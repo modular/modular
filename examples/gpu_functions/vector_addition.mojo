@@ -13,11 +13,11 @@
 
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
+from layout import LayoutTensor
 from math import ceildiv
 from max.driver import (
     Accelerator,
     Device,
-    DynamicTensor,
     Tensor,
     accelerator,
     cpu,
@@ -26,14 +26,13 @@ from sys import has_nvidia_gpu_accelerator
 
 alias float_dtype = DType.float32
 alias tensor_rank = 1
-alias TensorType = DynamicTensor[type=float_dtype, rank=tensor_rank].Type
 
 
 fn vector_addition(
     length: Int,
-    lhs: TensorType,
-    rhs: TensorType,
-    out: TensorType,
+    lhs: LayoutTensor[float_dtype],
+    rhs: LayoutTensor[float_dtype],
+    out: LayoutTensor[float_dtype],
 ):
     """The calculation to perform across the vector on the GPU."""
     tid = block_dim.x * block_idx.x + thread_idx.x
@@ -85,9 +84,9 @@ def main():
         gpu_function(
             gpu_device,
             VECTOR_WIDTH,
-            lhs_tensor.unsafe_slice(),
-            rhs_tensor.unsafe_slice(),
-            out_tensor.unsafe_slice(),
+            lhs_tensor.to_layout_tensor(),
+            rhs_tensor.to_layout_tensor(),
+            out_tensor.to_layout_tensor(),
             grid_dim=Dim(num_blocks),
             block_dim=Dim(BLOCK_SIZE),
         )

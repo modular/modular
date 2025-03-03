@@ -15,19 +15,19 @@ from collections.string import StringSlice
 from complex import ComplexSIMD
 from gpu.host import Dim
 from gpu.id import thread_idx, block_dim, block_idx
+from layout import LayoutTensor
 from math import ceildiv
-from max.driver import Accelerator, DynamicTensor, Tensor, accelerator, cpu
+from max.driver import Accelerator, Tensor, accelerator, cpu
 from sys import has_nvidia_gpu_accelerator
 
 alias float_dtype = DType.float32
 alias int_dtype = DType.int32
-alias TensorType = DynamicTensor[type=int_dtype, rank=2].Type
 
 
 def draw_mandelbrot[h: Int, w: Int](t: Tensor[int_dtype, 2], max: Int):
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     alias sr = StringSlice("....,c8M@jawrpogOQEPGJ")
-    out = t.unsafe_slice()
+    out = t.to_layout_tensor()
     for row in range(h):
         for col in range(w):
             var v = out[row, col]
@@ -46,7 +46,7 @@ fn mandelbrot(
     scale_x: Scalar[float_dtype],
     scale_y: Scalar[float_dtype],
     max_iterations: Scalar[int_dtype],
-    out: TensorType,
+    out: LayoutTensor[int_dtype],
 ):
     """The per-element calculation of iterations to escape in the Mandelbrot set.
     """
@@ -119,7 +119,7 @@ def main():
             SCALE_X,
             SCALE_Y,
             MAX_ITERATIONS,
-            out_tensor.unsafe_slice(),
+            out_tensor.to_layout_tensor(),
             grid_dim=Dim(num_col_blocks, num_row_blocks),
             block_dim=Dim(BLOCK_SIZE, BLOCK_SIZE),
         )

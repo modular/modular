@@ -14,11 +14,11 @@
 
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
+from layout import LayoutTensor
 from math import ceildiv
 from max.driver import (
     Accelerator,
     Device,
-    DynamicTensor,
     Tensor,
     accelerator,
     cpu,
@@ -27,16 +27,15 @@ from sys import has_nvidia_gpu_accelerator
 
 alias float_dtype = DType.float32
 alias tensor_rank = 2
-alias TensorType = DynamicTensor[type=float_dtype, rank=tensor_rank].Type
 
 
 fn naive_matrix_multiplication(
     i: Int,
     j: Int,
     k: Int,
-    m: TensorType,
-    n: TensorType,
-    p: TensorType,
+    m: LayoutTensor[float_dtype],
+    n: LayoutTensor[float_dtype],
+    p: LayoutTensor[float_dtype],
 ):
     """Naive matrix multiplication of M_ij x N_jk = P_ik."""
     row = block_dim.y * block_idx.y + thread_idx.y
@@ -102,9 +101,9 @@ def main():
             I,
             J,
             K,
-            m_tensor.unsafe_slice(),
-            n_tensor.unsafe_slice(),
-            p_tensor.unsafe_slice(),
+            m_tensor.to_layout_tensor(),
+            n_tensor.to_layout_tensor(),
+            p_tensor.to_layout_tensor(),
             grid_dim=Dim(num_col_blocks, num_row_blocks),
             block_dim=Dim(BLOCK_SIZE, BLOCK_SIZE),
         )
