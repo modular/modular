@@ -1499,8 +1499,11 @@ struct DeviceContext:
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
-        """Private version of `compile_function()`, which includes debugging
-        params."""
+        """Private undocumented version with the extra options `_dump_sass` and
+        `_ptxas_info_verbose`, which are only available on NVIDIA with
+        additional external tools. Also enables changing the `_target` to a
+        different device type.
+        """
         debug_assert(
             not func_attribute
             or func_attribute.value().attribute
@@ -1567,8 +1570,10 @@ struct DeviceContext:
             func_type: The type of the function to launch.
             func: The function to launch.
             Ts: The types of the arguments being passed to the function.
-            dump_asm: Pass `True` or a `Path` to dump the assembly.
-            dump_llvm: Pass `True` or a `Path` to dump the LLVM IR.
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
         Args:
             args: Variadic arguments which are passed to the `func`.
             grid_dim: The grid dimensions.
@@ -1605,14 +1610,57 @@ struct DeviceContext:
             ctx.synchronize()
         ```
         """
-
         var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
-            _dump_sass=False,
-            _target = self.device_info.target(),
-            _ptxas_info_verbose=False,
+        ](func_attribute=func_attribute)
+
+        self._enqueue_function(
+            gpu_kernel,
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
+
+    @doc_private
+    @parameter
+    @always_inline
+    fn enqueue_function[
+        func_type: AnyTrivialRegType, //,
+        func: func_type,
+        *Ts: AnyType,
+        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        owned attributes: List[LaunchAttribute] = List[LaunchAttribute](),
+        owned constant_memory: List[ConstantMemoryMapping] = List[
+            ConstantMemoryMapping
+        ](),
+        func_attribute: OptionalReg[FuncAttribute] = None,
+    ) raises:
+        """Private undocumented version with the extra options `_dump_sass` and
+        `_ptxas_info_verbose`, which are only available on NVIDIA with
+        additional external tools.
+        """
+        var gpu_kernel = self.compile_function[
+            func,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
         ](func_attribute=func_attribute)
 
         self._enqueue_function(
