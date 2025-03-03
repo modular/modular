@@ -30,7 +30,6 @@ from transformers import AutoTokenizer
 
 def get_default_replit_config(use_cpu: bool) -> PipelineConfig:
     pipeline_config = PipelineConfig(
-        architecture="MPTForCausalLM",
         model_path="modularai/replit-code-1.5",
         trust_remote_code=True,
         device_specs=[
@@ -48,7 +47,6 @@ def get_default_replit_config(use_cpu: bool) -> PipelineConfig:
 
 def get_default_llama31_config(use_cpu: bool) -> PipelineConfig:
     return PipelineConfig(
-        architecture="LlamaForCausalLM",
         # model_path="meta-llama/Meta-Llama-3.1-8B-Instruct",
         model_path="modularai/llama-3.1",
         device_specs=[
@@ -140,14 +138,13 @@ def serve(
                 print(f"ERROR invalid model name {model}")
                 exit(-1)
 
-            if (
-                pipeline_config.architecture
-                not in PIPELINE_REGISTRY.architectures
-            ):
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                model_name, trust_remote_code=pipeline_config.trust_remote_code
+            )
+            if not arch:
                 # TODO arekay - better error handling
                 print(
-                    f"ERROR {pipeline_config.architecture} not found in"
-                    f" registry {PIPELINE_REGISTRY.architectures}"
+                    f"ERROR architecture for {model_name} not found in registry"
                 )
                 exit(-1)
 
