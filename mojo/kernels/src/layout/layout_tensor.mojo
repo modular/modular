@@ -944,6 +944,51 @@ struct LayoutTensor[
             other
         )
 
+    fn __itruediv__(self, other: Scalar[dtype]):
+        """Truediv the LayoutTensor with a scalar value. The scalar value will be
+        broadcasted to the entire tensor.
+
+        Args:
+            other: The scalar value.
+        """
+
+        @parameter
+        fn div_val(val: Self.element_type) -> Self.element_type:
+            return val / Self.element_type(other)
+
+        _ = self._elementwise_unary[div_val]()
+
+    @always_inline
+    fn __itruediv__[
+        other_layout: Layout
+    ](
+        self,
+        other: LayoutTensor[
+            dtype,
+            other_layout,
+            address_space=address_space,
+            element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
+        ],
+    ):
+        """Do an truediv with another LayoutTensor and return the divided
+        tensor. Currently only support tensors of the same shape if the rank
+        is the same and also tensors of rank-2.
+
+        Parameters:
+            other_layout: The layout of the other tensor.
+
+        Args:
+            other: The other tensor to be subtract from.
+        """
+
+        fn div_val(
+            lhs: Self.element_type, rhs: Self.element_type
+        ) capturing -> Self.element_type:
+            return lhs / rhs
+
+        _ = self._elementwise_binary_with_broadcast[div_val](other)
+
     @always_inline("nodebug")
     fn __getitem__(self, *dims: Int) -> Self.element_type:
         """Get the element of the tensor with a specified index. Note that the
