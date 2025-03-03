@@ -1,6 +1,7 @@
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load(
     "//bazel:api.bzl",
+    "cc_autolink_deps",
     "gentbl_cc_library",
     "gentbl_mlir_dialect",
     "gentbl_modular_passes",
@@ -90,6 +91,7 @@ modular_cc_library(
     }),
     tags = ["no-clang-tidy-headers"],
     deps = [
+        ":Globals",
         "//Config",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Pass",
@@ -900,6 +902,19 @@ modular_cc_library(
     ],
 )
 
+# Always link and expose the FallbackTypeIDResolver::registerImplicitTypeID
+# function. This is used by downstream libraries to decide whether MLIR types
+# in different SOs are the same type or not.
+#
+# See https://github.com/llvm/llvm-project/pull/126999#issuecomment-2661526333
+# for more details and breadcrumbs.
+cc_autolink_deps(
+    name = "mlir-typeid-registry",
+    deps = [
+        "@llvm-project//mlir:Support",
+    ],
+)
+
 modular_shared_library(
     name = "Globals",
     srcs = glob(["lib/Globals/*.cpp"]),
@@ -907,6 +922,10 @@ modular_shared_library(
         "include/Support/SymbolExport.h",
     ],
     output_name = "MSupportGlobals",
+    deps = [
+        ":mlir-typeid-registry",
+        "@llvm-project//mlir:Support",
+    ],
     # TODO: Missing define conditionals for symbol visibility
     # NOTE: This library should not have any deps to avoid shared object linking issues
 )
