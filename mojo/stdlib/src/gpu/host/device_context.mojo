@@ -351,6 +351,39 @@ struct DeviceBuffer[
             ](self._handle, dst._handle)
         )
 
+    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[type]]) raises:
+        # const char * AsyncRT_DeviceBuffer_copyToPtr(const DeviceBuffer* src, void *dst)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyToPtr",
+                _CharPtr,
+                _DeviceBufferPtr,
+                UnsafePointer[Scalar[type]],
+            ](self._handle, dst_ptr)
+        )
+
+    fn enqueue_copy_from(self, src: DeviceBuffer[type, **_]) raises:
+        # const char * AsyncRT_DeviceBuffer_copyFrom(const DeviceBuffer* dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyFrom",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](self._handle, src._handle)
+        )
+
+    fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[type]]) raises:
+        # const char * AsyncRT_DeviceBuffer_copyFromPtr(const DeviceBuffer* dst, const void *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyFromPtr",
+                _CharPtr,
+                _DeviceBufferPtr,
+                UnsafePointer[Scalar[type]],
+            ](self._handle, src_ptr)
+        )
+
     fn enqueue_fill(self, val: Scalar[type]) raises -> Self:
         self.context().enqueue_memset(self, val)
         return self
