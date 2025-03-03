@@ -47,7 +47,7 @@ struct AddOneCustom:
         out: ManagedTensorSlice,
         x: ManagedTensorSlice[type = out.type, rank = out.rank],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         @parameter
         fn add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.type, width]:
             return x.load[width](idx) + 1
