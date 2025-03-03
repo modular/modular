@@ -167,7 +167,7 @@ ErrorOrSuccess M::fillHomogeneous(void *destPtr, size_t numElements,
   default: {
     // This is for the weird case, things like f80 which isn't a power of two in
     // size.
-    assert(bytesPerElement < sizeof(chunk) && "giant element?");
+    assert(bytesPerElement <= sizeof(chunk) && "giant element?");
     memcpy(chunk, elementPtr, bytesPerElement);
     unsigned chunkSize = bytesPerElement;
     while (chunkSize * 2 <= sizeof(chunk)) {
@@ -177,7 +177,7 @@ ErrorOrSuccess M::fillHomogeneous(void *destPtr, size_t numElements,
     // Finally, fill the target buffer with chunks until we reach the end.  This
     // is less efficient than the copy of this below, because the chunk size is
     // not constant here.
-    fillFromChunk(sizeof(chunk));
+    fillFromChunk(chunkSize);
     return success();
   }
   }
