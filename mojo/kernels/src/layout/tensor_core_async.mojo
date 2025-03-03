@@ -471,14 +471,16 @@ struct TensorCoreAsync[
         # fmt: on
         # K dim is stepped by 2 core matrices.
         alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
-        constrained[
-            b_n_stride > 0, "b_smem_layout = " + String(b_smem_layout)
-        ]()
         constrained[b_k_stride > 0]()
 
         alias num_n_mmas = b_smem_layout[0].size() // mma_shape[1]
         alias num_k_mmas = b_smem_layout[1].size() // mma_shape[2]
         alias num_m_mmas = a_frag.layout[0].shape[0].value() // num_k_mmas
+
+        constrained[
+            b_n_stride > 0 or (b_n_stride == 0 and num_n_mmas == 1),
+            "b_smem_layout = " + String(b_smem_layout),
+        ]()
 
         # Vectorize each wgmma's fragment size.
         alias a_frag_size = mma_shape[0] * mma_shape[2] // 128
@@ -505,13 +507,6 @@ struct TensorCoreAsync[
         ]()
 
         b_desc = _rhs_descriptor[mma_shape, transpose_b, b_swizzle](b_smem_tile)
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
-                alias mma_id = n_mma * num_m_mmas + m_mma
 
         @parameter
         for m_mma in range(num_m_mmas):
