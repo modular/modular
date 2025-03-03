@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "llvm/ADT/StringSet.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -15,6 +16,7 @@
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "Support/AssertStream.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/IRMapping.h"
@@ -319,13 +321,31 @@ private:
       }
     }
 
+    ASSERT_STREAM(elementwiseOp.getNumResults() == 1,
+                  << "Expect only one result from elementwise op -- error code "
+                     "for handling raising");
     for (Operation &op : gen.getOps()) {
       if (&op == elementwiseOp)
         continue;
+
       if (isa<KGEN::ParamDeclareOp, KGEN::ParamDeclareRegionOp, KGEN::ReturnOp,
-              KGEN::ParamConstantOp>(op))
+              KGEN::ParamConstantOp, POP::StackAllocationOp,
+              POP::StackAllocLifetimeStartOp, POP::StackAllocLifetimeEndOp,
+              POP::StoreOp>(op))
         continue;
-      // Should not be marked elementwise.
+
+      // It is assumed `elementwiseOp` is `foreach` which raises and returns
+      // whether an error occurred .
+      //
+      // Allow an if statement which uses this boolean.
+      auto ifOp = dyn_cast<HLCF::IfOp>(op);
+      if (ifOp && ifOp.getCond() == elementwiseOp.getResults()[0])
+        continue;
+
+      ASSERT_STREAM(!gen->hasAttr(KGEN::MOGGPreElab::kMOGGElementFunction),
+                    << "Kernel marked elementwise but violates some fact "
+                       "about Kernel API. See offending op "
+                    << op << "\nFor generator " << gen.getSymNameAttr());
       return nullptr;
     }
     return elementwiseOp;
