@@ -27,6 +27,7 @@ from gpu.host._compile import (
 from memory import stack_allocation
 
 from utils import Variant
+from utils._serialize import _serialize_elements, _serialize_elements_compact
 
 from .info import DEFAULT_GPU
 
@@ -117,7 +118,7 @@ struct DeviceBuffer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
     origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
-](Sized):
+](Sized, Stringable, Writable):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
 
@@ -426,6 +427,35 @@ struct DeviceBuffer[
         self,
     ) raises -> Self._HostMappedBufferType:
         return Self._HostMappedBufferType(self.context(), self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        try:
+            with self.map_to_host() as host_buffer:
+                writer.write("DeviceBuffer")
+                writer.write("(")
+
+                @parameter
+                fn serialize[T: Writable](val: T):
+                    writer.write(val)
+
+                var size = len(self)
+
+                if size < 1000:
+                    writer.write("[")
+                    _serialize_elements[serialize_fn=serialize](
+                        host_buffer.unsafe_ptr(), len(self)
+                    )
+                    writer.write("]")
+                else:
+                    _serialize_elements[serialize_fn=serialize, compact=True](
+                        host_buffer.unsafe_ptr(), size
+                    )
+                writer.write(")")
+        except e:
+            abort("failed to write DeviceBuffer:", e)
+
+    fn __str__(self) -> String:
+        return String.write(self)
 
     fn __getitem__(self, idx: Int) -> Scalar[type]:
         return self._device_ptr[idx]
