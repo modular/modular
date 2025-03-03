@@ -45,14 +45,11 @@ fn fused_reduce_inner_test[
         "expected vals must match output shape",
     )
 
-    var vec_host = UnsafePointer[Scalar[type]].alloc(in_size)
-    var res_host0 = UnsafePointer[Scalar[type]].alloc(out_size)
-    var res_host1 = UnsafePointer[Scalar[type]].alloc(out_size)
-
-    for i in range(in_size):
-        vec_host[i] = i // shape[axis] + 1
-
     var vec_device = ctx.enqueue_create_buffer[type](in_size)
+    with vec_device.map_to_host() as vec_host:
+        for i in range(in_size):
+            vec_host[i] = i // shape[axis] + 1
+
     var res_device0 = ctx.enqueue_create_buffer[type](out_size)
     var res_device1 = ctx.enqueue_create_buffer[type](out_size)
     var input_buf_device = NDBuffer[type, rank](vec_device.unsafe_ptr(), shape)
@@ -62,8 +59,6 @@ fn fused_reduce_inner_test[
     var output_buf_device1 = NDBuffer[type, rank](
         res_device1.unsafe_ptr(), out_shape
     )
-
-    ctx.enqueue_copy(vec_device, vec_host)
 
     @__copy_capture(input_buf_device)
     @parameter
@@ -95,23 +90,17 @@ fn fused_reduce_inner_test[
         shape, axis, init, ctx
     )
 
-    ctx.enqueue_copy(res_host0, res_device0)
-    ctx.enqueue_copy(res_host1, res_device1)
-    ctx.synchronize()
+    with res_device0.map_to_host() as res_host0:
+        for i in range(out_shape.flattened_length()):
+            assert_equal(String(res_host0[i]), String(expected_vals0[i]))
 
-    for i in range(out_shape.flattened_length()):
-        assert_equal(String(res_host0[i]), String(expected_vals0[i]))
-
-    for i in range(out_shape.flattened_length()):
-        assert_equal(String(res_host1[i]), String(expected_vals1[i]))
+    with res_device1.map_to_host() as res_host1:
+        for i in range(out_shape.flattened_length()):
+            assert_equal(String(res_host1[i]), String(expected_vals1[i]))
 
     _ = vec_device
     _ = res_device0
     _ = res_device1
-
-    vec_host.free()
-    res_host0.free()
-    res_host1.free()
 
 
 fn reduce_inner_test[
@@ -139,20 +128,17 @@ fn reduce_inner_test[
         len(expected_vals) == out_size, "expected vals must match output shape"
     )
 
-    var vec_host = UnsafePointer[Scalar[type]].alloc(in_size)
-    var res_host = UnsafePointer[Scalar[type]].alloc(out_size)
-
-    for i in range(in_size):
-        vec_host[i] = i // shape[axis] + 1
-
     var vec_device = ctx.enqueue_create_buffer[type](in_size)
+
+    with vec_device.map_to_host() as vec_host:
+        for i in range(in_size):
+            vec_host[i] = i // shape[axis] + 1
+
     var res_device = ctx.enqueue_create_buffer[type](out_size)
     var input_buf_device = NDBuffer[type, rank](vec_device.unsafe_ptr(), shape)
     var output_buf_device = NDBuffer[type, rank](
         res_device.unsafe_ptr(), out_shape
     )
-
-    ctx.enqueue_copy(vec_device, vec_host)
 
     @always_inline
     @parameter
@@ -190,17 +176,12 @@ fn reduce_inner_test[
         num_reductions, input_fn, output_fn, reduce_wrapper, rank, type
     ](shape, axis, init, ctx)
 
-    ctx.synchronize()
-    ctx.enqueue_copy(res_host, res_device)
-
-    for i in range(out_shape.flattened_length()):
-        assert_equal(String(res_host[i]), String(expected_vals[i]))
+    with res_device.map_to_host() as res_host:
+        for i in range(out_shape.flattened_length()):
+            assert_equal(String(res_host[i]), String(expected_vals[i]))
 
     _ = vec_device
     _ = res_device
-
-    vec_host.free()
-    res_host.free()
 
 
 def main():

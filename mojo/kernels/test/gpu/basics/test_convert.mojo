@@ -73,26 +73,15 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     """
 
     alias size = 4
-    var host_ptr = UnsafePointer[Scalar[dst_type]].alloc(size)
     var device_buf = ctx.enqueue_create_buffer[dst_type](size)
-
-    for i in range(size):
-        host_ptr[i] = 0
-
-    ctx.enqueue_copy(device_buf, host_ptr)
+    _ = device_buf.enqueue_fill(0)
 
     ctx.enqueue_function[convert_kernel[src_type, dst_type, size]](
         device_buf, grid_dim=(1), block_dim=(1)
     )
-    ctx.enqueue_copy(host_ptr, device_buf)
-
-    ctx.synchronize()
-
-    for i in range(size):
-        assert_equal(host_ptr[i], i)
-
-    _ = device_buf^
-    host_ptr.free()
+    with device_buf.map_to_host() as host_buf:
+        for i in range(size):
+            assert_equal(host_buf[i], i)
 
 
 fn main() raises:

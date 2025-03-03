@@ -25,16 +25,12 @@ fn add_constant_fn(
 def run_add_constant(ctx: DeviceContext):
     alias length = 1024
 
-    var in_host = UnsafePointer[Float32].alloc(length)
-    var out_host = UnsafePointer[Float32].alloc(length)
-
-    for i in range(length):
-        in_host[i] = i
-
     var in_device = ctx.enqueue_create_buffer[DType.float32](length)
     var out_device = ctx.enqueue_create_buffer[DType.float32](length)
 
-    ctx.enqueue_copy(in_device, in_host)
+    with in_device.map_to_host() as in_host:
+        for i in range(length):
+            in_host[i] = i
 
     var block_dim = 32
     alias constant = Float32(33)
@@ -48,18 +44,9 @@ def run_add_constant(ctx: DeviceContext):
         block_dim=(block_dim),
     )
 
-    ctx.enqueue_copy(out_host, out_device)
-
-    ctx.synchronize()
-
-    for i in range(10):
-        assert_equal(out_host[i], i + constant)
-
-    _ = in_device
-    _ = out_device
-
-    in_host.free()
-    out_host.free()
+    with out_device.map_to_host() as out_host:
+        for i in range(10):
+            assert_equal(out_host[i], i + constant)
 
 
 def main():

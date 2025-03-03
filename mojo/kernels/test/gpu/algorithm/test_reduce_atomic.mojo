@@ -50,8 +50,9 @@ fn reduce(
 fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     alias BLOCK_SIZE = 32
     alias n = 1024
+    alias F32 = DType.float32
 
-    var vec_host = NDBuffer[DType.float32, 1, DimList(n)].stack_allocation()
+    var vec_host = NDBuffer[F32, 1, DimList(n)].stack_allocation()
 
     if fill_strategy is FillStrategy.LINSPACE:
         for i in range(n):
@@ -69,17 +70,14 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
         for i in range(n):
             vec_host[i] = 1
 
-    var vec_device = ctx.enqueue_create_buffer[DType.float32](n)
-    var res_add_device = ctx.enqueue_create_buffer[DType.float32](1)
+    var vec_device = ctx.enqueue_create_buffer[F32](n)
+    vec_device.enqueue_copy_from(vec_host.data)
 
-    ctx.enqueue_copy(vec_device, vec_host.data)
-    ctx.memset(res_add_device, 0)
+    var res_add_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
 
-    var res_min_device = ctx.enqueue_create_buffer[DType.float32](1)
-    ctx.memset(res_min_device, 0)
+    var res_min_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
 
-    var res_max_device = ctx.enqueue_create_buffer[DType.float32](1)
-    ctx.memset(res_max_device, 0)
+    var res_max_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
 
     ctx.enqueue_function[reduce](
         res_add_device,
@@ -92,13 +90,13 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     )
 
     var res = Float32(0)
-    ctx.enqueue_copy(UnsafePointer.address_of(res), res_add_device)
+    res_add_device.enqueue_copy_to(UnsafePointer.address_of(res))
 
     var res_min = Float32(0)
-    ctx.enqueue_copy(UnsafePointer.address_of(res_min), res_min_device)
+    res_min_device.enqueue_copy_to(UnsafePointer.address_of(res_min))
 
     var res_max = Float32(0)
-    ctx.enqueue_copy(UnsafePointer.address_of(res_max), res_max_device)
+    res_max_device.enqueue_copy_to(UnsafePointer.address_of(res_max))
 
     ctx.synchronize()
 
