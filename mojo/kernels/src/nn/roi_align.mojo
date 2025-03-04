@@ -159,23 +159,15 @@ fn roi_align_nhwc[
 
     var pooled_height = output_height
     var pooled_width = output_width
-    alias offset = 0.5 if aligned else 0.0
+    alias offset = Float32(0.5 if aligned else 0.0)
 
     for ri in range(n_regions):
         # Region coordinates and batch index
         var roi_batch_idx = Int(rois[ri, 0])
-        var roi_start_w = rois[ri, 1].cast[
-            DType.float32
-        ]() * spatial_scale - offset
-        var roi_start_h = rois[ri, 2].cast[
-            DType.float32
-        ]() * spatial_scale - offset
-        var roi_end_w = rois[ri, 3].cast[
-            DType.float32
-        ]() * spatial_scale - offset
-        var roi_end_h = rois[ri, 4].cast[
-            DType.float32
-        ]() * spatial_scale - offset
+        var roi_start_w = Float32(rois[ri, 1]) * spatial_scale - offset
+        var roi_start_h = Float32(rois[ri, 2]) * spatial_scale - offset
+        var roi_end_w = Float32(rois[ri, 3]) * spatial_scale - offset
+        var roi_end_h = Float32(rois[ri, 4]) * spatial_scale - offset
 
         # Region size (roi_h, roi_w) with 1x1 lower bound
         var roi_height = roi_end_h - roi_start_h if aligned else max(
