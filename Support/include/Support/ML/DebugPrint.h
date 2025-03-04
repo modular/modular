@@ -7,14 +7,26 @@
 #ifndef GENERICML_SUPPORT_DEBUGPRINT_H
 #define GENERICML_SUPPORT_DEBUGPRINT_H
 
-#include "Runtime/Tensor/Tensor.h"
 #include "Support/ErrorOr.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/raw_os_ostream.h"
 
 #include <string>
 
 namespace M {
+
+class TensorSpec;
+
+enum class ResultOutputStyle {
+  kCompact, // Display a few elements at the start and end of each dimension
+  kFull,    // Display all the elements of result
+  kBinary,  // Save results to .bin
+  kNone,    // Do not display any tensor details
+  kBinaryMaxCheckpoint, // Save results to .max (saves tensor shape and dtype).
+};
+
+/// This prints the specified tensor data to stdout.
+ErrorOrSuccess printTensor(raw_ostream &os, const void *srcPtr,
+                           const TensorSpec &spec, ResultOutputStyle style,
+                           unsigned precision = 6);
 
 /// Options, conveyed via a runtime context object, which control the output
 /// format for debug printing of tensor values.
