@@ -13,7 +13,7 @@ from sys import sizeof
 from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (
     _block_Q4_K,
@@ -26,13 +26,6 @@ from quantization.qmatmul_k import (
 )
 
 from utils.index import Index
-
-
-@always_inline
-fn _to_dtype_pointer[
-    type: DType
-](mut array: InlineArray[Scalar[type]]) -> UnsafePointer[Scalar[type]]:
-    return UnsafePointer[Scalar[type]](array.unsafe_ptr())
 
 
 fn fill_random[type: DType](mut array: InlineArray[Scalar[type]]):
@@ -51,7 +44,7 @@ fn random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
 
 fn quantize_a_Q8[
     group_size: Int
-](a: UnsafePointer[Float32], a_quant: UnsafePointer[Int8]) -> Float32:
+](a: UnsafePointer[Float32, **_], a_quant: UnsafePointer[Int8, **_]) -> Float32:
     var fp_data = a.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
@@ -68,9 +61,9 @@ fn dot_product_QK_K[
     group_size: Int,
     b_zero_point: Int32 = 0,
 ](
-    a_quant_data: UnsafePointer[Int8],
-    b_quant_data: UnsafePointer[UInt8],
-    b_scales: UnsafePointer[Scalar[b_scales_type]],
+    a_quant_data: UnsafePointer[Int8, **_],
+    b_quant_data: UnsafePointer[UInt8, **_],
+    b_scales: UnsafePointer[Scalar[b_scales_type], **_],
 ) -> Int32:
     var sum: Int32 = 0
     for i in range(_block_QK_K.quantized_k):
@@ -172,17 +165,17 @@ struct qgemm_Q4_0(QuantizedGemm):
             k // Self.k_group_size()
         )
 
-        var a_quant_data = stack_allocation[
-            _block_Q4_0.group_size, DType.int8
-        ]()
-
-        var a_scale = quantize_a_Q8[_block_Q4_0.group_size](
-            a._offset(Index(m, k)), a_quant_data
+        var a_quant_data = InlineArray[Int8, _block_Q4_0.group_size](
+            unsafe_uninitialized=True
         )
 
-        var b_quant_data = stack_allocation[
-            _block_Q4_0.group_size, DType.uint8
-        ]()
+        var a_scale = quantize_a_Q8[_block_Q4_0.group_size](
+            a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
+        )
+
+        var b_quant_data = InlineArray[UInt8, _block_Q4_0.group_size](
+            unsafe_uninitialized=True
+        )
 
         # Decode the bits of the weight data.
         var q_packed_bits = block_ptr[].q_bits.unsafe_ptr().load[
@@ -192,7 +185,7 @@ struct qgemm_Q4_0(QuantizedGemm):
         for j in range(2):
             var idx = j * _block_Q4_0.group_size // 2
             var q_bits = ((q_packed_bits >> (j * 4)) & 15)
-            b_quant_data.store(idx, q_bits)
+            b_quant_data.unsafe_ptr().store(idx, q_bits)
 
         var sum: Int32 = 0
 
@@ -261,28 +254,33 @@ struct qgemm_Q4_K(QuantizedGemm):
             k // Self.k_group_size()
         )
 
-        var a_quant_data = stack_allocation[
-            _block_QK_K.quantized_k, DType.int8
-        ]()
-
-        var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
-            a._offset(Index(m, k)), a_quant_data
+        var a_quant_data = InlineArray[Int8, _block_QK_K.quantized_k](
+            unsafe_uninitialized=True
         )
 
-        var a_block_sums = stack_allocation[
-            _block_Q4_K.group_count, DType.int32
-        ]()
+        var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
+            a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
+        )
+
+        var a_block_sums = InlineArray[Int32, _block_Q4_K.group_count](
+            unsafe_uninitialized=True
+        )
         for i in range(_block_Q4_K.group_count):
             a_block_sums[i] = (
-                a_quant_data.load[width = _block_Q4_K.group_size](
+                a_quant_data.unsafe_ptr()
+                .load[width = _block_Q4_K.group_size](
                     i * _block_Q4_K.group_size
                 )
                 .cast[DType.int32]()
                 .reduce_add()
             )
 
-        var b_scales = stack_allocation[_block_Q4_K.group_count, DType.uint8]()
-        var b_mins = stack_allocation[_block_Q4_K.group_count, DType.uint8]()
+        var b_scales = InlineArray[UInt8, _block_Q4_K.group_count](
+            unsafe_uninitialized=True
+        )
+        var b_mins = InlineArray[UInt8, _block_Q4_K.group_count](
+            unsafe_uninitialized=True
+        )
 
         for i in range(_block_Q4_K.group_count):
             if i < 4:
@@ -296,9 +294,9 @@ struct qgemm_Q4_K(QuantizedGemm):
                     (block_ptr[].q_scales_and_mins[i - 0] >> 6) << 4
                 )
 
-        var b_quant_data = stack_allocation[
-            _block_QK_K.quantized_k, DType.uint8
-        ]()
+        var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
+            unsafe_uninitialized=True
+        )
 
         # Decode the bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 32):
@@ -308,7 +306,7 @@ struct qgemm_Q4_K(QuantizedGemm):
             for j in range(2):
                 var idx = i * 2 + j * 32
                 var q_bits = ((q_packed_bits >> (j * 4)) & 15)
-                b_quant_data.store(idx, q_bits)
+                b_quant_data.unsafe_ptr().store(idx, q_bits)
 
         var sum2: Int32 = 0
 
@@ -316,7 +314,9 @@ struct qgemm_Q4_K(QuantizedGemm):
             sum2 += a_block_sums[i] * b_mins[i].cast[DType.int32]()
 
         var sum = dot_product_QK_K[group_size = _block_Q4_K.group_size](
-            a_quant_data, b_quant_data, b_scales
+            a_quant_data.unsafe_ptr(),
+            b_quant_data.unsafe_ptr(),
+            b_scales.unsafe_ptr(),
         )
 
         var sumf = sum.cast[DType.float32]() * block_ptr[].base_scale.cast[
@@ -382,17 +382,17 @@ struct qgemm_Q6_K(QuantizedGemm):
             k // Self.k_group_size()
         )
 
-        var a_quant_data = stack_allocation[
-            _block_QK_K.quantized_k, DType.int8
-        ]()
-
-        var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
-            a._offset(Index(m, k)), a_quant_data
+        var a_quant_data = InlineArray[Int8, _block_QK_K.quantized_k](
+            unsafe_uninitialized=True
         )
 
-        var b_quant_data = stack_allocation[
-            _block_QK_K.quantized_k, DType.uint8
-        ]()
+        var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
+            a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
+        )
+
+        var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
+            unsafe_uninitialized=True
+        )
 
         # Decode the bottom bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 64):
@@ -402,7 +402,7 @@ struct qgemm_Q6_K(QuantizedGemm):
             for j in range(2):
                 var idx = i * 2 + j * 64
                 var q_bits = ((q_packed_bits >> (j * 4)) & 15)
-                b_quant_data.store(idx, q_bits)
+                b_quant_data.unsafe_ptr().store(idx, q_bits)
 
         # Decode the top bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 4, 32):
@@ -411,13 +411,17 @@ struct qgemm_Q6_K(QuantizedGemm):
 
             for j in range(4):
                 var idx = i * 4 + j * 32
-                var q_bits_lo = b_quant_data.load[width=32](idx)
+                var q_bits_lo = b_quant_data.unsafe_ptr().load[width=32](idx)
                 var q_bits_hi = (((q_packed_bits >> (j * 2)) & 3) << 4)
-                b_quant_data.store(idx, q_bits_hi | q_bits_lo)
+                b_quant_data.unsafe_ptr().store(idx, q_bits_hi | q_bits_lo)
 
         var sum = dot_product_QK_K[
             group_size = _block_Q6_K.group_size, b_zero_point=32
-        ](a_quant_data, b_quant_data, block_ptr[].q_scales.unsafe_ptr())
+        ](
+            a_quant_data.unsafe_ptr(),
+            b_quant_data.unsafe_ptr(),
+            block_ptr[].q_scales.unsafe_ptr(),
+        )
 
         var sumf = sum.cast[DType.float32]() * block_ptr[].base_scale.cast[
             DType.float32

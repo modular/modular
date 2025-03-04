@@ -93,7 +93,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     """
 
     @always_inline
-    fn _pack_int4(mut self, owned src_ptr: UnsafePointer[UInt8]):
+    fn _pack_int4(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
@@ -120,7 +120,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             src_ptr += Self._packed_stride
 
     @always_inline
-    fn _unpack_int4(mut self, owned dst_ptr: UnsafePointer[UInt8]):
+    fn _unpack_int4(mut self, owned dst_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
@@ -153,7 +153,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     """
 
     @always_inline
-    fn _pack_int6(mut self, owned src_ptr: UnsafePointer[UInt8]):
+    fn _pack_int6(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
@@ -185,7 +185,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn _unpack_int6[
         zero_point: UInt8
-    ](mut self, owned dst_ptr: UnsafePointer[UInt8]):
+    ](mut self, owned dst_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
@@ -218,7 +218,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             dst_ptr += Self._packed_stride * 4
 
     @always_inline
-    fn pack(mut self, owned src_ptr: UnsafePointer[UInt8]):
+    fn pack(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
         """Packs the supplied external buffer to local storage."""
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
@@ -233,7 +233,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn unpack[
         *, zero_point: UInt8 = 0
-    ](mut self, owned dst_ptr: UnsafePointer[UInt8]):
+    ](mut self, owned dst_ptr: UnsafePointer[UInt8, **_]):
         """Unpacks the local storage to the supplied external buffer."""
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
@@ -272,7 +272,9 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 fn _quantize_a_Q8_K[
     group_size: Int, type: DType, *, interleave_group_sums: Bool = False
-](a: NDBuffer[type, 2]) -> UnsafePointer[_block_Q8_K_packed[group_size]]:
+](a: NDBuffer[type, 2, **_]) -> UnsafePointer[
+    _block_Q8_K_packed[group_size], origin = a.origin
+]:
     alias quantized_k = _block_QK_K.quantized_k
     alias group_count = quantized_k // group_size
 
@@ -346,7 +348,10 @@ fn _quantize_a_Q8_K[
 
 fn _expand_q_bits_lo[
     *, width: Int
-](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8]):
+](
+    owned src_ptr: UnsafePointer[UInt8, **_],
+    owned dst_ptr: UnsafePointer[UInt8, **_],
+):
     for k in range(0, _block_QK_K.quantized_k // 2, width):
         var src_q_bits = src_ptr.load[width=width]()
         src_ptr += width
@@ -359,7 +364,10 @@ fn _expand_q_bits_lo[
 
 fn _expand_and_merge_q_bits_hi[
     *, width: Int, bit_count: Int
-](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8]):
+](
+    owned src_ptr: UnsafePointer[UInt8, **_],
+    owned dst_ptr: UnsafePointer[UInt8, **_],
+):
     alias values_per_byte = 8 // bit_count
     alias bit_mask = (1 << bit_count) - 1
 
@@ -378,7 +386,10 @@ fn _expand_and_merge_q_bits_hi[
 
 fn _copy_column_q_bits_to_block[
     block_n: Int
-](owned src_ptr: UnsafePointer[UInt8], owned dst_ptr: UnsafePointer[UInt8]):
+](
+    owned src_ptr: UnsafePointer[UInt8, **_],
+    owned dst_ptr: UnsafePointer[UInt8, **_],
+):
     """Interleaves the linear source buffer to the blocked destination
     buffer.
     """
@@ -389,11 +400,18 @@ fn _copy_column_q_bits_to_block[
 
 
 fn _pack_block_Q4_K[
-    block_n: Int
+    block_n: Int,
+    src_origin: MutableOrigin,
+    dst_origin: MutableOrigin,
+    alignment: Int,
 ](
-    owned src_ptr: UnsafePointer[_block_Q4_K],
+    owned src_ptr: UnsafePointer[
+        _block_Q4_K, origin=src_origin, alignment=alignment
+    ],
     stride: Int,
-    dst_ptr: UnsafePointer[_block_Q4_K_packed[block_n]],
+    mut dst_ptr: UnsafePointer[
+        _block_Q4_K_packed[block_n], origin=dst_origin, alignment=alignment
+    ],
 ):
     alias group_size = _block_Q4_K.group_size
     alias group_count = _block_Q4_K.group_count
@@ -404,11 +422,15 @@ fn _pack_block_Q4_K[
         "packed block size should be multiple of the unpacked block size",
     ]()
 
-    var q_scales_buf = stack_allocation[group_count * block_n, DType.uint8]()
-    var q_mins_buf = stack_allocation[group_count * block_n, DType.uint8]()
-    var q_bits_block_buf = stack_allocation[
-        _block_QK_K.quantized_k * block_n, DType.uint8
-    ]()
+    var q_scales_buf = InlineArray[UInt8, group_count * block_n](
+        unsafe_uninitialized=True
+    )
+    var q_mins_buf = InlineArray[UInt8, group_count * block_n](
+        unsafe_uninitialized=True
+    )
+    var q_bits_block_buf = InlineArray[
+        UInt8, _block_QK_K.quantized_k * block_n
+    ](unsafe_uninitialized=True)
 
     for n in range(block_n):
         dst_ptr[].base_scales[n] = src_ptr[].base_scale
@@ -431,15 +453,16 @@ fn _pack_block_Q4_K[
             q_scales_buf[g * block_n + n] = q_scale
             q_mins_buf[g * block_n + n] = q_min
 
-        var q_bits_column_buf = stack_allocation[
-            _block_QK_K.quantized_k, DType.uint8
-        ]()
+        var q_bits_column_buf = InlineArray[UInt8, _block_QK_K.quantized_k](
+            unsafe_uninitialized=True
+        )
 
         _expand_q_bits_lo[width=32](
-            src_ptr[].q_bits.unsafe_ptr(), q_bits_column_buf
+            src_ptr[].q_bits.unsafe_ptr(), q_bits_column_buf.unsafe_ptr()
         )
         _copy_column_q_bits_to_block[block_n](
-            q_bits_column_buf, q_bits_block_buf + n * 4
+            q_bits_column_buf.unsafe_ptr(),
+            q_bits_block_buf.unsafe_ptr() + n * 4,
         )
 
         src_ptr += stride
@@ -447,14 +470,18 @@ fn _pack_block_Q4_K[
     # Allocate a staging buffer to pack the scales and minimums as a single
     # blob and to do processor specific reordering of the values for the
     # compute kernel.
-    var q_scales_and_mins_buf = stack_allocation[
-        2 * group_count * block_n, DType.uint8
-    ]()
-    var q_scales_reorder_buf = q_scales_and_mins_buf
-    var q_mins_reorder_buf = q_scales_and_mins_buf + group_count * block_n
+    var q_scales_and_mins_buf = InlineArray[UInt8, 2 * group_count * block_n](
+        unsafe_uninitialized=True
+    )
+    var q_scales_reorder_buf = q_scales_and_mins_buf.unsafe_ptr()
+    var q_mins_reorder_buf = q_scales_and_mins_buf.unsafe_ptr() + group_count * block_n
 
     # Scales are not currently transformed.
-    memcpy(q_scales_reorder_buf, q_scales_buf, group_count * block_n)
+    memcpy(
+        q_scales_reorder_buf,
+        q_scales_buf.unsafe_ptr(),
+        group_count * block_n,
+    )
 
     # Minimums are row interleaved with a stride to enable use of int16->int32
     # multiply/add instructions.
@@ -469,7 +496,7 @@ fn _pack_block_Q4_K[
     # two rows are split across the lower and upper halves of the register:
     #       [n0_g0 n1_g0 n2_g0 n3_g0 : n0_g1 n1_g1 n2_g1 n3_g1]
     for g in range(0, group_count, 2):
-        var q_mins_row_0_ptr = q_mins_buf + g * block_n
+        var q_mins_row_0_ptr = q_mins_buf.unsafe_ptr() + g * block_n
         var q_mins_row_1_ptr = q_mins_row_0_ptr + block_n
         for n in range(block_n):
             var q_mins_row_0_val = q_mins_row_0_ptr[n]
@@ -490,16 +517,23 @@ fn _pack_block_Q4_K[
             else:
                 constrained[False, "unsupported architecture"]()
 
-    dst_ptr[].q_scales_and_mins.pack(q_scales_and_mins_buf)
-    dst_ptr[].q_bits.pack(q_bits_block_buf)
+    dst_ptr[].q_scales_and_mins.pack(q_scales_and_mins_buf.unsafe_ptr())
+    dst_ptr[].q_bits.pack(q_bits_block_buf.unsafe_ptr())
 
 
 fn _pack_block_Q6_K[
-    block_n: Int
+    block_n: Int,
+    src_origin: MutableOrigin,
+    dst_origin: MutableOrigin,
+    alignment: Int,
 ](
-    owned src_ptr: UnsafePointer[_block_Q6_K],
+    owned src_ptr: UnsafePointer[
+        _block_Q6_K, origin=src_origin, alignment=alignment
+    ],
     stride: Int,
-    dst_ptr: UnsafePointer[_block_Q6_K_packed[block_n]],
+    mut dst_ptr: UnsafePointer[
+        _block_Q6_K_packed[block_n], origin=dst_origin, alignment=alignment
+    ],
 ):
     alias group_count = _block_Q6_K.group_count
 
@@ -538,8 +572,11 @@ fn _pack_block_Q6_K[
     dst_ptr[].q_bits.pack(q_bits_block_buf)
 
 
-def matmul_Q4_K_pack_b(
-    b: NDBuffer[DType.uint8, 2], b_packed: NDBuffer[DType.uint8, 2]
+def matmul_Q4_K_pack_b[
+    b_origin: MutableOrigin, b_packed_origin: MutableOrigin
+](
+    b: NDBuffer[DType.uint8, 2, origin=b_origin],
+    b_packed: NDBuffer[DType.uint8, 2, origin=b_packed_origin],
 ):
     var N = b.dim[0]()
     var K = b.dim[1]()
@@ -555,7 +592,9 @@ def matmul_Q4_K_pack_b(
         var src_n_ptr = src_ptr
 
         for n in range(0, N, block_n):
-            _pack_block_Q4_K[block_n](src_n_ptr, k_blocks, dst_ptr)
+            _pack_block_Q4_K[block_n, b_origin, b_packed_origin](
+                src_n_ptr, k_blocks, dst_ptr
+            )
 
             src_n_ptr += k_blocks * block_n
             dst_ptr += 1
@@ -563,8 +602,11 @@ def matmul_Q4_K_pack_b(
         src_ptr += 1
 
 
-def matmul_Q6_K_pack_b(
-    b: NDBuffer[DType.uint8, 2], b_packed: NDBuffer[DType.uint8, 2]
+def matmul_Q6_K_pack_b[
+    b_origin: MutableOrigin, b_packed_origin: MutableOrigin
+](
+    b: NDBuffer[DType.uint8, 2, origin=b_origin],
+    b_packed: NDBuffer[DType.uint8, 2, origin=b_packed_origin],
 ):
     var N = b.dim[0]()
     var K = b.dim[1]()
