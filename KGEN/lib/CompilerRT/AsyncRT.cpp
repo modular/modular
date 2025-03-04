@@ -17,6 +17,7 @@
 #include "Runtime/Tensor/Tensor.h"
 #include "Runtime/Tensor/TensorBufferRef.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/ML/DebugPrint.h"
 #include "Support/ML/SizeUtils.h"
 #include "Support/ML/TensorSpec.h"
 #include "Support/SymbolExport.h"
@@ -562,6 +563,42 @@ KGEN_CompilerRT_DestructAsyncRefs(size_t size, void **storageRefPtr,
     // initialized.
     if (refAddr && refAddr->getPointer())
       refAddr->reset();
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// debug print function
+//===----------------------------------------------------------------------===//
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_DebugTensorPrint(const char *label, size_t labelLen,
+                                 uint8_t dtype, size_t *shapeArray,
+                                 size_t shapeLen, void *bufAddr,
+                                 size_t bufLen) {
+  auto buffer = TensorBufferRef::createWithNonTrackedMemory(bufAddr, bufLen,
+                                                            std::nullopt);
+  TensorSpec spec(ArrayRef(shapeArray, shapeLen), DType(dtype));
+
+  StringRef labelRef(label, labelLen);
+  if (labelRef.empty()) {
+    // Metadata only.
+    llvm::outs() << "Tensor(" << spec << ", " << buffer << ")\n";
+    llvm::outs().flush();
+  } else {
+    // Buffer contents, using tensor spec for shape. This is only possible for
+    // CPU buffers. The printTensor function will crash for GPU buffers, so this
+    // primitive assumes that the buffer is a CPU buffer. I don't see a good way
+    // to assert on this condition though.
+    Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
+
+    DebugTensorPrintOptions defaultOptions;
+    DebugTensorPrintOptions *options =
+        runtime.context->get<DebugTensorPrintOptions>();
+    if (!options)
+      options = &defaultOptions;
+    auto errOr = options->printTensor(buffer.getBuffer(), spec, labelRef);
+    if (errOr.isError())
+      llvm_unreachable(errOr.getError());
   }
 }
 
