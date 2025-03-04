@@ -7,7 +7,7 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import stack_allocation
+from collections import InlineArray
 
 from utils.index import Index
 
@@ -78,9 +78,9 @@ fn test_broadcast():
     print("== test_broadcast")
 
     # Create a buffer holding a single value with zero stride.
-    var ptr = stack_allocation[1, DType.float32, 1]()
+    var arr = InlineArray[Float32, 1](unsafe_uninitialized=True)
     var stride_buf = NDBuffer[DType.float32, 1, DimList(100)](
-        ptr,
+        arr.unsafe_ptr(),
         DimList(100),
         Index(0),
     )
