@@ -606,7 +606,8 @@ Returns:
 Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
-gelu = _elementwise_unary(rmo.mo_gelu)
+
+_gelu_exact = _elementwise_unary(rmo.mo_gelu)
 """
 Computes the elementwise gelu function of a symbolic tensor.
 
@@ -627,6 +628,104 @@ Returns:
 Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
+
+
+def _gelu_quick(x: TensorValue):
+    """
+    Computes the elementwise quick gelu of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise quick gelu of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    ``quick gelu`` is defined as ``gelu_quick(x) = sigmoid(1.702 * x) * x``.
+
+    References:
+        - https://github.com/hendrycks/GELUs
+        - https://arxiv.org/abs/1606.08415
+
+    Args:
+        value: The symbolic tensor to use as the input to the quick gelu
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        Error: If the symbol doesn't represent a tensor value.
+    """
+    return x * sigmoid(x * 1.702)
+
+
+def _gelu_tanh(x: TensorValue):
+    """
+    Computes the elementwise gelu of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise gelu of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    Args:
+        value: The symbolic tensor to use as the input to the gelu
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        Error: If the symbol doesn't represent a tensor value.
+    """
+    return x * 0.5 * (1.0 + tanh(0.7978845608028654 * (x + 0.044715 * x**3)))
+
+
+def gelu(x: TensorValue, approximate: str = "none"):
+    """
+    Computes the elementwise gelu of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise gelu of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    For ``approximate == "none"``, the exact gelu function is computed.
+
+    For ``approximate == "tanh"``, the approximation:
+
+    .. math::
+
+        gelu(x) = 0.5 * x * (1.0 + tanh(0.7978845608028654 * (x + 0.044715 * x**3)))
+
+    is used.
+
+    For ``approximate == "quick"``, the approximation:
+
+
+    .. math::
+
+        gelu(x) = sigmoid(1.702 * x) * x
+
+    is used.
+
+    Args:
+        value: The symbolic tensor to use as the input to the gelu
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        Error: If the symbol doesn't represent a tensor value.
+        ValueError: If the approximation method is invalid.
+    """
+    if approximate == "none":
+        return _gelu_exact(x)
+    if approximate == "tanh":
+        return _gelu_tanh(x)
+    if approximate == "quick":
+        return _gelu_quick(x)
+
+    raise ValueError(f"Invalid approximation method: {approximate}")
+
+
 log = _elementwise_unary(rmo.mo_log)
 """
 Computes the elementwise natural logarithm of a symbolic tensor.
@@ -760,32 +859,6 @@ def silu(x: TensorValue):
         Error: If the symbol doesn't represent a tensor value.
     """
     return mul(x, sigmoid(x))
-
-
-def gelu_quick(x: TensorValue):
-    """
-    Computes the elementwise quick gelu of a symbolic tensor.
-
-    Creates a new op node to compute the elementwise quick gelu of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    ``quick gelu`` is defined as ``gelu_quick(x) = sigmoid(1.702 * x) * x``.
-
-    See github.com/hendrycks/GELUs/blob/master/README.md.
-
-    Args:
-        value: The symbolic tensor to use as the input to the quick gelu
-            computation.
-
-    Returns:
-        A new symbolic tensor value representing the output of the absolute
-            value computation.
-
-    Raises:
-        Error: If the symbol doesn't represent a tensor value.
-    """
-    QUICK_GELU_SCALING_FACTOR = 1.702
-    return x * sigmoid(QUICK_GELU_SCALING_FACTOR * x)
 
 
 softmax = _elementwise_unary(rmo.mo_softmax)
