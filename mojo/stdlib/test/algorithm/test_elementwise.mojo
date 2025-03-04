@@ -11,7 +11,7 @@ from algorithm.functional import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import stack_allocation
+from collections import InlineArray
 
 from utils.index import Index, IndexList
 
@@ -19,14 +19,20 @@ from utils.index import Index, IndexList
 def test_elementwise[
     numelems: Int, outer_rank: Int, is_blocking: Bool
 ](dims: DimList):
-    var memory1 = stack_allocation[numelems, DType.float32, 1]()
-    var buffer1 = NDBuffer[DType.float32, outer_rank](memory1, dims)
+    var memory1 = InlineArray[Float32, numelems](unsafe_uninitialized=True)
+    var buffer1 = NDBuffer[DType.float32, outer_rank](
+        memory1.unsafe_ptr(), dims
+    )
 
-    var memory2 = stack_allocation[numelems, DType.float32, 1]()
-    var buffer2 = NDBuffer[DType.float32, outer_rank](memory2, dims)
+    var memory2 = InlineArray[Float32, numelems](unsafe_uninitialized=True)
+    var buffer2 = NDBuffer[DType.float32, outer_rank](
+        memory2.unsafe_ptr(), dims
+    )
 
-    var memory3 = stack_allocation[numelems, DType.float32, 1]()
-    var out_buffer = NDBuffer[DType.float32, outer_rank](memory3, dims)
+    var memory3 = InlineArray[Float32, numelems](unsafe_uninitialized=True)
+    var out_buffer = NDBuffer[DType.float32, outer_rank](
+        memory3.unsafe_ptr(), dims
+    )
 
     var x: Float32 = 1.0
     for i in range(numelems):
