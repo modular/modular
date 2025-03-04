@@ -519,32 +519,6 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
   return registrationInfo.registrationName != nullptr;
 }
 
-// Run standard checks and mutations on a function. emits an
-// error and returns false if an issue was present.
-//
-// `structDeclOp` the parent struct the function being process lives in
-// `registrationInfo` the metadata about registration info
-// `func` the func being processed
-// `annotation` the annotation name to attach to this function to be used in
-//    later lowering.
-// `builder` builder for ops
-LogicalResult processStructFuncCommon(
-    LIT::StructDeclOp structDeclOp, ExtensibilityAPIStructInfo registrationInfo,
-    LIT::FnOp func, StringLiteral annotation, Builder &builder) {
-  if (!func.getIsStatic()) {
-    func->emitError("This function must be static");
-    return failure();
-  }
-
-  func->setAttr(builder.getStringAttr(annotation),
-                registrationInfo.registrationName);
-  func.setExported();
-  if (failed(annotateTypes(func)))
-    return failure();
-
-  return success();
-}
-
 /// Extract the mut and input fields from various tensor-related struct types
 /// Returns a pair of (mut, input) TypedAttrs
 static std::pair<TypedAttr, TypedAttr>
@@ -589,6 +563,77 @@ extractIOSpecSubFields(LIT::StructType structType) {
 
   // Unsupported type
   return std::make_pair(TypedAttr(), TypedAttr());
+}
+
+// This is basically a duplicate of checkSpecializedIOSpecParams, but that
+// function will go away quite soon anyways.
+static LogicalResult enforceUnspecializedIOParams(LIT::FnOp func) {
+  for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
+    auto structType = getAsDeclRefOrNull(argType);
+
+    if (!structType)
+      continue;
+
+    // Lists are only used for mo.concat_from_list atm and autoparameteriation
+    // currently fails on them so they need to have mut/input specialized. We
+    // don't want errors emitted in this case so just skip them.
+    //
+    // TODO(GEX-1882): Hammer out the paramterization story for list types.
+    if (symbolMatches(structType.getSymbol(), kMaxList))
+      continue;
+
+    auto [mutRaw, inputRaw] = extractIOSpecSubFields(structType);
+
+    if (!mutRaw && !inputRaw)
+      continue;
+
+    auto mut = isa<KGEN::ParamDeclRefAttr>(mutRaw);
+    auto input = isa<KGEN::ParamDeclRefAttr>(inputRaw);
+
+    if (!mut || !input) {
+      auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
+      auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
+
+      emitError(loc)
+          << "'mut' and/or 'input' of the io_spec parameter were"
+          << " specialized in argument " << argName
+          << " this is not necessary for shape functions and will be ignored.";
+
+      return failure();
+    }
+  }
+  return success();
+}
+
+// Run standard checks and mutations on a function. emits an
+// error and returns false if an issue was present.
+//
+// `structDeclOp` the parent struct the function being process lives in
+// `registrationInfo` the metadata about registration info
+// `func` the func being processed
+// `annotation` the annotation name to attach to this function to be used in
+//    later lowering.
+// `builder` builder for ops
+LogicalResult processStructFuncCommon(
+    LIT::StructDeclOp structDeclOp, ExtensibilityAPIStructInfo registrationInfo,
+    LIT::FnOp func, StringLiteral annotation, Builder &builder) {
+  if (!func.getIsStatic()) {
+    func->emitError("This function must be static");
+    return failure();
+  }
+
+  if (annotation == kMOGGShapeFunctionLabel) {
+    if (failed(enforceUnspecializedIOParams(func)))
+      return failure();
+  }
+
+  func->setAttr(builder.getStringAttr(annotation),
+                registrationInfo.registrationName);
+  func.setExported();
+  if (failed(annotateTypes(func)))
+    return failure();
+
+  return success();
 }
 
 static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
@@ -715,6 +760,13 @@ processIOSpecs(LIT::FnOp func) {
     if (!ioSpec) {
       error = true;
       continue;
+    }
+
+    if (symbolMatches(structType.getSymbol(), kMaxList) &&
+        ioSpec != IOSpec::InputTensor) {
+      // TODO(GEX_1882)
+      emitError(loc, "Only input tensors are allowed as the element type for "
+                     "list arguments at the moment.");
     }
 
     if (*ioSpec != IOSpec::OutputTensor)
