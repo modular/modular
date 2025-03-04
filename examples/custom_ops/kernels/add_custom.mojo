@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from max.tensor import ManagedTensorSlice, foreach
+from max.tensor import OutputTensor, InputTensor, foreach
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
@@ -26,9 +26,9 @@ struct AddConstantCustom[value: Int]:
         target: StringLiteral,
     ](
         # as num_dps_outputs=1, the first argument is the "output"
-        out: ManagedTensorSlice,
+        out: OutputTensor,
         # starting here are the list of inputs
-        x: ManagedTensorSlice[type = out.type, rank = out.rank],
+        x: InputTensor[type = out.type, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
@@ -58,9 +58,9 @@ struct AddOneCustom:
         target: StringLiteral,
     ](
         # as num_dps_outputs=1, the first argument is the "output"
-        out: ManagedTensorSlice,
+        out: OutputTensor,
         # starting here are the list of inputs
-        x: ManagedTensorSlice[type = out.type, rank = out.rank],
+        x: InputTensor[type = out.type, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
