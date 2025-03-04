@@ -1238,7 +1238,7 @@ fn cp_async_bulk_tensor_reduce[
     rank: Int,
     /,
     *,
-    reduction_kind: StringLiteral,
+    reduction_kind: ReduceOp,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src_mem: UnsafePointer[src_type, address_space = GPUAddressSpace.SHARED],
@@ -1278,18 +1278,13 @@ fn cp_async_bulk_tensor_reduce[
         - The reduction operation is performed atomically to ensure correctness.
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
-    constrained[
-        reduction_kind
-        in ("add", "min", "max", "inc", "dec", "and", "or", "xor"),
-        "reduction type " + reduction_kind + " is not supported",
-    ]()
     alias cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
 
     @parameter
     if rank == 2:
         llvm_intrinsic[
             "llvm.nvvm.cp.async.bulk.tensor.reduce."
-            + reduction_kind
+            + reduction_kind.mnemonic()
             + ".tile.2d",
             NoneType,
         ](
@@ -1303,7 +1298,7 @@ fn cp_async_bulk_tensor_reduce[
     else:
         llvm_intrinsic[
             "llvm.nvvm.cp.async.bulk.tensor.reduce."
-            + reduction_kind
+            + reduction_kind.mnemonic()
             + ".tile.1d",
             NoneType,
         ](
