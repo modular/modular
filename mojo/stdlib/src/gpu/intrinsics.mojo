@@ -3,18 +3,19 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module provides low-level GPU intrinsic operations and memory access primitives.
+"""Provides low-level GPU intrinsic operations and memory access primitives.
 
-The module implements hardware-specific intrinsic operations that map directly to GPU
-assembly instructions, with a focus on NVIDIA GPU architectures. It includes:
+Implements hardware-specific intrinsics that map directly to GPU assembly
+instructions, focusing on NVIDIA GPU architectures. Includes:
 
 - Global memory load/store operations with cache control
 - Warp-level primitives and synchronization
 - Memory fence and barrier operations
 - Atomic operations and memory ordering primitives
 
-These low-level primitives should be used carefully as they correspond directly to
-hardware instructions and require understanding of the underlying GPU architecture.
+These low-level primitives should be used carefully as they correspond
+directly to hardware instructions and require understanding of the
+underlying GPU architecture.
 """
 
 from sys._assembly import inlined_assembly
@@ -45,9 +46,8 @@ fn ldg[
 ](x: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
     """Load a register variable from global state space via non-coherent cache.
 
-    This function is used to load a register variable from the global state
-    space through a non-coherent cache. The type of the data to be loaded must
-    be numeric.
+    Loads a register variable from global state space through a non-coherent
+    cache. The data type must be numeric.
 
     Parameters:
         type: The type of the data to be loaded.
@@ -70,10 +70,10 @@ fn ldg[
 fn warpgroup_reg_alloc[count: Int]():
     """Allocates additional registers for the executing warp group.
 
-    This function provides a hint to the system to increase the maximum number of
-    per-thread registers owned by the executing warp. It requests additional registers
-    to increase the absolute per-thread maximum register count from its current value
-    to the specified count.
+    Hints to the system to increase per-thread registers owned by the
+    executing warp. Requests additional registers to increase the absolute
+    per-thread maximum register count from its current value to the specified
+    count.
 
     Parameters:
         count: The desired number of registers per thread. Must be:
@@ -82,8 +82,8 @@ fn warpgroup_reg_alloc[count: Int]():
 
     Note:
         - Only supported on NVIDIA SM90+ GPUs
-        - This is a performance optimization hint that may be ignored by the hardware
-        - Should be paired with `warpgroup_reg_dealloc() when extra registers are no
+        - Performance optimization hint that may be ignored by the hardware
+        - Pair with `warpgroup_reg_dealloc() when extra registers are no
           longer needed
     """
 
@@ -109,10 +109,9 @@ fn warpgroup_reg_alloc[count: Int]():
 fn warpgroup_reg_dealloc[count: Int]():
     """Deallocates additional registers for the executing warp group.
 
-    This function provides a hint to the system to decrease the maximum number of
-    per-thread registers owned by the executing warp. It releases extra registers
-    to reduce the absolute per-thread maximum register count from its current value
-    to the specified count.
+    Hints to the system to decrease per-thread registers owned by the
+    executing warp. Releases extra registers to reduce the absolute per-thread
+    maximum register count from its current value to the specified count.
 
     Parameters:
         count: The desired number of registers per thread. Must be:
@@ -121,8 +120,8 @@ fn warpgroup_reg_dealloc[count: Int]():
 
     Note:
         - Only supported on NVIDIA SM90+ GPUs.
-        - This is a performance optimization hint that may be ignored by the hardware.
-        - Should be paired with `warpgroup_reg_alloc()` when extra registers are needed.
+        - Performance optimization hint that may be ignored by the hardware.
+        - Pair with `warpgroup_reg_alloc()` when extra registers are needed.
     """
 
     constrained[
@@ -151,13 +150,13 @@ fn warpgroup_reg_dealloc[count: Int]():
 
 @always_inline
 fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
-    """Performs an arbitrary logical operation on 3 input values using a lookup table.
+    """Performs an arbitrary logical operation on 3 inputs using a lookup table.
 
-    This function implements a 3-input lookup table (LUT) operation, where the result is
-    determined by the bits in the lookup table value for each possible input combination.
+    Implements a 3-input lookup table (LUT) operation. The result is
+    determined by bits in the lookup table value for each input combination.
 
     Parameters:
-        lut: A 32-bit lookup table value that defines the logical operation.
+        lut: 32-bit lookup table value that defines the logical operation.
 
     Args:
         a: First input value.
@@ -165,12 +164,12 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
         c: Third input value.
 
     Returns:
-        The result of applying the lookup table operation to the inputs.
+        Result of applying the lookup table operation to the inputs.
 
     Note:
         - Only supported on NVIDIA GPUs.
         - Maps to the LOP3.B32 PTX instruction.
-        - The lookup table value determines the output for each possible input combination.
+        - Lookup table value determines output for each possible input combo.
     """
 
     @parameter
@@ -195,20 +194,21 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
 fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
     """Permutes bytes from two 32-bit integers based on a control mask.
 
-    This function selects and rearranges individual bytes from two source integers
-    based on a control mask to create a new 32-bit value.
+    Selects and rearranges bytes from two source integers based on a control
+    mask to create a new 32-bit value.
 
     Args:
         a: First source integer containing bytes to select from.
         b: Second source integer containing bytes to select from.
-        c: Control mask that specifies which bytes to select and their positions
-           Each byte in the mask controls the selection and placement of one output byte.
+        c: Control mask that specifies which bytes to select and their
+           positions. Each byte in the mask controls selection/placement of
+           one output byte.
 
     Returns:
         A new 32-bit integer containing the selected and rearranged bytes
 
     Note:
-        The exact byte selection behavior depends on the GPU architecture:
+        Byte selection behavior depends on the GPU architecture:
         - On NVIDIA: Maps to PRMT instruction
         - On AMD: Maps to PERM instruction.
     """
@@ -224,10 +224,12 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
 
 @always_inline
 fn mulhi(a: UInt16, b: UInt16) -> UInt32:
-    """Calculates the most significant 32 bits of the product of two 16-bit unsigned integers.
+    """Calculates the most significant 32 bits of the product of two 16-bit
+    unsigned integers.
 
-    This function multiplies two 16-bit unsigned integers and returns the high 32 bits
-    of their product. This is useful for fixed-point arithmetic and overflow detection.
+    Multiplies two 16-bit unsigned integers and returns the high 32 bits
+    of their product. Useful for fixed-point arithmetic and overflow
+    detection.
 
     Args:
         a: First 16-bit unsigned integer operand.
@@ -238,7 +240,7 @@ fn mulhi(a: UInt16, b: UInt16) -> UInt32:
 
     Note:
         On NVIDIA GPUs, this maps directly to the MULHI.U16 PTX instruction.
-        On other architectures, it performs the multiplication using 32-bit arithmetic.
+        On others, it performs multiplication using 32-bit arithmetic.
     """
 
     @parameter
@@ -254,10 +256,11 @@ fn mulhi(a: UInt16, b: UInt16) -> UInt32:
 
 @always_inline
 fn mulhi(a: Int16, b: Int16) -> Int32:
-    """Calculates the most significant 32 bits of the product of two 16-bit signed integers.
+    """Calculates the most significant 32 bits of the product of two 16-bit
+    signed integers.
 
-    This function multiplies two 16-bit signed integers and returns the high 32 bits
-    of their product. This is useful for fixed-point arithmetic and overflow detection.
+    Multiplies two 16-bit signed integers and returns the high 32 bits
+    of their product. Useful for fixed-point arithmetic and overflow detection.
 
     Args:
         a: First 16-bit signed integer operand.
@@ -268,7 +271,7 @@ fn mulhi(a: Int16, b: Int16) -> Int32:
 
     Note:
         On NVIDIA GPUs, this maps directly to the MULHI.S16 PTX instruction.
-        On other architectures, it performs the multiplication using 32-bit arithmetic.
+        On others, it performs multiplication using 32-bit arithmetic.
     """
 
     @parameter
@@ -284,10 +287,11 @@ fn mulhi(a: Int16, b: Int16) -> Int32:
 
 @always_inline
 fn mulhi(a: UInt32, b: UInt32) -> UInt32:
-    """Calculates the most significant 32 bits of the product of two 32-bit unsigned integers.
+    """Calculates the most significant 32 bits of the product of two 32-bit
+    unsigned integers.
 
-    This function multiplies two 32-bit unsigned integers and returns the high 32 bits
-    of their product. This is useful for fixed-point arithmetic and overflow detection.
+    Multiplies two 32-bit unsigned integers and returns the high 32 bits
+    of their product. Useful for fixed-point arithmetic and overflow detection.
 
     Args:
         a: First 32-bit unsigned integer operand.
@@ -298,7 +302,7 @@ fn mulhi(a: UInt32, b: UInt32) -> UInt32:
 
     Note:
         On NVIDIA GPUs, this maps directly to the MULHI.U32 PTX instruction.
-        On other architectures, it performs the multiplication using 64-bit arithmetic.
+        On others, it performs multiplication using 64-bit arithmetic.
     """
 
     @parameter
@@ -314,10 +318,11 @@ fn mulhi(a: UInt32, b: UInt32) -> UInt32:
 
 @always_inline
 fn mulhi(a: Int32, b: Int32) -> Int32:
-    """Calculates the most significant 32 bits of the product of two 32-bit signed integers.
+    """Calculates the most significant 32 bits of the product of two 32-bit
+    signed integers.
 
-    This function multiplies two 32-bit signed integers and returns the high 32 bits
-    of their product. This is useful for fixed-point arithmetic and overflow detection.
+    Multiplies two 32-bit signed integers and returns the high 32 bits
+    of their product. Useful for fixed-point arithmetic and overflow detection.
 
     Args:
         a: First 32-bit signed integer operand.
@@ -328,7 +333,7 @@ fn mulhi(a: Int32, b: Int32) -> Int32:
 
     Note:
         On NVIDIA GPUs, this maps directly to the MULHI.S32 PTX instruction.
-        On other architectures, it performs the multiplication using 64-bit arithmetic.
+        On others, it performs multiplication using 64-bit arithmetic.
     """
 
     @parameter
@@ -352,7 +357,7 @@ fn mulwide(a: UInt32, b: UInt32) -> UInt64:
     """Performs a wide multiplication of two 32-bit unsigned integers.
 
     Multiplies two 32-bit unsigned integers and returns the full 64-bit result.
-    This is useful when the product may exceed 32 bits.
+    Useful when the product may exceed 32 bits.
 
     Args:
         a: First 32-bit unsigned integer operand.
@@ -363,7 +368,7 @@ fn mulwide(a: UInt32, b: UInt32) -> UInt64:
 
     Note:
         On NVIDIA GPUs, this maps directly to the MUL.WIDE.U32 PTX instruction.
-        On other architectures, it performs the multiplication using 64-bit casts.
+        On others, it performs multiplication using 64-bit casts.
     """
 
     @parameter
@@ -385,7 +390,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
     """Performs a wide multiplication of two 32-bit signed integers.
 
     Multiplies two 32-bit signed integers and returns the full 64-bit result.
-    This is useful when the product may exceed 32 bits or be negative.
+    Useful when the product may exceed 32 bits or be negative.
 
     Args:
         a: First 32-bit signed integer operand.
@@ -396,7 +401,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
 
     Note:
         On NVIDIA GPUs, this maps directly to the MUL.WIDE.S32 PTX instruction.
-        On other architectures, it performs the multiplication using 64-bit casts.
+        On others, it performs multiplication using 64-bit casts.
     """
 
     @parameter
@@ -422,12 +427,12 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
 struct Scope:
     """Represents memory synchronization scope levels for GPU memory operations.
 
-    This struct defines different scopes of memory visibility and synchronization,
-    from thread-local to system-wide. Each scope level determines how memory
+    Defines different scopes of memory visibility and synchronization, from
+    thread-local to system-wide. Each scope level determines how memory
     operations are ordered and visible across different execution units.
 
-    The scope levels form a hierarchy, with each higher level providing stronger
-    ordering guarantees but potentially higher synchronization costs.
+    The scope levels form a hierarchy, with each higher level providing
+    stronger ordering guarantees but potentially higher synchronization costs.
     """
 
     var _value: Int
@@ -442,16 +447,16 @@ struct Scope:
     """Warp-level scope. Memory operations are ordered within a warp of threads."""
 
     alias BLOCK = Self(3)
-    """Block-level scope. Memory operations are ordered within a thread block/CTA."""
+    """Block-level scope. Memory operations ordered within a thread block/CTA."""
 
     alias CLUSTER = Self(4)
-    """Cluster-level scope. Memory operations are ordered within a thread block cluster."""
+    """Cluster-level scope. Memory operations ordered within a thread block cluster."""
 
     alias GPU = Self(5)
     """GPU-level scope. Memory operations are ordered across all threads on the GPU."""
 
     alias SYSTEM = Self(6)
-    """System-wide scope. Memory operations are ordered across the entire system."""
+    """System-wide scope. Memory operations ordered across the entire system."""
 
     fn __eq__(self, other: Self) -> Bool:
         return self is other
@@ -468,8 +473,8 @@ struct Scope:
     fn mnemonic(self) -> StringLiteral:
         """Returns the mnemonic string representation of the memory scope.
 
-        This method converts the memory scope level into a string mnemonic used by
-        LLVM/NVVM intrinsics for memory operations.
+        Converts the memory scope level into a string mnemonic used by LLVM/NVVM
+        intrinsics for memory operations.
 
         Returns:
             A string literal containing the mnemonic.
@@ -491,12 +496,12 @@ struct Scope:
 fn threadfence[scope: Scope = Scope.GPU]():
     """Enforces ordering of memory operations across threads.
 
-    This function acts as a memory fence/barrier that ensures all memory operations
-    (both loads and stores) issued before the fence are visible to other threads
+    Acts as a memory fence/barrier that ensures all memory operations (both
+    loads and stores) issued before the fence are visible to other threads
     within the specified scope before any memory operations after the fence.
 
     Parameters:
-        scope: The memory scope level for the fence operation. Defaults to GPU-wide scope.
+        scope: Memory scope level for the fence. Defaults to GPU-wide scope.
               Valid values are:
               - Scope.BLOCK: Orders memory within a thread block/CTA.
               - Scope.GPU: Orders memory across all threads on the GPU (default).
@@ -554,7 +559,7 @@ fn _get_pointer_constraint() -> StringLiteral:
 fn store_release[
     type: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
 ](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
-    """Performs an atomic store operation with release memory ordering semantics.
+    """Performs an atomic store with release memory ordering semantics.
 
     Args:
         ptr: Pointer to the memory location to store to.
@@ -598,7 +603,7 @@ fn load_acquire[
     Note:
         - Only supported on NVIDIA GPUs.
         - Maps directly to PTX ld.acquire instruction.
-        - Ensures subsequent memory operations don't execute until after this load.
+        - Ensures subsequent memory operations don't execute until after load.
     """
     constrained[
         is_nvidia_gpu(), "load_acquire is not currently supported on AMD GPUs"
@@ -679,7 +684,8 @@ fn load_volatile[
 
 
 alias _buffer_resource = SIMD[DType.uint32, 4]
-"""A 128-bit descriptor used to describe a buffer resource on AMD GPUs. Used for buffer_load/buffer_store instructions."""
+"""128-bit descriptor for a buffer resource on AMD GPUs. Used for
+buffer_load/buffer_store instructions."""
 
 
 @always_inline
@@ -691,14 +697,15 @@ fn make_buffer_resource[
 ) -> _buffer_resource:
     """Creates a 128-bit buffer constant for buffer IO.
 
-    This function is used to create a 128-bit buffer constant struct for buffer IO
+    Creates a 128-bit buffer constant struct for buffer IO
 
     Parameters:
         type: The type of the data to be loaded.
 
     Arg:
         gds_ptr: Global memory base address.
-        num_records: Reads with gds_offset > num_records return 0. Defaults to the maximum number of elements UInt32.MAX.
+        num_records: Reads with gds_offset > num_records return 0. Defaults
+        to the maximum number of elements UInt32.MAX.
 
     """
 
@@ -778,15 +785,15 @@ fn _buffer_load_store_lds_nowait[
 ):
     """Loads four bytes from global memory ands writes them to shared memory.
 
-    This function is used to copy from global memory to shared memory (aka LDS)
-    bypassing storing to register without waiting for the copy to finish.
-    A call to wait_cnt_amd() is necessary to ensure the copy is finished.
+    Copies from global memory to shared memory (aka LDS) bypassing storing to
+    register without waiting for the copy to finish. A call to wait_cnt_amd()
+    is necessary to ensure the copy is finished.
 
     Parameters:
         type: The type of the data to be loaded.
 
     Arg:
-        src_resource: The buffer resource descriptor from make_buffer_resource.
+        src_resource: Buffer resource descriptor from make_buffer_resource.
         gds_offset: Global memory offset.
         lds_ptr_base: LDS base address.
         lds_offset: LDS offset.
@@ -831,14 +838,14 @@ fn buffer_load_store_lds[
 ):
     """Loads four bytes from global memory ands writes them to shared memory.
 
-    This function is used to copy from global memory to shared memory (aka LDS)
-    bypassing storing to register.
+    Copies from global memory to shared memory (aka LDS) bypassing storing to
+    register.
 
     Parameters:
         type: The type of the data to be loaded.
 
     Args:
-        src_resource: The buffer resource descriptor from make_buffer_resource.
+        src_resource: Buffer resource descriptor from make_buffer_resource.
         gds_offset: Global memory offset.
         lds_ptr_base: LDS base address.
         lds_offset: LDS offset.
@@ -870,14 +877,14 @@ fn buffer_load[
 ](src_resource: _buffer_resource, gds_offset: Int32) -> SIMD[type, width]:
     """Loads a register variable from global memory.
 
-    This function is used to copy from global memory to register.
+    Copies from global memory to register.
 
     Parameters:
         type: The type of the data to be loaded.
         width: The width of the SIMD vector to load.
 
     Args:
-        src_resource: The buffer resource descriptor from make_buffer_resource.
+        src_resource: Buffer resource descriptor from make_buffer_resource.
         gds_offset: Global memory offset.
     """
 
@@ -924,18 +931,18 @@ fn buffer_load[
 fn buffer_store[
     type: DType, width: Int
 ](src_resource: _buffer_resource, gds_offset: Int32, val: SIMD[type, width],):
-    """Stores  a register variable to global memory.
+    """Stores a register variable to global memory.
 
-    This function is used to write to global memory from a register.
+    Writes to global memory from a register.
 
     Parameters:
-        type: The type of the data to be loaded.
-        width: The width of the SIMD vector to load.
+        type: The data type.
+        width: The SIMD vector width.
 
     Args:
-        src_resource: The buffer resource descriptor from make_buffer_resource.
+        src_resource: Buffer resource descriptor.
         gds_offset: Global memory offset.
-        val: The value to write to memory.
+        val: Value to write.
     """
 
     constrained[
