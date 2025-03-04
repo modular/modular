@@ -348,7 +348,7 @@ class TokenGenerationSchedulerV2(Scheduler):
                 break
 
             if self._exceeds_batch_token_limit(
-                tokens_to_encode, tokens_to_encode
+                tot_tokens_to_encode, tokens_to_encode
             ):
                 if self.scheduler_config.enable_chunked_prefill:
                     # We can only schedule part of the prompt.
@@ -363,6 +363,7 @@ class TokenGenerationSchedulerV2(Scheduler):
                         + tokens_to_encode
                         - self.scheduler_config.target_tokens_per_batch_ce
                     )
+                    assert token_num_diff >= 0
                     data.bump_token_indices(active_idx=-token_num_diff)
 
                     if data.cache_seq_id is None:
