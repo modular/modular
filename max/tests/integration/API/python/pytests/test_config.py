@@ -116,7 +116,7 @@ def test_hf_config_retrieval():
 
 
 class LimitedPickler(pickle.Unpickler):
-    """A custom Unpickler class that that checks for transformer modules."""
+    """A custom Unpickler class that checks for transformer modules."""
 
     def find_class(self, module, name):
         if module.startswith("transformers"):
