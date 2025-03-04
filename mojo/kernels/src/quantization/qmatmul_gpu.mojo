@@ -2080,7 +2080,7 @@ fn gpu_qint4_repack_GPTQ[
         cuda_ctx.enqueue_function[repack](
             tensor_b,
             tensor_packed_b,
-            UnsafePointer[Scalar[DType.int32]](),
+            UnsafePointer[Int32](),
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
             shared_mem_bytes=smem_usage,
