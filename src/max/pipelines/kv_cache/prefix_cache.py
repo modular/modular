@@ -348,6 +348,15 @@ class PrefixCache:
             return None, 0
         return partial_match_block, num_cache_hit_tokens
 
+    @property
+    def cow_blocks_copied(self) -> int:
+        """Get the number of cow operations performed."""
+        return self.cow_count
+
+    def reset_cow_blocks_copied(self) -> None:
+        """Reset the number of cow operations performed."""
+        self.cow_count = 0
+
     def _fetch_cow(
         self,
         seq_id: int,
