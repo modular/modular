@@ -6,9 +6,9 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from algorithm import elementwise
+from collections import InlineArray
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import stack_allocation
 from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, IndexList
@@ -40,31 +40,41 @@ def test_slice[
     use_copy: Bool,
 ):
     # Isn't always used but is used for the output buffer if we copy.
-    var output_mem = stack_allocation[numelems, dtype, 1]()
+    var output_mem = InlineArray[Scalar[dtype], numelems](
+        unsafe_uninitialized=True
+    )
 
-    var memory1 = stack_allocation[numelems, dtype, 1]()
+    var memory1 = InlineArray[Scalar[dtype], numelems](
+        unsafe_uninitialized=True
+    )
     var in_tensor = NDBuffer[
         dtype,
         outer_rank,
         rebind[DimList](static_shape),
-    ](memory1, dims)
+    ](memory1.unsafe_ptr(), dims)
 
     print("In shape:", in_tensor.get_shape())
     print("In strides:", in_tensor.get_strides())
 
-    var start_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
+    var start_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
+        unsafe_uninitialized=True
+    )
     var start_tensor = NDBuffer[DType.index, 1](
-        start_tensor_mem, IndexList[1](outer_rank)
+        start_tensor_mem.unsafe_ptr(), IndexList[1](outer_rank)
     )
 
-    var end_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
+    var end_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
+        unsafe_uninitialized=True
+    )
     var end_tensor = NDBuffer[DType.index, 1](
-        end_tensor_mem, IndexList[1](outer_rank)
+        end_tensor_mem.unsafe_ptr(), IndexList[1](outer_rank)
     )
 
-    var step_tensor_mem = stack_allocation[outer_rank, DType.index, 1]()
+    var step_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
+        unsafe_uninitialized=True
+    )
     var step_tensor = NDBuffer[DType.index, 1](
-        step_tensor_mem, IndexList[1](outer_rank)
+        step_tensor_mem.unsafe_ptr(), IndexList[1](outer_rank)
     )
 
     for dim in range(outer_rank):
@@ -93,7 +103,7 @@ def test_slice[
             outer_rank,
             rebind[DimList](static_shape),
         ](
-            output_mem,
+            output_mem.unsafe_ptr(),
             rebind[IndexList[outer_rank]](sliced.get_shape()),
         )
 

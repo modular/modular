@@ -11,7 +11,7 @@ import builtin
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from internal_utils import TestTensor
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
 

@@ -10,7 +10,7 @@ from sys.info import has_neon, simdwidthof
 from algorithm.functional import vectorize
 from buffer import NDBuffer
 from linalg.accumulate import _Accumulator, _simd_load_maybe_partial
-from memory import stack_allocation
+from collections import InlineArray
 from testing import *
 
 
@@ -19,15 +19,16 @@ def test_maybe_partial_load():
     alias simd_size = 4
     alias size = simd_size + 1
 
-    var a = stack_allocation[size, DType.float32]()
-
+    var a = InlineArray[Float32, size](unsafe_uninitialized=True)
     for i in range(size):
         a[i] = 1.0
 
-    var vec = _simd_load_maybe_partial[simd_size, False](a, 0)
+    var vec = _simd_load_maybe_partial[simd_size, False](a.unsafe_ptr(), 0)
     assert_equal(vec, SIMD[DType.float32, simd_size](1.0))
 
-    vec = _simd_load_maybe_partial[simd_size, True](a, simd_size, 1)
+    vec = _simd_load_maybe_partial[simd_size, True](
+        a.unsafe_ptr(), simd_size, 1
+    )
     assert_equal(vec, SIMD[DType.float32, simd_size](1.0, 0.0, 0.0, 0.0))
 
 
@@ -40,9 +41,11 @@ def test_accumulate[
     #     [ 1.0, 1.0 ],
     #     [ 2.0, 2.0 ],
     #     [ 3.0, 3.0 ]]
-    var a = stack_allocation[2 * num_rows * length, type]()
+    var a = InlineArray[Scalar[type], 2 * num_rows * length](
+        unsafe_uninitialized=True
+    )
     for i in range(2 * num_rows):
-        var a_ptr = a + i * length
+        var a_ptr = a.unsafe_ptr() + i * length
         a_ptr[0] = Scalar[type](i)
         a_ptr[1] = Scalar[type](i)
 
@@ -51,10 +54,10 @@ def test_accumulate[
     #     [4 x 2.0, 4 x 2.0, 4 x 3.0, 4 x 3.0]]
     alias b_size = 2 * num_cols * simd_size * length
     alias kernel_width = num_cols * simd_size
-    var b = stack_allocation[b_size, type]()
+    var b = InlineArray[Scalar[type], b_size](unsafe_uninitialized=True)
 
     for i in range(2 * length):
-        var b_ptr = b + i * num_cols * simd_size
+        var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
 
         @parameter
         for j in range(num_cols):
@@ -62,7 +65,7 @@ def test_accumulate[
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
     acc.init(0)
-    acc.accumulate(length, a, length, b, kernel_width)
+    acc.accumulate(length, a.unsafe_ptr(), length, b.unsafe_ptr(), kernel_width)
 
     # C results:
     # C[0,0]:[0.0, 0.0, 0.0, 0.0]  C[0,1]:[0.0, 0.0, 0.0, 0.0]
@@ -78,7 +81,13 @@ def test_accumulate[
         SIMD[type, simd_size](1.0),
     )
 
-    acc.accumulate(length, a, 2 * length, b + kernel_width, kernel_width)
+    acc.accumulate(
+        length,
+        a.unsafe_ptr(),
+        2 * length,
+        b.unsafe_ptr() + kernel_width,
+        kernel_width,
+    )
 
     # C results:
     # C[0,0]:[0.0, 0.0, 0.0, 0.0]  C[0,1]:[0.0, 0.0, 0.0, 0.0]
@@ -96,9 +105,9 @@ def test_accumulate[
 
     acc.accumulate(
         length,
-        a + length,
+        a.unsafe_ptr() + length,
         2 * length,
-        b + kernel_width,
+        b.unsafe_ptr() + kernel_width,
         2 * kernel_width,
     )
 
@@ -126,9 +135,11 @@ def test_accumulate_with_offsets[
     #     [ 1.0, 1.0 ],
     #     [ 2.0, 2.0 ],
     #     [ 3.0, 3.0 ]]
-    var a = stack_allocation[2 * num_rows * length, type]()
+    var a = InlineArray[Scalar[type], 2 * num_rows * length](
+        unsafe_uninitialized=True
+    )
     for i in range(2 * num_rows):
-        var a_ptr = a + i * length
+        var a_ptr = a.unsafe_ptr() + i * length
         a_ptr[0] = Scalar[type](i)
         a_ptr[1] = Scalar[type](i)
 
@@ -137,10 +148,10 @@ def test_accumulate_with_offsets[
     #     [4 x 2.0, 4 x 2.0, 4 x 3.0, 4 x 3.0]]
     alias b_size = 2 * num_cols * simd_size * length
     alias kernel_width = num_cols * simd_size
-    var b = stack_allocation[b_size, type]()
+    var b = InlineArray[Scalar[type], b_size](unsafe_uninitialized=True)
 
     for i in range(2 * length):
-        var b_ptr = b + i * num_cols * simd_size
+        var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
 
         @parameter
         for j in range(num_cols):
@@ -152,7 +163,9 @@ def test_accumulate_with_offsets[
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
     acc.init(0)
-    acc.accumulate(length, a, a_base_offsets, 0, b, kernel_width)
+    acc.accumulate(
+        length, a.unsafe_ptr(), a_base_offsets, 0, b.unsafe_ptr(), kernel_width
+    )
 
     # C results:
     # [0.0, 0.0, 0.0, 0.0]
@@ -172,7 +185,14 @@ def test_accumulate_with_offsets[
 
     a_base_offsets[0] = 0
     a_base_offsets[1] = 2 * length
-    acc.accumulate(length, a, a_base_offsets, 0, b + kernel_width, kernel_width)
+    acc.accumulate(
+        length,
+        a.unsafe_ptr(),
+        a_base_offsets,
+        0,
+        b.unsafe_ptr() + kernel_width,
+        kernel_width,
+    )
 
     # C results:
     # [0.0, 0.0, 0.0, 0.0]
@@ -195,10 +215,10 @@ def test_accumulate_with_offsets[
 
     acc.accumulate(
         length,
-        a,
+        a.unsafe_ptr(),
         a_base_offsets,
         0,
-        b + kernel_width,
+        b.unsafe_ptr() + kernel_width,
         2 * kernel_width,
     )
 
@@ -229,7 +249,9 @@ def test_load_store[
     alias one_vec = SIMD[type, simd_size](1.0)
     alias residual_vec = SIMD[type, simd_size](-1.0, 0.0, 0.0, 0.0)
 
-    var a = stack_allocation[num_rows * row_size, type]()
+    var a = InlineArray[Scalar[type], num_rows * row_size](
+        unsafe_uninitialized=True
+    )
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
     #     [ 4x1.0, 4x2.0, -1.0]]
@@ -238,18 +260,18 @@ def test_load_store[
 
         @parameter
         for j in range(num_cols):
-            a.store(
+            a.unsafe_ptr().store(
                 i * row_size + j * simd_size,
                 SIMD[type, simd_size](i + j),
             )
 
-        a.store(
+        a.unsafe_ptr().store(
             i * row_size + num_cols * simd_size,
             SIMD[type, residual](-1.0),
         )
 
     var tile0 = _Accumulator[type, num_rows, num_cols, simd_size]()
-    tile0.load(a, row_size)
+    tile0.load(a.unsafe_ptr(), row_size)
 
     assert_equal(
         tile0[0, 0],
@@ -272,11 +294,11 @@ def test_load_store[
     #            [ 4x1.0, 4x1.0, -1.0]]
     tile0[0, 0] = one_vec
     tile0[1, 1] = one_vec
-    tile0.store(a, row_size)
+    tile0.store(a.unsafe_ptr(), row_size)
 
     var tile1 = _Accumulator[type, num_rows, num_cols + 1, simd_size]()
 
-    tile1.load[partial_load=True](a, row_size, residual)
+    tile1.load[partial_load=True](a.unsafe_ptr(), row_size, residual)
 
     assert_equal(tile1[0, 0], one_vec)
     assert_equal(tile1[0, 1], one_vec)
@@ -301,10 +323,15 @@ def test_load_store[
 
     # Update A: [[ 4x1.0, 4x1.0, -2.0],
     #            [ 4x1.0, 4x1.0, -2.0]]
-    tile1.store[partial_store=True](a, row_size, residual)
+    tile1.store[partial_store=True](a.unsafe_ptr(), row_size, residual)
 
-    assert_equal(a.load[width=residual](row_size - residual), residual_vec1)
-    assert_equal(a.load[width=residual](2 * row_size - residual), residual_vec1)
+    assert_equal(
+        a.unsafe_ptr().load[width=residual](row_size - residual), residual_vec1
+    )
+    assert_equal(
+        a.unsafe_ptr().load[width=residual](2 * row_size - residual),
+        residual_vec1,
+    )
 
 
 def main():

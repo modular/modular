@@ -8,7 +8,7 @@
 from algorithm import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import stack_allocation
+from collections import InlineArray
 from nn.arange import arange, arange_shape
 from nn.slice import slice_as_copy, slice_as_view
 
@@ -32,16 +32,16 @@ def print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 def test_arange[
     dtype: DType,
 ](start: Int, stop: Int, step: Int):
-    var memory1 = stack_allocation[1, dtype, 1]()
-    var start_tensor = NDBuffer[dtype, 1](memory1, IndexList[1](1))
+    var memory1 = InlineArray[Scalar[dtype], 1](unsafe_uninitialized=True)
+    var start_tensor = NDBuffer[dtype, 1](memory1.unsafe_ptr(), IndexList[1](1))
     start_tensor[0] = start
 
-    var memory2 = stack_allocation[1, dtype, 1]()
-    var stop_tensor = NDBuffer[dtype, 1](memory2, IndexList[1](1))
+    var memory2 = InlineArray[Scalar[dtype], 1](unsafe_uninitialized=True)
+    var stop_tensor = NDBuffer[dtype, 1](memory2.unsafe_ptr(), IndexList[1](1))
     stop_tensor[0] = stop
 
-    var memory3 = stack_allocation[1, dtype, 1]()
-    var step_tensor = NDBuffer[dtype, 1](memory3, IndexList[1](1))
+    var memory3 = InlineArray[Scalar[dtype], 1](unsafe_uninitialized=True)
+    var step_tensor = NDBuffer[dtype, 1](memory3.unsafe_ptr(), IndexList[1](1))
     step_tensor[0] = step
 
     var outshape = IndexList[1]()
@@ -60,8 +60,10 @@ def test_arange[
         print("Memory is larger than static limit, test failed")
         return
 
-    var memory4 = stack_allocation[max_output_size, dtype, 1]()
-    var out_tensor = NDBuffer[dtype, 1](memory4, outshape)
+    var memory4 = InlineArray[Scalar[dtype], max_output_size](
+        unsafe_uninitialized=True
+    )
+    var out_tensor = NDBuffer[dtype, 1](memory4.unsafe_ptr(), outshape)
 
     @always_inline
     @__copy_capture(out_tensor, step_tensor, start_tensor, stop_tensor)

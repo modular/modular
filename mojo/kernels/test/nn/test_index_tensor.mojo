@@ -9,13 +9,13 @@ from random import random_ui64
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import stack_allocation
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,
     _index_tensor_impl,
     index_tensor_shape,
 )
+from collections import InlineArray
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList
@@ -104,9 +104,11 @@ fn test_index_tensor_DLRM() raises:
         batch_dims,
     ](input.make_dims_unknown(), indices.make_dims_unknown())
 
-    var output_data_data = stack_allocation[dim_0 * index_len, input_type]()
+    var output_data_data = InlineArray[Scalar[input_type], dim_0 * index_len](
+        unsafe_uninitialized=True
+    )
     var output_data_buffer = NDBuffer[input_type, output_rank](
-        output_data_data, output_shape
+        output_data_data.unsafe_ptr(), output_shape
     )
 
     _index_tensor_1d[batch_dims](
@@ -213,11 +215,11 @@ fn test_index_tensor_DLRM_batch() raises:
         batch_dims,
     ](input.make_dims_unknown(), indices.make_dims_unknown())
 
-    var output_data_data = stack_allocation[
-        dim_0 * dim_1 * index_len, input_type
-    ]()
+    var output_data_data = InlineArray[
+        Scalar[input_type], dim_0 * dim_1 * index_len
+    ](unsafe_uninitialized=True)
     var output_data_buffer = NDBuffer[input_type, output_rank](
-        output_data_data, output_shape
+        output_data_data.unsafe_ptr(), output_shape
     )
 
     _index_tensor_impl[batch_dims](
@@ -323,9 +325,11 @@ fn test_index_tensor_CLIPVIT() raises:
         0,
     ](input.make_dims_unknown(), indices.make_dims_unknown())
 
-    var output_data_data = stack_allocation[dim_0 * dim_2, input_type]()
+    var output_data_data = InlineArray[Scalar[input_type], dim_0 * dim_2](
+        unsafe_uninitialized=True
+    )
     var output_data_buffer = NDBuffer[input_type, output_rank](
-        output_data_data, output_shape
+        output_data_data.unsafe_ptr(), output_shape
     )
 
     # TODO: index_tensor works too. For batch_dims = 0 only.
@@ -410,11 +414,11 @@ fn test_index_tensor_llama2_mistral() raises:
         output_rank, input_rank, index_rank, input_type, index_type
     ](input.make_dims_unknown(), index_a.make_dims_unknown(), 0)
 
-    var output_data_data = stack_allocation[
-        index_dim_0 * index_dim_1 * dim_1, input_type
-    ]()
+    var output_data_data = InlineArray[
+        Scalar[input_type], index_dim_0 * index_dim_1 * dim_1
+    ](unsafe_uninitialized=True)
     var output_data_buffer = NDBuffer[input_type, output_rank](
-        output_data_data, output_shape
+        output_data_data.unsafe_ptr(), output_shape
     )
 
     gather[axis=0](

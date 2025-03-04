@@ -7,7 +7,7 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import stack_allocation
+from collections import InlineArray
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 
 from utils import IndexList
@@ -57,9 +57,11 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        var output_data_data = stack_allocation[2, data_type]()
+        var output_data_data = InlineArray[Scalar[data_type], 2](
+            unsafe_uninitialized=True
+        )
         var output_data_buffer = NDBuffer[data_type, output_rank](
-            output_data_data, output_shape
+            output_data_data.unsafe_ptr(), output_shape
         )
         _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
@@ -103,9 +105,11 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        var output_data_data = stack_allocation[4, data_type]()
+        var output_data_data = InlineArray[Scalar[data_type], 4](
+            unsafe_uninitialized=True
+        )
         var output_data_buffer = NDBuffer[data_type, output_rank](
-            output_data_data, output_shape
+            output_data_data.unsafe_ptr(), output_shape
         )
         _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
@@ -162,9 +166,11 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        var output_data_data = stack_allocation[4, data_type]()
+        var output_data_data = InlineArray[Scalar[data_type], 4](
+            unsafe_uninitialized=True
+        )
         var output_data_buffer = NDBuffer[data_type, output_rank](
-            output_data_data, output_shape
+            output_data_data.unsafe_ptr(), output_shape
         )
         _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
@@ -221,9 +227,11 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        var output_data_data = stack_allocation[4, data_type]()
+        var output_data_data = InlineArray[Scalar[data_type], 4](
+            unsafe_uninitialized=True
+        )
         var output_data_buffer = NDBuffer[data_type, output_rank](
-            output_data_data, output_shape
+            output_data_data.unsafe_ptr(), output_shape
         )
         _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
@@ -278,9 +286,11 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        var output_data_data = stack_allocation[4, data_type]()
+        var output_data_data = InlineArray[Scalar[data_type], 4](
+            unsafe_uninitialized=True
+        )
         var output_data_buffer = NDBuffer[data_type, output_rank](
-            output_data_data, output_shape
+            output_data_data.unsafe_ptr(), output_shape
         )
         _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
@@ -360,9 +370,11 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        var output_data_data = stack_allocation[6, data_type]()
+        var output_data_data = InlineArray[Scalar[data_type], 6](
+            unsafe_uninitialized=True
+        )
         var output_data_buffer = NDBuffer[data_type, output_rank](
-            output_data_data, output_shape
+            output_data_data.unsafe_ptr(), output_shape
         )
         _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
@@ -421,9 +433,11 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        var output_data_data = stack_allocation[8, data_type]()
+        var output_data_data = InlineArray[Scalar[data_type], 8](
+            unsafe_uninitialized=True
+        )
         var output_data_buffer = NDBuffer[data_type, output_rank](
-            output_data_data, output_shape
+            output_data_data.unsafe_ptr(), output_shape
         )
         _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
@@ -485,9 +499,11 @@ fn main():
         ](data.make_dims_unknown(), indices.make_dims_unknown())
         print("Output shape: ", output_shape)
 
-        var output_data_data = stack_allocation[6, data_type]()
+        var output_data_data = InlineArray[Scalar[data_type], 6](
+            unsafe_uninitialized=True
+        )
         var output_data_buffer = NDBuffer[data_type, output_rank](
-            output_data_data, output_shape
+            output_data_data.unsafe_ptr(), output_shape
         )
         _gather_nd_impl[batch_dims](
             data.make_dims_unknown(),
