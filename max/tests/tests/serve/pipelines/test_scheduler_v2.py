@@ -20,6 +20,8 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManager,
 )
 from max.serve.pipelines.scheduler_v2 import (
+    BatchType,
+    SchedulerOutput,
     TokenGenerationSchedulerConfig,
     TokenGenerationSchedulerV2,
 )
@@ -126,6 +128,7 @@ def create_mock_request(
     mock_data.current_length = (
         current_length if current_length is not None else seq_len
     )
+    mock_data.end_idx = mock_data.active_idx
     mock_data.cache_seq_id = cache_seq_id
     mock_data.next_tokens = np.ones(mock_data.active_length)
 
@@ -183,7 +186,7 @@ def test_try_create_ce_batch(scheduler):
     mock_data.active_length = 10
     scheduler.request_q.put(("req1", mock_data))
 
-    batch = scheduler._try_create_ce_batch()
+    batch = scheduler._try_create_ce_batch().batch_inputs
     assert len(batch) == 1
     assert "req1" in batch
     assert batch["req1"].cache_seq_id not in scheduler.available_cache_indices
@@ -198,7 +201,7 @@ def test_try_create_chunked_ce_batch(scheduler):
     mock_data = create_mock_request(seq_len=30)
     scheduler.request_q.put(("req1", mock_data))
 
-    batch = scheduler._try_create_ce_batch()
+    batch = scheduler._try_create_ce_batch().batch_inputs
     assert len(batch) == 1
     assert "req1" in batch
     assert batch["req1"].cache_seq_id not in scheduler.available_cache_indices
@@ -261,8 +264,11 @@ def test_handle_cancelled_requests(scheduler):
 def test_schedule_ce(scheduler):
     mock_request = create_mock_request(cache_seq_id=0)
     batch_to_execute = {"req1": mock_request}
+    sch_output = SchedulerOutput(
+        batch_type=BatchType.ContextEncoding, batch_inputs=batch_to_execute
+    )
 
-    scheduler._schedule_ce(batch_to_execute)
+    scheduler._schedule_ce(sch_output)
 
     assert scheduler.ce_batch_start_time is None
     assert "req1" in scheduler.active_batch
@@ -280,9 +286,12 @@ def test_schedule_ce_with_chunked_prefill(scheduler):
 
     mock_request = create_mock_request(cache_seq_id=0, seq_len=30)
     scheduler.request_q.put(("req1", mock_request))
-    batch_to_execute = scheduler._try_create_ce_batch()
+    batch_to_execute = scheduler._try_create_ce_batch().batch_inputs
+    sch_output = SchedulerOutput(
+        batch_type=BatchType.ContextEncoding, batch_inputs=batch_to_execute
+    )
 
-    scheduler._schedule_ce(batch_to_execute)
+    scheduler._schedule_ce(sch_output)
 
     assert "req1" not in scheduler.active_batch
     assert scheduler.response_q.empty()
@@ -305,14 +314,17 @@ def test_schedule_mixed_ce_tg(scheduler):
 
     mock_request_tg = create_mock_request(cache_seq_id=0, seq_len=10)
     scheduler.request_q.put(("req1", mock_request_tg))
-    batch_to_execute = scheduler._try_create_ce_batch()
+    batch_to_execute = scheduler._try_create_ce_batch().batch_inputs
+    sch_output = SchedulerOutput(
+        batch_type=BatchType.ContextEncoding, batch_inputs=batch_to_execute
+    )
 
-    scheduler._schedule_ce(batch_to_execute)
+    scheduler._schedule_ce(sch_output)
     # req1 has been put in `active_batch`
 
     mock_request_ce = create_mock_request(cache_seq_id=1, seq_len=30)
     scheduler.request_q.put(("req2", mock_request_ce))
-    batch = scheduler._try_create_ce_batch()
+    batch = scheduler._try_create_ce_batch().batch_inputs
 
     # `batch_to_execute` should contain 1 token from req1 and 19 tokens from req2
     assert len(batch) == 2
@@ -327,8 +339,9 @@ def test_schedule_mixed_ce_tg(scheduler):
 def test_schedule_tg(scheduler):
     mock_request = create_mock_request(cache_seq_id=0)
     batch_to_execute = {"req1": mock_request}
+    sch_output = SchedulerOutput(batch_inputs=batch_to_execute)
 
-    scheduler._schedule_tg(batch_to_execute)
+    scheduler._schedule_tg(sch_output)
 
     scheduler.pipeline.next_token.assert_called_once_with(
         batch_to_execute,
@@ -444,5 +457,5 @@ def test_schedule_paged_manager_exceed_max_seq_len(
     scheduler.active_batch["req1"] = mock_request
 
     # Try to construct TG batch and make sure it is non-empty
-    batch_to_execute = scheduler._create_tg_batch()
+    batch_to_execute = scheduler._create_tg_batch().batch_inputs
     assert len(batch_to_execute) == 1
