@@ -625,7 +625,7 @@ fn multistage_gemm_kernel[
     c: LayoutTensor[c_type, c_layout],
     a: LayoutTensor[a_type, a_layout],
     b: LayoutTensor[b_type, b_layout],
-    locks: UnsafePointer[Scalar[DType.int32]],
+    locks: UnsafePointer[Int32],
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
@@ -1052,7 +1052,7 @@ fn multistage_gemm_split_k_kernel[
     b: LayoutTensor[b_type, b_layout],
     work_space: NDBuffer[work_space_type, 3],
     num_partitions: UInt,
-    locks: UnsafePointer[Scalar[DType.int32]],
+    locks: UnsafePointer[Int32],
 ):
     var M = c.dim(0)
     var N = c.dim(1)

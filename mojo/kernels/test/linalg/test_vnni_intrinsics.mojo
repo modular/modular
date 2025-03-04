@@ -46,13 +46,9 @@ def test_i8_to_i32():
         c[i] = i
         csat[i] = c[i]
 
-    var av16u = a.data.offset(128 + 64).bitcast[Scalar[DType.int32]]().load[
-        width=16
-    ]()
-    var av16s = asat.data.offset(128 + 64).bitcast[Scalar[DType.int32]]().load[
-        width=16
-    ]()
-    var bv16 = b.data.offset(0).bitcast[Scalar[DType.int32]]().load[width=16]()
+    var av16u = a.data.offset(128 + 64).bitcast[Int32]().load[width=16]()
+    var av16s = asat.data.offset(128 + 64).bitcast[Int32]().load[width=16]()
+    var bv16 = b.data.offset(0).bitcast[Int32]().load[width=16]()
     var cv16u: SIMD[DType.int32, 16] = 0
     var cv16s: SIMD[DType.int32, 16] = 0
     if has_avx512f():
@@ -124,13 +120,9 @@ def test_i8_to_i32():
         ),
     )
 
-    var av8u = a.data.offset(128 + 64).bitcast[Scalar[DType.int32]]().load[
-        width=8
-    ]()
-    var av8s = asat.data.offset(128 + 64).bitcast[Scalar[DType.int32]]().load[
-        width=8
-    ]()
-    var bv8 = b.data.offset(0).bitcast[Scalar[DType.int32]]().load[width=8]()
+    var av8u = a.data.offset(128 + 64).bitcast[Int32]().load[width=8]()
+    var av8s = asat.data.offset(128 + 64).bitcast[Int32]().load[width=8]()
+    var bv8 = b.data.offset(0).bitcast[Int32]().load[width=8]()
     var cv8u = dot_i8_to_i32_AVX2[8](c.data.load[width=8](), av8u, bv8)
     var cv8s = dot_i8_to_i32_saturated_AVX2[8](
         c.data.load[width=8](), av8s, bv8
@@ -149,13 +141,9 @@ def test_i8_to_i32():
         ),
     )
 
-    var av4u = a.data.offset(128 + 64).bitcast[Scalar[DType.int32]]().load[
-        width=4
-    ]()
-    var av4s = asat.data.offset(128 + 64).bitcast[Scalar[DType.int32]]().load[
-        width=4
-    ]()
-    var bv4 = b.data.offset(0).bitcast[Scalar[DType.int32]]().load[width=4]()
+    var av4u = a.data.offset(128 + 64).bitcast[Int32]().load[width=4]()
+    var av4s = asat.data.offset(128 + 64).bitcast[Int32]().load[width=4]()
+    var bv4 = b.data.offset(0).bitcast[Int32]().load[width=4]()
     var cv4u = dot_i8_to_i32_AVX2[4](c.data.load[width=4](), av4u, bv4)
     var cv4s = dot_i8_to_i32_saturated_AVX2[4](
         c.data.load[width=4](), av4s, bv4
