@@ -152,9 +152,7 @@ fn create_index_async(value: Int, async_ptr: UnsafePointer[NoneType]):
 @register_internal("builtin.create_si64_async")
 @no_inline
 @export
-fn create_si64_async(
-    value: Scalar[DType.int64], async_ptr: UnsafePointer[NoneType]
-):
+fn create_si64_async(value: Int64, async_ptr: UnsafePointer[NoneType]):
     external_call["KGEN_CompilerRT_CreateAsync_int64t", NoneType](
         value, async_ptr
     )

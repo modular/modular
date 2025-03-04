@@ -4154,7 +4154,7 @@ struct NonMaximumSupression:
         output: OutputTensor[type = DType.int64, rank=2],
         boxes: InputTensor[type=type, rank=3],
         scores: InputTensor[type=type, rank=3],
-        max_output_boxes_per_class: Scalar[DType.int64],
+        max_output_boxes_per_class: Int64,
         iou_threshold: Float32,
         score_threshold: Float32,
     ):
@@ -4177,7 +4177,7 @@ struct NonMaximumSupression:
     ](
         boxes: ManagedTensorSlice[type=type, rank=3],
         scores: ManagedTensorSlice[type=type, rank=3],
-        max_output_boxes_per_class: Scalar[DType.int64],
+        max_output_boxes_per_class: Int64,
         iou_threshold: Float32,
         score_threshold: Float32,
     ) -> IndexList[2]:
@@ -4481,8 +4481,8 @@ struct ROIAlign:
         output: OutputTensor[type=type, rank=4],
         input: InputTensor[type=type, rank=4],
         rois: InputTensor[type=type, rank=2],
-        output_height: Scalar[DType.int64],
-        output_width: Scalar[DType.int64],
+        output_height: Int64,
+        output_width: Int64,
         spatial_scale: Scalar,
         sampling_ratio: Scalar,
     ):
@@ -4500,8 +4500,8 @@ struct ROIAlign:
     fn shape(
         input: ManagedTensorSlice[rank=4],
         rois: ManagedTensorSlice[rank=2],
-        output_height: Scalar[DType.int64],
-        output_width: Scalar[DType.int64],
+        output_height: Int64,
+        output_width: Int64,
         spatial_scale: Scalar,
         sampling_ratio: Scalar,
     ) -> IndexList[4]:
