@@ -223,6 +223,9 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 
 - The `logger` package is now documented.
 
+- Large bigwidth integers are introduced. Specifically, the Int128, UInt128,
+  Int256, and UInt256 are now supported.
+
 ### Tooling changes
 
 #### Mojo Compiler

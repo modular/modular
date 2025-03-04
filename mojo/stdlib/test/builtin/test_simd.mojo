@@ -1909,6 +1909,37 @@ def test_reversed():
     test[DType.float64]()
 
 
+def test_large_int_types():
+    var x = Int128(1234567890)
+    var y = UInt128(1234567890)
+    var z = Int256(1234567890)
+    var w = UInt256(1234567890)
+
+    assert_equal(x, 1234567890)
+    assert_equal(y, 1234567890)
+    assert_equal(z, 1234567890)
+    assert_equal(w, 1234567890)
+
+    assert_equal(x.cast[DType.uint128](), y)
+    assert_equal(x.cast[DType.int256](), z)
+    assert_equal(x.cast[DType.uint256](), w)
+
+    assert_equal(y.cast[DType.int128](), x)
+    assert_equal(y.cast[DType.int256](), z)
+    assert_equal(y.cast[DType.uint256](), w)
+
+    assert_equal(z.cast[DType.int128](), x)
+    assert_equal(z.cast[DType.uint128](), y)
+    assert_equal(z.cast[DType.uint256](), w)
+
+    assert_equal(w.cast[DType.int128](), x)
+    assert_equal(w.cast[DType.uint128](), y)
+    assert_equal(w.cast[DType.int256](), z)
+
+    assert_equal(x.cast[DType.uint128]() + y, y + y)
+    assert_equal(x.cast[DType.int256]() + z, z + z)
+
+
 def main():
     test_abs()
     test_add()
@@ -1966,4 +1997,5 @@ def main():
     test_comparison()
     test_float_conversion()
     test_reversed()
+    test_large_int_types()
     # TODO: add tests for __and__, __or__, anc comparison operators

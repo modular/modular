@@ -95,6 +95,14 @@ alias Int64 = Scalar[DType.int64]
 """Represents a 64-bit signed scalar integer."""
 alias UInt64 = Scalar[DType.uint64]
 """Represents a 64-bit unsigned scalar integer."""
+alias Int128 = Scalar[DType.int128]
+"""Represents a 128-bit signed scalar integer."""
+alias UInt128 = Scalar[DType.uint128]
+"""Represents a 128-bit unsigned scalar integer."""
+alias Int256 = Scalar[DType.int256]
+"""Represents a 256-bit signed scalar integer."""
+alias UInt256 = Scalar[DType.uint256]
+"""Represents a 256-bit unsigned scalar integer."""
 
 alias Float8_e5m2 = Scalar[DType.float8_e5m2]
 """Represents a FP8E5M2 floating point format from the [OFP8
