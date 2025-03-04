@@ -73,6 +73,7 @@ class Whisper(PipelineModel):
         graph = build_graph(
             self.pipeline_config,
             self.weights,  # type: ignore
+            self.huggingface_config,
         )
         model = session.load(
             graph, weights_registry=self.weights.allocated_weights
