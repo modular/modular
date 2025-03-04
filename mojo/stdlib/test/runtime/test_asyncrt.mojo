@@ -7,7 +7,6 @@
 
 from os.atomic import Atomic
 
-from memory import stack_allocation
 from runtime.asyncrt import create_task, run
 from testing import assert_true
 
