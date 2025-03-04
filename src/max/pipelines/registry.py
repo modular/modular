@@ -24,6 +24,7 @@ from typing import Callable, Optional, Type, Union, cast
 import torch
 from max.graph.weights import WeightsAdapter
 from max.support.human_readable_formatter import to_human_readable_bytes
+from transformers import AutoTokenizer
 
 from .config import (
     PipelineConfig,
@@ -126,6 +127,30 @@ class SupportedArchitecture:
         self.weight_adapters = weight_adapters or {}
         self.task = task
 
+    def __eq__(self, other) -> bool:
+        if other.__class__ == self.__class__:
+            for field in [
+                "name",
+                "example_repo_ids",
+                "default_encoding",
+                "supported_encodings",
+                "pipeline_model",
+                "tokenizer",
+                "default_weights_format",
+                "rope_type",
+                "weight_adapters",
+                "task",
+            ]:
+                if not (hasattr(other, field) and hasattr(self, field)):
+                    return False
+
+                if getattr(other, field) != getattr(self, field):
+                    return False
+
+            return True
+
+        return False
+
 
 class PipelineRegistry:
     def __init__(self, architectures: list[SupportedArchitecture]):
@@ -176,6 +201,49 @@ class PipelineRegistry:
             msg = (
                 "Speculative Decoding not supported with the HuggingFace Engine"
             )
+            raise ValueError(msg)
+
+        # Validate that both the `draft_model` and target model `model_path` have the same
+        # architecture
+        draft_arch = self.retrieve_architecture(
+            pipeline_config.draft_model,
+            trust_remote_code=pipeline_config.trust_remote_code,
+        )
+
+        if not draft_arch:
+            msg = "MAX-Optimized architecture not found for `draft_model`"
+            raise ValueError(msg)
+
+        target_arch = self.retrieve_architecture(
+            pipeline_config.model_path,
+            trust_remote_code=pipeline_config.trust_remote_code,
+        )
+        if not target_arch:
+            msg = "MAX-Optimized architecture not found for target model (`model_path`)"
+            raise ValueError(msg)
+
+        if draft_arch != target_arch:
+            msg = f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
+            raise ValueError(msg)
+
+        # Validate that their tokenizers are identical.
+        draft_tokenizer = AutoTokenizer.from_pretrained(
+            pipeline_config.draft_model,
+            trust_remote_code=pipeline_config.trust_remote_code,
+        )
+        target_tokenizer = AutoTokenizer.from_pretrained(
+            pipeline_config.model_path,
+            trust_remote_code=pipeline_config.trust_remote_code,
+        )
+
+        # Compare Vocabularies
+        if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
+            msg = f"tokenizer for draft_model ({pipeline_config.draft_model}) does not match the vocabulary of the tokenizer for the target model ({pipeline_config.model_path})"
+            raise ValueError(msg)
+
+        # Compare Tokenizer Configuration
+        if draft_tokenizer.__dict__ == target_tokenizer.__dict__:
+            msg = f"tokenizer for draft_model ({pipeline_config.draft_model}) does not match the configuration of the tokenizer for the target model ({pipeline_config.model_path})"
             raise ValueError(msg)
 
     def validate_pipeline_config(
