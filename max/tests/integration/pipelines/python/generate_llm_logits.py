@@ -694,7 +694,6 @@ class OlmoPipelineOracle(PipelineOracle):
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
         config = pipelines.PipelineConfig(
-            architecture="OlmoForCausalLM",
             device_specs=device_specs,
             model_path="allenai/OLMo-1B-hf",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
