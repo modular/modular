@@ -3,25 +3,75 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# GENERATED FILE, DO NOT EDIT MANUALLY!
+# ===----------------------------------------------------------------------=== #
 
-from __future__ import annotations
+from collections.abc import Mapping, Sequence
+from typing import Annotated, Any, overload
 
-from typing import Any, Sequence, Union, overload
+import max._core
+import typing_extensions
+from numpy.typing import ArrayLike
 
-import numpy as np
-from max._core.dtype import DType
+class Accelerator(Device):
+    def __init__(self, id: int = -1) -> None:
+        """
+        Creates an accelerator device with the specified ID.
 
-_IdxElType = Union[int, slice]
-IndexType = Union[Sequence[_IdxElType], _IdxElType]
-ShapeType = Sequence[int]
+        Provides access to GPU or other hardware accelerators in the system.
+
+        .. code-block:: python
+
+            from max import driver
+            # Create default accelerator (usually first available GPU)
+            device = driver.Accelerator()
+            # Or specify GPU id
+            device = driver.Accelerator(id=0)  # First GPU
+            device = driver.Accelerator(id=1)  # Second GPU
+            # Get device id
+            device_id = device.id
+        """
+
+class CPU(Device):
+    def __init__(self, id: int = -1) -> None:
+        """
+        Creates a CPU device.
+
+        .. code-block:: python
+
+            from max import driver
+            # Create default CPU device
+            device = driver.CPU()
+            # Device id is always 0 for CPU devices
+            device_id = device.id
+        """
 
 class Device:
-    def __str__(self) -> str: ...
-    def __repr__(self) -> str: ...
-    def __eq__(self, other: object) -> bool: ...
+    def synchronize(self) -> None:
+        """
+        Ensures all operations on this device complete before returning.
+
+        Raises:
+            ValueError: If any enqueue'd operations had an internal error.
+        """
+
     @property
-    def stats(self) -> dict[str, Any]:
-        """Returns utilization data for the device.
+    def is_host(self) -> bool:
+        """
+        Whether this device is the CPU (host) device.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.is_host
+        """
+
+    @property
+    def stats(self) -> Mapping[str, Any]:
+        """
+        Returns utilization data for the device.
 
         .. code-block:: python
 
@@ -30,9 +80,11 @@ class Device:
             device = driver.CPU()
             device.stats
         """
+
     @property
     def label(self) -> str:
-        """Returns device label.
+        """
+        Returns device label.
 
         Possible values are:
         - "cpu" for host devices
@@ -45,9 +97,11 @@ class Device:
             device = driver.CPU()
             device.label
         """
+
     @property
     def api(self) -> str:
-        """Returns the API used to program the device.
+        """
+        Returns the API used to program the device.
 
         Possible values are:
         - "cpu" for host devices
@@ -61,9 +115,11 @@ class Device:
             device = driver.CPU()
             device.api
         """
+
     @property
     def id(self) -> int:
-        """Returns a zero-based device id. For a CPU device this is always 0.
+        """
+        Returns a zero-based device id. For a CPU device this is always 0.
         For GPU accelerators this is the id of the device relative to this host.
         Along with the `label`, an id can uniquely identify a device,
         e.g. "gpu:0", "gpu:1".
@@ -75,73 +131,55 @@ class Device:
             device = driver.Accelerator()
             device.id
         """
-    @property
-    def is_host(self) -> bool:
-        """Whether this device is the CPU (host) device.
 
-        .. code-block:: python
-
-            from max import driver
-
-            device = driver.CPU()
-            device.is_host
-        """
     @property
     def is_compatible(self) -> bool:
         """Returns whether this device is compatible with MAX."""
-    def synchronize(self) -> None:
-        """Ensures all operations on this device complete before returning.
 
-        Raises:
-            ValueError: If any enqueue'd operations had an internal error.
-        """
-
-class CPU(Device):
-    def __new__(cls, id: int = -1) -> CPU: ...
-
-class Accelerator(Device):
-    def __new__(cls, id: int = -1) -> Accelerator: ...
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+    def __eq__(self, arg: object, /) -> bool: ...
+    @staticmethod
+    def cpu(id: int = -1) -> CPU:
+        """Creates a CPU device. The id is ignored currently."""
 
 class Tensor:
+    @overload
+    def __init__(
+        self, shape: Sequence[int], dtype: max._core.dtype.DType, device: Device
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, shape: Annotated[ArrayLike, dict(writable=False)], device: Device
+    ) -> None: ...
     @property
-    def shape(self) -> ShapeType: ...
+    def dtype(self) -> max._core.dtype.DType: ...
+    @property
+    def shape(self) -> tuple: ...
     @property
     def rank(self) -> int: ...
+    @property
+    def num_elements(self) -> int: ...
+    @property
+    def device(self) -> Device: ...
     @property
     def is_contiguous(self) -> bool: ...
     @property
     def is_host(self) -> bool: ...
-    @property
-    def num_elements(self) -> int: ...
-    @overload
-    def __init__(
-        self,
-        shape: ShapeType,
-        dtype: DType,
-        device: Device,
-    ) -> None: ...
-    @overload
-    def __init__(self, shape: np.ndarray, device: Device) -> None: ...
-    def view(self, shape: ShapeType, dtype: DType) -> Tensor: ...
-    def set(self, index: IndexType, value: Any) -> None: ...
-    def get(self, index: IndexType) -> Tensor: ...
-    def item(self) -> Any: ...
+    def view(
+        self, shape: Sequence[int], dtype: max._core.dtype.DType
+    ) -> Tensor: ...
+    def set(self, index: object, value: object) -> None: ...
+    def get(self, index: object) -> Tensor: ...
+    def item(self) -> object: ...
     def copy_to(self, device: Device) -> Tensor: ...
     def zeros(self) -> None: ...
-    @staticmethod
-    def from_dlpack(arg0: Any) -> Tensor: ...
-    @property
-    def device(self) -> Device: ...
-    @property
-    def dtype(self) -> DType: ...
+    def __dlpack_device__(self) -> tuple: ...
     def __dlpack__(
-        self, *, stream: Any | None = None, _mmap: Any | None = None
-    ) -> Any: ...
-    def __dlpack_device__(self) -> tuple[Any, Any]: ...
+        self, *, stream: object | None = None, _mmap: object | None = None
+    ) -> typing_extensions.CapsuleType: ...
+    @staticmethod
+    def from_dlpack(arg: object, /) -> Tensor: ...
 
-def cpu_device(device_id: int = -1) -> Device: ...
-def accelerator(device_id: int = -1) -> Device: ...
 def accelerator_count() -> int:
     """Returns number of accelerator devices available."""
-
-__version__: str = ...

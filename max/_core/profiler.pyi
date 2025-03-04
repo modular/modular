@@ -3,21 +3,45 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-from types import TracebackType
-
-from typing_extensions import Self
+# GENERATED FILE, DO NOT EDIT MANUALLY!
+# ===----------------------------------------------------------------------=== #
 
 class Trace:
-    def __init__(self, message: str, color: str = "") -> None: ...
-    def __enter__(self) -> Self: ...
+    """
+    Context manager for creating profiling spans.
+
+    Examples:
+        >>> with Trace("foo", color="blue"):
+        >>>   # Run `bar()` inside the profiling span.
+        >>>   bar()
+        >>> # The profiling span ends when the context manager exits.
+    """
+
+    def __init__(self, message: str, color: str = "blue") -> None:
+        """
+        Constructs and initializes the underlying Mojo Trace object.
+
+        Args:
+            message: name of the span.
+            color: color of the span.
+        """
+
+    def __enter__(self) -> Trace:
+        """Begins a profiling event."""
+
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> bool | None: ...
-    def mark(self) -> None: ...
+        exc_type: object | None = None,
+        exc_value: object | None = None,
+        traceback: object | None = None,
+    ) -> None:
+        """Ends a profiling event."""
 
-def is_profiling_enabled() -> bool: ...
-def set_gpu_profiling_state(state: str): ...
+    def mark(self) -> None:
+        """Marks an event in the trace timeline."""
+
+def is_profiling_enabled() -> bool:
+    """Returns whether profiling is enabled."""
+
+def set_gpu_profiling_state(arg: str, /) -> None:
+    """Sets the GPU profiling state."""
