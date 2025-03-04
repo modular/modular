@@ -569,6 +569,19 @@ static void optimizeReadOnlyMemory(Region &funcBody, PassInfo &pass) {
   if (!pass.target)
     return;
 
+  // Return true if type can be lowered to pop.global_constant
+  std::function<bool(Type)> isSupportedType = [&isSupportedType](Type type) {
+    if (!type)
+      return false;
+    if (isa<IntegerType, FloatType>(type))
+      return true;
+    if (auto simd = dyn_cast<SIMDType>(type))
+      return simd.isScalar();
+    if (auto structTy = dyn_cast<StructType>(type))
+      return llvm::all_of(structTy.getElementTypes(), isSupportedType);
+    return false;
+  };
+
   DenseMap<Value, StackAllocationOp> aliases;
   DenseMap<Operation *, std::vector<StackAllocationOp>> regionVariants;
   std::vector<StackAllocationOp> allocs =
@@ -589,12 +602,27 @@ static void optimizeReadOnlyMemory(Region &funcBody, PassInfo &pass) {
     std::optional<int64_t> constantSize = popArrayType.getTypeSize(pass.target);
     // Don't try to optimize the memory if constant's size is smaller than
     // expected threshold.
-    if (!constantSize || constantSize < clOptions->promoteToGlobalThreshold) {
+    if (!constantSize ||
+        (size_t)*constantSize < clOptions->promoteToGlobalThreshold) {
       KGEN_DEBUG(0, {
         llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
         constant.print(llvm::dbgs());
         llvm::dbgs()
             << " constant is too small to be optimized to global constant\n";
+      });
+      return WalkResult::advance();
+    }
+
+    // Non-simple type, such as string, requires to allocate memory for each
+    // element and use their pointers to access them, which GlobalConstantOp
+    // does not support.
+    auto eltType = popArrayType.getElementType();
+    if (!eltType || !isSupportedType(eltType)) {
+      KGEN_DEBUG(0, {
+        llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
+        constant.print(llvm::dbgs());
+        llvm::dbgs() << " constant's element type is not supported (size = "
+                     << *constantSize << ")\n";
       });
       return WalkResult::advance();
     }

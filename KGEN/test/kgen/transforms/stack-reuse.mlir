@@ -332,4 +332,21 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       pop.stack_alloc.lifetime.end(%21) : !kgen.pointer<array<2, struct<(scalar<ui64>, scalar<ui64>)>>>
       kgen.return
   }
+
+  // Cannot convert the constant of strings into pop.global_constant
+  // CHECK: @negative_large_constant_with_strings
+  kgen.func @negative_large_constant_with_strings(%arg0: index) -> index {
+    // CHECK-NEXT: kgen.param.constant
+    %array = kgen.param.constant: array<8, string> = <["0.0", "0.001953125", "0.00390625", "0.005859375", "0.0078125", "0.009765625", "0.01171875", "0.013671875"]>
+    %3 = pop.stack_allocation 1 x array<8, string> marked
+    pop.stack_alloc.lifetime.start(%3) : !kgen.pointer<array<8, string>>
+    pop.store %array, %3 : !kgen.pointer<array<8, string>>
+    %4 = pop.array.gep %3[%arg0] : <array<8, string>>
+    %5 = pop.load %4 : !kgen.pointer<string>
+    pop.stack_alloc.lifetime.end(%3) : !kgen.pointer<array<8, string>>
+    %6 = pop.string.address %5
+    %7 = pop.pointer.bitcast %6 : !kgen.pointer<scalar<si8>> to !kgen.pointer<none>
+    %8 = pop.string.size %5
+    kgen.return %8 : index
+  }
 }
