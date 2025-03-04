@@ -51,10 +51,10 @@ fn export():
 @value
 @register_passable
 struct MyCustomScalarRegSI32:
-    var val: Scalar[DType.int32]
+    var val: Int32
 
     @implicit
-    fn __init__(out self, val: Scalar[DType.int32]):
+    fn __init__(out self, val: Int32):
         print("MyCustomScalarRegSI32.__init__", val)
         self.val = val
 
@@ -127,10 +127,10 @@ struct OpaqueAddToTensorF32:
 
 @value
 struct MyCustomScalarSI32:
-    var val: Scalar[DType.int32]
+    var val: Int32
 
     @implicit
-    fn __init__(out self, val: Scalar[DType.int32]):
+    fn __init__(out self, val: Int32):
         print("MyCustomScalarSI32.__init__", val)
         self.val = val
 
