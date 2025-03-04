@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the MAX tensor package."""
+"""APIs to create and manage tensors in a graph."""
 
 from .managed_tensor_slice import (
     DynamicTensor,
