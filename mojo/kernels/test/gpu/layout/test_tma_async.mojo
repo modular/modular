@@ -330,7 +330,7 @@ fn test_tma_async_reduce_kernel[
     tma_store_fence()
 
     if thread_idx.x == 0:
-        tma_tile.async_reduce[reduction_kind="add"](
+        tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
             tile, (block_idx.x * tileN, block_idx.y * tileM)
         )
         cp_async_bulk_commit_group()
@@ -365,7 +365,7 @@ fn test_tma_async_multiple_reduce_kernel[
         tma_store_fence()
 
         if thread_idx.x == 0:
-            tma_tile.async_reduce[reduction_kind="add"](
+            tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
                 tile, (UInt(i) * tileN, block_idx.y * tileM)
             )
             cp_async_bulk_commit_group()

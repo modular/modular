@@ -14,6 +14,7 @@ from gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     fence_proxy_tensormap_generic_sys_acquire,
     fence_proxy_tensormap_generic_sys_release,
+    ReduceOp,
 )
 from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from memory import UnsafePointer
@@ -101,20 +102,22 @@ fn test_async_bulk_tensor_reduce_asm():
         *coords: Int32,
     ):
         # CHECK:
-        cp_async_bulk_tensor_reduce[reduction_kind="add"](
+        cp_async_bulk_tensor_reduce[reduction_kind = ReduceOp.ADD](
             src_mem, tma_descriptor, Index(coords[0], coords[1])
         )
         # CHECK:
         cp_async_bulk_tensor_reduce[
-            reduction_kind="add", eviction_policy = CacheEviction.EVICT_FIRST
+            reduction_kind = ReduceOp.ADD,
+            eviction_policy = CacheEviction.EVICT_FIRST,
         ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
         # CHECK:
-        cp_async_bulk_tensor_reduce[reduction_kind="add"](
+        cp_async_bulk_tensor_reduce[reduction_kind = ReduceOp.ADD](
             src_mem, tma_descriptor, Index(coords[0])
         )
         # CHECK:
         cp_async_bulk_tensor_reduce[
-            reduction_kind="add", eviction_policy = CacheEviction.EVICT_LAST
+            reduction_kind = ReduceOp.ADD,
+            eviction_policy = CacheEviction.EVICT_LAST,
         ](src_mem, tma_descriptor, Index(coords[0]))
 
     print(
