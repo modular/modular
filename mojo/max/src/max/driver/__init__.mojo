@@ -47,7 +47,9 @@ from .device_memory import DeviceMemory, DeviceTensor
 from .tensor import Tensor
 from .tensor_slice import TensorSlice
 
+
 # TODO(GEX-1891): Remove deprecated legacy names for Device creation
+@deprecated("Please use the modern factory API accelerator().")
 alias accelerator_device = accelerator
 
 
