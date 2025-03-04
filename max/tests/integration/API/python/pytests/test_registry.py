@@ -756,6 +756,61 @@ def test_registry__raise_oom_error_max_batch_size_set_and_max_length_set():
 
 
 @prepare_registry
+def test_registry__validate_speculative_decoding_pipeline():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    # Valid device/encoding combinations
+    config = PipelineConfig(
+        model_path="HuggingFaceTB/SmolLM-135M",
+        device_specs=[DeviceSpec.cpu()],
+        quantization_encoding=SupportedEncoding.float32,
+        draft_model="HuggingFaceTB/SmolLM-135M",
+    )
+
+    PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    # Invalid device/encoding combinations
+    config = PipelineConfig(
+        model_path="modularai/llama-3.1",
+        device_specs=[DeviceSpec.cpu()],
+        quantization_encoding=SupportedEncoding.float32,
+        draft_model="HuggingFaceTB/SmolLM-135M",
+        engine=PipelineEngine.HUGGINGFACE,
+    )
+
+    with pytest.raises(ValueError):
+        PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    # Test that when the target & draft architectures are different
+    # we raise an error.
+    config = PipelineConfig(
+        model_path="LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
+        quantization_encoding=SupportedEncoding.q4_k,
+        device_specs=[DeviceSpec.cpu()],
+        draft_model="HuggingFaceTB/SmolLM-135M",
+    )
+
+    with pytest.raises(ValueError):
+        PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    # Test that the target & draft architectures are the same,
+    # but the tokenizers are different
+    config = PipelineConfig(
+        model_path="deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+        quantization_encoding=SupportedEncoding.q4_k,
+        weight_path=[
+            Path(
+                "lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf"
+            )
+        ],
+        draft_model="HuggingFaceTB/SmolLM-135M",
+    )
+
+    with pytest.raises(ValueError):
+        PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+
+@prepare_registry
 def test_registry__validates_supported_device():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
