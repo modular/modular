@@ -14,7 +14,7 @@
   that are automatically imported into every Mojo program.
 """
 
-from collections import KeyElement, List
+from collections import KeyElement, List, Optional, InlineArray
 from collections.string import Codepoint, String, ascii, atof, atol, chr, ord
 from hashlib.hash import Hashable, hash
 
@@ -134,7 +134,7 @@ from builtin.value import (
     WritableCollectionElement,
 )
 from documentation import doc_private
-from memory import AddressSpace, Pointer
+from memory import AddressSpace, Pointer, Span
 from memory.span import AsBytes
 
 from utils import Writable, Writer
