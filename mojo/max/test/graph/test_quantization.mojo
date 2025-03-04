@@ -69,7 +69,7 @@ def test_quantize_bfloat16():
     # Bitcast output to bfloat16 then cast to float32 to verify.
     output = Tensor(
         TensorShape(num_tokens, channels),
-        output._steal_ptr().bitcast[Scalar[DType.bfloat16]](),
+        output._steal_ptr().bitcast[BFloat16](),
     ).astype[DType.float32]()
 
     # Set rtol based on bfloat16 resolution: 0.01.
