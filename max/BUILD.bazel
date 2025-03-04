@@ -1,16 +1,111 @@
-load("//bazel:api.bzl", "modular_nanobind_extension", "modular_py_library")
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("//bazel:api.bzl", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library", "modular_python_binding_py_library")
 
 modular_nanobind_extension(
-    name = "_core",
+    name = "_core.bindings",
     srcs = ["_core.cpp"],
+    declare_py_library = False,
+    module_name = "_core",
     nanobind_deps = [
-        "//SDK/lib/API/python/max/_core:modules",
+        "//SDK/lib/API/python/max/_core/src:modules",
     ],
-    py_data = ["//SDK/lib/API/python/max/_core:stubs"],
     deps = [
         "@llvm-project//llvm:Support",
     ],
 )
+
+# Intermediate targets just for stubgen
+modular_py_library(
+    name = "_core.stubfile_generator_library",
+    data = [":_core.bindings"],
+    imports = [".."],
+)
+
+modular_py_binary(
+    name = "_core.stubfile_generator",
+    srcs = ["@nanobind//:src/stubgen.py"],
+    tags = ["no-mypy"],
+    deps = ["_core.stubfile_generator_library"],
+)
+
+stubfiles = ["stubfiles/_core.pyi"] + ["stubfiles/" + dir + "/__init__.pyi" for dir in ("profiler", "graph", "engine", "dtype", "driver", "dialects", "dialects/mo")]
+
+modular_genrule(
+    name = "_core.stubfiles",
+    srcs = [
+        # To ensure our linting + formatting aligns with the rest of our project
+        "//:pyproject.toml",
+    ],
+    outs = stubfiles,
+    cmd = """
+    set -e
+    export folder=$(dirname $(location stubfiles/_core.pyi))
+    $(execpath {stubgen}) -r -m max._core -O $folder --quiet
+
+    # Fix missing `typing` imports, since these are manually replaced
+    # These will get merged with other `typing` imports during formatting.
+    echo "from typing import Any\n$(cat $(location {driver}))" > $(location {driver})
+    echo "from typing import Any, Mapping\n$(cat $(location {engine}))" > $(location {engine})
+
+    # Add copyright headers
+    header="
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# GENERATED FILE, DO NOT EDIT MANUALLY!
+# ===----------------------------------------------------------------------=== #
+"
+    for file in $(find $folder -name *.pyi); do
+        echo "$header\n$(cat $file)" > $file
+    done
+
+    # Lint and format the files
+    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) format --quiet
+    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) check --fix --exclude {excludes} --quiet
+    """.format(
+        driver = ":stubfiles/driver/__init__.pyi",
+        engine = ":stubfiles/engine/__init__.pyi",
+        excludes = "graph/__init__.pyi,dialects/mo/__init__.pyi",
+        module = "_core",
+        ruff = "//utils/bazel/lint:ruff-wrapper",
+        stubgen = ":_core.stubfile_generator",
+    ),
+    tools = [
+        "_core.stubfile_generator",
+        "//utils/bazel/lint:ruff-wrapper",
+    ],
+    visibility = [":__subpackages__"],
+)
+
+modular_python_binding_py_library(
+    name = "_core",
+    srcs = glob(["_core/*.pyi"]),
+    bindings_data = [":_core.bindings"],
+    imports = [".."],
+)
+
+# Compare the generated stubs to the committed ones.
+# We commit the changes for a few reasons:
+# 1. It is easier to see when they change
+# 2. For other tooling that uses them, such as docs or (perhaps in the future) copybara.
+# We can also select which ones to commit, if some of the generated ones are not to our
+# liking, since we don't directly depend on any of the generated ones.
+# FIXME (SDLC-1866): Currently, we don't use the generate stubgs for _core.graph.
+[
+    diff_test(
+        name = name + ".diff_test",
+        file1 = "//SDK/lib/API/python/max:stubfiles/{}/__init__.pyi".format(name),
+        file2 = "_core/{}.pyi".format(name),
+    )
+    for name in (
+        "driver",
+        "dtype",
+        "engine",
+        "profiler",
+    )
+]
 
 modular_py_library(
     name = "max",
