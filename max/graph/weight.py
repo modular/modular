@@ -85,6 +85,11 @@ class Weight(TensorValue):
 
     @property
     def shape(self) -> Shape:
+        if self.shard_idx is not None:
+            # If this is a weight shard, then the weight shape will not
+            # match the actual shard shape. The correct shape is the shape of
+            # the TensorValue computed from the sharding strategy.
+            return super().shape
         return Shape(self._shape)
 
     @cached_property
@@ -119,9 +124,34 @@ class Weight(TensorValue):
         else:
             return f"Weight({self.name}, {self.dtype}, {self.shape}, {self.device})"
 
+    def set_sharding_strategy(
+        self, sharding_strategy: ShardingStrategy
+    ) -> None:
+        """Set the weight sharding strategy.
+
+        Args:
+            sharding_strategy: A callable that takes the host weight and shard
+              index, and returns the sharded value.
+        """
+        self.sharding_strategy = _ShardingStrategyContainer(
+            self, sharding_strategy
+        )
+
     def shard(
         self, shard_idx: int, device: Optional[DeviceRef] = None
     ) -> Weight:
+        """Gets a specific shard from the Weight.
+
+        This `Weight` must have `sharding_strategy` defined. The shard object
+        returned is also a `Weight` object, but cannot be sharded further.
+
+        Args:
+            shard_idx: int value of the shard.
+            device: Optional device to place the shard.
+
+        Returns:
+            The sharded weight.
+        """
         if not self.sharding_strategy:
             raise ValueError(
                 f"Weight {self.name} cannot be sharded because no sharding strategy was provided."
