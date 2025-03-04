@@ -242,7 +242,11 @@ def main(model, encoding, verbose):
             )
 
             session = InferenceSession(devices=config.devices)
-            llama3 = Llama3Model(pipeline_config=config, session=session)
+            llama3 = Llama3Model(
+                pipeline_config=config,
+                session=session,
+                huggingface_config=config.huggingface_config,
+            )
             results = run_model(llama3, tokenizer, PROMPTS)
 
             output_full_path = os.path.join(

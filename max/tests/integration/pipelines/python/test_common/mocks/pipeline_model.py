@@ -24,6 +24,7 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
 )
+from transformers import AutoConfig
 
 
 class MockModelInputs(ModelInputs):
@@ -43,8 +44,10 @@ class MockPipelineModel(PipelineModel):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.huggingface_config = huggingface_config
         self.vocab_size = pipeline_config.huggingface_config.vocab_size
         self.eos_token = pipeline_config.huggingface_config.eos_token
         self.max_length = pipeline_config.max_length
