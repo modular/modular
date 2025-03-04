@@ -10,9 +10,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements SIMD struct.
+"""Implements SIMD primitives and abstractions
 
-These are Mojo built-ins, so you don't need to import them.
+Provides high-performance SIMD primitives and abstractions for
+vectorized computation in Mojo. It enables efficient data-parallel operations
+by leveraging hardware vector processing units across different architectures.
+
+Key Features:
+1. Architecture-agnostic SIMD abstractions with automatic hardware detection
+2. Optimized vector operations for common numerical computations
+3. Explicit control over vectorization strategies and memory layouts
+4. Zero-cost abstractions that compile to efficient machine code
+5. Support for different vector widths and element types
+
+Primary Components:
+- Vector types: Strongly-typed vector containers with element-wise operations
+- SIMD intrinsics: Low-level access to hardware SIMD instructions
+- Vectorized algorithms: Common algorithms optimized for SIMD execution
+- Memory utilities: Aligned memory allocation and vector load/store operations
+
+Performance Considerations:
+- Vector width selection should match target hardware capabilities
+- Memory alignment affects load/store performance
+- Data layout transformations may be necessary for optimal vectorization
+
+Integration:
+This module is designed to work seamlessly with other Mojo numerical computing
+components, including tensor operations, linear algebra routines, and
+domain-specific libraries for machine learning and scientific computing.
 """
 
 import math
