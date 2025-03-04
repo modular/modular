@@ -433,9 +433,9 @@ struct SIMD[type: DType, size: Int](
         """
         _simd_construction_checks[type, size]()
 
-        var tn1 = __mlir_op.`kgen.int_literal.convert`[
-            _type = __mlir_type.si128
-        ](value.value)
+        var tn1 = __mlir_attr[
+            `#kgen<int_literal_convert<`, value.value, `, 0>> : si128`
+        ]
         var t0 = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<si128>`
         ](tn1)
@@ -548,9 +548,11 @@ struct SIMD[type: DType, size: Int](
                 __mlir_op.`pop.cast_from_builtin`[
                     _type = __mlir_type[`!pop.scalar<f8e4m3fn>`]
                 ](
-                    __mlir_op.`kgen.float_literal.convert`[
-                        _type = __mlir_type.f8E4M3FN
-                    ](value.value)
+                    __mlir_attr[
+                        `#kgen<float_literal_convert<`,
+                        value.value,
+                        `>> : f8E4M3FN`,
+                    ]
                 )
             )
         elif type is DType.float8_e4m3fnuz:
@@ -558,9 +560,11 @@ struct SIMD[type: DType, size: Int](
                 __mlir_op.`pop.cast_from_builtin`[
                     _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`]
                 ](
-                    __mlir_op.`kgen.float_literal.convert`[
-                        _type = __mlir_type.f8E4M3FNUZ
-                    ](value.value)
+                    __mlir_attr[
+                        `#kgen<float_literal_convert<`,
+                        value.value,
+                        `>> : f8E4M3FNUZ`,
+                    ]
                 )
             )
         elif type is DType.float8_e5m2:
@@ -568,9 +572,11 @@ struct SIMD[type: DType, size: Int](
                 __mlir_op.`pop.cast_from_builtin`[
                     _type = __mlir_type[`!pop.scalar<f8e5m2>`]
                 ](
-                    __mlir_op.`kgen.float_literal.convert`[
-                        _type = __mlir_type.f8E5M2
-                    ](value.value)
+                    __mlir_attr[
+                        `#kgen<float_literal_convert<`,
+                        value.value,
+                        `>> : f8E5M2`,
+                    ]
                 )
             )
         elif type is DType.float8_e5m2fnuz:
@@ -578,9 +584,11 @@ struct SIMD[type: DType, size: Int](
                 __mlir_op.`pop.cast_from_builtin`[
                     _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`]
                 ](
-                    __mlir_op.`kgen.float_literal.convert`[
-                        _type = __mlir_type.f8E5M2FNUZ
-                    ](value.value)
+                    __mlir_attr[
+                        `#kgen<float_literal_convert<`,
+                        value.value,
+                        `>> : f8E5M2FNUZ`,
+                    ]
                 )
             )
         elif type is DType.float16:
@@ -588,9 +596,11 @@ struct SIMD[type: DType, size: Int](
                 __mlir_op.`pop.cast_from_builtin`[
                     _type = __mlir_type[`!pop.scalar<f16>`]
                 ](
-                    __mlir_op.`kgen.float_literal.convert`[
-                        _type = __mlir_type.f16
-                    ](value.value)
+                    __mlir_attr[
+                        `#kgen<float_literal_convert<`,
+                        value.value,
+                        `>> : f16`,
+                    ]
                 )
             )
         elif type is DType.bfloat16:
@@ -598,9 +608,11 @@ struct SIMD[type: DType, size: Int](
                 __mlir_op.`pop.cast_from_builtin`[
                     _type = __mlir_type[`!pop.scalar<bf16>`]
                 ](
-                    __mlir_op.`kgen.float_literal.convert`[
-                        _type = __mlir_type.bf16
-                    ](value.value)
+                    __mlir_attr[
+                        `#kgen<float_literal_convert<`,
+                        value.value,
+                        `>> : bf16`,
+                    ]
                 )
             )
         elif type is DType.float32:
@@ -608,9 +620,11 @@ struct SIMD[type: DType, size: Int](
                 __mlir_op.`pop.cast_from_builtin`[
                     _type = __mlir_type[`!pop.scalar<f32>`]
                 ](
-                    __mlir_op.`kgen.float_literal.convert`[
-                        _type = __mlir_type.f32
-                    ](value.value)
+                    __mlir_attr[
+                        `#kgen<float_literal_convert<`,
+                        value.value,
+                        `>> : f32`,
+                    ]
                 )
             )
         else:
@@ -618,9 +632,11 @@ struct SIMD[type: DType, size: Int](
                 __mlir_op.`pop.cast_from_builtin`[
                     _type = __mlir_type[`!pop.scalar<f64>`]
                 ](
-                    __mlir_op.`kgen.float_literal.convert`[
-                        _type = __mlir_type.f64
-                    ](value.value)
+                    __mlir_attr[
+                        `#kgen<float_literal_convert<`,
+                        value.value,
+                        `>> : f64`,
+                    ]
                 )
             )
         # Finally, splat the scalar to a SIMD if needed.

@@ -23,47 +23,54 @@ These are Mojo built-ins, so you don't need to import them.
 @value
 @nonmaterializable(Float64)
 @register_passable("trivial")
-struct FloatLiteral(
-    Comparable,
+struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
     ImplicitlyBoolable,
     Intable,
     Stringable,
     Floatable,
 ):
-    """Mojo floating point literal type."""
+    """Mojo floating point literal type.
 
-    alias fp_type = __mlir_type.`!kgen.float_literal`
-    var value: Self.fp_type
-    """The underlying storage for the floating point value."""
+    Parameters:
+        value: The underlying infinite precision floating point value.
+    """
 
     # ===------------------------------------------------------------------===#
     # Constructors
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: Self.fp_type):
-        """Create a FloatLiteral value from a kgen.float_literal value.
-
-        Args:
-            value: The float value.
-        """
-        self.value = value
+    fn __init__(out self):
+        """Create a FloatLiteral for any parameter value."""
+        pass
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: IntLiteral):
+    fn __init__(
+        value: IntLiteral[_],
+        out result: FloatLiteral[
+            __mlir_attr[
+                `#kgen<int_to_float_literal<`,
+                value.value,
+                `>> : !kgen.float_literal`,
+            ]
+        ],
+    ):
         """Convert an IntLiteral to a FloatLiteral value.
 
         Args:
             value: The IntLiteral value.
         """
-        self.value = __mlir_op.`kgen.int_to_float_literal`(value.value)
+        out = __type_of(result)()
 
-    alias nan = Self(__mlir_attr.`#kgen.float_literal<nan>`)
-    alias infinity = Self(__mlir_attr.`#kgen.float_literal<inf>`)
-    alias negative_infinity = Self(__mlir_attr.`#kgen.float_literal<neg_inf>`)
-    alias negative_zero = Self(__mlir_attr.`#kgen.float_literal<neg_zero>`)
+    alias nan = FloatLiteral[__mlir_attr.`#kgen.float_literal<nan>`]()
+    alias infinity = FloatLiteral[__mlir_attr.`#kgen.float_literal<inf>`]()
+    alias negative_infinity = FloatLiteral[
+        __mlir_attr.`#kgen.float_literal<neg_inf>`
+    ]()
+    alias negative_zero = FloatLiteral[
+        __mlir_attr.`#kgen.float_literal<neg_zero>`
+    ]()
 
     @always_inline("builtin")
     fn is_nan(self) -> Bool:
@@ -74,9 +81,9 @@ struct FloatLiteral(
         Returns:
             True, if the value is nan, False otherwise.
         """
-        return __mlir_op.`kgen.float_literal.isa`[
-            special = __mlir_attr.`#kgen<float_literal.special_values nan>`
-        ](self.value)
+        return __mlir_attr[
+            `#kgen<float_literal_isa<nan `, self.value, `>> : i1`
+        ]
 
     @always_inline("builtin")
     fn is_neg_zero(self) -> Bool:
@@ -88,9 +95,9 @@ struct FloatLiteral(
         Returns:
             True, if the value is negative zero, False otherwise.
         """
-        return __mlir_op.`kgen.float_literal.isa`[
-            special = __mlir_attr.`#kgen<float_literal.special_values neg_zero>`
-        ](self.value)
+        return __mlir_attr[
+            `#kgen<float_literal_isa<neg_zero `, self.value, `>> : i1`
+        ]
 
     @always_inline("builtin")
     fn _is_normal(self) -> Bool:
@@ -99,9 +106,9 @@ struct FloatLiteral(
         Returns:
             True, if the value is a normal float, False otherwise.
         """
-        return __mlir_op.`kgen.float_literal.isa`[
-            special = __mlir_attr.`#kgen<float_literal.special_values normal>`
-        ](self.value)
+        return __mlir_attr[
+            `#kgen<float_literal_isa<normal `, self.value, `>> : i1`
+        ]
 
     # ===------------------------------------------------------------------===#
     # Conversion Operators
@@ -117,7 +124,16 @@ struct FloatLiteral(
         return String(Float64(self))
 
     @always_inline("builtin")
-    fn __int_literal__(self) -> IntLiteral:
+    fn __int_literal__(
+        self,
+        out result: IntLiteral[
+            __mlir_attr[
+                `#kgen<float_to_int_literal<`,
+                value,
+                `>> : !kgen.int_literal`,
+            ]
+        ],
+    ):
         """Casts the floating point value to an IntLiteral. If there is a
         fractional component, then the value is truncated towards zero.
 
@@ -127,7 +143,7 @@ struct FloatLiteral(
         Returns:
             The value as an integer.
         """
-        return IntLiteral(__mlir_op.`kgen.float_to_int_literal`(self.value))
+        return __type_of(result)()
 
     @always_inline("builtin")
     fn __int__(self) -> Int:
@@ -173,20 +189,32 @@ struct FloatLiteral(
         return self.__bool__()
 
     @always_inline("builtin")
-    fn __neg__(self) -> FloatLiteral:
+    fn __neg__(self, out result: __type_of(self * -1)):
         """Return the negation of the FloatLiteral value.
 
         Returns:
             The negated FloatLiteral value.
         """
-        return self * Self(-1)
+        result = __type_of(result)()
 
     # ===------------------------------------------------------------------===#
     # Arithmetic Operators
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __add__(self, rhs: FloatLiteral) -> FloatLiteral:
+    fn __add__(
+        self,
+        rhs: FloatLiteral,
+        out result: FloatLiteral[
+            __mlir_attr[
+                `#kgen<float_literal_bin<add `,
+                value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.float_literal`,
+            ]
+        ],
+    ):
         """Add two FloatLiterals.
 
         Args:
@@ -195,12 +223,22 @@ struct FloatLiteral(
         Returns:
             The sum of the two values.
         """
-        return __mlir_op.`kgen.float_literal.binop`[
-            oper = __mlir_attr.`#kgen<float_literal.binop_kind add>`
-        ](self.value, rhs.value)
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __sub__(self, rhs: FloatLiteral) -> FloatLiteral:
+    fn __sub__(
+        self,
+        rhs: FloatLiteral,
+        out result: FloatLiteral[
+            __mlir_attr[
+                `#kgen<float_literal_bin<sub `,
+                value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.float_literal`,
+            ]
+        ],
+    ):
         """Subtract two FloatLiterals.
 
         Args:
@@ -209,12 +247,22 @@ struct FloatLiteral(
         Returns:
             The difference of the two values.
         """
-        return __mlir_op.`kgen.float_literal.binop`[
-            oper = __mlir_attr.`#kgen<float_literal.binop_kind sub>`
-        ](self.value, rhs.value)
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __mul__(self, rhs: FloatLiteral) -> FloatLiteral:
+    fn __mul__(
+        self,
+        rhs: FloatLiteral,
+        out result: FloatLiteral[
+            __mlir_attr[
+                `#kgen<float_literal_bin<mul `,
+                value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.float_literal`,
+            ]
+        ],
+    ):
         """Multiply two FloatLiterals.
 
         Args:
@@ -223,12 +271,22 @@ struct FloatLiteral(
         Returns:
             The product of the two values.
         """
-        return __mlir_op.`kgen.float_literal.binop`[
-            oper = __mlir_attr.`#kgen<float_literal.binop_kind mul>`
-        ](self.value, rhs.value)
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __truediv__(self, rhs: FloatLiteral) -> FloatLiteral:
+    fn __truediv__(
+        self,
+        rhs: FloatLiteral,
+        out result: FloatLiteral[
+            __mlir_attr[
+                `#kgen<float_literal_bin<truediv `,
+                value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.float_literal`,
+            ]
+        ],
+    ):
         """Divide two FloatLiterals.
 
         Args:
@@ -238,12 +296,22 @@ struct FloatLiteral(
             The quotient of the two values.
         """
         # TODO - Python raises an error on divide by 0.0 or -0.0
-        return __mlir_op.`kgen.float_literal.binop`[
-            oper = __mlir_attr.`#kgen<float_literal.binop_kind truediv>`
-        ](self.value, rhs.value)
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __floordiv__(self, rhs: Self) -> Self:
+    fn __floordiv__(
+        self,
+        rhs: FloatLiteral,
+        out result: FloatLiteral[
+            __mlir_attr[
+                `#kgen<float_literal_bin<floordiv `,
+                value,
+                `,`,
+                rhs.value,
+                `>> : !kgen.float_literal`,
+            ]
+        ],
+    ):
         """Returns self divided by rhs, rounded down to the nearest integer.
 
         Args:
@@ -253,12 +321,14 @@ struct FloatLiteral(
             `floor(self / rhs)` value.
         """
         # TODO - Python raises an error on divide by 0.0 or -0.0
-        return __mlir_op.`kgen.float_literal.binop`[
-            oper = __mlir_attr.`#kgen<float_literal.binop_kind floordiv>`
-        ](self.value, rhs.value)
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __mod__(self, rhs: Self) -> Self:
+    fn __mod__(
+        self,
+        rhs: FloatLiteral,
+        out result: __type_of(self - (self.__floordiv__(rhs) * rhs)),
+    ):
         """Return the remainder of self divided by rhs.
 
         Args:
@@ -267,22 +337,14 @@ struct FloatLiteral(
         Returns:
             The remainder of dividing self by rhs.
         """
-        return self - (self.__floordiv__(rhs) * rhs)
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __rfloordiv__(self, rhs: Self) -> Self:
-        """Returns rhs divided by self, rounded down to the nearest integer.
-
-        Args:
-            rhs: The value to be divided by self.
-
-        Returns:
-            `floor(rhs / self)` value.
-        """
-        return rhs // self
-
-    @always_inline("builtin")
-    fn __ceildiv__(self, denominator: Self) -> Self:
+    fn __ceildiv__(
+        self,
+        denominator: FloatLiteral,
+        out result: __type_of(-(self // -denominator)),
+    ):
         """Return the rounded-up result of dividing self by denominator.
 
         Args:
@@ -291,7 +353,7 @@ struct FloatLiteral(
         Returns:
             The ceiling of dividing numerator by denominator.
         """
-        return -(self // -denominator)
+        result = __type_of(result)()
 
     # TODO - maybe __pow__?
 
@@ -300,7 +362,7 @@ struct FloatLiteral(
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __radd__(self, rhs: FloatLiteral) -> FloatLiteral:
+    fn __radd__(self, rhs: FloatLiteral, out result: __type_of(rhs + self)):
         """Reversed addition operator.
 
         Args:
@@ -309,10 +371,10 @@ struct FloatLiteral(
         Returns:
             The sum of this and the given value.
         """
-        return rhs + self
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __rsub__(self, rhs: FloatLiteral) -> FloatLiteral:
+    fn __rsub__(self, rhs: FloatLiteral, out result: __type_of(rhs - self)):
         """Reversed subtraction operator.
 
         Args:
@@ -321,10 +383,10 @@ struct FloatLiteral(
         Returns:
             The result of subtracting this from the given value.
         """
-        return rhs - self
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __rmul__(self, rhs: FloatLiteral) -> FloatLiteral:
+    fn __rmul__(self, rhs: FloatLiteral, out result: __type_of(rhs * self)):
         """Reversed multiplication operator.
 
         Args:
@@ -333,10 +395,42 @@ struct FloatLiteral(
         Returns:
             The product of the given number and this.
         """
-        return rhs * self
+        result = __type_of(result)()
 
     @always_inline("builtin")
-    fn __rtruediv__(self, rhs: FloatLiteral) -> FloatLiteral:
+    fn __rmod__(
+        self,
+        rhs: FloatLiteral,
+        out result: __type_of(rhs.__mod__(self)),
+    ):
+        """Return the remainder of rhs divided by self.
+
+        Args:
+            rhs: The value to divide on.
+
+        Returns:
+            The remainder of dividing rhs by self.
+        """
+        result = __type_of(result)()
+
+    @always_inline("builtin")
+    fn __rfloordiv__(
+        self,
+        rhs: FloatLiteral,
+        out result: __type_of(rhs // self),
+    ):
+        """Returns rhs divided by self, rounded down to the nearest integer.
+
+        Args:
+            rhs: The value to be divided by self.
+
+        Returns:
+            `floor(rhs / self)` value.
+        """
+        result = __type_of(result)()
+
+    @always_inline("builtin")
+    fn __rtruediv__(self, rhs: FloatLiteral, out result: __type_of(rhs / self)):
         """Reversed division.
 
         Args:
@@ -345,7 +439,7 @@ struct FloatLiteral(
         Returns:
             The result of dividing the given value by this.
         """
-        return rhs / self
+        result = __type_of(result)()
 
     # ===------------------------------------------------------------------===#
     # Comparison Operators
@@ -361,9 +455,15 @@ struct FloatLiteral(
         Returns:
             True if they are equal.
         """
-        return __mlir_op.`kgen.float_literal.cmp`[
-            pred = __mlir_attr.`#kgen<float_literal.cmp_pred eq>`
-        ](self.value, rhs.value)
+        return Bool(
+            __mlir_attr[
+                `#kgen<float_literal_cmp<eq `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : i1`,
+            ]
+        )
 
     @always_inline("builtin")
     fn __ne__(self, rhs: FloatLiteral) -> Bool:
@@ -375,9 +475,15 @@ struct FloatLiteral(
         Returns:
             True if they are not equal.
         """
-        return __mlir_op.`kgen.float_literal.cmp`[
-            pred = __mlir_attr.`#kgen<float_literal.cmp_pred ne>`
-        ](self.value, rhs.value)
+        return Bool(
+            __mlir_attr[
+                `#kgen<float_literal_cmp<ne `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : i1`,
+            ]
+        )
 
     @always_inline("builtin")
     fn __lt__(self, rhs: FloatLiteral) -> Bool:
@@ -389,9 +495,15 @@ struct FloatLiteral(
         Returns:
             True if this value is less than `rhs`.
         """
-        return __mlir_op.`kgen.float_literal.cmp`[
-            pred = __mlir_attr.`#kgen<float_literal.cmp_pred lt>`
-        ](self.value, rhs.value)
+        return Bool(
+            __mlir_attr[
+                `#kgen<float_literal_cmp<lt `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : i1`,
+            ]
+        )
 
     @always_inline("builtin")
     fn __le__(self, rhs: FloatLiteral) -> Bool:
@@ -403,9 +515,15 @@ struct FloatLiteral(
         Returns:
             True if this value is less than or equal to `rhs`.
         """
-        return __mlir_op.`kgen.float_literal.cmp`[
-            pred = __mlir_attr.`#kgen<float_literal.cmp_pred le>`
-        ](self.value, rhs.value)
+        return Bool(
+            __mlir_attr[
+                `#kgen<float_literal_cmp<le `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : i1`,
+            ]
+        )
 
     @always_inline("builtin")
     fn __gt__(self, rhs: FloatLiteral) -> Bool:
@@ -417,9 +535,15 @@ struct FloatLiteral(
         Returns:
             True if this value is greater than `rhs`.
         """
-        return __mlir_op.`kgen.float_literal.cmp`[
-            pred = __mlir_attr.`#kgen<float_literal.cmp_pred gt>`
-        ](self.value, rhs.value)
+        return Bool(
+            __mlir_attr[
+                `#kgen<float_literal_cmp<gt `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : i1`,
+            ]
+        )
 
     @always_inline("builtin")
     fn __ge__(self, rhs: FloatLiteral) -> Bool:
@@ -431,6 +555,12 @@ struct FloatLiteral(
         Returns:
             True if this value is greater than or equal to `rhs`.
         """
-        return __mlir_op.`kgen.float_literal.cmp`[
-            pred = __mlir_attr.`#kgen<float_literal.cmp_pred ge>`
-        ](self.value, rhs.value)
+        return Bool(
+            __mlir_attr[
+                `#kgen<float_literal_cmp<ge `,
+                self.value,
+                `,`,
+                rhs.value,
+                `>> : i1`,
+            ]
+        )

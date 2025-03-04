@@ -130,7 +130,11 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
 # NOTE: this overload is needed because IntLiteral promotes to a runtime type
 # before overload resolution.
 @always_inline("builtin")
-fn ceildiv(numerator: IntLiteral, denominator: IntLiteral) -> IntLiteral:
+fn ceildiv(
+    numerator: IntLiteral,
+    denominator: IntLiteral,
+    out result: __type_of(numerator.__ceildiv__(denominator)),
+):
     """Return the rounded-up result of dividing numerator by denominator.
 
     Args:
@@ -140,7 +144,7 @@ fn ceildiv(numerator: IntLiteral, denominator: IntLiteral) -> IntLiteral:
     Returns:
         The ceiling of dividing numerator by denominator.
     """
-    return numerator.__ceildiv__(denominator)
+    result = __type_of(result)()
 
 
 # ===----------------------------------------------------------------------=== #
