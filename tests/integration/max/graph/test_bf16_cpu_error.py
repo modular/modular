@@ -7,6 +7,7 @@
 import platform
 
 import pytest
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import Graph, TensorType
 
@@ -28,6 +29,11 @@ def test_bf16_cpu_input_error(session):
     )
 
 
+@pytest.mark.skipif(
+    accelerator_api() != "cuda",
+    reason="This test is checking if the PTX output is correct, it will be the "
+    "same logic for HIP but we need to generalize the asserts.",
+)
 @pytest.mark.skipif(
     platform.machine() not in ["arm64", "aarch64"],
     reason="BF16 is only unsupported on ARM CPU architecture",
