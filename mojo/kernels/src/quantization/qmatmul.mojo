@@ -986,7 +986,7 @@ fn _matmul_qint4_m_1[
         var task_n_start = block_range[0] * grain_size
         var task_n_count = block_range[1] * grain_size
 
-        var b_ptr = b.data.bitcast[Scalar[DType.int8]]()
+        var b_ptr = b.data.bitcast[Int8]()
 
         @parameter
         @always_inline
@@ -997,7 +997,7 @@ fn _matmul_qint4_m_1[
 
             c_float.init()
 
-            var ak_ptr = a_quant.data.bitcast[Scalar[DType.int8]]()
+            var ak_ptr = a_quant.data.bitcast[Int8]()
             var ak_scale_ptr = a_scale.data
             var bk_ptr = b_ptr + n * k_groups * bytes_per_group_int4
 
