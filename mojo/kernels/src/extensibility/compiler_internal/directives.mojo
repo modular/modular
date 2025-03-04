@@ -11,6 +11,8 @@ from layout import Layout, IntTuple
 
 from utils import IndexList, StaticTuple
 
+from register import enforce_io_param
+
 
 fn __mogg_intrinsic_attr(intrin: StringLiteral):
     return
