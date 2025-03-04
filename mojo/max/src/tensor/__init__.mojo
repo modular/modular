@@ -13,6 +13,7 @@ from tensor_internal import (
     ManagedTensorSlice,
     StaticTensorSpec,
     InputTensor,
+    MutableInputTensor,
     OutputTensor,
     VariadicTensors,
     _indexing,
