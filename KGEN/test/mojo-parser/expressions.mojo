@@ -588,13 +588,14 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 fn test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(#lit.struct.extract<:!Bool cond, "value">, {:!kgen.int_literal 2}, {:!kgen.int_literal 3})> 
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "value">, {2}, {3})> 
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(#lit.struct.extract<:!Bool cond, "value">, {:!kgen.float_literal #kgen.float_literal<2|1>}, {:!kgen.float_literal #kgen.float_literal<3|1>})> 
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {:dtype f64}, :!Int {1}> = <cond(#lit.struct.extract<:!Bool cond, "value">,
+  # CHECK-SAME: :!kgen.float_literal #kgen.float_literal<2|1>{{.*}}:!kgen.int_literal 3> 
   alias j = 2.0 if cond else 3
 
-  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral
+  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <cond(#lit.struct.extract<:!Bool cond, "value">, {2}, {3})>
   return i
 
 # CHECK-LABEL: lit.fn @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
@@ -1227,7 +1228,7 @@ fn testTransferWarning():
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl *"bigggNumber{{.*}}": !IntLiteral = <{:!kgen.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936}>
+# CHECK: lit.alias.decl *"bigggNumber{{.*}}@IntLiteral<:!kgen.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936> = <*?>
 alias bigggNumber = 2 << 255
 fn useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{512}>
