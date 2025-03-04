@@ -16,6 +16,7 @@ from tensor_internal import (
     MutableInputTensor,
     OutputTensor,
     VariadicTensors,
+    InputVariadicTensors,
     _indexing,
     foreach,
 )
