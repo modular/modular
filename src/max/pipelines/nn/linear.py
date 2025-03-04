@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Sequence
+from typing import Callable, Sequence
 
 import numpy as np
 from max.dtype import DType
@@ -81,9 +81,9 @@ class LinearV2(LayerV2):
         dtype: DType,
         device: DeviceRef | None = None,
         has_bias: bool = False,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-        name: Optional[str] = None,
-        clip_weight: Optional[float] = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        name: str | None = None,
+        clip_weight: float | None = None,
     ) -> None:
         """Initializes the linear layer with weights and optional bias.
 
@@ -169,7 +169,7 @@ class Linear(Layer):
     """A unified linear layer that delegates to either regular or quantized implementation."""
 
     weight: TensorValueLike
-    bias: Optional[TensorValueLike] = None
+    bias: TensorValueLike | None = None
 
     def __call__(self, x: TensorValue) -> TensorValue:
         weight = TensorValue(self.weight)
@@ -182,12 +182,12 @@ class Linear(Layer):
     def create(
         cls,
         dtype: DType,
-        quantization_encoding: Optional[QuantizationEncoding],
+        quantization_encoding: QuantizationEncoding | None,
         in_features: int,
         out_features: int,
         weights: Weights | Weight,
-        bias: Optional[Weights | Weight] = None,
-        quantization_config: Optional[QuantizationConfig] = None,
+        bias: Weights | Weight | None = None,
+        quantization_config: QuantizationConfig | None = None,
     ) -> "Linear":
         """Factory method to create a Linear layer with appropriate implementation."""
         if not quantization_encoding:
@@ -227,8 +227,8 @@ class QLinear(Linear):
         in_features: int,
         out_features: int,
         weights: Weights | Weight,
-        bias: Optional[Weights | Weight],
-        quantization_config: Optional[QuantizationConfig],
+        bias: Weights | Weight | None,
+        quantization_config: QuantizationConfig | None,
     ) -> "Linear":
         if quantization_encoding != QuantizationEncoding.GPTQ:
             weight = _allocate_if_needed(
@@ -276,7 +276,7 @@ class GPTQLinear(QLinear):
 
     # Because QLinear has optional fields, so must we, since we subclass QLinear
     quantization_config: QuantizationConfig | None = None
-    perm_idx: Optional[TensorValueLike] | None = None
+    perm_idx: TensorValueLike | None = None
 
     @classmethod
     def _create(
@@ -286,8 +286,8 @@ class GPTQLinear(QLinear):
         in_features: int,
         out_features: int,
         weights: Weights | Weight,
-        bias: Optional[Weights | Weight],
-        quantization_config: Optional[QuantizationConfig],
+        bias: Weights | Weight | None,
+        quantization_config: QuantizationConfig | None,
     ) -> "Linear":
         """Internal method to create a Linear layer from GPTQ weights."""
 
@@ -385,8 +385,8 @@ class GPTQLinearV2(LinearV2):
         dtype: DType,
         device: DeviceRef | None = None,
         has_bias: bool = False,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-        quantization_config: Optional[QuantizationConfig] = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        quantization_config: QuantizationConfig | None = None,
     ) -> None:
         """Initializes the linear layer with weights and optional bias with
         GPTQ quantization.
@@ -520,7 +520,7 @@ class MLPV2(LayerV2):
     def __init__(
         self,
         dtype: DType,
-        quantization_encoding: Optional[QuantizationEncoding],
+        quantization_encoding: QuantizationEncoding | None,
         hidden_dim: int,
         feed_forward_length: int,
         linear_cls: Callable[..., LinearV2] = LinearV2,
