@@ -7,7 +7,7 @@
 # Implementation of the C++ backed DeviceContext in Mojo
 
 from collections import List, Optional
-from collections.string import StaticString
+from collections.string import StaticString, StringSlice
 from pathlib import Path
 from sys import env_get_int, env_get_string, external_call, is_defined, sizeof
 from sys.compile import DebugLevel, OptimizationLevel
@@ -521,11 +521,10 @@ fn _is_nvidia_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
     return is_triple["nvptx64-nvidia-cuda", target]()
 
 
-fn _is_path_like(val: String) -> Bool:
+fn _is_path_like(ss: StringSlice) -> Bool:
     # Ideally we want to use `val.start_with` but we hit a compiler bug if we do
     # that. So, instead we implement the function inline, since we only care
     # about whether the string starts with a `/`, `~`, or "./".
-    var ss = val.as_string_slice()
     if len(ss) == 0:
         return False
     if len(ss) >= 1:
@@ -1006,8 +1005,8 @@ struct DeviceExternalFunction:
         mut self,
         ctx: DeviceContext,
         *,
-        function_name: String,
-        asm: String,
+        function_name: StringSlice,
+        asm: StringSlice,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
         var max_dynamic_shared_size_bytes: Int32 = -1
@@ -1577,8 +1576,8 @@ struct DeviceContext:
     ](
         self,
         *,
-        function_name: String,
-        asm: String,
+        function_name: StringSlice,
+        asm: StringSlice,
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceExternalFunction,
     ) raises:
