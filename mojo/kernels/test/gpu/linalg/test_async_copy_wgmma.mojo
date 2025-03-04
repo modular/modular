@@ -56,7 +56,7 @@ fn cpasync_wgmma_kernel[
     c_layout: Layout,
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
-    transpose_b: Bool = True,
+    transpose_b: Bool = False,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
@@ -71,7 +71,7 @@ fn cpasync_wgmma_kernel[
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
+    alias a_smem_layout = Layout.row_major(BM, BK)
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
@@ -79,7 +79,9 @@ fn cpasync_wgmma_kernel[
         alignment=128,
     ].stack_allocation()
 
-    alias b_smem_layout = tile_layout_mn_major[b_type, BN, BK, b_swizzle]()
+    alias b_smem_layout = Layout.row_major(
+        BN, BK
+    ) if transpose_b else tile_layout_mn_major[b_type, BN, BK, b_swizzle]()
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
@@ -123,11 +125,14 @@ fn cpasync_wgmma_kernel[
 
     _ = c_reg_tile.fill(0.0)
 
-    warpid = thread_idx.x // WARP_SIZE
-
-    for k in range(num_iters):
+    for _ in range(num_iters):
         cp_async_k_major(a_smem_tile, a_gmem_iter[])
-        cp_async_mn_major(b_smem_tile, b_gmem_iter[])
+
+        if transpose_b:
+            cp_async_k_major(b_smem_tile, b_gmem_iter[])
+        else:
+            cp_async_mn_major(b_smem_tile, b_gmem_iter[])
+
         async_copy_commit_group()
         async_copy_wait_group(0)
 
@@ -292,4 +297,40 @@ def main():
             a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=False,
+        ](ctx)
+
+        test_cpasync_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 128, 128),
+            Index(64, 128, 128),
+            Index(64, 128, 16),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=False,
+        ](ctx)
+
+        test_cpasync_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 64, 64),
+            Index(64, 64, 64),
+            Index(64, 64, 16),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](ctx)
+
+        test_cpasync_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(64, 64, 128),
+            Index(64, 64, 128),
+            Index(64, 64, 16),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
         ](ctx)
