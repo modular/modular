@@ -334,6 +334,38 @@ def main():
             1,
         ](528, 528, ctx)
 
+        # BF16 with differnet length for prompt and cache.
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            1,
+        ](128, 256, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            3,
+            group=3,
+        ](32, 77, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            16,
+            group=8,
+        ](201, 400, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.float32,
+            128,
+            12,
+            group=4,
+        ](1000, 2000, ctx)
+
         # BF16 token gen
 
         test[
