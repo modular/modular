@@ -846,7 +846,7 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
 
   // TODO(GEX-1911): Remove code around enforce_io_param usage as now io_spec
   // specialization is always enforced
-  if (true) {
+  if (enforceIOParamUsage) {
     // Set mogg.num_dps_outputs
     auto numOutputs = llvm::count_if(ioSpecs, [](auto &&elem) {
       return elem.second == IOSpec::OutputTensor;
