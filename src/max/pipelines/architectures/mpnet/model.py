@@ -77,27 +77,31 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         self.model = self.load_model(session)
 
     @classmethod
-    def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
+    def get_kv_params(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> KVCacheParams:
         return KVCacheParams(
             dtype=pipeline_config.cache_dtype,
-            n_kv_heads=pipeline_config.huggingface_config.num_attention_heads,
+            n_kv_heads=huggingface_config.num_attention_heads,
             head_dim=(
-                pipeline_config.huggingface_config.hidden_size
-                // pipeline_config.huggingface_config.num_attention_heads
+                huggingface_config.hidden_size
+                // huggingface_config.num_attention_heads
             ),
             cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
             enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
         )
 
     @classmethod
-    def get_num_layers(cls, pipeline_config: PipelineConfig) -> int:
-        return pipeline_config.huggingface_config.num_hidden_layers
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers
 
     @classmethod
-    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
         try:
             return upper_bounded_default(
-                upper_bound=pipeline_config.huggingface_config.max_position_embeddings,
+                upper_bound=huggingface_config.max_position_embeddings,
                 default=pipeline_config.max_length,
             )
         except ValueError as e:

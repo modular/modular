@@ -149,13 +149,15 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
     @classmethod
-    def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
+    def get_kv_params(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> KVCacheParams:
         return KVCacheParams(
             dtype=pipeline_config.cache_dtype,
-            n_kv_heads=pipeline_config.huggingface_config.num_key_value_heads,
+            n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=(
-                pipeline_config.huggingface_config.hidden_size
-                // pipeline_config.huggingface_config.num_attention_heads
+                huggingface_config.hidden_size
+                // huggingface_config.num_attention_heads
             ),
             page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
             cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
@@ -164,8 +166,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
     @classmethod
-    def get_num_layers(cls, pipeline_config: PipelineConfig) -> int:
-        return pipeline_config.huggingface_config.num_hidden_layers
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers
 
     def execute(
         self,
@@ -294,10 +296,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
             raise ValueError(msg)
 
     @classmethod
-    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
         try:
             return upper_bounded_default(
-                upper_bound=pipeline_config.huggingface_config.max_position_embeddings,
+                upper_bound=huggingface_config.max_position_embeddings,
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
@@ -305,7 +309,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 "Unable to infer max_length for Llama3, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
-                f"({pipeline_config.huggingface_config.max_position_embeddings})."
+                f"({huggingface_config.max_position_embeddings})."
             )
             raise ValueError(msg) from e
 
@@ -315,10 +319,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
         available_cache_memory: int,
     ) -> KVCacheManager:
         return load_kv_manager(
-            params=self.get_kv_params(self.pipeline_config),
+            params=self.get_kv_params(
+                self.pipeline_config, huggingface_config=self.huggingface_config
+            ),
             max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
-            num_layers=self.get_num_layers(self.pipeline_config),
+            max_seq_len=self.calculate_max_seq_len(
+                self.pipeline_config, huggingface_config=self.huggingface_config
+            ),
+            num_layers=self.get_num_layers(
+                huggingface_config=self.huggingface_config
+            ),
             devices=self.pipeline_config.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
@@ -331,13 +341,22 @@ class LlamaModelBase(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
         devices: List[Device],
+        huggingface_config: AutoConfig,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
-            params=cls.get_kv_params(pipeline_config),
+            params=cls.get_kv_params(
+                pipeline_config,
+                huggingface_config=huggingface_config,
+            ),
             max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(pipeline_config),
-            num_layers=cls.get_num_layers(pipeline_config),
+            max_seq_len=cls.calculate_max_seq_len(
+                pipeline_config,
+                huggingface_config=huggingface_config,
+            ),
+            num_layers=cls.get_num_layers(
+                huggingface_config=huggingface_config,
+            ),
             available_cache_memory=available_cache_memory,
             devices=devices,
         )
@@ -390,7 +409,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[TensorValue]
     ) -> List[tuple[TensorValue, ...]]:
-        kv_params = self.get_kv_params(self.pipeline_config)
+        kv_params = self.get_kv_params(
+            self.pipeline_config, huggingface_config=self.huggingface_config
+        )
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
         len_of_kv_tuple_per_dev = len(list(fetch_types))
@@ -417,7 +438,13 @@ class LlamaModelBase(PipelineModel[TextContext]):
         return getattr(
             self.huggingface_config,
             "attention_multiplier",
-            math.sqrt(1.0 / self.get_kv_params(self.pipeline_config).head_dim),
+            math.sqrt(
+                1.0
+                / self.get_kv_params(
+                    self.pipeline_config,
+                    huggingface_config=self.huggingface_config,
+                ).head_dim
+            ),
         )
 
     def _build_opaque_graph(self, weights: Weights) -> Graph:
@@ -644,8 +671,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
             quantization_encoding=self.pipeline_config.graph_quantization_encoding,
             quantization_config=self.pipeline_config._quant_config,
             all_logits=self.pipeline_config.enable_echo,
-            max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
-            kv_params=self.get_kv_params(self.pipeline_config),
+            max_seq_len=self.calculate_max_seq_len(
+                self.pipeline_config, huggingface_config=self.huggingface_config
+            ),
+            kv_params=self.get_kv_params(
+                self.pipeline_config, huggingface_config=self.huggingface_config
+            ),
             norm_method=self.norm_method,
             tie_word_embeddings=tie_word_embeddings,
             stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,

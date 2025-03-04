@@ -497,7 +497,8 @@ class PipelineRegistry:
                 pipeline_config.max_batch_size = 1
             if not pipeline_config.max_length:
                 pipeline_config.max_length = model_cls.calculate_max_seq_len(
-                    pipeline_config
+                    pipeline_config,
+                    huggingface_config=pipeline_config.huggingface_config,
                 )
             return
 
@@ -516,7 +517,8 @@ class PipelineRegistry:
         )
         if not user_provided_max_length:
             pipeline_config.max_length = model_cls.calculate_max_seq_len(
-                pipeline_config
+                pipeline_config,
+                huggingface_config=pipeline_config.huggingface_config,
             )
 
         if not user_provided_max_batch_size:
@@ -802,6 +804,7 @@ class PipelineRegistry:
                 pipeline_config=pipeline_config,
                 available_cache_memory=available_kv_cache_memory,
                 devices=pipeline_config.devices,
+                huggingface_config=pipeline_config.huggingface_config,
             )
         return 0
 
@@ -966,6 +969,7 @@ class PipelineRegistry:
         return model_cls.infer_optimal_batch_size(
             pipeline_config,
             available_kv_cache_memory,
+            huggingface_config=pipeline_config.huggingface_config,
         )
 
     def _load_logging_message(
@@ -1056,7 +1060,8 @@ class PipelineRegistry:
             )
 
             max_length = arch.pipeline_model.calculate_max_seq_len(
-                pipeline_config
+                pipeline_config,
+                huggingface_config=pipeline_config.huggingface_config,
             )
 
             # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
