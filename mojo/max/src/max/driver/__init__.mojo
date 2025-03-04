@@ -49,4 +49,7 @@ from .tensor_slice import TensorSlice
 
 # TODO(GEX-1891): Remove deprecated legacy names for Device creation
 alias accelerator_device = accelerator
+
+
+@deprecated("Please use the modern factory API cpu().")
 alias cpu_device = cpu

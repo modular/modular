@@ -12,14 +12,14 @@
 # RUN: %mojo-build %s -o %t/test-device
 # RUN: %t/test-device
 
-from max.driver import DeviceMemory, DeviceTensor, cpu_device
+from max.driver import DeviceMemory, DeviceTensor, cpu
 from max.tensor import TensorSpec
 from memory import UnsafePointer
 from testing import assert_equal, assert_true
 
 
 def test_device():
-    dev = cpu_device()
+    dev = cpu()
     assert_true("Device(type=cpu,target_info(" in String(dev))
 
     dev2 = dev
@@ -27,7 +27,7 @@ def test_device():
 
 
 def test_device_memory():
-    dev = cpu_device()
+    dev = cpu()
     alias type = DType.float32
 
     dt1 = dev.allocate(TensorSpec(DType.float32, 2, 2))
@@ -55,7 +55,7 @@ def test_device_memory():
 
 def test_take():
     var tensors = List[DeviceTensor]()
-    var cpu = cpu_device()
+    var cpu = cpu()
     for _ in range(2):
         tensors.append(cpu.allocate(TensorSpec(DType.float32, 2, 2)))
 
@@ -68,7 +68,7 @@ def test_take():
 
 
 def test_kv_cache():
-    cpu = cpu_device()
+    cpu = cpu()
     alias type = DType.float32
     alias shape = (2, 2)
     allocs = List[DeviceTensor]()

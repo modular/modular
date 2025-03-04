@@ -90,7 +90,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement):
             device: Device on which tensor is to be allocated.
         """
         var spec = TensorSpec(type, shape)
-        var dev = device.value() if device else cpu_device()
+        var dev = device.value() if device else cpu()
         var dt = dev.allocate(spec)
         self = Self(device_tensor=dt)
 

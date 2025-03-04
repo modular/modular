@@ -6,7 +6,7 @@
 # RUN: %mojo %s
 
 from max._tensor_utils import foreach
-from max.driver import DynamicTensor, ManagedTensorSlice, Tensor, cpu_device
+from max.driver import DynamicTensor, ManagedTensorSlice, Tensor
 from max.tensor import TensorShape, TensorSpec
 from testing import assert_equal
 

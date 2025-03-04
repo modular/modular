@@ -12,13 +12,13 @@
 # RUN: %mojo-build %s -o %t/test-anymemory
 # RUN: %t/test-anymemory
 
-from max.driver import AnyMemory, AnyMojoValue, AnyTensor, Tensor, cpu_device
+from max.driver import AnyMemory, AnyMojoValue, AnyTensor, Tensor, cpu
 from max.tensor import TensorShape, TensorSpec
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 def test_from_device_memory():
-    dev = cpu_device()
+    dev = cpu()
 
     dm = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -63,7 +63,7 @@ def _function_that_takes_anytensor(owned t1: AnyTensor, owned t2: AnyTensor):
 
 
 def test_implicit_conversion():
-    dev = cpu_device()
+    dev = cpu()
 
     tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
 
@@ -89,7 +89,7 @@ struct RegFoo:
 
 
 def test_any_memory():
-    dev = cpu_device()
+    dev = cpu()
 
     tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
 

@@ -17,7 +17,7 @@ from max.driver import (
     ManagedTensorSlice,
     Tensor,
     TensorSlice,
-    cpu_device,
+    cpu,
 )
 from max.tensor import Tensor as OldTensor
 from max.tensor import TensorShape, TensorSpec
@@ -207,8 +207,8 @@ def test_round_trip():
 
 
 def test_copy():
-    cpu1 = cpu_device()
-    cpu2 = cpu_device()
+    cpu1 = cpu()
+    cpu2 = cpu()
 
     src_dev_tensor = cpu1.allocate(
         TensorSpec(DType.float32, 10, 2),
@@ -423,7 +423,7 @@ def test_move():
     alias shape = (1,)
     t = Tensor[DType.float32, len(shape)](TensorShape(shape))
     t[0] = 1.0
-    dev = cpu_device()
+    dev = cpu()
     t1 = t^.move_to(dev)
     assert_equal(t1[0], 1.0)
 
@@ -443,7 +443,7 @@ def test_from_max_tensor():
 
 
 def test_copy_error():
-    cpu = cpu_device()
+    cpu = cpu()
     src_dev_tensor = cpu.allocate(
         TensorSpec(DType.float32, 10, 2),
     )
