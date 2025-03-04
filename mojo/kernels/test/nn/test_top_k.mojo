@@ -72,7 +72,7 @@ fn test_case_sampling[
     var output_vals_ptr = UnsafePointer[Scalar[type]].alloc(
         Int(output_shape.product())
     )
-    var output_idxs_ptr = UnsafePointer[Scalar[DType.int64]].alloc(
+    var output_idxs_ptr = UnsafePointer[Int64].alloc(
         Int(output_idxs_shape.product())
     )
     var out_vals = NDBuffer[type, rank](output_vals_ptr, output_shape)
