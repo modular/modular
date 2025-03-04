@@ -202,7 +202,7 @@ def graph_api_whisper_encoder(weights_registry, model):
                             shape=weights_registry[f"layer{i}_fc1_bias"].shape,
                         ),
                     ),
-                    ops.gelu,
+                    ops.gelu,  # type: ignore
                     Linear(
                         Weight(
                             f"layer{i}_fc2",
