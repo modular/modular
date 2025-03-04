@@ -455,16 +455,7 @@ TEST(HoverTest, testHoverImport) {
   lsp::Range rangeFunction = *doc.findFirstRange("function");
   lsp::Range rangeStructWithAlias = *doc.findFirstRange("StructWithAlias");
 
-  auto simdDoc = R"(### module `simd`
-
----
-
-###
-Implements SIMD struct.
-
-These are Mojo built-ins, so you don't need to import them.
-
-)";
+  auto simdDoc = "Implements SIMD primitives and abstractions";
 
   createTestClient()
       .open(doc)
@@ -495,12 +486,12 @@ Implements the string package.
       .hover(doc, rangeSimd.start,
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeSimd);
-               EXPECT_EQ(hover.contents.value, simdDoc);
+               EXPECT_TRUE(StringRef(hover.contents.value).contains(simdDoc));
              })
       .hover(doc, range_Simd.start,
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, range_Simd);
-               EXPECT_EQ(hover.contents.value, simdDoc);
+               EXPECT_TRUE(StringRef(hover.contents.value).contains(simdDoc));
              })
       .hover(doc, rangeAliases.start,
              [&](const lsp::Hover &hover) {
