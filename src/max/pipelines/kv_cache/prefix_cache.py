@@ -445,6 +445,9 @@ class PrefixCache:
             - prefix_blocks: Prefix cache blocks that would be reused for this seq.
             - num_cache_hit_tokens: Number of new cached tokens retrieved from prefix cache.
         """
+        if len(data.prompt_tokens) == 1:
+            return set(), 0
+
         node, prefix_blocks = self._fetch_query_cache(seq_id, data)
         num_cache_hit_tokens = len(prefix_blocks) * self.page_size
 
