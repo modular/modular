@@ -1439,9 +1439,9 @@ fn test_layout_tensor_iterator():
     alias size = 64
     alias type = DType.float32
 
-    var ptr = stack_allocation[size, type]()
+    var arr = InlineArray[Scalar[type], size](unsafe_uninitialized=True)
     for i in range(size):
-        ptr[i] = i
+        arr[i] = i
 
     alias layout_2x2_8x1 = Layout(IntTuple(2, 2), IntTuple(8, 1))
 
@@ -1450,7 +1450,7 @@ fn test_layout_tensor_iterator():
     # CHECK: 8.0 9.0
     # CHECK: 4.0 5.0
     # CHECK: 12.0 13.0
-    var iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](ptr, size)
+    var iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](arr.unsafe_ptr(), size)
     for _ in range(2):
         print(iter2x2.get())
         iter2x2 += 1
@@ -1460,7 +1460,9 @@ fn test_layout_tensor_iterator():
     # CHECK: 8.0 9.0
     # CHECK: 16.0 17.0
     # CHECK: 24.0 25.0
-    iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](ptr, size, stride=16)
+    iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](
+        arr.unsafe_ptr(), size, stride=16
+    )
     for _ in range(2):
         print(iter2x2.get())
         iter2x2 += 1
@@ -1471,7 +1473,7 @@ fn test_layout_tensor_iterator():
     # CHECK: 20.0 21.0
     # CHECK: 28.0 29.0
     iter2x2 = LayoutTensorIter[type, layout_2x2_8x1](
-        ptr, size, stride=16, offset=4
+        arr.unsafe_ptr(), size, stride=16, offset=4
     )
     for _ in range(2):
         print(iter2x2.get())
@@ -1488,13 +1490,13 @@ fn test_layout_tensor_iterator():
     # CHECK: 24.0 25.0
     var iter2x2_circular = LayoutTensorIter[
         type, layout_2x2_8x1, circular=True
-    ](ptr, size, stride=16, offset=32)
+    ](arr.unsafe_ptr(), size, stride=16, offset=32)
     for _ in range(4):
         print(iter2x2_circular.get())
         iter2x2_circular += 1
 
     # Tiled iterator.
-    var tensor = LayoutTensor[type, Layout.row_major(8, 8)](ptr)
+    var tensor = LayoutTensor[type, Layout.row_major(8, 8)](arr.unsafe_ptr())
     # CHECK: 32.0 33.0
     # CHECK: 40.0 41.0
     # CHECK: 34.0 35.0
@@ -1520,7 +1522,9 @@ fn test_layout_tensor_iterator():
     # CHECK: 12.0 13.0
     # CHECK: 14.0 15.0
     # CHECK: 16.0 17.0
-    var iter2x3 = LayoutTensorIter[type, Layout.row_major(2, 3)](ptr, size)
+    var iter2x3 = LayoutTensorIter[type, Layout.row_major(2, 3)](
+        arr.unsafe_ptr(), size
+    )
     iter2x3 += 1
     var iter3x2 = iter2x3.reshape[Layout.row_major(3, 2)]()
     iter3x2 += 1
@@ -1536,9 +1540,9 @@ fn test_nested_layout_tensor_iterator():
     alias size = N * K
     alias type = DType.float32
 
-    var ptr = stack_allocation[size, type]()
+    var arr = InlineArray[Scalar[type], size](unsafe_uninitialized=True)
     for i in range(size):
-        ptr[i] = i
+        arr[i] = i
 
     # Here we define a float32 tensor (64 * TN, 2 * TK):
     #              K
@@ -1588,7 +1592,7 @@ fn test_nested_layout_tensor_iterator():
     var nested_tensor = LayoutTensor[
         DType.float32,
         nested_layout,
-    ](ptr)
+    ](arr.unsafe_ptr())
 
     var tiled_nested_tensor_iter = nested_tensor.tiled_iterator[64, 2, axis=1](
         0, 0

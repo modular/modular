@@ -8,7 +8,7 @@
 from layout import Layout
 from layout.fillers import arange
 from layout.tensor_builder import LayoutTensorBuild as tb
-from memory import stack_allocation
+from collections import InlineArray
 
 
 fn test_tile_masked():
@@ -56,8 +56,10 @@ fn test_subtile_masked():
 
 fn test_tile_dynamic_no_bounds():
     print("== test_tile_dynamic_no_bounds")
-    ptr_4x4_f32 = stack_allocation[16, DType.float32]()
-    tensor_UxU = tb[DType.float32]().row_major(4, 4).view(ptr_4x4_f32)
+    arr_4x4_f32 = InlineArray[Float32, 16](unsafe_uninitialized=True)
+    tensor_UxU = (
+        tb[DType.float32]().row_major(4, 4).view(arr_4x4_f32.unsafe_ptr())
+    )
     arange(tensor_UxU)
     for tile_i in range(2):
         for tile_j in range(2):
@@ -73,8 +75,10 @@ fn test_tile_dynamic_no_bounds():
 
 fn test_tile_dynamic_with_bounds():
     print("== test_tile_dynamic_with_bounds")
-    ptr_5x3_f32 = stack_allocation[15, DType.float32]()
-    tensor_UxU = tb[DType.float32]().row_major(5, 3).view(ptr_5x3_f32)
+    arr_5x3_f32 = InlineArray[Float32, 15](unsafe_uninitialized=True)
+    tensor_UxU = (
+        tb[DType.float32]().row_major(5, 3).view(arr_5x3_f32.unsafe_ptr())
+    )
     arange(tensor_UxU)
     for tile_i in range(3):
         for tile_j in range(2):
@@ -90,8 +94,10 @@ fn test_tile_dynamic_with_bounds():
 
 fn test_tile_and_distribute():
     print("== test_tile_and_distribute")
-    ptr_5x3_f32 = stack_allocation[15, DType.float32]()
-    tensor_UxU = tb[DType.float32]().row_major(5, 3).view(ptr_5x3_f32)
+    arr_5x3_f32 = InlineArray[Float32, 15](unsafe_uninitialized=True)
+    tensor_UxU = (
+        tb[DType.float32]().row_major(5, 3).view(arr_5x3_f32.unsafe_ptr())
+    )
     arange(tensor_UxU)
     for tile_i in range(3):
         for tile_j in range(2):
@@ -113,8 +119,10 @@ fn test_tile_and_distribute():
 
 fn test_tile_iterator_masked():
     print("== test_tile_iterator_masked")
-    ptr_5x3_f32 = stack_allocation[15, DType.float32]()
-    tensor_UxU = tb[DType.float32]().row_major(5, 3).view(ptr_5x3_f32)
+    arr_5x3_f32 = InlineArray[Float32, 15](unsafe_uninitialized=True)
+    tensor_UxU = (
+        tb[DType.float32]().row_major(5, 3).view(arr_5x3_f32.unsafe_ptr())
+    )
     arange(tensor_UxU)
     print(tensor_UxU)
     for tile_j in range(2):
@@ -128,8 +136,10 @@ fn test_tile_iterator_masked():
 
 fn test_tile_and_vectorize():
     print("== test_tile_and_vectorize")
-    ptr_3x4_f32 = stack_allocation[12, DType.float32]()
-    tensor_UxU = tb[DType.float32]().row_major(3, 4).view(ptr_3x4_f32)
+    arr_3x4_f32 = InlineArray[Float32, 12](unsafe_uninitialized=True)
+    tensor_UxU = (
+        tb[DType.float32]().row_major(3, 4).view(arr_3x4_f32.unsafe_ptr())
+    )
     arange(tensor_UxU)
     print(tensor_UxU)
     for tile_i in range(2):
