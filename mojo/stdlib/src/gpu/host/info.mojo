@@ -3,7 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Contains information about the GPUs."""
+"""
+Contains information about GPU architectures and their capabilities.
+
+This module provides detailed specifications for various GPU models including
+NVIDIA and AMD GPUs. It includes information about compute capabilities,
+memory specifications, thread organization, and performance characteristics.
+"""
 
 from math import ceildiv, floor
 from os import abort
@@ -24,6 +30,13 @@ alias _KB = 1024
 @value
 @register_passable
 struct Vendor:
+    """
+    Represents GPU vendors.
+
+    This struct provides identifiers for different GPU vendors and utility
+    methods for comparison and string representation.
+    """
+
     var _value: Int8
 
     alias NO_GPU = Self(0)
@@ -31,19 +44,61 @@ struct Vendor:
     alias NVIDIA_GPU = Self(2)
 
     fn __eq__(self, other: Self) -> Bool:
+        """
+        Checks if two Vendor instances are equal.
+
+        Args:
+            other: The Vendor to compare with.
+
+        Returns:
+            True if vendors are equal, False otherwise.
+        """
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
+        """
+        Checks if two Vendor instances are not equal.
+
+        Args:
+            other: The Vendor to compare with.
+
+        Returns:
+            True if vendors are not equal, False otherwise.
+        """
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
+        """
+        Identity comparison for vendors.
+
+        Args:
+            other: The Vendor to compare with.
+
+        Returns:
+            True if vendors are identical, False otherwise.
+        """
         return self == other
 
     fn __isnot__(self, other: Self) -> Bool:
+        """
+        Negative identity comparison for vendors.
+
+        Args:
+            other: The Vendor to compare with.
+
+        Returns:
+            True if vendors are not identical, False otherwise.
+        """
         return self != other
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
+        """
+        Writes vendor information to a writer.
+
+        Args:
+            writer: The writer to output vendor information to.
+        """
         if self is Vendor.NO_GPU:
             writer.write("no_gpu")
             return
@@ -54,6 +109,12 @@ struct Vendor:
 
     @no_inline
     fn __str__(self) -> String:
+        """
+        Returns a string representation of the vendor.
+
+        Returns:
+            String representation of the vendor.
+        """
         return String.write(self)
 
 
@@ -63,6 +124,12 @@ struct Vendor:
 
 
 fn _get_empty_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an empty target configuration for when no GPU is available.
+
+    Returns:
+        An empty MLIR target configuration.
+    """
     return __mlir_attr[
         `#kgen.target<triple = "", `,
         `arch = "", `,
@@ -116,6 +183,16 @@ alias NoGPU = Info(
 
 
 fn _get_a100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA A100 GPU.
+
+    Parameters:
+        index_bit_width: The bit width for indices (32 or 64).
+
+    Returns:
+        MLIR target configuration for A100.
+    """
+
     @parameter
     if index_bit_width == 64:
         return __mlir_attr[
@@ -174,6 +251,16 @@ alias A100 = Info(
 
 
 fn _get_a10_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA A10 GPU.
+
+    Parameters:
+        index_bit_width: The bit width for indices (32 or 64).
+
+    Returns:
+        MLIR target configuration for A10.
+    """
+
     @parameter
     if index_bit_width == 64:
         return __mlir_attr[
@@ -232,6 +319,16 @@ alias A10 = Info(
 
 
 fn _get_l4_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA L4 GPU.
+
+    Parameters:
+        index_bit_width: The bit width for indices (32 or 64).
+
+    Returns:
+        MLIR target configuration for L4.
+    """
+
     @parameter
     if index_bit_width == 64:
         return __mlir_attr[
@@ -290,6 +387,16 @@ alias L4 = Info(
 
 
 fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA H100 GPU.
+
+    Parameters:
+        index_bit_width: The bit width for indices (32 or 64).
+
+    Returns:
+        MLIR target configuration for H100.
+    """
+
     @parameter
     if index_bit_width == 64:
         return __mlir_attr[
@@ -349,6 +456,16 @@ alias H100 = Info(
 
 
 fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for AMD MI300X GPU.
+
+    Parameters:
+        index_bit_width: The bit width for indices (32 or 64).
+
+    Returns:
+        MLIR target configuration for MI300X.
+    """
+
     @parameter
     if index_bit_width == 64:
         return __mlir_attr[
@@ -401,6 +518,13 @@ alias MI300X = Info(
 @value
 @register_passable
 struct Flops:
+    """
+    Represents floating point operations per second for different precisions.
+
+    This struct stores FLOPS values for various precision formats including
+    FP8, FP16, TF32, FP64, and integer operations.
+    """
+
     var fp8: Float64
     var fp16: Float64
     var tf32: Float64
@@ -418,6 +542,17 @@ struct Flops:
         tf32: Float64 = 0,
         fp64: Float64 = 0,
     ):
+        """
+        Initializes a Flops instance with performance metrics.
+
+        Args:
+            fp16: FP16 operations per second in TFLOPS.
+            i8: INT8 operations per second in TOPS.
+            i4: INT4 operations per second in TOPS.
+            fp8: FP8 operations per second in TFLOPS (default: 0).
+            tf32: TF32 operations per second in TFLOPS (default: 0).
+            fp64: FP64 operations per second in TFLOPS (default: 0).
+        """
         self.fp8 = fp8
         self.fp16 = fp16
         self.tf32 = tf32
@@ -427,6 +562,12 @@ struct Flops:
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
+        """
+        Writes FLOPS information to a writer.
+
+        Args:
+            writer: The writer to output FLOPS information to.
+        """
         if self.fp8:
             writer.write("flops_fp8: ", self.fp8, "\n")
             writer.write("flops_fp16: ", self.fp16, "\n")
@@ -439,6 +580,12 @@ struct Flops:
 
     @no_inline
     fn __str__(self) -> String:
+        """
+        Returns a string representation of the FLOPS metrics.
+
+        Returns:
+            String representation of FLOPS values.
+        """
         return String.write(self)
 
 
@@ -450,6 +597,14 @@ struct Flops:
 @value
 @register_passable
 struct Info:
+    """
+    Comprehensive information about a GPU architecture.
+
+    This struct contains detailed specifications about GPU capabilities,
+    including compute units, memory, thread organization, and performance
+    characteristics.
+    """
+
     var name: StringLiteral
     var vendor: Vendor
     var api: StringLiteral
@@ -477,6 +632,15 @@ struct Info:
     var flops: Flops
 
     fn target[index_bit_width: Int = 64](self) -> __mlir_type.`!kgen.target`:
+        """
+        Gets the MLIR target configuration for this GPU.
+
+        Parameters:
+            index_bit_width: The bit width for indices (default: 64).
+
+        Returns:
+            MLIR target configuration for the GPU.
+        """
         if self.name == "A100":
             return _get_a100_target[index_bit_width]()
         if self.name == "A10":
@@ -493,16 +657,52 @@ struct Info:
 
     @staticmethod
     fn from_target[target: __mlir_type.`!kgen.target`]() -> Self:
+        """
+        Creates an Info instance from an MLIR target.
+
+        Parameters:
+            target: MLIR target configuration.
+
+        Returns:
+            GPU info corresponding to the target.
+        """
         return _get_info_from_target[_get_arch[target]()]()
 
     @staticmethod
     fn from_name[name: StringLiteral]() -> Self:
+        """
+        Creates an Info instance from a GPU architecture name.
+
+        Parameters:
+            name: GPU architecture name (e.g., "sm_80", "gfx942").
+
+        Returns:
+            GPU info corresponding to the architecture name.
+        """
         return _get_info_from_target[name]()
 
     fn _warps_per_block(self, threads_per_block: Int) -> Int:
+        """
+        Calculates the number of warps per thread block.
+
+        Args:
+            threads_per_block: Number of threads in a block.
+
+        Returns:
+            Number of warps needed for the specified threads.
+        """
         return ceildiv(threads_per_block, self.threads_per_warp)
 
     fn _registers_per_warp(self, registers_per_thread: Int) -> Int:
+        """
+        Calculates the total registers used by a warp.
+
+        Args:
+            registers_per_thread: Number of registers per thread.
+
+        Returns:
+            Total registers used by a warp, aligned to allocation unit.
+        """
         return _quantized_ceil(
             registers_per_thread * self.threads_per_warp,
             self.register_allocation_unit_size,
@@ -511,6 +711,16 @@ struct Info:
     fn _registers_per_block(
         self, threads_per_block: Int, registers_per_thread: Int
     ) -> Int:
+        """
+        Calculates the total registers used by a thread block.
+
+        Args:
+            threads_per_block: Number of threads in a block.
+            registers_per_thread: Number of registers per thread.
+
+        Returns:
+            Total registers used by the thread block.
+        """
         return self._registers_per_warp(
             registers_per_thread
         ) * self._warps_per_block(threads_per_block)
@@ -518,6 +728,15 @@ struct Info:
     fn _warps_per_multiprocessor_register_limited(
         self, registers_per_thread: Int
     ) -> Int:
+        """
+        Calculates max warps per SM based on register constraints.
+
+        Args:
+            registers_per_thread: Number of registers per thread.
+
+        Returns:
+            Maximum number of warps per SM limited by register usage.
+        """
         return _quantized_floor(
             self.max_registers_per_block
             / self._registers_per_warp(registers_per_thread),
@@ -527,6 +746,16 @@ struct Info:
     fn _blocks_per_multiprocessor_register_limited(
         self, *, threads_per_block: Int, registers_per_thread: Int
     ) -> Int:
+        """
+        Calculates max blocks per SM based on register constraints.
+
+        Args:
+            threads_per_block: Number of threads in a block.
+            registers_per_thread: Number of registers per thread.
+
+        Returns:
+            Maximum number of blocks per SM limited by register usage.
+        """
         return Int(
             self._warps_per_multiprocessor_register_limited(
                 registers_per_thread
@@ -535,6 +764,12 @@ struct Info:
         ) * Int(self.register_file_size / self.max_registers_per_block)
 
     fn _block_runtime_shared_memory(self) -> Int:
+        """
+        Calculates shared memory used by the CUDA runtime per block.
+
+        Returns:
+            Amount of shared memory used by the runtime in bytes.
+        """
         if self.compute > 8:
             # starting with Compute Capability 8.x, the CUDA runtime consumes
             # 1KB of shared memory the amount might change depending on the
@@ -543,7 +778,15 @@ struct Info:
         return 0
 
     fn _block_shared_memory(self, *, shared_memory_per_block: Int) -> Int:
-        """shared memory per thread block."""
+        """
+        Calculates total shared memory needed per block.
+
+        Args:
+            shared_memory_per_block: User-requested shared memory per block.
+
+        Returns:
+            Total shared memory needed per block, aligned to allocation unit.
+        """
         return ceildiv(
             shared_memory_per_block + self._block_runtime_shared_memory(),
             self.shared_memory_allocation_unit_size,
@@ -552,6 +795,15 @@ struct Info:
     fn _thread_blocks_per_multiprocessor_limited_by_warps_or_blocks_per_multiprocessor(
         self, threads_per_block: Int
     ) -> Float64:
+        """
+        Calculates max blocks per SM based on warp and block limits.
+
+        Args:
+            threads_per_block: Number of threads in a block.
+
+        Returns:
+            Maximum number of blocks per SM, limited by either warps or blocks.
+        """
         return min(
             self.thread_blocks_per_multiprocessor,
             floor(
@@ -563,6 +815,18 @@ struct Info:
     fn _warps_per_multiprocessor_limited_by_registers(
         self, registers_per_thread: Int
     ) -> Int:
+        """
+        Calculates maximum warps per multiprocessor limited by register usage.
+
+        Determines how many warps can fit in a multiprocessor based on the
+        register requirements, quantized to allocation granularity.
+
+        Args:
+            registers_per_thread: Number of registers used by each thread.
+
+        Returns:
+            Maximum number of warps per multiprocessor limited by registers.
+        """
         return _quantized_floor(
             self.max_registers_per_block
             / self._registers_per_warp(registers_per_thread),
@@ -572,6 +836,19 @@ struct Info:
     fn _thread_blocks_per_multiprocessor_limited_by_registers_per_multiprocessor(
         self, *, threads_per_block: Int, registers_per_thread: Int
     ) -> Float64:
+        """
+        Calculates maximum blocks per SM limited by register availability.
+
+        Determines how many thread blocks can fit in a streaming multiprocessor
+        based on register usage constraints.
+
+        Args:
+            threads_per_block: Number of threads in each block.
+            registers_per_thread: Number of registers used by each thread.
+
+        Returns:
+            Maximum number of blocks per SM limited by register constraints.
+        """
         if registers_per_thread > self.max_registers_per_thread:
             return 0
         if registers_per_thread > 0:
@@ -586,8 +863,23 @@ struct Info:
     fn occupancy(
         self, *, threads_per_block: Int, registers_per_thread: Int
     ) -> Float64:
-        # TODO (KERN-795): Add occupancy calculation based on shared memory
-        # usage and thread block size and take use the minimum value
+        """
+        Calculates theoretical occupancy for given thread and register config.
+
+        Occupancy represents the ratio of active warps to the maximum possible
+        warps on a streaming multiprocessor.
+
+        Args:
+            threads_per_block: Number of threads in each block.
+            registers_per_thread: Number of registers used by each thread.
+
+        Returns:
+            Occupancy as a ratio between 0.0 and 1.0.
+
+        Note:
+            TODO (KERN-795): Add occupancy calculation based on shared memory
+            usage and thread block size and take use the minimum value.
+        """
         return (
             self._blocks_per_multiprocessor_register_limited(
                 threads_per_block=threads_per_block,
@@ -598,6 +890,15 @@ struct Info:
         )
 
     fn __lt__(self, other: Self) -> Bool:
+        """
+        Compares if this GPU has lower compute capability than another.
+
+        Args:
+            other: Another GPU Info instance to compare against.
+
+        Returns:
+            True if this GPU has lower compute capability, False otherwise.
+        """
         debug_assert(
             self.vendor == other.vendor,
             "the vendors must be the same to perform the comparison",
@@ -605,6 +906,15 @@ struct Info:
         return self.compute < other.compute
 
     fn __le__(self, other: Self) -> Bool:
+        """
+        Compares if this GPU has lower or equal compute capability.
+
+        Args:
+            other: Another GPU Info instance to compare against.
+
+        Returns:
+            True if this GPU has lower or equal compute capability.
+        """
         debug_assert(
             self.vendor == other.vendor,
             "the vendors must be the same to perform the comparison",
@@ -612,6 +922,15 @@ struct Info:
         return self.compute <= other.compute
 
     fn __gt__(self, other: Self) -> Bool:
+        """
+        Compares if this GPU has higher compute capability than another.
+
+        Args:
+            other: Another GPU Info instance to compare against.
+
+        Returns:
+            True if this GPU has higher compute capability, False otherwise.
+        """
         debug_assert(
             self.vendor == other.vendor,
             "the vendors must be the same to perform the comparison",
@@ -619,6 +938,15 @@ struct Info:
         return self.compute > other.compute
 
     fn __ge__(self, other: Self) -> Bool:
+        """
+        Compares if this GPU has higher or equal compute capability.
+
+        Args:
+            other: Another GPU Info instance to compare against.
+
+        Returns:
+            True if this GPU has higher or equal compute capability.
+        """
         debug_assert(
             self.vendor == other.vendor,
             "the vendors must be the same to perform the comparison",
@@ -626,19 +954,64 @@ struct Info:
         return self.compute >= other.compute
 
     fn __eq__(self, other: Self) -> Bool:
+        """
+        Checks if two GPU Info instances represent the same GPU model.
+
+        Args:
+            other: Another GPU Info instance to compare against.
+
+        Returns:
+            True if both instances represent the same GPU model.
+        """
         return self.name == other.name
 
     fn __ne__(self, other: Self) -> Bool:
+        """
+        Checks if two GPU Info instances represent different GPU models.
+
+        Args:
+            other: Another GPU Info instance to compare against.
+
+        Returns:
+            True if instances represent different GPU models.
+        """
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
+        """
+        Identity comparison operator for GPU Info instances.
+
+        Args:
+            other: Another GPU Info instance to compare against.
+
+        Returns:
+            True if both instances represent the same GPU model.
+        """
         return self == other
 
     fn __isnot__(self, other: Self) -> Bool:
+        """
+        Negative identity comparison operator for GPU Info instances.
+
+        Args:
+            other: Another GPU Info instance to compare against.
+
+        Returns:
+            True if instances represent different GPU models.
+        """
         return self != other
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
+        """
+        Writes GPU information to a writer.
+
+        Outputs all GPU specifications and capabilities to the provided writer
+        in a human-readable format.
+
+        Args:
+            writer: A Writer instance to output the GPU information.
+        """
         writer.write("name: ", self.name, "\n")
         writer.write("vendor: ", self.vendor, "\n")
         writer.write("api: ", self.api, "\n")
@@ -709,6 +1082,15 @@ struct Info:
 
     @no_inline
     fn __str__(self) -> String:
+        """
+        Returns a string representation of the GPU information.
+
+        Converts all GPU specifications and capabilities to a human-readable
+        string format.
+
+        Returns:
+            String containing all GPU information.
+        """
         return String.write(self)
 
 
@@ -719,6 +1101,18 @@ struct Info:
 
 @always_inline
 fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
+    """
+    Gets GPU Info for a specific compute capability (compile-time version).
+
+    Maps compute capability numbers to corresponding GPU Info instances at
+    compile time.
+
+    Parameters:
+        compute_capability: The compute capability as an integer.
+
+    Returns:
+        Info instance for the specified compute capability.
+    """
     constrained[
         compute_capability in (0, 80, 86, 89, 90, 94),
         "invalid compute capability",
@@ -742,6 +1136,18 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
 
 @always_inline
 fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
+    """
+    Gets GPU Info for a specific compute capability (runtime version).
+
+    Maps compute capability numbers to corresponding GPU Info instances at
+    runtime.
+
+    Args:
+        compute_capability: The compute capability as an integer.
+
+    Returns:
+        Info instance for the specified compute capability.
+    """
     if compute_capability == 0:
         return _get_info_from_compute_capability[0]()
     if compute_capability == 80:
@@ -760,6 +1166,17 @@ fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
 
 @always_inline
 fn _get_info_from_target[target_arch0: StringLiteral]() -> Info:
+    """
+    Gets GPU Info for a specific target architecture.
+
+    Maps target architecture strings to corresponding GPU Info instances.
+
+    Parameters:
+        target_arch0: Target architecture string (e.g., "sm_80", "gfx942").
+
+    Returns:
+        Info instance for the specified target architecture.
+    """
     alias target_arch = target_arch0.replace("sm_", "")
 
     constrained[
@@ -807,32 +1224,106 @@ fn _get_info_from_target[target_arch0: StringLiteral]() -> Info:
 
 
 fn _quantized_ceil(a: Float64, b: Int) -> Int:
+    """
+    Rounds up a value to the nearest multiple of another value.
+
+    Args:
+        a: Value to round up.
+        b: Quantization factor.
+
+    Returns:
+        Rounded up value that is a multiple of b.
+    """
     return Int(ceildiv(a, b) * b)
 
 
 fn _quantized_floor(a: Float64, b: Int) -> Int:
+    """
+    Rounds down a value to the nearest multiple of another value.
+
+    Args:
+        a: Value to round down.
+        b: Quantization factor.
+
+    Returns:
+        Rounded down value that is a multiple of b.
+    """
     return Int(floor(a / b) * b)
 
 
 fn is_gpu[target: StringLiteral]() -> Bool:
+    """
+    Checks if the target is a GPU (compile-time version).
+
+    Parameters:
+        target: Target string to check.
+
+    Returns:
+        True if the target is a GPU, False otherwise.
+    """
     return is_gpu(target)
 
 
 fn is_gpu(target: String) -> Bool:
+    """
+    Checks if the target is a GPU (runtime version).
+
+    Args:
+        target: Target string to check.
+
+    Returns:
+        True if the target is a GPU, False otherwise.
+    """
     return target == "gpu"
 
 
 fn is_cpu[target: StringLiteral]() -> Bool:
+    """
+    Checks if the target is a CPU (compile-time version).
+
+    Parameters:
+        target: Target string to check.
+
+    Returns:
+        True if the target is a CPU, False otherwise.
+    """
     return is_cpu(target)
 
 
 fn is_cpu(target: String) -> Bool:
+    """
+    Checks if the target is a CPU (runtime version).
+
+    Args:
+        target: Target string to check.
+
+    Returns:
+        True if the target is a CPU, False otherwise.
+    """
     return target == "cpu"
 
 
 fn is_valid_target[target: StringLiteral]() -> Bool:
+    """
+    Checks if the target is valid (compile-time version).
+
+    Parameters:
+        target: Target string to check.
+
+    Returns:
+        True if the target is valid (CPU or GPU), False otherwise.
+    """
     return is_valid_target(target)
 
 
 fn is_valid_target(target: String) -> Bool:
+    """
+    Checks if the target is valid (runtime version).
+
+    Args:
+        target: Target string to check.
+
+    Returns:
+        True if the target is valid (CPU or GPU), False otherwise.
+    """
     return is_gpu(target) or is_cpu(target)
