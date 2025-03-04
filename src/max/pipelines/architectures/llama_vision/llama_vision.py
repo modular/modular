@@ -895,7 +895,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             msg = "Llama Vision only supports continuous batching"
             raise ValueError(msg)
 
-        def has_image(pixel_values: np.ndarray | list[np.ndarray]) -> bool:
+        def has_image(pixel_values: Sequence[np.ndarray]) -> bool:
             return pixel_values is not None and len(pixel_values) > 0
 
         has_images = any(has_image(ctx.pixel_values) for ctx in context_batch)
