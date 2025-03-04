@@ -816,7 +816,7 @@ fn _buffer_load_store_lds_nowait[
         has_side_effect=True,
     ](lds_ptr_sgpr)
 
-    var global_offset_bytes = Scalar[DType.int32](sizeof[type]() * gds_offset)
+    var global_offset_bytes = Int32(sizeof[type]() * gds_offset)
     inlined_assembly[
         "buffer_load_dword $0, $1, 0 offen lds",
         NoneType,
@@ -859,7 +859,7 @@ fn buffer_load_store_lds[
     ]()
 
     var lds_ptr = lds_ptr_base + lds_offset
-    var global_offset_bytes = Scalar[DType.int32](sizeof[type]() * gds_offset)
+    var global_offset_bytes = Int32(sizeof[type]() * gds_offset)
     _raw_buffer_load_lds(
         src_resource,
         lds_ptr,
@@ -894,9 +894,7 @@ fn buffer_load[
     ]()
 
     alias bytes = sizeof[type]() * width
-    var global_offset_bytes: Int32 = Scalar[DType.int32](
-        sizeof[type]() * gds_offset
-    )
+    var global_offset_bytes: Int32 = Int32(sizeof[type]() * gds_offset)
     # READ
     # GLC = 0 Reads can hit on the L1 and persist across wavefronts
     # GLC = 1 Reads miss the L1 and L2 and force fetch to the data fabric. No L1 persistence across waves.
@@ -952,9 +950,7 @@ fn buffer_store[
 
     alias bytes = sizeof[type]() * width
 
-    var global_offset_bytes: Int32 = Scalar[DType.int32](
-        sizeof[type]() * gds_offset
-    )
+    var global_offset_bytes: Int32 = Int32(sizeof[type]() * gds_offset)
     # WRITE
     # GLC = 0 Writes miss the L1, write through to L2, and persist in L1 across wavefronts.
     # GLC = 1 Writes miss the L1, write through to L2. No persistence across wavefronts.
