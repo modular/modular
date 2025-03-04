@@ -14,7 +14,7 @@
 from pathlib import Path
 from sys import argv
 
-from max.driver import cpu_device
+from max.driver import cpu
 from max.engine import InferenceSession, SessionOptions
 from max.graph import Graph, Symbol, TensorType, Type
 from max.tensor import TensorSpec
@@ -27,7 +27,7 @@ fn test_model_device_tensor() raises:
     assert_true("mo_unnamed.mlir" in args[1])
 
     var model_path = args[1]
-    var device = cpu_device()
+    var device = cpu()
 
     var options = SessionOptions()
     options._set_device(device)
@@ -60,7 +60,7 @@ fn test_device_graph() raises:
     g.output(y)
     g.verify()
 
-    var device = cpu_device()
+    var device = cpu()
     var options = SessionOptions()
     options._set_device(device)
     var session = InferenceSession(options)

@@ -20,7 +20,7 @@ from max.driver import (
     DeviceTensor,
     Tensor,
     accelerator_device,
-    cpu_device,
+    cpu,
 )
 from max.engine import InferenceSession, SessionOptions
 from max.graph import Graph, Symbol, TensorType, Type
@@ -108,7 +108,7 @@ def test_device_graph(
 
 
 def main():
-    cpu_dev = cpu_device()
+    cpu_dev = cpu()
     gpu_dev = accelerator_device()
     options = SessionOptions()
     options._set_device(gpu_dev)
