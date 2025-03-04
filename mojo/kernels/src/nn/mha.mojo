@@ -952,6 +952,10 @@ fn mha[
             config.depth * config.num_heads * max_seq_len * batch_idx
         )
 
+        # When cache length (num_keys) is greater, we assume it has
+        # prefix preceding the input seq_len.
+        start_pos = num_keys - seq_len
+
     @parameter
     if is_shared_kv:
         mha_single_batch_pipelined[

@@ -150,6 +150,11 @@ fn mha_sm90[
 
         max_seq_len = seq_len_arg
         num_keys = num_keys_arg
+
+        # When cache length (num_keys) is greater, we assume it has
+        # prefix preceding the input seq_len.
+        start_pos = num_keys - seq_len
+
         mask_tensor_col = num_keys_arg
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
