@@ -23,6 +23,93 @@ Functions declared inside a [`struct`](/mojo/manual/structs) are called
 
 :::
 
+## Anatomy of a function
+
+Both `def` and `fn` function declarations have the same basic components (here
+demonstrated with a `def` function):
+
+<pre>
+<strong>def</strong> <var>function_name</var><strong>[
+&#8203;    </strong><var>parameters ...</var><strong>
+](
+&#8203;    </strong><var>arguments ...</var><strong>
+) -&gt;</strong> <var>return_value_type</var>:
+&#8203;    <var>function_body</var>
+</pre>
+
+Functions can have:
+
+- Parameters: A function can optionally take one or more compile-time
+  _parameter_ values used for metaprogramming.
+- Arguments: A function can also optionally take one or more runtime
+  _arguments_.
+- Return value: A function can optionally return a value.
+- Function body: Statements that are executed when you call the function.
+  Function definitions must include a body.
+
+All of the optional parts of the function can be omitted, so the minimal
+function is something like this:
+
+```mojo
+def do_nothing():
+    pass
+```
+
+If a function takes no parameters, you can omit the square brackets, but the
+parenthesis are always required.
+
+While you can't leave out the function body, you can use the `pass` statement to
+define a function that does nothing.
+
+### Arguments and parameters
+
+Functions take two kinds of inputs: _arguments_ and _parameters_. Arguments are
+familiar from many other languages: they are runtime values passed into the
+function.
+
+```mojo
+def add(a: Int, b: Int) -> Int:
+    return a+b
+```
+
+On the other hand, you can think of a parameter as a
+compile-time variable that becomes a runtime constant. For example, consider the
+following function with a parameter:
+
+```mojo
+def add_tensors[rank: Int](a: MyTensor[rank], b: MyTensor[rank]) -> MyTensor[rank]:
+    # ...
+```
+
+In this case, the `rank` value needs to be specified in a way that can be
+determined at compilation time, such as a literal or expression.
+
+When you compile a program that uses this code, the compiler produces a unique
+version of the function for each unique `rank` value used in the program, each
+with a constant `rank`.
+
+This usage of "parameter"
+is probably different from what you're used to from other languages, where
+"parameter" and "argument" are often used interchangeably. In Mojo, "parameter"
+and "parameter expression" refer to compile-time values, and "argument" and
+"expression" refer to runtime values.
+
+By default, both arguments and parameters can be specified either by position or
+by keyword, as shown below:
+
+```mojo
+# positional
+x = add(5, 7)
+# keyword
+y = add(a=9, b=3)
+```
+
+These forms can also be mixed in the same function call.
+
+For more information on arguments, see [Function arguments](#function-arguments)
+on this page. For more information on parameters, see
+[Parameterization: compile-time metaprogramming](/mojo/manual/parameters/).
+
 ## `def` functions
 
 Compared to an `fn` function, a `def` function has fewer restrictions.
@@ -165,6 +252,31 @@ type. If no type is specified, the argument is passed as an
 The remaining rules for arguments described in this section apply to both `def`
 and `fn` functions.
 
+:::note Functions with \`/\` and \`*\` in the argument list
+
+You might see the following characters in
+place of arguments: slash (`/`) and/or star (`*`). For example:
+
+```mojo
+def myfunc(pos_only, /, pos_or_keyword, *, keyword_only):
+```
+
+Arguments **before** the `/` can only be passed by position. Arguments **after**
+the `*` can only be passed by keyword. For details, see
+[Positional-only and keyword-only arguments](#positional-only-and-keyword-only-arguments)
+
+You may also see argument names prefixed with one or two stars (`*`):
+
+```mojo
+def myfunc2(*names, **attributes):
+```
+An argument name prefixed by a single star character, like `*names` identifies a
+[variadic argument](#variadic-arguments), while an argument name prefixed with
+a double star, like `**attributes` identifies a
+[variadic keyword-only argument](#variadic-keyword-arguments).
+
+:::
+
 ### Optional arguments
 
 An optional argument is one that includes a default value, such as the `exp`
@@ -239,10 +351,8 @@ variadic arguments.
 
 :::note Variadic parameters
 
-Mojo [parameters](/mojo/manual/parameters/) are distinct from arguments
-(parameters are used for compile-time metaprogramming). Variadic parameters
-are supported, but with some limitations—for details see
-[variadic parameters](/mojo/manual/parameters/#variadic-parameters).
+Mojo also supports variadic *parameters*, but with some limitations—for details
+see [variadic parameters](/mojo/manual/parameters/#variadic-parameters).
 
 :::
 
@@ -548,25 +658,31 @@ fn add(x: String, y: String) -> String:
 If you pass anything other than `Int` or `String` to the `add()` function,
 you'll get a compiler error. That is, unless `Int` or `String` can implicitly
 cast the type into their own type. For example, `String` includes an overloaded
-version of its constructor (`__init__()`) that accepts a `StringLiteral` value.
-Thus, you can also pass a `StringLiteral` to a function that expects a `String`.
+version of its constructor (`__init__()`) that supports
+[implicit conversion](/mojo/manual/lifecycle/life#constructors-and-implicit-conversion)
+from a `StringLiteral` value. Thus, you can also pass a `StringLiteral` to a
+function that expects a `String`.
 
 When resolving an overloaded function call, the Mojo compiler tries each
 candidate function and uses the one that works (if only one version works), or
 it picks the closest match (if it can determine a close match), or it reports
-that the call is ambiguous (if it can't figure out which one to pick).
+that the call is ambiguous (if it can't figure out which one to pick). For
+details on how Mojo picks the best candidate, see
+[Overload resolution](#overload-resolution).
 
 If the compiler can't figure out which function to use, you can resolve the
 ambiguity by explicitly casting your value to a supported argument type. For
-example, in the following code, we want to call the overloaded `foo()` function,
+example, the following code calls the overloaded `foo()` function,
 but both implementations accept an argument that supports [implicit
 conversion](/mojo/manual/lifecycle/life#constructors-and-implicit-conversion)
 from `StringLiteral`. So, the call to `foo(string)` is ambiguous and creates a
-compiler error. We can fix it by casting the value to the type we really want:
+compiler error. You can fix this by casting the value to the type you really
+want:
 
 ```mojo
 @value
 struct MyString:
+    @implicit
     fn __init__(out self, string: StringLiteral):
         pass
 
@@ -578,26 +694,95 @@ fn foo(name: MyString):
 
 fn call_foo():
     alias string: StringLiteral = "Hello"
-    # foo(string) # This call is ambiguous because two `foo` functions match it
+    # foo(string) # error: ambiguous call to 'foo' ... This call is ambiguous because two `foo` functions match it
     foo(MyString(string))
 ```
 
-When resolving an overloaded function, Mojo does not consider the return type
-or other contextual information at the call site—only the argument types affect
-which function is selected.
 
 Overloading also works with combinations of both `fn` and `def` functions.
 For example, you could define multiple `fn` function overloads and then one
 or more `def` versions that don't specify all argument types, as a fallback.
 
-:::note
+### Overload resolution
 
-Although we haven't discussed
-[parameters](/mojo/manual/parameters/) yet (they're
-different from function arguments, and used for compile-time metaprogramming),
-you can also overload functions based on parameter types.
+When resolving an overloaded function, Mojo does not consider the return type
+or other contextual information at the call site—it considers only parameter and
+argument types and whether the functions are instance methods or static methods.
 
-:::
+The overload resolution logic filters for candidates according to the following
+rules, in order of precedence:
+
+1. Candidates requiring the smallest number of implicit conversions (in both
+   arguments and parameters).
+2. Candidates without variadic arguments.
+3. Candidates without variadic parameters.
+4. Candidates with the shortest parameter signature.
+5. Non-`@staticmethod` candidates (over `@staticmethod` ones, if available).
+
+If there is more than one candidate after applying these rules, the overload
+resolution fails. For example:
+
+```mojo
+@register_passable("trivial")
+struct MyInt:
+    """A type that is implicitly convertible to `Int`."""
+    var value: Int
+
+    @implicit
+    fn __init__(out self, _a: Int):
+        self.value = _a
+
+fn foo[x: MyInt, a: Int]():
+    print("foo[x: MyInt, a: Int]()")
+
+fn foo[x: MyInt, y: MyInt]():
+    print("foo[x: MyInt, y: MyInt]()")
+
+fn bar[a: Int](b: Int):
+    print("bar[a: Int](b: Int)")
+
+fn bar[a: Int](*b: Int):
+    print("bar[a: Int](*b: Int)")
+
+fn bar[*a: Int](b: Int):
+    print("bar[*a: Int](b: Int)")
+
+fn parameter_overloads[a: Int, b: Int, x: MyInt]():
+    # `foo[x: MyInt, a: Int]()` is called because it requires no implicit
+    # conversions, whereas `foo[x: MyInt, y: MyInt]()` requires one.
+    foo[x, a]()
+
+    # `bar[a: Int](b: Int)` is called because it does not have variadic
+    # arguments or parameters.
+    bar[a](b)
+
+    # `bar[*a: Int](b: Int)` is called because it has variadic parameters.
+    bar[a, a, a](b)
+
+parameter_overloads[1, 2, MyInt(3)]()
+
+struct MyStruct:
+    fn __init__(out self):
+        pass
+
+    fn foo(mut self):
+        print("calling instance method")
+
+    @staticmethod
+    fn foo():
+        print("calling static method")
+
+fn test_static_overload():
+    var a = MyStruct()
+    # `foo(mut self)` takes precedence over a static method.
+    a.foo()
+```
+
+```output
+foo[x: MyInt, a: Int]()
+bar[a: Int](b: Int)
+bar[*a: Int](b: Int)
+```
 
 ## Return values
 
