@@ -224,14 +224,6 @@ kgen.func @hoist() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @int_literal_convert
-kgen.func @int_literal_convert() -> si64 {
-  // CHECK: constant: si64 = <123>
-  %0 = kgen.param.constant: !kgen.int_literal = <123>
-  %1 = kgen.int_literal.convert %0 : to si64
-  kgen.return %1 : si64
-}
-
 // CHECK-LABEL: @pack_create(
 kgen.func @pack_create() -> !kgen.pack<[ui8, i32]> {
   // CHECK-NEXT: kgen.param.constant{{.*}} = <<5, -55>>

@@ -408,13 +408,6 @@ static AnyValue handleIntOrFPLiteral(TypedAttr value, ASTType type,
   // or FloatLiteral[value: __mlir_type.`!kgen.float_literal`]
   auto litStruct = dyn_cast_if_present<StructDeclOp>(decl);
 
-  // FIXME: remove legacy IntLiteral/FloatLiteral format.
-  if (litStruct && litStruct.getParams().empty()) {
-    return emitter.emitConstructorCall(
-        type, CallOperands({{AnyValue(value), expr}}), expr,
-        CallSyntax::kImplicitConvert, dest);
-  }
-
   if (!litStruct || litStruct.getParams().size() != 1 ||
       !isa<IntLiteralType, FloatLiteralType>(
           litStruct.getParams()[0].getType())) {
