@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+
 import numpy as np
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
@@ -117,7 +118,7 @@ def feed_forward(
                 hidden_dim,
                 weights.fc1,
             ),
-            ops.gelu,
+            ops.gelu,  # type: ignore
             linear(
                 dtype,
                 hidden_dim,

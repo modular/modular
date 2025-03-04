@@ -51,7 +51,7 @@ def _feed_forward(
                     dtype, [hidden_dim, input_dim], quantization_encoding
                 )
             ),
-            ops.gelu,
+            ops.gelu,  # type: ignore
             Linear(
                 weights.ffn_down.weight.allocate(
                     dtype, [input_dim, hidden_dim], quantization_encoding
