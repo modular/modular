@@ -4,10 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 import numpy as np
 import pytest
 import torch
+from max.driver import accelerator_api
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import Graph, TensorType
 from max.pipelines.nn import RMSNorm
 from modular_graph_test import are_all_tensor_values, modular_graph_test
@@ -18,16 +21,7 @@ def torch_rms_norm(x, weight, eps=1e-6):
     return x * torch.rsqrt((x**2).mean(-1, keepdim=True) + eps) * weight
 
 
-@pytest.mark.parametrize(
-    "input_type",
-    [
-        TensorType(DType.float32, ["dim"]),
-        TensorType(DType.float32, ["batch", "dim"]),
-        TensorType(DType.float32, ["a", "x", "y", "z", "dim"]),
-        TensorType(DType.float64, ["dim"]),
-    ],
-)
-def test_norm(session, input_type):
+def run_test_norm(session: InferenceSession, input_type: TensorType):
     # Initialize Graph
     dim = input_type.shape[-1]
     weight_type = TensorType(input_type.dtype, [dim])
@@ -49,3 +43,46 @@ def test_norm(session, input_type):
                 rtol=ACCURACY_RTOL,
                 equal_nan=True,
             )
+
+
+# ===----------------------------------------------------------------------=== #
+# CPU Test
+# ===----------------------------------------------------------------------=== #
+
+
+def get_tensor_types(type: DType):
+    return [
+        TensorType(type, ["dim"]),
+        TensorType(type, ["batch", "dim"]),
+        TensorType(type, ["a", "x", "y", "z", "dim"]),
+        TensorType(type, ["dim"]),
+    ]
+
+
+@pytest.mark.parametrize(
+    "input_type",
+    [
+        *get_tensor_types(DType.float32),
+        *get_tensor_types(DType.float64),
+    ],
+)
+def test_norm(session, input_type):
+    run_test_norm(session, input_type)
+
+
+# ===----------------------------------------------------------------------=== #
+# GPU Test
+# ===----------------------------------------------------------------------=== #
+
+
+@pytest.mark.skipif(accelerator_api() == "cpu", reason="Test only runs on GPU")
+@pytest.mark.parametrize(
+    "input_type",
+    [
+        *get_tensor_types(DType.bfloat16),
+        *get_tensor_types(DType.float32),
+        *get_tensor_types(DType.float64),
+    ],
+)
+def test_norm_gpu(gpu_session, input_type):
+    run_test_norm(gpu_session, input_type)
