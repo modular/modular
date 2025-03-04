@@ -235,7 +235,7 @@ fn distribute[
         res_shape[i] = buff.dim[i]() // thread_shape_i
         res_strides[i] = buff.stride[i]() * thread_shape_i
 
-    var thread_offset: Scalar[DType.int32] = 0
+    var thread_offset: Int32 = 0
 
     @parameter
     for i in range(rank):
