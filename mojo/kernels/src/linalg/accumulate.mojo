@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import InlineArray
 from collections.optional import OptionalReg
 from math import fma
 from sys import alignof, prefetch
@@ -12,7 +13,7 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm.functional import tile
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 
 from utils import IndexList
 
@@ -179,15 +180,17 @@ struct _Accumulator[
             var transfer_count = min(
                 c_bound[1] - tile_n_idx, num_cols * simd_width
             )
-            var row_ptrs = stack_allocation[
-                num_rows, UnsafePointer[Scalar[type]]
-            ]()
+            var row_ptrs = InlineArray[UnsafePointer[Scalar[type]], num_rows](
+                unsafe_uninitialized=True
+            )
 
             @parameter
             for row in range(num_rows):
                 row_ptrs[row] = c_ptr_loc + row * c_stride
 
-            self._transfer_loop[0, is_load](transfer_count, row_ptrs, c_stride)
+            self._transfer_loop[0, is_load](
+                transfer_count, row_ptrs.unsafe_ptr(), c_stride
+            )
 
     @always_inline
     fn _transfer_columns[
@@ -811,7 +814,9 @@ struct _Accumulator[
         @parameter
         @always_inline
         fn micro_kernel[num_lanes: Int](offset: Int):
-            var a_vecs = stack_allocation[num_rows, SIMD[a_type, num_lanes]]()
+            var a_vecs = InlineArray[SIMD[a_type, num_lanes], num_rows](
+                unsafe_uninitialized=True
+            )
 
             # Load vectors of size num_lanes from input.
             @parameter
@@ -869,7 +874,9 @@ struct _Accumulator[
         @parameter
         @always_inline
         fn micro_kernel[num_lanes: Int](offset: Int):
-            var a_vecs = stack_allocation[num_rows, SIMD[a_type, num_lanes]]()
+            var a_vecs = InlineArray[SIMD[a_type, num_lanes], num_rows](
+                unsafe_uninitialized=True
+            )
 
             # Load vectors of size num_lanes from input.
             @parameter

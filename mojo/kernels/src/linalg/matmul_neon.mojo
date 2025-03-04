@@ -7,9 +7,10 @@
 from math import fma
 from sys.info import alignof
 
+from collections import InlineArray
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 from utils.loop import unroll
@@ -59,9 +60,9 @@ struct Inner_matmul_neon(InnerMatmulKernel):
 
         var b_ptr = b_packed._offset(Index(n_outer_idx, tile_n_k_idx[1], 0))
 
-        var a_vals = stack_allocation[
-            kernel_rows, SIMD[c_local.type, a_col_size]
-        ]()
+        var a_vals = InlineArray[SIMD[c_local.type, a_col_size], kernel_rows](
+            unsafe_uninitialized=True
+        )
 
         @parameter
         for row in range(kernel_rows):
