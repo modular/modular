@@ -29,7 +29,6 @@ from max.pipelines.kv_cache import (
 from ..attention.interfaces import (
     AttentionImpl,
     AttentionImplQKV,
-    AttentionImplV2,
 )
 from ..embedding import Embedding, EmbeddingV2
 from ..layer import Layer, LayerList, LayerV2
@@ -41,7 +40,7 @@ class TransformerBlock(LayerV2):
 
     def __init__(
         self,
-        attention: AttentionImpl | AttentionImplV2 | AttentionImplQKV,
+        attention: AttentionImpl | AttentionImplQKV | LayerV2,
         mlp: Layer,
         attention_norm: Layer,
         mlp_norm: Layer,

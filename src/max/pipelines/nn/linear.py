@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 from max.dtype import DType
@@ -461,13 +461,12 @@ class GPTQLinearV2(LinearV2):
             perm_idx: TensorValue = self.perm_idx
             if self.device:
                 perm_idx = perm_idx.to(self.device)
-
             res = ops.qmatmul(
                 self.qweight.quantization_encoding,
                 self.quantization_config,
-                ops.gather(x, self.perm_idx, axis=(x.rank - 1)),
+                ops.gather(x, perm_idx, axis=(x.rank - 1)),
                 weight,
-                self.perm_idx,
+                perm_idx,
             )
         else:
             res = ops.qmatmul(
@@ -512,19 +511,56 @@ class MLP(Layer):
         return self.down_proj(ops.silu(self.gate_proj(x)) * self.up_proj(x))  # type: ignore
 
 
-@dataclass
 class MLPV2(LayerV2):
     """
     Simple multi-layer perceptron composed of three linear layers.
     Uses SiLU activation function.
     """
 
-    gate_proj: LinearV2
-    down_proj: LinearV2
-    up_proj: LinearV2
-
-    def __post_init__(self):
+    def __init__(
+        self,
+        dtype: DType,
+        quantization_encoding: Optional[QuantizationEncoding],
+        hidden_dim: int,
+        feed_forward_length: int,
+        linear_cls: Callable[..., LinearV2] = LinearV2,
+        devices: Sequence[DeviceRef] = (),
+    ):
+        """
+        Args:
+            dtype: DType to use for the layer weights, which should match the
+                input dtype.
+            quantization_encoding: Quantization encoding of the layer weights.
+            hidden_dim: The last dimension of the layer input.
+            feed_forward_length: Size of dimension used to project the inputs.
+            linear_cls: Linear class to use to create the projection layers.
+            devices: Devices to run the `MLP` layer. If multiple are provided,
+                the first device is used instead. Use `DistributedMLP` to use
+                all devices.
+        """
         super().__init__()
+        self.devices = devices
+        self.gate_proj = linear_cls(  # [ffl, hidden]
+            in_dim=hidden_dim,
+            out_dim=feed_forward_length,
+            dtype=dtype,
+            device=devices[0] if devices else None,
+            quantization_encoding=quantization_encoding,
+        )
+        self.down_proj = linear_cls(
+            in_dim=feed_forward_length,
+            out_dim=hidden_dim,
+            dtype=dtype,
+            device=devices[0] if devices else None,
+            quantization_encoding=quantization_encoding,
+        )
+        self.up_proj = linear_cls(
+            in_dim=hidden_dim,
+            out_dim=feed_forward_length,
+            dtype=dtype,
+            device=devices[0] if devices else None,
+            quantization_encoding=quantization_encoding,
+        )
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
         if (
@@ -548,13 +584,65 @@ class MLPV2(LayerV2):
         )
 
 
-@dataclass
-class DistributedMLP(Layer):
-    list_of_mlps: list[MLP]
-    num_devices: int
+class DistributedMLP(MLPV2):
+    """A distributed multi-layer perceptron.
 
-    def __call__(
+    This class has the same state keys as the non-distributed MLP Layer.
+    """
+
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.num_devices = len(self.devices)
+
+        def col_sharding_strategy(weight: Weight, i) -> TensorValue:
+            col_size = int(weight.shape[1]) // self.num_devices
+            return weight[:, i * col_size : (i + 1) * col_size]
+
+        def row_sharding_strategy(weight: Weight, i) -> TensorValue:
+            row_size = int(weight.shape[0]) // self.num_devices
+            return weight[i * row_size : (i + 1) * row_size, :]
+
+        self.gate_proj.weight.set_sharding_strategy(row_sharding_strategy)
+        self.down_proj.weight.set_sharding_strategy(col_sharding_strategy)
+        self.up_proj.weight.set_sharding_strategy(row_sharding_strategy)
+
+        # Create normal MLP layers for each device. These layers and weights are
+        # not recorded by the nn.LayerV2 and do not appear in the state dict.
+        self.list_of_mlps = []
+        for n, device in enumerate(self.devices):
+            layer = MLPV2(*args, **kwargs)
+
+            layer.gate_proj.device = device
+            layer.gate_proj.weight = self.gate_proj.weight.shard(n, device)
+
+            layer.down_proj.device = device
+            layer.down_proj.weight = self.down_proj.weight.shard(n, device)
+
+            layer.up_proj.device = device
+            layer.up_proj.weight = self.up_proj.weight.shard(n, device)
+
+            self.list_of_mlps.append(layer)
+
+    def __call__(  # type: ignore[override]
         self, x: list[TensorValue], signal_buffers: list[BufferValue]
     ) -> list[TensorValue]:
+        """Applies a linear transformation to the input data.
+
+        Args:
+            x: Input tensor of shape ``(..., in_dim)``.
+                The last dimension must match the layer's ``in_dim``.
+                The input tensor must reside on :obj:`device`.
+
+        Returns:
+            Output tensor of shape ``(..., out_dim)``.
+            The result resides on the device specified in :obj:`device`.
+
+        Raises:
+            ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
+        """
         mlp_outs = [self.list_of_mlps[i](x[i]) for i in range(self.num_devices)]
         return ops.allreduce.sum(mlp_outs, signal_buffers)

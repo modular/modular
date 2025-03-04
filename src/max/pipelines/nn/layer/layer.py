@@ -164,7 +164,7 @@ class LayerV2(Layer, ABC):
                         full_weight_name, state_dict.keys(), n=1
                     ):
                         msg += f" Did you mean '{possible_match[0]}'?"
-                    raise ValueError()
+                    raise ValueError(msg)
 
     def state_dict(
         self, auto_initialize: bool = True

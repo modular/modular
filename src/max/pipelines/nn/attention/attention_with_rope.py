@@ -47,7 +47,6 @@ from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
     AttentionImpl,
     AttentionImplQKV,
-    AttentionImplV2,
     DistributedAttentionImpl,
 )
 
@@ -134,7 +133,7 @@ class AttentionWithRope(AttentionImpl):
         return self.wo(attn_out)
 
 
-class AttentionWithRopeV2(AttentionImplV2):
+class AttentionWithRopeV2(LayerV2):
     """Implementation of attention that uses the rope frequency.
 
     `AttentionWithRopeV2` will replace `AttentionWithRope` as we roll out
@@ -156,7 +155,7 @@ class AttentionWithRopeV2(AttentionImplV2):
         kv_params: KVCacheParams,
         layer_idx: int,
         dtype: DType = DType.float32,
-        device: DeviceRef = DeviceRef.CPU(),
+        devices: list[DeviceRef] | None = None,
         linear_cls: Callable[..., LinearV2] = LinearV2,
         stacked_qkv: bool = False,
         scale: float | None = None,
@@ -173,7 +172,10 @@ class AttentionWithRopeV2(AttentionImplV2):
             kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
             layer_idx: The layer number associated with this Attention block.
             dtype: DType of the
-            device: Device to place the weights and run the computation.
+            devices: Device to place the weights and run the computation. If
+                multiple are provided, the first device is used. Use
+                `DistributedAttentionWithRope` to use all devices during
+                attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             stacked_qkv: Whether the weights are stacked together.
             scale: Value used to scale the results of the attention output.
@@ -192,6 +194,7 @@ class AttentionWithRopeV2(AttentionImplV2):
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.clip_qkv = clip_qkv
+        self.devices = devices
 
         if stacked_qkv and clip_qkv:
             raise ValueError(
@@ -249,7 +252,10 @@ class AttentionWithRopeV2(AttentionImplV2):
             )
 
         self.o_proj = linear_cls(
-            in_dim=hidden_size, out_dim=hidden_size, dtype=dtype, device=device
+            in_dim=hidden_size,
+            out_dim=hidden_size,
+            dtype=dtype,
+            device=devices[0] if devices else None,
         )
 
     @property
@@ -288,10 +294,11 @@ class AttentionWithRopeV2(AttentionImplV2):
 
         layer_idx = ops.constant(self.layer_idx, DType.uint32)
         # Call into fused qkv ragged matmul.
+        wqkv = self.wqkv
         xq = fused_qkv_ragged_matmul(
             self.kv_params,
             input=x,
-            wqkv=self.wqkv,
+            wqkv=wqkv,
             bias=self.wqkv_bias,
             input_row_offsets=kwargs["input_row_offsets"],
             kv_collection=kv_collection,
@@ -346,7 +353,7 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
         kv_params: KVCacheParams,
         layer_idx: int,
         dtype: DType = DType.float32,
-        device: DeviceRef | None = None,
+        devices: list[DeviceRef] | None = None,
         scale: float | None = None,
         linear_cls: Callable[..., LinearV2] = LinearV2,
     ):
@@ -359,7 +366,7 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
         self.layer_idx = layer_idx
         self.kv_params = kv_params
         self.hidden_size = hidden_size
-        self.device = device
+        self.devices = devices
         self.scale = (
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
@@ -475,8 +482,8 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
         total_seq_len = x.shape[0]
 
         wqkv = self.wqkv
-        if self.device:
-            wqkv = wqkv.to(self.device)
+        if self.devices:
+            wqkv = wqkv.to(self.devices[0])
 
         # Call into fused qkv ragged matmul.
         xq = fused_qkv_ragged_matmul_quantized(
@@ -530,12 +537,50 @@ def distribute_value(
     return [v.to(device) for device in devices]
 
 
-@dataclass
-class DistributedAttentionWithRope(DistributedAttentionImpl):
-    list_of_attentions: List[AttentionWithRope]
-    devices: list[DeviceRef]
+class DistributedAttentionWithRope(
+    AttentionWithRopeV2, DistributedAttentionImpl
+):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if not self.devices or len(self.devices) < 2:
+            raise ValueError(
+                f"Must provide at least 2 devices to `DistributedAttentionWithRope`, got {self.devices}"
+            )
+        # Shard weights into separate AttentionWithRope layers.
+        n_devices = len(self.devices)
 
-    def __call__(
+        def col_sharding_strategy(weight: Weight, i) -> TensorValue:
+            col_size = int(weight.shape[1]) // n_devices
+            return weight[:, i * col_size : (i + 1) * col_size]
+
+        def row_sharding_strategy(weight: Weight, i) -> TensorValue:
+            row_size = int(weight.shape[0]) // n_devices
+            return weight[i * row_size : (i + 1) * row_size, :]
+
+        if self.stacked_qkv:
+            self.qkv_proj.set_sharding_strategy(col_sharding_strategy)
+        else:
+            self.q_proj.set_sharding_strategy(row_sharding_strategy)
+            self.k_proj.set_sharding_strategy(row_sharding_strategy)
+            self.v_proj.set_sharding_strategy(row_sharding_strategy)
+        self.o_proj.weight.set_sharding_strategy(col_sharding_strategy)
+
+        self.list_of_attentions = []
+        kwargs = kwargs.copy()
+        kwargs["num_attention_heads"] //= len(self.devices)
+        for n, device in enumerate(self.devices):
+            kwargs["devices"] = [device]
+            layer = AttentionWithRopeV2(**kwargs)
+            if self.stacked_qkv:
+                layer.qkv_proj = self.qkv_proj.shard(n, device)
+            else:
+                layer.q_proj = self.q_proj.shard(n, device)
+                layer.k_proj = self.k_proj.shard(n, device)
+                layer.v_proj = self.v_proj.shard(n, device)
+            layer.o_proj.weight = self.o_proj.weight.shard(n, device)
+            self.list_of_attentions.append(layer)
+
+    def __call__(  # type: ignore[override]
         self,
         x: List[TensorValue],
         signal_buffers: List[BufferValue],
@@ -546,6 +591,7 @@ class DistributedAttentionWithRope(DistributedAttentionImpl):
     ) -> List[TensorValue]:
         input_row_offsets = kwargs["input_row_offsets"]
         assert isinstance(input_row_offsets, TensorValue)
+        assert self.devices
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
 
         return list(

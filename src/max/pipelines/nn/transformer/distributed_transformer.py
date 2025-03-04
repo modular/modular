@@ -25,11 +25,10 @@ from max.pipelines.kv_cache import (
     PagedKVCacheCollection,
 )
 
-from ..attention.interfaces import DistributedAttentionImpl
 from ..embedding import VocabParallelEmbedding
-from ..layer import Layer
-from ..linear import DistributedMLP, LinearV2
-from ..norm import DistributedRMSNorm, LayerNorm, RMSNorm
+from ..layer import LayerList, LayerV2
+from ..linear import LinearV2
+from ..norm import DistributedRMSNorm, LayerNormV2, RMSNormV2
 
 
 # TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
@@ -38,15 +37,23 @@ def distribute_value(v, devices: list[DeviceRef]):
     return [v.to(device) for device in devices]
 
 
-@dataclass
-class DistributedTransformerBlock(Layer):
+class DistributedTransformerBlock(LayerV2):
     """Stack of Attention, FeedForward, and RMSNorm layers."""
 
-    attention: DistributedAttentionImpl
-    mlp: DistributedMLP
-    attention_norm: DistributedRMSNorm
-    mlp_norm: DistributedRMSNorm
-    devices: list[DeviceRef]
+    def __init__(
+        self,
+        attention: LayerV2,
+        mlp: LayerV2,
+        attention_norm: DistributedRMSNorm,
+        mlp_norm: DistributedRMSNorm,
+        devices: list[DeviceRef],
+    ):
+        super().__init__()
+        self.self_attn = attention
+        self.mlp = mlp
+        self.input_layernorm = attention_norm
+        self.post_attention_layernorm = mlp_norm
+        self.devices = devices
 
     def __call__(
         self,
@@ -57,33 +64,48 @@ class DistributedTransformerBlock(Layer):
         ],
         **kwargs,
     ) -> list[TensorValue]:
-        attn_outs = self.attention(
-            self.attention_norm(xs), signal_buffers, kv_collections, **kwargs
+        attn_outs = self.self_attn(
+            self.input_layernorm(xs), signal_buffers, kv_collections, **kwargs
         )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
-        mlp_outs = self.mlp(self.mlp_norm(hs), signal_buffers)
+        mlp_outs = self.mlp(self.post_attention_layernorm(hs), signal_buffers)
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
 
         return hs
 
 
 @dataclass
-class DistributedTransformer(Layer):
+class DistributedTransformer(LayerV2):
     """Transformer model consisting for TransformerBlock layers."""
 
-    dim: int
-    n_heads: int
-    layers: list[DistributedTransformerBlock]
-    norm: RMSNorm | LayerNorm
-    output: LinearV2
-    embedding: VocabParallelEmbedding
-    kv_params: KVCacheParams
-    kv_collection_constructor: (
-        FetchContinuousBatchingKVCacheCollection | FetchPagedKVCacheCollection
-    )
-    devices: list[DeviceRef]
-    all_logits: bool = False
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        layers: list[DistributedTransformerBlock],
+        norm: RMSNormV2 | LayerNormV2,
+        output: LinearV2,
+        embedding: VocabParallelEmbedding,
+        kv_params: KVCacheParams,
+        kv_collection_constructor: (
+            FetchContinuousBatchingKVCacheCollection
+            | FetchPagedKVCacheCollection
+        ),
+        devices: list[DeviceRef],
+        all_logits: bool = False,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.n_heads = n_heads
+        self.layers = LayerList(layers)
+        self.norm = norm
+        self.lm_head = output
+        self.embed_tokens = embedding
+        self.kv_params = kv_params
+        self.kv_collection_constructor = kv_collection_constructor
+        self.all_logits = all_logits
+        self.devices = devices
 
     def __call__(
         self,
@@ -92,7 +114,7 @@ class DistributedTransformer(Layer):
         kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
         **kwargs,
     ) -> tuple[TensorValue, ...]:
-        h = self.embedding(tokens, signal_buffers)
+        h = self.embed_tokens(tokens, signal_buffers)
 
         kv_collections = [
             self.kv_collection_constructor(*kv_cache_inputs)
@@ -106,7 +128,7 @@ class DistributedTransformer(Layer):
         if self.all_logits:
             # When echo is enabled, the logits of the input tokens are
             # returned.
-            logits = ops.cast(self.output(self.norm(h0)), DType.float32)
+            logits = ops.cast(self.lm_head(self.norm(h0)), DType.float32)
             if "input_row_offsets" in kwargs:
                 # For ragged tensors gather the last tokens from packed dim 0.
                 input_row_offsets: TensorValueLike = kwargs["input_row_offsets"]
@@ -145,5 +167,5 @@ class DistributedTransformer(Layer):
 
             # Always return float32 logits, no matter the activation type
             return (
-                ops.cast(self.output(self.norm(last_token)), DType.float32),
+                ops.cast(self.lm_head(self.norm(last_token)), DType.float32),
             )

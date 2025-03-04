@@ -10,11 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Build a Llama3 model that uses continuous or paged kv-caching"""
+"""Build a Llama3 model that runs on multiple devices."""
 
 from __future__ import annotations
 
 import functools
+import logging
 from typing import Callable
 
 from max.dtype import DType
@@ -25,26 +26,31 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
 )
 from max.pipelines.nn import (
-    MLPV2,
     AttentionWithRopeV2,
-    EmbeddingV2,
+    DistributedAttentionWithRope,
+    DistributedMLP,
+    DistributedRMSNorm,
+    DistributedTransformer,
+    DistributedTransformerBlock,
     GPTQAttentionWithRope,
     GPTQLinearV2,
     LayerV2,
     LinearV2,
     OptimizedRotaryEmbedding,
     RMSNormV2,
-    Transformer,
-    TransformerBlock,
+    VocabParallelEmbedding,
 )
 
+from .naive_llama3 import StackedMLP
+
+logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config
-from .naive_llama3 import ConstantLayerNorm, StackedMLP
 
 
-class Llama3(Transformer):
+class DistributedLlama3(DistributedTransformer):
     def __init__(self, config: Llama3Config):
-        assert len(config.devices) == 1
+        assert len(config.devices) > 1
+
         rope = OptimizedRotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
@@ -55,29 +61,48 @@ class Llama3(Transformer):
         )
 
         # Select norm layer class.
-        create_norm: Callable[..., LayerV2]
-        if config.norm_method == "rms_norm":
-            if config.rms_norm_eps is None:
-                raise ValueError(
-                    "rms_norm_eps cannot be None for model that uses RMSNorm."
-                )
-            create_norm = functools.partial(
-                RMSNormV2, config.hidden_size, config.rms_norm_eps
+        assert config.norm_method == "rms_norm"
+        if config.rms_norm_eps is None:
+            raise ValueError(
+                "rms_norm_eps cannot be None for model that uses RMSNorm."
             )
-        else:
-            create_norm = functools.partial(
-                ConstantLayerNorm, config.hidden_size
-            )
+        create_distributed_norm = functools.partial(
+            DistributedRMSNorm,
+            dim=config.hidden_size,
+            eps=config.rms_norm_eps,
+            devices=config.devices,
+        )
+        create_norm = functools.partial(
+            RMSNormV2,
+            dim=config.hidden_size,
+            eps=config.rms_norm_eps,
+        )
 
         # Select linear layer class.
         linear_cls: Callable[..., LinearV2]
         if config.quantization_config:
+            logger.warning(
+                "Model contains GPTQ weights. This is currently not supported with multiple GPUs, and will run on %s.",
+                config.devices[0],
+            )
             linear_cls = functools.partial(
                 GPTQLinearV2, quantization_config=config.quantization_config
             )
         else:
             linear_cls = LinearV2
-        mlp_cls = StackedMLP if config.stacked_mlp else MLPV2
+
+        # Select MLP class.
+        mlp_cls: Callable[..., LayerV2]
+        if config.stacked_mlp:
+            logger.warning(
+                "Model contains stacked MLP weights. This is currently not supported with multiple GPUs, and will run on %s.",
+                config.devices[0],
+            )
+            mlp_cls = StackedMLP
+        else:
+            mlp_cls = DistributedMLP
+
+        # Select attention class.
         attention_cls: Callable[..., AttentionWithRopeV2]
         if config.quantization_config:
             attention_cls = functools.partial(
@@ -87,14 +112,14 @@ class Llama3(Transformer):
             )
         else:
             attention_cls = functools.partial(
-                AttentionWithRopeV2,
+                DistributedAttentionWithRope,
                 stacked_qkv=config.stacked_qkv,
                 scale=config.attention_multiplier,
                 clip_qkv=config.clip_qkv,
             )
 
         layers = [
-            TransformerBlock(
+            DistributedTransformerBlock(
                 attention=attention_cls(
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
@@ -114,9 +139,11 @@ class Llama3(Transformer):
                     linear_cls,
                     devices=config.devices,
                 ),
-                attention_norm=create_norm(),
-                mlp_norm=create_norm(),
-                residual_multiplier=config.residual_multiplier,
+                attention_norm=create_distributed_norm(),
+                mlp_norm=create_distributed_norm(),
+                devices=config.devices,
+                # TODO: Support residual_multiplier
+                # residual_multiplier=config.residual_multiplier,
             )
             for i in range(config.num_hidden_layers)
         ]
@@ -127,13 +154,15 @@ class Llama3(Transformer):
         if config.quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
-        embedding_layer = EmbeddingV2(
+
+        embedding_layer = VocabParallelEmbedding(
             config.vocab_size,
             config.hidden_size,
             embedding_output_dtype,
-            config.devices[0],
+            config.devices,
             quantization_encoding=embedding_output_quantization,
         )
+        # TODO: Shard the output layer.
         output = LinearV2(
             config.hidden_size,
             config.vocab_size,
@@ -168,7 +197,9 @@ class Llama3(Transformer):
             embedding=embedding_layer,
             kv_params=config.kv_params,
             kv_collection_constructor=kv_collection_cls(config.kv_params),
+            devices=config.devices,
             all_logits=config.all_logits,
-            embedding_multiplier=config.embedding_multiplier,
-            logits_postprocessor=config.logits_postprocessor,
+            # TODO: Support the following config options.
+            # embedding_multiplier=config.embedding_multiplier,
+            # logits_postprocessor=config.logits_postprocessor,
         )

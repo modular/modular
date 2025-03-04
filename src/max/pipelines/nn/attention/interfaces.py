@@ -118,66 +118,7 @@ class AttentionImpl(Layer, ABC):
     ) -> TensorValue: ...
 
 
-class AttentionImplV2(LayerV2, ABC):
-    """A generalized attention interface, that will be used upstream by a general Transformer.
-    We would expect a separate subclass, articulating each variation of Attention:
-
-    - AttentionWithRope
-    - AttentionWithAlibi
-    - VanillaAttentionWithCausalMask
-    - ...
-
-    `AttentionImplV2` will replace `AttentionImpl` as we roll out changes to the
-    Layer API.
-
-    There are a series of shared attributes, however, more may be needed for each individual variant.
-    For example, we may introduce an OptimizedRotaryEmbedding class for the AttentionWithRope class:
-
-    .. code-block:: python
-
-        @dataclass
-        class AttentionWithRope(AttentionImplV2):
-            rope: OptimizedRotaryEmbedding
-            ...
-
-    We expect the ``__call__`` abstractmethod to remain relatively consistent, however the ``**kwargs``
-    argument is exposed, allowing you to leverage additional arguments for each particular variant.
-    For example, we may introduce an VanillaAttentionWithCausalMask class, which includes an attention
-    mask:
-
-    .. code-block:: python
-
-        class VanillaAttentionWithCausalMask(AttentionImplV2):
-            ...
-
-            def __call__(
-                self,
-                x: TensorValueLike,
-                kv_collection: ContinuousBatchingKVCacheCollection,
-                **kwargs,
-            ) -> tuple[TensorValue, ContinuousBatchingKVCacheCollection]: ...
-
-                if "attn_mask" not in kwargs:
-                    raise ValueError("attn_mask not provided to VanillaAttentionWithCausalMask")
-
-                # Which we can then use the attention mask downstream like so:
-                op(
-                    attn_mask = kwargs["attn_mask"]
-                )
-    """
-
-    @abstractmethod
-    def __call__(
-        self,
-        x: TensorValue,
-        kv_collection: ContinuousBatchingKVCacheCollection
-        | PagedKVCacheCollection,
-        **kwargs,
-    ) -> TensorValue: ...
-
-
-@dataclass
-class DistributedAttentionImpl(Layer, ABC):
+class DistributedAttentionImpl(LayerV2, ABC):
     """
     A generalized Distributed attention interface.
     """
