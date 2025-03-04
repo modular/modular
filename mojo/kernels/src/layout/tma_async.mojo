@@ -20,6 +20,7 @@ from gpu.memory import (
     cp_async_bulk_tensor_reduce,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
+    ReduceOp,
 )
 from gpu.sync import (
     mbarrier_arrive,
@@ -498,7 +499,7 @@ struct TMATensorTile[
     # Schedules an asynchronous store into the global memory
     @always_inline
     fn async_reduce[
-        reduction_kind: StringLiteral
+        reduction_kind: ReduceOp
     ](
         self,
         src: LayoutTensor[
