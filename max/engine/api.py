@@ -18,6 +18,7 @@ from typing import (
     List,
     Mapping,
     Optional,
+    Sequence,
     Union,
     cast,
 )
@@ -150,7 +151,7 @@ class Model:
         Args:
           path: The filename where the mef is exported to.
         """
-        self._impl._export_mef(path)
+        self._impl._export_mef(path)  # type: ignore
 
     @traced
     def execute(
@@ -243,7 +244,7 @@ class Model:
             input_impls.append(tensor._impl)
         results = self._impl.execute_device_tensors(input_impls)
 
-        processed_results = []
+        processed_results: list[Tensor | MojoValue] = []
         for idx, result in enumerate(results):
             tracer.push(f"process_result_{idx}")
             # If the output is a MojoValue, we return it directly.
@@ -439,7 +440,9 @@ class TensorSpec:
 
     _impl: _TensorSpec
 
-    def __init__(self, shape: InputShape, dtype: DType, name: str):
+    def __init__(
+        self, shape: Optional[Sequence[Optional[int]]], dtype: DType, name: str
+    ):
         """
         Args:
             shape: The tensor shape.
@@ -468,7 +471,7 @@ class TensorSpec:
             return f"None x {self.dtype.name}"
 
     @property
-    def shape(self) -> list[int] | None:
+    def shape(self) -> list[Optional[int]] | None:
         """The shape of the tensor as a list of integers.
 
         If a dimension size is unknown/dynamic (such as the batch size), its
@@ -871,7 +874,7 @@ class InferenceSession:
         return Model._init(_model)
 
     def _get_torch_custom_op_schemas(self):
-        return self._impl._get_torch_custom_op_schemas()
+        return self._impl._get_torch_custom_op_schemas()  # type: ignore
 
     def set_debug_print_options(
         self,

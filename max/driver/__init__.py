@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max._core.driver import __version__
+from max._core.driver import __version__  # type: ignore
 
 from .driver import (
     CPU,
