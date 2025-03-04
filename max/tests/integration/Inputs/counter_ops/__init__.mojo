@@ -11,7 +11,7 @@ from buffer.dimlist import DimList
 from python import Python, PythonObject
 from python.python import _get_global_python_itf
 from register import register_internal
-from tensor import ManagedTensorSlice
+from tensor import ManagedTensorSlice, InputTensor, OutputTensor
 
 from utils.index import IndexList
 
@@ -43,26 +43,29 @@ struct Counter[stride: Int](Movable):
         print("bumped", self.a, self.b)
 
 
-@compiler.register("make_counter_from_tensor", num_dps_outputs=0)
+@compiler.register("make_counter_from_tensor")
 struct MakeCounterFromTensor:
+    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         stride: Int,
-    ](init: ManagedTensorSlice[type = DType.int32, rank=1]) -> Counter[stride]:
+    ](init: InputTensor[type = DType.int32, rank=1]) -> Counter[stride]:
         print("making. init:", init[0], init[1])
         return Counter[stride](Int(init[0]), Int(init[1]))
 
 
 @compiler.register("make_counter")
 struct MakeCounter:
+    @compiler.enforce_io_param
     @staticmethod
     fn execute[stride: Int]() -> Counter[stride]:
         print("making")
         return Counter[stride]()
 
 
-@compiler.register("bump_counter", num_dps_outputs=0)
+@compiler.register("bump_counter")
 struct BumpCounter:
+    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         stride: Int,
@@ -73,19 +76,18 @@ struct BumpCounter:
 
 @compiler.register("read_counter")
 struct ReadCounter:
+    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         stride: Int
-    ](
-        output: ManagedTensorSlice[type = DType.int32, rank=1],
-        c: Counter[stride],
-    ):
+    ](output: OutputTensor[type = DType.int32, rank=1], c: Counter[stride],):
         output[0] = c.a
         output[1] = c.b
 
 
-@compiler.register("bump_python_counter", num_dps_outputs=0)
+@compiler.register("bump_python_counter")
 struct BumpPythonCounter:
+    @compiler.enforce_io_param
     @staticmethod
     fn execute[stride: Int](counter: PythonObject) -> PythonObject:
         var cpython = _get_global_python_itf().cpython()
