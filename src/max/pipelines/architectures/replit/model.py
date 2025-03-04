@@ -276,6 +276,7 @@ class ReplitModel(PipelineModel[TextContext]):
                     huggingface_config=self.huggingface_config,
                 ),
                 kv_manager=self.kv_manager,
+                huggingface_config=self.huggingface_config,
             )
             model = session.load(
                 graph, weights_registry=self._weights.allocated_weights
