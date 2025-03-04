@@ -364,6 +364,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 build = lambda: _build_vision_graph(
                     pipeline_config=self.pipeline_config,
                     weights=self._weights,
+                    huggingface_config=self.huggingface_config,
                 )
                 vision_model_future = executor.submit(
                     build_and_compile_model, build, "vision", export_path
@@ -381,6 +382,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                         huggingface_config=self.huggingface_config,
                     ),
                     kv_manager=self.kv_manager,
+                    huggingface_config=self.huggingface_config,
                 )
                 text_model_future = executor.submit(
                     build_and_compile_model, build, "text", export_path

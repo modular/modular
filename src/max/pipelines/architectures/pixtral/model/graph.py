@@ -17,6 +17,7 @@ from max.graph.weights import SafetensorWeights
 from max.pipelines import PipelineConfig
 from max.pipelines.kv_cache import KVCacheManager, KVCacheParams
 from max.pipelines.nn import Linear
+from transformers import AutoConfig
 
 from ..llava.llava import (
     LlavaConditionalGeneration,
@@ -47,6 +48,7 @@ def _multi_modal_projector(
     dtype: DType,
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
+    huggingface_config: AutoConfig,
 ) -> LlavaMultiModalConnector:
     """Connects the vision encoder to the text decoder.
     This MLP projects the patch embeddings to the text-encoder's embeddings space.
@@ -56,14 +58,14 @@ def _multi_modal_projector(
     return LlavaMultiModalConnector(
         _linear(
             dtype,
-            pipeline_config.huggingface_config.text_config.hidden_size,
-            pipeline_config.huggingface_config.vision_config.hidden_size,
+            huggingface_config.text_config.hidden_size,
+            huggingface_config.vision_config.hidden_size,
             weights.linear_1,
         ),
         _linear(
             dtype,
-            pipeline_config.huggingface_config.text_config.hidden_size,
-            pipeline_config.huggingface_config.text_config.hidden_size,
+            huggingface_config.text_config.hidden_size,
+            huggingface_config.text_config.hidden_size,
             weights.linear_2,
         ),
     )
@@ -73,11 +75,17 @@ def _llava_vision_encoder_and_projector(
     graph: Graph,
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
+    huggingface_config: AutoConfig,
 ) -> LlavaVisionEncoder:
     # TODO(AIPIPE-273): Once we have mo.if, use this version of Llava rather than creating 2 graphs
-    vision_encoder = _vision_encoder(graph, pipeline_config, weights)
+    vision_encoder = _vision_encoder(
+        graph, pipeline_config, weights, huggingface_config
+    )
     multi_modal_projector = _multi_modal_projector(
-        pipeline_config.dtype, pipeline_config, weights.multi_modal_projector
+        pipeline_config.dtype,
+        pipeline_config,
+        weights.multi_modal_projector,
+        huggingface_config,
     )
     return LlavaVisionEncoder(
         vision_encoder=vision_encoder,
@@ -91,6 +99,7 @@ def _llava_decoder(
     weights: SafetensorWeights,
     max_seq_len: int,
     kv_params: KVCacheParams,
+    huggingface_config: AutoConfig,
 ) -> LlavaConditionalGenerationTextOnly:
     # Weights of pixtral decoder have the same names and shapes as weights of mistral.
     language_model = _transformer(
@@ -99,12 +108,13 @@ def _llava_decoder(
         weights=weights,
         max_seq_len=max_seq_len,
         kv_params=kv_params,
+        huggingface_config=huggingface_config,
     )
 
     return LlavaConditionalGenerationTextOnly(
         language_model=language_model,
-        vocab_size=pipeline_config.huggingface_config.text_config.vocab_size,
-        image_token_index=pipeline_config.huggingface_config.image_token_index,
+        vocab_size=huggingface_config.text_config.vocab_size,
+        image_token_index=huggingface_config.image_token_index,
     )
 
 
@@ -114,13 +124,17 @@ def _llava(
     weights: SafetensorWeights,
     max_seq_len: int,
     kv_params: KVCacheParams,
+    huggingface_config: AutoConfig,
 ) -> LlavaConditionalGeneration:
     # TODO: Once we have mo.if, use this version of Llava rather than creating 2 graphs
-    vision_encoder = _vision_encoder(graph, pipeline_config, weights)
+    vision_encoder = _vision_encoder(
+        graph, pipeline_config, weights, huggingface_config=huggingface_config
+    )
     multi_modal_projector = _multi_modal_projector(
         dtype=pipeline_config.dtype,
         pipeline_config=pipeline_config,
         weights=weights.multi_modal_projector,
+        huggingface_config=huggingface_config,
     )
     # Weights of pixtral have the same names and shapes as weights of mistral.
     language_model = _transformer(
@@ -129,17 +143,18 @@ def _llava(
         weights=weights,
         max_seq_len=max_seq_len,
         kv_params=kv_params,
+        huggingface_config=huggingface_config,
     )
 
     return LlavaConditionalGeneration(
         vision_encoder=vision_encoder,
         multi_modal_projector=multi_modal_projector,
         language_model=language_model,
-        vocab_size=pipeline_config.huggingface_config.text_config.vocab_size,
-        image_token_index=pipeline_config.huggingface_config.image_token_index,
-        vision_feature_layer=pipeline_config.huggingface_config.vision_feature_layer,
-        vision_feature_select_strategy=pipeline_config.huggingface_config.vision_feature_select_strategy,
-        image_seq_length=pipeline_config.huggingface_config.image_seq_length,
+        vocab_size=huggingface_config.text_config.vocab_size,
+        image_token_index=huggingface_config.image_token_index,
+        vision_feature_layer=huggingface_config.vision_feature_layer,
+        vision_feature_select_strategy=huggingface_config.vision_feature_select_strategy,
+        image_seq_length=huggingface_config.image_seq_length,
     )
 
 
@@ -149,6 +164,7 @@ def _build_graph(
     max_seq_len: int,
     kv_params: KVCacheParams,
     kv_manager: KVCacheManager,
+    huggingface_config: AutoConfig,
 ) -> Graph:
     # TODO: Make this work for multiple devices. Now getting the types for device [0]
     kv_cache_types = kv_manager.input_symbols()[0]
@@ -190,6 +206,7 @@ def _build_graph(
             weights=weights,
             max_seq_len=max_seq_len,
             kv_params=kv_params,
+            huggingface_config=huggingface_config,
         )
         (
             input_ids,
@@ -212,6 +229,7 @@ def _build_graph(
 def _build_vision_graph(
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
+    huggingface_config: AutoConfig,
 ) -> Graph:
     # Graph input types.
     pixel_values_type = TensorType(
@@ -233,7 +251,10 @@ def _build_vision_graph(
         ],
     ) as graph:
         model = _llava_vision_encoder_and_projector(
-            graph, pipeline_config, weights
+            graph,
+            pipeline_config,
+            weights,
+            huggingface_config,
         )
         (
             pixel_values,
@@ -253,6 +274,7 @@ def _build_text_graph(
     max_seq_len: int,
     kv_params: KVCacheParams,
     kv_manager: KVCacheManager,
+    huggingface_config: AutoConfig,
 ) -> Graph:
     # TODO: Make this work for multiple devices. Now getting the types for device [0]
     kv_cache_types = kv_manager.input_symbols()[0]
@@ -274,7 +296,7 @@ def _build_text_graph(
             # TODO(bduke): fix algebraic dim creation outside of graph contexts.
             "num_images",
             "num_patches_in_image",
-            pipeline_config.huggingface_config.text_config.hidden_size,
+            huggingface_config.text_config.hidden_size,
         ],
     )
 
@@ -294,6 +316,7 @@ def _build_text_graph(
             weights=weights,
             max_seq_len=max_seq_len,
             kv_params=kv_params,
+            huggingface_config=huggingface_config,
         )
         (
             input_ids,
