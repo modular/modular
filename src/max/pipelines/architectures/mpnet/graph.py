@@ -22,6 +22,7 @@ from max.graph.weights import Weights
 from max.pipelines import PipelineConfig
 from max.pipelines.nn import Embedding, LayerNorm, Linear, Sequential
 from max.pipelines.nn.layer import Layer
+from transformers import AutoConfig
 
 
 def _quantization_encoding(
@@ -36,8 +37,13 @@ class MPNetEmbeddings(Layer):
     """An embeddings layer that combines the tokens embeddings and positions
     embeddings."""
 
-    def __init__(self, pipeline_config: PipelineConfig, weights: Weights):
-        config = self.config = pipeline_config.huggingface_config
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        weights: Weights,
+        huggingface_config: AutoConfig,
+    ):
+        config = self.config = huggingface_config
         self.word_embeddings = Embedding(
             weights.word_embeddings.weight.allocate(
                 pipeline_config.dtype,
@@ -99,8 +105,13 @@ def _create_position_ids_from_input_ids(
 class MPNetSelfAttention(Layer):
     """Self-attention layer with position compensation."""
 
-    def __init__(self, pipeline_config: PipelineConfig, weights: Weights):
-        config = pipeline_config.huggingface_config
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        weights: Weights,
+        huggingface_config: AutoConfig,
+    ):
+        config = huggingface_config
         self.num_attention_heads = config.num_attention_heads
         self.attention_head_size = int(
             config.hidden_size / config.num_attention_heads
@@ -204,9 +215,16 @@ class MPNetSelfAttention(Layer):
 class MPNetAttention(Layer):
     """Container for the attention and attention output layer norm layers."""
 
-    def __init__(self, pipeline_config: PipelineConfig, weights: Weights):
-        config = pipeline_config.huggingface_config
-        self.attn = MPNetSelfAttention(pipeline_config, weights.attn)
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        weights: Weights,
+        huggingface_config: AutoConfig,
+    ):
+        config = huggingface_config
+        self.attn = MPNetSelfAttention(
+            pipeline_config, weights.attn, huggingface_config
+        )
         self.layer_norm = LayerNorm(
             weight=weights.LayerNorm.weight.allocate(
                 DType.float32, [config.hidden_size]
@@ -243,8 +261,13 @@ _ACTIVATIONS = {
 class MPNetIntermediate(Layer):
     """Fully connected layer with an activation function."""
 
-    def __init__(self, pipeline_config: PipelineConfig, weights: Weights):
-        config = pipeline_config.huggingface_config
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        weights: Weights,
+        huggingface_config: AutoConfig,
+    ):
+        config = huggingface_config
         self.dense = Linear(
             weights.dense.weight.allocate(
                 pipeline_config.dtype,
@@ -268,8 +291,13 @@ class MPNetIntermediate(Layer):
 class MPNetOutput(Layer):
     """Layer that combines the outputs of the intermediate and attention layers."""
 
-    def __init__(self, pipeline_config: PipelineConfig, weights: Weights):
-        config = pipeline_config.huggingface_config
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        weights: Weights,
+        huggingface_config: AutoConfig,
+    ):
+        config = huggingface_config
         self.dense = Linear(
             weights.dense.weight.allocate(
                 pipeline_config.dtype,
@@ -303,12 +331,21 @@ class MPNetOutput(Layer):
 class MPNetLayer(Layer):
     """An Encoder layer block."""
 
-    def __init__(self, pipeline_config: PipelineConfig, weights: Weights):
-        self.attention = MPNetAttention(pipeline_config, weights.attention)
-        self.intermediate = MPNetIntermediate(
-            pipeline_config, weights.intermediate
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        weights: Weights,
+        huggingface_config: AutoConfig,
+    ):
+        self.attention = MPNetAttention(
+            pipeline_config, weights.attention, huggingface_config
         )
-        self.output = MPNetOutput(pipeline_config, weights.output)
+        self.intermediate = MPNetIntermediate(
+            pipeline_config, weights.intermediate, huggingface_config
+        )
+        self.output = MPNetOutput(
+            pipeline_config, weights.output, huggingface_config
+        )
 
     def __call__(
         self,
@@ -329,13 +366,20 @@ class MPNetLayer(Layer):
 class MPNetEncoder(Layer):
     """Encoder that contains stacks of MPNetLayers."""
 
-    def __init__(self, pipeline_config: PipelineConfig, weights: Weights):
-        config = self.config = pipeline_config.huggingface_config
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        weights: Weights,
+        huggingface_config: AutoConfig,
+    ):
+        config = self.config = huggingface_config
         self.n_heads = config.num_attention_heads
         num_hidden_layers = config.num_hidden_layers
         self.layer = Sequential(
             [
-                MPNetLayer(pipeline_config, weights.layer[n])
+                MPNetLayer(
+                    pipeline_config, weights.layer[n], huggingface_config
+                )
                 for n in range(num_hidden_layers)
             ]
         )
@@ -427,9 +471,18 @@ class MPNetModel(Layer):
         self,
         pipeline_config: PipelineConfig,
         weights: Weights,
+        huggingface_config: AutoConfig,
     ):
-        self.embeddings = MPNetEmbeddings(pipeline_config, weights.embeddings)
-        self.encoder = MPNetEncoder(pipeline_config, weights.encoder)
+        self.embeddings = MPNetEmbeddings(
+            pipeline_config,
+            weights.embeddings,
+            huggingface_config=huggingface_config,
+        )
+        self.encoder = MPNetEncoder(
+            pipeline_config,
+            weights.encoder,
+            huggingface_config=huggingface_config,
+        )
         self.pool_outputs = pipeline_config.pool_embeddings
 
     def __call__(
@@ -473,6 +526,7 @@ class MPNetModel(Layer):
 def build_graph(
     pipeline_config: PipelineConfig,
     weights: Weights,
+    huggingface_config: AutoConfig,
 ) -> Graph:
     # Graph input types.
     input_ids_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
@@ -480,7 +534,7 @@ def build_graph(
         DType.float32, shape=["batch_size", "seq_len"]
     )
 
-    mpnet = MPNetModel(pipeline_config, weights)
+    mpnet = MPNetModel(pipeline_config, weights, huggingface_config)
 
     # Initialize Graph.
     return Graph(

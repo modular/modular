@@ -109,7 +109,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
                 "Unable to infer max_length for MPNet, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
-                f"({pipeline_config.huggingface_config.max_position_embeddings})."
+                f"({huggingface_config.max_position_embeddings})."
             )
             raise ValueError(msg) from e
 
@@ -185,8 +185,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             logger.info("Building and compiling model...")
             before = time.perf_counter()
             graph = build_graph(
-                self.pipeline_config,
-                self._weights,
+                self.pipeline_config, self._weights, self.huggingface_config
             )
             model = session.load(
                 graph, weights_registry=self._weights.allocated_weights
