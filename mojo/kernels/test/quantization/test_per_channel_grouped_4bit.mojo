@@ -219,7 +219,7 @@ fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]():
 
 
 fn main():
-    alias l2_tolerance: FloatLiteral = 0.1
+    alias l2_tolerance = 0.1
 
     # CHECK: G08 PASS
     # CHECK: G16 PASS
