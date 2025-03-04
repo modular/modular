@@ -886,6 +886,28 @@ fn mgp_debug_print[
     print(prefix + aDebugString)
 
 
+@register_internal("mgp.debug.tensor.print")
+@no_inline
+fn mgp_debug_tensor_print[
+    spec_rank: Int,
+    type: DType,
+](
+    buffer: NDBuffer[DType.uint8, 1],
+    spec: StaticTensorSpec[spec_rank],
+    label_ptr: UnsafePointer[Byte],
+    label_len: UInt,
+) raises:
+    external_call["KGEN_CompilerRT_DebugTensorPrint", NoneType](
+        label_ptr,
+        label_len,
+        type,
+        UnsafePointer.address_of(spec.shape.data.array),
+        spec_rank,
+        buffer.data,
+        len(buffer),
+    )
+
+
 # ===-----------------------------------------------------------------------===#
 # Opaque Test Primitives
 # ===-----------------------------------------------------------------------===#
