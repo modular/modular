@@ -138,7 +138,7 @@ fn test_fp8_multistage_gemm[
         c_tensor,
         a_tensor,
         b_tensor,
-        UnsafePointer[Scalar[DType.int32]](),
+        UnsafePointer[Int32](),
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
