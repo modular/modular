@@ -276,8 +276,8 @@ def test_bool():
     assert_false(Scalar[DType.bool](False).__bool__())
     assert_true(Scalar[DType.int32](5).__bool__())
     assert_false(Scalar[DType.int32](0).__bool__())
-    assert_true(Scalar[DType.float32](5.0).__bool__())
-    assert_false(Scalar[DType.float32](0.0).__bool__())
+    assert_true(Float32(5.0).__bool__())
+    assert_false(Float32(0.0).__bool__())
 
 
 def test_truthy():

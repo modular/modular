@@ -3181,7 +3181,7 @@ fn _powi(base: Scalar, exp: Int32) -> __type_of(base):
 @always_inline
 fn _convert_float8_to_f32_scaler[
     type: DType,
-](x: Scalar[type]) -> Scalar[DType.float32]:
+](x: Scalar[type]) -> Float32:
     var kF32_NaN: UInt32 = 0x7FFFFFFF
     var FP8_NUM_BITS = 8
     var IS_E4M3 = type is DType.float8_e4m3fn
@@ -3488,8 +3488,8 @@ alias _fp32_bf16_mantissa_diff = FPUtils[
 
 @always_inline
 fn _bfloat16_to_f32_scalar(
-    val: Scalar[DType.bfloat16],
-) -> Scalar[DType.float32]:
+    val: BFloat16,
+) -> Float32:
     @parameter
     if has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
@@ -3500,7 +3500,7 @@ fn _bfloat16_to_f32_scalar(
     if is_nvidia_gpu():
         return inlined_assembly[
             "cvt.f32.bf16 $0, $1;" if _is_sm_9x() else "mov.b32 $0, {0, $1};",
-            Scalar[DType.float32],
+            Float32,
             constraints="=f,h",
             has_side_effect=False,
         ](bitcast[DType.int16](val))
@@ -3523,7 +3523,7 @@ fn _bfloat16_to_f32[
         input_type: DType, result_type: DType
     ](val: Scalar[input_type]) capturing -> Scalar[result_type]:
         return rebind[Scalar[result_type]](
-            _bfloat16_to_f32_scalar(rebind[Scalar[DType.bfloat16]](val))
+            _bfloat16_to_f32_scalar(rebind[BFloat16](val))
         )
 
     return _simd_apply[wrapper_fn, DType.float32, size](val)
@@ -3531,8 +3531,8 @@ fn _bfloat16_to_f32[
 
 @always_inline
 fn _f32_to_bfloat16_scalar(
-    val: Scalar[DType.float32],
-) -> Scalar[DType.bfloat16]:
+    val: Float32,
+) -> BFloat16:
     @parameter
     if has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
@@ -3604,7 +3604,7 @@ fn _f32_to_bfloat16[
         input_type: DType, result_type: DType
     ](val: Scalar[input_type]) capturing -> Scalar[result_type]:
         return rebind[Scalar[result_type]](
-            _f32_to_bfloat16_scalar(rebind[Scalar[DType.float32]](val))
+            _f32_to_bfloat16_scalar(rebind[Float32](val))
         )
 
     return _simd_apply[wrapper_fn, DType.bfloat16, size](val)
