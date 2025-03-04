@@ -12,22 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from max.tensor import OutputTensor, InputTensor, foreach
+from max.tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
 
 
-@compiler.register("add_constant_custom", num_dps_outputs=1)
+@compiler.register("add_constant_custom")
 struct AddConstantCustom[value: Int]:
     @staticmethod
     fn execute[
         # e.g. "CUDA" or "CPU"
         target: StringLiteral,
     ](
-        # as num_dps_outputs=1, the first argument is the "output"
         out: OutputTensor,
-        # starting here are the list of inputs
         x: InputTensor[type = out.type, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
@@ -50,16 +48,14 @@ struct AddConstantCustom[value: Int]:
         raise "NotImplemented"
 
 
-@compiler.register("add_one_custom", num_dps_outputs=1)
+@compiler.register("add_one_custom")
 struct AddOneCustom:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StringLiteral,
     ](
-        # as num_dps_outputs=1, the first argument is the "output"
         out: OutputTensor,
-        # starting here are the list of inputs
         x: InputTensor[type = out.type, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,

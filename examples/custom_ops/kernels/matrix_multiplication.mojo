@@ -27,7 +27,8 @@ from math import ceildiv
 from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
 from sys.info import simdwidthof
-from tensor import ManagedTensorSlice, foreach
+from compiler import enforce_io_param
+from tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
 from utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
@@ -767,7 +768,7 @@ fn tensor_core_matrix_multiplication[
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("matrix_multiplication", num_dps_outputs=1)
+@compiler.register("matrix_multiplication")
 struct MatrixMultiplication[algorithm: StringLiteral]:
     """
     The central custom operation that dispatches to multiple different
@@ -775,16 +776,15 @@ struct MatrixMultiplication[algorithm: StringLiteral]:
     selected algorithm.
     """
 
+    @enforce_io_param
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StringLiteral,
     ](
-        # as num_dps_outputs=1, the first argument is the "output"
-        out: ManagedTensorSlice[rank=2],
-        # starting here are the list of inputs
-        a: ManagedTensorSlice[type = out.type, rank = out.rank],
-        b: ManagedTensorSlice[type = out.type, rank = out.rank],
+        out: OutputTensor[rank=2],
+        a: InputTensor[type = out.type, rank = out.rank],
+        b: InputTensor[type = out.type, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:

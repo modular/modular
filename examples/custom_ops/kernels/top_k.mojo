@@ -18,7 +18,7 @@ from bit import log2_floor
 from compiler import register
 from gpu import WARP_SIZE, barrier, warp
 from gpu.memory import AddressSpace, external_memory
-from max.tensor import ManagedTensorSlice
+from max.tensor import ManagedTensorSlice, OutputTensor, InputTensor
 from memory import Span
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
@@ -36,7 +36,7 @@ struct TopKElement[T: DType]:
         return self.val > rhs.val
 
 
-@register("top_k_custom", num_dps_outputs=2)
+@register("top_k_custom")
 struct TopK:
     """Registers the `top_k_custom` op, allowing python to use it from the `max`
     package. This is a simplified version without bottom_k and sorting options,
@@ -45,6 +45,7 @@ struct TopK:
     has the "mo.top_k" op which is feature complete.
     """
 
+    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -53,9 +54,9 @@ struct TopK:
         K: Int,
         target: StringLiteral,
     ](
-        out_vals: ManagedTensorSlice[type=type, rank=rank],
-        out_idxs: ManagedTensorSlice[type = DType.int32, rank=rank],
-        in_vals: ManagedTensorSlice[type=type, rank=rank],
+        out_vals: OutputTensor[type=type, rank=rank],
+        out_idxs: OutputTensor[type = DType.int32, rank=rank],
+        in_vals: InputTensor[type=type, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[rank == 2, "rank must be 2"]()

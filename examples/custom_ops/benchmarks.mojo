@@ -210,13 +210,13 @@ def matmul():
         gpu_ctx.enqueue_copy(a_dev_buf, a.unsafe_ptr())
         gpu_ctx.enqueue_copy(b_dev_buf, b.unsafe_ptr())
 
-        var c_dev = InputTensor[static_spec=c_spec](
+        var c_dev = OutputTensor[static_spec=c_spec](
             c_dev_buf.unsafe_ptr(), c_shape
         )
-        var a_dev = OutputTensor[static_spec=a_spec](
+        var a_dev = InputTensor[static_spec=a_spec](
             a_dev_buf.unsafe_ptr(), a_shape
         )
-        var b_dev = OutputTensor[static_spec=b_spec](
+        var b_dev = InputTensor[static_spec=b_spec](
             b_dev_buf.unsafe_ptr(), b_shape
         )
 

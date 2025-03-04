@@ -15,7 +15,7 @@ from math import iota
 
 import compiler
 from complex import ComplexSIMD
-from max.tensor import ManagedTensorSlice, foreach
+from max.tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList
@@ -24,15 +24,16 @@ from utils.index import IndexList
 alias float_dtype = DType.float32
 
 
-@compiler.register("mandelbrot", num_dps_outputs=1)
+@compiler.register("mandelbrot")
 struct Mandelbrot:
+    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StringLiteral,
     ](
         # as num_dps_outputs=1, the first argument is the "output"
-        out: ManagedTensorSlice,
+        out: OutputTensor,
         # starting here are the list of inputs
         min_x: Float32,
         min_y: Float32,

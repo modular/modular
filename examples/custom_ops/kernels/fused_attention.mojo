@@ -64,15 +64,16 @@ from gpu.sync import barrier
 from gpu.memory import AddressSpace
 from utils import Index
 
-from tensor import ManagedTensorSlice
+from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 
 
-@register("fused_attention_custom", num_dps_outputs=1)
+@register("fused_attention_custom")
 struct FusedAttention:
     """Registers the `fused_attention_custom` op, allowing python to use it from the `max`
     package.
     """
 
+    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         dtype: DType,
@@ -84,10 +85,10 @@ struct FusedAttention:
         BD: Int,  # Dimension of blocks to split K, V into
         target: StringLiteral,  # "cpu" or "gpu"
     ](
-        output: ManagedTensorSlice[type=dtype, rank=rank],
-        key: ManagedTensorSlice[type=dtype, rank=rank],
-        query: ManagedTensorSlice[type=dtype, rank=rank],
-        value: ManagedTensorSlice[type=dtype, rank=rank],
+        output: OutputTensor[type=dtype, rank=rank],
+        key: InputTensor[type=dtype, rank=rank],
+        query: InputTensor[type=dtype, rank=rank],
+        value: InputTensor[type=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[rank == 2, "rank must be 2"]()

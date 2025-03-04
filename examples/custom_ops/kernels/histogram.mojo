@@ -23,7 +23,7 @@ from gpu import (
 from gpu.memory import AddressSpace
 from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
-from tensor import ManagedTensorSlice
+from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 from os import Atomic
 from memory import stack_allocation
 from utils import StaticTuple
@@ -99,12 +99,13 @@ fn _histogram_gpu(
 
 @compiler.register("histogram", num_dps_outputs=1)
 struct Histogram:
+    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral
     ](
-        out: ManagedTensorSlice[type = DType.int64, rank=1],
-        input: ManagedTensorSlice[type = DType.uint8, rank=1],
+        out: OutputTensor[type = DType.int64, rank=1],
+        input: InputTensor[type = DType.uint8, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         _histogram_cpu(out, input) if is_cpu[target]() else _histogram_gpu(
