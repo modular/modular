@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements SIMD primitives and abstractions
+"""Implements SIMD primitives and abstractions.
 
 Provides high-performance SIMD primitives and abstractions for
 vectorized computation in Mojo. It enables efficient data-parallel operations
