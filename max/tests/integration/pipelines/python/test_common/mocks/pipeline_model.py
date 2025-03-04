@@ -58,7 +58,9 @@ class MockPipelineModel(PipelineModel):
         self.eos_prob = pipeline_config.eos_prob  # type: ignore
 
     @classmethod
-    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
         MAX_LENGTH = 1200
         if pipeline_config.max_length:
             return (
@@ -70,7 +72,9 @@ class MockPipelineModel(PipelineModel):
         return MAX_LENGTH
 
     @classmethod
-    def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
+    def get_kv_params(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> KVCacheParams:
         return KVCacheParams(
             dtype=DType.float32,
             n_kv_heads=1,
@@ -82,7 +86,7 @@ class MockPipelineModel(PipelineModel):
         )
 
     @classmethod
-    def get_num_layers(cls, pipeline_config: PipelineConfig) -> int:
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return 1
 
     @classmethod
@@ -90,6 +94,7 @@ class MockPipelineModel(PipelineModel):
         cls,
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
+        huggingface_config: AutoConfig,
     ) -> int:
         return 16
 

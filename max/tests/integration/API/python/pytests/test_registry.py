@@ -41,6 +41,7 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines.pipeline import KVCacheMixin
+from transformers import AutoConfig
 
 
 def prepare_registry(func):
@@ -87,7 +88,9 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         return ModelOutputs(next_token_logits=model_inputs.input1)
 
     @classmethod
-    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
         raise NotImplementedError("calculate_max_seq_len is not implemented")
 
     def prepare_initial_token_inputs(
@@ -153,24 +156,24 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             )
 
     @classmethod
-    def get_num_layers(cls, pipeline_config: PipelineConfig) -> int:
-        hf_config = pipeline_config.huggingface_config
-        if hasattr(hf_config, "num_hidden_layers"):
-            return hf_config.num_hidden_layers
-        elif hasattr(hf_config, "num_layers"):
-            return hf_config.num_layers
-        elif hasattr(hf_config, "n_layers"):
-            return hf_config.n_layers
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        if hasattr(huggingface_config, "num_hidden_layers"):
+            return huggingface_config.num_hidden_layers
+        elif hasattr(huggingface_config, "num_layers"):
+            return huggingface_config.num_layers
+        elif hasattr(huggingface_config, "n_layers"):
+            return huggingface_config.n_layers
         else:
             raise ValueError(
                 "num_hidden_layers or num_layers or n_layers not found in huggingface_config"
             )
 
     @classmethod
-    def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
-        hf_config = pipeline_config.huggingface_config
-        num_kv_heads = cls._get_num_kv_heads(hf_config)
-        hidden_size = cls._get_hidden_size(hf_config)
+    def get_kv_params(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> KVCacheParams:
+        num_kv_heads = cls._get_num_kv_heads(huggingface_config)
+        hidden_size = cls._get_hidden_size(huggingface_config)
 
         return KVCacheParams(
             dtype=pipeline_config.cache_dtype,
@@ -191,9 +194,13 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         num_layers = self.get_num_layers(self.pipeline_config)
 
         return load_kv_manager(
-            params=self.get_kv_params(self.pipeline_config),
+            params=self.get_kv_params(
+                self.pipeline_config, self.huggingface_config
+            ),
             max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
+            max_seq_len=self.calculate_max_seq_len(
+                self.pipeline_config, self.huggingface_config
+            ),
             num_layers=num_layers,
             devices=self.pipeline_config.devices,
             available_cache_memory=available_cache_memory,
@@ -206,14 +213,15 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         pipeline_config: PipelineConfig,
         available_cache_memory: int | None,
         devices: list[Device],
+        huggingface_config: AutoConfig,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         assert available_cache_memory is not None
         assert pipeline_config.max_length is not None
-        num_layers = cls.get_num_layers(pipeline_config)
+        num_layers = cls.get_num_layers(huggingface_config=huggingface_config)
 
         return estimate_kv_cache_size(
-            params=cls.get_kv_params(pipeline_config),
+            params=cls.get_kv_params(pipeline_config, huggingface_config),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=pipeline_config.max_length,
             num_layers=num_layers,
@@ -241,10 +249,12 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
 class DummyLlamaPipelineModel(DummyPipelineModel):
     @classmethod
-    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
         try:
             return upper_bounded_default(
-                upper_bound=pipeline_config.huggingface_config.max_position_embeddings,
+                upper_bound=huggingface_config.max_position_embeddings,
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
@@ -252,17 +262,19 @@ class DummyLlamaPipelineModel(DummyPipelineModel):
                 "Unable to infer max_length for DummyModel, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
-                f"({pipeline_config.huggingface_config.max_position_embeddings})."
+                f"({huggingface_config.max_position_embeddings})."
             )
             raise ValueError(msg) from e
 
 
 class DummyReplitPipelineModel(DummyPipelineModel):
     @classmethod
-    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
         try:
             return upper_bounded_default(
-                upper_bound=pipeline_config.huggingface_config.max_seq_len,
+                upper_bound=huggingface_config.max_seq_len,
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
@@ -270,7 +282,7 @@ class DummyReplitPipelineModel(DummyPipelineModel):
                 "Unable to infer max_length for DummyModel, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_seq_len "
-                f"({pipeline_config.huggingface_config.max_seq_len})."
+                f"({huggingface_config.max_seq_len})."
             )
             raise ValueError(msg) from e
 
