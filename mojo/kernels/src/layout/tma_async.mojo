@@ -113,9 +113,7 @@ fn _tma_desc_tile_layout[
 @value
 @register_passable("trivial")
 struct TMABarrier(CollectionElement):
-    var mbar: UnsafePointer[
-        Scalar[DType.int64], address_space = AddressSpace.SHARED
-    ]
+    var mbar: UnsafePointer[Int64, address_space = AddressSpace.SHARED]
 
     @always_inline
     fn __init__(out self):
@@ -132,7 +130,7 @@ struct TMABarrier(CollectionElement):
     fn __init__(
         out self,
         addr: UnsafePointer[
-            Scalar[DType.int64],
+            Int64,
             address_space = AddressSpace.SHARED,
             alignment=8,
         ],
@@ -184,7 +182,7 @@ fn create_mbarrier_array[
     num: Int
 ](
     addr: UnsafePointer[
-        Scalar[DType.int64],
+        Int64,
         address_space = AddressSpace.SHARED,
         alignment=8,
     ]
