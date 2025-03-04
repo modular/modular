@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Error helpers."""
 
-from collections import Optional
+from collections import Optional, InlineArray
 from collections.string import StaticString
 from sys import param_env
 from sys.ffi import c_char, external_call
 
 from builtin._location import __call_location, _SourceLocation
 from builtin.breakpoint import breakpoint
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 
 from utils.write import _WriteBufferStack, write_args
 
@@ -141,11 +141,13 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
         The system stack trace as a formatted string, with one indented
         call per line.
     """
-    var call_stack = stack_allocation[MAX_STACK_SIZE, UnsafePointer[NoneType]]()
+    var call_stack = InlineArray[UnsafePointer[NoneType], MAX_STACK_SIZE](
+        unsafe_uninitialized=True
+    )
     var frames = external_call["backtrace", Int](call_stack, MAX_STACK_SIZE)
     var frame_strs = external_call[
         "backtrace_symbols", UnsafePointer[UnsafePointer[c_char]]
-    ](call_stack, frames)
+    ](call_stack.unsafe_ptr(), frames)
 
     var formatted = String()
     var buffer = _WriteBufferStack(formatted)

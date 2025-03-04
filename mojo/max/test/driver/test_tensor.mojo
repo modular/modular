@@ -24,7 +24,7 @@ from max.tensor import TensorShape, TensorSpec
 from testing import assert_equal, assert_raises, assert_true
 
 from buffer import Dim, NDBuffer
-from memory import stack_allocation
+from collections import InlineArray
 
 from tensor_internal import IOUnknown
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
@@ -483,11 +483,13 @@ fn test_construction_from_managed_tensor_slice() raises:
         static_layout_tensor.runtime_layout.stride[1].S.value(), col_stride
     )
 
-    var stack_ptr = stack_allocation[rows * cols, dtype]()
+    var stack_buffer = InlineArray[Scalar[dtype], rows * cols](
+        unsafe_uninitialized=True
+    )
     var dynamic_tensor_slice = ManagedTensorSlice[
         IOUnknown,
         static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-    ](stack_ptr, (rows, cols), (row_stride, col_stride))
+    ](stack_buffer.unsafe_ptr(), (rows, cols), (row_stride, col_stride))
     var dynamic_layout_tensor = dynamic_tensor_slice.to_layout_tensor()
 
     # Assert that the static layout is unknown
@@ -520,7 +522,7 @@ fn test_construction_from_managed_tensor_slice() raises:
         static_spec = StaticTensorSpec[dtype, rank]
         .create_unknown()
         .with_layout[rank]((Dim(), cols), (Dim(), col_stride)),
-    ](stack_ptr, (rows, cols), (row_stride, col_stride))
+    ](stack_buffer.unsafe_ptr(), (rows, cols), (row_stride, col_stride))
     var partially_dynamic_layout_tensor = partially_dynamic_tensor_slice.to_layout_tensor()
 
     # cols are static, but rows are dynamic
