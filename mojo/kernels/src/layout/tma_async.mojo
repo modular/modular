@@ -6,7 +6,7 @@
 
 from sys import sizeof
 from sys._assembly import inlined_assembly
-
+from sys import llvm_intrinsic
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._nvidia_cuda import (
     TensorMapSwizzle,
@@ -27,13 +27,15 @@ from gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from layout import IntTuple, LayoutTensor
+from layout import IntTuple, LayoutTensor, Layout
 from layout.tensor_core_async import _CM_K_BYTES
 from memory import UnsafePointer, stack_allocation
-
+from memory.pointer import _GPUAddressSpace
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 from gpu.id import block_idx, thread_idx
+from gpu.memory import async_copy
+from collections import Optional
 
 
 # Returns an IntTuple of variadic Int values.
@@ -194,6 +196,67 @@ fn create_mbarrier_array[
         mbars[i] = TMABarrier(addr + i)
 
     return mbars
+
+
+@value
+@register_passable("trivial")
+struct TMATensorTileArray[
+    num_of_tensormaps: Int,
+    dtype: DType,
+    cta_tile_layout: Layout,
+    desc_layout: Layout,
+]:
+    var tensormaps: StaticTuple[
+        UnsafePointer[TMATensorTile[dtype, cta_tile_layout, desc_layout],],
+        num_of_tensormaps,
+    ]
+
+    @always_inline
+    fn __init__(
+        out self,
+        ctx: DeviceContext,
+        tensormaps_device: DeviceBuffer[DType.uint8],
+        template_tma_tensormap: Optional[
+            TMATensorTile[dtype, cta_tile_layout, desc_layout]
+        ],
+    ) raises:
+        self.tensormaps = StaticTuple[
+            UnsafePointer[TMATensorTile[dtype, cta_tile_layout, desc_layout]],
+            num_of_tensormaps,
+        ]()
+
+        # initialize with a template tensor map if provided
+        if template_tma_tensormap:
+            var tensormaps_host_ptr = stack_allocation[
+                num_of_tensormaps * 128, UInt8
+            ]()
+
+            @parameter
+            for i in range(num_of_tensormaps):
+                for j in range(128):
+                    tensormaps_host_ptr[
+                        i * 128 + j
+                    ] = template_tma_tensormap.value().descriptor.data[j]
+
+            ctx.enqueue_copy(tensormaps_device, tensormaps_host_ptr)
+
+        tensormaps_device_ptr = tensormaps_device.unsafe_ptr()
+
+        @parameter
+        for i in range(num_of_tensormaps):
+            self.tensormaps[i] = UnsafePointer[Scalar[DType.uint8]](
+                tensormaps_device_ptr + i * 128
+            ).bitcast[TMATensorTile[dtype, cta_tile_layout, desc_layout]]()
+
+    @always_inline
+    fn __getitem__(
+        self,
+        index: Int,
+        out result: UnsafePointer[
+            TMATensorTile[dtype, cta_tile_layout, desc_layout]
+        ],
+    ):
+        return self.tensormaps[index]
 
 
 # PipelineState keeps track of the current state of a barrier using circular indexing
@@ -456,6 +519,106 @@ struct TMATensorTile[
             Index(coords[0], coords[1]),
         )
 
+    @always_inline
+    fn smem_tensormap_init(
+        self,
+        smem_tma_descriptor_ptr: UnsafePointer[
+            TMADescriptor, address_space = _GPUAddressSpace.SHARED
+        ],
+    ):
+        # NOTE: Only one thread should call this
+        #
+        var src_desc = UnsafePointer.address_of(self.descriptor).bitcast[
+            UInt8
+        ]().address_space_cast[_GPUAddressSpace.GLOBAL]()
+        var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]()
+
+        @parameter
+        for i in range(8):
+            async_copy[16](src_desc + i * 16, dst_desc + i * 16)
+
+    @always_inline
+    fn replace_tensormap_global_address_in_gmem[
+        dtype: DType,
+        src_layout: Layout,
+    ](self, new_src: LayoutTensor[dtype, src_layout]):
+        var desc_ptr = UnsafePointer.address_of(self.descriptor).bitcast[
+            NoneType
+        ]()
+        var new_global_ptr = new_src.ptr.bitcast[NoneType]()
+        inlined_assembly[
+            "tensormap.replace.tile.global_address.global.b1024.b64 [$0], $1;",
+            NoneType,
+            constraints="l,l",
+            has_side_effect=True,
+        ](desc_ptr, new_global_ptr)
+
+    @always_inline
+    fn tensormap_fence_acquire(self):
+        # NOTE: Entire warp must call this function as the instruction is aligned
+        #
+        llvm_intrinsic[
+            "llvm.nvvm.fence.proxy.tensormap_generic.acquire.gpu", NoneType
+        ](
+            UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
+            Int32(128),
+        )
+
+    @always_inline
+    fn tensormap_fence_release(self):
+        # This fence is needed when modifying tensormap directly in GMEM
+        llvm_intrinsic[
+            "llvm.nvvm.fence.proxy.tensormap_generic.release.gpu", NoneType
+        ]()
+
+    @always_inline
+    fn replace_tensormap_global_address_in_shared_mem[
+        dtype: DType,
+        src_layout: Layout,
+    ](
+        self,
+        smem_tma_descriptor_ptr: UnsafePointer[
+            TMADescriptor, address_space = _GPUAddressSpace.SHARED
+        ],
+        new_src: LayoutTensor[dtype, src_layout],
+    ):
+        # NOTE: Only one thread should call this
+        inlined_assembly[
+            (
+                "tensormap.replace.tile.global_address.shared::cta.b1024.b64"
+                " [$0], $1;"
+            ),
+            NoneType,
+            constraints="r,l",
+            has_side_effect=True,
+        ](
+            smem_tma_descriptor_ptr.bitcast[NoneType](),
+            new_src.ptr.bitcast[NoneType](),
+        )
+
+    @always_inline
+    fn tensormap_cp_fence_release(
+        self,
+        smem_tma_descriptor_ptr: UnsafePointer[
+            TMADescriptor, address_space = _GPUAddressSpace.SHARED
+        ],
+    ):
+        # This fence is needed when modifying tensormap directly in SMEM
+        # NOTE: Entire warp must call this function as the instruction is aligned
+        var gmem_tma_descriptor_ptr = UnsafePointer.address_of(
+            self.descriptor
+        ).bitcast[NoneType]()
+
+        inlined_assembly[
+            (
+                "tensormap.cp_fenceproxy.global.shared::cta.tensormap::generic.release.gpu.sync.aligned"
+                " [$0], [$1], 128;"
+            ),
+            NoneType,
+            constraints="l,r",
+            has_side_effect=True,
+        ](gmem_tma_descriptor_ptr, smem_tma_descriptor_ptr.bitcast[NoneType]())
+
 
 # Creates a TMATensorTile with specified tile sizes.
 #
@@ -524,7 +687,7 @@ def create_tma_tile[
     type, __tile_layout, __desc_layout
 ]:
     # Current impl limitations
-    constrained[rank == 2 or rank == 3, "Only suppot 2D/3D TMA"]()
+    constrained[rank == 2 or rank == 3, "Only support 2D/3D TMA"]()
 
     @parameter
     if rank == 2:
