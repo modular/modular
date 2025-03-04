@@ -18,7 +18,8 @@ from hashlib.hash import hash as old_hash
 
 from bit import pop_count
 from builtin._location import __call_location
-from memory import Span, memset_zero, stack_allocation
+from collections import InlineArray
+from memory import Span, memset_zero
 from testing import assert_equal, assert_not_equal, assert_true
 
 # Source: https://www.101languages.net/arabic/most-common-arabic-words/
@@ -635,19 +636,19 @@ def test_hash_byte_array():
 def test_avalanche():
     # test that values which differ just in one bit,
     # produce significatly different hash values
-    var data = stack_allocation[256, UInt8]()
-    memset_zero(data, 256)
+    var data = InlineArray[UInt8, 256](unsafe_uninitialized=True)
+    memset_zero(data.unsafe_ptr(), 256)
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
-    hashes0.append(hash[HasherType=hasher0](data, 256))
-    hashes1.append(hash[HasherType=hasher1](data, 256))
+    hashes0.append(hash[HasherType=hasher0](data.unsafe_ptr(), 256))
+    hashes1.append(hash[HasherType=hasher1](data.unsafe_ptr(), 256))
 
     for i in range(256):
-        memset_zero(data, 256)
+        memset_zero(data.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         data[i >> 3] = v
-        hashes0.append(hash[HasherType=hasher0](data, 256))
-        hashes1.append(hash[HasherType=hasher1](data, 256))
+        hashes0.append(hash[HasherType=hasher0](data.unsafe_ptr(), 256))
+        hashes1.append(hash[HasherType=hasher1](data.unsafe_ptr(), 256))
 
     for i in range(len(hashes0)):
         var diff = dif_bits(hashes0[i], hashes1[i])
@@ -665,14 +666,14 @@ def test_avalanche():
 def test_trailing_zeros():
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
-    var data = stack_allocation[8, UInt8]()
-    memset_zero(data, 8)
+    var data = InlineArray[UInt8, 8](unsafe_uninitialized=True)
+    memset_zero(data.unsafe_ptr(), 8)
     data[0] = 23
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
     for i in range(1, 9):
-        hashes0.append(hash[HasherType=hasher0](data, i))
-        hashes1.append(hash[HasherType=hasher1](data, i))
+        hashes0.append(hash[HasherType=hasher0](data.unsafe_ptr(), i))
+        hashes1.append(hash[HasherType=hasher1](data.unsafe_ptr(), i))
 
     for i in range(len(hashes0)):
         var diff = dif_bits(hashes0[i], hashes1[i])

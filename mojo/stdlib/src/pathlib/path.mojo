@@ -14,7 +14,7 @@
 """
 
 import os
-from collections import List
+from collections import List, InlineArray
 from collections.string import StringSlice
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, listdir, stat_result
@@ -22,7 +22,7 @@ from sys import external_call, os_is_windows
 from sys.ffi import c_char
 
 from builtin._location import __call_location, _SourceLocation
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 
 alias DIR_SEPARATOR = "\\" if os_is_windows() else "/"
 
@@ -34,17 +34,23 @@ fn cwd() raises -> Path:
       The current directory.
     """
     alias MAX_CWD_BUFFER_SIZE = 1024
-    var buf = stack_allocation[MAX_CWD_BUFFER_SIZE, c_char]()
+    var buf = InlineArray[c_char, MAX_CWD_BUFFER_SIZE](
+        unsafe_uninitialized=True
+    )
 
     var res = external_call["getcwd", UnsafePointer[c_char]](
-        buf, Int(MAX_CWD_BUFFER_SIZE)
+        buf.unsafe_ptr(), Int(MAX_CWD_BUFFER_SIZE)
     )
 
     # If we get a nullptr, then we raise an error.
     if res == UnsafePointer[c_char]():
         raise Error("unable to query the current directory")
 
-    return String(StringSlice[buf.origin](unsafe_from_utf8_cstr_ptr=buf))
+    return String(
+        StringSlice[__origin_of(buf)](
+            unsafe_from_utf8_cstr_ptr=buf.unsafe_ptr()
+        )
+    )
 
 
 @always_inline

@@ -31,7 +31,7 @@ from sys import bitwidthof, simdwidthof, sizeof
 from sys.ffi import _Global
 
 from builtin.dtype import _uint_type_of_width
-from memory import UnsafePointer, bitcast, memcpy, memset_zero, stack_allocation
+from memory import UnsafePointer, bitcast, memcpy, memset_zero
 
 # ===----------------------------------------------------------------------=== #
 # Implementation

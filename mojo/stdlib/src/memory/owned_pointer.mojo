@@ -19,7 +19,7 @@ from memory import OwnedPointer
 ```
 """
 
-from memory import UnsafePointer, memcpy, stack_allocation
+from memory import UnsafePointer, memcpy
 
 
 struct OwnedPointer[T: AnyType]:
