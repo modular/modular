@@ -512,11 +512,14 @@ class LlamaVisionModel(Layer):
     """The Llama 3.2 vision model."""
 
     def __init__(
-        self, pipeline_config: PipelineConfig, weights: Weights
+        self,
+        pipeline_config: PipelineConfig,
+        weights: Weights,
+        huggingface_config: AutoConfig,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
-        self.vision_config = pipeline_config.huggingface_config.vision_config
-        self.text_config = pipeline_config.huggingface_config.text_config
+        self.vision_config = huggingface_config.vision_config
+        self.text_config = huggingface_config.text_config
 
         self.vision_model = instantiate_vision_model(
             dtype=pipeline_config.dtype,
@@ -596,8 +599,9 @@ class LlamaVisionLanguageModel(Layer):
         kv_params: KVCacheParams,
         max_seq_len: int,
         num_text_kv_cache_inputs: int,
+        huggingface_config: AutoConfig,
     ) -> None:
-        text_config = pipeline_config.huggingface_config.text_config
+        text_config = huggingface_config.text_config
 
         self.language_model = instantiate_language_model(
             dtype=pipeline_config.dtype,
@@ -727,7 +731,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         return Graph(
             "llama3-vision-vision-model-graph",
             forward=LlamaVisionModel(
-                pipeline_config=self.pipeline_config, weights=self.weights
+                pipeline_config=self.pipeline_config,
+                weights=self.weights,
+                huggingface_config=self.huggingface_config,
             ),
             input_types=input_types,
         )
@@ -813,6 +819,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                     huggingface_config=self.huggingface_config,
                 ),
                 num_text_kv_cache_inputs=len(list(text_kv_input_symbols)),
+                huggingface_config=self.huggingface_config,
             ),
             input_types=input_types,
         )
