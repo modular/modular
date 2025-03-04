@@ -763,6 +763,21 @@ struct WGMMADescriptor[dtype: DType]:
         """
         return self.desc + ((offset & 0x3FFFF) >> 4)
 
+    @always_inline
+    fn replace(
+        mut self,
+        smem_ptr: UnsafePointer[
+            Scalar[dtype], address_space = AddressSpace.SHARED
+        ],
+    ):
+        """Replace descriptor's base address.
+
+        Args:
+            smem_ptr: Base address in shared memory.
+        """
+        offset = Int(smem_ptr)
+        self.desc = self._insert_bit[0]((offset & 0x3FFFF) >> 4)
+
 
 @always_inline
 fn wgmma_fence_aligned():
