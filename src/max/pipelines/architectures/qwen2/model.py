@@ -276,7 +276,7 @@ class Qwen2Model(PipelineModel[TextContext]):
                 "Unable to infer max_length for Qwen2, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
-                f"({pipeline_config.huggingface_config.max_position_embeddings})."
+                f"({huggingface_config.max_position_embeddings})."
             )
             raise ValueError(msg) from e
 
@@ -427,6 +427,7 @@ class Qwen2Model(PipelineModel[TextContext]):
                     self.pipeline_config,
                     huggingface_config=self.huggingface_config,
                 ),
+                huggingface_config=self.huggingface_config,
             )
             tokens, input_row_offsets, *kv_cache = graph.inputs
 

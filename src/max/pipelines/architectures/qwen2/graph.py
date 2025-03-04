@@ -42,6 +42,7 @@ from max.pipelines.nn import (
     Transformer,
     TransformerBlock,
 )
+from transformers import AutoConfig
 
 
 def distribute_value(
@@ -140,33 +141,33 @@ def attention(
     rope: OptimizedRotaryEmbedding,
     weights: Weights,
     layer_idx: TensorValue,
+    huggingface_config: AutoConfig,
 ) -> AttentionWithRope:
     kv_weight_dim = (
-        pipeline_config.huggingface_config.hidden_size
-        // pipeline_config.huggingface_config.num_attention_heads
-    ) * pipeline_config.huggingface_config.num_key_value_heads
+        huggingface_config.hidden_size // huggingface_config.num_attention_heads
+    ) * huggingface_config.num_key_value_heads
 
     wq = weights.self_attn.q_proj.weight.allocate(
         pipeline_config.dtype,
         [
-            pipeline_config.huggingface_config.hidden_size,
-            pipeline_config.huggingface_config.hidden_size,
+            huggingface_config.hidden_size,
+            huggingface_config.hidden_size,
         ],
     )
     wk = weights.self_attn.k_proj.weight.allocate(
         pipeline_config.dtype,
-        [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
+        [kv_weight_dim, huggingface_config.hidden_size],
     )
     wv = weights.self_attn.v_proj.weight.allocate(
         pipeline_config.dtype,
-        [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
+        [kv_weight_dim, huggingface_config.hidden_size],
     )
 
     wqkv = ops.concat((wq, wk, wv))
 
     bias_q = weights.self_attn.q_proj.bias.allocate(
         pipeline_config.dtype,
-        [pipeline_config.huggingface_config.hidden_size],
+        [huggingface_config.hidden_size],
     )
 
     bias_k = weights.self_attn.k_proj.bias.allocate(
@@ -182,13 +183,13 @@ def attention(
     bias_qkv = ops.concat((bias_q, bias_k, bias_v))
 
     return AttentionWithRope(
-        n_heads=pipeline_config.huggingface_config.num_attention_heads,
+        n_heads=huggingface_config.num_attention_heads,
         kv_params=kv_params,
         wqkv=wqkv,
         wo=linear(
             pipeline_config.dtype,
-            pipeline_config.huggingface_config.hidden_size,
-            pipeline_config.huggingface_config.hidden_size,
+            huggingface_config.hidden_size,
+            huggingface_config.hidden_size,
             weights.self_attn.o_proj,
         ),
         rope=rope,
@@ -203,6 +204,7 @@ def transformer(
     pipeline_config: PipelineConfig,
     weights: Weights,
     kv_params: KVCacheParams,
+    huggingface_config: AutoConfig,
 ) -> Transformer:
     with graph:
         if weights.rope_freqs.weight.exists():
@@ -215,15 +217,15 @@ def transformer(
             and pipeline_config.rope_type == RopeType.normal
         )
         rope = OptimizedRotaryEmbedding(
-            dim=pipeline_config.huggingface_config.hidden_size,
-            n_heads=pipeline_config.huggingface_config.num_attention_heads,
-            theta=pipeline_config.huggingface_config.rope_theta,
-            max_seq_len=pipeline_config.huggingface_config.max_position_embeddings,
+            dim=huggingface_config.hidden_size,
+            n_heads=huggingface_config.num_attention_heads,
+            theta=huggingface_config.rope_theta,
+            max_seq_len=huggingface_config.max_position_embeddings,
             rope_scaling=rope_scaling,
             interleaved=interleaved_rope_weights,
         )
 
-        rms_norm_eps = pipeline_config.huggingface_config.rms_norm_eps
+        rms_norm_eps = huggingface_config.rms_norm_eps
         layers = [
             TransformerBlock(
                 attention=attention(
@@ -232,31 +234,32 @@ def transformer(
                     rope,
                     weights.model.layers[i],
                     layer_idx=ops.constant(i, DType.uint32),
+                    huggingface_config=huggingface_config,
                 ),
                 mlp=feed_forward(
                     pipeline_config.dtype,
-                    pipeline_config.huggingface_config.hidden_size,
-                    pipeline_config.huggingface_config.intermediate_size,
+                    huggingface_config.hidden_size,
+                    huggingface_config.intermediate_size,
                     weights.model.layers[i],
                 ),
                 attention_norm=rms_norm(
-                    pipeline_config.huggingface_config.hidden_size,
+                    huggingface_config.hidden_size,
                     rms_norm_eps,
                     weights.model.layers[i].input_layernorm,
                 ),
                 mlp_norm=rms_norm(
-                    pipeline_config.huggingface_config.hidden_size,
+                    huggingface_config.hidden_size,
                     rms_norm_eps,
                     weights.model.layers[i].post_attention_layernorm,
                 ),
             )
-            for i in range(pipeline_config.huggingface_config.num_hidden_layers)
+            for i in range(huggingface_config.num_hidden_layers)
         ]
 
         embedding_layer = embedding(
             pipeline_config,
-            pipeline_config.huggingface_config.vocab_size,
-            pipeline_config.huggingface_config.hidden_size,
+            huggingface_config.vocab_size,
+            huggingface_config.hidden_size,
             weights.model.embed_tokens,
         )
 
@@ -266,16 +269,16 @@ def transformer(
             output = Linear.create(
                 pipeline_config.dtype,
                 pipeline_config.graph_quantization_encoding,
-                pipeline_config.huggingface_config.vocab_size,
-                pipeline_config.huggingface_config.hidden_size,
+                huggingface_config.vocab_size,
+                huggingface_config.hidden_size,
                 weights.lm_head,
             )
         else:
             output = Linear.create(
                 pipeline_config.dtype,
                 pipeline_config.graph_quantization_encoding,
-                pipeline_config.huggingface_config.vocab_size,
-                pipeline_config.huggingface_config.hidden_size,
+                huggingface_config.vocab_size,
+                huggingface_config.hidden_size,
                 cast(Weight, embedding_layer.weights),
             )
 
@@ -293,11 +296,11 @@ def transformer(
             )
 
         return Transformer(
-            dim=pipeline_config.huggingface_config.hidden_size,
-            n_heads=pipeline_config.huggingface_config.num_attention_heads,
+            dim=huggingface_config.hidden_size,
+            n_heads=huggingface_config.num_attention_heads,
             layers=layers,
             norm=rms_norm(
-                pipeline_config.huggingface_config.hidden_size,
+                huggingface_config.hidden_size,
                 rms_norm_eps,
                 weights.model.norm,
             ),
