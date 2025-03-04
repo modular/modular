@@ -23,6 +23,7 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
 )
+from transformers import AutoConfig
 
 from .graph import build_graph
 
@@ -50,9 +51,12 @@ class WhisperInputs(ModelInputs):
 
 class Whisper(PipelineModel):
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
-        super().__init__(pipeline_config, session)
+        super().__init__(pipeline_config, session, huggingface_config)
         self.model = self.load_model(session)
 
     def load_model(

@@ -50,6 +50,7 @@ from max.pipelines.kv_cache import (
 from max.pipelines.kv_cache._utils import build_max_lengths_tensor
 from max.pipelines.nn import Linear
 from max.pipelines.nn.layer import Layer
+from transformers import AutoConfig
 
 from .language_model import CausalLanguageModel, instantiate_language_model
 from .vision_model import instantiate_vision_model
@@ -668,17 +669,20 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
     """
 
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
-        self.vision_config = pipeline_config.huggingface_config.vision_config
-        self.text_config = pipeline_config.huggingface_config.text_config
+        self.vision_config = huggingface_config.vision_config
+        self.text_config = huggingface_config.text_config
 
         # These need to be set at graph instantiation time.
         self.vision_graph_input_size = -1
         self.language_graph_input_size = -1
 
-        super().__init__(pipeline_config, session)
+        super().__init__(pipeline_config, session, huggingface_config)
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
         # pipeline. Unfortunately, self.model is still being used (and exposed)

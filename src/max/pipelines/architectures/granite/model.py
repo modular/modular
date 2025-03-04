@@ -16,6 +16,7 @@ from __future__ import annotations
 from max.engine import InferenceSession
 from max.graph import ops
 from max.pipelines import PipelineConfig
+from transformers import AutoConfig
 
 from ..llama3.model import Llama3Model
 
@@ -24,13 +25,14 @@ class GraniteModel(Llama3Model):
     """Granite pipeline model implementation."""
 
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
-        super().__init__(pipeline_config, session)
+        super().__init__(pipeline_config, session, huggingface_config)
 
-        logits_scaling = getattr(
-            self.pipeline_config.huggingface_config, "logits_scaling", 1.0
-        )
+        logits_scaling = getattr(huggingface_config, "logits_scaling", 1.0)
 
         if logits_scaling != 1.0:
             self.logits_processor = lambda logits: logits / ops.constant(

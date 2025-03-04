@@ -35,6 +35,7 @@ from max.pipelines import (
 )
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams
+from transformers import AutoConfig
 
 from .graph import build_graph
 
@@ -67,9 +68,12 @@ class MPNetInputs(ModelInputs):
 
 class MPNetPipelineModel(PipelineModel[TextContext]):
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
-        super().__init__(pipeline_config, session)
+        super().__init__(pipeline_config, session, huggingface_config)
         self.model = self.load_model(session)
 
     @classmethod
@@ -124,9 +128,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         tokens = [ctx.next_tokens for ctx in context_batch]
 
         # Pad tokens for the batch.
-        pad_value = getattr(
-            self.pipeline_config.huggingface_config, "pad_token_id", 1
-        )
+        pad_value = getattr(self.huggingface_config, "pad_token_id", 1)
         next_tokens_batch, _ = collate_batch(
             tokens,
             pad_value=pad_value,

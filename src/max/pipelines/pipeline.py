@@ -38,7 +38,7 @@ from max.pipelines.kv_cache import (
     infer_optimal_batch_size,
 )
 from max.profiler import Tracer, traced
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 
 from .config import PipelineConfig
 from .context import InputContext
@@ -146,9 +146,13 @@ class PipelineModel(ABC, Generic[T]):
     _MIN_DEFAULT_BATCH_SIZE = 1
 
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.huggingface_config = huggingface_config
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
@@ -417,7 +421,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         # Load model.
         self._pipeline_model = pipeline_model(
-            pipeline_config=self._pipeline_config, session=session
+            pipeline_config=self._pipeline_config,
+            session=session,
+            huggingface_config=self._pipeline_config.huggingface_config,
         )
 
         # Load sampler.

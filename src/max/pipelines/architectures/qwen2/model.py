@@ -42,6 +42,7 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
+from transformers import AutoConfig
 
 from .graph import transformer
 
@@ -77,9 +78,12 @@ class Qwen2Inputs(ModelInputs):
 
 class Qwen2Model(PipelineModel[TextContext]):
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
-        super().__init__(pipeline_config, session)
+        super().__init__(pipeline_config, session, huggingface_config)
         self.model = self.load_model(session)
 
     def execute(
@@ -281,7 +285,7 @@ class Qwen2Model(PipelineModel[TextContext]):
             params=self.get_kv_params(self.pipeline_config),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
-            num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
+            num_layers=self.huggingface_config.num_hidden_layers,
             devices=self.pipeline_config.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,

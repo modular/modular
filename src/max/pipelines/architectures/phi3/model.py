@@ -17,6 +17,7 @@ from typing import Literal
 
 from max.engine import InferenceSession
 from max.pipelines import PipelineConfig
+from transformers import AutoConfig
 
 from ..llama3.model import LlamaModelBase
 
@@ -28,6 +29,9 @@ class Phi3Model(LlamaModelBase):
     """Normalization layer."""
 
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
-        super().__init__(pipeline_config, session)
+        super().__init__(pipeline_config, session, huggingface_config)

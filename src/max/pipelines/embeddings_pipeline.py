@@ -43,7 +43,9 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
 
         # Load model.
         self._pipeline_model = pipeline_model(
-            pipeline_config=self._pipeline_config, session=session
+            pipeline_config=self._pipeline_config,
+            session=session,
+            huggingface_config=self._pipeline_config.huggingface_config,
         )
 
     @traced

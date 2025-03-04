@@ -38,6 +38,7 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
+from transformers import AutoConfig
 
 from .model.graph import _build_text_graph, _build_vision_graph
 from .vision_encoder.attention_utils import causal_attention_mask_2d_from_imgs
@@ -89,9 +90,12 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
     """The overall interface to the Pixtral model."""
 
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
-        super().__init__(pipeline_config, session)
+        super().__init__(pipeline_config, session, huggingface_config)
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
         # pipeline. Unfortunately, self.model is still being used (and exposed)
@@ -115,7 +119,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 shape=[
                     0,
                     0,
-                    self.pipeline_config.huggingface_config.text_config.hidden_size,
+                    self.huggingface_config.text_config.hidden_size,
                 ],
                 dtype=self.pipeline_config.dtype,
             ).to(self.pipeline_config.devices[0])
@@ -172,7 +176,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             fill_val = -10000.0
             attention_mask = causal_attention_mask_2d_from_imgs(
                 [image],
-                self.pipeline_config.huggingface_config.vision_config.patch_size,
+                self.huggingface_config.vision_config.patch_size,
                 1,
                 fill_val,
             )

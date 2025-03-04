@@ -46,6 +46,7 @@ from max.pipelines.kv_cache import (
 )
 from max.pipelines.nn import LayerV2, Signals
 from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
+from transformers import AutoConfig
 
 from .distributed_llama import DistributedLlama3
 from .llama3 import Llama3
@@ -118,14 +119,17 @@ class LlamaModelBase(PipelineModel[TextContext]):
     """Weights to load into the model."""
 
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
         """
         Args:
             pipeline_config: The configuration for this pipeline.
             session: The container for the runtime for this model.
         """
-        super().__init__(pipeline_config, session)
+        super().__init__(pipeline_config, session, huggingface_config)
         self.model = self.load_model(session)
 
         # Initialize state needed for communication collectives.
@@ -411,7 +415,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         calculated as the square root of 1.0 divided by the head dimension.
         """
         return getattr(
-            self.pipeline_config.huggingface_config,
+            self.huggingface_config,
             "attention_multiplier",
             math.sqrt(1.0 / self.get_kv_params(self.pipeline_config).head_dim),
         )
@@ -427,7 +431,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
 
-        huggingface_config = self.pipeline_config.huggingface_config
+        huggingface_config = self.huggingface_config
         adapter = self.pipeline_config._weight_adapters.get(
             self.pipeline_config.weights_format
         )
@@ -459,7 +463,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             nn_model.load_state_dict(state_dict)
             self.state_dict = nn_model.state_dict()
             with Graph(
-                getattr(huggingface_config, "model_type", "llama3"),
+                getattr(self.huggingface_config, "model_type", "llama3"),
                 input_types=[
                     tokens_type,
                     input_row_offsets_type,
@@ -531,11 +535,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
         adapter = self.pipeline_config._weight_adapters.get(
             self.pipeline_config.weights_format
         )
-        huggingface_config = self.pipeline_config.huggingface_config
         if adapter:
             state_dict = adapter(
                 dict(weights.items()),
-                huggingface_config=huggingface_config,
+                huggingface_config=self.huggingface_config,
                 pipeline_config=self.pipeline_config,
             )
         else:
@@ -551,7 +554,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         self.state_dict = nn_model.state_dict()
 
         with Graph(
-            getattr(huggingface_config, "model_type", "llama3"),
+            getattr(self.huggingface_config, "model_type", "llama3"),
             input_types=[
                 tokens_type,
                 attn_mask_type,
@@ -751,6 +754,9 @@ class Llama3Model(LlamaModelBase):
     """Normalization layer."""
 
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
     ) -> None:
-        super().__init__(pipeline_config, session)
+        super().__init__(pipeline_config, session, huggingface_config)
