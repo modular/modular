@@ -177,9 +177,9 @@ fn normalize_u32(value: UInt32) -> UInt32:
 
 
 @always_inline
-fn normalize(value: Scalar[DType.int32]) -> UInt32:
+fn normalize(value: Int32) -> UInt32:
     @always_inline
-    fn reinterpret(value: Scalar[DType.int32]) -> UInt32:
+    fn reinterpret(value: Int32) -> UInt32:
         # For signed integral types: Convert to unsigned int to ensure proper
         # comparison
         return value.cast[DType.uint32]()
@@ -226,7 +226,7 @@ fn normalize(
 
     @parameter
     if type is DType.int32:
-        return normalize(rebind[Scalar[DType.int32]](value)).cast[result.type]()
+        return normalize(rebind[Int32](value)).cast[result.type]()
     elif type is DType.uint32:
         return normalize(rebind[UInt32](value)).cast[result.type]()
     elif type is DType.float32:
@@ -301,27 +301,27 @@ fn radix_sort_pairs_kernel[
     # Shared mem declarations
     var s_counts = stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
-        Scalar[DType.int32],
+        Int32,
         address_space = AddressSpace.SHARED,
     ]()
     var total_counts = stack_allocation[
         NUM_BUCKETS,
-        Scalar[DType.int32],
+        Int32,
         address_space = AddressSpace.SHARED,
     ]()
     var total_offsets = stack_allocation[
         (NUM_BUCKETS + 1),  # +1 extended size for descending
-        Scalar[DType.int32],
+        Int32,
         address_space = AddressSpace.SHARED,
     ]()
     var total_offsets_descending = stack_allocation[
         NUM_BUCKETS,
-        Scalar[DType.int32],
+        Int32,
         address_space = AddressSpace.SHARED,
     ]()
     var s_thread_offsets = stack_allocation[
         BLOCK_SIZE * NUM_BUCKETS,
-        Scalar[DType.int32],
+        Int32,
         address_space = AddressSpace.SHARED,
     ]()
 
@@ -348,7 +348,7 @@ fn radix_sort_pairs_kernel[
 
     # Compute total_counts[NUM_BUCKETS] by summing counts[NUM_BUCKETS] across threads
     if tid < NUM_BUCKETS:
-        var sum = Scalar[DType.int32](0)
+        var sum = Int32(0)
         bucket_offset = tid
 
         @parameter
@@ -381,7 +381,7 @@ fn radix_sort_pairs_kernel[
         var offset = 1
         while offset < BLOCK_SIZE:
             # Initialize a temporary variable to store the value from the neighboring thread.
-            var val = Scalar[DType.int32](0)
+            var val = Int32(0)
             if tid >= offset:
                 # If the current thread ID is greater than or equal to the offset,
                 # fetch the value from the neighboring thread that is 'offset' positions behind.

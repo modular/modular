@@ -457,9 +457,7 @@ fn _warp_reduce_topk[
     ) -> TopK_2[T, largest]:
         return TopK_2[T, largest](
             u=warp.shuffle_down(v.u, offset),  # u is the value
-            p=Int(
-                warp.shuffle_down(Scalar[DType.int32](v.p), offset)
-            ),  # p is the index
+            p=Int(warp.shuffle_down(Int32(v.p), offset)),  # p is the index
         )
 
     @parameter
