@@ -408,7 +408,7 @@ class PrefixCache:
         )
         data.blocks.append(new_block)
         data.cached_idx += num_cache_hit_tokens
-        assert len(data.prompt_tokens) > 0
+        assert data.num_prompt_tokens > 0
         assert data.cached_idx < data.inflight_idx
 
     @traced
@@ -454,7 +454,7 @@ class PrefixCache:
             - prefix_blocks: Prefix cache blocks that would be reused for this seq.
             - num_cache_hit_tokens: Number of new cached tokens retrieved from prefix cache.
         """
-        if len(data.prompt_tokens) == 1:
+        if data.num_prompt_tokens == 1:
             return set(), 0
 
         node, prefix_blocks = self._fetch_query_cache(seq_id, data)
