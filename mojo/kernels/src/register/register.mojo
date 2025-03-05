@@ -28,11 +28,3 @@ fn __mogg_intrinsic_attr(intrin: StringLiteral):
     Attaches the given intrinsic annotation onto the function.
     """
     return
-
-
-fn enforce_io_param():
-    """
-    Decorator meant to ease the transition fo MangedTensorSlice needing to
-    specialize on the io_spec param in kernel struct execute calls.
-    """
-    return
