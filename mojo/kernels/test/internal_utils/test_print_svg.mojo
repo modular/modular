@@ -96,7 +96,9 @@ fn test_svg_wgmma_shape() raises:
         IntTuple(IntTuple(8, 64), IntTuple(1, 512)),
     )
 
-    var tensor = LayoutTensor[DType.float32, layout].stack_allocation()
+    var tensor = LayoutTensor[
+        DType.float32, layout, MutableAnyOrigin
+    ].stack_allocation()
     var tensor_dist = tensor.vectorize[1, 1]().distribute[
         Layout.col_major(8, 4)
     ](0)
@@ -130,7 +132,9 @@ fn test_svg_wgmma_shape() raises:
 fn test_svg_swizzle() raises:
     alias layout = Layout.row_major(8, 8)
     alias swizzle = Swizzle(3, 0, 3)
-    var tensor = LayoutTensor[DType.float32, layout].stack_allocation()
+    var tensor = LayoutTensor[
+        DType.float32, layout, MutableAnyOrigin
+    ].stack_allocation()
 
     # the figure generated here is identical to
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/async-warpgroup-smem-layout-128B-k.png
