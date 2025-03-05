@@ -473,8 +473,10 @@ class PipelineRegistry:
 
         self._estimate_memory_footprint(pipeline_config, arch)
 
-        # If we pass validation ensure, the engine is set as MAX.
-        pipeline_config.engine = PipelineEngine.MAX
+        # If we pass validation ensure and the engine is not set, just set it
+        # to MAX.
+        if pipeline_config.engine is None:
+            pipeline_config.engine = PipelineEngine.MAX
         return pipeline_config
 
     def _estimate_memory_footprint(
