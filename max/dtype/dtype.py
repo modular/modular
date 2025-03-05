@@ -172,6 +172,14 @@ class DType(Enum):
         """Returns true if the dtype is an integer."""
         return self.value & mIsInteger != 0
 
+    def is_float8(self) -> __builtins__.bool:
+        """Returns true if the dtype is any variant of float8."""
+        return self.is_float() and self.size_in_bytes == 1
+
+    def is_half(self) -> __builtins__.bool:
+        """Returns true if the dtype is half-precision floating point."""
+        return self.is_float() and self.size_in_bytes == 2
+
     def is_float(self) -> __builtins__.bool:
         """Returns true if the dtype is floating point."""
         if self.is_integral():

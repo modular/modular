@@ -457,20 +457,32 @@ def load_max_tensor(path: PathLike) -> Tensor:
                 '"BINARY_MAX_CHECKPOINT"), please initialize `MemmapTensor` '
                 "directly."
             )
-        major_version, _minor_version = struct.unpack("2i", f.read(8))
+
+        # '2I' = 2 4-byte integers (major_version, minor_version).
+        major_version, _minor_version = struct.unpack("2I", f.read(8))
 
         # Hardcoded but we should move to a robust versioning system if this
         # method is ever used outside of debugging.
         if major_version > 0:
             raise ValueError("Unable to read from version > 0.")
 
+        # 'Q' = 8-byte unsigned long long (metadata_size).
         metadata_size = struct.unpack("Q", f.read(8))[0]
 
-        key_size = struct.unpack("i", f.read(4))[0]
+        # 'I' = 4-byte unsigned integer (key_size).
+        key_size = struct.unpack("I", f.read(4))[0]
+
         unused_key = f.read(key_size).decode("utf-8")
-        dtype, rank = struct.unpack("2b", f.read(2))
+
+        # '2B' = 2 unsigned bytes (dtype, rank).
+        dtype, rank = struct.unpack("2B", f.read(2))
+
         dtype = DType(dtype)
-        shape = tuple(struct.unpack("i", f.read(4))[0] for _ in range(rank))
+
+        # 'I' = 4-byte unsigned integer (each dimension in shape tuple).
+        shape = tuple(struct.unpack("I", f.read(4))[0] for _ in range(rank))
+
+        # 'Q' = 8-byte unsigned long long (offset).
         offset = struct.unpack("Q", f.read(8))[0]
 
         bytes_read = 4 + key_size + 2 + 4 * rank + 8
