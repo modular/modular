@@ -106,7 +106,7 @@ class Tensor(DLPackArray):
         return DType._from(self._impl.dtype)
 
     @property
-    def shape(self) -> ShapeType:
+    def shape(self) -> tuple:
         """Shape of tensor."""
         return self._impl.shape
 
@@ -243,7 +243,8 @@ class Tensor(DLPackArray):
         it is, a contiguous copy will be returned."""
 
         # NOTE: np.ascontiguousarray only copies if needed.
-        return cls.from_dlpack(np.ascontiguousarray(arr))
+        # Skip np.contiguousarray for scalars since it converts them to rank-1.
+        return cls.from_dlpack(np.ascontiguousarray(arr) if arr.shape else arr)
 
     def to_numpy(self) -> np.ndarray:
         """Converts the tensor to a numpy array.
