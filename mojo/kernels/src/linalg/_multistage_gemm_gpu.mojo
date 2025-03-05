@@ -174,11 +174,13 @@ fn multistage_mma[
     next_op_b_iter: LayoutTensorIter[
         b_type,
         b_next_gmem_layout,
+        MutableAnyOrigin,
         alignment=next_op_b_iter_alignment,
         masked=next_op_b_iter_masked,
     ] = LayoutTensorIter[
         b_type,
         b_next_gmem_layout,
+        MutableAnyOrigin,
         alignment=next_op_b_iter_alignment,
         masked=next_op_b_iter_masked,
     ](),
@@ -622,9 +624,9 @@ fn multistage_gemm_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     serial_reduction: Bool = False,
 ](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b: LayoutTensor[b_type, b_layout],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     locks: UnsafePointer[Int32],
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
@@ -699,6 +701,7 @@ fn multistage_gemm_kernel[
                 LayoutTensorIter[
                     a_type,
                     Layout.row_major(BM, BK),
+                    MutableAnyOrigin,
                     address_space = a_smem.address_space,
                     alignment = a_smem.alignment,
                     circular=True,
@@ -997,6 +1000,7 @@ fn multistage_gemm_kernel[
             var c_reg_tile_out = LayoutTensor[
                 c_type,
                 c_reg_tile.layout,
+                MutableAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ].stack_allocation()
 
@@ -1047,9 +1051,9 @@ fn multistage_gemm_split_k_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     serial_reduction: Bool = False,
 ](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b: LayoutTensor[b_type, b_layout],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     work_space: NDBuffer[work_space_type, 3],
     num_partitions: UInt,
     locks: UnsafePointer[Int32],
@@ -1088,7 +1092,9 @@ fn multistage_gemm_split_k_kernel[
             serial_reduction=serial_reduction,
         ](c, a_part, b_part, locks)
     else:
-        var work_space_part = LayoutTensor[work_space_type, c_layout](
+        var work_space_part = LayoutTensor[
+            work_space_type, c_layout, MutableAnyOrigin
+        ](
             work_space.data + block_idx.z * M * N,
             RuntimeLayout[c_layout].row_major(IndexList[2](M, N)),
         )

@@ -132,6 +132,7 @@ fn gemm_kernel[
     var a_smem_tensor = LayoutTensor[
         a_type,
         a_smem_layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=smem_alignment,
     ].stack_allocation()
@@ -142,6 +143,7 @@ fn gemm_kernel[
     var b_smem_tensor = LayoutTensor[
         b_type,
         b_smem_layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=smem_alignment,
     ].stack_allocation()

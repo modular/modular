@@ -91,19 +91,38 @@ fn multistage_dual_mma[
     static_num_iters: Dim = Dim(),
     k_group_size: UInt = 1,
 ](
-    c0: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL, **_],
-    c1: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL, **_],
-    a_iter_arg: LayoutTensorIter[_, a_layout, **_],
-    b0_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
-    b1_iter_arg: LayoutTensorIter[b_type, b_layout, **_],
+    c0: LayoutTensor[
+        c_type,
+        c_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL, **_,
+    ],
+    c1: LayoutTensor[
+        c_type,
+        c_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL, **_,
+    ],
+    a_iter_arg: LayoutTensorIter[_, a_layout, MutableAnyOrigin, **_],
+    b0_iter_arg: LayoutTensorIter[b_type, b_layout, MutableAnyOrigin, **_],
+    b1_iter_arg: LayoutTensorIter[b_type, b_layout, MutableAnyOrigin, **_],
     a_smem_iter_arg: LayoutTensorIter[
-        a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
+        a_type,
+        a_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED, **_,
     ],
     mut b0_smem_iter: LayoutTensorIter[
-        b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
+        b_type,
+        b_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED, **_,
     ],
     mut b1_smem_iter: LayoutTensorIter[
-        b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
+        b_type,
+        b_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED, **_,
     ],
     num_iters: Int,
     /,
@@ -418,10 +437,10 @@ fn multistage_dual_gemm_kernel[
     binary_lambda_fn: binary_fn_type,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b0: LayoutTensor[b_type, b_layout],
-    b1: LayoutTensor[b_type, b_layout],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b0: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    b1: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
@@ -487,6 +506,7 @@ fn multistage_dual_gemm_kernel[
                 LayoutTensorIter[
                     a_type,
                     Layout.row_major(BM, BK),
+                    MutableAnyOrigin,
                     address_space = a_smem.address_space,
                     alignment = a_smem.alignment,
                     circular=True,
@@ -731,10 +751,10 @@ fn multistage_dual_gemm[
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b0: LayoutTensor[b_type, b_layout],
-    b1: LayoutTensor[b_type, b_layout],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b0: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    b1: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim(0)
