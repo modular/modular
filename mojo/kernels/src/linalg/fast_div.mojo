@@ -19,6 +19,8 @@ from gpu.intrinsics import mulhi
 @always_inline
 fn _ceillog2(x: Scalar) -> Int32:
     """Computes ceil(log_2(d))."""
+
+    @parameter
     for i in range(bitwidthof[x.type]()):
         if (__type_of(x)(1) << i) >= x:
             return i
