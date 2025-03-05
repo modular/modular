@@ -4,17 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import fma
 from sys import prefetch
 from sys.info import alignof
 from sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
-from buffer.dimlist import DimList
-from memory import UnsafePointer, stack_allocation
+from buffer.buffer import NDBuffer
+from memory import UnsafePointer
 
 from utils.index import Index, IndexList
-from utils.loop import unroll
 
 from .accumulate import _Accumulator
 from .matmul import InnerMatmulKernel

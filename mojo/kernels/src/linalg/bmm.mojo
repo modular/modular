@@ -7,21 +7,19 @@
 from collections import OptionalReg
 from math import align_up, ceildiv, gcd
 from sys import alignof
-from sys.info import bitwidthof, simdwidthof
+from sys.info import simdwidthof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import (
-    _get_start_indices_of_nth_subvolume,
     _get_start_indices_of_nth_subvolume_uint,
 )
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_dim, block_idx, global_idx, thread_idx
+from gpu import block_idx, global_idx
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from memory import UnsafePointer, memset_zero
-from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -29,12 +27,12 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 from .apple_accelerate import apple_batched_matmul, use_apple_accelerate_lib
-from .matmul import _submatmul_sequential_sync, matmul
+from .matmul import _submatmul_sequential_sync
 from .matmul_gpu import _matmul_gpu
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 from .utils import (
-    get_kernel_config,
     get_kernel_type,
+    get_kernel_config,
     get_matmul_num_tasks,
     get_min_task_size,
     get_partitioned_matmul,

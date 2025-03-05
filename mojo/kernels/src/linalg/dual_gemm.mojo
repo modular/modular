@@ -32,10 +32,8 @@ from layout import Layout
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    _swizzle_signature,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy_local_to_local,
     copy_local_to_sram,
     copy_sram_to_dram,
 )
@@ -50,7 +48,7 @@ from layout.tensor_core import (
     get_mma_shape,
 )
 from utils.numerics import get_accum_type
-from memory import UnsafePointer, memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
@@ -59,14 +57,12 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from utils import StaticTuple
 from utils.index import Index, IndexList
 
-from ._multistage_gemm_gpu import multistage_gemm_kernel
 from .utils import GemmShape, elementwise_epilogue_type
 from .utils_gpu import (
     MatmulConfig,
     MatmulKernels,
     _bk_base,
     block_swizzle,
-    select_config,
 )
 
 
