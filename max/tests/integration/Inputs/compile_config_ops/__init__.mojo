@@ -18,7 +18,6 @@ alias logger = Logger()
 
 @compiler.register("use_splitk_reduction_scheme")
 struct UseSplitkReductionScheme:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute(
         out: OutputTensor[type = DType.int32, rank=1],
@@ -31,7 +30,6 @@ struct UseSplitkReductionScheme:
 
 @compiler.register("use_logger")
 struct UseLogger:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute(
         out: OutputTensor[type = DType.int32, rank=1],
@@ -42,7 +40,6 @@ struct UseLogger:
 
 @compiler.register("add_one_custom")
 struct AddOneCustom:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral

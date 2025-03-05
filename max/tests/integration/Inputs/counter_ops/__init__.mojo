@@ -45,7 +45,6 @@ struct Counter[stride: Int](Movable):
 
 @compiler.register("make_counter_from_tensor")
 struct MakeCounterFromTensor:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         stride: Int,
@@ -56,7 +55,6 @@ struct MakeCounterFromTensor:
 
 @compiler.register("make_counter")
 struct MakeCounter:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[stride: Int]() -> Counter[stride]:
         print("making")
@@ -65,7 +63,6 @@ struct MakeCounter:
 
 @compiler.register("bump_counter")
 struct BumpCounter:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         stride: Int,
@@ -76,7 +73,6 @@ struct BumpCounter:
 
 @compiler.register("read_counter")
 struct ReadCounter:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         stride: Int
@@ -87,7 +83,6 @@ struct ReadCounter:
 
 @compiler.register("bump_python_counter")
 struct BumpPythonCounter:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[stride: Int](counter: PythonObject) -> PythonObject:
         var cpython = _get_global_python_itf().cpython()
