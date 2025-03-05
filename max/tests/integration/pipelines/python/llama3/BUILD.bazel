@@ -8,39 +8,6 @@ load(
 )
 
 modular_py_binary(
-    name = "evaluate_llama",
-    srcs = ["evaluate_llama.py"],
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "//Kernels/tools/gpu-query",
-        "//SDK/integration-test/pipelines/python/llama3/testdata",
-        "//Support/tools/system-info",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
-    env = {
-        "MODULAR_MOJO_MAX_ORCRT_PATH": (
-            "$(location @llvm-project//compiler-rt:orc_rt)"
-        ),
-        "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(location //KGEN:CompilerRT)",
-        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
-        "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
-        "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
-        ),
-    },
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        requirement("click"),
-        requirement("huggingface-hub"),
-        requirement("py-cpuinfo"),
-    ],
-)
-
-modular_py_binary(
     name = "verify",
     srcs = ["verify.py"],
     data = [
@@ -54,7 +21,6 @@ modular_py_binary(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        ":evaluate_llama",
         "//GenericML/tools/model:lib",
         "//SDK/integration-test/pipelines/python/test_common",
         requirement("click"),
@@ -93,12 +59,12 @@ modular_py_binary(
                 "$(location //Support/tools/system-info)"
             ),
         },
+        imports = ["."],
         tags = [
             "no-sandbox",
             "requires-network",
         ],
         deps = [
-            ":evaluate_llama",
             "//SDK/integration-test/API/python:modular_graph_test",
             "//SDK/integration-test/pipelines/python/test_common",
             "//SDK/lib/API/python/max/engine",
@@ -114,6 +80,7 @@ modular_py_binary(
             requirement("pytest-xdist"),
             requirement("torch"),
             requirement("transformers"),
+            requirement("py-cpuinfo"),
         ],
     )
     for src in glob(
@@ -164,7 +131,6 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        ":evaluate_llama",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/pipelines/architectures",

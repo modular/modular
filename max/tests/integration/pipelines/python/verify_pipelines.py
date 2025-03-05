@@ -147,9 +147,6 @@ def run_llm_verification(
 ) -> VerificationVerdict:
     """Run a Llama3 verification with the given model and weights encoding.
 
-    See SDK/integration-test/pipelines/python/llama3/evaluate_llama.py for
-    definitions of acceptable values for model and encoding.
-
     extra_verify_flags are passed to
     SDK/integration-test/pipelines/python/llama3/verify.py -- check that script
     for details on acceptable flags.

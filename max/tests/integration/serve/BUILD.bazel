@@ -22,7 +22,6 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/serve",
@@ -64,7 +63,6 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/pipelines/architectures",

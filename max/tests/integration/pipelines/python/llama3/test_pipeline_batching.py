@@ -5,64 +5,42 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 import pytest
-from evaluate_llama import SupportedTestModels
 from max.pipelines import (
+    PIPELINE_REGISTRY,
     PipelineConfig,
     SupportedEncoding,
     TextGenerationPipeline,
     TextTokenizer,
 )
+from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.llama3.model import Llama3Model
 from max.pipelines.interfaces import TokenGeneratorRequest
-from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
 
-@dataclass(frozen=True)
-class PipelineModelParams:
-    name: Literal["tinyllama", "llama3_1"]
-    encoding: SupportedEncoding
-    max_length: int
-    max_new_tokens: int = -1
-    max_batch_size: int = 1
-
-    """Whether to include a print hook. This is generally for debugging
-    purposes, but it's also helping to avoid a segfault in the heterogeneous
-    test."""
-
-    def __str__(self):
-        return f"{self.name}-{self.encoding}-{self.max_length}-{self.max_batch_size}"
-
-
 @pytest.fixture(scope="session")
-def pipeline_config(testdata_directory, request):
-    model_params: PipelineModelParams = request.param
-    print(f"\nPipelineModel: {model_params}")
-    encoding = model_params.encoding
-    test_model = SupportedTestModels.get(model_params.name, encoding)
+def pipeline_config() -> PipelineConfig:
+    if not PIPELINE_REGISTRY.architectures:
+        register_all_models()
 
-    if encoding in [SupportedEncoding.float32, SupportedEncoding.bfloat16]:
-        print("using continuous batching caching strategy")
-        cache_strategy = KVCacheStrategy.CONTINUOUS
-    else:
-        print("using naive caching strategy")
-        cache_strategy = KVCacheStrategy.NAIVE
-
-    return test_model.build_config(
-        testdata_directory=testdata_directory,
-        max_length=model_params.max_length,
-        max_new_tokens=model_params.max_new_tokens,
-        max_batch_size=model_params.max_batch_size,
-        cache_strategy=cache_strategy,
+    config = PipelineConfig(
+        model_path="HuggingFaceTB/SmolLM-135M",
+        quantization_encoding=SupportedEncoding.float32,
+        max_cache_batch_size=4,
     )
+
+    return PIPELINE_REGISTRY.validate_pipeline_config(config)
 
 
 @pytest.fixture(scope="session")
 def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
+    pipeline_config = PipelineConfig(
+        model_path="HuggingFaceTB/SmolLM-135M",
+        quantization_encoding=SupportedEncoding.float32,
+    )
     return TextTokenizer(
         pipeline_config.model_path,
         revision=pipeline_config.huggingface_revision,
@@ -85,15 +63,6 @@ def pipeline(
 
 @pytest.mark.skip("Disabling tempoarily to update llama3 in a separate commit")
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "pipeline_config",
-    [
-        PipelineModelParams("llama3_1", SupportedEncoding.q4_k, 10, -1, 2),
-        PipelineModelParams("llama3_1", SupportedEncoding.q4_k, 10, -1, 4),
-    ],
-    ids=PipelineModelParams.__str__,
-    indirect=True,
-)
 async def test_pipeline_static_batch_same_prompt_same_output(
     pipeline, pipeline_tokenizer
 ):
@@ -138,15 +107,6 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 
 @pytest.mark.skip("flaky")
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "pipeline_config",
-    [
-        PipelineModelParams("tinyllama", SupportedEncoding.float32, 128, -1, 2),
-        PipelineModelParams("tinyllama", SupportedEncoding.float32, 128, -1, 4),
-    ],
-    ids=PipelineModelParams.__str__,
-    indirect=True,
-)
 async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     pipeline, pipeline_tokenizer
 ):
@@ -222,16 +182,10 @@ def batch_sizes(request):
 @pytest.mark.skip("Disabling tempoarily to update llama3 in a separate commit")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "pipeline_config, batch_sizes",
+    "batch_sizes",
     [
-        (
-            PipelineModelParams("llama3_1", SupportedEncoding.q4_k, 12, -1, 4),
-            [3, 1, 2, 4],
-        ),
-        (
-            PipelineModelParams("llama3_1", SupportedEncoding.q4_k, 12, -1, 8),
-            [4, 7, 1, 8],
-        ),
+        ([3, 1, 2, 4],),
+        ([4, 7, 1, 8],),
     ],
     ids=lambda x: str(x),
     indirect=True,
@@ -298,16 +252,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
             pipeline.release(context)
 
 
-@pytest.mark.skip("TODO: AITLIB-234")
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "pipeline_config",
-    [
-        PipelineModelParams("tinyllama", SupportedEncoding.float32, 512, 10, 4),
-    ],
-    ids=PipelineModelParams.__str__,
-    indirect=True,
-)
 async def test_pipeline_heterogeneous_batch_logits(
     pipeline, pipeline_tokenizer
 ):
