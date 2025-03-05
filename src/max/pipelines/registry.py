@@ -24,7 +24,7 @@ from typing import Callable, Optional, Type, Union, cast
 import torch
 from max.graph.weights import WeightsAdapter
 from max.support.human_readable_formatter import to_human_readable_bytes
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 
 from .config import (
     PipelineConfig,
@@ -483,6 +483,11 @@ class PipelineRegistry:
         arch: SupportedArchitecture,
     ):
         model_cls = arch.pipeline_model
+        huggingface_config = AutoConfig.from_pretrained(
+            pipeline_config.model_path,
+            trust_remote_code=pipeline_config.trust_remote_code,
+            revision=pipeline_config.huggingface_revision,
+        )
 
         try:
             free_memory = int(
@@ -498,7 +503,7 @@ class PipelineRegistry:
             if not pipeline_config.max_length:
                 pipeline_config.max_length = model_cls.calculate_max_seq_len(
                     pipeline_config,
-                    huggingface_config=pipeline_config.huggingface_config,
+                    huggingface_config=huggingface_config,
                 )
             return
 
@@ -518,18 +523,22 @@ class PipelineRegistry:
         if not user_provided_max_length:
             pipeline_config.max_length = model_cls.calculate_max_seq_len(
                 pipeline_config,
-                huggingface_config=pipeline_config.huggingface_config,
+                huggingface_config=huggingface_config,
             )
 
         if not user_provided_max_batch_size:
             pipeline_config.max_batch_size = self._infer_optimal_batch_size(
-                pipeline_config, model_cls, available_kv_cache_memory
+                pipeline_config,
+                model_cls,
+                available_kv_cache_memory,
+                huggingface_config=huggingface_config,
             )
 
         actual_kv_cache_size = self._calculate_kv_cache_size(
             model_cls,
             pipeline_config,
             available_kv_cache_memory,
+            huggingface_config,
         )
 
         pipeline_config.kv_cache_config._available_cache_memory = (
@@ -551,6 +560,7 @@ class PipelineRegistry:
                 model_cls,
                 available_kv_cache_memory,
                 user_provided_max_batch_size,
+                huggingface_config=huggingface_config,
             )
 
             if found_valid_max_length:
@@ -562,6 +572,7 @@ class PipelineRegistry:
                     model_cls,
                     pipeline_config,
                     available_kv_cache_memory,
+                    huggingface_config,
                 )
                 total_size = model_weights_size + actual_kv_cache_size
 
@@ -609,6 +620,7 @@ class PipelineRegistry:
                     free_memory,
                     available_kv_cache_memory,
                     model_weights_size,
+                    huggingface_config,
                 )
 
             elif total_size > vram_usage_limit_scale * free_memory:
@@ -626,6 +638,7 @@ class PipelineRegistry:
         original_free_memory: int,
         available_kv_cache_memory: int,
         weights_size: int,
+        huggingface_config: AutoConfig,
     ) -> None:
         """If we've determined the current configuration won't fit in device memory,
         this method provides a friendly error message suggesting a viable configuration.
@@ -662,6 +675,7 @@ class PipelineRegistry:
             model_cls,
             available_kv_cache_memory,
             user_provided_max_batch_size,
+            huggingface_config,
         )
 
         pipeline_config.max_batch_size = original_max_batch_size
@@ -673,6 +687,7 @@ class PipelineRegistry:
                 available_kv_cache_memory,
                 original_max_length,
                 user_provided_max_batch_size,
+                huggingface_config,
             )
         )
 
@@ -698,6 +713,7 @@ class PipelineRegistry:
         model_cls: Type[PipelineModel],
         available_kv_cache_memory: int,
         user_provided_max_batch_size: bool,
+        huggingface_config: AutoConfig,
     ) -> tuple[bool, int, int]:
         """Binary search to find a valid max_length configuration.
 
@@ -721,11 +737,17 @@ class PipelineRegistry:
 
             if not user_provided_max_batch_size:
                 pipeline_config.max_batch_size = self._infer_optimal_batch_size(
-                    pipeline_config, model_cls, available_kv_cache_memory
+                    pipeline_config,
+                    model_cls,
+                    available_kv_cache_memory,
+                    huggingface_config,
                 )
 
             kv_cache_size = self._calculate_kv_cache_size(
-                model_cls, pipeline_config, available_kv_cache_memory
+                model_cls,
+                pipeline_config,
+                available_kv_cache_memory,
+                huggingface_config,
             )
 
             if lower > upper:
@@ -752,6 +774,7 @@ class PipelineRegistry:
         available_kv_cache_memory: int,
         original_max_length: int,
         user_provided_max_batch_size: bool,
+        huggingface_config: AutoConfig,
     ) -> tuple[bool, int]:
         """Binary search to find a valid batch size configuration.
 
@@ -775,7 +798,10 @@ class PipelineRegistry:
             pipeline_config.max_batch_size = inferred_max_batch_size
 
             kv_cache_size = self._calculate_kv_cache_size(
-                model_cls, pipeline_config, available_kv_cache_memory
+                model_cls,
+                pipeline_config,
+                available_kv_cache_memory,
+                huggingface_config,
             )
 
             if lower > upper:
@@ -797,6 +823,7 @@ class PipelineRegistry:
         model_cls: Type[PipelineModel],
         pipeline_config: PipelineConfig,
         available_kv_cache_memory: int,
+        huggingface_config: AutoConfig,
     ) -> int:
         """Calculate the KV cache size for the current configuration."""
         if issubclass(model_cls, KVCacheMixin):
@@ -804,7 +831,7 @@ class PipelineRegistry:
                 pipeline_config=pipeline_config,
                 available_cache_memory=available_kv_cache_memory,
                 devices=pipeline_config.devices,
-                huggingface_config=pipeline_config.huggingface_config,
+                huggingface_config=huggingface_config,
             )
         return 0
 
@@ -965,11 +992,12 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         model_cls: Type[PipelineModel],
         available_kv_cache_memory: int,
+        huggingface_config: AutoConfig,
     ) -> int:
         return model_cls.infer_optimal_batch_size(
             pipeline_config,
             available_kv_cache_memory,
-            huggingface_config=pipeline_config.huggingface_config,
+            huggingface_config=huggingface_config,
         )
 
     def _load_logging_message(
@@ -1046,6 +1074,13 @@ class PipelineRegistry:
             arch = self.retrieve_architecture(
                 pipeline_config.model_path, pipeline_config.trust_remote_code
             )
+
+            # Load HuggingFace Config
+            huggingface_config = AutoConfig.from_pretrained(
+                pipeline_config.model_path,
+                trust_remote_code=pipeline_config.trust_remote_code,
+                revision=pipeline_config.huggingface_revision,
+            )
             # Architecture should not be None here, as the engine is MAX.
             assert arch is not None
             logger.info(
@@ -1061,7 +1096,7 @@ class PipelineRegistry:
 
             max_length = arch.pipeline_model.calculate_max_seq_len(
                 pipeline_config,
-                huggingface_config=pipeline_config.huggingface_config,
+                huggingface_config=huggingface_config,
             )
 
             # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
