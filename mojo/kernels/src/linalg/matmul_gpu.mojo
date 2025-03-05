@@ -394,12 +394,17 @@ fn _matmul_gpu[
                 )
                 return
 
+            alias use_A100_kernels_on_H100 = env_get_int[
+                "USE_EXPERIMENTAL_KERNELS", 0
+            ]()
+
             @parameter
             if (
                 a_type == b_type
                 and a_type.is_half_float()
                 and ctx.device_info is H100
                 and transpose_b
+                and not use_A100_kernels_on_H100
             ):
                 alias static_N = c_shape.get[1]()
                 alias static_K = a_shape.get[1]()
@@ -673,11 +678,15 @@ fn _matmul_gpu[
                 )
                 return
 
+            alias use_A100_kenrels = ctx.device_info is A100 or (
+                ctx.device_info is H100 and use_A100_kernels_on_H100 != 0
+            )
+
             @parameter
             if (
                 a_type == b_type
                 and a_type.is_half_float()
-                and ctx.device_info is A100
+                and use_A100_kenrels
                 and transpose_b
             ):
                 alias static_K = a_shape.get[1]()
