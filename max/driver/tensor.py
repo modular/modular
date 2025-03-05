@@ -341,19 +341,25 @@ class MemMapTensor(Tensor):
         self,
         filename: PathLike,
         dtype: DType,
-        shape: ShapeType,
+        shape: ShapeType | int,
         mode="r+",
         offset=0,
-    ):
+    ) -> None:
         # Instead of implementing all the mmap-related logic, we just delegate
         # to numpy. By passing order="C", we ensure C-contiguous layout.
-        arr = np.memmap(  # type: ignore
-            filename, dtype.to_numpy(), mode, offset, shape, order="C"
+        arr: np.memmap = np.memmap(
+            filename,
+            dtype.to_numpy(),
+            mode,
+            offset,
+            # NOTE: prior to NumPy 2.0, `shape` must be `tuple` or `int`.
+            shape if isinstance(shape, int) else tuple(shape),
+            order="C",
         )
         assert arr.flags["C_CONTIGUOUS"]
         self._init_from_numpy_memmap(arr)
 
-    def _init_from_numpy_memmap(self, arr: np.memmap):
+    def _init_from_numpy_memmap(self, arr: np.memmap) -> None:
         # TODO(MSDK-976): Ideally, we could just use DLPack to borrow the
         # underlying memory from numpy. But our numpy version doesn't allow
         # dlpack to be used on read-only arrays (common for memmaped weights).
@@ -436,9 +442,22 @@ def load_max_tensor(path: PathLike) -> Tensor:
             )
 
         if dtype == DType.bfloat16:
-            dtype = DType.uint8
-            shape = tuple(dim * 2 for dim in shape)
-            tensor = MemMapTensor(path, dtype, shape, mode="r", offset=offset)
+            # Only modify last dimension for byte expansion.
+            new_shape = list(shape)
+            if len(new_shape) == 0:
+                # Handle scalar case.
+                new_shape = [2]
+            else:
+                # Expand last dimension for uint8 bytes.
+                new_shape[-1] *= 2
+
+            tensor = MemMapTensor(
+                path,
+                DType.uint8,
+                new_shape,
+                mode="r",
+                offset=offset,
+            )
             return tensor.view(DType.bfloat16)
         else:
             return MemMapTensor(path, dtype, shape, mode="r", offset=offset)
