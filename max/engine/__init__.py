@@ -8,6 +8,7 @@
 from max._core.engine import __version__  # type: ignore
 
 from .api import (
+    GPUProfilingMode,
     InferenceSession,
     LogLevel,
     Model,
