@@ -169,3 +169,64 @@ def test_debug_print_binary_max_bf16(session, capfd, tmp_path):
 
     for i in range(dim):
         assert from_file[i].item() == input[i].item()
+
+
+@pytest.mark.skipif(
+    platform.machine() in ["arm64", "aarch64"],
+    reason="BF16 is not supported on ARM CPU architecture",
+)
+@pytest.mark.parametrize("shape", [(), (5,), (2, 3), (2, 3, 4)])
+def test_debug_print_binary_max_bf16_shapes(session, capfd, tmp_path, shape):
+    """Test bfloat16 tensor loading with various shapes including scalar"""
+
+    def print_input(x):
+        x.print("test_x_value")
+        return x
+
+    # Create graph with specified shape
+    g = Graph(
+        f"test_print_bf16_{len(shape)}d",
+        print_input,
+        [TensorType(DType.bfloat16, shape)],
+    )
+    compiled_model = session.load(g)
+
+    # Generate test data.
+    input = Tensor(shape, DType.bfloat16)
+    rng = np.random.default_rng()
+
+    if shape:
+        # Generate and set values for non-scalar tensors.
+        np_arr = rng.uniform(size=shape).astype(np.float32)
+        for idx in np.ndindex(shape):
+            input[idx] = np_arr[idx]
+    else:
+        # Special handling for scalar.
+        input[()] = rng.uniform()
+
+    # Execute and save.
+    session.set_debug_print_options(
+        "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
+    )
+    _ = compiled_model.execute(input)
+
+    # Verify saved file.
+    max_path = tmp_path / "test_x_value.max"
+    assert max_path.exists()
+
+    # Load and validate.
+    loaded = load_max_tensor(max_path)
+    if shape:
+        assert loaded.shape == shape
+    else:
+        # TODO(bduke): `max.driver.Tensor` saves/loads bfloat16 scalars as a tensor due to using a
+        # 2-byte uint8 tensor as an intermediate format.
+        assert len(loaded.shape) == 1 and loaded.shape[0] == 1
+    assert loaded.dtype == DType.bfloat16
+
+    # Element-wise comparison.
+    if shape:
+        for idx in np.ndindex(shape):
+            assert loaded[idx].item() == input[idx].item()
+    else:
+        assert loaded.item() == input[()].item()
