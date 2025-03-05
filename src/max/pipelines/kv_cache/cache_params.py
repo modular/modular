@@ -23,17 +23,11 @@ class KVCacheStrategy(str, Enum):
     CONTINUOUS = "continuous"
     PAGED = "paged"
 
-    def __str__(self) -> str:
-        return self.value
-
-    def __repr__(self) -> str:
-        return self.value
-
     def kernel_substring(self) -> str:
         """Returns the common substring that we include in the kernel name for this caching strategy."""
         if self == KVCacheStrategy.CONTINUOUS:
             return "continuous_batching"
-        return str(self.value)
+        return self.value
 
     def uses_opaque(self) -> bool:
         return self != KVCacheStrategy.NAIVE
