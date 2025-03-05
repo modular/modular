@@ -3,6 +3,49 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Provides a high-performance tensor layout system for memory mapping and indexing.
+
+The layout module implements a comprehensive system for describing memory layouts
+of multi-dimensional tensors, enabling efficient mapping between logical tensor
+coordinates and physical memory locations. This is a critical component for
+high-performance tensor operations in machine learning and scientific computing.
+These low-level primitives require careful use to avoid errors.
+Understanding the relationship between tensor shapes, strides, and
+memory layout is essential for effective use.
+
+Key components:
+- `LayoutTrait`: Core trait defining the interface for all layout types
+- `Layout`: Primary struct implementing memory layout with shape and stride information
+- Layout algebra: Functions for composing, dividing, and transforming layouts
+- Tiling operations: Functions for hierarchical decomposition of layouts
+
+Performance features:
+- Zero-cost abstractions for mapping between logical and physical indices
+- Support for both compile-time and runtime-determined shapes
+- Efficient memory access patterns through layout transformations
+- Hierarchical tiling for cache-friendly memory access
+
+Common use cases:
+- Defining memory layouts for tensors with different storage formats (row-major, column-major)
+- Implementing efficient tensor operations with optimal memory access patterns
+- Supporting hardware-specific memory layouts for accelerators
+- Enabling zero-copy tensor views and reshaping operations
+
+Example:
+```mojo
+    from layout import Layout, IntTuple
+    from layout.layout import blocked_product
+
+    # Create a 3x4 row-major layout
+    var layout = Layout.row_major(3, 4)
+
+    # Access the memory location for logical coordinates (1, 2)
+    var memory_idx = layout(IntTuple(1, 2))
+
+    # Create a tiled layout for blocked matrix multiplication
+    var tiled = blocked_product(layout, Layout(IntTuple(2, 2)))
+```
+"""
 
 import sys
 from collections import InlineArray, Optional
@@ -45,37 +88,66 @@ from .int_tuple import (
 
 
 trait LayoutTrait(Copyable):
-    """The LayoutTrait trait destribles layouts, swizzles, and composed layouts.
+    """Defines the interface for mapping between logical coordinates and memory indices.
 
-    They are used to map indices, e.g. from thread id to memory location.
+    The `LayoutTrait` provides a common interface for all layout types, including
+    basic layouts, swizzles, and composed layouts. It enables mapping from
+    multi-dimensional logical coordinates to linear memory indices, which is
+    essential for tensor operations.
 
+    Implementations of this trait must provide methods for:
+    1. Mapping coordinates to indices via the `__call__` method
+    2. Calculating the total size of the layout's domain
+    3. Calculating the size of the layout's codomain (memory footprint)
+    4. Indicating whether the layout has a valid shape
+
+    This trait serves as the foundation for the layout system, allowing
+    different layout implementations to be used interchangeably in algorithms.
     """
 
     fn __call__(self, index: IntTuple) -> Int:
-        """Get the output index."""
+        """Maps a logical coordinate to a linear memory index.
+
+        Args:
+            index: An IntTuple representing the logical coordinates to map.
+
+        Returns:
+            The linear memory index corresponding to the given coordinates.
+        """
         ...
 
     fn size(self) -> Int:
-        """Return the size defined by shape.
+        """Returns the total number of elements in the layout's domain.
 
-        E.g. shape (m, n) has size m * n.
+        For a layout with shape (m, n), this returns m * n, representing
+        the total number of valid coordinates in the layout.
+
+        Returns:
+            The total number of elements in the layout.
         """
         ...
 
     fn cosize(self) -> Int:
-        """Return the size of the domain spanned by output indices.
+        """Returns the size of the memory region spanned by the layout.
 
-        E.g. shape (m, n) and stride (r, s) has cosize (m - 1) * r + (n -1) * s.
+        For a layout with shape (m, n) and stride (r, s), this returns
+        (m-1)*r + (n-1)*s + 1, representing the memory footprint.
+
+        Returns:
+            The size of the memory region required by the layout.
         """
         ...
 
     @staticmethod
     fn has_shape() -> Bool:
-        """Return whether the object has valid shape.
+        """Indicates whether the layout has a valid shape.
 
-        Layout and ComposedLayout with at least one Layout have valid shapes.
-        They can be used in layout algebra. Swizzle doesn't have shape and
+        Layouts and ComposedLayouts with at least one Layout have valid shapes
+        and can be used in layout algebra. Swizzles don't have shapes and
         should be excluded from layout algebra.
+
+        Returns:
+            True if the layout has a valid shape, False otherwise.
         """
         ...
 
