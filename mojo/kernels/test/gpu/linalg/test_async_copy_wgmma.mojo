@@ -128,7 +128,7 @@ fn cpasync_wgmma_kernel[
 
     _ = c_reg_tile.fill(0.0)
 
-    for _ in range(num_iters):
+    for i in range(num_iters):
         cp_async_k_major(a_smem_tile, a_gmem_iter[])
 
         if transpose_b:
@@ -330,8 +330,20 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            Index(64, 64, 128),
-            Index(64, 64, 128),
+            Index(64, 128, 128),
+            Index(64, 128, 128),
+            Index(64, 128, 16),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            transpose_b=True,
+        ](ctx)
+
+        test_cpasync_wgmma[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(128, 64, 128),
+            Index(128, 64, 128),
             Index(64, 64, 16),
             a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
