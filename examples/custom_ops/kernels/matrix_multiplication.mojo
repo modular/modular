@@ -64,9 +64,9 @@ fn naive_matrix_multiplication[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout],
-    b: LayoutTensor[dtype, b_layout],
-    c: LayoutTensor[dtype, c_layout],
+    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B.

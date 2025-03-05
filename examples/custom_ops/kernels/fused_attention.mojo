@@ -284,7 +284,7 @@ fn matmul[
         res.copy_from(out_sram)
 
 
-fn fused_attention_kenel[
+fn fused_attention_kernel[
     q_dtype: DType,
     q_layout: Layout,
     k_dtype: DType,
@@ -296,10 +296,10 @@ fn fused_attention_kenel[
     BN: Int,
     BD: Int,
 ](
-    Q: LayoutTensor[q_dtype, q_layout],
-    K: LayoutTensor[k_dtype, k_layout],
-    V: LayoutTensor[v_dtype, v_layout],
-    O: LayoutTensor[o_dtype, o_layout],
+    Q: LayoutTensor[q_dtype, q_layout, MutableAnyOrigin],
+    K: LayoutTensor[k_dtype, k_layout, MutableAnyOrigin],
+    V: LayoutTensor[v_dtype, v_layout, MutableAnyOrigin],
+    O: LayoutTensor[o_dtype, o_layout, MutableAnyOrigin],
 ):
     alias N = Q.shape[0]()
     alias D = Q.shape[1]()
@@ -348,7 +348,7 @@ def fused_attention_gpu[
     V: LayoutTensor,
     mut O: LayoutTensor,
 ):
-    alias kernel_func = fused_attention_kenel[
+    alias kernel_func = fused_attention_kernel[
         Q.dtype,
         Q.layout,
         K.dtype,
