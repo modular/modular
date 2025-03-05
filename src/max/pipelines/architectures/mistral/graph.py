@@ -33,6 +33,7 @@ from max.pipelines.nn import (
     Transformer,
     TransformerBlock,
 )
+from transformers import AutoConfig
 
 
 def feed_forward(
@@ -98,39 +99,39 @@ def _attention_opaque(
     rope: OptimizedRotaryEmbedding,
     weights: SafetensorWeights,
     layer_idx: int,
+    huggingface_config: AutoConfig,
 ):
     kv_weight_dim = (
-        params.huggingface_config.head_dim
-        * params.huggingface_config.num_key_value_heads
+        huggingface_config.head_dim * huggingface_config.num_key_value_heads
     )
 
     wq = weights.self_attn.q_proj.weight.allocate(
         params.dtype,
         [
-            params.huggingface_config.num_attention_heads
-            * params.huggingface_config.head_dim,
-            params.huggingface_config.hidden_size,
+            huggingface_config.num_attention_heads
+            * huggingface_config.head_dim,
+            huggingface_config.hidden_size,
         ],
     )
     wk = weights.self_attn.k_proj.weight.allocate(
         params.dtype,
-        [kv_weight_dim, params.huggingface_config.hidden_size],
+        [kv_weight_dim, huggingface_config.hidden_size],
     )
     wv = weights.self_attn.v_proj.weight.allocate(
         params.dtype,
-        [kv_weight_dim, params.huggingface_config.hidden_size],
+        [kv_weight_dim, huggingface_config.hidden_size],
     )
     wqkv = ops.concat((wq, wk, wv))
 
     return AttentionWithRope(
-        n_heads=params.huggingface_config.num_attention_heads,
+        n_heads=huggingface_config.num_attention_heads,
         kv_params=kv_params,
         wqkv=wqkv,
         wo=linear(
             params.dtype,
-            params.huggingface_config.hidden_size,
-            params.huggingface_config.num_attention_heads
-            * params.huggingface_config.head_dim,
+            huggingface_config.hidden_size,
+            huggingface_config.num_attention_heads
+            * huggingface_config.head_dim,
             weights.self_attn.o_proj,
         ),
         rope=rope,
@@ -145,13 +146,14 @@ def _transformer(
     weights: SafetensorWeights,
     max_seq_len: int,
     kv_params: KVCacheParams,
+    huggingface_config: AutoConfig,
 ):
     with graph:
         rope = OptimizedRotaryEmbedding(
-            dim=params.huggingface_config.num_attention_heads
-            * params.huggingface_config.head_dim,
-            n_heads=params.huggingface_config.num_attention_heads,
-            theta=params.huggingface_config.rope_theta,
+            dim=huggingface_config.num_attention_heads
+            * huggingface_config.head_dim,
+            n_heads=huggingface_config.num_attention_heads,
+            theta=huggingface_config.rope_theta,
             max_seq_len=max_seq_len,
             rope_scaling=None,
             interleaved=False,
@@ -165,50 +167,51 @@ def _transformer(
                     rope,
                     weights.model.layers[i],
                     layer_idx=ops.constant(i, DType.uint32),  # type: ignore
+                    huggingface_config=huggingface_config,
                 ),
                 mlp=feed_forward(
                     params.dtype,
-                    params.huggingface_config.hidden_size,
-                    params.huggingface_config.intermediate_size,
+                    huggingface_config.hidden_size,
+                    huggingface_config.intermediate_size,
                     weights.model.layers[i].mlp,
                 ),
                 attention_norm=rms_norm(
-                    params.huggingface_config.hidden_size,
-                    params.huggingface_config.rms_norm_eps,
+                    huggingface_config.hidden_size,
+                    huggingface_config.rms_norm_eps,
                     weights.model.layers[i].input_layernorm,
                 ),
                 mlp_norm=rms_norm(
-                    params.huggingface_config.hidden_size,
-                    params.huggingface_config.rms_norm_eps,
+                    huggingface_config.hidden_size,
+                    huggingface_config.rms_norm_eps,
                     weights.model.layers[i].post_attention_layernorm,
                 ),
             )
-            for i in range(params.huggingface_config.num_hidden_layers)
+            for i in range(huggingface_config.num_hidden_layers)
         ]
 
         embedding_layer = embedding(
             params,
-            params.huggingface_config.vocab_size,
-            params.huggingface_config.hidden_size,
+            huggingface_config.vocab_size,
+            huggingface_config.hidden_size,
             weights.model.embed_tokens,
         )
 
         output = linear(
             params.dtype,
-            params.huggingface_config.vocab_size,
-            params.huggingface_config.hidden_size,
+            huggingface_config.vocab_size,
+            huggingface_config.hidden_size,
             weights.lm_head,
         )
 
         kv_collection_cls = FetchContinuousBatchingKVCacheCollection
 
         return Transformer(
-            dim=params.huggingface_config.hidden_size,
-            n_heads=params.huggingface_config.num_attention_heads,
+            dim=huggingface_config.hidden_size,
+            n_heads=huggingface_config.num_attention_heads,
             layers=layers,
             norm=rms_norm(
-                params.huggingface_config.hidden_size,
-                params.huggingface_config.rms_norm_eps,
+                huggingface_config.hidden_size,
+                huggingface_config.rms_norm_eps,
                 weights.model.norm,
             ),
             output=output,
@@ -224,6 +227,7 @@ def _build_graph(
     max_seq_len: int,
     kv_params: KVCacheParams,
     kv_manager: KVCacheManager,
+    huggingface_config: AutoConfig,
 ) -> Graph:
     tokens_type = TensorType(DType.int64, shape=["total_seq_len"])
     input_row_offsets_type = TensorType(
@@ -246,6 +250,7 @@ def _build_graph(
             weights=weights,
             max_seq_len=max_seq_len,
             kv_params=kv_params,
+            huggingface_config=huggingface_config,
         )
         tokens, input_row_offsets, *kv_cache = graph.inputs
         outputs = model(tokens, kv_cache, input_row_offsets=input_row_offsets)
