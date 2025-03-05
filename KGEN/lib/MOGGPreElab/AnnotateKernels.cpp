@@ -831,9 +831,11 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   if (registrationInfo.isViewKernel)
     func->setAttr(kMOGGViewKernel, UnitAttr::get(func->getContext()));
 
+  // TODO(GEX-1911): Remove code around enforce_io_param usage as now io_spec
+  // specialization is always enforced
   bool enforceIOParamUsage = hasEnforceIODecorator(func);
   SmallVector<std::pair<size_t, IOSpec>> ioSpecs;
-  if (enforceIOParamUsage) {
+  if (true) {
     auto result = processIOSpecs(func);
     if (!result)
       return false;
@@ -846,7 +848,7 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
 
   // TODO(GEX-1911): Remove code around enforce_io_param usage as now io_spec
   // specialization is always enforced
-  if (enforceIOParamUsage) {
+  if (true) {
     // Set mogg.num_dps_outputs
     auto numOutputs = llvm::count_if(ioSpecs, [](auto &&elem) {
       return elem.second == IOSpec::OutputTensor;
