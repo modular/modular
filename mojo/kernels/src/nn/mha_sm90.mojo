@@ -285,6 +285,7 @@ fn mha_single_batch_sm90[
         q_type,
         q_smem_layout,
         # Layout.row_major(BM, BK),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment = q_smem.alignment,
     ](
@@ -294,6 +295,7 @@ fn mha_single_batch_sm90[
                     q_type,
                     q_smem_layout,
                     # Layout.row_major(BM, BK),
+                    MutableAnyOrigin,
                     address_space = AddressSpace.SHARED,
                     alignment = q_smem.alignment,
                 ]().ptr
@@ -309,6 +311,7 @@ fn mha_single_batch_sm90[
         k_type,
         k_smem_layout,
         # Layout.row_major(BN, BK),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ](k_smem, k_smem_size)
@@ -319,6 +322,7 @@ fn mha_single_batch_sm90[
         v_type,
         # Layout.row_major(BK, BN),
         v_smem_layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ](v_smem, v_smem_size)
@@ -402,6 +406,7 @@ fn mha_single_batch_sm90[
     p_reg_tile = LayoutTensor[
         accum_type,
         reg_tile_layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -409,6 +414,7 @@ fn mha_single_batch_sm90[
         LayoutTensor[
             accum_type,
             reg_tile_layout,
+            MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
@@ -468,6 +474,7 @@ fn mha_single_batch_sm90[
         out result: LayoutTensor[
             accum_type,
             vec_output_layout,
+            MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
             element_layout=element_layout,
         ],
@@ -485,11 +492,13 @@ fn mha_single_batch_sm90[
     rowmax = LayoutTensor[
         accum_type,
         Layout.row_major(num_rows_per_warp),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     rowsum = LayoutTensor[
         accum_type,
         Layout.row_major(num_rows_per_warp),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     _ = rowmax.vectorize[accum_simd_width]().fill(min_or_neg_inf[accum_type]())
@@ -797,6 +806,7 @@ fn mha_single_batch_sm90[
         p_frag = LayoutTensor[
             v_type,
             Layout.row_major(num_m_mmas * num_k_mmas, a_frag_size),
+            MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
@@ -855,6 +865,7 @@ fn mha_single_batch_sm90[
     accum_smem_tile = LayoutTensor[
         output_type,
         Layout.row_major(BM, depth),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ](q_smem.bitcast[Scalar[output_type]]())
     accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](

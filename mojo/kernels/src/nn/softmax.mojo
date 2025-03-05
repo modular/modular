@@ -867,7 +867,10 @@ fn _online_softmax_kernel[
     WN: Int,
     type: DType,
     layout: Layout,
-](input: LayoutTensor[type, layout], output: LayoutTensor[type, layout]):
+](
+    input: LayoutTensor[type, layout, MutableAnyOrigin],
+    output: LayoutTensor[type, layout, MutableAnyOrigin],
+):
     """This is only for online softmax validation, NOT a general kernel."""
 
     alias mma_shape = IndexList[3](16, 8, 8) if is_nvidia_gpu() else IndexList[
@@ -921,6 +924,7 @@ fn _online_softmax_kernel[
     var p = LayoutTensor[
         type,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -941,6 +945,7 @@ fn _online_softmax_kernel[
     var o = LayoutTensor[
         type,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0.0)
     var o_vecs = o.reshape[
@@ -959,6 +964,7 @@ fn _online_softmax_kernel[
     var warp_scratch = LayoutTensor[
         type,
         Layout.row_major(frag_num_rows * num_rowwise_warps, WM),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 

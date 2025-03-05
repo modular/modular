@@ -1095,6 +1095,7 @@ fn mha_single_batch[
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
+                    q_smem.origin,
                     address_space = AddressSpace.SHARED,
                     alignment = q_smem.alignment,
                 ]().ptr
@@ -1163,12 +1164,14 @@ fn mha_single_batch[
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
     var output_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0)
 
@@ -1828,6 +1831,7 @@ fn mha_single_batch_pipelined[
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
+                    q_smem.origin,
                     address_space = AddressSpace.SHARED,
                     alignment = q_smem.alignment,
                 ]().ptr
@@ -1887,12 +1891,14 @@ fn mha_single_batch_pipelined[
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
     var output_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0)
 
@@ -3152,6 +3158,7 @@ fn mha_decoding_single_batch[
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
+                    q_smem.origin,
                     address_space = AddressSpace.SHARED,
                     alignment = q_smem.alignment,
                 ]().ptr
@@ -3194,6 +3201,7 @@ fn mha_decoding_single_batch[
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
@@ -3206,6 +3214,7 @@ fn mha_decoding_single_batch[
     var output_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_output_rows_full, p_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0.0)
 
@@ -3739,6 +3748,7 @@ fn mha_decoding_single_batch_pipelined[
                 LayoutTensorIter[
                     q_type,
                     Layout.row_major(BM, BK),
+                    q_smem.origin,
                     address_space = AddressSpace.SHARED,
                     alignment = q_smem.alignment,
                 ]().ptr
@@ -3754,6 +3764,7 @@ fn mha_decoding_single_batch_pipelined[
     var k_smem_iter = LayoutTensorIter[
         k_type,
         Layout.row_major(BN, BK),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ](k_smem, k_smem_size)
@@ -3775,12 +3786,14 @@ fn mha_decoding_single_batch_pipelined[
     var p_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
     var output_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0.0)
 
@@ -3799,6 +3812,7 @@ fn mha_decoding_single_batch_pipelined[
     var v_smem_iter = LayoutTensorIter[
         v_type,
         Layout.row_major(BK, BN),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ](v_smem, v_smem_size)
@@ -3818,6 +3832,7 @@ fn mha_decoding_single_batch_pipelined[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
