@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -19,7 +20,11 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
 )
-from max.pipelines.nn import RotaryEmbedding
+from max.pipelines.nn import (
+    Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+    RotaryEmbedding,
+)
 from max.pipelines.nn.kernels import fused_qk_ragged_rope
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
@@ -29,9 +34,47 @@ ACCURACY_ATOL = 1e-7
 FAKE_TOKEN = 999
 
 
-def torch_freqs_cis(dim: int, theta: float, scaling: float):
+def torch_freqs_cis(dim: int, theta: float):
     freqs = 1.0 / (
-        theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() * scaling / dim)
+        theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim)
+    )
+    t = torch.arange(
+        MAX_SEQ_LEN * 2.0, device=freqs.device, dtype=torch.float32
+    )
+    freqs = torch.outer(t, freqs)
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
+    return freqs_cis
+
+
+def torch_llama3_freqs_cis(
+    dim: int,
+    theta: float,
+    factor: float,
+    low_freq_factor: float,
+    high_freq_factor: float,
+    orig_max_position: int,
+):
+    inv_freqs = 1.0 / (
+        theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim)
+    )
+    low_freq_wavelen = orig_max_position / low_freq_factor
+    high_freq_wavelen = orig_max_position / high_freq_factor
+
+    wave_len = 2 * math.pi / inv_freqs
+    if low_freq_factor != high_freq_factor:
+        smooth = (orig_max_position / wave_len - low_freq_factor) / (
+            high_freq_factor - low_freq_factor
+        )
+    else:
+        smooth = 0
+    freqs = torch.where(
+        wave_len < high_freq_wavelen,
+        inv_freqs,
+        torch.where(
+            wave_len > low_freq_wavelen,
+            inv_freqs / factor,
+            (1 - smooth) * inv_freqs / factor + smooth * inv_freqs,
+        ),
     )
     t = torch.arange(
         MAX_SEQ_LEN * 2.0, device=freqs.device, dtype=torch.float32
@@ -46,7 +89,6 @@ class RopeParams:
     dim: int
     n_heads: int
     theta: float
-    scaling: float
 
     @property
     def head_dim(self):
@@ -56,8 +98,8 @@ class RopeParams:
 @pytest.mark.parametrize(
     "params",
     [
-        RopeParams(dim=64, n_heads=4, theta=1e4, scaling=1.0),
-        RopeParams(dim=512, n_heads=16, theta=5e5, scaling=0.1),
+        RopeParams(dim=64, n_heads=4, theta=1e4),
+        RopeParams(dim=512, n_heads=16, theta=5e5),
     ],
 )
 @pytest.mark.parametrize("dtype", [DType.float32])
@@ -68,7 +110,6 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
             params.n_heads,
             params.theta,
             MAX_SEQ_LEN,
-            np.array([params.scaling], dtype=dtype.to_numpy()),
         )
         graph.output(rope.freqs_cis)
         model = session.load(graph)
@@ -77,10 +118,80 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
     # The result is a tensor with shape (..., 2) where the last dimension holds [real, imaginary]
     # We extract and convert into a complex tensor type before comparing them.
     result_cis_complex = result[:, :, 0] + 1j * result[:, :, 1]
-    expected = torch_freqs_cis(params.head_dim, params.theta, params.scaling)
-    # TODO(MSDK-1071): Consolidate and figure out how to call
-    # assert_allclose(result, expected) to fire again on mismatched
-    # tensor values.
+    expected = torch_freqs_cis(params.head_dim, params.theta)
+    np.testing.assert_allclose(
+        result_cis_complex,
+        expected,
+        atol=ACCURACY_ATOL,
+        rtol=ACCURACY_RTOL,
+        equal_nan=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "base_params",
+    [
+        RopeParams(
+            dim=64,
+            n_heads=4,
+            theta=1e4,
+        ),
+        RopeParams(
+            dim=512,
+            n_heads=16,
+            theta=5e5,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "scaling_params",
+    [
+        Llama3RopeScalingParams(
+            factor=4.0,
+            low_freq_factor=1.0,
+            high_freq_factor=4.0,
+            orig_max_position=8192,
+        ),
+        Llama3RopeScalingParams(
+            factor=8.0,
+            low_freq_factor=4.0,
+            high_freq_factor=4.0,
+            orig_max_position=8192,
+        ),
+    ],
+)
+@pytest.mark.parametrize("dtype", [DType.float32])
+def test_llama3_freqs_cis(
+    session,
+    dtype: DType,
+    base_params: RopeParams,
+    scaling_params: Llama3RopeScalingParams,
+):
+    with Graph("freqs_cis", input_types=[]) as graph:
+        rope = Llama3RotaryEmbedding(
+            base_params.dim,
+            base_params.n_heads,
+            base_params.theta,
+            MAX_SEQ_LEN,
+            scaling_params=scaling_params,
+        )
+        graph.output(rope.freqs_cis)
+        model = session.load(graph)
+    result = model.execute_legacy()["output0"]
+    d0, d1 = result.shape
+    result = result.reshape(d0, d1 // 2, 2)
+    # freq_cis result is stacked along a new dimension - real goes first, then imaginary.
+    # The result is a tensor with shape (..., 2) where the last dimension holds [real, imaginary]
+    # We extract and convert into a complex tensor type before comparing them.
+    result_cis_complex = result[:, :, 0] + 1j * result[:, :, 1]
+    expected = torch_llama3_freqs_cis(
+        base_params.head_dim,
+        base_params.theta,
+        scaling_params.factor,
+        scaling_params.low_freq_factor,
+        scaling_params.high_freq_factor,
+        scaling_params.orig_max_position,
+    )
     np.testing.assert_allclose(
         result_cis_complex,
         expected,
@@ -146,9 +257,6 @@ def test_rope(session, input_type: TensorType, start_pos: Dim):
             result = execute(inputs)
             expected = torch_rope(*torch_inputs).detach().numpy()
 
-            # TODO(MSDK-1071): Consolidate and figure out how to call
-            # assert_allclose(result, expected) to fire again on mismatched
-            # tensor values.
             np.testing.assert_allclose(
                 result,
                 expected,

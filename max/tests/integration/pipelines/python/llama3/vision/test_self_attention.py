@@ -137,14 +137,13 @@ def _attention_layer(
 
         # Get KV Collection
         kv_collection = fetch_op(*graph_kv_cache_inputs)
+        # TODO: this should be Llama3RotaryEmbedding with rope scaling params.
         rotary_embedding = OptimizedRotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             # TODO: Check if this param value used is correct for "max_seq_len".
             max_seq_len=config.max_position_embeddings,
-            # TODO: Figure out how we want to pass this
-            # rope_scaling=params.rope_scaling,
         )
         attention = AttentionWithRopeQKV(
             n_heads=config.num_attention_heads,

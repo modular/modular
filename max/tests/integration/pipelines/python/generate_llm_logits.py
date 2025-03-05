@@ -672,9 +672,7 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
 
     @property
     def prompts(self) -> Sequence[str]:
-        # TODO(AITLIB-194): Drop first prompt for now due to divergence -- fix
-        # once we bisect Llama 3.3 70B correctness.
-        return evaluate.PROMPTS[1:]
+        return evaluate.PROMPTS
 
 
 class OlmoPipelineOracle(PipelineOracle):

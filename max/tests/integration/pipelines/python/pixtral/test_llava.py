@@ -407,7 +407,6 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
         n_heads=config.num_attention_heads,
         theta=config.rope_theta,
         max_seq_len=config.max_length,
-        rope_scaling=None,
     )
 
     transformer_layers = []

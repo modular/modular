@@ -158,7 +158,6 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
                     n_heads=n_heads,
                     theta=theta,
                     max_seq_len=max_seq_len,
-                    rope_scaling=None,
                 ),
             )(
                 x,
