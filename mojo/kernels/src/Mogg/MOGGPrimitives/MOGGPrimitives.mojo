@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from collections.vector import InlinedFixedVector
+from collections import OptionalReg, List
 from collections.string import StringSlice
 from math import ceildiv
 from os import abort

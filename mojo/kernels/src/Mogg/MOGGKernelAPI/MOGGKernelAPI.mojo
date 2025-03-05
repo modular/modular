@@ -8,8 +8,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import InlineArray, Optional, OptionalReg
-from collections.vector import InlinedFixedVector
+from collections import InlineArray, Optional, OptionalReg, List
 from math import (
     ceil,
     cos,
@@ -4687,7 +4686,7 @@ fn to_managed_tensor_slice_list[
     type: DType, rank: Int, mut: Bool, input: IO
 ](
     raw_list_ptr: UnsafePointer[NoneType],
-) -> InlinedFixedVector[
+) -> List[
     ManagedTensorSlice[
         io_spec = IOSpec[mut, input](),
         static_spec = StaticTensorSpec[type, rank].create_unknown(),
@@ -4697,25 +4696,22 @@ fn to_managed_tensor_slice_list[
         raw_list_ptr
     ).__int__()
 
-    var data_ptrs = InlinedFixedVector[UnsafePointer[NoneType], 0](num_elements)
-    var dim_values = InlinedFixedVector[Int64, 0](num_elements * rank)
-
-    data_ptrs.current_size = num_elements
-    dim_values.current_size = num_elements * rank
+    var data_ptrs = List[UnsafePointer[NoneType]](capacity=num_elements)
+    var dim_values = List[Int64](capacity=num_elements * rank)
 
     # Collect the data pointers and dimensions of each element from the list.
     external_call["MGP_RT_ListPopulate", NoneType](
-        raw_list_ptr, data_ptrs.dynamic_data, dim_values.dynamic_data
+        raw_list_ptr, data_ptrs.unsafe_ptr(), dim_values.unsafe_ptr()
     )
 
     # TODO: revist the use of unknown here
     # Create output list
-    var out_list = InlinedFixedVector[
+    var out_list = List[
         ManagedTensorSlice[
             io_spec = IOSpec[mut, input](),
             static_spec = StaticTensorSpec[type, rank].create_unknown(),
         ]
-    ](num_elements)
+    ](capacity=num_elements)
 
     # Convert individual elements of the input list into NDBuffer, and
     # accumulate the results to output list.
@@ -4742,7 +4738,7 @@ fn concat_from_list_shape_impl[
     type: DType, rank: Int
 ](
     axis0: Int,
-    inputs: InlinedFixedVector[
+    inputs: List[
         InputTensor[
             static_spec = StaticTensorSpec[type, rank].create_unknown(),
         ]
@@ -4787,7 +4783,7 @@ struct ConcatFromList:
         _synchronous: Bool,
     ](
         output: OutputTensor[type=type, rank=rank],
-        inputs: InlinedFixedVector[
+        inputs: List[
             InputTensor[
                 static_spec = StaticTensorSpec[type, rank].create_unknown()
             ]
@@ -4801,10 +4797,8 @@ struct ConcatFromList:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
-        var input_as_ndbuffer = InlinedFixedVector[NDBuffer[type, rank]](
-            inputs.current_size
-        )
-        for i in range(inputs.current_size):
+        var input_as_ndbuffer = List[NDBuffer[type, rank]](capacity=len(inputs))
+        for i in range(len(inputs)):
             input_as_ndbuffer.append(
                 managed_tensor_slice_to_ndbuffer(inputs[i])
             )
@@ -4821,7 +4815,7 @@ struct ConcatFromList:
         rank: Int,
         _synchronous: Bool,
     ](
-        inputs: InlinedFixedVector[
+        inputs: List[
             InputTensor[
                 static_spec = StaticTensorSpec[type, rank].create_unknown()
             ]
