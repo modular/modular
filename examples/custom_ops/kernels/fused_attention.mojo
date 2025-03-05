@@ -116,7 +116,9 @@ fn matmul_b_transpose(
     lhs: LayoutTensor,
     rhs: LayoutTensor,
     out res: LayoutTensor[
-        lhs.dtype, Layout.row_major(lhs.shape[0](), rhs.shape[0]())
+        lhs.dtype,
+        Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
+        MutableAnyOrigin,
     ],
 ):
     res = __type_of(res).stack_allocation()
@@ -169,19 +171,21 @@ fn fused_attention_cpu[
         @parameter
         for tile_d in range(D // BD):
             m_1 = (
-                LayoutTensor[Q_tile.dtype, Layout(BN, 1)]
+                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutableAnyOrigin]
                 .stack_allocation()
                 .fill(Scalar[Q_tile.dtype].MIN)
             )
 
             l_1 = (
-                LayoutTensor[Q_tile.dtype, Layout(BN, 1)]
+                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutableAnyOrigin]
                 .stack_allocation()
                 .fill(0)
             )
 
             O_i = (
-                LayoutTensor[Q_tile.dtype, Layout.row_major(BN, BD)]
+                LayoutTensor[
+                    Q_tile.dtype, Layout.row_major(BN, BD), MutableAnyOrigin
+                ]
                 .stack_allocation()
                 .fill(0)
             )
@@ -215,6 +219,7 @@ fn matmul[
     out res: LayoutTensor[
         lhs.dtype,
         Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
+        MutableAnyOrigin,
         address_space = lhs.address_space,
         element_layout = lhs.element_layout,
         layout_bitwidth = lhs.layout_bitwidth,
@@ -245,6 +250,7 @@ fn matmul[
         out_sram = LayoutTensor[
             res.dtype,
             Layout.row_major(M, N),
+            MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
         ].stack_allocation()
 
@@ -301,13 +307,17 @@ fn fused_attention_kenel[
     Q_tile = Q.tile[BN, D](block_idx.y, 0)
 
     m_1 = (
-        LayoutTensor[q_dtype, Layout(BN, 1)]
+        LayoutTensor[q_dtype, Layout(BN, 1), MutableAnyOrigin]
         .stack_allocation()
         .fill(Scalar[q_dtype].MIN)
     )
-    l_1 = LayoutTensor[q_dtype, Layout(BN, 1)].stack_allocation().fill(0)
+    l_1 = (
+        LayoutTensor[q_dtype, Layout(BN, 1), MutableAnyOrigin]
+        .stack_allocation()
+        .fill(0)
+    )
     O_i = (
-        LayoutTensor[q_dtype, Layout.row_major(BN, BD)]
+        LayoutTensor[q_dtype, Layout.row_major(BN, BD), MutableAnyOrigin]
         .stack_allocation()
         .fill(0)
     )
