@@ -103,6 +103,14 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_pipelines_cli_help",
+    srcs = ["test_pipelines_cli_help.py"],
+    deps = [
+        "//SDK/lib/API/python/max/entrypoints:pipelines",
+    ],
+)
+
+modular_py_test(
     name = "test_pipelines_cli_lightweight",
     srcs = ["test_pipelines_cli_lightweight.py"],
     deps = [
