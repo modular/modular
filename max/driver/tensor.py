@@ -386,6 +386,43 @@ class MemMapTensor(Tensor):
     def read_only(self) -> bool:
         return self._read_only
 
+    def view(
+        self, dtype: DType, shape: ShapeType | None = None
+    ) -> MemMapTensor:
+        """Creates a view of the memory-mapped tensor with new type and shape.
+
+        Preserves the original memory mapping properties (read-only status and
+        file reference) while reinterpreting the bytes.
+        Shares underlying storage -- modifications affect all views of the same
+        memory region.
+
+        Args:
+            dtype: New data type for interpreting the bytes.
+                Size must divide evenly into the original tensor's last
+                dimension byte size.
+            shape: Optional new shape.
+                Inferred from dtype size if not provided.
+                Product of dimensions must match original element count
+                adjusted for dtype size.
+
+        Returns:
+            New :obj:`MemMapTensor` instance with specified dtype/shape, sharing the
+            original memory-mapped file properties.
+
+        Raises:
+            ValueError: For invalid shape/dtype combinations or boundary overflows.
+            TypeError: For undefined byte interpretations.
+        """
+        viewed = super().view(dtype, shape)
+        # Create new MemMapTensor with shared memory mapping.
+        memmap_view = MemMapTensor.__new__(MemMapTensor)
+
+        # Set the _impl here to preserve the MemMapTensor class and fields.
+        memmap_view._impl = viewed._impl
+        memmap_view._mmap = self._mmap
+        memmap_view._read_only = self._read_only
+        return memmap_view
+
     def __setitem__(self, idx: IndexType, value: Any) -> None:
         """Sets an item in the tensor."""
         if self.read_only:
