@@ -19,6 +19,7 @@ from typing import Any, Type, TypeVar
 
 from max.engine import InferenceSession
 from max.profiler import Tracer, traced
+from transformers import AutoConfig
 
 from .config import PipelineConfig
 from .context import InputContext
@@ -42,10 +43,15 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         session = InferenceSession(devices=self._pipeline_config.devices)
 
         # Load model.
+        huggingface_config = AutoConfig.from_pretrained(
+            self._pipeline_config.model_path,
+            trust_remote_code=self._pipeline_config.trust_remote_code,
+            revision=self._pipeline_config.huggingface_revision,
+        )
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self._pipeline_config.huggingface_config,
+            huggingface_config=huggingface_config,
         )
 
     @traced

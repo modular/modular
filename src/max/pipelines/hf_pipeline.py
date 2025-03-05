@@ -23,6 +23,7 @@ import numpy as np
 import torch
 from max.driver import Tensor
 from transformers import (
+    AutoConfig,
     AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -56,6 +57,11 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
     ):
         self._pipeline_config = pipeline_config
         self._torch_device = torch.device(torch_device_type)
+        self._huggingface_config = AutoConfig.from_pretrained(
+            pipeline_config.model_path,
+            trust_remote_code=pipeline_config.trust_remote_code,
+            revision=pipeline_config.huggingface_revision,
+        )
 
         self._model = AutoModelForCausalLM.from_pretrained(
             pipeline_config.model_path,
@@ -75,8 +81,8 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         eos_token_id = self._tokenizer.eos_token_id
 
         # Expand eos tokens if more are provided in pipeline_config
-        if "eos_token_id" in pipeline_config.huggingface_config:
-            eos_tokens = pipeline_config.huggingface_config.eos_token_id
+        if "eos_token_id" in self._huggingface_config:
+            eos_tokens = self._huggingface_config.eos_token_id
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
                     msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"

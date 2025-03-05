@@ -170,10 +170,10 @@ class PipelineModel(ABC, Generic[T]):
         Example:
             >>> class MistralModel(PipelineModel):
             ...     @classmethod
-            ...     def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+            ...     def calculate_max_seq_len(cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig) -> int:
             ...         try:
             ...             return upper_bounded_default(
-            ...                 upper_bound=pipeline_config.huggingface_config.max_seq_len,
+            ...                 upper_bound=huggingface_config.max_seq_len,
             ...                 default=pipeline_config.max_length,
             ...             )
             ...         except ValueError as e:
@@ -181,7 +181,7 @@ class PipelineModel(ABC, Generic[T]):
             ...                 "Unable to infer max_length for Mistral, the provided "
             ...                 f"max_length ({pipeline_config.max_length}) exceeds the "
             ...                 f"model's max_seq_len "
-            ...                 f"({pipeline_config.huggingface_config.max_seq_len})."
+            ...                 f"({huggingface_config.max_seq_len})."
             ...             )
             ...             raise ValueError(msg) from e
             ...
@@ -227,17 +227,17 @@ class PipelineModel(ABC, Generic[T]):
         # TODO we should map HF configs to a unified MAX Config object
         # this would help avoid these excessive calls to class methods.
         n_layers = cls.get_num_layers(
-            huggingface_config=pipeline_config.huggingface_config,
+            huggingface_config=huggingface_config,
         )
         kv_params = cls.get_kv_params(
             pipeline_config,
-            huggingface_config=pipeline_config.huggingface_config,
+            huggingface_config=huggingface_config,
         )
         inferred_batch_size = infer_optimal_batch_size(
             params=kv_params,
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config,
-                huggingface_config=pipeline_config.huggingface_config,
+                huggingface_config=huggingface_config,
             ),
             num_layers=n_layers,
             available_cache_memory=available_cache_memory,
@@ -383,10 +383,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
         eos_token_id: int,
     ) -> None:
         self._pipeline_config = pipeline_config
+        self._huggingface_config: Optional[AutoConfig] = None
 
         # Expand eos tokens if more are provided in pipeline_config
-        if "eos_token_id" in pipeline_config.huggingface_config:
-            eos_tokens = pipeline_config.huggingface_config.eos_token_id
+        if "eos_token_id" in self.huggingface_config:
+            eos_tokens = self.huggingface_config.eos_token_id
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
                     msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
@@ -437,13 +438,23 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self._pipeline_config.huggingface_config,
+            huggingface_config=self.huggingface_config,
         )
 
         # Load sampler.
         self._sampler = session.load(
             token_sampler(self._pipeline_config.sampling_config),
         )
+
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        if not self._huggingface_config:
+            self._huggingface_config = AutoConfig.from_pretrained(
+                self._pipeline_config.model_path,
+                trust_remote_code=self._pipeline_config.trust_remote_code,
+            )
+
+        return self._huggingface_config
 
     def calculate_num_steps(
         self,
@@ -452,7 +463,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
     ) -> int:
         max_seq_len = self._pipeline_model.calculate_max_seq_len(
             self._pipeline_config,
-            huggingface_config=self._pipeline_config.huggingface_config,
+            huggingface_config=self.huggingface_config,
         )
         # this is effectively: max_seq_len - (num_tokens_in_kv_cache + num_new_tokens) - num_new_tokens
         num_available_steps = max_seq_len - (
@@ -765,7 +776,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 max_length = upper_bounded_default(
                     upper_bound=self._pipeline_model.calculate_max_seq_len(
                         self._pipeline_config,
-                        huggingface_config=self._pipeline_config.huggingface_config,
+                        huggingface_config=self.huggingface_config,
                     ),
                     default=context.max_length,
                 )
