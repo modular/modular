@@ -465,56 +465,6 @@ struct ManagedTensorSlice[
         """
         self = Self(ndbuffer.data, ndbuffer.get_shape())
 
-    fn __init__(out self):
-        """Initializes a ManagedTensorSlice using the `static_spec` parameter to
-        determine the dtype and amount of elements to allocate.
-
-        In general, custom operations should not create `ManagedTensorSlice`
-        instances, but instead use the ones provided by the MAX inference
-        engine.
-        """
-        var size = Int(Self.static_spec.shape.product())
-        var ptr = UnsafePointer[Scalar[type]].alloc(size)
-        return ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec](
-            ptr,
-            Self.static_spec.shape.into_index_list[rank](),
-            Self.static_spec.strides.into_index_list[rank](),
-        )
-
-    @staticmethod
-    fn rand() -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
-        """Initializes a ManagedTensorSlice with random values, using the
-        `static_spec` parameter to determine the dtype and amount of elements to
-        initialize. This is useful for benchmarks and tests on custom ops.
-
-        In general, custom operations should not create `ManagedTensorSlice`
-        instances, but instead use the ones provided by the MAX inference
-        engine.
-        """
-        var tensor = ManagedTensorSlice[
-            io_spec=io_spec, static_spec=static_spec
-        ]()
-        var size = Int(Self.static_spec.shape.product())
-        rand(tensor._ptr, size)
-        return tensor
-
-    @staticmethod
-    fn iota() -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
-        """Initializes a ManagedTensorSlice with sequential values, using the
-        `static_spec` parameter to determine the dtype and amount of elements to
-        initialize. This is useful for benchmarks and tests on custom ops.
-
-        In general, custom operations should not create `ManagedTensorSlice`
-        instances, but instead use the ones provided by the MAX inference
-        engine.
-        """
-        var tensor = ManagedTensorSlice[
-            io_spec=io_spec, static_spec=static_spec
-        ]()
-        var size = Int(Self.static_spec.shape.product())
-        iota(tensor._ptr, size)
-        return tensor
-
     @always_inline
     fn __getitem__(self, indices: IndexList[rank]) -> Scalar[type]:
         """Gets the value at the specified indices.
