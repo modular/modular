@@ -9,11 +9,8 @@ modular_py_test(
         ["**/test_tokenizer.py"],
     ),
     data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     tags = [
         "no-sandbox",
