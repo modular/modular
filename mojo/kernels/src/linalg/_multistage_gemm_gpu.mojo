@@ -123,7 +123,7 @@ fn warp_split_k_reduction[
                 c_reg_tile_vectorized[0, i] += rebind[
                     __type_of(c_reg_tile_vectorized[0, i])
                 ](red_tb_thread_tile[0, i])
-        i_red /= 2
+        i_red //= 2
 
 
 @always_inline
