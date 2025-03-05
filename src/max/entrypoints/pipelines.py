@@ -15,7 +15,6 @@
 import functools
 import logging
 import os
-import signal
 
 import click
 from max.entrypoints.cli import (
@@ -256,19 +255,5 @@ def cli_list(json):
 if __name__ == "__main__":
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
-
-    # Workaround for https://github.com/buildbuddy-io/buildbuddy/issues/8326
-    if (
-        signal.getsignal(signal.SIGINT) == signal.SIG_IGN
-        and signal.getsignal(signal.SIGTERM) == signal.SIG_IGN
-        and signal.getsignal(signal.SIGQUIT) == signal.SIG_IGN
-    ):
-        # For SIGINT, Python remaps SIG_DFL to default_int_handler on startup.
-        # We do the same here to retain the same behavior we would get if we
-        # started normally.  (SIG_DFL terminates the process immediately;
-        # default_int_handler raises KeyboardInterrupt.)
-        signal.signal(signal.SIGINT, signal.default_int_handler)
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
-        signal.signal(signal.SIGQUIT, signal.SIG_DFL)
 
     main()
