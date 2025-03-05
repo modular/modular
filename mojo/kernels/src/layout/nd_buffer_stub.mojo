@@ -468,9 +468,9 @@ fn _copy_nd_buffer_to_layout_tensor[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
+        mut=True,
         dtype,
         layout,
-        mut=True,
         *_, **_,
     ],
     src: NDBuffer[dtype, src_rank, shape],
@@ -609,9 +609,9 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
+        mut=True,
         dtype,
         layout,
-        mut=True,
         *_, **_,
     ],
     src: NDBuffer[dtype, src_rank, shape],
@@ -974,9 +974,9 @@ fn copy_from_nd_buffer[
     swizzle: OptionalReg[_swizzle_signature] = None,
 ](
     dst_thread_local: LayoutTensor[
+        mut=True,
         dtype,
         dst_data_layout,
-        mut=True,
         *_, **_,
     ],
     src: NDBuffer[dtype, *_],
@@ -1046,9 +1046,9 @@ fn copy_from_nd_buffer_masked[
     swizzle: OptionalReg[_swizzle_signature] = None,
 ](
     dst_thread_local: LayoutTensor[
+        mut=True,
         dtype,
         dst_data_layout,
-        mut=True,
         *_, **_,
     ],
     src: NDBuffer[dtype, src_rank, src_buff_shape],
@@ -1288,9 +1288,9 @@ fn copy_from_nd_buffer_async[
     swizzle: OptionalReg[_swizzle_signature] = None,
 ](
     dst_tensor: LayoutTensor[
+        mut=True,
         dtype,
         dst_data_layout,
-        mut=True,
         *_, **_,
     ],
     src_buffer: NDBuffer[dtype, src_rank, src_buff_shape],
@@ -1305,10 +1305,10 @@ fn copy_from_nd_buffer_async[
 fn from_ndbuffer_row_major(
     buffer: NDBuffer,
     out result: LayoutTensor[
+        mut=True,
         buffer.type,
         Layout.row_major[buffer.rank](buffer.shape),
-        mut=True,
-        origin = buffer.origin,
+        buffer.origin,
         address_space = buffer.address_space,
     ],
 ):

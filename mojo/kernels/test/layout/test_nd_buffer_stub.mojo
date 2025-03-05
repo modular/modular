@@ -124,7 +124,7 @@ fn test_copy_from_nd_buffer_scalars():
     linspace_fill(buff)
 
     var layout_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8)
+        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
     ].stack_allocation().fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
@@ -151,7 +151,7 @@ fn test_copy_to_nd_buffer_scalars():
     print("== test_copy_to_nd_buffer_scalars")
 
     var layout_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8)
+        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
     ].stack_allocation()
     arange(layout_tensor)
 
@@ -186,7 +186,7 @@ fn test_copy_from_nd_buffer_vectors():
     linspace_fill(buff)
 
     var layout_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(16, 16)
+        DType.float32, Layout.row_major(16, 16), MutableAnyOrigin
     ].stack_allocation().fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
@@ -239,7 +239,7 @@ fn test_copy_to_nd_buffer_vectors():
     print("== test_copy_to_nd_buffer_vectors")
 
     var layout_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(16, 16)
+        DType.float32, Layout.row_major(16, 16), MutableAnyOrigin
     ].stack_allocation()
     arange(layout_tensor)
 
@@ -512,7 +512,7 @@ fn test_copy_nd_buffer_to_layout_tensor():
     var buff_v_1_1_and_element_layout = vectorize[1, 1](buff)
 
     var tensor_1_1 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8)
+        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
     ].stack_allocation().fill(0)
 
     _copy_nd_buffer_to_layout_tensor(
@@ -533,7 +533,7 @@ fn test_copy_nd_buffer_to_layout_tensor():
     var buff_v_1_4_and_element_layout = vectorize[1, 4](buff)
 
     var tensor_4_1 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8)
+        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
     ].stack_allocation().vectorize[1, 4]().fill(0)
 
     _copy_nd_buffer_to_layout_tensor(
@@ -554,7 +554,7 @@ fn test_copy_nd_buffer_to_layout_tensor():
 
     var buff_v_4_4_and_element_layout = vectorize[4, 4](buff)
     var tensor_4_4 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8)
+        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
     ].stack_allocation().vectorize[4, 4]().fill(0)
 
     _copy_nd_buffer_to_layout_tensor(
@@ -574,7 +574,7 @@ fn test_copy_nd_buffer_to_layout_tensor():
 fn test_copy_layout_tensor_to_buffer():
     print("== test_copy_layout_tensor_to_buffer")
     var tensor = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8)
+        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor)
 
@@ -1137,7 +1137,7 @@ fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
     linspace_fill(buff_7x9)
 
     var dst_tensor_8x12 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 12)
+        DType.float32, Layout.row_major(8, 12), MutableAnyOrigin
     ].stack_allocation().fill(0)
 
     # CHECK: --tile[ 0 , 0 ]---
@@ -1212,7 +1212,7 @@ fn test_copy_from_nd_buffer_masked_scalar():
     linspace_fill(buff_7x9)
 
     var dst_tensor_8x12 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 12)
+        DType.float32, Layout.row_major(8, 12), MutableAnyOrigin
     ].stack_allocation().fill(0)
 
     # CHECK: --tile[ 0 , 0 ]---
@@ -1277,7 +1277,7 @@ fn test_copy_to_nd_buffer_masked_scalar():
     buff_7x9.zero()
 
     var dst_tensor_8x12 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 12)
+        DType.float32, Layout.row_major(8, 12), MutableAnyOrigin
     ].stack_allocation()
     arange(dst_tensor_8x12)
 

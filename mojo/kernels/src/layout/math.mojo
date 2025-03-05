@@ -163,6 +163,7 @@ fn max[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
+        MutableAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_bitwidth = inp.layout_bitwidth,
@@ -174,8 +175,10 @@ fn max[
 
 
 @always_inline
-fn max(
-    x: LayoutTensor, y: __type_of(x)
+fn max[
+    dtype: DType, layout: Layout
+](
+    x: LayoutTensor[dtype, layout, **_], y: LayoutTensor[dtype, layout, **_]
 ) -> __type_of(x.origin_cast[True, MutableAnyOrigin]()):
     constrained[
         x.layout.all_dims_known(), "max expects tensor of statically know shape"
@@ -197,6 +200,7 @@ fn sum[
     out res: LayoutTensor[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
+        MutableAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
         layout_bitwidth = inp.layout_bitwidth,

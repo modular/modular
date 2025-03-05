@@ -24,6 +24,7 @@ fn print_svg[
         LayoutTensor[
             dtype,
             layout,
+            MutableAnyOrigin,
             element_layout=element_layout,
             masked=masked,
         ]
@@ -53,6 +54,7 @@ fn _print_svg_impl[
         LayoutTensor[
             dtype,
             layout,
+            MutableAnyOrigin,
             element_layout=element_layout,
             masked=masked,
         ]

@@ -31,7 +31,7 @@ fn test_reduce_sum():
         print(tensor_4_0)
 
     var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
     test_reduce_sum_impl(tensor_4x4)
 
@@ -57,7 +57,7 @@ fn test_reduce_max():
         print(tensor_4_1)
 
     var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
     test_reduce_max_impl(tensor_4x4)
 
@@ -66,7 +66,7 @@ fn test_reduce_max():
 fn test_reduce_res_allocated():
     print("== test_reduce_res_allocated")
     var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4x4)
     # CHECK: 12.0
@@ -85,7 +85,7 @@ fn test_reduce_res_allocated():
 fn test_exp():
     print("== test_exp")
     var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4x4)
     # CHECK: 1.0 2.7182817 7.389056 20.085537
@@ -99,7 +99,7 @@ fn test_exp():
 fn test_unary_scalar():
     print("== test_unary_scalar")
     var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4x4)
 
@@ -128,7 +128,7 @@ fn test_unary_scalar():
     print(tensor_4x4 * 10.0)
 
     var tensor_4x4_mul_by_10 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4x4_mul_by_10, step=10.0)
 
@@ -171,11 +171,11 @@ fn test_unary_scalar():
 fn test_binary_same_rank():
     print("== test_binary_same_rank")
     var tensor_4x5 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 5)
+        DType.float32, Layout.row_major(4, 5), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4x5)
     var tensor_4x5_2 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 5)
+        DType.float32, Layout.row_major(4, 5), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4x5_2)
     tensor_4x5_2 = tensor_4x5_2 + 2
@@ -228,11 +228,11 @@ fn test_binary_same_rank():
 fn test_binary_broadcast_inner():
     print("== test_binary_broadcast_inner")
     var tensor_4x5 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 5)
+        DType.float32, Layout.row_major(4, 5), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4x5)
     var tensor_4 = LayoutTensor[
-        DType.float32, Layout.row_major(4)
+        DType.float32, Layout.row_major(4), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4)
     tensor_4 = tensor_4 + 1
@@ -253,7 +253,7 @@ fn test_binary_broadcast_inner():
 fn test_softmax_math():
     print("== test_softmax_math")
     var tensor_5x4 = LayoutTensor[
-        DType.float32, Layout.row_major(5, 4)
+        DType.float32, Layout.row_major(5, 4), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_5x4)
 
@@ -272,12 +272,12 @@ fn test_softmax_math():
 fn test_max_elemntwise():
     print("== test_max_elemntwise")
     var tensor_4x4_a = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4x4_a)
 
     var tensor_4x4_b = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation().fill(5)
 
     # CHECK: 5.0 5.0 5.0 5.0

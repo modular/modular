@@ -191,12 +191,12 @@ fn _distribute_is_masked[
 
 @register_passable("trivial")
 struct LayoutTensor[
+    mut: Bool, //,
     dtype: DType,
     layout: Layout,
+    origin: Origin[mut],
     /,
     *,
-    mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
     layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
@@ -211,9 +211,9 @@ struct LayoutTensor[
         var tensor_5x4 = LayoutTensor[f32, Layout.row_major(5,4)].stack_allocation()
 
     Parameters:
+        mut: The inferred mutability of the underlying pointer.
         dtype: The data type of the underlying pointer.
         layout: The memory layout of the Tensor.
-        mut: The mutability of the underlying pointer.
         origin: The origin of the underlying pointer.
         address_space: The address space of the underlying pointer.
         element_layout: The memory layout of each element in the Tensor.
@@ -245,6 +245,85 @@ struct LayoutTensor[
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
+    @always_inline
+    @implicit
+    fn __init__(
+        out self,
+        span: Span[
+            Scalar[dtype],
+            origin,
+            address_space=address_space, **_,
+        ],
+    ):
+        """Create a LayoutTensor with an UnsafePointer. Expect layout to be
+        fully static.
+
+        Args:
+            span: The UnsafePointer pointing to the underlying data.
+        """
+
+        constrained[layout.all_dims_known(), "Layout must be fully static"]()
+        self.ptr = span.unsafe_ptr()
+        self.runtime_layout = RuntimeLayout[
+            layout, bitwidth = Self.layout_bitwidth
+        ]()
+        self.runtime_element_layout = RuntimeLayout[element_layout]()
+
+    @always_inline
+    fn __init__(
+        mut self,
+        span: Span[
+            Scalar[dtype],
+            origin,
+            address_space=address_space, **_,
+        ],
+        runtime_layout: RuntimeLayout[layout, **_],
+    ):
+        """Create a LayoutTensor with an UnsafePointer. Expect element layout
+        to be fully static.
+
+        Args:
+            span: The UnsafePointer pointing to the underlying data.
+            runtime_layout: The runtime layout of the LayoutTensor.
+        """
+
+        constrained[
+            element_layout.all_dims_known(), "Layout must be fully static"
+        ]()
+
+        constrained[
+            runtime_layout.bitwidth == Self.layout_bitwidth,
+            "Mismatch of bitwidth for RuntimeLayout and LayoutTensor.",
+        ]()
+
+        self.ptr = span.unsafe_ptr()
+        self.runtime_layout = rebind[
+            RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]
+        ](runtime_layout)
+        self.runtime_element_layout = RuntimeLayout[element_layout]()
+
+    @always_inline
+    fn __init__(
+        mut self,
+        span: Span[
+            Scalar[dtype],
+            origin,
+            address_space=address_space, **_,
+        ],
+        runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
+        element_runtime_layout: RuntimeLayout[element_layout],
+    ):
+        """Create a LayoutTensor with an UnsafePointer, a runtime layout of the
+        Tensor, the runtime layout of each element.
+
+        Args:
+            span: The UnsafePointer pointing to the underlying data.
+            runtime_layout: The runtime layout of the LayoutTensor.
+            element_runtime_layout: The runtime layout of each element.
+        """
+        self.ptr = span.unsafe_ptr()
+        self.runtime_layout = runtime_layout
+        self.runtime_element_layout = element_runtime_layout
 
     @always_inline
     @implicit
@@ -424,8 +503,7 @@ struct LayoutTensor[
         out result: LayoutTensor[
             new_type,
             layout,
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
             masked=masked,
@@ -456,8 +534,7 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             layout,
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
@@ -480,6 +557,36 @@ struct LayoutTensor[
             self.runtime_layout,
             self.runtime_element_layout,
         )
+
+    @always_inline
+    fn get_immutable(
+        self,
+    ) -> LayoutTensor[
+        dtype,
+        layout,
+        ImmutableOrigin.cast_from[origin].result,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_bitwidth=layout_bitwidth,
+        masked=masked,
+        alignment=alignment,
+    ]:
+        """
+        Return an immutable version of this tensor.
+
+        Returns:
+            A LayoutTensor covering the same elements, but without mutability.
+        """
+        return LayoutTensor[
+            dtype,
+            layout,
+            ImmutableOrigin.cast_from[origin].result,
+            address_space=address_space,
+            element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
+            masked=masked,
+            alignment=alignment,
+        ](self.ptr, self.runtime_layout, self.runtime_element_layout)
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
@@ -520,8 +627,7 @@ struct LayoutTensor[
         other: LayoutTensor[
             dtype,
             other_layout,
-            mut=other_mut,
-            origin=other_origin,
+            other_origin,
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
@@ -1162,8 +1268,7 @@ struct LayoutTensor[
     ]() -> LayoutTensor[
         dtype,
         layout,
-        mut=True,
-        origin=MutableAnyOrigin,
+        MutableAnyOrigin,
         address_space=address_space,
         element_layout=element_layout,
         layout_bitwidth=layout_bitwidth,
@@ -1203,8 +1308,7 @@ struct LayoutTensor[
     ) -> LayoutTensor[
         dtype,
         layout,
-        mut=True,
-        origin=MutableAnyOrigin,
+        MutableAnyOrigin,
         address_space=address_space,
         element_layout=element_layout,
         layout_bitwidth=layout_bitwidth,
@@ -1303,8 +1407,7 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             coalesce(layout),
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout = self.element_layout,
         ],
@@ -1353,8 +1456,7 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             Self._compute_tile_layout[*tile_sizes]()[0],
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
             masked = masked or _tile_is_masked[layout, *tile_sizes](),
@@ -1470,8 +1572,7 @@ struct LayoutTensor[
         out result: LayoutTensorIter[
             dtype,
             Self._compute_tile_layout[*tile_sizes]()[0],
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             circular=False,
             axis=axis,
@@ -1604,8 +1705,7 @@ struct LayoutTensor[
                 Self._compute_tile_layout[
                     layout.shape[axis].value() // count, axis
                 ]()[0],
-                mut=mut,
-                origin=origin,
+                origin,
                 address_space=address_space,
                 element_layout=element_layout,
                 alignment=alignment,
@@ -1646,8 +1746,7 @@ struct LayoutTensor[
                 Self._compute_tile_layout[
                     layout.shape[axis].value() // count, axis
                 ]()[0],
-                mut=mut,
-                origin=origin,
+                origin,
                 address_space=address_space,
                 element_layout=element_layout,
                 alignment=alignment,
@@ -1666,8 +1765,7 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             layout.make_shape_unknown[axis](),
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -1764,8 +1862,7 @@ struct LayoutTensor[
                 threads_layout,
                 axis,
             ]()[1],
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
             masked = masked
@@ -1935,8 +2032,7 @@ struct LayoutTensor[
             coalesce(
                 Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True
             ),
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout = Self._divide_tiles[*vector_shape]()[0],
             masked=masked,
@@ -2080,8 +2176,7 @@ struct LayoutTensor[
                 d0_slice,
                 d1_slice,
             ),
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -2114,8 +2209,7 @@ struct LayoutTensor[
             Self._compute_slice_layout(
                 d0_slice, d1_slice, slice_indices[0], slice_indices[1]
             ),
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -2164,8 +2258,7 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             Self._compute_slice_layout(d0_slice, slice_indices[0]),
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -2208,8 +2301,7 @@ struct LayoutTensor[
                 layout,
                 Layout(IntTuple(N, M), IntTuple(M, 1)),
             ),
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -2224,8 +2316,7 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             dst_layout,
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
             masked=masked,
@@ -2243,8 +2334,7 @@ struct LayoutTensor[
         out result: LayoutTensor[
             dtype,
             dst_layout,
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             element_layout=element_layout,
         ],
@@ -2485,7 +2575,7 @@ struct LayoutTensor[
 
     @always_inline
     fn fill(
-        self: LayoutTensor[dtype, mut=True, **_], val: Scalar[dtype]
+        self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]
     ) -> __type_of(self):
         @parameter
         if layout.all_dims_known():
@@ -2621,8 +2711,7 @@ fn stack_allocation_like[
     out result: LayoutTensor[
         dtype,
         layout,
-        mut=True,
-        origin=MutableAnyOrigin,
+        MutableAnyOrigin,
         address_space=target_address_space,
         masked = in_tensor.masked,
     ],
@@ -3655,12 +3744,12 @@ fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
 
 @register_passable("trivial")
 struct LayoutTensorIter[
+    mut: Bool, //,
     type: DType,
     layout: Layout,
+    origin: Origin[mut],
     /,
     *,
-    mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = alignof[type]() if is_nvidia_gpu() else 1,
     circular: Bool = False,
@@ -3782,8 +3871,7 @@ struct LayoutTensorIter[
         out result: LayoutTensor[
             type,
             layout,
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             masked=masked,
             alignment=alignment,
@@ -3805,8 +3893,7 @@ struct LayoutTensorIter[
     ) -> LayoutTensor[
         type,
         layout,
-        mut=mut,
-        origin=origin,
+        origin,
         address_space=address_space,
         masked=masked,
         alignment=alignment,
@@ -3934,8 +4021,7 @@ struct LayoutTensorIter[
         out result: LayoutTensorIter[
             type,
             dst_layout,
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             alignment=alignment,
             circular=circular,
@@ -3996,8 +4082,7 @@ struct LayoutTensorIter[
         out result: LayoutTensorIter[
             new_type,
             layout,
-            mut=mut,
-            origin=origin,
+            origin,
             address_space=address_space,
             alignment=alignment,
             circular = Self.circular,

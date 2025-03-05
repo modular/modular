@@ -178,10 +178,10 @@ fn gemm_l1_cache[
     fn process_raw(m_1: Int):
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
         var l1_lhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.m, L1.k))
+            dst.dtype, Layout(IntTuple(L1.m, L1.k)), MutableAnyOrigin
         ].stack_allocation()
         var l1_rhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.n, L1.k))
+            dst.dtype, Layout(IntTuple(L1.n, L1.k)), MutableAnyOrigin
         ].stack_allocation()
 
         for k_1 in range(l1_size.k):

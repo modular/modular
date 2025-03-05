@@ -82,7 +82,7 @@ struct ManagedLayoutTensor[
 
     fn device_tensor[
         update: Bool = True
-    ](self) raises -> LayoutTensor[dtype, layout]:
+    ](self) raises -> LayoutTensor[dtype, layout, MutableAnyOrigin]:
         debug_assert(
             Bool(self.ctx.api() != "cpu"),
             "device_tensor cannot be constructed for host only tensor.",
@@ -115,7 +115,9 @@ struct ManagedLayoutTensor[
 
         return NDBuffer[dtype, 2](self.device_data.value().unsafe_ptr(), (M, N))
 
-    fn tensor[update: Bool = True](self) raises -> LayoutTensor[dtype, layout]:
+    fn tensor[
+        update: Bool = True
+    ](self) raises -> LayoutTensor[dtype, layout, MutableAnyOrigin]:
         @parameter
         if update:
             self._update_host()

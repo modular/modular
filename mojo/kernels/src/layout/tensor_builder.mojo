@@ -386,7 +386,9 @@ struct LayoutTensorBuild[
     @always_inline
     fn alloc(
         self,
-        out res: LayoutTensor[dtype, __layout, address_space=__address_space],
+        out res: LayoutTensor[
+            dtype, __layout, MutableAnyOrigin, address_space=__address_space
+        ],
     ):
         constrained[__layout_init, "Layout is not set."]()
         constrained[
@@ -405,8 +407,7 @@ struct LayoutTensorBuild[
         out res: LayoutTensor[
             dtype,
             __layout,
-            mut = ptr.mut,
-            origin = ptr.origin,
+            ptr.origin,
             address_space=address_space,
         ],
     ):
@@ -445,8 +446,7 @@ struct LayoutTensorBuild[
         out res: LayoutTensorIter[
             dtype,
             __layout,
-            mut = ptr.mut,
-            origin = ptr.origin,
+            ptr.origin,
             address_space=__address_space,
             circular=__circular,
         ],

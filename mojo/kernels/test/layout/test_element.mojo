@@ -22,7 +22,7 @@ from utils import IndexList
 fn test_element_load():
     print("== test_element_load")
     var tensor_8x8 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8)
+        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
     ].stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
     arange(tensor_8x8)
 
@@ -79,7 +79,7 @@ fn test_element_load():
 fn test_element_store():
     print("== test_element_store")
     var tensor_8x8 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8)
+        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
     ].stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
     arange(tensor_8x8)
 
@@ -261,7 +261,7 @@ fn test_element_dynamic_layout() raises:
 fn test_element_masked_load():
     print("== test_element_masked_load")
     var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
     arange(tensor_4x4)
     var tensor_1x3 = LayoutTensor[DType.float32, Layout.row_major(1, 3)](
@@ -314,7 +314,7 @@ fn test_element_masked_load():
 fn test_element_masked_store():
     print("== test_element_masked_store")
     var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
+        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation().fill(-1)
 
     var tensor_4x4_vec_1_4 = tensor_4x4.vectorize[1, 4]()
