@@ -28,7 +28,7 @@ alias alignment = alignof[SIMD[dtype, simd_size]]()
 
 
 fn gemm_naive[
-    layout_b: Layout,
+    layout_b: Layout, origin: Origin
 ](
     c: NDBuffer[dtype, 2],  # M x N
     a: NDBuffer[dtype, 2],  # M x K
