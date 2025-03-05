@@ -294,4 +294,7 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
   bound is not known until runtime, use `List` with the `capacity` constructor
   to minimize allocations.
 
+- The `InlineList` type has been removed.  Replace uses with `List` and the
+  capacity constructor, or an `InlineArray`.
+
 ### 🛠️ Fixed

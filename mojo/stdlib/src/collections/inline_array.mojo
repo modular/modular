@@ -88,12 +88,6 @@ struct InlineArray[
 
         Note that this is highly unsafe and should be used with caution.
 
-        We recommend to use the `InlineList` instead if all the objects
-        are not available when creating the array.
-
-        If despite those workarounds, one still needs an uninitialized array,
-        it is possible with:
-
         ```mojo
         var uninitialized_array = InlineArray[Int, 10](unsafe_uninitialized=True)
         ```
