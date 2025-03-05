@@ -41,7 +41,7 @@ fn test_tma_mcast_load_kernel[
     CLUSTER_M: UInt32,
     CLUSTER_N: UInt32,
 ](
-    dst: LayoutTensor[dtype, layout],
+    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -60,6 +60,7 @@ fn test_tma_mcast_load_kernel[
         LayoutTensor[
             dtype,
             tile_layout,
+            MutableAnyOrigin,
             address_space = _GPUAddressSpace.SHARED,
             alignment=128,
         ]
@@ -167,7 +168,7 @@ fn test_tma_sliced_multicast_load_kernel[
     CLUSTER_N: UInt32,
     tma_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, layout],
+    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
     tma_tile: TMATensorTile[dtype, tma_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -186,6 +187,7 @@ fn test_tma_sliced_multicast_load_kernel[
         LayoutTensor[
             dtype,
             tile_layout,
+            MutableAnyOrigin,
             address_space = _GPUAddressSpace.SHARED,
             alignment=128,
         ]

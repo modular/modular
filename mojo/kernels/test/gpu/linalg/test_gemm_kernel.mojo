@@ -60,11 +60,17 @@ fn gemm_kernel[
     var K = mat_a.dim(1)
 
     var a_tile_sram = LayoutTensor[
-        a_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
+        a_type,
+        Layout.row_major(BM, BK),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_tile_sram = LayoutTensor[
-        b_type, Layout.row_major(BK, BN), address_space = AddressSpace.SHARED
+        b_type,
+        Layout.row_major(BK, BN),
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var num_warps = NUM_THREADS // WARP_SIZE

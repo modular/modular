@@ -32,13 +32,14 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
     fn copy_to_sram_test_kernel[
         layout: Layout,
     ](
-        dram_tensor: LayoutTensor[DType.float32, layout],
+        dram_tensor: LayoutTensor[DType.float32, layout, MutableAnyOrigin],
         flag: UnsafePointer[Bool],
     ):
         var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
         var sram_tensor = LayoutTensor[
             DType.float32,
             Layout.row_major(4, 4),
+            MutableAnyOrigin,
             address_space = _GPUAddressSpace.SHARED,
         ].stack_allocation()
         sram_tensor.copy_from_async(dram_tile)

@@ -108,8 +108,8 @@ fn repack_Q4_0_for_sm8x[
     repack_layout: Layout,
     scales_type: DType,
 ](
-    q_weight: LayoutTensor[DType.uint8, q_layout],
-    q_packed_weight: LayoutTensor[DType.uint8, repack_layout],
+    q_weight: LayoutTensor[DType.uint8, q_layout, MutableAnyOrigin],
+    q_packed_weight: LayoutTensor[DType.uint8, repack_layout, MutableAnyOrigin],
 ):
     alias group_size = 32
     alias group_bytes = sizeof[DType.float16]() + (group_size // 2)
@@ -293,8 +293,8 @@ fn create_ref_b[
     group_size: Int,
     pack_factor: Int,
 ](
-    b_packed: LayoutTensor[type_q, b_q_layout],
-    b_out: LayoutTensor[type_b, b_layout],
+    b_packed: LayoutTensor[type_q, b_q_layout, MutableAnyOrigin],
+    b_out: LayoutTensor[type_b, b_layout, MutableAnyOrigin],
 ):
     alias WARP_SIZE = 32
     alias BLOCK_N = 128

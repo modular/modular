@@ -54,12 +54,13 @@ fn async_copy_kernel[
     input_layout: Layout,
     BM: Int,
     BN: Int,
-](input: LayoutTensor[DType.float32, input_layout]):
+](input: LayoutTensor[DType.float32, input_layout, MutableAnyOrigin]):
     var input_tile = input.tile[BM, BN](block_idx.y, block_idx.x)
 
     var smem_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BM, BN)),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -140,8 +141,8 @@ fn async_dynamic_copy_kernel[
     BN: Int,
     num_rows: Int,
 ](
-    input: LayoutTensor[DType.float32, input_layout],
-    output: LayoutTensor[DType.float32, output_layout],
+    input: LayoutTensor[DType.float32, input_layout, MutableAnyOrigin],
+    output: LayoutTensor[DType.float32, output_layout, MutableAnyOrigin],
 ):
     masked_input = LayoutTensor[DType.float32, input_layout, masked=True](
         input.ptr,
@@ -159,6 +160,7 @@ fn async_dynamic_copy_kernel[
     var smem_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BM, BN)),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -244,13 +246,17 @@ fn swizzle_copy[
     BM: Int,
     BK: Int,
     num_threads: Int,
-](a: LayoutTensor[type, layout], b: LayoutTensor[type, layout],):
+](
+    a: LayoutTensor[type, layout, MutableAnyOrigin],
+    b: LayoutTensor[type, layout, MutableAnyOrigin],
+):
     alias simd_size = simdwidthof[type]()
 
     # Double buffer in shared memory.
     var a_smem_tile = LayoutTensor[
         type,
         Layout.row_major(BM, BK),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation().fill(0)
 
@@ -409,7 +415,7 @@ def run_swizzle_copy_tests(ctx: DeviceContext):
 @always_inline
 fn masked_async_copy_kernel[
     layout: Layout, num_rows: Int
-](input: LayoutTensor[DType.float32, layout]):
+](input: LayoutTensor[DType.float32, layout, MutableAnyOrigin]):
     alias thread_layout = Layout.row_major(4, 2)
 
     var masked_input = LayoutTensor[DType.float32, layout, masked=True](
@@ -421,7 +427,10 @@ fn masked_async_copy_kernel[
     )
 
     var smem_tile = LayoutTensor[
-        DType.float32, layout, address_space = AddressSpace.SHARED
+        DType.float32,
+        layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
     ].stack_allocation().fill(-1.0)
 
     copy_dram_to_sram_async[thread_layout=thread_layout](
@@ -508,7 +517,7 @@ def run_masked_async_copy_tests(ctx: DeviceContext):
 @always_inline
 fn masked_copy_kernel[
     layout: Layout, num_rows: Int
-](input: LayoutTensor[DType.float32, layout]):
+](input: LayoutTensor[DType.float32, layout, MutableAnyOrigin]):
     alias thread_layout = Layout.row_major(4, 2)
 
     var masked_input = LayoutTensor[DType.float32, layout, masked=True](
@@ -520,7 +529,10 @@ fn masked_copy_kernel[
     )
 
     var smem_tile = LayoutTensor[
-        DType.float32, layout, address_space = AddressSpace.SHARED
+        DType.float32,
+        layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
     ].stack_allocation().fill(0)
 
     copy_dram_to_sram[thread_layout=thread_layout](
@@ -607,9 +619,12 @@ fn partial_copy_dram_to_sram_async_kernel[
     layout: Layout,
     thread_layout: Layout,
     num_threads: Int,
-](input: LayoutTensor[DType.float32, layout]):
+](input: LayoutTensor[DType.float32, layout, MutableAnyOrigin]):
     var smem_tile = LayoutTensor[
-        DType.float32, layout, address_space = AddressSpace.SHARED
+        DType.float32,
+        layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
     ].stack_allocation().fill(-1.0)
 
     copy_dram_to_sram_async[
@@ -677,13 +692,14 @@ fn copy_sram_to_dram_kernel[
     M: Int,
     N: Int,
     binary_op: OptionalReg[binary_op_type] = None,
-](input: LayoutTensor[type, layout]):
+](input: LayoutTensor[type, layout, MutableAnyOrigin]):
     alias simd_size = simdwidthof[type]()
     alias thread_layout = Layout.row_major(simd_size, N // simd_size)
 
     var smem_tile = LayoutTensor[
         DType.float32,
         Layout.row_major(M, N),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     arange(smem_tile)
@@ -774,12 +790,13 @@ def run_copy_sram_to_dram_tests(ctx: DeviceContext):
 @always_inline
 fn copy_local_to_local_kernel[
     type: DType, layout: Layout, WM: Int, WN: Int, MMA_M: Int, MMA_N: Int
-](output: LayoutTensor[type, layout]):
+](output: LayoutTensor[type, layout, MutableAnyOrigin]):
     alias simd_size = 2
 
     var reg_tile0 = LayoutTensor[
         DType.float32,
         Layout.row_major(MMA_M, MMA_N * simd_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     arange(reg_tile0)
@@ -787,6 +804,7 @@ fn copy_local_to_local_kernel[
     var reg_tile1 = LayoutTensor[
         DType.bfloat16,
         Layout.row_major(MMA_M, MMA_N * simd_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0)
 
@@ -868,10 +886,11 @@ fn copy_local_to_sram_kernel[
     MMA_N: Int,
     simd_size_row: Int,
     simd_size_col: Int,
-](output: LayoutTensor[type, layout]):
+](output: LayoutTensor[type, layout, MutableAnyOrigin]):
     var reg_tile0 = LayoutTensor[
         DType.float32,
         Layout.row_major(MMA_M * simd_size_row, MMA_N * simd_size_col),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
     arange(reg_tile0)
@@ -879,6 +898,7 @@ fn copy_local_to_sram_kernel[
     var smem_warp_tile = LayoutTensor[
         type,
         Layout.row_major(WM, WN),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation().fill(0)
 

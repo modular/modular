@@ -127,9 +127,9 @@ fn gemm_kernel_1[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout],
-    b: LayoutTensor[dtype, b_layout],
-    c: LayoutTensor[dtype, c_layout],
+    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B.
@@ -248,9 +248,9 @@ fn gemm_kernel_2[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout],
-    b: LayoutTensor[dtype, b_layout],
-    c: LayoutTensor[dtype, c_layout],
+    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
 ):
     """
     GEMM kernel that performs matrix multiplication C = A * B with
@@ -371,9 +371,9 @@ fn gemm_kernel_3[
     BK: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout],
-    b: LayoutTensor[dtype, b_layout],
-    c: LayoutTensor[dtype, c_layout],
+    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -519,9 +519,9 @@ fn gemm_kernel_4[
     TM: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout],
-    b: LayoutTensor[dtype, b_layout],
-    c: LayoutTensor[dtype, c_layout],
+    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -684,9 +684,9 @@ fn gemm_kernel_5[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout],
-    b: LayoutTensor[dtype, b_layout],
-    c: LayoutTensor[dtype, c_layout],
+    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B.
@@ -838,9 +838,9 @@ fn gemm_kernel_6[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout],
-    b: LayoutTensor[dtype, b_layout],
-    c: LayoutTensor[dtype, c_layout],
+    a: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[dtype, c_layout, MutableAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B with
@@ -1019,9 +1019,9 @@ fn matmul_kernel_tc[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[dtype, layout_a],
-    B: LayoutTensor[dtype, layout_b],
-    C: LayoutTensor[dtype, layout_c],
+    A: LayoutTensor[dtype, layout_a, MutableAnyOrigin],
+    B: LayoutTensor[dtype, layout_b, MutableAnyOrigin],
+    C: LayoutTensor[dtype, layout_c, MutableAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using

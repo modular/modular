@@ -60,9 +60,9 @@ fn cpasync_wgmma_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    a: LayoutTensor[a_type, a_layout],
-    b: LayoutTensor[b_type, b_layout],
-    c: LayoutTensor[c_type, c_layout],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
     """Test k_major @ mn_major with cp.async to simulate the 2nd matmul in mha.
@@ -75,6 +75,7 @@ fn cpasync_wgmma_kernel[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -85,6 +86,7 @@ fn cpasync_wgmma_kernel[
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -120,6 +122,7 @@ fn cpasync_wgmma_kernel[
     var c_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 

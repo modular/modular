@@ -27,7 +27,10 @@ fn mma_load_and_multiply[
     rhs_layout: Layout,
     inst_shape: IndexList[3],
     transpose_b: Bool = False,
-](lhs: LayoutTensor[dtype, lhs_layout], rhs: LayoutTensor[dtype, rhs_layout]):
+](
+    lhs: LayoutTensor[dtype, lhs_layout, MutableAnyOrigin],
+    rhs: LayoutTensor[dtype, rhs_layout, MutableAnyOrigin],
+):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_reg_tile = mma.load_a(lhs)
     var a_frags = load_to_simd(a_reg_tile).cast[DType.float64]()
@@ -132,7 +135,7 @@ fn mma_write_operand_kernel[
     dtype: DType,
     layout: Layout,
     inst_shape: IndexList[3],
-](out: LayoutTensor[dst_dtype, layout]):
+](out: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
     var thread_reg_tile_v = thread_reg_tile.vectorize[1, mma.c_reg_type.size]()
@@ -204,17 +207,22 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
     rhs_layout: Layout,
     inst_shape: IndexList[3],
     transpose_b: Bool = False,
-](lhs: LayoutTensor[dtype, lhs_layout], rhs: LayoutTensor[dtype, rhs_layout]):
+](
+    lhs: LayoutTensor[dtype, lhs_layout, MutableAnyOrigin],
+    rhs: LayoutTensor[dtype, rhs_layout, MutableAnyOrigin],
+):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_smem = LayoutTensor[
         dtype,
         lhs.layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem = LayoutTensor[
         dtype,
         rhs.layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -228,12 +236,14 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
     var a_reg_tile = LayoutTensor[
         dtype,
         Layout.row_major(1, a_simd_width),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().vectorize[1, a_simd_width]()
 
     var b_reg_tile = LayoutTensor[
         dtype,
         Layout.row_major(1, b_simd_width),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().vectorize[1, b_simd_width]()
 

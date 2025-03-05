@@ -17,13 +17,15 @@ fn test_no_alloca_fill():
 
     fn layout_tensor_kernel(
         outout: LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+            DType.float32,
+            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+            MutableAnyOrigin,
         ],
         i: Int,
         j: Int,
     ):
         var reg_tile = LayoutTensor[
-            DType.float32, Layout.row_major(4, 4)
+            DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
         ].stack_allocation().fill(0)
 
         outout.tile[4, 4](i, j).copy_from(reg_tile)

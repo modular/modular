@@ -35,7 +35,7 @@ fn test_tma_load_kernel[
     tile_layout: Layout,
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, layout],
+    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -45,6 +45,7 @@ fn test_tma_load_kernel[
     tile = LayoutTensor[
         dtype,
         tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -73,7 +74,7 @@ fn test_tma_multiple_loads_kernel[
     tile_layout: Layout,
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, layout],
+    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_layout],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -86,6 +87,7 @@ fn test_tma_multiple_loads_kernel[
     tile = LayoutTensor[
         dtype,
         tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -184,13 +186,14 @@ fn test_tma_async_store_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
     tma_tile: TMATensorTile[dtype, tile_layout],
-    src: LayoutTensor[dtype, layout],
+    src: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
@@ -213,13 +216,14 @@ fn test_tma_async_multiple_store_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
     tma_tile: TMATensorTile[dtype, tile_layout],
-    src: LayoutTensor[dtype, layout],
+    src: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
@@ -312,13 +316,14 @@ fn test_tma_async_reduce_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
     tma_tile: TMATensorTile[dtype, tile_layout],
-    src: LayoutTensor[dtype, layout],
+    src: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
@@ -343,13 +348,14 @@ fn test_tma_async_multiple_reduce_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
     tma_tile: TMATensorTile[dtype, tile_layout],
-    src: LayoutTensor[dtype, layout],
+    src: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
     alias tileM = tile_layout.shape[0].value()
     alias tileN = tile_layout.shape[1].value()
     tile = LayoutTensor[
         dtype,
         tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation[]()
@@ -450,8 +456,8 @@ fn test_tma_loads_two_buffers_kernel[
     a_thread_layout: Layout,
     b_thread_layout: Layout,
 ](
-    a_dst: LayoutTensor[dtype, a_layout],
-    b_dst: LayoutTensor[dtype, b_layout],
+    a_dst: LayoutTensor[dtype, a_layout, MutableAnyOrigin],
+    b_dst: LayoutTensor[dtype, b_layout, MutableAnyOrigin],
     a_tma_tile: TMATensorTile[dtype, a_tile_layout],
     b_tma_tile: TMATensorTile[dtype, b_tile_layout],
 ):
@@ -465,6 +471,7 @@ fn test_tma_loads_two_buffers_kernel[
     a_tile = LayoutTensor[
         dtype,
         a_tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -472,6 +479,7 @@ fn test_tma_loads_two_buffers_kernel[
     b_tile = LayoutTensor[
         dtype,
         b_tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -608,6 +616,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
     a_tile = LayoutTensor[
         dtype,
         a_tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -615,6 +624,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
     b_tile = LayoutTensor[
         dtype,
         b_tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()

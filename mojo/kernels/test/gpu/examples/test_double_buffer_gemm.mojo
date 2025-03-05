@@ -60,9 +60,9 @@ fn sgemm_double_buffer[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b: LayoutTensor[b_type, b_layout],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
 ):
     alias _uint = Scalar[itype]
 
@@ -100,6 +100,7 @@ fn sgemm_double_buffer[
     var a_smem_tile = LayoutTensor[
         a_type,
         Layout.row_major(2 * BK, BM_padded),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation().slice[:, :BM]().split[2]()
 
@@ -108,6 +109,7 @@ fn sgemm_double_buffer[
     var b_smem_tile = LayoutTensor[
         b_type,
         Layout.row_major(2 * BK, BN),
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation().split[2]()
 

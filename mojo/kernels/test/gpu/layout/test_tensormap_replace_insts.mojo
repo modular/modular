@@ -48,8 +48,8 @@ fn test_tma_replace_in_gmem_descriptor_kernel[
     desc_layout: Layout,
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout],
-    new_src: LayoutTensor[dtype, src_layout],
+    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
+    new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
     template_tma_tensormap: TMATensorTile[dtype, cta_tile_layout, desc_layout],
     device_tma_tile: TMATensorTileArray[
         num_of_tensormaps, dtype, cta_tile_layout, desc_layout
@@ -62,6 +62,7 @@ fn test_tma_replace_in_gmem_descriptor_kernel[
     tile = LayoutTensor[
         dtype,
         cta_tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -168,8 +169,8 @@ fn test_tma_replace_in_smem_descriptor_kernel[
     desc_layout: Layout,
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout],
-    new_src: LayoutTensor[dtype, src_layout],
+    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
+    new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
     template_tma_tensormap: TMATensorTile[dtype, cta_tile_layout, desc_layout],
     device_tma_tile: TMATensorTileArray[
         num_of_tensormaps, dtype, cta_tile_layout, desc_layout
@@ -182,6 +183,7 @@ fn test_tma_replace_in_smem_descriptor_kernel[
     tile = LayoutTensor[
         dtype,
         cta_tile_layout,
+        MutableAnyOrigin,
         address_space = _GPUAddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()

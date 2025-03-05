@@ -29,7 +29,7 @@ fn test_load_a[
     layout: Layout,
     inst_shape: IndexList[3],
 ](
-    a: LayoutTensor[dtype, layout],
+    a: LayoutTensor[dtype, layout, MutableAnyOrigin],
     a_lane: LayoutTensor[dtype, Layout(WARP_SIZE)],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
@@ -45,7 +45,7 @@ fn test_load_b[
     inst_shape: IndexList[3],
     transpose_b: Bool,
 ](
-    b: LayoutTensor[dtype, layout],
+    b: LayoutTensor[dtype, layout, MutableAnyOrigin],
     b_lane: LayoutTensor[dtype, Layout(WARP_SIZE)],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
@@ -60,7 +60,7 @@ fn test_load_c[
     layout: Layout,
     inst_shape: IndexList[3],
 ](
-    c: LayoutTensor[dst_dtype, layout],
+    c: LayoutTensor[dst_dtype, layout, MutableAnyOrigin],
     c_lane: LayoutTensor[dst_dtype, Layout.row_major(WARP_SIZE, 4)],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
@@ -74,7 +74,7 @@ fn test_store_d[
     dtype: DType,
     layout: Layout,
     inst_shape: IndexList[3],
-](d: LayoutTensor[dst_dtype, layout]):
+](d: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var src = __type_of(mma).c_reg_tile_type.stack_allocation().fill(lane_id())
     mma.store_d(d, src)
@@ -89,10 +89,10 @@ fn test_mma_op[
     inst_shape: IndexList[3],
     transpose_b: Bool,
 ](
-    a: LayoutTensor[dtype, layout_a],
-    b: LayoutTensor[dtype, layout_b],
-    c: LayoutTensor[dst_dtype, layout_c],
-    d: LayoutTensor[dst_dtype, layout_c],
+    a: LayoutTensor[dtype, layout_a, MutableAnyOrigin],
+    b: LayoutTensor[dtype, layout_b, MutableAnyOrigin],
+    c: LayoutTensor[dst_dtype, layout_c, MutableAnyOrigin],
+    d: LayoutTensor[dst_dtype, layout_c, MutableAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     alias k_group_size = a.layout.shape[1].value() // inst_shape[2]

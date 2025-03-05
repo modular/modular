@@ -33,7 +33,9 @@ from utils.numerics import get_accum_type
 
 
 @always_inline
-fn _get_b[type: DType](out B: LayoutTensor[type, Layout.row_major(4, 4)]):
+fn _get_b[
+    type: DType
+](out B: LayoutTensor[type, Layout.row_major(4, 4), MutableAnyOrigin]):
     B = __type_of(B).stack_allocation()
     # fmt:off
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
@@ -44,7 +46,9 @@ fn _get_b[type: DType](out B: LayoutTensor[type, Layout.row_major(4, 4)]):
 
 
 @always_inline
-fn _get_g[type: DType](out G: LayoutTensor[type, Layout.row_major(4, 3)]):
+fn _get_g[
+    type: DType
+](out G: LayoutTensor[type, Layout.row_major(4, 3), MutableAnyOrigin]):
     G = __type_of(G).stack_allocation()
     # fmt:off
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
@@ -55,7 +59,9 @@ fn _get_g[type: DType](out G: LayoutTensor[type, Layout.row_major(4, 3)]):
 
 
 @always_inline
-fn _get_a[type: DType](out A: LayoutTensor[type, Layout.row_major(2, 4)]):
+fn _get_a[
+    type: DType
+](out A: LayoutTensor[type, Layout.row_major(2, 4), MutableAnyOrigin]):
     A = __type_of(A).stack_allocation()
     # fmt:off
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
@@ -74,9 +80,9 @@ fn matmul[
     transpose_b: Bool,
     s_type: DType = get_accum_type[c_type](),
 ](
-    C: LayoutTensor[c_type, c_layout],
-    A: LayoutTensor[a_type, a_layout],
-    B: LayoutTensor[b_type, b_layout],
+    C: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    A: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    B: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
 ):
     alias M = Int(c_layout.shape[0])
     alias N = Int(c_layout.shape[1])
@@ -110,11 +116,13 @@ fn get_tile[
     h: Int,
     w: Int,
     c: Int,
-) -> LayoutTensor[type, Layout.row_major(tile_size, tile_size)]:
+) -> LayoutTensor[
+    type, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
+]:
     # TODO: Issue because returning a stack variable? Workaround
     # with @always_inline
     var result = LayoutTensor[
-        type, Layout.row_major(tile_size, tile_size)
+        type, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
     ].stack_allocation()
 
     for i in range(tile_size):
@@ -187,17 +195,19 @@ fn winograd_conv2d_gpu_nhwc[
 
     # Allocate scratch space
     var scratch = LayoutTensor[
-        input_type, Layout.row_major(4, 3)
+        input_type, Layout.row_major(4, 3), MutableAnyOrigin
     ].stack_allocation()
     var scratch_2 = LayoutTensor[
-        input_type, Layout.row_major(4, 4)
+        input_type, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
     var scratch_3 = LayoutTensor[
-        input_type, Layout.row_major(2, 4)
+        input_type, Layout.row_major(2, 4), MutableAnyOrigin
     ].stack_allocation()
-    var m = LayoutTensor[output_type, Layout.row_major(4, 4)].stack_allocation()
+    var m = LayoutTensor[
+        output_type, Layout.row_major(4, 4), MutableAnyOrigin
+    ].stack_allocation()
     var g_transformed = LayoutTensor[
-        input_type, Layout.row_major(4, 4)
+        input_type, Layout.row_major(4, 4), MutableAnyOrigin
     ].stack_allocation()
 
     # Pre-transform filter (G^T * filter * G)
@@ -210,7 +220,7 @@ fn winograd_conv2d_gpu_nhwc[
     # Process each output channel
     for c_out in range(C_out):
         var output_tile = LayoutTensor[
-            output_type, Layout.row_major(2, 2)
+            output_type, Layout.row_major(2, 2), MutableAnyOrigin
         ].stack_allocation()
 
         # Process each input channel

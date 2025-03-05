@@ -128,7 +128,7 @@ struct test_matmul[
         fn create_tensor[
             layout: Layout
         ](m: Int, n: Int, ptr: UnsafePointer[Scalar[dtype]]) -> LayoutTensor[
-            dtype, layout
+            dtype, layout, ptr.origin
         ]:
             var dynamic_layout = RuntimeLayout[layout](
                 RuntimeTuple[layout.shape, unsigned=True](m, n),

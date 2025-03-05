@@ -70,12 +70,13 @@ fn multicast_tma_wgmma_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -83,6 +84,7 @@ fn multicast_tma_wgmma_kernel[
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
+        MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
@@ -116,6 +118,7 @@ fn multicast_tma_wgmma_kernel[
     var c_reg_tile = LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+        MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 

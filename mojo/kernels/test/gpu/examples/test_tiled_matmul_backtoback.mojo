@@ -160,10 +160,10 @@ fn b2b_gemm[
     config: BackToBackMatmulConfig[d_type, in_type, transpose_b, transpose_c],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    D: LayoutTensor[d_type, d_layout],
-    A: LayoutTensor[in_type, a_layout],
-    B: LayoutTensor[in_type, b_layout],
-    C: LayoutTensor[in_type, c_layout],
+    D: LayoutTensor[d_type, d_layout, MutableAnyOrigin],
+    A: LayoutTensor[in_type, a_layout, MutableAnyOrigin],
+    B: LayoutTensor[in_type, b_layout, MutableAnyOrigin],
+    C: LayoutTensor[in_type, c_layout, MutableAnyOrigin],
 ):
     constrained[
         A.dtype in (DType.float32, DType.bfloat16)
@@ -257,6 +257,7 @@ fn b2b_gemm[
                 LayoutTensorIter[
                     in_type,
                     Layout.row_major(BM, BK),
+                    MutableAnyOrigin,
                     address_space = a_smem.address_space,
                     alignment = a_smem.alignment,
                 ]().ptr

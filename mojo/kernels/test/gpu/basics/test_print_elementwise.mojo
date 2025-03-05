@@ -24,7 +24,10 @@ from utils.index import IndexList
 fn test_elementwise_print[
     c_type: DType,
     c_layout: Layout,
-](c01: LayoutTensor[c_type, c_layout], ctx: DeviceContext,) raises:
+](
+    c01: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    ctx: DeviceContext,
+) raises:
     var M = c01.dim(0)
     var N = c01.dim(1) // 2
     alias simd_width = simdwidthof[
