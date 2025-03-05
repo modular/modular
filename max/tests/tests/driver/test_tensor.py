@@ -585,3 +585,26 @@ def test_from_dlpack_noncontiguous() -> None:
         match=r"from_dlpack only accepts contiguous arrays. First call np.ascontiguousarray",
     ):
         tensor = Tensor.from_dlpack(array)
+
+
+def test_item_success() -> None:
+    """Test successful item() calls for valid single-element tensors."""
+    # Zero-rank case
+    scalar = Tensor.scalar(8, DType.int32)
+    assert scalar.item() == 8
+
+    # Single-element tensors of various ranks
+    for shape in [(), (1,), (1, 1), (1, 1, 1)]:
+        tensor = Tensor(shape, DType.float32)
+        tensor[tuple(0 for _ in shape)] = 3.14
+        assert math.isclose(tensor.item(), 3.14, rel_tol=1e-6)
+
+
+def test_item_multiple_elements() -> None:
+    """Test item() fails when tensor contains multiple elements"""
+    tensor = Tensor((2,), DType.int32)
+    with pytest.raises(
+        ValueError,
+        match="calling `item` on a tensor with 2 items but expected only 1",
+    ):
+        tensor.item()
