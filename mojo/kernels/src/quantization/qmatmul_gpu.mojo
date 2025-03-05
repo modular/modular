@@ -459,9 +459,9 @@ fn multistage_qgemm_kernel[
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b_packed: LayoutTensor[b_packed_type, b_layout],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
+    b_packed: LayoutTensor[b_packed_type, b_layout, MutableAnyOrigin],
 ):
     constrained[
         is_nvidia_gpu(),
@@ -541,6 +541,7 @@ fn multistage_qgemm_kernel[
                 LayoutTensorIter[
                     a_type,
                     Layout.row_major(BM, BK),
+                    MutableAnyOrigin,
                     address_space = AddressSpace.SHARED,
                     alignment = a_smem.alignment,
                     circular=True,
@@ -812,6 +813,7 @@ fn multistage_qgemm_kernel[
             var c_reg_tile_out = LayoutTensor[
                 c_type,
                 c_reg_tile.layout,
+                MutableAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ].stack_allocation()
 
