@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-"""Implements the fast div algorithm.
+"""Implements the fast division algorithm.
 
 This method replaces division by constants with a sequence of shifts and
 multiplications, significantly optimizing division performance.
@@ -26,6 +26,14 @@ fn _ceillog2(x: Scalar) -> Int32:
 
 
 struct FastDiv[type: DType]:
+    """Implements fast division for a given type.
+
+    This struct provides optimized division by a constant divisor,
+    replacing the division operation with a series of shifts and
+    multiplications. This approach significantly improves performance,
+    especially in scenarios where division is a frequent operation.
+    """
+
     alias uint_type = _uint_type_of_width[bitwidthof[type]()]()
 
     var _div: Scalar[Self.uint_type]
@@ -36,6 +44,15 @@ struct FastDiv[type: DType]:
     @always_inline
     @implicit
     fn __init__(out self, divisor: Int = 1):
+        """Initializes FastDiv with the divisor.
+
+        Constraints:
+            ConstraintError: If the bitwidth of the type is > 32.
+
+        Args:
+            divisor: The divisor to use for fast division.
+                Defaults to 1.
+        """
         constrained[
             bitwidthof[type]() <= 32, "larger types are not currently supported"
         ]()
@@ -54,12 +71,30 @@ struct FastDiv[type: DType]:
 
     @always_inline
     fn __rdiv__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
+        """Divides the other scalar by the divisor.
+
+        Args:
+            other: The dividend.
+
+        Returns:
+            The result of the division.
+        """
         return other / self
 
     @always_inline
     fn __rtruediv__(
         self, other: Scalar[Self.uint_type]
     ) -> Scalar[Self.uint_type]:
+        """Divides the other scalar by the divisor (true division).
+
+        Uses the fast division algorithm.
+
+        Args:
+            other: The dividend.
+
+        Returns:
+            The result of the division.
+        """
         var t = mulhi(
             self._mprime.cast[DType.uint32](), other.cast[DType.uint32]()
         ).cast[Self.uint_type]()
@@ -69,6 +104,14 @@ struct FastDiv[type: DType]:
 
     @always_inline
     fn __rmod__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
+        """Computes the remainder of division.
+
+        Args:
+            other: The dividend.
+
+        Returns:
+            The remainder.
+        """
         var q = other / self
         return other - (q * self._div)
 
@@ -76,5 +119,13 @@ struct FastDiv[type: DType]:
     fn __divmod__(
         self, other: Scalar[Self.uint_type]
     ) -> (Scalar[Self.uint_type], Scalar[Self.uint_type]):
+        """Computes both quotient and remainder.
+
+        Args:
+            other: The dividend.
+
+        Returns:
+            A tuple containing the quotient and remainder.
+        """
         var q = other / self
         return q, (other - (q * self._div))
