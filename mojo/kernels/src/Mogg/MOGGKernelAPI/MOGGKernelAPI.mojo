@@ -170,7 +170,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from register import register_internal, enforce_io_param
+from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import (
@@ -688,7 +688,6 @@ fn export():
 @compiler.register("mo.range")
 @compiler.elementwise
 struct Range:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -738,7 +737,6 @@ struct Range:
 @compiler.register("copy")
 @compiler.elementwise
 struct Copy:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -759,7 +757,6 @@ struct Copy:
 @compiler.register("mo.add")
 @compiler.elementwise
 struct Add:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -786,7 +783,6 @@ struct Add:
 @compiler.register("mo.sub")
 @compiler.elementwise
 struct Sub:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -813,7 +809,6 @@ struct Sub:
 @compiler.register("mo.mul")
 @compiler.elementwise
 struct Mul:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -840,7 +835,6 @@ struct Mul:
 @compiler.register("mo.div")
 @compiler.elementwise
 struct Div:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -867,7 +861,6 @@ struct Div:
 @compiler.register("mo.mod")
 @compiler.elementwise
 struct Mod:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -894,7 +887,6 @@ struct Mod:
 @compiler.register("mo.equal")
 @compiler.elementwise
 struct Equal:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -921,7 +913,6 @@ struct Equal:
 @compiler.register("mo.greater")
 @compiler.elementwise
 struct Greater:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -948,7 +939,6 @@ struct Greater:
 @compiler.register("mo.greater_equal")
 @compiler.elementwise
 struct GreaterEqual:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -975,7 +965,6 @@ struct GreaterEqual:
 @compiler.register("mo.not_equal")
 @compiler.elementwise
 struct NotEqual:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1002,7 +991,6 @@ struct NotEqual:
 @compiler.register("mo.and")
 @compiler.elementwise
 struct And:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1029,7 +1017,6 @@ struct And:
 @compiler.register("mo.or")
 @compiler.elementwise
 struct Or:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1056,7 +1043,6 @@ struct Or:
 @compiler.register("mo.xor")
 @compiler.elementwise
 struct Xor:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1083,7 +1069,6 @@ struct Xor:
 @compiler.register("mo.pow")
 @compiler.elementwise
 struct Pow:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1110,7 +1095,6 @@ struct Pow:
 @compiler.register("mo.max")
 @compiler.elementwise
 struct Max:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1137,7 +1121,6 @@ struct Max:
 @compiler.register("mo.min")
 @compiler.elementwise
 struct Min:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1169,7 +1152,6 @@ struct Min:
 @compiler.register("mo.cast")
 @compiler.elementwise
 struct Cast:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1193,7 +1175,6 @@ struct Cast:
 @compiler.register("mo.negative")
 @compiler.elementwise
 struct Negative:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1216,7 +1197,6 @@ struct Negative:
 @compiler.register("mo.relu")
 @compiler.elementwise
 struct ReLU:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1239,7 +1219,6 @@ struct ReLU:
 @compiler.register("mo.gelu")
 @compiler.elementwise
 struct GeLU:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1262,7 +1241,6 @@ struct GeLU:
 @compiler.register("mo.ceil")
 @compiler.elementwise
 struct Ceil:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1285,7 +1263,6 @@ struct Ceil:
 @compiler.register("mo.floor")
 @compiler.elementwise
 struct Floor:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1308,7 +1285,6 @@ struct Floor:
 @compiler.register("mo.tanh")
 @compiler.elementwise
 struct Tanh:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1331,7 +1307,6 @@ struct Tanh:
 @compiler.register("mo.cos")
 @compiler.elementwise
 struct Cos:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1354,7 +1329,6 @@ struct Cos:
 @compiler.register("mo.sin")
 @compiler.elementwise
 struct Sin:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1377,7 +1351,6 @@ struct Sin:
 @compiler.register("mo.erf")
 @compiler.elementwise
 struct Erf:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1400,7 +1373,6 @@ struct Erf:
 @compiler.register("mo.exp")
 @compiler.elementwise
 struct Exp:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1423,7 +1395,6 @@ struct Exp:
 @compiler.register("mo.round")
 @compiler.elementwise
 struct Round:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1446,7 +1417,6 @@ struct Round:
 @compiler.register("mo.sqrt")
 @compiler.elementwise
 struct Sqrt:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1469,7 +1439,6 @@ struct Sqrt:
 @compiler.register("mo.isqrt")
 @compiler.elementwise
 struct Isqrt:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1492,7 +1461,6 @@ struct Isqrt:
 @compiler.register("mo.select")
 @compiler.elementwise
 struct Select:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1528,7 +1496,6 @@ struct Select:
 @compiler.register("mo.trunc")
 @compiler.elementwise
 struct Trunc:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1556,7 +1523,6 @@ struct Trunc:
 @compiler.register("mo.log")
 @compiler.elementwise
 struct Log:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1579,7 +1545,6 @@ struct Log:
 @compiler.register("mo.log1p")
 @compiler.elementwise
 struct Log1p:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1602,7 +1567,6 @@ struct Log1p:
 @compiler.register("mo.is_nan")
 @compiler.elementwise
 struct IsNan:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1625,7 +1589,6 @@ struct IsNan:
 @compiler.register("mo.is_inf")
 @compiler.elementwise
 struct IsInf:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1648,7 +1611,6 @@ struct IsInf:
 @compiler.register("mo.not")
 @compiler.elementwise
 struct Not:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1672,7 +1634,6 @@ struct Not:
 @compiler.register("mo.abs")
 @compiler.elementwise
 struct Abs:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1695,7 +1656,6 @@ struct Abs:
 @compiler.register("mo.squeeze_shape")
 @compiler.elementwise
 struct SqueezeShape:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1766,7 +1726,6 @@ struct SqueezeShape:
 @compiler.register("mo.unsqueeze_shape")
 @compiler.elementwise
 struct UnsqueezeShape:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1839,7 +1798,6 @@ struct UnsqueezeShape:
 
 @compiler.register("mo.scatter_nd")
 struct ScatterND:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1889,7 +1847,6 @@ struct ScatterND:
 
 @compiler.register("mo.scatter_nd.add")
 struct ScatterNDAdd:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1949,7 +1906,6 @@ struct ScatterNDAdd:
 
 @compiler.register("mo.scatter_nd.mul")
 struct ScatterNDMul:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2009,7 +1965,6 @@ struct ScatterNDMul:
 
 @compiler.register("mo.scatter_nd.min")
 struct ScatterNDMin:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2069,7 +2024,6 @@ struct ScatterNDMin:
 
 @compiler.register("mo.scatter_nd.max")
 struct ScatterNDMax:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2134,7 +2088,6 @@ struct ScatterNDMax:
 
 @compiler.register("mo.scatter")
 struct Scatter:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2179,7 +2132,6 @@ struct Scatter:
 
 @compiler.register("mo.scatter.add")
 struct ScatterAdd:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2224,7 +2176,6 @@ struct ScatterAdd:
 
 @compiler.register("mo.scatter.max")
 struct ScatterMax:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2269,7 +2220,6 @@ struct ScatterMax:
 
 @compiler.register("mo.scatter.min")
 struct ScatterMin:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2314,7 +2264,6 @@ struct ScatterMin:
 
 @compiler.register("mo.scatter.mul")
 struct ScatterMul:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2459,7 +2408,6 @@ struct BroadcastShape:
     # We expect `mo.broadcast_to` to always simplify to `mo.static.broadcast_to`
     #
     # Sometimes with a call to the below shape function.
-    @enforce_io_param
     @staticmethod
     fn execute(
         out_buf: OutputTensor[rank=1],
@@ -2552,7 +2500,6 @@ struct StaticBroadcastTo:
 
         return tuple_to_dimlist(new_strides)
 
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2609,7 +2556,6 @@ struct StaticReshape:
 
         return tuple_to_dimlist(new_strides)
 
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2706,7 +2652,6 @@ struct Transpose:
 
         return tuple_to_dimlist(new_strides)
 
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2789,7 +2734,6 @@ struct Slice:
 
         return tuple_to_dimlist(new_strides)
 
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2849,7 +2793,6 @@ struct Slice:
 
 @compiler.register("mo.mutable.store.slice")
 struct MutableStoreSlice:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2896,7 +2839,6 @@ struct SliceDim:
 
         return tuple_to_dimlist(new_strides)
 
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2948,7 +2890,6 @@ struct SliceDim:
 
 @compiler.register("mo.arg_max")
 struct ArgMax:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -2989,7 +2930,6 @@ struct ArgMax:
 
 @compiler.register("mo.arg_min")
 struct ArgMin:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -3030,7 +2970,6 @@ struct ArgMin:
 
 @compiler.register("mo.arg_nonzero")
 struct ArgNonZero:
-    @enforce_io_param
     @staticmethod
     fn execute(
         output_buffer: OutputTensor[rank=2],
@@ -3051,7 +2990,6 @@ struct ArgNonZero:
 @compiler.register("mo.mean")
 struct Mean:
     @compiler.enable_fusion_for("input", "output")
-    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool, target: StringLiteral
@@ -3104,7 +3042,6 @@ struct Mean:
 @compiler.register("mo.reduce.add")
 struct ReduceAdd:
     @compiler.enable_fusion_for("input", "output")
-    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool, target: StringLiteral, _trace_name: StringLiteral
@@ -3158,7 +3095,6 @@ struct ReduceAdd:
 @compiler.register("mo.reduce.mul")
 struct ReduceMul:
     @compiler.enable_fusion_for("input", "output")
-    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
@@ -3214,7 +3150,6 @@ struct ReduceMul:
 @compiler.register("mo.reduce.max")
 struct ReduceMax:
     @compiler.enable_fusion_for("input", "output")
-    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
@@ -3270,7 +3205,6 @@ struct ReduceMax:
 @compiler.register("mo.reduce.min")
 struct ReduceMin:
     @compiler.enable_fusion_for("input", "output")
-    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
@@ -3325,7 +3259,6 @@ struct ReduceMin:
 
 @compiler.register("reduce_min_and_max")
 struct ReduceMinMax:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -3448,7 +3381,6 @@ struct ReduceMinMax:
 
 @compiler.register("mo.avg_pool")
 struct AvgPool:
-    @enforce_io_param
     @staticmethod
     fn execute[
         count_boundary: Bool,
@@ -3494,7 +3426,6 @@ struct AvgPool:
 
 @compiler.register("mo.avg_pool_ceil_mode_true")
 struct AvgPoolCeilModeTrue:
-    @enforce_io_param
     @staticmethod
     fn execute[
         count_boundary: Bool,
@@ -3541,7 +3472,6 @@ struct AvgPoolCeilModeTrue:
 
 @compiler.register("mo.max_pool")
 struct MaxPool:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -3586,7 +3516,6 @@ struct MaxPool:
 
 @compiler.register("mo.max_pool_ceil_mode_true")
 struct MaxPoolCeilModeTrue:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -3636,7 +3565,6 @@ struct MaxPoolCeilModeTrue:
 
 @compiler.register("mo.pad.constant")
 struct PadConstant:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int, target: StringLiteral
@@ -3683,7 +3611,6 @@ struct PadConstant:
 
 @compiler.register("mo.pad.repeat")
 struct PadRepeat:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -3714,7 +3641,6 @@ struct PadRepeat:
 
 @compiler.register("mo.pad.reflect")
 struct PadReflect:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -3750,7 +3676,6 @@ struct PadReflect:
 
 @compiler.register("mo.gather_nd")
 struct GatherND:
-    @enforce_io_param
     @staticmethod
     fn execute[
         batchDims: Int,
@@ -3793,7 +3718,6 @@ struct GatherND:
 @compiler.register("mo.gather")
 struct Gather:
     @compiler.enable_fusion_for("input", "output")
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -3871,7 +3795,6 @@ struct Gather:
 
 @compiler.register("mo.gather_sum")
 struct GatherSum:
-    @enforce_io_param
     @staticmethod
     fn execute(
         output: OutputTensor,
@@ -3903,7 +3826,6 @@ struct GatherSum:
 @compiler.register("mo.layer_norm")
 struct LayerNorm:
     @compiler.enable_fusion_for("input", "gamma")
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -3961,7 +3883,6 @@ struct LayerNorm:
 @compiler.register("rms_norm")
 struct RMSNorm:
     @compiler.enable_fusion_for("input")
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -4009,7 +3930,6 @@ struct RMSNorm:
 
 @compiler.register("mo.bottom_k")
 struct BottomK:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -4048,7 +3968,6 @@ struct BottomK:
 
 @compiler.register("mo.top_k")
 struct TopK:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -4092,7 +4011,6 @@ struct TopK:
 
 @compiler.register("mo.non_maximum_suppression")
 struct NonMaximumSupression:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
@@ -4148,7 +4066,6 @@ struct NonMaximumSupression:
 @compiler.register("mo.matmul")
 struct Matmul:
     @compiler.enable_fusion_for("c")
-    @enforce_io_param
     @staticmethod
     fn execute[
         transpose_b: Bool,
@@ -4202,7 +4119,6 @@ struct Matmul:
 @compiler.register("mo.batch_matmul")
 struct BatchMatmul:
     @compiler.enable_fusion_for("c")
-    @enforce_io_param
     @staticmethod
     fn execute[
         lambdas_have_fusion: Bool,
@@ -4261,7 +4177,6 @@ struct BatchMatmul:
 
 @compiler.register("mo.linalg.solve")
 struct LinalgSolve:
-    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
@@ -4294,7 +4209,6 @@ struct LinalgSolve:
 @compiler.register("mo.linalg.band_part")
 struct LinalgBandPart:
     @compiler.enable_fusion_for("input")
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -4346,7 +4260,6 @@ struct LinalgBandPart:
 
 @compiler.register("mo.resize.nearest")
 struct ResizeNearest:
-    @enforce_io_param
     @staticmethod
     fn execute[
         coordinate_transform_mode: Int,
@@ -4379,7 +4292,6 @@ struct ResizeNearest:
 
 @compiler.register("mo.resize.linear")
 struct ResizeLinear:
-    @enforce_io_param
     @staticmethod
     fn execute[
         coordinate_transform_mode: Int,
@@ -4417,7 +4329,6 @@ struct ResizeLinear:
 
 @compiler.register("mo.roi_align")
 struct ROIAlign:
-    @enforce_io_param
     @staticmethod
     fn execute[
         aligned: Bool,
@@ -4470,7 +4381,6 @@ struct ROIAlign:
 
 @compiler.register("mo.tile")
 struct Tile:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
@@ -4503,7 +4413,6 @@ struct Tile:
 
 @compiler.register("mo.random.normal")
 struct RandomNormal:
-    @enforce_io_param
     @staticmethod
     fn execute[
         mean_var_type: DType
@@ -4539,7 +4448,6 @@ struct RandomNormal:
 
 @compiler.register("mo.static.random.normal")
 struct StaticRandomNormal:
-    @enforce_io_param
     @staticmethod
     fn execute[
         mean_var_type: DType
@@ -4561,7 +4469,6 @@ struct StaticRandomNormal:
 
 @compiler.register("mo.softmax")
 struct Softmax:
-    @enforce_io_param
     @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
@@ -4601,7 +4508,6 @@ struct Softmax:
 
 @compiler.register("mo.logsoftmax")
 struct LogSoftmax:
-    @enforce_io_param
     @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
@@ -4639,7 +4545,6 @@ struct LogSoftmax:
 
 @compiler.register("mo.cumsum")
 struct CumSum:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -4705,7 +4610,6 @@ fn concat_shape_impl[
 
 @compiler.register("mo.concat")
 struct Concat:
-    @enforce_io_param
     @compiler.enable_fusion_for("inputs", "output")
     @staticmethod
     fn execute[
@@ -4875,7 +4779,6 @@ fn concat_from_list_shape_impl[
 
 @compiler.register("mo.concat_from_list")
 struct ConcatFromList:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -4937,7 +4840,6 @@ struct ConcatFromList:
 # handling in the graph compiler to make things work.
 @compiler.register("mo.split")
 struct Split:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -5018,7 +4920,6 @@ struct SplitOutputShapeHelper:
 @compiler.register("mo.conv")
 struct Conv:
     @compiler.enable_fusion_for("output")
-    @enforce_io_param
     @staticmethod
     fn execute[
         filter_packed: Bool,
@@ -5186,7 +5087,6 @@ struct Conv:
 @compiler.register("mo.conv_transpose")
 struct ConvTranspose:
     @compiler.enable_fusion_for("output")
-    @enforce_io_param
     @staticmethod
     fn execute[
         filter_packed: Bool,
@@ -5315,7 +5215,6 @@ struct ConvTranspose:
 
 @compiler.register("masked_flash_attention_gpu")
 struct MaskedFlashAttentionGPU:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral, rank: Int
@@ -5394,7 +5293,6 @@ struct MaskedFlashAttentionGPU:
 @compiler.register("no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
     @compiler.enable_fusion_for("k", "v")
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -5440,7 +5338,6 @@ struct NoMaskFlashAttentionCPU:
 @compiler.register("with_mask_flash_attention_split_kv_cpu")
 struct WithMaskFlashAttentionSplitKVCPU:
     @compiler.enable_fusion_for("k", "v", "k_cache", "v_cache", "mask")
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -5521,7 +5418,6 @@ struct WithMaskFlashAttentionSplitKVCPU:
 @compiler.register("with_mask_flash_attention_cpu")
 struct WithMaskFlashAttentionCPU:
     @compiler.enable_fusion_for("k", "v", "mask")
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -5578,7 +5474,6 @@ struct WithMaskFlashAttentionCPU:
 
 @compiler.register("ggml_q4_0_dequantize")
 struct GGMLQ40Dequantize:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5609,7 +5504,6 @@ struct GGMLQ40Dequantize:
 
 @compiler.register("vroom_q4_0_matmul")
 struct VroomQ40Matmul:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5637,7 +5531,6 @@ struct VroomQ40Matmul:
 
 @compiler.register("vroom_q4_0_repack_weights")
 struct VroomQ40RepackWeights:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5668,7 +5561,6 @@ struct VroomQ40RepackWeights:
 
 @compiler.register("ggml_q4_k_dequantize")
 struct GGMLQ4KDequantize:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5703,7 +5595,6 @@ struct GGMLQ4KDequantize:
 
 @compiler.register("vroom_q4_k_matmul")
 struct VroomQ4KMatmul:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5731,7 +5622,6 @@ struct VroomQ4KMatmul:
 
 @compiler.register("vroom_q4_k_repack_weights")
 struct VroomQ4KRepackWeights:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5762,7 +5652,6 @@ struct VroomQ4KRepackWeights:
 
 @compiler.register("ggml_q6_k_dequantize")
 struct GGMLQ6KDequantize:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5798,7 +5687,6 @@ struct GGMLQ6KDequantize:
 
 @compiler.register("vroom_q6_k_matmul")
 struct VroomQ6KMatmul:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5826,7 +5714,6 @@ struct VroomQ6KMatmul:
 
 @compiler.register("vroom_q6_k_repack_weights")
 struct VroomQ6KRepackWeights:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5857,7 +5744,6 @@ struct VroomQ6KRepackWeights:
 
 @compiler.register("qmatmul_b4_g32")
 struct QMatmulGPU_b4_g32:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5890,7 +5776,6 @@ struct QMatmulGPU_b4_g32:
 
 @compiler.register("qmatmul_b4_g128")
 struct QMatmulGPU_b4_g128:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5923,7 +5808,6 @@ struct QMatmulGPU_b4_g128:
 
 @compiler.register("GGUF_gpu_repack_q4_0")
 struct QMatmulGPURepackGGUF:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5953,7 +5837,6 @@ struct QMatmulGPURepackGGUF:
 
 @compiler.register("GPTQ_gpu_repack_b4_g128")
 struct QMatmulGPURepackGPTQ_b4_g128:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -5983,7 +5866,6 @@ struct QMatmulGPURepackGPTQ_b4_g128:
 
 @compiler.register("GPTQ_gpu_repack_b4_g128_desc_act")
 struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -6071,7 +5953,6 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
 
 @compiler.register("mo.fused_qkv_matmul.ragged.continuous_batching")
 struct Struct_fused_qkv_matmul_ragged_continuous_batching:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6137,7 +6018,6 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
 
 @compiler.register("mo.fused_qkv_matmul.padded.continuous_batching")
 struct Struct_fused_qkv_matmul_padded_continuous_batching:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6230,7 +6110,6 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged")
 struct Struct_fused_qkv_matmul_padded_ragged:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6267,7 +6146,6 @@ struct Struct_fused_qkv_matmul_padded_ragged:
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_quantized:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6314,7 +6192,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.bias")
 struct Struct_fused_qkv_matmul_padded_ragged_bias:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6353,7 +6230,6 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
 
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.bias.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6447,7 +6323,6 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
 
 @compiler.register("mo.fused_qk_rope.padded.continuous_batching")
 struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6507,7 +6382,6 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
 
 @compiler.register("mo.fused_qk_rope.ragged.continuous_batching")
 struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6570,7 +6444,6 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 
 @compiler.register("mo.fused_qk_rope.ragged.paged")
 struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6640,7 +6513,6 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
 
 @compiler.register("mo.mha.padded.continuous_batching.tensor_mask.no_pos")
 struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6695,7 +6567,6 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
 
 @compiler.register("mo.mha.padded.continuous_batching.causal_mask.no_pos")
 struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6769,7 +6640,6 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
 
 @compiler.register("mo.mha.ragged.continuous_batching.causal_mask.no_pos")
 struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6801,7 +6671,6 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
 
 @compiler.register("mo.mha.ragged.continuous_batching.causal_mask.alibi_pos")
 struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6857,7 +6726,6 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
 
 @compiler.register("mo.mha.ragged.paged.causal_mask.no_pos")
 struct Struct_mha_ragged_paged_causal_mask_no_pos:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6931,7 +6799,6 @@ fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
     "mo.cross_attention.ragged.continuous_batching.null_mask.no_pos"
 )
 struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -6995,7 +6862,6 @@ fn generic_get_continuous_cache_kernel_api[
 
 @compiler.register("mo.kv_collection_ctor.continuous_batching")
 struct Struct_kv_collection_ctor_continuous_batching:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7045,7 +6911,6 @@ fn layout_transform_conv_transpose_filter_common[
 
 @compiler.register("layout_transform_RSFC_to_FRSCf")
 struct LayoutTransformRSFC2FRSCf:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7059,7 +6924,6 @@ struct LayoutTransformRSFC2FRSCf:
 
 @compiler.register("layout_transform_QRSFC_to_FQRSCf")
 struct LayoutTransformQRSFC2FQRSCf:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7168,7 +7032,6 @@ fn layout_transform_conv_filter_common[
 
 @compiler.register("layout_transform_QRSCF_to_FQRSCf")
 struct LayoutTransformQRSCF2FQRSCf:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7184,7 +7047,6 @@ struct LayoutTransformQRSCF2FQRSCf:
 
 @compiler.register("layout_transform_RSCF_to_FRSCf")
 struct LayoutTransformRSCF2FRSCf:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7200,7 +7062,6 @@ struct LayoutTransformRSCF2FRSCf:
 
 @compiler.register("layout_transform_KN_to_KNkni")
 struct LayoutTransformMatmulKN2KNkni:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7237,7 +7098,6 @@ struct LayoutTransformMatmulKN2KNkni:
 
 @compiler.register("layout_transform_NK_to_KNkni")
 struct LayoutTransformMatmulNK2KNkni:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7313,7 +7173,6 @@ struct PackMatmulBShapeFunc:
 
 @compiler.register("mo.rms_norm_kv_cache.ragged.continuous_batching")
 struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7408,7 +7267,6 @@ fn print_kv_cache_paged_generic_kernel_api[
 
 @compiler.register("mo.print_kv_cache.paged")
 struct Struct_print_kv_cache_paged:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7439,7 +7297,6 @@ struct Struct_print_kv_cache_paged:
 
 @compiler.register("mo.print_kv_cache.continuous_batching")
 struct Struct_print_kv_cache_continuous_batching:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7473,7 +7330,6 @@ struct Struct_print_kv_cache_continuous_batching:
 
 @compiler.register("mo.kv_collection_ctor.paged")
 struct Struct_kv_collection_ctor_paged:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7503,7 +7359,6 @@ struct Struct_kv_collection_ctor_paged:
 
 @compiler.register("mo.kv_collection_cow_strided_memcpy.paged")
 struct Struct_kv_collection_cow_strided_memcpy_paged:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7629,7 +7484,6 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
 
 @compiler.register("mo.kv_matmul.ragged.continuous_batching")
 struct Struct_kv_matmul_ragged_continuous_batching:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7662,7 +7516,6 @@ struct Struct_kv_matmul_ragged_continuous_batching:
 
 @compiler.register("topk_fused_sampling")
 struct Struct_topk_fused_sampling:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7704,7 +7557,6 @@ struct Struct_topk_fused_sampling:
 
 @compiler.register("swishGLU")
 struct Struct_swishGLU:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7727,7 +7579,6 @@ struct Struct_swishGLU:
 
 @compiler.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7771,7 +7622,6 @@ struct DistributedAllReduceSum1Devices:
     alias num_devices = 1
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @enforce_io_param
     @always_inline
     @staticmethod
     fn execute[
@@ -7823,7 +7673,6 @@ struct DistributedAllReduceSum2Devices:
     alias num_devices = 2
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -7884,7 +7733,6 @@ struct DistributedAllReduceSum4Devices:
     alias num_devices = 4
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -7965,7 +7813,6 @@ struct DistributedAllReduceSum8Devices:
     alias num_devices = 8
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @enforce_io_param
     @staticmethod
     @always_inline
     fn execute[
@@ -8088,7 +7935,6 @@ struct DistributedAllReduceSum8Devices:
 # a stopgap measure for some important models (DLRM, CLIP-ViT, LLaMa2)
 @compiler.register("index_tensor")
 struct IndexTensor:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
