@@ -48,8 +48,8 @@ class MockPipelineModel(PipelineModel):
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
-        self.vocab_size = pipeline_config.huggingface_config.vocab_size
-        self.eos_token = pipeline_config.huggingface_config.eos_token
+        self.vocab_size = pipeline_config.vocab_size  # type: ignore
+        self.eos_token = pipeline_config.eos_token  # type: ignore
         self.max_length = pipeline_config.max_length
         self.kv_manager = MagicMock()
 

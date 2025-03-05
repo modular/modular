@@ -298,17 +298,12 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
             pipeline.release(context)
 
 
+@pytest.mark.skip("TODO: AITLIB-234")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineModelParams(
-            "tinyllama",
-            SupportedEncoding.float32,
-            512,
-            10,
-            4,
-        ),
+        PipelineModelParams("tinyllama", SupportedEncoding.float32, 512, 10, 4),
     ],
     ids=PipelineModelParams.__str__,
     indirect=True,

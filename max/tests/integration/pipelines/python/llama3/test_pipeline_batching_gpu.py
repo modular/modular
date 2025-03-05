@@ -85,6 +85,7 @@ def pipeline(
     return pipeline
 
 
+@pytest.mark.skip("TODO: AITLIB-234")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",

@@ -39,54 +39,57 @@ def test_mock_text_tokenizer():
 def test_text_generation_pipeline():
     max_length = 512
     eos_token = 998
-    tokenizer, pipeline = retrieve_mock_text_generation_pipeline(
-        vocab_size=1000,
-        eos_token=eos_token,
-        eos_prob=0.05,  # On average, one in every 20 tokens will be an eos token.
-        max_length=max_length,
-    )
+    with (
+        retrieve_mock_text_generation_pipeline(
+            vocab_size=1000,
+            eos_token=eos_token,
+            eos_prob=0.05,  # On average, one in every 20 tokens will be an eos token.
+            max_length=max_length,
+        ) as (tokenizer, pipeline)
+    ):
+        pipeline.huggingface_config
 
-    prompts = [
-        "This is a test prompt",
-        "This is a slightly longer test prompt " * 2,
-        "This is a very very long test prompt " * 4,
-    ]
-    _max_new_tokens = [25, 100, None]
-    context_batch = {}
-    max_new_tokens = {}
-    for i, prompt in enumerate(prompts):
-        id = f"request_{i}"
-        max_new_tokens[id] = _max_new_tokens[i]
-        request = TokenGeneratorRequest(
-            id=id,
-            index=i,
-            model_name="HuggingFaceTB/SmolLM-135M-Instruct",
-            prompt=prompt,
-            messages=None,
-            max_new_tokens=max_new_tokens[id],
-        )
+        prompts = [
+            "This is a test prompt",
+            "This is a slightly longer test prompt " * 2,
+            "This is a very very long test prompt " * 4,
+        ]
+        _max_new_tokens = [25, 100, None]
+        context_batch = {}
+        max_new_tokens = {}
+        for i, prompt in enumerate(prompts):
+            id = f"request_{i}"
+            max_new_tokens[id] = _max_new_tokens[i]
+            request = TokenGeneratorRequest(
+                id=id,
+                index=i,
+                model_name="HuggingFaceTB/SmolLM-135M-Instruct",
+                prompt=prompt,
+                messages=None,
+                max_new_tokens=max_new_tokens[id],
+            )
 
-        context_batch[id] = asyncio.run(tokenizer.new_context(request))
+            context_batch[id] = asyncio.run(tokenizer.new_context(request))
 
-    num_steps = 1
-    length = [0 for _ in range(len(context_batch))]
-    request_ids = list(context_batch.keys())
-    while True:
-        # This will generate a list[dict[request_id, TextResponse]] for each step
-        output = pipeline.next_token(context_batch, num_steps=1)
-        assert len(output) == len(context_batch)
+        num_steps = 1
+        length = [0 for _ in range(len(context_batch))]
+        request_ids = list(context_batch.keys())
+        while True:
+            # This will generate a list[dict[request_id, TextResponse]] for each step
+            output = pipeline.next_token(context_batch, num_steps=1)
+            assert len(output) == len(context_batch)
 
-        for i, (request_idx, response) in enumerate(output.items()):
-            length[i] += len(response.tokens)
-            # Check that we are not overrunning, the request max new tokens
-            if _max := max_new_tokens[request_idx]:
-                assert length[i] <= _max
+            for i, (request_idx, response) in enumerate(output.items()):
+                length[i] += len(response.tokens)
+                # Check that we are not overrunning, the request max new tokens
+                if _max := max_new_tokens[request_idx]:
+                    assert length[i] <= _max
 
-            assert length[i] < max_length
+                assert length[i] < max_length
 
-            if response.is_done:
-                del context_batch[request_idx]
+                if response.is_done:
+                    del context_batch[request_idx]
 
-        # Break
-        if not context_batch:
-            break
+            # Break
+            if not context_batch:
+                break
