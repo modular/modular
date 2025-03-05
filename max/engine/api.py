@@ -51,6 +51,14 @@ InputType = Union[
 ]
 
 
+class GPUProfilingMode(str, Enum):
+    """The supported modes for GPU profiling."""
+
+    OFF = "off"
+    ON = "on"
+    DETAILED = "detailed"
+
+
 def _raise_if_not_contiguous(x: InputType) -> None:
     should_raise = False
     if isinstance(x, bool):
@@ -969,18 +977,17 @@ class InferenceSession:
 
         self._set_mojo_define("ASSERT", level)
 
-    def gpu_profiling(self, mode: str):
+    def gpu_profiling(self, mode: GPUProfilingMode):
         """Enables end to end gpu profiling configuration."""
-        state = mode.lower()
-        if state in ("false", "off", "no", "0"):
+        if mode == GPUProfilingMode.OFF:
             return
 
         self._set_mojo_define("MODULAR_ENABLE_PROFILING", 1)
         self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING", 1)
-        if state == "detailed":
+        if mode == GPUProfilingMode.DETAILED:
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
-        set_gpu_profiling_state(state)
+        set_gpu_profiling_state(str(mode))
 
     def _use_experimental_kernels(self, mode: str):
         """Enables experimental kernels."""
