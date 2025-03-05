@@ -241,6 +241,15 @@ def test_from_numpy() -> None:
     assert tensor[1, 2].item() == 6
 
 
+def test_from_numpy_scalar() -> None:
+    # Also test that scalar numpy arrays remain scalar.
+    arr = np.array(1.0, dtype=np.float32)
+    tensor = Tensor.from_numpy(arr)
+
+    assert tensor.dtype == DType.float32
+    assert tensor.shape == arr.shape
+
+
 def test_is_host() -> None:
     # CPU tensors should be marked as being on-host.
     assert Tensor((1, 1), DType.int32, device=CPU()).is_host
