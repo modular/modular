@@ -345,16 +345,8 @@ void Config::flush(raw_ostream &os) {
 ErrorOrSuccess Config::flush() {
   auto configFilePathOr = getConfigFilePath(/*create=*/true);
 
-  // We need to write the configuration, so if this has returned an error, then
-  // we don't actually have a writable directory that we can use.
-  if (configFilePathOr.isError())
-    return configFilePathOr.takeError();
-
-  // Write the config file to the output atomically.
-  auto pathOr = writeFileUnderLock(*configFilePathOr,
-                                   [&](llvm::raw_ostream &os) { flush(os); });
-  if (pathOr.isError())
-    return pathOr.takeError();
+  // TODO: Depreciating modular.cfg. We no longer support flushing the config
+  // file to disk. This was always racy and error prone.
 
   return success();
 }
