@@ -70,9 +70,6 @@ constexpr StringLiteral MOGG_INTRINSIC_INPUT_FUSION_HOOK =
 constexpr StringLiteral MOGG_INTRINSIC_OUTPUT_FUSION_HOOK =
     "mogg.dps_output_fusion_hook";
 
-/// MOGG Intrinsic for marking a kernel operand being a `mo.buffer`
-constexpr StringLiteral MOGG_INTRINSIC_MUTABLE = "mogg.mutable";
-
 /// MOGG Intrinsic for the ManagedTensorSlice _fused_load method.
 constexpr StringLiteral MOGG_INTRINSIC_TENSOR_FUSED_LOAD =
     "mogg.tensor_fused_load";
