@@ -497,18 +497,18 @@ class TextAndVisionTokenizer(
             if request.images
             else None
         )
-        # PixtralProcessor returns torch tensor or list of torch tensors.
+        # PixtralProcessor returns a list of torch tensors.
         # LlamaVision returns a np Array.
-        processed_inputs = self.processor(
+        inputs = self.processor(
             text=prompt,
             images=images,
             add_special_tokens=add_special_tokens,
         )
 
-        if "input_ids" not in processed_inputs:
+        if "input_ids" not in inputs:
             msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
             raise ValueError(msg)
-        encoded_prompt = np.array(processed_inputs["input_ids"][0])
+        encoded_prompt = np.array(inputs["input_ids"][0])
 
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
@@ -527,27 +527,21 @@ class TextAndVisionTokenizer(
         extra_model_args = dict()
 
         if images is not None:
-            if "pixel_values" not in processed_inputs:
+            if "pixel_values" not in inputs:
                 msg = "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
                 raise ValueError(msg)
-            pixel_values = processed_inputs["pixel_values"][0]
+            pixel_values = inputs["pixel_values"][0]
             if isinstance(pixel_values, list):
-                pixel_values = tuple(
+                pixel_values = [
                     tensor.numpy() if torch.is_tensor(tensor) else tensor
                     for tensor in pixel_values
-                )
-            elif torch.is_tensor(pixel_values):
-                pixel_values = (pixel_values.numpy(),)
-            if "aspect_ratio_ids" in processed_inputs:
-                extra_model_args["aspect_ratio_ids"] = (
-                    processed_inputs.aspect_ratio_ids
-                )
-            if "aspect_ratio_mask" in processed_inputs:
-                extra_model_args["aspect_ratio_mask"] = (
-                    processed_inputs.aspect_ratio_mask
-                )
+                ]
+            if "aspect_ratio_ids" in inputs:
+                extra_model_args["aspect_ratio_ids"] = inputs.aspect_ratio_ids
+            if "aspect_ratio_mask" in inputs:
+                extra_model_args["aspect_ratio_mask"] = inputs.aspect_ratio_mask
         else:
-            pixel_values = ()
+            pixel_values = []
 
         json_schema = (
             json.dumps(request.response_format.get("json_schema", None))

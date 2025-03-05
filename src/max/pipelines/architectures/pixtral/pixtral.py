@@ -160,7 +160,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         )
 
         # TODO: change this to work with all contexts in the batch.
-
         if context_batch[
             0
         ].pixel_values:  # check if the request has pixel_values

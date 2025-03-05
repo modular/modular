@@ -12,7 +12,7 @@ tokenizers >= 0.19.1
 torch == 2.5.1
 torchvision == 0.20.1
 torchaudio == 2.5.1
-transformers >= 4.49.0
+transformers >= 4.44.2
 safetensors >= 0.4.5
 psutil
 

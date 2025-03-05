@@ -332,7 +332,7 @@ class TextAndVisionContext(TextContext):
         prompt: Union[str, Sequence[int]],
         max_length: int | None,
         tokens: np.ndarray,
-        pixel_values: Sequence[np.ndarray],
+        pixel_values: Union[np.ndarray, list[np.ndarray]],
         extra_model_args: dict[str, Any],
         log_probabilities: int = 0,
         log_probabilities_echo: bool = False,
@@ -365,4 +365,4 @@ class TextAndVisionContext(TextContext):
 
         # Update context not to re-encode the same image in next steps. There are no image tokens
         # expected after context encoding.
-        self.pixel_values = ()
+        self.pixel_values = []
