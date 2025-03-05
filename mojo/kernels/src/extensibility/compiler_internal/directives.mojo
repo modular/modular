@@ -18,7 +18,7 @@ fn __mogg_intrinsic_attr(intrin: StringLiteral):
 
 # Register a DPS Kernel
 @__mogg_intrinsic_attr("mogg.intrinsic_register")
-fn register(name: StringLiteral, num_dps_outputs: Int = 1):
+fn register(name: StringLiteral):
     pass
 
 
@@ -37,11 +37,6 @@ fn enable_fusion_for(*names: StringLiteral):
 # Indicates that a DPS Kernel is a view operation
 @__mogg_intrinsic_attr("mogg.view_kernel")
 fn view_kernel():
-    return
-
-
-@__mogg_intrinsic_attr("mogg.mutable")
-fn mutable(*names: StringLiteral):
     return
 
 
