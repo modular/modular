@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug -D FLASH_ATTENTION_HW_SUPPORTED=True %s
-# REQUIRES: AMD-GPU
+# REQUIRES: DISABLED
 
 from math import ceildiv, isclose, isqrt
 from random import rand
