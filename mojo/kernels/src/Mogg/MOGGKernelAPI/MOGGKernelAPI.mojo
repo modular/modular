@@ -481,60 +481,6 @@ fn _int_bitwidth_safety_check[simd_dtype: DType]():
     ]()
 
 
-# Extract an Int from a managed tensor slice.
-@register_internal("get_int_from_managed_tensor_slice")
-@always_inline
-fn get_int_from_managed_tensor_slice[
-    dtype: DType, mut: Bool, input: IO
-](
-    tensor: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
-    ]
-) -> Int:
-    _int_bitwidth_safety_check[tensor.type]()
-
-    constrained[
-        dtype.is_integral(),
-        String(
-            (
-                "get_int_from_managed_tensor_slice expects an integral tensor"
-                " but got a tensor of type '"
-            ),
-            dtype,
-            "'",
-        ),
-    ]()
-    return Int(_get_scalar_from_managed_tensor_slice(tensor))
-
-
-# Extract a UInt from a managed tensor slice.
-@register_internal("get_uint_from_managed_tensor_slice")
-@always_inline
-fn get_uint_from_managed_tensor_slice[
-    dtype: DType, mut: Bool, input: IO
-](
-    tensor: ManagedTensorSlice[
-        io_spec = IOSpec[mut, input](),
-        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
-    ]
-) -> UInt:
-    _int_bitwidth_safety_check[tensor.type]()
-
-    constrained[
-        dtype.is_integral(),
-        String(
-            (
-                "get_uint_from_managed_tensor_slice expects an integral tensor"
-                " but got a tensor of type '"
-            ),
-            dtype,
-            "'",
-        ),
-    ]()
-    return index(_get_scalar_from_managed_tensor_slice(tensor))
-
-
 # Extract a Bool from a managed tensor slice.
 @register_internal("get_bool_from_managed_tensor_slice")
 @always_inline
@@ -2198,7 +2144,7 @@ struct Scatter:
         input: InputTensor[type = output.type, rank = output.rank],
         updates: InputTensor[type = output.type, rank = output.rank],
         indices: InputTensor[rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @always_inline
@@ -2212,7 +2158,7 @@ struct Scatter:
             input,
             indices,
             updates,
-            normalize_neg_index(axis, output.rank),
+            normalize_neg_index(Int(axis), output.rank),
             output,
         )
 
@@ -2221,13 +2167,13 @@ struct Scatter:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
         )
 
 
@@ -2243,7 +2189,7 @@ struct ScatterAdd:
         input: InputTensor[type = output.type, rank = output.rank],
         updates: InputTensor[type = output.type, rank = output.rank],
         indices: InputTensor[rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @always_inline
@@ -2257,7 +2203,7 @@ struct ScatterAdd:
             input,
             indices,
             updates,
-            normalize_neg_index(axis, output.rank),
+            normalize_neg_index(Int(axis), output.rank),
             output,
         )
 
@@ -2266,13 +2212,13 @@ struct ScatterAdd:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
         )
 
 
@@ -2288,7 +2234,7 @@ struct ScatterMax:
         input: InputTensor[type = output.type, rank = output.rank],
         updates: InputTensor[type = output.type, rank = output.rank],
         indices: InputTensor[rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @always_inline
@@ -2302,7 +2248,7 @@ struct ScatterMax:
             input,
             indices,
             updates,
-            normalize_neg_index(axis, output.rank),
+            normalize_neg_index(Int(axis), output.rank),
             output,
         )
 
@@ -2311,13 +2257,13 @@ struct ScatterMax:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
         )
 
 
@@ -2333,7 +2279,7 @@ struct ScatterMin:
         input: InputTensor[type = output.type, rank = output.rank],
         updates: InputTensor[type = output.type, rank = output.rank],
         indices: InputTensor[rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @always_inline
@@ -2347,7 +2293,7 @@ struct ScatterMin:
             input,
             indices,
             updates,
-            normalize_neg_index(axis, output.rank),
+            normalize_neg_index(Int(axis), output.rank),
             output,
         )
 
@@ -2356,13 +2302,13 @@ struct ScatterMin:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
         )
 
 
@@ -2378,7 +2324,7 @@ struct ScatterMul:
         input: InputTensor[type = output.type, rank = output.rank],
         updates: InputTensor[type = output.type, rank = output.rank],
         indices: InputTensor[rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @always_inline
@@ -2392,7 +2338,7 @@ struct ScatterMul:
             input,
             indices,
             updates,
-            normalize_neg_index(axis, output.rank),
+            normalize_neg_index(Int(axis), output.rank),
             output,
         )
 
@@ -2401,13 +2347,13 @@ struct ScatterMul:
         input: ManagedTensorSlice,
         updates: ManagedTensorSlice[type = input.type, rank = input.rank],
         indices: ManagedTensorSlice[rank = input.rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
         var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         return scatter_elements_shape[single_thread_blocking_override=True](
-            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, axis
+            input_ndbuffer, updates_ndbuffer, indices_ndbuffer, Int(axis)
         )
 
 
@@ -3011,10 +2957,10 @@ struct ArgMax:
     ](
         output: OutputTensor[rank=rank],
         input: InputTensor[rank=rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
-        var axis_val = normalize_neg_index(axis, rank)
+        var axis_val = normalize_neg_index(Int(axis), rank)
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
 
@@ -3052,10 +2998,10 @@ struct ArgMin:
     ](
         output: OutputTensor[rank=rank],
         input: InputTensor[rank=rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
-        var axis_val = normalize_neg_index(axis, rank)
+        var axis_val = normalize_neg_index(Int(axis), rank)
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
 
@@ -3112,7 +3058,7 @@ struct Mean:
     ](
         output: OutputTensor,
         input: InputTensor[type = output.type, rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3165,7 +3111,7 @@ struct ReduceAdd:
     ](
         output: OutputTensor,
         input: InputTensor[type = output.type, rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3204,9 +3150,9 @@ struct ReduceAdd:
         input_type: DType,
     ](
         input: ManagedTensorSlice[type=input_type, rank=input_rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, axis)
+        return reduce_shape(input, Int(axis))
 
 
 @compiler.register("mo.reduce.mul")
@@ -3221,7 +3167,7 @@ struct ReduceMul:
     ](
         output: OutputTensor,
         input: InputTensor[type = output.type, rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3260,9 +3206,9 @@ struct ReduceMul:
         input_type: DType,
     ](
         input: ManagedTensorSlice[type=input_type, rank=input_rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, axis)
+        return reduce_shape(input, Int(axis))
 
 
 @compiler.register("mo.reduce.max")
@@ -3277,7 +3223,7 @@ struct ReduceMax:
     ](
         output: OutputTensor,
         input: InputTensor[type = output.type, rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3316,9 +3262,9 @@ struct ReduceMax:
         input_type: DType,
     ](
         input: ManagedTensorSlice[type=input_type, rank=input_rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, axis)
+        return reduce_shape(input, Int(axis))
 
 
 @compiler.register("mo.reduce.min")
@@ -3333,7 +3279,7 @@ struct ReduceMin:
     ](
         output: OutputTensor,
         input: InputTensor[type = output.type, rank = output.rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3372,9 +3318,9 @@ struct ReduceMin:
         input_type: DType,
     ](
         input: ManagedTensorSlice[type=input_type, rank=input_rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, axis)
+        return reduce_shape(input, Int(axis))
 
 
 @compiler.register("reduce_min_and_max")
@@ -3390,7 +3336,7 @@ struct ReduceMinMax:
     ](
         output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
-        axis0: Int,
+        axis0: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
@@ -3399,7 +3345,7 @@ struct ReduceMinMax:
         """
 
         alias num_reductions = 2
-        var axis = normalize_neg_index(axis0, rank)
+        var axis = normalize_neg_index(Int(axis0), rank)
 
         @parameter
         @always_inline
@@ -3488,9 +3434,9 @@ struct ReduceMinMax:
         _ = axis
 
     @staticmethod
-    fn shape(input: ManagedTensorSlice, axis: Int) -> IndexList[input.rank]:
+    fn shape(input: ManagedTensorSlice, axis: Scalar) -> IndexList[input.rank]:
         var new_shape = input.shape()
-        new_shape[_unsafe_normalize_neg_index(axis, input.rank)] = 2
+        new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
 
         return new_shape
 
@@ -3857,7 +3803,7 @@ struct Gather:
         output: OutputTensor,
         input: InputTensor[type = output.type, *_],
         indices: InputTensor,
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3898,7 +3844,7 @@ struct Gather:
                 target=target,
                 single_thread_blocking_override=_synchronous,
             ](
-                Axis(axis, input.rank),
+                Axis(Int(axis), input.rank),
                 input.shape(),
                 indices.shape(),
                 output.shape(),
@@ -3911,7 +3857,7 @@ struct Gather:
     ](
         input: ManagedTensorSlice,
         indices: ManagedTensorSlice,
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[output_rank]:
         return gather_shape[
             output_rank=output_rank,
@@ -3919,7 +3865,7 @@ struct Gather:
         ](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(indices),
-            axis,
+            Int(axis),
         )
 
 
@@ -4073,15 +4019,15 @@ struct BottomK:
         values: OutputTensor[type=type, rank=rank],
         indices: OutputTensor[type = DType.int64, rank=rank],
         input: InputTensor[type=type, rank=rank],
-        k: Int,
-        axis: Int,
+        k: Scalar,
+        axis: Scalar,
         sorted: Bool,
         ctx: DeviceContextPtr,
     ) raises:
         top_k[largest=False, target=target](
             managed_tensor_slice_to_ndbuffer(input),
-            k,
-            axis,
+            Int(k),
+            Int(axis),
             managed_tensor_slice_to_ndbuffer(values),
             managed_tensor_slice_to_ndbuffer(indices),
             sorted,
@@ -4091,12 +4037,12 @@ struct BottomK:
     @staticmethod
     fn shape(
         input: ManagedTensorSlice,
-        k: Int,
-        axis: Int,
+        k: Scalar,
+        axis: Scalar,
         sorted: Bool,
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input), k, axis
+            managed_tensor_slice_to_ndbuffer(input), Int(k), Int(axis)
         )
 
 
@@ -4112,15 +4058,15 @@ struct TopK:
         values: OutputTensor[type=type, rank=rank],
         indices: OutputTensor[type = DType.int64, rank=rank],
         input: InputTensor[type=type, rank=rank],
-        k: Int,
-        axis: Int,
+        k: Scalar,
+        axis: Scalar,
         sorted: Bool,
         ctx: DeviceContextPtr,
     ) raises:
         top_k[largest=True, target=target](
             managed_tensor_slice_to_ndbuffer(input),
-            k,
-            axis,
+            Int(k),
+            Int(axis),
             managed_tensor_slice_to_ndbuffer(values),
             managed_tensor_slice_to_ndbuffer(indices),
             sorted,
@@ -4130,12 +4076,12 @@ struct TopK:
     @staticmethod
     fn shape(
         input: ManagedTensorSlice,
-        k: Int,
-        axis: Int,
+        k: Scalar,
+        axis: Scalar,
         sorted: Bool,
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input), k, axis
+            managed_tensor_slice_to_ndbuffer(input), Int(k), Int(axis)
         )
 
 
@@ -4703,14 +4649,14 @@ struct CumSum:
     ](
         output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ):
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
 
         cumsum[rank, type, exclusive, reverse](
-            output_buf, input_buf, _unsafe_normalize_neg_index(axis, rank)
+            output_buf, input_buf, _unsafe_normalize_neg_index(Int(axis), rank)
         )
 
 
@@ -4769,7 +4715,7 @@ struct Concat:
         _synchronous: Bool,
     ](
         output: OutputTensor[type=type, rank=rank],
-        axis: Int,
+        axis: Scalar,
         inputs: InputVariadicTensors[type, rank, *_],
         ctx: DeviceContextPtr,
     ) raises:
@@ -4813,7 +4759,7 @@ struct Concat:
             epilogue_wrapper,
             target,
         ](
-            normalize_neg_index(axis, rank),
+            normalize_neg_index(Int(axis), rank),
             input_shapes,
             output_buf,
             ctx,
@@ -4824,10 +4770,10 @@ struct Concat:
         type: DType,
         rank: Int,
         _synchronous: Bool,
-    ](axis: Int, inputs: VariadicTensors[type, rank, *_]) raises -> IndexList[
-        rank
-    ]:
-        return concat_shape_impl(axis, inputs)
+    ](
+        axis: Scalar, inputs: VariadicTensors[type, rank, *_]
+    ) raises -> IndexList[rank]:
+        return concat_shape_impl(Int(axis), inputs)
 
 
 # Helper method used by compiler to reconcile MGP list with type Mojo expects.
@@ -4943,7 +4889,7 @@ struct ConcatFromList:
                 static_spec = StaticTensorSpec[type, rank].create_unknown()
             ]
         ],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         constrained[
@@ -4962,7 +4908,7 @@ struct ConcatFromList:
 
         _concat_cpu[rank, type, None, _synchronous](
             output_buf,
-            normalize_neg_index(axis, rank),
+            normalize_neg_index(Int(axis), rank),
             input_as_ndbuffer,
         )
 
@@ -4977,9 +4923,9 @@ struct ConcatFromList:
                 static_spec = StaticTensorSpec[type, rank].create_unknown()
             ]
         ],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[rank]:
-        return concat_from_list_shape_impl(axis, inputs)
+        return concat_from_list_shape_impl(Int(axis), inputs)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -5002,7 +4948,7 @@ struct Split:
         output: OutputVariadicTensors[type, rank, *_],
         input: InputTensor[type=type, rank=rank],
         split_sizes: InputTensor[rank=1],
-        axis: Int,
+        axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
@@ -5013,7 +4959,7 @@ struct Split:
             output_bufs[i] = managed_tensor_slice_to_ndbuffer(output[i])
 
         split[type, rank](
-            input_buf, normalize_neg_index(axis, rank), output_bufs
+            input_buf, normalize_neg_index(Int(axis), rank), output_bufs
         )
 
 
@@ -5035,18 +4981,18 @@ struct SplitOutputShapeHelper:
     ](
         input_buf: ManagedTensorSlice[type=input_type, rank=rank],
         split_sizes_buf: ManagedTensorSlice[type=split_size_type, rank=1],
-        split_axis: Int,
-        output_idx: Int,
+        split_axis: Scalar,
+        output_idx: Scalar,
     ) raises -> IndexList[rank]:
         # extract relevant hyper parameters
-        if output_idx < 0 or split_sizes_buf.size() <= output_idx:
+        if not (0 <= Int(output_idx) < split_sizes_buf.size()):
             raise Error(
                 "[split] output index must be within range [0,"
                 " len(split_sizes))"
             )
-        var output_split_size = Int(split_sizes_buf[output_idx])
+        var output_split_size = Int(split_sizes_buf[Int(output_idx)])
 
-        var normalized_split_axis = normalize_neg_index(split_axis, rank)
+        var normalized_split_axis = normalize_neg_index(Int(split_axis), rank)
 
         var split_sizes_sum = 0
 
