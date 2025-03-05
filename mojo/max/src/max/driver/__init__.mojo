@@ -37,6 +37,10 @@ from max._tensor_utils import (
     StaticTensorSpec,
     InputTensor,
     OutputTensor,
+    IOSpec,
+    Input,
+    Output,
+    MutableInput,
 )
 from max.tensor import RuntimeTensorSpec
 
