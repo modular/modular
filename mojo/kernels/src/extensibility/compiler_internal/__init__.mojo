@@ -8,7 +8,6 @@ from .directives import (
     StaticTensorSpec,
     elementwise,
     enable_fusion_for,
-    enforce_io_param,
     mutable,
     register,
     view_kernel,
