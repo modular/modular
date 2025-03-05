@@ -41,7 +41,7 @@ static constexpr std::array<StringLiteral, 4> kMaxSIMD = {"stdlib", "builtin",
 static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
     "tensor_internal", "managed_tensor_slice", "VariadicTensors"};
 static constexpr std::array<StringLiteral, 4> kMaxList = {
-    "stdlib", "collections", "vector", "InlinedFixedVector"};
+    "stdlib", "collections", "list", "List"};
 
 // TODO(GEX-1822): Should be able to query this information from
 // The lit.struct.decl ops for each of these types rather than hard-coding them.
