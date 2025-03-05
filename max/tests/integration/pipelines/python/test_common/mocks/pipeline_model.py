@@ -17,6 +17,7 @@ from max.pipelines import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    SupportedEncoding,
     TextContext,
 )
 from max.pipelines.kv_cache import (
@@ -45,11 +46,14 @@ class MockPipelineModel(PipelineModel):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
         self.vocab_size = pipeline_config.vocab_size  # type: ignore
         self.eos_token = pipeline_config.eos_token  # type: ignore
+        self.encoding = encoding
+        # This is required to smuggle these parameters in.
         self.max_length = pipeline_config.max_length
         self.kv_manager = MagicMock()
 
