@@ -825,7 +825,7 @@ struct ManagedTensorSlice[
     @always_inline
     fn to_layout_tensor(
         self,
-    ) -> LayoutTensor[type, static_spec.to_layout()]:
+    ) -> LayoutTensor[type, static_spec.to_layout(), MutableAnyOrigin]:
         alias layout = static_spec.to_layout()
         return LayoutTensor[type, layout](
             self.unsafe_ptr(),
