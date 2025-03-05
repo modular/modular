@@ -32,7 +32,12 @@ from .kernels import MHAMaskVariant
 from .layer import Layer, LayerV2
 from .linear import MLP, MLPV2, DistributedMLP, GPTQLinearV2, Linear, LinearV2
 from .norm import DistributedRMSNorm, LayerNorm, LayerNormV2, RMSNorm, RMSNormV2
-from .rotary_embedding import OptimizedRotaryEmbedding, RotaryEmbedding
+from .rotary_embedding import (
+    Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+    OptimizedRotaryEmbedding,
+    RotaryEmbedding,
+)
 from .sequential import Sequential
 from .transformer import (
     DistributedTransformer,

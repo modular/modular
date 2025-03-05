@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Sequence
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 import numpy as np
 from max.dtype import DType
@@ -29,10 +29,10 @@ from max.pipelines.nn import (
     GPTQLinearV2,
     LayerV2,
     LinearV2,
+    Llama3RotaryEmbedding,
     NaiveAttentionWithRope,
     NaiveTransformer,
     NaiveTransformerBlock,
-    OptimizedRotaryEmbedding,
     RMSNormV2,
     RotaryEmbedding,
 )
@@ -73,13 +73,13 @@ class NaiveLlama3(NaiveTransformer):
             raise ValueError(
                 "Stacked QKV is not supported with naive caching strategy."
             )
-        rope = RotaryEmbedding(
+        rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
-            rope_scaling=config.rope_scaling,
             interleaved=config.interleaved_rope_weights,
+            scaling_params=config.rope_scaling_params,
         )
 
         create_norm: Callable[..., LayerV2]
@@ -173,7 +173,7 @@ class NaiveLLama3Attention(NaiveAttentionWithRope):
         hidden_size: int,
         num_attention_heads: int,
         num_key_value_heads: int,
-        rope: Union[OptimizedRotaryEmbedding, RotaryEmbedding],
+        rope: RotaryEmbedding,
         dtype: DType,
         quantization_encoding: Optional[QuantizationEncoding],
         linear_cls: Callable[..., LinearV2],

@@ -374,13 +374,12 @@ def instantiate_language_model(
 
     # We don't really have a rotary embedding layer within the graph as it's largely
     # folded into the custom kernel, but leaving this here for now.
+    # TODO: this should be Llama3RotaryEmbedding with rope scaling params.
     rotary_embedding = OptimizedRotaryEmbedding(
         dim=hidden_size,
         n_heads=n_heads,
         theta=rope_theta,
         max_seq_len=max_seq_len,
-        # TODO: Figure out how we want to pass this
-        # rope_scaling=params.rope_scaling,
         interleaved=False,
     )
 

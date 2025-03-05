@@ -32,7 +32,7 @@ from max.pipelines.nn import (
     GPTQLinearV2,
     LayerV2,
     LinearV2,
-    OptimizedRotaryEmbedding,
+    Llama3RotaryEmbedding,
     RMSNormV2,
     Transformer,
     TransformerBlock,
@@ -45,13 +45,13 @@ from .naive_llama3 import ConstantLayerNorm, StackedMLP
 class Llama3(Transformer):
     def __init__(self, config: Llama3Config):
         assert len(config.devices) == 1
-        rope = OptimizedRotaryEmbedding(
+        rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
-            rope_scaling=config.rope_scaling,
             interleaved=config.interleaved_rope_weights,
+            scaling_params=config.rope_scaling_params,
         )
 
         # Select norm layer class.

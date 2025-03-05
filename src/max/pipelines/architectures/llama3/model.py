@@ -44,7 +44,7 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.nn import LayerV2, Signals
+from max.pipelines.nn import LayerV2, Llama3RopeScalingParams, Signals
 from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 
@@ -621,13 +621,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
     def _model_config(self, state_dict: dict[str, WeightData]):
         huggingface_config = self.pipeline_config.huggingface_config
-        if (
-            rope_freqs := state_dict.pop("rope_freqs.weight", None)
-        ) is not None:
-            rope_scaling = rope_freqs.data
-        else:
-            rope_scaling = None
-
         interleaved_rope_weights = (
             self.pipeline_config.weights_format == WeightsFormat.gguf
             and self.pipeline_config.rope_type == RopeType.normal
@@ -656,16 +649,28 @@ class LlamaModelBase(PipelineModel[TextContext]):
         residual_multiplier = getattr(
             huggingface_config, "residual_multiplier", 1.0
         )
+        rope_scaling_params = None
+        rope_scaling = huggingface_config.rope_scaling
+        if rope_scaling is not None and rope_scaling["rope_type"] == "llama3":
+            rope_scaling_params = Llama3RopeScalingParams(
+                factor=rope_scaling["factor"],
+                low_freq_factor=rope_scaling["low_freq_factor"],
+                high_freq_factor=rope_scaling["high_freq_factor"],
+                orig_max_position=rope_scaling[
+                    "original_max_position_embeddings"
+                ],
+            )
+
         return Llama3Config(
             hidden_size=huggingface_config.hidden_size,
             num_attention_heads=huggingface_config.num_attention_heads,
             num_key_value_heads=huggingface_config.num_key_value_heads,
             num_hidden_layers=huggingface_config.num_hidden_layers,
             rope_theta=huggingface_config.rope_theta,
+            rope_scaling_params=rope_scaling_params,
             rms_norm_eps=rms_norm_eps,
             intermediate_size=huggingface_config.intermediate_size,
             interleaved_rope_weights=interleaved_rope_weights,
-            rope_scaling=rope_scaling,
             vocab_size=huggingface_config.vocab_size,
             dtype=self.pipeline_config.dtype,
             quantization_encoding=self.pipeline_config.graph_quantization_encoding,

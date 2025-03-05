@@ -17,13 +17,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Literal, Optional
 
-import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.pipelines.kv_cache import (
-    KVCacheParams,
-)
+from max.pipelines.kv_cache import KVCacheParams
+from max.pipelines.nn import Llama3RopeScalingParams
 
 
 @dataclass
@@ -33,10 +31,10 @@ class Llama3Config:
     num_key_value_heads: int
     num_hidden_layers: int
     rope_theta: float
+    rope_scaling_params: Optional[Llama3RopeScalingParams]
     max_seq_len: int
     intermediate_size: int
     interleaved_rope_weights: bool
-    rope_scaling: Optional[np.ndarray]
     vocab_size: int
     dtype: DType
     quantization_encoding: Optional[QuantizationEncoding]

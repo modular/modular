@@ -155,7 +155,6 @@ def _transformer(
             n_heads=huggingface_config.num_attention_heads,
             theta=huggingface_config.rope_theta,
             max_seq_len=max_seq_len,
-            rope_scaling=None,
             interleaved=False,
         )
 

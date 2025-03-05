@@ -14,9 +14,8 @@
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import List, Optional
+from typing import List
 
-import numpy as np
 from max.dtype import DType
 from max.graph import Dim, DimLike, TensorValue, TensorValueLike, ops
 from max.pipelines.nn.layer import Layer
@@ -90,8 +89,6 @@ class RotaryEmbedding2D(Layer):
     """Hyperparameter used to control the frequency scaling of the sinusoidal components of the embeddings."""
     max_patches_per_side: int
     """The maximum number of patches per side for model's input (images)."""
-    rope_scaling: Optional[np.ndarray] = None
-    """Scaling factor for the positional frequencies."""
 
     def freqs_cis_base(self) -> TensorValue:
         """
@@ -118,8 +115,6 @@ class RotaryEmbedding2D(Layer):
             ops.constant(2, DType.float64),
             out_dim=head_dim // 2,
         )
-        if self.rope_scaling is not None:
-            iota = iota * self.rope_scaling
         # 1D tensor of length head_dim // 2 = 32
         freqs = ops.cast(1.0 / (self.theta ** (iota / head_dim)), DType.float32)
 

@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """The rope embedding used within the model."""
 
+import math
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Optional
 
-import numpy as np
 from max.dtype import DType
-from max.graph import Dim, DimLike, TensorValue, TensorValueLike, ops
+from max.graph import Dim, TensorValue, TensorValueLike, ops
 
 from .layer import LayerV2
 
@@ -29,19 +29,29 @@ class RotaryEmbedding(LayerV2):
     RotaryEmbedding layer to calculate and apply the frequency tensor for complex exponentials.
     """
 
-    dim: DimLike
+    dim: int
     n_heads: int
     theta: float
     """Hyperparameter used to control the frequency scaling of the sinusoidal components of the embeddings."""
     max_seq_len: int
     """The maximum sequence length for model's input."""
-    rope_scaling: Optional[np.ndarray] = None
-    """Scaling factor for the positional frequencies."""
     _freqs_cis: Optional[TensorValueLike] = None
     interleaved: bool = True
 
     def __post_init__(self):
         super().__init__()
+
+    def _compute_inv_freqs(self) -> TensorValue:
+        n = self.dim // self.n_heads
+        # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
+        iota = ops.range(
+            ops.constant(0, DType.float64),
+            ops.constant(n - 1, DType.float64),
+            ops.constant(2, DType.float64),
+            out_dim=n // 2,
+        )
+        inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
+        return inv_freq
 
     def freqs_cis_base(self) -> TensorValue:
         """
@@ -56,24 +66,15 @@ class RotaryEmbedding(LayerV2):
                 (max_seq_len * 2, dim//(2 * n_heads), 2)
         """
         if self._freqs_cis is None:
-            n = self.dim // self.n_heads  # type: ignore
-            # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
-            iota = ops.range(
-                ops.constant(0, DType.float64),
-                ops.constant(n - 1, DType.float64),  # type: ignore
-                ops.constant(2, DType.float64),
-                out_dim=n // 2,
-            )
-            if self.rope_scaling is not None:
-                iota = iota * self.rope_scaling
-            freqs = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
+            inv_freqs = self._compute_inv_freqs()
+
             t = ops.range(
                 ops.constant(0, DType.float32),
                 ops.constant(self.max_seq_len * 2.0, DType.float32),
                 ops.constant(1, DType.float32),
                 out_dim=self.max_seq_len * 2,
             )
-            freqs = ops.outer(t, freqs)
+            freqs = ops.outer(t, inv_freqs)
             self._freqs_cis = ops.stack(
                 [ops.cos(freqs), ops.sin(freqs)], axis=-1
             )
@@ -118,6 +119,12 @@ class RotaryEmbedding(LayerV2):
         freqs_cis_sliced = self.freqs_cis[
             (slice(start_pos, start_pos + seq_len_val), seq_len),
         ]
+        # Handle optimized case that flattens freqs_cis.
+        # This is needed so naive llama3 can still use Llama3RotaryEmbedding with correct freq_cis.
+        if len(freqs_cis_sliced.shape) == 2:
+            d0, d1 = freqs_cis_sliced.shape
+            freqs_cis_sliced = freqs_cis_sliced.reshape((d0, d1 // 2, 2))
+
         # TODO(MSDK-1188): Ideally this cast would happen inside of the cached
         # self.freqs_cis property instead of here, but complex.dtype is not
         # known at that point.
@@ -151,6 +158,66 @@ class OptimizedRotaryEmbedding(RotaryEmbedding):
     def freqs_cis(self):
         freqs = self.freqs_cis_base()
         d1, d2, d3 = freqs.shape
-        new_f_shape = [d1.dim, d2.dim * d3.dim]  # type: ignore
+        new_f_shape = [d1, d2 * d3]
         self._freqs_cis = ops.reshape(freqs, new_f_shape)
         return self._freqs_cis
+
+
+@dataclass
+class Llama3RopeScalingParams:
+    factor: float
+    """Main scaling factor for the frequency components of the rope."""
+    low_freq_factor: float
+    """Factor to scale the low frequency components of the rope."""
+    high_freq_factor: float
+    """Factor to scale the high frequency components of the rope."""
+    orig_max_position: int
+    """The original maximum position length supported by the model."""
+
+
+@dataclass
+class Llama3RotaryEmbedding(OptimizedRotaryEmbedding):
+    """
+    RotaryEmbedding for Llama3 that takes rope scaling into account.
+    """
+
+    scaling_params: Optional[Llama3RopeScalingParams] = None
+    """Scaling parameters to enable llama to function with a longer context length."""
+
+    def _compute_inv_freqs(self) -> TensorValue:
+        inv_freqs = super()._compute_inv_freqs()
+        if self.scaling_params is not None:
+            low_freq_wavelen = (
+                self.scaling_params.orig_max_position
+                / self.scaling_params.low_freq_factor
+            )
+            high_freq_wavelen = (
+                self.scaling_params.orig_max_position
+                / self.scaling_params.high_freq_factor
+            )
+
+            wave_len = 2 * math.pi / inv_freqs
+            if (
+                self.scaling_params.low_freq_factor
+                != self.scaling_params.high_freq_factor
+            ):
+                smooth = (
+                    self.scaling_params.orig_max_position / wave_len
+                    - self.scaling_params.low_freq_factor
+                ) / (
+                    self.scaling_params.high_freq_factor
+                    - self.scaling_params.low_freq_factor
+                )
+            else:
+                smooth = ops.constant(0, DType.float32)
+            inv_freqs = ops.select(
+                wave_len < high_freq_wavelen,
+                inv_freqs,
+                ops.select(
+                    wave_len > low_freq_wavelen,
+                    inv_freqs / self.scaling_params.factor,
+                    (1 - smooth) * inv_freqs / self.scaling_params.factor
+                    + smooth * inv_freqs,
+                ),
+            )
+        return inv_freqs
