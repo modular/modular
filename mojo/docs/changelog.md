@@ -289,4 +289,9 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 - Use of legacy argument conventions like `inout` and the use of `as` in named
   results now produces an error message instead of a warning.
 
+- The `InlinedFixedVector` collection has been removed.  Instead, use
+  `InlineArray` when the upper bound is known at compile time.  If the upper
+  bound is not known until runtime, use `List` with the `capacity` constructor
+  to minimize allocations.
+
 ### 🛠️ Fixed
