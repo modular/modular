@@ -23,10 +23,7 @@ from modular_graph_test import modular_graph_test
 from torch import nn
 from transformers import StaticCache
 from transformers.models.llama.configuration_llama import LlamaConfig
-from transformers.models.llama.modeling_llama import (
-    LlamaAttention,
-    LlamaRotaryEmbedding,
-)
+from transformers.models.llama.modeling_llama import LlamaAttention
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
@@ -37,7 +34,6 @@ class TorchAttention(nn.Module):
         super().__init__()
         self.config = config
         self.attention = LlamaAttention(self.config, layer_idx=0)
-        self.rotary_emb = LlamaRotaryEmbedding(config=config)
         self.start_pos = start_pos
         self.seq_len = seq_len
 
@@ -87,13 +83,13 @@ class TorchAttention(nn.Module):
             device=x.device,
         )
         positional_ids = positional_ids.unsqueeze(0)
-        position_embeddings = self.rotary_emb(x, positional_ids)
+        position_embeddings = self.attention.rotary_emb(x, positional_ids)
 
         return self.attention(
             x,
-            position_embeddings,
             attention_mask,
             past_key_values=cache,
+            position_embeddings=position_embeddings,
         )[0]
 
 
