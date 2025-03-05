@@ -21,14 +21,39 @@ ENCODING=float32
 """
 
 from pathlib import Path
+from typing import List, Optional, Sequence, TypedDict
 
 import click
+import numpy as np
 from model.cli.commands._internal._verify_utils import construct_validator
 from model.utils.custom_args import CommaSeparatedList
 from model.utils.exceptions import AccuracyError
 from model.utils.logging import CONSOLE
 from test_common.evaluate import compare_values
 from test_common.numpy_encoder import NumpyDecoder
+from typing_extensions import NotRequired
+
+
+class TokenInfo(TypedDict):
+    """Information about a token in the output."""
+
+    next_token: int
+    """The next token in the output."""
+    next_token_logits: float
+    """The logits for the next token."""
+    logits: np.ndarray
+    """The logits for the token."""
+
+
+class ModelOutput(TypedDict):
+    """The prompt and the output of a model run."""
+
+    prompt: str
+    """The prompt that was used to generate the output."""
+    values: NotRequired[List[TokenInfo]]
+    """Outputs from a text generation model."""
+    embeddings: NotRequired[np.ndarray]
+    """Outputs from a text embedding model."""
 
 
 @click.command()
@@ -117,8 +142,12 @@ def main(
         kl_div_threshold=kl_div_threshold,
     )
 
-    pipeline_results = NumpyDecoder().decode(pipeline_outputs.read_text())
-    torch_results = NumpyDecoder().decode(torch_outputs.read_text())
+    pipeline_results: List[ModelOutput] = NumpyDecoder().decode(
+        pipeline_outputs.read_text()
+    )
+    torch_results: List[ModelOutput] = NumpyDecoder().decode(
+        torch_outputs.read_text()
+    )
 
     results = []
     any_failed = False
@@ -159,6 +188,7 @@ def main(
                 " where the results differ."
             )
 
+        print_norms(pipeline_results, torch_results)
         raise AccuracyError(
             f'The outputs when using the "{first_framework}"'
             " framework is not within tolerance to the"
@@ -166,6 +196,7 @@ def main(
             " framework."
         )
 
+    print_norms(pipeline_results, torch_results)
     # the results are within tolerance, so we log a good message
     CONSOLE.print(
         f'👍 The outputs when using the "{first_framework}" framework'
@@ -173,6 +204,122 @@ def main(
         " framework for specified tolerances"
         f" ({validator.threshold_str()})"
     )
+
+
+def print_norms(
+    results: List[ModelOutput], references: List[ModelOutput]
+) -> None:
+    """
+    Calculate and print the L1 and L2 norms between outputs from two model runs.
+
+    Args:
+        results: List of model outputs to evaluate
+        references: List of reference model outputs to compare against
+    """
+    if len(results) != len(references):
+        raise ValueError("The two lists must have the same length")
+
+    # Calculate norms for each prompt
+    l1_errors = []
+    l2_errors = []
+    for result, reference in zip(results, references):
+        verify_matching_prompts(result, reference)
+        l1_error = None
+        l2_error = None
+        if "embeddings" in result and "embeddings" in reference:
+            l1_error, l2_error = calculate_embedding_norms(
+                result["embeddings"], reference["embeddings"]
+            )
+        elif "values" in result and "values" in reference:
+            l1_error, l2_error = calculate_logit_norms(
+                result["values"], reference["values"]
+            )
+        l1_errors.append(l1_error)
+        l2_errors.append(l2_error)
+
+    # Print the results
+    print_norm_results(l1_errors, l2_errors)
+
+
+def verify_matching_prompts(
+    result: ModelOutput, reference: ModelOutput
+) -> None:
+    """Verify that the prompts match between result and reference."""
+    if result["prompt"] != reference["prompt"]:
+        raise ValueError(
+            f"Mismatched prompts:\nResult: {result['prompt']}\nReference: {reference['prompt']}"
+        )
+
+
+def calculate_embedding_norms(
+    result_embeddings: np.ndarray, reference_embeddings: np.ndarray
+) -> tuple[float, float]:
+    """Calculate L1 and L2 norms between result and reference embeddings."""
+    diff = result_embeddings - reference_embeddings
+    l1_norm = np.mean(np.abs(diff))
+    l2_norm = np.sqrt(np.mean(diff**2))
+    return float(l1_norm), float(l2_norm)
+
+
+def calculate_logit_norms(
+    result_values: List[TokenInfo], reference_values: List[TokenInfo]
+) -> tuple[Optional[float], Optional[float]]:
+    """
+    Calculate L1 and L2 norms between result and reference outputs until tokens diverge.
+    We stop computing the norms when the tokens diverge, because the values
+    will then be misleading.
+
+    Returns (None, None) if tokens immediately diverge.
+    """
+    total_l1 = 0
+    total_l2 = 0
+    token_count = 0
+
+    for res_token, ref_token in zip(result_values, reference_values):
+        # Stop if tokens diverge
+        if res_token["next_token"] != ref_token["next_token"]:
+            break
+
+        # Calculate norms for current token
+        diff = res_token["logits"] - ref_token["logits"]
+        token_l1 = np.mean(np.abs(diff))
+        token_l2 = np.sqrt(np.mean(diff**2))
+        total_l1 += token_l1
+        total_l2 += token_l2
+        token_count += 1
+
+    if token_count == 0:
+        return None, None
+    return float(total_l1 / token_count), float(total_l2 / token_count)
+
+
+def print_norm_results(
+    l1_errors: Sequence[Optional[float]], l2_errors: Sequence[Optional[float]]
+) -> None:
+    """Print formatted L1 and L2 norm results."""
+    valid_l1_errors = [error for error in l1_errors if error is not None]
+    valid_l2_errors = [error for error in l2_errors if error is not None]
+
+    if not valid_l1_errors or not valid_l2_errors:
+        CONSOLE.print("Unable to compute any valid norm values")
+        return
+
+    avg_l1 = sum(valid_l1_errors) / len(valid_l1_errors)
+    avg_l2 = sum(valid_l2_errors) / len(valid_l2_errors)
+    CONSOLE.print(
+        "\nL1 and L2 norms of the outputs (up until a potential token mismatch)"
+    )
+    CONSOLE.print(f"Average output L1 norm: {avg_l1:.2e}")
+    CONSOLE.print(f"Average output L2 norm: {avg_l2:.2e}")
+
+    formatted_l1 = ", ".join(
+        f"{error:.2e}" if error is not None else "N/A" for error in l1_errors
+    )
+    formatted_l2 = ", ".join(
+        f"{error:.2e}" if error is not None else "N/A" for error in l2_errors
+    )
+    CONSOLE.print(f"Per prompt L1 norm: [{formatted_l1}]")
+    CONSOLE.print(f"Per prompt L2 norm: [{formatted_l2}]\n")
 
 
 if __name__ == "__main__":

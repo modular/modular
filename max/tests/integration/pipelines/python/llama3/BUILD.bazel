@@ -58,6 +58,7 @@ modular_py_binary(
         "//GenericML/tools/model:lib",
         "//SDK/integration-test/pipelines/python/test_common",
         requirement("click"),
+        requirement("numpy"),
     ],
 )
 

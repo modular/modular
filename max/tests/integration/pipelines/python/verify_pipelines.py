@@ -486,10 +486,11 @@ def main(
                 continue
             if not tag_filter.satisfied_by(pipeline_def.tags):
                 continue
-            print(f"Running {pipeline_name}...", flush=True)
+            print(f"\n===== Running {pipeline_name} =====", flush=True)
             verdicts[pipeline_name] = pipeline_def.run_protected(
                 device_type, devices_str
             )
+            print(f"===== Finished {pipeline_name} =====", flush=True)
     else:
         if pipeline not in PIPELINES:
             raise click.ClickException(f"Unknown pipeline {pipeline!r}")
