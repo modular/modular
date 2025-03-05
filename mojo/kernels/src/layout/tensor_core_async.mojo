@@ -8,7 +8,7 @@ matrix multiplication operations.
 """
 from sys import sizeof
 
-from gpu import WARP_SIZE
+from gpu import WARP_SIZE, barrier
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace
@@ -499,35 +499,30 @@ struct TensorCoreAsync[
 
                 @parameter
                 for k_mma in range(num_k_mmas):
-                    alias a_k_bytes = k_mma * a_k_stride
-                    alias b_k_bytes = k_mma * b_k_stride
-
-                    @parameter
-                    if k_mma > 0 and k_mma % a_num_k_mmas_per_tile == 0:
-                        alias a_offset = (
-                            k_mma // a_num_k_mmas_per_tile
-                        ) * a_canonical_layout.size()
-                        a_desc.replace(a_smem_tile.ptr + a_offset)
-
-                    @parameter
-                    if (
-                        transpose_b
-                        and k_mma > 0
-                        and k_mma % b_num_k_mmas_per_tile == 0
-                    ):
-                        alias b_offset = (
-                            k_mma // b_num_k_mmas_per_tile
-                        ) * b_canonical_layout.size()
-                        b_desc.replace(b_smem_tile.ptr + b_offset)
+                    # Offsets when K is multiple of canonical layouts.
+                    alias a_offset_bytes = (
+                        k_mma // a_num_k_mmas_per_tile
+                    ) * a_canonical_layout.size() * sizeof[a_type]()
+                    alias b_offset_bytes = (
+                        k_mma // b_num_k_mmas_per_tile
+                    ) * b_canonical_layout.size() * sizeof[
+                        b_type
+                    ]() if transpose_b else 0
 
                     alias a_k_mma = k_mma % a_num_k_mmas_per_tile
                     alias b_k_mma = k_mma % b_num_k_mmas_per_tile
 
                     a_desc_m = (
-                        a_desc + m_mma * a_m_stride + a_k_mma * a_k_stride
+                        a_desc
+                        + m_mma * a_m_stride
+                        + a_k_mma * a_k_stride
+                        + a_offset_bytes
                     )
                     b_desc_n = (
-                        b_desc + n_mma * b_n_stride + b_k_mma * b_k_stride
+                        b_desc
+                        + n_mma * b_n_stride
+                        + b_k_mma * b_k_stride
+                        + b_offset_bytes
                     )
 
                     c_frags[mma_id, 0] = wgmma_async[
