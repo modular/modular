@@ -37,6 +37,7 @@ from huggingface_hub import errors as hf_hub_errors
 from huggingface_hub.utils import tqdm as hf_tqdm
 from max.driver import CPU, Accelerator, Device, DeviceSpec, accelerator_count
 from max.dtype import DType
+from max.engine import GPUProfilingMode
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import (
     GGUFWeights,
@@ -611,27 +612,24 @@ class KVCacheConfig(MAXConfig):
 
 @dataclass
 class ProfilingConfig(MAXConfig):
-    gpu_profiling: str = os.environ.get("MODULAR_ENABLE_PROFILING", "false")
+    gpu_profiling: GPUProfilingMode = GPUProfilingMode.OFF
     """Whether to enable GPU profiling of the model."""
 
     def __post_init__(self):
-        if self.gpu_profiling not in (
-            "false",
-            "off",
-            "no",
-            "0",
-            "true",
-            "on",
-            "yes",
-            "1",
-            "detailed",
-        ):
-            raise ValueError("gpu_profiling must be a boolean or 'detailed'")
+        gpu_profiling_env = os.environ.get("MODULAR_ENABLE_PROFILING", "off")
+
+        if self.gpu_profiling == GPUProfilingMode.OFF:
+            if gpu_profiling_env not in GPUProfilingMode:
+                raise ValueError(
+                    "gpu_profiling must be one of: "
+                    + ", ".join(GPUProfilingMode)
+                )
+            self.gpu_profiling = GPUProfilingMode(gpu_profiling_env)
 
     @staticmethod
     def help() -> dict[str, str]:
         return {
-            "gpu_profiling": "Whether to enable GPU profiling of the model. This defaults to false.",
+            "gpu_profiling": "Whether to turn on GPU profiling for the model. This defaults to 'off'.",
         }
 
 
