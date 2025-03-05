@@ -156,6 +156,8 @@ what we publish.
   provide high performance for these types and may have missing operations like
   divide, remainder, etc.
 
+- The `compile` package is now documented.
+
 ### GPU changes
 
 - You can now skip compiling a GPU kernel first and then enqueueing it:
