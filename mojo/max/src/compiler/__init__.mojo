@@ -10,6 +10,5 @@ from compiler_internal import (
     enable_fusion_for,
     mutable,
     register,
-    enforce_io_param,
     view_kernel,
 )
