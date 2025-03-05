@@ -107,18 +107,6 @@ getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
   return answer;
 }
 
-static bool hasEnforceIODecorator(LIT::FnOp func) {
-  auto isEnforceIO = [](TypedAttr attr) {
-    auto sym = dyn_cast<SymbolConstantAttr>(attr);
-    if (!sym)
-      return false;
-    return sym.getSymbol().getLeafReference().strref().starts_with(
-        M::KGEN::MOGGPreElab::Decorators::ENFORCE_IO_PARAM);
-  };
-
-  return llvm::any_of(func.getDecorators(), isEnforceIO);
-}
-
 /// Look through ref types to get underlaying decl ref type if needed.
 LIT::StructType getAsDeclRefOrNull(Type t) {
   auto asLitRef = dyn_cast<LIT::RefType>(t);
@@ -452,9 +440,6 @@ struct ExtensibilityAPIStructInfo {
   // Whether the operation is marked as a view kernel.
   bool isViewKernel = false;
 
-  // The number of Destination Passing Style result operands to expect.
-  IntegerAttr numDPSOperands{};
-
   // The name of the operation this struct is registered to
   StringAttr registrationName{};
 };
@@ -492,7 +477,7 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
 
     std::optional<SmallVector<TypedAttr>> registerOperand =
         getDecoratorLambdaArgument(moduleOp, decorator, MOGG_INTRINSIC_REGISTER,
-                                   SmallVector<size_t>{1, 2});
+                                   SmallVector<size_t>{1});
     if (!registerOperand.has_value())
       continue;
 
@@ -505,15 +490,6 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
       return Error("Only one op can be registered per kernel");
     }
     registrationInfo.registrationName = name;
-
-    auto [__, numDPSOperandsAttr] =
-        cast<LIT::LITStructAttr>(registerOperand.value()[1])
-            .getValues()
-            .front();
-    auto numDPSOperands = dyn_cast<IntegerAttr>(numDPSOperandsAttr);
-    ASSERT_STREAM(numDPSOperands,
-                  << "Expected an IntegerAttr as the number of DPS operands");
-    registrationInfo.numDPSOperands = numDPSOperands;
   }
 
   return registrationInfo.registrationName != nullptr;
@@ -704,35 +680,6 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
   return std::nullopt;
 }
 
-// TODO(GEX-GEX-1904): Can be deleted when enforce_io_param decorator is no
-// longer needed.
-static void checkSpecializedIOSpecParams(LIT::FnOp func) {
-  for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
-    auto structType = getAsDeclRefOrNull(argType);
-
-    if (!structType)
-      continue;
-
-    auto [mutRaw, inputRaw] = extractIOSpecSubFields(structType);
-
-    if (!mutRaw && !inputRaw)
-      continue;
-
-    auto mut = isa<KGEN::ParamDeclRefAttr>(mutRaw);
-    auto input = isa<KGEN::ParamDeclRefAttr>(inputRaw);
-
-    // If either mut or input is specialized, emit a warning
-    if (!mut || !input) {
-      auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
-      auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
-      emitWarning(loc) << "'mut' and/or 'input' of the io_spec parameter were"
-                       << " specialized in argument " << argName
-                       << ", but enforce_io_param decorator is not used. "
-                       << "These specializations will be ignored";
-    }
-  }
-}
-
 static std::optional<SmallVector<std::pair<size_t, IOSpec>>>
 processIOSpecs(LIT::FnOp func) {
   SmallVector<std::pair<size_t, IOSpec>> specs;
@@ -831,66 +778,35 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   if (registrationInfo.isViewKernel)
     func->setAttr(kMOGGViewKernel, UnitAttr::get(func->getContext()));
 
-  // TODO(GEX-1911): Remove code around enforce_io_param usage as now io_spec
-  // specialization is always enforced
-  bool enforceIOParamUsage = hasEnforceIODecorator(func);
   SmallVector<std::pair<size_t, IOSpec>> ioSpecs;
-  if (true) {
-    auto result = processIOSpecs(func);
-    if (!result)
-      return false;
-    ioSpecs = std::move(*result);
-  } else {
-    // When enforce_io_param is NOT used, check for specialized parameters and
-    // emit warnings
-    checkSpecializedIOSpecParams(func);
-  }
+  auto result = processIOSpecs(func);
+  if (!result)
+    return false;
+  ioSpecs = std::move(*result);
 
-  // TODO(GEX-1911): Remove code around enforce_io_param usage as now io_spec
-  // specialization is always enforced
-  if (true) {
-    // Set mogg.num_dps_outputs
-    auto numOutputs = llvm::count_if(ioSpecs, [](auto &&elem) {
-      return elem.second == IOSpec::OutputTensor;
-    });
-    // TODO: should we emit an error if numDPSOperands on the register decorator
-    // was set to something other than the default?
-    func->setDiscardableAttr(kMOGGNumDPSOutputs,
-                             builder.getIndexAttr(numOutputs));
+  auto numOutputs = llvm::count_if(
+      ioSpecs, [](auto &&elem) { return elem.second == IOSpec::OutputTensor; });
+  func->setDiscardableAttr(kMOGGNumDPSOutputs,
+                           builder.getIndexAttr(numOutputs));
 
-    // Set mogg.buffer_args
-    SmallVector<Attribute> mutableIdxs;
-    for (auto [idx, spec] : ioSpecs) {
-      if (spec == IOSpec::MutableInputTensor) {
-        mutableIdxs.push_back(builder.getIndexAttr(idx - numOutputs));
-      }
+  // Set mogg.buffer_args
+  SmallVector<Attribute> mutableIdxs;
+  for (auto [idx, spec] : ioSpecs) {
+    if (spec == IOSpec::MutableInputTensor) {
+      mutableIdxs.push_back(builder.getIndexAttr(idx - numOutputs));
     }
-    if (!mutableIdxs.empty())
-      func->setAttr(kMOGGBufferArgs, builder.getArrayAttr(mutableIdxs));
-  } else {
-    func->setDiscardableAttr(kMOGGNumDPSOutputs,
-                             registrationInfo.numDPSOperands);
   }
+  if (!mutableIdxs.empty())
+    func->setAttr(kMOGGBufferArgs, builder.getArrayAttr(mutableIdxs));
 
   // Iterate over the decorators to find enable_fusion_for/mutable
   for (auto decorator : func.getDecorators()) {
-    std::optional<SmallVector<TypedAttr>> mutableOperands =
-        getDecoratorLambdaArgument(moduleOp, decorator, MOGG_INTRINSIC_MUTABLE,
-                                   SmallVector<size_t>{1});
-
     std::optional<SmallVector<TypedAttr>> enableFusionOperand =
         getDecoratorLambdaArgument(moduleOp, decorator,
                                    MOGG_INTRINSIC_ENABLE_FUSION_FOR,
                                    SmallVector<size_t>{1});
 
-    if (mutableOperands.has_value() && enforceIOParamUsage) {
-      emitError(func->getLoc(),
-                "Using the mutable decorator and enforce_io_param decorator at "
-                "the same time is not permitted");
-      return false;
-    }
-
-    if (!enableFusionOperand.has_value() && !mutableOperands.has_value())
+    if (!enableFusionOperand.has_value())
       continue;
 
     ArrayAttr argSrcNamesAttr =
@@ -903,9 +819,6 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
     auto nameArgs = [&]() {
       if (enableFusionOperand)
         return cast<KGEN::VariadicAttr>(enableFusionOperand.value()[0]);
-
-      else if (mutableOperands)
-        return cast<KGEN::VariadicAttr>(mutableOperands.value()[0]);
 
       llvm_unreachable("Unsupported decorator!");
     }();
@@ -921,8 +834,7 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
           });
 
       if (argIt == argSrcNamesAttr.getValue().end()) {
-        StringRef decoratorName =
-            enableFusionOperand ? "enable_fusion_for" : "mutable";
+        StringRef decoratorName = "enable_fusion_for";
 
         emitError(func->getLoc(),
                   llvm::formatv("{0} decorator: '{1}' does not name any of the "
@@ -935,19 +847,11 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
 
       auto idx = std::distance(argSrcNamesAttr.getValue().begin(), argIt);
 
-      if (mutableOperands) {
-        idx -= registrationInfo.numDPSOperands.getInt();
-      }
-
       argIdxsAttrs.push_back(builder.getIndexAttr(idx));
     }
 
     if (!argIdxsAttrs.empty() && enableFusionOperand) {
       func->setAttr(kMOGGFusableArgs, builder.getArrayAttr(argIdxsAttrs));
-    }
-
-    if (!argIdxsAttrs.empty() && mutableOperands) {
-      func->setAttr(kMOGGBufferArgs, builder.getArrayAttr(argIdxsAttrs));
     }
   }
   return true;
