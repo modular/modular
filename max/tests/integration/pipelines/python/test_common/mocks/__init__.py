@@ -9,7 +9,7 @@ from typing import Optional, Tuple, Union
 from unittest.mock import MagicMock
 
 from max.driver import CPU, Device
-from max.dtype import DType
+from max.engine import GPUProfilingMode
 from max.pipelines import (
     ProfilingConfig,
     SamplingConfig,
@@ -40,7 +40,7 @@ def retrieve_mock_text_generation_pipeline(
     # Create a mock Pipeline Config
     mock_config = MagicMock()
     mock_config.profiling_config = ProfilingConfig(
-        gpu_profiling="false",
+        gpu_profiling=GPUProfilingMode.OFF,
     )
     mock_config.sampling_config = SamplingConfig(
         enable_structured_output=False,
