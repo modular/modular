@@ -22,6 +22,21 @@ what we publish.
 
 ### Standard library changes
 
+- Add `Variant.is_type_supported` method. ([PR #4057](https://github.com/modular/max/pull/4057))
+  Example:
+  
+  ```mojo
+    def my_function(mut arg: Variant):
+        if arg.is_type_supported[Float64]():
+            arg = Float64(1.5)
+
+    def main():
+        var x = Variant[Int, Float64](1)
+        my_function(x)
+        if x.isa[Float64]():
+            print(x[Float64]) # 1.5
+  ```
+
 ### Tooling changes
 
 ### ❌ Removed
