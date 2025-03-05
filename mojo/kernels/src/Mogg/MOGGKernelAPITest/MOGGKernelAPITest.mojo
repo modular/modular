@@ -12,7 +12,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
 from runtime.asyncrt import DeviceContextPtr
-from register import enforce_io_param
 from tensor_internal import (
     ManagedTensorSlice,
     VariadicTensors,
@@ -80,7 +79,6 @@ struct MyCustomScalarRegF32:
 
 @compiler.register("tensor_to_custom_scalar_si32_reg")
 struct OpaqueToCustomScalarSI32Reg:
-    @enforce_io_param
     @staticmethod
     fn execute(
         x: InputTensor[type = DType.int32, rank=1]
@@ -92,7 +90,6 @@ struct OpaqueToCustomScalarSI32Reg:
 # to a tensor
 @compiler.register("opaque_add_to_tensor_si32_reg")
 struct OpaqueAddToTensorSI32Reg:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -107,7 +104,6 @@ struct OpaqueAddToTensorSI32Reg:
 
 @compiler.register("opaque_add_to_tensor_f32_reg")
 struct OpaqueAddToTensorF32:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -140,7 +136,6 @@ struct MyCustomScalarSI32:
 
 @compiler.register("tensor_to_custom_scalar_si32")
 struct OpaqueToCustomScalarSI32:
-    @enforce_io_param
     @staticmethod
     fn execute(
         x: InputTensor[type = DType.int32, rank=1]
@@ -152,7 +147,6 @@ struct OpaqueToCustomScalarSI32:
 # to a tensor
 @compiler.register("opaque_add_to_tensor_si32")
 struct OpaqueAddToTensorSI32:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -167,7 +161,6 @@ struct OpaqueAddToTensorSI32:
 
 @compiler.register("opaque_add_to_tensor_si32_raises")
 struct OpaqueAddToTensorSI32Raises:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -187,7 +180,6 @@ struct OpaqueAddToTensorSI32Raises:
 
 @compiler.register("imposter_add")
 struct Foo:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -247,7 +239,6 @@ fn _matmul[
 # c = a @ b, should support CPU and GPU
 @compiler.register("imposter_matmul")
 struct ImposterMatmul:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -272,7 +263,6 @@ struct ImposterMatmul:
 
 @compiler.register("print_tensor_spec")
 struct PrintTensorSpecOp:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -299,7 +289,6 @@ struct PrintTensorSpecOp:
 @compiler.register("print_tensor_spec_view")
 @compiler.view_kernel
 struct PrintTensorSpecViewOp:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -325,7 +314,6 @@ struct PrintTensorSpecViewOp:
 
 @compiler.register("print_tensor_spec_fused")
 struct PrintTensorSpecFusedOp:
-    @enforce_io_param
     @compiler.enable_fusion_for("out", "x")
     @staticmethod
     fn execute[
@@ -353,7 +341,6 @@ struct PrintTensorSpecFusedOp:
 @compiler.register("imposter_add_elementwise")
 @compiler.elementwise
 struct AddElementwise:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -372,7 +359,6 @@ struct AddElementwise:
 @compiler.register("imposter_add_lhs")
 struct AddFuseLHS:
     @compiler.enable_fusion_for("x")
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -396,7 +382,6 @@ struct AddFuseLHS:
 @compiler.register("imposter_add_fuse_inputs")
 struct AddFuseInputs:
     @compiler.enable_fusion_for("x", "y")
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -421,7 +406,6 @@ struct AddFuseInputs:
 @compiler.register("matmul_fuse_out")
 struct MatmulFuseOut:
     @compiler.enable_fusion_for("c")
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -466,7 +450,6 @@ struct MatmulFuseOut:
 
 @compiler.register("op_with_synchronous")
 struct WithSynchronous:
-    @enforce_io_param
     @staticmethod
     fn execute[
         _synchronous: Bool,
@@ -476,7 +459,6 @@ struct WithSynchronous:
 
 @compiler.register("op_without_synchronous")
 struct WithoutSynchronous:
-    @enforce_io_param
     @staticmethod
     fn execute(out: OutputTensor, input: InputTensor):
         print("what up")
@@ -486,7 +468,6 @@ struct WithoutSynchronous:
 # number from the associated inputs to outputs, plus a bias
 @compiler.register("variadic_input_to_output")
 struct VariadicInputToOutput:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -509,7 +490,6 @@ struct VariadicInputToOutput:
 # Mainly here to test logic with multiple DPS outputs
 @compiler.register("add_bias_to_two_tensors")
 struct AddBiasToDouble:
-    @enforce_io_param
     @staticmethod
     fn execute[
         rank: Int,
@@ -528,7 +508,6 @@ struct AddBiasToDouble:
 
 @compiler.register("inplace_increment_elem")
 struct BasicInplace:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -541,7 +520,6 @@ struct BasicInplace:
 # Have this nearly identical version as having a raise changes the Mojo function's signature
 @compiler.register("inplace_increment_elem_raises")
 struct BasicInplaceRaises:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -553,7 +531,6 @@ struct BasicInplaceRaises:
 
 @compiler.register("variadic_add")
 struct VariadicAdd:
-    @enforce_io_param
     @compiler.enable_fusion_for("inputs")
     @staticmethod
     fn execute[
@@ -605,7 +582,6 @@ struct Transpose2DOp:
         # transpose the strides of the input
         return DimList(input_strides.at[1](), input_strides.at[0]())
 
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -629,7 +605,6 @@ struct Transpose2DOp:
 
 @compiler.register("print_shape_fused")
 struct ElementwisePrintShape:
-    @enforce_io_param
     @compiler.enable_fusion_for("z", "x")
     @staticmethod
     fn execute[
@@ -654,7 +629,6 @@ struct ElementwisePrintShape:
 # Raises if input shape is 10
 @compiler.register("custom_op_that_raises")
 struct CustomOpThatRaises:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -681,7 +655,6 @@ struct CustomOpThatRaises:
 
 @compiler.register("mo.test.failing_constraint")
 struct OpThatAlwaysFailsConstraint:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
@@ -697,7 +670,6 @@ struct OpThatAlwaysFailsConstraint:
 
 @compiler.register("mo.test.return_error")
 struct OpThatAlwaysRaises:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
@@ -711,7 +683,6 @@ struct OpThatAlwaysRaises:
 
 @compiler.register("monnx.abs_v13")
 struct MONNXAbsOverload:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
@@ -730,7 +701,6 @@ struct MONNXAbsOverload:
 
 @compiler.register("torch.aten.abs")
 struct MTorchAbsOverload:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, rank: Int
@@ -749,7 +719,6 @@ struct MTorchAbsOverload:
 
 @compiler.register("op_with_custom_params")
 struct OpWithCustomParams:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -769,7 +738,6 @@ struct OpWithCustomParams:
 
 @compiler.register("mgprt_test_func")
 struct MGPRTTestFunc:
-    @enforce_io_param
     @staticmethod
     fn execute(out_tensor: OutputTensor) raises:
         external_call["MGP_RT_TEST", NoneType]()
@@ -777,7 +745,6 @@ struct MGPRTTestFunc:
 
 @compiler.register("mutable_test_op")
 struct MutableTestOp:
-    @enforce_io_param
     @staticmethod
     fn execute(in_place_tensor: MutableInputTensor) raises:
         in_place_tensor._ptr.store(0, 0)
@@ -786,7 +753,6 @@ struct MutableTestOp:
 # For testing support for Scalar[...] in Mojo
 @compiler.register("supports_scalar_kernel")
 struct SupportsScalarKernel:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
@@ -800,7 +766,6 @@ struct SupportsScalarKernel:
 
 @compiler.register("kernel_with_no_target")
 struct KernelWithNoTarget:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
@@ -810,7 +775,6 @@ struct KernelWithNoTarget:
 
 @compiler.register("basic_target")
 struct BasicTarget:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType, target: StringLiteral
@@ -834,7 +798,6 @@ struct MyCustomScalarReg[type: DType]:
 
 @compiler.register("buff_to_my_custom_scalar_reg")
 struct BuffToMyCustomScalarReg:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral
@@ -846,7 +809,6 @@ struct BuffToMyCustomScalarReg:
 
 @compiler.register("my_custom_scalar_reg_to_buff")
 struct CustomScalarRegToBuff:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral
@@ -859,7 +821,6 @@ struct CustomScalarRegToBuff:
 
 @compiler.register("test_custom_op")
 struct TestCustomOp:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral, type: DType, rank: Int
@@ -879,7 +840,6 @@ struct TestCustomOp:
 
 @compiler.register("invalid_kernel_owned_arg")
 struct InvalidOwnedArgConvention:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral, type: DType, rank: Int
@@ -889,7 +849,6 @@ struct InvalidOwnedArgConvention:
 
 @compiler.register("single_device_context")
 struct SingleDeviceContext:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
@@ -903,7 +862,6 @@ struct SingleDeviceContext:
 
 @compiler.register("multi_device_context")
 struct MultiDeviceContext:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
@@ -920,7 +878,6 @@ struct MultiDeviceContext:
 
 @compiler.register("multi_device_context_dedup")
 struct MultiDeviceContextDedup:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType
@@ -936,7 +893,6 @@ struct MultiDeviceContextDedup:
 
 @compiler.register("variadic_device_context")
 struct VariadicDeviceContext:
-    @enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
@@ -954,7 +910,6 @@ struct VariadicDeviceContext:
 @compiler.register("imposter_cast_elementwise")
 @compiler.elementwise
 struct CastElementwise:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -973,7 +928,6 @@ struct CastElementwise:
 @compiler.register("print_vector_size")
 @compiler.elementwise
 struct PrintVectorSize:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -1001,7 +955,6 @@ struct PrintVectorSize:
 
 @compiler.register("tensor_opaque_tensor_kernel")
 struct TensorOpaqueTensorKernel:
-    @enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral,
