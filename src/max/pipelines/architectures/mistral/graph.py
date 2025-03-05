@@ -84,10 +84,11 @@ def embedding(
     vocab_size: int,
     hidden_dim: int,
     weights: SafetensorWeights,
+    dtype: DType,
 ):
     return Embedding(
         weights.weight.allocate(
-            params.dtype,
+            dtype,
             [vocab_size, hidden_dim],
         )
     )
@@ -100,13 +101,14 @@ def _attention_opaque(
     weights: SafetensorWeights,
     layer_idx: int,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ):
     kv_weight_dim = (
         huggingface_config.head_dim * huggingface_config.num_key_value_heads
     )
 
     wq = weights.self_attn.q_proj.weight.allocate(
-        params.dtype,
+        dtype,
         [
             huggingface_config.num_attention_heads
             * huggingface_config.head_dim,
@@ -114,11 +116,11 @@ def _attention_opaque(
         ],
     )
     wk = weights.self_attn.k_proj.weight.allocate(
-        params.dtype,
+        dtype,
         [kv_weight_dim, huggingface_config.hidden_size],
     )
     wv = weights.self_attn.v_proj.weight.allocate(
-        params.dtype,
+        dtype,
         [kv_weight_dim, huggingface_config.hidden_size],
     )
     wqkv = ops.concat((wq, wk, wv))
@@ -128,7 +130,7 @@ def _attention_opaque(
         kv_params=kv_params,
         wqkv=wqkv,
         wo=linear(
-            params.dtype,
+            dtype,
             huggingface_config.hidden_size,
             huggingface_config.num_attention_heads
             * huggingface_config.head_dim,
@@ -147,6 +149,7 @@ def _transformer(
     max_seq_len: int,
     kv_params: KVCacheParams,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ):
     with graph:
         rope = OptimizedRotaryEmbedding(
@@ -169,7 +172,7 @@ def _transformer(
                     huggingface_config=huggingface_config,
                 ),
                 mlp=feed_forward(
-                    params.dtype,
+                    dtype,
                     huggingface_config.hidden_size,
                     huggingface_config.intermediate_size,
                     weights.model.layers[i].mlp,
@@ -193,10 +196,11 @@ def _transformer(
             huggingface_config.vocab_size,
             huggingface_config.hidden_size,
             weights.model.embed_tokens,
+            dtype=dtype,
         )
 
         output = linear(
-            params.dtype,
+            dtype,
             huggingface_config.vocab_size,
             huggingface_config.hidden_size,
             weights.lm_head,
@@ -227,6 +231,7 @@ def _build_graph(
     kv_params: KVCacheParams,
     kv_manager: KVCacheManager,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> Graph:
     tokens_type = TensorType(DType.int64, shape=["total_seq_len"])
     input_row_offsets_type = TensorType(
@@ -250,6 +255,7 @@ def _build_graph(
             max_seq_len=max_seq_len,
             kv_params=kv_params,
             huggingface_config=huggingface_config,
+            dtype=dtype,
         )
         tokens, input_row_offsets, *kv_cache = graph.inputs
         outputs = model(tokens, kv_cache, input_row_offsets=input_row_offsets)

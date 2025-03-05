@@ -22,6 +22,7 @@ from max.pipelines import (
     ModelInputs,
     PipelineConfig,
     PipelineModel,
+    SupportedEncoding,
 )
 from transformers import AutoConfig
 
@@ -55,8 +56,9 @@ class Whisper(PipelineModel):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config)
+        super().__init__(pipeline_config, session, huggingface_config, encoding)
         self.model = self.load_model(session)
 
     def load_model(

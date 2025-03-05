@@ -126,10 +126,11 @@ def embedding(
     vocab_size: int,
     hidden_dim: int,
     weights: Weights,
+    dtype: DType,
 ) -> Embedding:
     return Embedding(
         weights.weight.allocate(
-            pipeline_config.dtype,
+            dtype,
             [vocab_size, hidden_dim],
         )
     )
@@ -142,41 +143,42 @@ def attention(
     weights: Weights,
     layer_idx: TensorValue,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> AttentionWithRope:
     kv_weight_dim = (
         huggingface_config.hidden_size // huggingface_config.num_attention_heads
     ) * huggingface_config.num_key_value_heads
 
     wq = weights.self_attn.q_proj.weight.allocate(
-        pipeline_config.dtype,
+        dtype,
         [
             huggingface_config.hidden_size,
             huggingface_config.hidden_size,
         ],
     )
     wk = weights.self_attn.k_proj.weight.allocate(
-        pipeline_config.dtype,
+        dtype,
         [kv_weight_dim, huggingface_config.hidden_size],
     )
     wv = weights.self_attn.v_proj.weight.allocate(
-        pipeline_config.dtype,
+        dtype,
         [kv_weight_dim, huggingface_config.hidden_size],
     )
 
     wqkv = ops.concat((wq, wk, wv))
 
     bias_q = weights.self_attn.q_proj.bias.allocate(
-        pipeline_config.dtype,
+        dtype,
         [huggingface_config.hidden_size],
     )
 
     bias_k = weights.self_attn.k_proj.bias.allocate(
-        pipeline_config.dtype,
+        dtype,
         [kv_weight_dim],
     )
 
     bias_v = weights.self_attn.v_proj.bias.allocate(
-        pipeline_config.dtype,
+        dtype,
         [kv_weight_dim],
     )
 
@@ -187,7 +189,7 @@ def attention(
         kv_params=kv_params,
         wqkv=wqkv,
         wo=linear(
-            pipeline_config.dtype,
+            dtype,
             huggingface_config.hidden_size,
             huggingface_config.hidden_size,
             weights.self_attn.o_proj,
@@ -205,6 +207,7 @@ def transformer(
     weights: Weights,
     kv_params: KVCacheParams,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> Transformer:
     with graph:
         interleaved_rope_weights = (
@@ -229,9 +232,10 @@ def transformer(
                     weights.model.layers[i],
                     layer_idx=ops.constant(i, DType.uint32),
                     huggingface_config=huggingface_config,
+                    dtype=dtype,
                 ),
                 mlp=feed_forward(
-                    pipeline_config.dtype,
+                    dtype,
                     huggingface_config.hidden_size,
                     huggingface_config.intermediate_size,
                     weights.model.layers[i],
@@ -255,13 +259,14 @@ def transformer(
             huggingface_config.vocab_size,
             huggingface_config.hidden_size,
             weights.model.embed_tokens,
+            dtype,
         )
 
         # Some model variants lack dedicated weights for a final linear
         # layer, and share the embedding layer.
         if weights.lm_head.weight.exists():
             output = Linear.create(
-                pipeline_config.dtype,
+                dtype,
                 pipeline_config.graph_quantization_encoding,
                 huggingface_config.vocab_size,
                 huggingface_config.hidden_size,
@@ -269,7 +274,7 @@ def transformer(
             )
         else:
             output = Linear.create(
-                pipeline_config.dtype,
+                dtype,
                 pipeline_config.graph_quantization_encoding,
                 huggingface_config.vocab_size,
                 huggingface_config.hidden_size,

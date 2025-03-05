@@ -123,13 +123,14 @@ class LlamaModelBase(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
         """
         Args:
             pipeline_config: The configuration for this pipeline.
             session: The container for the runtime for this model.
         """
-        super().__init__(pipeline_config, session, huggingface_config)
+        super().__init__(pipeline_config, session, huggingface_config, encoding)
         self.model = self.load_model(session)
 
         # Initialize state needed for communication collectives.
@@ -592,7 +593,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 graph.inputs
             )
             mask_dtype = (
-                self.pipeline_config.dtype
+                self.dtype
                 if self.pipeline_config.quantization_encoding
                 in [
                     SupportedEncoding.float32,
@@ -672,7 +673,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             intermediate_size=huggingface_config.intermediate_size,
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
-            dtype=self.pipeline_config.dtype,
+            dtype=self.dtype,
             quantization_encoding=self.pipeline_config.graph_quantization_encoding,
             quantization_config=self.pipeline_config._quant_config,
             all_logits=self.pipeline_config.enable_echo,
@@ -792,5 +793,6 @@ class Llama3Model(LlamaModelBase):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config)
+        super().__init__(pipeline_config, session, huggingface_config, encoding)

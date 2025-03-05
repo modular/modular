@@ -135,23 +135,24 @@ def attention(
     weights: SafetensorWeights,
     layer_index: int,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ):
     wq = weights.self_attn.q_proj.weight.allocate(
-        pipeline_config.dtype,
+        dtype,
         [
             huggingface_config.d_model,
             huggingface_config.d_model,
         ],
     )
     wk = weights.self_attn.k_proj.weight.allocate(
-        pipeline_config.dtype,
+        dtype,
         [
             huggingface_config.d_model,
             huggingface_config.d_model,
         ],
     )
     wv = weights.self_attn.v_proj.weight.allocate(
-        pipeline_config.dtype,
+        dtype,
         [
             huggingface_config.d_model,
             huggingface_config.d_model,
@@ -159,25 +160,25 @@ def attention(
     )
 
     bias_q = weights.self_attn.q_proj.bias.allocate(
-        pipeline_config.dtype, [huggingface_config.d_model]
+        dtype, [huggingface_config.d_model]
     )
     bias_v = weights.self_attn.v_proj.bias.allocate(
-        pipeline_config.dtype, [huggingface_config.d_model]
+        dtype, [huggingface_config.d_model]
     )
     bias_k = ops.constant(
         np.zeros(huggingface_config.d_model),
-        pipeline_config.dtype,
+        dtype,
     )
 
     wo = weights.attn_output.weight.allocate(
-        pipeline_config.dtype,
+        dtype,
         [
             huggingface_config.d_model,
             huggingface_config.d_model,
         ],
     )
     bias_o = weights.self_attn.out_proj.bias.allocate(
-        pipeline_config.dtype, [huggingface_config.d_model]
+        dtype, [huggingface_config.d_model]
     )
     return WhisperSdpaAttention(
         n_heads=huggingface_config.n_heads,
@@ -197,9 +198,10 @@ def encoder(
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> WhisperEncoder:
     conv1 = conv1d(
-        dtype=pipeline_config.dtype,
+        dtype=dtype,
         in_channels=huggingface_config.num_mel_bins,
         kernel_size=3,
         stride=1,
@@ -209,7 +211,7 @@ def encoder(
     )
 
     conv2 = conv1d(
-        dtype=pipeline_config.dtype,
+        dtype=dtype,
         in_channels=huggingface_config.d_model,
         kernel_size=3,
         stride=2,
@@ -220,7 +222,7 @@ def encoder(
 
     # TODO: Not sure how to handle this. It learns embeddings to a max size.
     embed_positions = embedding(
-        dtype=pipeline_config.dtype,
+        dtype=dtype,
         max_source_positions=huggingface_config.max_source_positions,
         hidden_dim=huggingface_config.d_model,
         weights=weights.model.encoder.embed_positions,
@@ -237,7 +239,7 @@ def encoder(
                 huggingface_config=huggingface_config,
             ),
             mlp=feed_forward(
-                pipeline_config.dtype,
+                dtype,
                 huggingface_config.d_model,
                 huggingface_config.encoder_ffn_dim,
                 weights.model.encoder.layers[i],
@@ -277,6 +279,7 @@ def build_graph(
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> Graph:
     # Audio input_features.
     input_features_type = TensorType(
@@ -292,7 +295,10 @@ def build_graph(
         ],
     ) as graph:
         model = encoder(
-            pipeline_config, weights, huggingface_config=huggingface_config
+            pipeline_config,
+            weights,
+            huggingface_config=huggingface_config,
+            dtype=dtype,
         )
         input_features = graph.inputs[0]
         outputs = model(

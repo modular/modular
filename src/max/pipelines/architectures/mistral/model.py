@@ -26,6 +26,7 @@ from max.pipelines import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    SupportedEncoding,
     TextContext,
     upper_bounded_default,
 )
@@ -71,8 +72,9 @@ class MistralModel(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config)
+        super().__init__(pipeline_config, session, huggingface_config, encoding)
         self.model = self.load_model(session)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
@@ -264,6 +266,7 @@ class MistralModel(PipelineModel[TextContext]):
                 ),
                 kv_manager=self.kv_manager,
                 huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
             )
             model = session.load(
                 graph, weights_registry=self._weights.allocated_weights

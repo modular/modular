@@ -101,29 +101,30 @@ def _encoder_attention(
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> Attention:
     # TODO: Do we need to transpose weights? Not obvious from shapes. Both dims are the same.
     hidden_dim = huggingface_config.vision_config.hidden_size
     wq = _linear(
-        pipeline_config.dtype,
+        dtype,
         hidden_dim,
         hidden_dim,
         weights.attention.q_proj,
     )
     wk = _linear(
-        pipeline_config.dtype,
+        dtype,
         hidden_dim,
         hidden_dim,
         weights.attention.k_proj,
     )
     wv = _linear(
-        pipeline_config.dtype,
+        dtype,
         hidden_dim,
         hidden_dim,
         weights.attention.v_proj,
     )
     wo = _linear(
-        pipeline_config.dtype,
+        dtype,
         hidden_dim,
         hidden_dim,
         weights.attention.o_proj,
@@ -146,6 +147,7 @@ def _transformer(
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ):
     with graph:
         layers = [
@@ -154,9 +156,10 @@ def _transformer(
                     pipeline_config,
                     weights.layers[i],
                     huggingface_config,
+                    dtype,
                 ),
                 mlp=_feed_forward(
-                    pipeline_config.dtype,
+                    dtype,
                     huggingface_config.vision_config.hidden_size,
                     huggingface_config.vision_config.intermediate_size,
                     weights.layers[i],
@@ -178,7 +181,7 @@ def _transformer(
         return Transformer(
             n_heads=huggingface_config.vision_config.num_attention_heads,
             layers=layers,
-            dtype=pipeline_config.dtype,
+            dtype=dtype,
         )
 
 
@@ -187,9 +190,10 @@ def _vision_encoder(
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> VisionEncoder:
     patch_conv = _patch_conv2d(
-        pipeline_config.dtype,
+        dtype,
         huggingface_config.vision_config.num_channels,
         huggingface_config.vision_config.patch_size,
         huggingface_config.vision_config.hidden_size,
@@ -212,6 +216,7 @@ def _vision_encoder(
         pipeline_config,
         weights.vision_tower.transformer,
         huggingface_config,
+        dtype,
     )
 
     return VisionEncoder(
@@ -219,7 +224,7 @@ def _vision_encoder(
         layer_norm=ln_pre,
         patch_positional_embedding=patch_rope,
         transformer=encoder_transformer,
-        dtype=pipeline_config.dtype,
+        dtype=dtype,
         patch_size=huggingface_config.vision_config.patch_size,
         max_image_size=huggingface_config.vision_config.image_size,
     )

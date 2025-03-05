@@ -968,15 +968,6 @@ class PipelineConfig(MAXConfig):
                 sym=hf_quant_config["sym"],
             )
 
-    @property
-    def dtype(self) -> DType:
-        if self.quantization_encoding is None:
-            raise ValueError(
-                "quantization_encoding must be provided to infer dtype."
-            )
-
-        return self.quantization_encoding.dtype
-
     # TODO(zheng): Move this under KVCacheConfig.
     @property
     def cache_dtype(self) -> DType:

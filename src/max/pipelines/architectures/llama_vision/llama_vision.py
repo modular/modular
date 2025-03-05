@@ -31,6 +31,7 @@ from max.pipelines import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    SupportedEncoding,
     TextAndVisionContext,
     upper_bounded_default,
 )
@@ -516,13 +517,14 @@ class LlamaVisionModel(Layer):
         pipeline_config: PipelineConfig,
         weights: Weights,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
         self.vision_config = huggingface_config.vision_config
         self.text_config = huggingface_config.text_config
 
         self.vision_model = instantiate_vision_model(
-            dtype=pipeline_config.dtype,
+            dtype=dtype,
             image_size=self.vision_config.image_size,
             patch_size=self.vision_config.patch_size,
             supported_aspect_ratios=self.vision_config.supported_aspect_ratios,
@@ -540,14 +542,14 @@ class LlamaVisionModel(Layer):
 
         self.multi_modal_projector = Linear(
             weights.multi_modal_projector.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [
                     self.text_config.hidden_size,
                     self.vision_config.vision_output_dim,
                 ],
             ),
             weights.multi_modal_projector.bias.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [self.text_config.hidden_size],
             ),
         )
@@ -600,11 +602,12 @@ class LlamaVisionLanguageModel(Layer):
         max_seq_len: int,
         num_text_kv_cache_inputs: int,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ) -> None:
         text_config = huggingface_config.text_config
 
         self.language_model = instantiate_language_model(
-            dtype=pipeline_config.dtype,
+            dtype=dtype,
             hidden_size=text_config.hidden_size,
             n_heads=text_config.num_attention_heads,
             rope_theta=text_config.rope_theta,
@@ -677,6 +680,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
         self.vision_config = huggingface_config.vision_config
@@ -686,7 +690,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self.vision_graph_input_size = -1
         self.language_graph_input_size = -1
 
-        super().__init__(pipeline_config, session, huggingface_config)
+        super().__init__(pipeline_config, session, huggingface_config, encoding)
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
         # pipeline. Unfortunately, self.model is still being used (and exposed)
@@ -734,6 +738,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 pipeline_config=self.pipeline_config,
                 weights=self.weights,
                 huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
             ),
             input_types=input_types,
         )
@@ -770,7 +775,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # image_size = self.vision_config.image_size
         # patch_size = self.vision_config.patch_size
         cross_attention_states_type = TensorType(
-            self.pipeline_config.dtype,
+            self.dtype,
             shape=[
                 # TODO(bduke): fix algebraic dim creation outside of graph
                 # contexts.
@@ -820,6 +825,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 ),
                 num_text_kv_cache_inputs=len(list(text_kv_input_symbols)),
                 huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
             ),
             input_types=input_types,
         )
@@ -1025,7 +1031,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # are set to 0 here to imitate a dummy tensor (used in text-only mode).
         cross_attention_states = Tensor.zeros(
             shape=[0, self.text_config.hidden_size],
-            dtype=self.pipeline_config.dtype,
+            dtype=self.dtype,
         ).to(self.pipeline_config.devices[0])
 
         model_inputs = cast(LlamaVisionInputs, model_inputs)

@@ -48,10 +48,15 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             trust_remote_code=self._pipeline_config.trust_remote_code,
             revision=self._pipeline_config.huggingface_revision,
         )
+
+        if not self._pipeline_config.quantization_encoding:
+            raise ValueError("quantization_encoding must not be None")
+
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
             huggingface_config=huggingface_config,
+            encoding=self._pipeline_config.quantization_encoding,
         )
 
     @traced

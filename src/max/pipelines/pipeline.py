@@ -40,7 +40,7 @@ from max.pipelines.kv_cache import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 
-from .config import PipelineConfig
+from .config import PipelineConfig, SupportedEncoding
 from .context import InputContext
 from .interfaces import (
     LogProbabilities,
@@ -150,14 +150,20 @@ class PipelineModel(ABC, Generic[T]):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
+        self.encoding = encoding
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
                 session, pipeline_config.kv_cache_config._available_cache_memory
             )
+
+    @property
+    def dtype(self) -> DType:
+        return self.encoding.dtype
 
     @classmethod
     @abstractmethod
@@ -435,10 +441,14 @@ class TextGenerationPipeline(TokenGenerator[T]):
         )
 
         # Load model.
+        if not self._pipeline_config.quantization_encoding:
+            raise ValueError("quantization_encoding must not be None")
+
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
             huggingface_config=self.huggingface_config,
+            encoding=self._pipeline_config.quantization_encoding,
         )
 
         # Load sampler.

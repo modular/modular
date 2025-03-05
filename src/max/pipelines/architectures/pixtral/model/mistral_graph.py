@@ -87,10 +87,11 @@ def embedding(
     vocab_size: int,
     hidden_dim: int,
     weights: SafetensorWeights,
+    dtype: DType,
 ):
     return Embedding(
         weights.weight.allocate(
-            params.dtype,
+            dtype,
             [vocab_size, hidden_dim],
         )
     )
@@ -103,6 +104,7 @@ def _attention_opaque(
     weights: SafetensorWeights,
     layer_idx: int,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ):
     kv_weight_dim = (
         huggingface_config.text_config.head_dim
@@ -110,7 +112,7 @@ def _attention_opaque(
     )
 
     wq = weights.self_attn.q_proj.weight.allocate(
-        params.dtype,
+        dtype,
         [
             huggingface_config.text_config.num_attention_heads
             * huggingface_config.text_config.head_dim,
@@ -118,11 +120,11 @@ def _attention_opaque(
         ],
     )
     wk = weights.self_attn.k_proj.weight.allocate(
-        params.dtype,
+        dtype,
         [kv_weight_dim, huggingface_config.text_config.hidden_size],
     )
     wv = weights.self_attn.v_proj.weight.allocate(
-        params.dtype,
+        dtype,
         [kv_weight_dim, huggingface_config.text_config.hidden_size],
     )
     wqkv = ops.concat((wq, wk, wv))
@@ -132,7 +134,7 @@ def _attention_opaque(
         kv_params=kv_params,
         wqkv=wqkv,
         wo=linear(
-            params.dtype,
+            dtype,
             huggingface_config.text_config.hidden_size,
             huggingface_config.text_config.num_attention_heads
             * huggingface_config.text_config.head_dim,
@@ -151,6 +153,7 @@ def _transformer(
     max_seq_len: int,
     kv_params: KVCacheParams,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ):
     with graph:
         rope = OptimizedRotaryEmbedding(
@@ -171,9 +174,10 @@ def _transformer(
                     weights.language_model.model.layers[i],
                     layer_idx=i,
                     huggingface_config=huggingface_config,
+                    dtype=dtype,
                 ),
                 mlp=feed_forward(
-                    params.dtype,
+                    dtype,
                     huggingface_config.text_config.hidden_size,
                     huggingface_config.text_config.intermediate_size,
                     weights.language_model.model.layers[i],
@@ -199,10 +203,11 @@ def _transformer(
             huggingface_config.text_config.vocab_size,
             huggingface_config.text_config.hidden_size,
             weights.language_model.model.embed_tokens,
+            dtype=dtype,
         )
 
         output = linear(
-            params.dtype,
+            dtype,
             huggingface_config.text_config.vocab_size,
             huggingface_config.text_config.hidden_size,
             weights.language_model.lm_head,

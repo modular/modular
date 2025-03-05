@@ -30,6 +30,7 @@ from max.pipelines import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    SupportedEncoding,
     TextContext,
     upper_bounded_default,
 )
@@ -72,8 +73,9 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config)
+        super().__init__(pipeline_config, session, huggingface_config, encoding)
         self.model = self.load_model(session)
 
     @classmethod
@@ -185,7 +187,10 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             logger.info("Building and compiling model...")
             before = time.perf_counter()
             graph = build_graph(
-                self.pipeline_config, self._weights, self.huggingface_config
+                self.pipeline_config,
+                self._weights,
+                self.huggingface_config,
+                self.dtype,
             )
             model = session.load(
                 graph, weights_registry=self._weights.allocated_weights

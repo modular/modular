@@ -75,13 +75,14 @@ def _attention(
     kv_params: KVCacheParams,
     layer_index: int,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> AttentionImpl:
     k_in_dim = kv_params.n_kv_heads * kv_params.head_dim
     v_in_dim = kv_params.n_kv_heads * kv_params.head_dim
     q_in_dim = huggingface_config.d_model
     wqkv = TensorValue(
         weights.attn_qkv.weight.allocate(
-            pipeline_config.dtype,
+            dtype,
             [
                 k_in_dim + v_in_dim + q_in_dim,
                 huggingface_config.d_model,
@@ -96,7 +97,7 @@ def _attention(
         wqkv=wqkv,
         wo=Linear(
             weights.attn_output.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [
                     huggingface_config.d_model,
                     huggingface_config.d_model,
@@ -116,6 +117,7 @@ def _transformer(
     weights: GGUFWeights,
     kv_params: KVCacheParams,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ):
     with graph:
         # Initialize Attention.
@@ -127,9 +129,10 @@ def _transformer(
                     kv_params,
                     i,
                     huggingface_config,
+                    dtype=dtype,
                 ),
                 mlp=_feed_forward(
-                    pipeline_config.dtype,
+                    dtype,
                     pipeline_config.quantization_encoding.quantization_encoding,  # type: ignore
                     huggingface_config.d_model,
                     12288,
@@ -151,7 +154,7 @@ def _transformer(
 
         # Initialize Shared Embedding Weights.
         shared_embedding_weight = weights.token_embd.weight.allocate(
-            pipeline_config.dtype,
+            dtype,
             [
                 huggingface_config.vocab_size,
                 huggingface_config.d_model,
@@ -184,6 +187,7 @@ def _build_graph(
     kv_params: KVCacheParams,
     kv_manager: KVCacheManager,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> Graph:
     # Graph input types.
     tokens_type = TensorType(DType.int64, shape=["total_seq_len"])
@@ -202,7 +206,12 @@ def _build_graph(
         ],
     ) as graph:
         model = _transformer(
-            graph, pipeline_config, weights, kv_params, huggingface_config
+            graph,
+            pipeline_config,
+            weights,
+            kv_params,
+            huggingface_config,
+            dtype,
         )
         tokens, input_row_offsets, *kv_cache_inputs = graph.inputs
         outputs = model(

@@ -42,11 +42,12 @@ class MPNetEmbeddings(Layer):
         pipeline_config: PipelineConfig,
         weights: Weights,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ):
         config = self.config = huggingface_config
         self.word_embeddings = Embedding(
             weights.word_embeddings.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [
                     config.vocab_size,
                     config.hidden_size,
@@ -56,7 +57,7 @@ class MPNetEmbeddings(Layer):
         )
         self.position_embeddings = Embedding(
             weights.position_embeddings.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [
                     config.max_position_embeddings,
                     config.hidden_size,
@@ -65,12 +66,10 @@ class MPNetEmbeddings(Layer):
         )
         self.layer_norm = LayerNorm(
             weight=weights.LayerNorm.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [config.hidden_size],
             ),
-            bias=weights.LayerNorm.bias.allocate(
-                pipeline_config.dtype, [config.hidden_size]
-            ),
+            bias=weights.LayerNorm.bias.allocate(dtype, [config.hidden_size]),
             eps=config.layer_norm_eps,
         )
         self.position_ids = weights.position_ids.allocate(
@@ -110,6 +109,7 @@ class MPNetSelfAttention(Layer):
         pipeline_config: PipelineConfig,
         weights: Weights,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ):
         config = huggingface_config
         self.num_attention_heads = config.num_attention_heads
@@ -120,48 +120,48 @@ class MPNetSelfAttention(Layer):
 
         self.q = Linear(
             weights.q.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [self.all_head_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
             ),
             bias=weights.q.bias.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [self.all_head_size],
                 _quantization_encoding(pipeline_config),
             ),
         )
         self.k = Linear(
             weights.k.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [self.all_head_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
             ),
             bias=weights.k.bias.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [self.all_head_size],
                 _quantization_encoding(pipeline_config),
             ),
         )
         self.v = Linear(
             weights.v.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [self.all_head_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
             ),
             bias=weights.v.bias.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [self.all_head_size],
                 _quantization_encoding(pipeline_config),
             ),
         )
         self.o = Linear(
             weights.o.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [config.hidden_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
             ),
             bias=weights.o.bias.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [config.hidden_size],
                 _quantization_encoding(pipeline_config),
             ),
@@ -220,10 +220,14 @@ class MPNetAttention(Layer):
         pipeline_config: PipelineConfig,
         weights: Weights,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ):
         config = huggingface_config
         self.attn = MPNetSelfAttention(
-            pipeline_config, weights.attn, huggingface_config
+            pipeline_config,
+            weights.attn,
+            huggingface_config,
+            dtype,
         )
         self.layer_norm = LayerNorm(
             weight=weights.LayerNorm.weight.allocate(
@@ -266,16 +270,17 @@ class MPNetIntermediate(Layer):
         pipeline_config: PipelineConfig,
         weights: Weights,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ):
         config = huggingface_config
         self.dense = Linear(
             weights.dense.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [config.intermediate_size, config.hidden_size],
                 _quantization_encoding(pipeline_config),
             ),
             bias=weights.dense.bias.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [config.intermediate_size],
                 _quantization_encoding(pipeline_config),
             ),
@@ -296,16 +301,17 @@ class MPNetOutput(Layer):
         pipeline_config: PipelineConfig,
         weights: Weights,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ):
         config = huggingface_config
         self.dense = Linear(
             weights.dense.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [config.hidden_size, config.intermediate_size],
                 _quantization_encoding(pipeline_config),
             ),
             bias=weights.dense.bias.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [config.hidden_size],
                 _quantization_encoding(pipeline_config),
             ),
@@ -336,15 +342,19 @@ class MPNetLayer(Layer):
         pipeline_config: PipelineConfig,
         weights: Weights,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ):
         self.attention = MPNetAttention(
-            pipeline_config, weights.attention, huggingface_config
+            pipeline_config,
+            weights.attention,
+            huggingface_config,
+            dtype,
         )
         self.intermediate = MPNetIntermediate(
-            pipeline_config, weights.intermediate, huggingface_config
+            pipeline_config, weights.intermediate, huggingface_config, dtype
         )
         self.output = MPNetOutput(
-            pipeline_config, weights.output, huggingface_config
+            pipeline_config, weights.output, huggingface_config, dtype
         )
 
     def __call__(
@@ -371,6 +381,7 @@ class MPNetEncoder(Layer):
         pipeline_config: PipelineConfig,
         weights: Weights,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ):
         config = self.config = huggingface_config
         self.n_heads = config.num_attention_heads
@@ -378,14 +389,14 @@ class MPNetEncoder(Layer):
         self.layer = Sequential(
             [
                 MPNetLayer(
-                    pipeline_config, weights.layer[n], huggingface_config
+                    pipeline_config, weights.layer[n], huggingface_config, dtype
                 )
                 for n in range(num_hidden_layers)
             ]
         )
         self.relative_attention_bias = Embedding(
             weights.relative_attention_bias.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [
                     config.relative_attention_num_buckets,
                     config.num_attention_heads,
@@ -472,16 +483,19 @@ class MPNetModel(Layer):
         pipeline_config: PipelineConfig,
         weights: Weights,
         huggingface_config: AutoConfig,
+        dtype: DType,
     ):
         self.embeddings = MPNetEmbeddings(
             pipeline_config,
             weights.embeddings,
             huggingface_config=huggingface_config,
+            dtype=dtype,
         )
         self.encoder = MPNetEncoder(
             pipeline_config,
             weights.encoder,
             huggingface_config=huggingface_config,
+            dtype=dtype,
         )
         self.pool_outputs = pipeline_config.pool_embeddings
 
@@ -527,6 +541,7 @@ def build_graph(
     pipeline_config: PipelineConfig,
     weights: Weights,
     huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> Graph:
     # Graph input types.
     input_ids_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
@@ -534,7 +549,7 @@ def build_graph(
         DType.float32, shape=["batch_size", "seq_len"]
     )
 
-    mpnet = MPNetModel(pipeline_config, weights, huggingface_config)
+    mpnet = MPNetModel(pipeline_config, weights, huggingface_config, dtype)
 
     # Initialize Graph.
     return Graph(

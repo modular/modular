@@ -28,6 +28,7 @@ from max.pipelines import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    SupportedEncoding,
     TextAndVisionContext,
     upper_bounded_default,
 )
@@ -94,8 +95,9 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config)
+        super().__init__(pipeline_config, session, huggingface_config, encoding)
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
         # pipeline. Unfortunately, self.model is still being used (and exposed)
@@ -121,7 +123,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                     0,
                     self.huggingface_config.text_config.hidden_size,
                 ],
-                dtype=self.pipeline_config.dtype,
+                dtype=self.dtype,
             ).to(self.pipeline_config.devices[0])
         assert model_inputs.kv_cache_inputs is not None, (
             "Pixtral has KV cache inputs, but none were provided"
@@ -364,6 +366,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                     pipeline_config=self.pipeline_config,
                     weights=self._weights,
                     huggingface_config=self.huggingface_config,
+                    dtype=self.dtype,
                 )
                 vision_model_future = executor.submit(
                     build_and_compile_model, build, "vision", export_path
@@ -382,6 +385,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                     ),
                     kv_manager=self.kv_manager,
                     huggingface_config=self.huggingface_config,
+                    dtype=self.dtype,
                 )
                 text_model_future = executor.submit(
                     build_and_compile_model, build, "text", export_path

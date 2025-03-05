@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from max.engine import InferenceSession
 from max.graph import ops
-from max.pipelines import PipelineConfig
+from max.pipelines import PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
 from ..llama3.model import Llama3Model
@@ -29,8 +29,9 @@ class GraniteModel(Llama3Model):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config)
+        super().__init__(pipeline_config, session, huggingface_config, encoding)
 
         logits_scaling = getattr(huggingface_config, "logits_scaling", 1.0)
 

@@ -30,6 +30,7 @@ from max.pipelines import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    SupportedEncoding,
     TextContext,
     upper_bounded_default,
 )
@@ -82,8 +83,9 @@ class Qwen2Model(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config)
+        super().__init__(pipeline_config, session, huggingface_config, encoding)
         self.model = self.load_model(session)
 
     def execute(
@@ -428,6 +430,7 @@ class Qwen2Model(PipelineModel[TextContext]):
                     huggingface_config=self.huggingface_config,
                 ),
                 huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
             )
             tokens, input_row_offsets, *kv_cache = graph.inputs
 
