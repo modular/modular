@@ -27,7 +27,6 @@ from math import ceildiv
 from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
 from sys.info import simdwidthof
-from compiler import enforce_io_param
 from tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
 from utils.index import Index
 
@@ -776,7 +775,6 @@ struct MatrixMultiplication[algorithm: StringLiteral]:
     selected algorithm.
     """
 
-    @enforce_io_param
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"

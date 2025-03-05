@@ -73,7 +73,6 @@ struct FusedAttention:
     package.
     """
 
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         dtype: DType,

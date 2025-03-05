@@ -26,13 +26,11 @@ alias float_dtype = DType.float32
 
 @compiler.register("mandelbrot")
 struct Mandelbrot:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StringLiteral,
     ](
-        # as num_dps_outputs=1, the first argument is the "output"
         out: OutputTensor,
         # starting here are the list of inputs
         min_x: Float32,

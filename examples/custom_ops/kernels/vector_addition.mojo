@@ -72,7 +72,6 @@ fn _vector_addition_gpu(
 
 @compiler.register("vector_addition")
 struct VectorAddition:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"

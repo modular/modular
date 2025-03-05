@@ -97,9 +97,8 @@ fn _histogram_gpu(
     )
 
 
-@compiler.register("histogram", num_dps_outputs=1)
+@compiler.register("histogram")
 struct Histogram:
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         target: StringLiteral

@@ -45,7 +45,6 @@ struct TopK:
     has the "mo.top_k" op which is feature complete.
     """
 
-    @compiler.enforce_io_param
     @staticmethod
     fn execute[
         type: DType,
