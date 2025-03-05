@@ -9,6 +9,7 @@ import platform
 
 import numpy as np
 import pytest
+import torch
 from max.driver import Tensor
 from max.driver.tensor import load_max_tensor
 from max.dtype import DType
@@ -230,3 +231,72 @@ def test_debug_print_binary_max_bf16_shapes(session, capfd, tmp_path, shape):
             assert loaded[idx].item() == input[idx].item()
     else:
         assert loaded.item() == input[()].item()
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [dt for dt in DType.__members__.values() if dt is not DType._unknown],
+)
+def test_save_load_all_dtypes(session, tmp_path, dtype):
+    """Verify round-trip save/load works for all supported DType values."""
+    # Skip unsupported configurations.
+    if dtype.is_half() and platform.machine() in ["arm64", "aarch64"]:
+        pytest.skip("half-precision types not supported on ARM")
+
+    if (
+        dtype.is_float8() or dtype == DType.float16
+    ) and not torch.cuda.is_available():
+        pytest.skip("FP8 requires CUDA support")
+
+    # Create test graph.
+    def print_input(x):
+        x.print("test_x_value")
+        return x
+
+    shape = (2,)
+    compiled_model = session.load(
+        Graph(f"test_{dtype.name}", print_input, [TensorType(dtype, shape)])
+    )
+
+    # Generate test data based on dtype using PyTorch.
+    device = "cuda" if dtype.is_float8() else "cpu"
+    torch_dtype = getattr(torch, dtype.name)
+
+    if dtype.is_float():
+        if dtype.is_float8():
+            # Generate FP8 data with appropriate scaling.
+            torch_data = torch.rand(shape, dtype=torch.float32, device=device)
+            torch_data = torch_data.to(torch_dtype)
+        else:
+            torch_data = torch.rand(shape, dtype=torch_dtype, device=device)
+    elif dtype.is_integral():
+        torch_data = torch.randint(
+            0, 100, shape, dtype=torch_dtype, device=device
+        )
+    else:
+        pytest.skip(f"No test data generation implemented for {dtype}")
+
+    input_tensor = Tensor.from_dlpack(torch_data)
+
+    # Save and load.
+    session.set_debug_print_options(
+        "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
+    )
+    _ = compiled_model.execute(input_tensor)
+
+    max_path = tmp_path / "test_x_value.max"
+    loaded_tensor = load_max_tensor(max_path)
+
+    # Validate using PyTorch
+    assert loaded_tensor.dtype == dtype
+    assert loaded_tensor.shape == shape
+
+    loaded_torch = torch.from_dlpack(loaded_tensor)
+    if dtype.is_float():
+        # Convert FP8 back to float32 for comparison.
+        if dtype.is_float8():
+            loaded_torch = loaded_torch.float()
+            torch_data = torch_data.float()
+        torch.testing.assert_close(loaded_torch.cpu(), torch_data.cpu())
+    else:
+        torch.testing.assert_close(loaded_torch.cpu(), torch_data.cpu())
