@@ -497,6 +497,20 @@ def test_dlpack_memmap(memmap_example_file: Path) -> None:
     assert array[0, 0] == np.int8(8)
 
 
+def test_dlpack_memmap_view(memmap_example_file: Path) -> None:
+    tensor = MemMapTensor(memmap_example_file, dtype=DType.int8, shape=(2, 4))
+    tensor_view = tensor.view(DType.uint8)
+    assert isinstance(tensor_view, MemMapTensor)
+
+    array = np.from_dlpack(tensor_view)
+    assert array.dtype == np.uint8
+    assert tensor.shape == array.shape
+
+    # Numpy creates a read-only array, so we modify ours.
+    tensor[0, 0] = np.uint8(8)
+    assert array[0, 0] == np.uint8(8)
+
+
 def test_from_dlpack_memmap(memmap_example_file: Path) -> None:
     # We test that we can call from_dlpack on a read-only numpy memmap array.
     # TODO(MSDK-976): remove this test when we upgraded numpy to 2.1.
