@@ -3,10 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
 from collections import OptionalReg
-from math import align_down, align_up, ceildiv
-from sys import alignof, bitwidthof, llvm_intrinsic, simdwidthof
+from math import align_up, ceildiv
+from sys import alignof, simdwidthof
 
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
@@ -24,15 +23,14 @@ from gpu import (
 from gpu.host import (
     DeviceAttribute,
     DeviceContext,
-    FuncAttribute,
     LaunchAttribute,
 )
 from gpu.host._compile import _get_gpu_target
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, CacheOperation, load
 import gpu.warp as warp
-from gpu.tensor_ops import tc_reduce_gevm_4x, tc_reduce_gevm_8x
-from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
+from gpu.tensor_ops import tc_reduce_gevm_8x
+from memory import UnsafePointer, memset_zero, stack_allocation
 
 from utils import IndexList
 from utils.index import Index
@@ -40,7 +38,7 @@ from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 from .matmul_gpu import matmul_kernel_naive
-from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
+from .utils import GemmShape, elementwise_epilogue_type
 
 
 @value
@@ -69,11 +67,7 @@ struct GEMVAlgorithm:
 
 @always_inline
 fn reverse_idx[transpose: Bool](x: Int, y: Int) -> IndexList[2]:
-    @parameter
-    if transpose:
-        return Index(y, x)
-    else:
-        return Index(x, y)
+    return Index(y, x) if transpose else Index(x, y)
 
 
 # Matrix-Column Vector Multiplication using scalar arithmetic
