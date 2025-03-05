@@ -739,9 +739,6 @@ class PipelineConfig(MAXConfig):
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
 
-    _huggingface_config: Optional[AutoConfig] = None
-    """The Hugging Face config associated with the `model-path`."""
-
     _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
     """The KVCache config."""
 
@@ -940,7 +937,6 @@ class PipelineConfig(MAXConfig):
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""
         state = self.__dict__.copy()
-        state.pop("_huggingface_config")
         state["_devices"] = []
         return state
 
@@ -964,7 +960,11 @@ class PipelineConfig(MAXConfig):
     def finalize_encoding_config(self):
         """Depending on the encoding picked, we get some more parameters from the hf config"""
         if self.quantization_encoding == SupportedEncoding.gptq:
-            hf_config = self.huggingface_config
+            hf_config = AutoConfig.from_pretrained(
+                self.model_path,
+                trust_remote_code=self.trust_remote_code,
+                revision=self.huggingface_revision,
+            )
             hf_quant_config = hf_config.quantization_config
             self._quant_config = QuantizationConfig(
                 quant_method=hf_quant_config["quant_method"],
@@ -973,21 +973,6 @@ class PipelineConfig(MAXConfig):
                 desc_act=hf_quant_config["desc_act"],
                 sym=hf_quant_config["sym"],
             )
-
-    @property
-    def huggingface_config(self) -> AutoConfig:
-        """Given the model_path, return the Hugging Face Config."""
-        if self._huggingface_config is None:
-            # Lazy initialize the Hugging Face config field.
-            self._huggingface_config = AutoConfig.from_pretrained(
-                self.model_path,
-                trust_remote_code=self.trust_remote_code,
-            )
-            assert self._huggingface_config is not None, (
-                "Failed to load Hugging Face config"
-            )
-
-        return self._huggingface_config
 
     @property
     def dtype(self) -> DType:

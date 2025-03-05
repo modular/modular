@@ -620,7 +620,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             return graph
 
     def _model_config(self, state_dict: dict[str, WeightData]):
-        huggingface_config = self.pipeline_config.huggingface_config
+        huggingface_config = self.huggingface_config
         interleaved_rope_weights = (
             self.pipeline_config.weights_format == WeightsFormat.gguf
             and self.pipeline_config.rope_type == RopeType.normal
@@ -691,9 +691,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             embedding_multiplier=embedding_multiplier,
             residual_multiplier=residual_multiplier,
             devices=device_refs,
-            clip_qkv=getattr(
-                self.pipeline_config.huggingface_config, "clip_qkv", None
-            ),
+            clip_qkv=getattr(self.huggingface_config, "clip_qkv", None),
         )
 
     def compute_log_probabilities(
