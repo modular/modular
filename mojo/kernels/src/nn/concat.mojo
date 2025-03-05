@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.vector import InlinedFixedVector
+from collections import List
 from math import align_down, align_up, ceildiv
 from sys._build import is_debug_build
 from sys.info import bitwidthof, simdwidthof, sizeof
@@ -141,7 +141,7 @@ fn _canonical_reshape_output[
 ](
     out_buf: NDBuffer[type, rank],
     axis: Int,
-    inputs: InlinedFixedVector[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank]],
 ) -> _CanonicallyReshapedBuffer:
     var input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
@@ -162,7 +162,7 @@ fn _concat_parallel[
 ](
     output: NDBuffer[type, rank],
     axis: Int,
-    inputs: InlinedFixedVector[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank]],
 ) raises:
     var output_canon = _canonical_reshape_output(output, axis, inputs)
 
@@ -294,7 +294,7 @@ fn _concat[
 ](
     output: NDBuffer[type, rank],
     axis: Int,
-    inputs: InlinedFixedVector[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank]],
 ) raises:
     """Concatenate inputs along axis and store in output.
 
@@ -341,10 +341,7 @@ fn _concat_inner[
     rank: Int,
     type: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
-](
-    output: NDBuffer[type, rank],
-    inputs: InlinedFixedVector[NDBuffer[type, rank]],
-) raises:
+](output: NDBuffer[type, rank], inputs: List[NDBuffer[type, rank]],) raises:
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
         var buffer_len = inputs[i].size()
@@ -361,7 +358,7 @@ fn _concat_inner[
 @always_inline
 fn _check_input_consistency[
     rank: Int, type: DType
-](axis: Int, inputs: InlinedFixedVector[NDBuffer[type, rank]]):
+](axis: Int, inputs: List[NDBuffer[type, rank]]):
     @parameter
     if not is_debug_build():
         return
@@ -389,7 +386,7 @@ fn _concat_serial[
 ](
     output: NDBuffer[type, rank],
     axis: Int,
-    inputs: InlinedFixedVector[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank]],
 ) raises:
     _check_input_consistency[rank, type](axis, inputs)
 
@@ -416,7 +413,7 @@ fn _concat_small[
 ](
     output: NDBuffer[type, rank],
     axis: Int,
-    inputs: InlinedFixedVector[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank]],
 ) raises:
     alias single_thread_blocking_override = True
     alias simd_width = simdwidthof[type]()
@@ -489,7 +486,7 @@ fn _concat_cpu[
 ](
     output: NDBuffer[type, rank],
     axis: Int,
-    inputs: InlinedFixedVector[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank]],
 ) raises:
     @parameter
     if single_thread_blocking_override:
@@ -521,7 +518,7 @@ fn concat_shape[
     input_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_bufs: InlinedFixedVector[NDBuffer[input_type, input_rank]],
+    input_bufs: List[NDBuffer[input_type, input_rank]],
     axis: Int,
 ) raises -> IndexList[input_rank]:
     """
@@ -591,7 +588,7 @@ fn concat[
 
         @parameter
         if is_cpu[target]():
-            var inputVec = InlinedFixedVector[NDBuffer[type, rank]](len(inputs))
+            var inputVec = List[NDBuffer[type, rank]](capacity=len(inputs))
 
             @parameter
             for i in range(inputs.size):

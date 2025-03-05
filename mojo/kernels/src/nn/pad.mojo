@@ -9,7 +9,7 @@
 # pad
 # ===-----------------------------------------------------------------------===#
 
-from collections.vector import InlinedFixedVector
+from collections import InlineArray
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -43,7 +43,7 @@ struct _NestedLoopIter[n_loops: Int]:
 
     var cur: IndexList[n_loops]
 
-    alias LoopBoundSpec = InlinedFixedVector[IndexList[2], n_loops]
+    alias LoopBoundSpec = InlineArray[IndexList[2], n_loops]
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
@@ -790,7 +790,7 @@ fn pad_repeat[
     var loop_bounds = _NestedLoopIter[rank].LoopBoundSpec(rank)
 
     for i in range(rank):
-        loop_bounds.append(IndexList[2](0, input.dim(i)))
+        loop_bounds[i] = IndexList[2](0, input.dim(i))
 
     var non_pad_iter = _NestedLoopIter[rank](loop_bounds)
 

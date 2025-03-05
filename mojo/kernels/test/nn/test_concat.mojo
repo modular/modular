@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from collections import InlinedFixedVector, OptionalReg
+from collections import List, OptionalReg
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -20,13 +20,14 @@ from nn.concat import (
 from utils import IndexList, StaticTuple
 
 
-fn tuple_to_vector[
-    type: AnyTrivialRegType
-](elems: StaticTuple[type, *_]) -> InlinedFixedVector[type]:
-    var vector = InlinedFixedVector[type](len(elems))
+fn _tuple_to_list[
+    type: DType,
+    rank: Int,
+](elems: StaticTuple[NDBuffer[type, rank], *_]) -> List[NDBuffer[type, rank]]:
+    var output = List[NDBuffer[type, rank]](capacity=len(elems))
     for i in range(len(elems)):
-        vector.append(elems[i])
-    return vector^
+        output.append(elems[i])
+    return output^
 
 
 def test_concat():
@@ -113,7 +114,7 @@ def test_concat_parallel():
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
-    var input_list = StaticTuple[NDBuffer[type, rank], 3](
+    var input_tuple = StaticTuple[NDBuffer[type, rank], 3](
         x1_dyn, x2_dyn, x3_dyn
     )
 
@@ -127,7 +128,7 @@ def test_concat_parallel():
             rebind[SIMD[type, width]](val + 1),
         )
 
-    var input_vec = tuple_to_vector(input_list)
+    var input_vec = _tuple_to_list(input_tuple)
     _concat_parallel[rank, type, epilogue_plus_one](
         output_dyn, concat_axis, input_vec
     )
@@ -177,7 +178,7 @@ def test_concat_inner():
         x1_dyn, x2_dyn, x3_dyn
     )
 
-    var input_vec = tuple_to_vector(input_list)
+    var input_vec = _tuple_to_list(input_list)
 
     @parameter
     @always_inline

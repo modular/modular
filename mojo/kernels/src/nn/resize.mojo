@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.vector import InlinedFixedVector
+from collections import List
 from math import ceil, floor
 
 from algorithm.functional import elementwise
@@ -275,7 +275,7 @@ fn _resize[
     if input.get_shape() == output.get_shape():
         return memcpy(output.data, input.data, input.size())
     var scales = StaticTuple[Float32, rank]()
-    var resize_dims = InlinedFixedVector[Int, size=rank](rank)
+    var resize_dims = List[Int, hint_trivial_type=True](capacity=rank)
     var tmp_dims = IndexList[rank](0)
     for i in range(rank):
         # need to consider output dims when upsampling and input dims when downsampling

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.vector import InlinedFixedVector
+from collections import List
 from sys import external_call
 
 from algorithm import sync_parallelize
@@ -23,15 +23,13 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
 
     alias stack_capacity = 20
     alias BufferType = NDBuffer[type, rank]
-    alias StorageType = InlinedFixedVector[
-        Self.BufferType, size = Self.stack_capacity
-    ]
+    alias StorageType = List[Self.BufferType]
     var storage: Self.StorageType
 
     @always_inline
     @implicit
     fn __init__(out self, num_inputs: Int):
-        self.storage = Self.StorageType(num_inputs)
+        self.storage = Self.StorageType(capacity=num_inputs)
 
     @always_inline
     @implicit
@@ -40,13 +38,13 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
 
     @implicit
     fn __init__(out self, input_list: VariadicList[Self.BufferType]):
-        self.storage = Self.StorageType(len(input_list))
+        self.storage = Self.StorageType(capacity=len(input_list))
         for i in range(len(input_list)):
             self.storage.append(input_list[i])
 
     @implicit
     fn __init__(out self, inputs: StaticTuple[NDBuffer[type, rank]]):
-        self.storage = Self.StorageType(inputs.size)
+        self.storage = Self.StorageType(capacity=inputs.size)
 
         @parameter
         for i in range(inputs.size):
