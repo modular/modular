@@ -68,12 +68,6 @@ class SupportedEncoding(str, Enum):
     q6_k = "q6_k"
     gptq = "gptq"
 
-    def __repr__(self) -> str:
-        return self.name
-
-    def __str__(self) -> str:
-        return self.name
-
     @classmethod
     def parse_from_file_name(cls, name: str):
         # TODO(AITLIB-127): Robustify detection of quantization encoding
