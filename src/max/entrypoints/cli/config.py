@@ -150,7 +150,12 @@ def config_to_flag(cls):
     for _field in fields(cls):
         # Skip private config fields.
         # We also skip device_specs as it should not be used directly via the CLI entrypoint.
-        if _field.name.startswith("_") or _field.name == "device_specs":
+        if (
+            _field.name.startswith("_")
+            or _field.name == "device_specs"
+            or _field.name == "in_dtype"
+            or _field.name == "out_dtype"
+        ):
             continue
 
         new_option = create_click_option(
