@@ -107,14 +107,6 @@ def test_validate_model_path__bad_repo_provided():
         )
 
 
-def test_hf_config_retrieval():
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-    )
-
-    assert config.huggingface_config is not None
-
-
 class LimitedPickler(pickle.Unpickler):
     """A custom Unpickler class that checks for transformer modules."""
 
@@ -131,7 +123,6 @@ def test_config_is_picklable(tmp_path):
     config = PipelineConfig(
         model_path="modularai/llama-3.1",
     )
-    assert config.huggingface_config is not None
 
     pickle_path = tmp_path / "config.pkl"
     with open(pickle_path, "wb") as f:
@@ -141,12 +132,6 @@ def test_config_is_picklable(tmp_path):
         limited_pickler = LimitedPickler(f)
         loaded_config = limited_pickler.load()
 
-    assert loaded_config._huggingface_config is None
-    assert loaded_config != config
-
-    # Now try loading the Hugging Face config
-    assert loaded_config.huggingface_config is not None
-    # The configs should now be equivalent.
     assert loaded_config == config
 
 

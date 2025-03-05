@@ -45,6 +45,7 @@ from max.pipelines.interfaces import (
     PipelineTokenizer,
     TokenGeneratorRequest,
 )
+from transformers import AutoConfig
 
 
 class EmbeddingModel:
@@ -55,10 +56,12 @@ class EmbeddingModel:
         pipeline_config: PipelineConfig,
         tokenizer: PipelineTokenizer,
         pipeline: EmbeddingsGenerator,
+        huggingface_config: AutoConfig,
     ):
         self.pipeline_config = pipeline_config
         self.tokenizer = tokenizer
         self.pipeline = pipeline
+        self.huggingface_config = huggingface_config
 
     @cached_property
     def mteb_model_meta(self) -> mteb.ModelMeta:
@@ -74,7 +77,7 @@ class EmbeddingModel:
         ):
             return meta.model_copy(update={"name": name})
         else:
-            config = self.pipeline_config.huggingface_config
+            config = self.huggingface_config
             return mteb.ModelMeta(
                 name=name,
                 revision=None,
@@ -216,7 +219,13 @@ def main(
             pipeline_config, task=PipelineTask.EMBEDDINGS_GENERATION
         )
         assert isinstance(pipeline, EmbeddingsGenerator)
-        model = EmbeddingModel(pipeline_config, tokenizer, pipeline)
+        huggingface_config = AutoConfig.from_pretrained(
+            pipeline_config.model_path,
+            trust_remote_code=pipeline_config.trust_remote_code,
+        )
+        model = EmbeddingModel(
+            pipeline_config, tokenizer, pipeline, huggingface_config
+        )
 
     tasks: mteb.Benchmark | mteb.overview.MTEBTasks
     if eval_benchmark:
