@@ -137,7 +137,7 @@ def _attention_opaque(
             weights.self_attn.o_proj,
         ),
         rope=rope,
-        layer_idx=layer_idx,  # type: ignore
+        layer_idx=ops.constant(layer_idx, DType.uint32),
         scale=math.sqrt(1 / kv_params.head_dim),
     )
 
@@ -168,8 +168,9 @@ def _transformer(
                     params,
                     rope,
                     weights.model.layers[i],
-                    layer_idx=ops.constant(i, DType.uint32),  # type: ignore
+                    layer_idx=i,
                     huggingface_config=huggingface_config,
+                    dtype=dtype,
                 ),
                 mlp=feed_forward(
                     dtype,
