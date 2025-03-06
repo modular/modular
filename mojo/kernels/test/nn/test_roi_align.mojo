@@ -20,9 +20,20 @@ def test_roi_align_avg[scale_type: DType]():
     alias out_shape = DimList(1, 5, 5, 1)
     alias roi_shape = DimList(1, 5)
 
-    var input = NDBuffer[DType.float32, 4, in_shape].stack_allocation()
-    var output = NDBuffer[DType.float32, 4, out_shape].stack_allocation()
-    var rois = NDBuffer[DType.float32, 2, roi_shape].stack_allocation()
+    var input_stack = InlineArray[Float32, Int(in_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var input = NDBuffer[DType.float32, 4, in_shape](input_stack.unsafe_ptr())
+    var output_stack = InlineArray[Float32, Int(out_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var output = NDBuffer[DType.float32, 4, out_shape](
+        output_stack.unsafe_ptr()
+    )
+    var rois_stack = InlineArray[Float32, Int(roi_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var rois = NDBuffer[DType.float32, 2, roi_shape](rois_stack.unsafe_ptr())
 
     for i in range(10):
         for j in range(10):
@@ -82,9 +93,20 @@ def test_roi_align_max():
     alias out_shape = DimList(1, 5, 5, 1)
     alias roi_shape = DimList(1, 5)
 
-    var input = NDBuffer[DType.float32, 4, in_shape].stack_allocation()
-    var output = NDBuffer[DType.float32, 4, out_shape].stack_allocation()
-    var rois = NDBuffer[DType.float32, 2, roi_shape].stack_allocation()
+    var input_stack = InlineArray[Float32, Int(in_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var input = NDBuffer[DType.float32, 4, in_shape](input_stack.unsafe_ptr())
+    var output_stack = InlineArray[Float32, Int(out_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var output = NDBuffer[DType.float32, 4, out_shape](
+        output_stack.unsafe_ptr()
+    )
+    var rois_stack = InlineArray[Float32, Int(roi_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var rois = NDBuffer[DType.float32, 2, roi_shape](rois_stack.unsafe_ptr())
 
     for i in range(10):
         for j in range(10):
@@ -144,9 +166,20 @@ def test_roi_align_KERN_692():
     alias out_shape = DimList(1, 3, 3, 1)
     alias roi_shape = DimList(1, 5)
 
-    var input = NDBuffer[DType.float32, 4, in_shape].stack_allocation()
-    var output = NDBuffer[DType.float32, 4, out_shape].stack_allocation()
-    var rois = NDBuffer[DType.float32, 2, roi_shape].stack_allocation()
+    var input_stack = InlineArray[Float32, Int(in_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var input = NDBuffer[DType.float32, 4, in_shape](input_stack.unsafe_ptr())
+    var output_stack = InlineArray[Float32, Int(out_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var output = NDBuffer[DType.float32, 4, out_shape](
+        output_stack.unsafe_ptr()
+    )
+    var rois_stack = InlineArray[Float32, Int(roi_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var rois = NDBuffer[DType.float32, 2, roi_shape](rois_stack.unsafe_ptr())
 
     for i in range(6):
         for j in range(6):

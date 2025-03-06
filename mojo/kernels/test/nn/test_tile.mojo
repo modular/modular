@@ -22,11 +22,12 @@ fn test_tile_eg1() raises:
     alias rank = 2
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 4](unsafe_uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0)] = 0
     input[IndexList[rank](0, 1)] = 1
@@ -38,22 +39,26 @@ fn test_tile_eg1() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 16](unsafe_uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
         DimList(4, 4),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -81,11 +86,12 @@ fn test_tile_eg2() raises:
     alias rank = 2
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 4](unsafe_uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0)] = 0
     input[IndexList[rank](0, 1)] = 1
@@ -97,22 +103,28 @@ fn test_tile_eg2() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 3
     repeats[IndexList[rank_repeats](1)] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 6 * 4](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(6, 4),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -138,11 +150,12 @@ fn test_tile_eg3() raises:
     alias rank = 2
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 4](unsafe_uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0)] = 0
     input[IndexList[rank](0, 1)] = 1
@@ -154,22 +167,28 @@ fn test_tile_eg3() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 3
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 4 * 6](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(4, 6),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -199,11 +218,14 @@ fn test_tile_eg4() raises:
     alias rank = 3
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](
+        unsafe_uninitialized=True
+    )
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -220,11 +242,14 @@ fn test_tile_eg4() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 1
@@ -232,11 +257,14 @@ fn test_tile_eg4() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 4 * 2 * 2](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(4, 2, 2),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -268,11 +296,14 @@ fn test_tile_eg5() raises:
     alias rank = 3
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](
+        unsafe_uninitialized=True
+    )
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -289,11 +320,14 @@ fn test_tile_eg5() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 1
@@ -301,11 +335,14 @@ fn test_tile_eg5() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 4 * 2 * 4](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(4, 2, 4),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -331,11 +368,15 @@ fn test_tile_eg6() raises:
     alias rank = 2
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 2 * 2](
+        unsafe_uninitialized=True
+    )
+
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0)] = 1
     input[IndexList[rank](0, 1)] = 2
@@ -347,22 +388,28 @@ fn test_tile_eg6() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 1
     repeats[IndexList[rank_repeats](1)] = 2
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 2 * 4](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(2, 4),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -388,11 +435,14 @@ fn test_tile_eg7() raises:
     alias rank = 2
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 2 * 2](
+        unsafe_uninitialized=True
+    )
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0)] = 1
     input[IndexList[rank](0, 1)] = 2
@@ -404,22 +454,28 @@ fn test_tile_eg7() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 4 * 2](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(4, 2),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -445,11 +501,12 @@ fn test_tile_eg8() raises:
     alias rank = 2
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 4](unsafe_uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
         DimList(1, 4),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0)] = 1
     input[IndexList[rank](0, 1)] = 2
@@ -461,22 +518,28 @@ fn test_tile_eg8() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(2),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 4
     repeats[IndexList[rank_repeats](1)] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 4 * 4](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(4, 4),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     for i in range(4):
         for j in range(4):
@@ -518,11 +581,14 @@ fn test_tile_eg9() raises:
     alias rank = 3
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](
+        unsafe_uninitialized=True
+    )
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -539,11 +605,14 @@ fn test_tile_eg9() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 2
@@ -551,11 +620,14 @@ fn test_tile_eg9() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 4 * 4 * 2](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(4, 4, 2),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     for i in range(4):
         for j in range(4):
@@ -608,11 +680,14 @@ fn test_tile_eg10() raises:
     alias rank = 3
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](
+        unsafe_uninitialized=True
+    )
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -629,11 +704,14 @@ fn test_tile_eg10() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 3
     repeats[IndexList[rank_repeats](1)] = 2
@@ -641,11 +719,14 @@ fn test_tile_eg10() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 6 * 4 * 6](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(6, 4, 6),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -705,11 +786,14 @@ fn test_tile_eg11() raises:
     alias rank = 3
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 3 * 2 * 2](
+        unsafe_uninitialized=True
+    )
     var input = NDBuffer[
         type,
         rank,
         DimList(3, 2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -731,11 +815,14 @@ fn test_tile_eg11() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(3),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 3
@@ -743,11 +830,14 @@ fn test_tile_eg11() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 6 * 6 * 2](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(6, 6, 2),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     for i in range(6):
         for j in range(6):
@@ -780,11 +870,14 @@ fn test_tile_eg12() raises:
     alias rank = 4
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 2 * 2](
+        unsafe_uninitialized=True
+    )
     var input = NDBuffer[
         type,
         rank,
         DimList(1, 1, 2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 0, 1)] = 1
@@ -796,11 +889,14 @@ fn test_tile_eg12() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 4](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(4),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 1
     repeats[IndexList[rank_repeats](1)] = 1
@@ -809,11 +905,14 @@ fn test_tile_eg12() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 4 * 6](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(1, 1, 4, 6),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     for i in range(1):
         for j in range(1):
@@ -861,11 +960,14 @@ fn test_tile_eg13() raises:
     alias rank = 4
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
+        unsafe_uninitialized=True
+    )
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 0, 1)] = 1
@@ -892,11 +994,14 @@ fn test_tile_eg13() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 4](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(4),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 1
     repeats[IndexList[rank_repeats](1)] = 2
@@ -905,11 +1010,14 @@ fn test_tile_eg13() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 2 * 4 * 4 * 6](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(2, 4, 4, 6),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     for i in range(2):
         for j in range(4):
@@ -973,11 +1081,14 @@ fn test_tile_eg14() raises:
     alias rank = 4
     alias type = DType.float32
 
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
+        unsafe_uninitialized=True
+    )
     var input = NDBuffer[
         type,
         rank,
         DimList(2, 2, 2, 2),
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[rank](0, 0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 0, 1)] = 1
@@ -1004,11 +1115,14 @@ fn test_tile_eg14() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
+    var repeats_stack = InlineArray[Scalar[type_repeats], 4](
+        unsafe_uninitialized=True
+    )
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
         DimList(4),
-    ].stack_allocation()
+    ](repeats_stack.unsafe_ptr())
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 2
@@ -1017,11 +1131,14 @@ fn test_tile_eg14() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = InlineArray[Scalar[type], 4 * 4 * 4 * 6](
+        unsafe_uninitialized=True
+    )
     var output = NDBuffer[
         type,
         rank,
         DimList(4, 4, 4, 6),
-    ].stack_allocation()
+    ](output_stack.unsafe_ptr())
 
     for i in range(4):
         for j in range(4):

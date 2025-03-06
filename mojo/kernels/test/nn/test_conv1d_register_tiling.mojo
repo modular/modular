@@ -97,9 +97,18 @@ fn conv1d_register_tiling(
 
 
 fn test_conv1d_register_tiling() raises:
-    var output = NDBuffer[type, 3, output_shape].stack_allocation()
-    var input = NDBuffer[type, 3, input_shape].stack_allocation()
-    var filter = NDBuffer[type, 4, filter_shape].stack_allocation()
+    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var output = NDBuffer[type, 3, output_shape](output_stack.unsafe_ptr())
+    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var input = NDBuffer[type, 3, input_shape](input_stack.unsafe_ptr())
+    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+        unsafe_uninitialized=True
+    )
+    var filter = NDBuffer[type, 4, filter_shape](filter_stack.unsafe_ptr())
 
     output.fill(0.0)
     input.fill(1.0)
