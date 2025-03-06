@@ -30,9 +30,9 @@ alias tensor_rank = 1
 
 fn vector_addition(
     length: Int,
-    lhs: LayoutTensor[float_dtype],
-    rhs: LayoutTensor[float_dtype],
-    out: LayoutTensor[float_dtype],
+    lhs: LayoutTensor[float_dtype, _, MutableAnyOrigin],
+    rhs: LayoutTensor[float_dtype, _, MutableAnyOrigin],
+    out: LayoutTensor[float_dtype, _, MutableAnyOrigin],
 ):
     """The calculation to perform across the vector on the GPU."""
     tid = block_dim.x * block_idx.x + thread_idx.x
