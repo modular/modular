@@ -43,7 +43,7 @@ fn run_layer_norm_cpu[
     var output_buf = NDBuffer[type, rank](output_ptr, shape)
     var gamma = NDBuffer[type, 1](gamma_ptr, param_shape)
     var beta = NDBuffer[type, 1](beta_ptr, param_shape)
-    var epsilon = Scalar[type](0.0001)
+    var epsilon = Float32(0.0001)
 
     @__copy_capture(input_buf)
     @always_inline
@@ -67,7 +67,7 @@ fn run_layer_norm_cpu[
         var vec = NDBuffer[type, 1](input_ptr + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon)
+        var norm_factor_ref = isqrt(var_ref + epsilon.cast[type]())
         for c in range(cols):
             var idx = r * cols + c
             var val = (

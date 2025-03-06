@@ -247,7 +247,7 @@ fn layer_norm_gpu_warp_tiling[
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         type, width
     ],
-](output: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type]):
+](output: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Float32):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -302,7 +302,7 @@ fn layer_norm_gpu_block[
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         type, width
     ],
-](output: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type]):
+](output: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Float32):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -390,7 +390,7 @@ fn layer_norm_gpu[
 ](
     shape: IndexList[rank, **_],
     beta: NDBuffer[type, 1],
-    epsilon: Scalar[type],
+    epsilon: Float32,
     output: NDBuffer[type, rank, *_],
     *,
     ctx: DeviceContext,
@@ -476,9 +476,7 @@ fn layer_norm_cpu[
         type, width
     ],
 ](
-    out_buf: NDBuffer[type, 2, _],
-    beta: NDBuffer[type, 1],
-    epsilon: Scalar[type],
+    out_buf: NDBuffer[type, 2, _], beta: NDBuffer[type, 1], epsilon: Float32
 ) raises:
     """Computes layernorm(elementwise_fn(x)) across the last dimension of x, where layernorm is
     defined as $(x-mean(x))/(sqrt(var(x)+eps)*gamma_fn + beta$.
@@ -527,7 +525,7 @@ fn layer_norm_cpu[
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var var_val = variance(out_slice, mean_val, 0)  # use biased estimator
-        var norm_factor = isqrt(var_val + epsilon)
+        var norm_factor = isqrt(var_val + epsilon.cast[type]())
 
         @__copy_capture(out_slice, norm_factor, mean_val)
         @parameter
@@ -554,7 +552,7 @@ fn layer_norm_cpu[
 ](
     shape: IndexList[rank, **_],
     beta: NDBuffer[type, 1],
-    epsilon: Scalar[type],
+    epsilon: Float32,
     output: NDBuffer[type, rank, *_],
 ):
     var last_dim = shape[rank - 1]
@@ -616,7 +614,7 @@ fn layer_norm[
     shape: IndexList[rank],
     gamma_shape: IndexList[1],
     beta: NDBuffer[type, 1],
-    epsilon: Scalar[type],
+    epsilon: Float32,
     output: NDBuffer[type, rank, *_],
     ctx: DeviceContextPtr,
 ) raises:
@@ -666,7 +664,7 @@ fn layer_norm_shape[
     input: NDBuffer[type, rank],
     gamma: NDBuffer[type, 1, DimList(1)],
     beta: NDBuffer[type, 1, DimList(1)],
-    epsilon: Scalar[type],
+    epsilon: Float32,
 ) -> IndexList[rank]:
     """
     Compute the output shape of a `layer_norm` operation.
@@ -699,7 +697,7 @@ fn rms_norm_gpu_warp_tiling[
     output_fn: fn[width: Int] (
         row: Int, col: Int, val: SIMD[type, width]
     ) capturing -> None,
-](gamma: NDBuffer[type, 1], epsilon: Scalar[type], num_cols: Int):
+](gamma: NDBuffer[type, 1], epsilon: Float32, num_cols: Int):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -739,7 +737,7 @@ fn rms_norm_gpu_block[
     output_fn: fn[width: Int] (
         row: Int, col: Int, val: SIMD[type, width]
     ) capturing -> None,
-](gamma: NDBuffer[type, 1], epsilon: Scalar[type], num_cols: Int):
+](gamma: NDBuffer[type, 1], epsilon: Float32, num_cols: Int):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -787,7 +785,7 @@ fn rms_norm_gpu[
 ](
     shape: IndexList[rank, **_],
     gamma: NDBuffer[type, 1],
-    epsilon: Scalar[type],
+    epsilon: Float32,
     ctx: DeviceContext,
 ) raises:
     if rank == 0:
@@ -876,7 +874,7 @@ fn rms_norm_cpu[
     type: DType, //,
     input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[type, width],
     output_fn: fn[width: Int] (Int, Int, SIMD[type, width]) capturing -> None,
-](gamma: NDBuffer[type, 1], epsilon: Scalar[type], out_shape: IndexList[2]):
+](gamma: NDBuffer[type, 1], epsilon: Float32, out_shape: IndexList[2]):
     alias simd_width = simdwidthof[type]()
 
     var num_rows = out_shape[0]
@@ -894,7 +892,7 @@ fn rms_norm_cpu[
             sum_val += input_fn[1](row, col) ** 2
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
-        var norm_factor = isqrt(mean_val + epsilon)
+        var norm_factor = isqrt(mean_val + epsilon.cast[type]())
 
         @__copy_capture(norm_factor)
         @parameter
@@ -916,7 +914,7 @@ fn rms_norm_cpu[
     output_fn: fn[width: Int] (
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
-](shape: IndexList[rank], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
+](shape: IndexList[rank], gamma: NDBuffer[type, 1], epsilon: Float32):
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
 
@@ -979,7 +977,7 @@ fn _rms_norm_impl[
 ](
     shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
-    epsilon: Scalar[type],
+    epsilon: Float32,
     ctx: DeviceContextPtr,
 ) raises:
     # Note: we only support reduction along the last dimension
@@ -1020,7 +1018,7 @@ fn rms_norm[
 ](
     shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
-    epsilon: Scalar[type],
+    epsilon: Float32,
     output: NDBuffer[type, rank],
     ctx: DeviceContextPtr,
 ) raises:
@@ -1059,6 +1057,6 @@ fn rms_norm_shape[
 ](
     input: NDBuffer[type, rank],
     gamma: NDBuffer[type, 1],
-    epsilon: Scalar[type],
+    epsilon: Float32,
 ) -> IndexList[rank]:
     return input.get_shape()
