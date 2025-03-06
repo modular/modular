@@ -243,7 +243,7 @@ fn multistage_mma[
     @parameter
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor, src: LayoutTensor,):
+    ](dst: LayoutTensor, src: LayoutTensor):
         @parameter
         if is_nvidia_gpu():
             copy_dram_to_sram_async[

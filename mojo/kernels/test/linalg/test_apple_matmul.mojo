@@ -44,7 +44,7 @@ fn bench_run[
 
 fn gemm_naive[
     transpose_b: Bool
-](a: NDBuffer, b: NDBuffer, c: NDBuffer, m: Int, n: Int, k: Int,):
+](a: NDBuffer, b: NDBuffer, c: NDBuffer, m: Int, n: Int, k: Int):
     for i in range(m):
         for p in range(k):
             for j in range(n):

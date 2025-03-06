@@ -384,7 +384,7 @@ struct TiledMatmul[
 fn _small_matmul[
     transpose_b: Bool,
     epilogue_wrapper: OptionalReg[elementwise_epilogue_type],
-](a: NDBuffer[_, 2, _], b: NDBuffer[_, 2, _], c: NDBuffer[_, 2, _],):
+](a: NDBuffer[_, 2, _], b: NDBuffer[_, 2, _], c: NDBuffer[_, 2, _]):
     alias simd_width = simdwidthof[c.type]()
 
     var M = a.dim[0]()
