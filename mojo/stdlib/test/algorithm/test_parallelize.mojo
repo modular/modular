@@ -18,7 +18,10 @@ fn test_sync_parallelize():
 
     var num_work_items = 4
 
-    var vector = NDBuffer[DType.index, 1, 20].stack_allocation()
+    var vector_stack = InlineArray[Scalar[DType.index], 20](
+        unsafe_uninitialized=True
+    )
+    var vector = NDBuffer[DType.index, 1, 20](vector_stack.unsafe_ptr())
 
     for i in range(len(vector)):
         vector[i] = i
@@ -55,7 +58,10 @@ fn test_parallelize():
 
     var num_work_items = num_physical_cores()
 
-    var vector = NDBuffer[DType.index, 1, 20].stack_allocation()
+    var vector_stack = InlineArray[Scalar[DType.index], 20](
+        unsafe_uninitialized=True
+    )
+    var vector = NDBuffer[DType.index, 1, 20](vector_stack.unsafe_ptr())
 
     for i in range(len(vector)):
         vector[i] = i
