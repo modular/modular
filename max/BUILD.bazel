@@ -93,6 +93,8 @@ modular_python_binding_py_library(
 # We can also select which ones to commit, if some of the generated ones are not to our
 # liking, since we don't directly depend on any of the generated ones.
 # FIXME (SDLC-1866): Currently, we don't use the generate stubgs for _core.graph.
+
+# Can run `./utils/sync-stubfiles.py` to sync the committed ones to the generated ones.
 [
     diff_test(
         name = name + ".diff_test",
