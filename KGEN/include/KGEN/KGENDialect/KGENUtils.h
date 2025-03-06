@@ -100,8 +100,8 @@ bool isTypeExprType(Type type);
 bool isTypeExpr(TypedAttr attr);
 
 /// Gets the common Modular environment attribute (also known as `-D` defines)
-/// for the given module. This includes things like `MODULAR_PARANOID`,
-/// `BUILD_TYPE`, AsyncRT profiling level, etc.
+/// for the given compilation context. This includes things like
+/// `MODULAR_PARANOID`, `BUILD_TYPE`, AsyncRT profiling level, etc.
 EnvAttr getModularEnvAttr(MLIRContext *ctx, CompilationContext *compileCtx);
 
 /// Extends the module EnvAttr with common Modular environment attribute (also
@@ -110,6 +110,10 @@ EnvAttr getModularEnvAttr(MLIRContext *ctx, CompilationContext *compileCtx);
 /// the existing EnvAttr module values take precedence here.
 void extendWithModularEnvAttr(ModuleOp moduleOp,
                               CompilationContext *compileCtx);
+
+/// Gets the common Modular environment attribute (also known as `-D` defines)
+/// for the given module.
+EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
 
 /// Parser & printer for the bool flag "memoryOnly".
 void printIsMemoryOnly(AsmPrinter &p, bool isMemoryOnly);
