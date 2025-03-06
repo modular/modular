@@ -38,7 +38,7 @@ fn _fill_buffer[rank: Int, dtype: DType](buffer: NDBuffer[dtype, rank]):
 
 fn _fill_buffer[
     rank: Int, dtype: DType
-](buffer: NDBuffer[dtype, rank], val: Scalar[dtype],):
+](buffer: NDBuffer[dtype, rank], val: Scalar[dtype]):
     for i in range(buffer.num_elements()):
         buffer.flatten()[i] = val
 

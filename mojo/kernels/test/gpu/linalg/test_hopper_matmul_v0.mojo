@@ -62,7 +62,7 @@ def test_hopper_matmul0_tma_wgmma[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
     var K = k.value

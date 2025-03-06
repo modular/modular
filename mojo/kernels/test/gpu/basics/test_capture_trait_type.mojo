@@ -32,9 +32,7 @@ struct ImplT(BaseT):
         return self.values[idx]
 
 
-def trait_repro_sub[
-    t: BaseT
-](thing: t, ctx: DeviceContext, size: Int,):
+def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
     @parameter
     @__copy_capture(thing)
     fn kernel_fn():

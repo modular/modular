@@ -298,9 +298,7 @@ fn test_case_multi_rank[
 
 
 @parameter
-fn fill_random[
-    rank: Int, dtype: DType
-](mut buffer: NDBuffer[dtype, rank],):
+fn fill_random[rank: Int, dtype: DType](mut buffer: NDBuffer[dtype, rank]):
     alias min_val = -1e9
     alias max_val = 1e9
     var total_elements = buffer.num_elements()

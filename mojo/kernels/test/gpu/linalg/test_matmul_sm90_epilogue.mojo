@@ -78,7 +78,7 @@ def test_warp_specialize_gemm_with_multicasting[
     num_consumer: Int = 1,
     transpose_b: Bool = True,
     partitioned_multicast: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
     var K = k.value

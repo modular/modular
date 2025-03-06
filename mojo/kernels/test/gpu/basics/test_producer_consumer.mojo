@@ -129,7 +129,7 @@ def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
 
 fn cpaysnc_producer_consumer_pipeline_kernel[
     num_stages: Int
-](src: UnsafePointer[Float32], dst: UnsafePointer[Float32],):
+](src: UnsafePointer[Float32], dst: UnsafePointer[Float32]):
     alias size_per_copy = 16 // sizeof[DType.float32]()
     alias size_per_stage = size_per_copy * 128
 
