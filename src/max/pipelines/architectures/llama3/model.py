@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import time
 from typing import Any, Callable, List, Literal, Sequence, cast
 
@@ -23,18 +22,15 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.graph.weights import WeightData, Weights
+from max.graph.weights import Weights
 from max.pipelines import (
     LogProbabilities,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    RopeType,
     SupportedEncoding,
     TextContext,
-    WeightsFormat,
-    upper_bounded_default,
 )
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
 from max.pipelines.kv_cache import (
@@ -44,7 +40,7 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.nn import LayerV2, Llama3RopeScalingParams, Signals
+from max.pipelines.nn import LayerV2, Signals
 from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 
@@ -152,6 +148,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
             else []
         )
 
+    # TODO(zheng): These get_kv_params calls in PipelineModel(s) should probably be
+    # a config interface / method.
     @classmethod
     def get_kv_params(
         cls,
@@ -159,17 +157,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
         huggingface_config: AutoConfig,
         n_devices: int,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            dtype=pipeline_config.cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=(
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            ),
-            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
-            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
-            n_devices=n_devices,
+        return Llama3Config.get_kv_params(
+            pipeline_config, huggingface_config, n_devices
         )
 
     @classmethod
@@ -304,19 +293,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
-            )
-        except ValueError as e:
-            msg = (
-                "Unable to infer max_length for Llama3, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            )
-            raise ValueError(msg) from e
+        return Llama3Config.calculate_max_seq_len(
+            pipeline_config, huggingface_config
+        )
 
     def load_kv_manager(
         self,
@@ -436,28 +415,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
         ]
         return kv_caches_per_dev
 
-    @property
-    def _attention_multiplier(self) -> float:
-        """The attention multiplier is a scalar that scales the attention scores.
-        It is used to control the variance of the attention scores.
-
-        This function is used to get the attention multiplier from the
-        huggingface config. If the attention multiplier is not set, it will be
-        calculated as the square root of 1.0 divided by the head dimension.
-        """
-        return getattr(
-            self.huggingface_config,
-            "attention_multiplier",
-            math.sqrt(
-                1.0
-                / self.get_kv_params(
-                    self.pipeline_config,
-                    huggingface_config=self.huggingface_config,
-                    n_devices=len(self.devices),
-                ).head_dim
-            ),
-        )
-
     def _build_opaque_graph(self, weights: Weights) -> Graph:
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
@@ -481,7 +438,15 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
         else:
             state_dict = {key: value.data() for key, value in weights.items()}
-        model_config = self._model_config(state_dict)
+        model_config = Llama3Config.generate(
+            pipeline_config=self.pipeline_config,
+            huggingface_config=huggingface_config,
+            state_dict=state_dict,
+            dtype=self.dtype,
+            n_devices=len(self.devices),
+            logits_postprocessor=self.logits_postprocessor,
+            norm_method=self.norm_method,
+        )
         nn_model: LayerV2
         if len(self.devices) > 1:
             kv_cache_args = self.kv_manager.input_symbols()
@@ -576,7 +541,15 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
         else:
             state_dict = {key: value.data() for key, value in weights.items()}
-        model_config = self._model_config(state_dict)
+        model_config = Llama3Config.generate(
+            pipeline_config=self.pipeline_config,
+            huggingface_config=self.huggingface_config,
+            state_dict=state_dict,
+            dtype=self.dtype,
+            n_devices=len(self.devices),
+            logits_postprocessor=self.logits_postprocessor,
+            norm_method=self.norm_method,
+        )
         nn_model = NaiveLlama3(model_config)
 
         # Load weights. We allow the weight types to be overriden due to
@@ -624,83 +597,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 graph.output(logits[:, -1])
 
             return graph
-
-    def _model_config(self, state_dict: dict[str, WeightData]):
-        huggingface_config = self.huggingface_config
-        interleaved_rope_weights = (
-            self.pipeline_config.weights_format == WeightsFormat.gguf
-            and self.pipeline_config.rope_type == RopeType.normal
-        )
-        rms_norm_eps = None
-        if self.norm_method == "rms_norm":
-            if huggingface_config.model_type == "exaone":
-                rms_norm_eps = huggingface_config.layer_norm_epsilon
-            else:
-                rms_norm_eps = huggingface_config.rms_norm_eps
-
-        device_refs = [
-            DeviceRef(spec.device_type, spec.id)
-            for spec in self.pipeline_config.device_specs
-        ]
-
-        # When tie_word_embeddings=True, the embedding weights are shared with
-        # the output weights.
-        tie_word_embeddings = (
-            getattr(huggingface_config, "tie_word_embeddings", False)
-            or "lm_head.weight" not in state_dict
-        )
-        embedding_multiplier = getattr(
-            huggingface_config, "embedding_multiplier", 1.0
-        )
-        residual_multiplier = getattr(
-            huggingface_config, "residual_multiplier", 1.0
-        )
-        rope_scaling_params = None
-        rope_scaling = huggingface_config.rope_scaling
-        if rope_scaling is not None and rope_scaling["rope_type"] == "llama3":
-            rope_scaling_params = Llama3RopeScalingParams(
-                factor=rope_scaling["factor"],
-                low_freq_factor=rope_scaling["low_freq_factor"],
-                high_freq_factor=rope_scaling["high_freq_factor"],
-                orig_max_position=rope_scaling[
-                    "original_max_position_embeddings"
-                ],
-            )
-
-        return Llama3Config(
-            hidden_size=huggingface_config.hidden_size,
-            num_attention_heads=huggingface_config.num_attention_heads,
-            num_key_value_heads=huggingface_config.num_key_value_heads,
-            num_hidden_layers=huggingface_config.num_hidden_layers,
-            rope_theta=huggingface_config.rope_theta,
-            rope_scaling_params=rope_scaling_params,
-            rms_norm_eps=rms_norm_eps,
-            intermediate_size=huggingface_config.intermediate_size,
-            interleaved_rope_weights=interleaved_rope_weights,
-            vocab_size=huggingface_config.vocab_size,
-            dtype=self.dtype,
-            quantization_encoding=self.pipeline_config.graph_quantization_encoding,
-            quantization_config=self.pipeline_config._quant_config,
-            all_logits=self.pipeline_config.enable_echo,
-            max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config, huggingface_config=self.huggingface_config
-            ),
-            kv_params=self.get_kv_params(
-                self.pipeline_config,
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-            ),
-            norm_method=self.norm_method,
-            tie_word_embeddings=tie_word_embeddings,
-            stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
-            stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
-            logits_postprocessor=self.logits_postprocessor,
-            attention_multiplier=self._attention_multiplier,
-            embedding_multiplier=embedding_multiplier,
-            residual_multiplier=residual_multiplier,
-            devices=device_refs,
-            clip_qkv=getattr(self.huggingface_config, "clip_qkv", None),
-        )
 
     def compute_log_probabilities(
         self,

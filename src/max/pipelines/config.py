@@ -546,6 +546,18 @@ class MAXConfig:
 
 
 @dataclass
+class MAXModelConfig(MAXConfig):
+    """Abstract base class for all MAX model configs.
+
+    This class is used to configure a model to use for a pipeline.
+    """
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        return {}
+
+
+@dataclass
 class SamplingConfig(MAXConfig):
     top_k: int = 1
     """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""

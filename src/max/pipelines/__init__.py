@@ -18,6 +18,7 @@ from typing import Union as _Union
 
 from .config import (
     KVCacheConfig,
+    MAXModelConfig,
     PipelineConfig,
     PipelineEngine,
     ProfilingConfig,
@@ -68,6 +69,7 @@ __all__ = [
     "PipelineConfig",
     "ProfilingConfig",
     "KVCacheConfig",
+    "MAXModelConfig",
     "PipelineEngine",
     "PipelineTask",
     "PIPELINE_REGISTRY",
