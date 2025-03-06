@@ -84,8 +84,11 @@ class Qwen2Model(PipelineModel[TextContext]):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )
         self.model = self.load_model(session)
 
     def execute(
@@ -134,12 +137,10 @@ class Qwen2Model(PipelineModel[TextContext]):
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
 
         return Qwen2Inputs(
-            tokens=Tensor.from_numpy(tokens).to(
-                self.pipeline_config.devices[0]
-            ),
+            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets_or_attn_mask=Tensor.from_numpy(
                 input_row_offsets
-            ).to(self.pipeline_config.devices[0]),
+            ).to(self.devices[0]),
             kv_cache_inputs=kv_cache_inputs,
         )
 
@@ -161,11 +162,9 @@ class Qwen2Model(PipelineModel[TextContext]):
         )
 
         return Qwen2Inputs(
-            tokens=Tensor.from_numpy(next_tokens_batch).to(
-                self.pipeline_config.devices[0]
-            ),
+            tokens=Tensor.from_numpy(next_tokens_batch).to(self.devices[0]),
             input_row_offsets_or_attn_mask=Tensor.from_numpy(attn_mask).to(
-                self.pipeline_config.devices[0]
+                self.devices[0]
             ),
             kv_cache_inputs=kv_cache_inputs,
         )
@@ -218,11 +217,9 @@ class Qwen2Model(PipelineModel[TextContext]):
             pad_to_multiple_of=self.pipeline_config.pad_to_multiple_of,
         )
         return Qwen2Inputs(
-            tokens=Tensor.from_numpy(next_tokens_batch).to(
-                self.pipeline_config.devices[0]
-            ),
+            tokens=Tensor.from_numpy(next_tokens_batch).to(self.devices[0]),
             input_row_offsets_or_attn_mask=Tensor.from_numpy(attn_mask).to(
-                self.pipeline_config.devices[0]
+                self.devices[0]
             ),
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
@@ -296,7 +293,7 @@ class Qwen2Model(PipelineModel[TextContext]):
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
             num_layers=self.huggingface_config.num_hidden_layers,
-            devices=self.pipeline_config.devices,
+            devices=self.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
             session=session,
@@ -340,7 +337,7 @@ class Qwen2Model(PipelineModel[TextContext]):
 
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(batch_size, dtype=np.uint32)
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         # Read in weights.
         self._weights = self.pipeline_config.load_weights()
@@ -401,7 +398,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         return [item for sublist in kv_caches_per_dev for item in sublist]
 
     def _build_opaque_graph(self, weights: Weights) -> Graph:
-        device0 = self.pipeline_config.devices[0]
+        device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref

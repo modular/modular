@@ -151,10 +151,12 @@ class PipelineModel(ABC, Generic[T]):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
         self.encoding = encoding
+        self.devices = devices
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
@@ -449,6 +451,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             session=session,
             huggingface_config=self.huggingface_config,
             encoding=self._pipeline_config.quantization_encoding,
+            devices=self._pipeline_config.devices,
         )
 
         # Load sampler.

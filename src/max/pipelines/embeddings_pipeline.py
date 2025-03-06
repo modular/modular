@@ -57,6 +57,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             session=session,
             huggingface_config=huggingface_config,
             encoding=self._pipeline_config.quantization_encoding,
+            devices=self._pipeline_config.devices,
         )
 
     @traced

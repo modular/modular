@@ -681,6 +681,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
         # Set convenience attributes for the text and vision configs.
         self.vision_config = huggingface_config.vision_config
@@ -690,7 +691,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self.vision_graph_input_size = -1
         self.language_graph_input_size = -1
 
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
         # pipeline. Unfortunately, self.model is still being used (and exposed)
@@ -769,7 +772,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         )
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         input_ids_type = TensorType(DType.int64, shape=["total_seq_len"])
         # image_size = self.vision_config.image_size
@@ -889,20 +892,18 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # (batch_size, 1, max_num_tiles, H, W, C).
         final_images = np.concatenate(images, axis=0)
 
-        pixel_values = Tensor.from_numpy(final_images).to(
-            self.pipeline_config.devices[0]
-        )
+        pixel_values = Tensor.from_numpy(final_images).to(self.devices[0])
 
         final_aspect_ratio_ids = np.concatenate(aspect_ratio_ids_list, axis=0)
 
         aspect_ratio_ids = Tensor.from_numpy(final_aspect_ratio_ids).to(
-            self.pipeline_config.devices[0]
+            self.devices[0]
         )
 
         final_aspect_ratio_mask = np.concatenate(aspect_ratio_mask_list, axis=0)
 
         aspect_ratio_mask = Tensor.from_numpy(final_aspect_ratio_mask).to(
-            self.pipeline_config.devices[0]
+            self.devices[0]
         )
 
         return pixel_values, aspect_ratio_ids, aspect_ratio_mask
@@ -954,7 +955,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 [0] + [ctx.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         pixel_row_offsets = Tensor.from_numpy(
             np.cumsum(
@@ -968,14 +969,12 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 ],
                 dtype=np.uint32,
             )
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
-        input_id_values = Tensor.from_numpy(tokens).to(
-            self.pipeline_config.devices[0]
-        )
+        input_id_values = Tensor.from_numpy(tokens).to(self.devices[0])
         # This lives on host / in the CPU kernel, but is later casted to a scalar on
         # device kernel side. No need for explicit .to(pipeline_config.device) call here.
         input_id_max_seq_len = Tensor.from_numpy(
@@ -1032,7 +1031,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         cross_attention_states = Tensor.zeros(
             shape=[0, self.text_config.hidden_size],
             dtype=self.dtype,
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         model_inputs = cast(LlamaVisionInputs, model_inputs)
         if model_inputs.has_vision_inputs:
@@ -1118,7 +1117,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             text_num_layers=self.text_config.num_hidden_layers
             - num_cross_attn_layers,
             vision_num_layers=num_cross_attn_layers,
-            devices=self.pipeline_config.devices,
+            devices=self.devices,
             session=session,
             available_cache_memory=available_cache_memory,
             page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,

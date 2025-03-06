@@ -23,7 +23,7 @@ from collections.abc import Sequence
 from typing import cast
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
 from max.pipelines import (
     ModelInputs,
@@ -74,8 +74,11 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )
         self.model = self.load_model(session)
 
     @classmethod
@@ -147,10 +150,10 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
 
         return MPNetInputs(
             next_tokens_batch=Tensor.from_numpy(next_tokens_batch).to(
-                self.pipeline_config.devices[0]
+                self.devices[0]
             ),
             attention_mask=Tensor.from_numpy(attention_mask).to(
-                self.pipeline_config.devices[0]
+                self.devices[0]
             ),
         )
 

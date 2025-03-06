@@ -124,13 +124,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
         """
         Args:
             pipeline_config: The configuration for this pipeline.
             session: The container for the runtime for this model.
         """
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )
         self.model = self.load_model(session)
 
         # Initialize state needed for communication collectives.
@@ -141,9 +144,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
                     dtype=DType.uint8,
                     device=dev,
                 )
-                for dev in pipeline_config.devices
+                for dev in self.devices
             ]
-            if len(pipeline_config.devices) > 1
+            if len(self.devices) > 1
             # Skip creating buffers for single-device, where communication
             # collectives shouldn't be called.
             else []
@@ -212,12 +215,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
 
         return Llama3Inputs(
-            tokens=Tensor.from_numpy(tokens).to(
-                self.pipeline_config.devices[0]
-            ),
+            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets_or_attn_mask=Tensor.from_numpy(
                 input_row_offsets
-            ).to(self.pipeline_config.devices[0]),
+            ).to(self.devices[0]),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
         )
@@ -330,7 +331,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             num_layers=self.get_num_layers(
                 huggingface_config=self.huggingface_config
             ),
-            devices=self.pipeline_config.devices,
+            devices=self.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
             session=session,
@@ -373,7 +374,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         # Read in weights.
         self._weights = self.pipeline_config.load_weights()
@@ -449,7 +450,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
     def _build_opaque_graph(self, weights: Weights) -> Graph:
-        device0 = self.pipeline_config.devices[0]
+        device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -473,7 +474,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             state_dict = {key: value.data() for key, value in weights.items()}
         model_config = self._model_config(state_dict)
         nn_model: LayerV2
-        if len(self.pipeline_config.devices) > 1:
+        if len(self.devices) > 1:
             kv_cache_args = self.kv_manager.input_symbols()
             flattened_kv_types = [
                 kv_type for sublist in kv_cache_args for kv_type in sublist
@@ -481,10 +482,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
             # Create metadata for signal buffers.
             signals = Signals(
-                devices=(
-                    DeviceRef(d.label, d.id)
-                    for d in self.pipeline_config.devices
-                )
+                devices=(DeviceRef(d.label, d.id) for d in self.devices)
             )
 
             nn_model = DistributedLlama3(model_config)
@@ -503,14 +501,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
                 # Multi-GPU passes a signal buffer per device: unmarshal those.
                 signal_buffers = [
-                    v.buffer
-                    for v in variadic_args[: len(self.pipeline_config.devices)]
+                    v.buffer for v in variadic_args[: len(self.devices)]
                 ]
 
                 # Unmarshal the remaining arguments, which are for KV cache.
                 kv_cache = [
-                    v.tensor
-                    for v in variadic_args[len(self.pipeline_config.devices) :]
+                    v.tensor for v in variadic_args[len(self.devices) :]
                 ]
 
                 kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
@@ -553,7 +549,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             DType.float32, shape=["batch_size", "seq_len", "post_seq_len"]
         )
 
-        if len(self.pipeline_config.devices) > 1:
+        if len(self.devices) > 1:
             raise ValueError(
                 "Naive mode does not support distributed execution"
             )
@@ -601,7 +597,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 ]
                 else (
                     DType.float32
-                    if self.pipeline_config.devices[0].label == "cpu"
+                    if self.devices[0].label == "cpu"
                     else DType.bfloat16
                 )
             )
@@ -794,5 +790,8 @@ class Llama3Model(LlamaModelBase):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )

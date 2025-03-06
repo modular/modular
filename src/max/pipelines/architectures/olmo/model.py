@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from max.driver import Device
 from max.engine import InferenceSession
 from max.pipelines import PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
@@ -33,5 +34,8 @@ class OlmoModel(LlamaModelBase):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )

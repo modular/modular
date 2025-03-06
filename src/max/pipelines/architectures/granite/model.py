@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from max.driver import Device
 from max.engine import InferenceSession
 from max.graph import ops
 from max.pipelines import PipelineConfig, SupportedEncoding
@@ -30,8 +31,11 @@ class GraniteModel(Llama3Model):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )
 
         logits_scaling = getattr(huggingface_config, "logits_scaling", 1.0)
 

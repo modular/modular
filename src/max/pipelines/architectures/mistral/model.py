@@ -73,8 +73,11 @@ class MistralModel(PipelineModel[TextContext]):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )
         self.model = self.load_model(session)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
@@ -107,12 +110,12 @@ class MistralModel(PipelineModel[TextContext]):
                 [0] + [ctx.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         next_tokens_batch = np.concatenate(tokens)
         next_tokens_batch = Tensor.from_numpy(next_tokens_batch).to(
-            self.pipeline_config.devices[0]
+            self.devices[0]
         )
 
         return MistralInputs(
@@ -175,9 +178,7 @@ class MistralModel(PipelineModel[TextContext]):
         session: InferenceSession,
         available_cache_memory: int,
     ) -> KVCacheManager:
-        assert self.pipeline_config.devices, (
-            "devices must be provided to load kv manager."
-        )
+        assert self.devices, "devices must be provided to load kv manager."
         return load_kv_manager(
             params=self.get_kv_params(
                 self.pipeline_config, huggingface_config=self.huggingface_config
@@ -187,7 +188,7 @@ class MistralModel(PipelineModel[TextContext]):
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
             num_layers=self.huggingface_config.num_hidden_layers,
-            devices=self.pipeline_config.devices,
+            devices=self.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
             session=session,
@@ -230,7 +231,7 @@ class MistralModel(PipelineModel[TextContext]):
         )
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         self._weights = self.pipeline_config.load_weights()
 

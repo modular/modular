@@ -96,8 +96,11 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
         # pipeline. Unfortunately, self.model is still being used (and exposed)
@@ -124,7 +127,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                     self.huggingface_config.text_config.hidden_size,
                 ],
                 dtype=self.dtype,
-            ).to(self.pipeline_config.devices[0])
+            ).to(self.devices[0])
         assert model_inputs.kv_cache_inputs is not None, (
             "Pixtral has KV cache inputs, but none were provided"
         )
@@ -150,16 +153,14 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 [0] + [ctx.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.ascontiguousarray(
             np.concatenate([ctx.next_tokens for ctx in context_batch])
         )
-        input_ids = Tensor.from_numpy(tokens).to(
-            self.pipeline_config.devices[0]
-        )
+        input_ids = Tensor.from_numpy(tokens).to(self.devices[0])
 
         # TODO: change this to work with all contexts in the batch.
         if context_batch[
@@ -170,9 +171,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             image = np.ascontiguousarray(
                 np.transpose(context_batch[0].pixel_values[0], (1, 2, 0))
             )
-            pixel_values = Tensor.from_numpy(image).to(
-                self.pipeline_config.devices[0]
-            )
+            pixel_values = Tensor.from_numpy(image).to(self.devices[0])
             # TODO(KERN-782): This should be -inf but softmax saturates with NaNs.
             fill_val = -10000.0
             attention_mask = causal_attention_mask_2d_from_imgs(
@@ -182,7 +181,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 fill_val,
             )
             attention_mask = Tensor.from_numpy(attention_mask).to(
-                self.pipeline_config.devices[0]
+                self.devices[0]
             )
             return PixtralInputs(
                 input_ids=input_ids,
@@ -267,7 +266,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             num_layers=self.get_num_layers(
                 huggingface_config=self.huggingface_config
             ),
-            devices=self.pipeline_config.devices,
+            devices=self.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
             session=session,
@@ -309,7 +308,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         )
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         weights = self.pipeline_config.load_weights()
 

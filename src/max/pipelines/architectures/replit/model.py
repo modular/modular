@@ -77,12 +77,15 @@ class ReplitModel(PipelineModel[TextContext]):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
         if pipeline_config.device_specs[0] == DeviceSpec.cpu():
             msg = "Replit currently only supported on gpu."
             raise ValueError(msg)
 
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )
         self.model = self.load_model(session)
 
     def execute(
@@ -132,11 +135,9 @@ class ReplitModel(PipelineModel[TextContext]):
                 "Replit has KV cache inputs, but got None instead."
             )
         return ReplitInputs(
-            tokens=Tensor.from_numpy(tokens).to(
-                self.pipeline_config.devices[0]
-            ),
+            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
-                self.pipeline_config.devices[0]
+                self.devices[0]
             ),
             kv_cache_inputs=kv_cache_inputs,
         )
@@ -204,7 +205,7 @@ class ReplitModel(PipelineModel[TextContext]):
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
             num_layers=self.huggingface_config.n_layers,
-            devices=self.pipeline_config.devices,
+            devices=self.devices,
             available_cache_memory=available_cache_memory,
             page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
             session=session,
@@ -245,7 +246,7 @@ class ReplitModel(PipelineModel[TextContext]):
         )
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         # Read in weights.
         weights = self.pipeline_config.load_weights()

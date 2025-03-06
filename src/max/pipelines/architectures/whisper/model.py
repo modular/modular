@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import time
 
-from max.driver import Tensor
+from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
 from max.pipelines import (
     ModelInputs,
@@ -57,8 +57,11 @@ class Whisper(PipelineModel):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device],
     ) -> None:
-        super().__init__(pipeline_config, session, huggingface_config, encoding)
+        super().__init__(
+            pipeline_config, session, huggingface_config, encoding, devices
+        )
         self.model = self.load_model(session)
 
     def load_model(
