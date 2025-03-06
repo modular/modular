@@ -513,11 +513,12 @@ class PipelineRegistry:
         model_weights_size = model_cls.estimate_weights_size(pipeline_config)
 
         total_size = model_weights_size
-        available_kv_cache_memory = max(0, free_memory - model_weights_size)
         available_kv_cache_memory = int(
-            available_kv_cache_memory
+            free_memory
             * pipeline_config.kv_cache_config.device_memory_utilization
+            - model_weights_size
         )
+        available_kv_cache_memory = max(0, available_kv_cache_memory)
 
         user_provided_max_length = pipeline_config.max_length is not None
         user_provided_max_batch_size = (
