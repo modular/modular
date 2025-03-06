@@ -290,7 +290,7 @@ def _sum_squares[count: Int](ptr: UnsafePointer[Float32]) -> Float32:
 def _pick_weights_q4_k_q5_k[
     count: Int
 ](ptr: UnsafePointer[Float32], rms: Float32) -> InlineArray[Float32, count]:
-    weights = InlineArray[Float32, count](unsafe_uninitialized=True)
+    weights = InlineArray[Float32, count](uninitialized=True)
 
     @parameter
     fn fill[width: Int](i: Int):
@@ -354,7 +354,7 @@ fn _biased_symmetric_quantize[
 def _biased_symmetric_quantize[
     count: Int, nmax: Int
 ](ptr: UnsafePointer[Float32], *, iscale: Float32) -> InlineArray[UInt8, count]:
-    quants = InlineArray[UInt8, count](unsafe_uninitialized=True)
+    quants = InlineArray[UInt8, count](uninitialized=True)
 
     @parameter
     fn quantize_piece[width: Int](i: Int):
@@ -381,7 +381,7 @@ fn _unbiased_symmetric_quantize[
 def _unbiased_symmetric_quantize[
     count: Int, nmax: Int
 ](ptr: UnsafePointer[Float32], *, iscale: Float32) -> InlineArray[Int8, count]:
-    quants = InlineArray[Int8, count](unsafe_uninitialized=True)
+    quants = InlineArray[Int8, count](uninitialized=True)
 
     @parameter
     fn quantize_piece[width: Int](i: Int):
@@ -398,7 +398,7 @@ def _unbiased_symmetric_qdq[
 ](
     ptr: UnsafePointer[Float32], *, scale: Float32, iscale: Float32
 ) -> InlineArray[Int8, count]:
-    quants = InlineArray[Int8, count](unsafe_uninitialized=True)
+    quants = InlineArray[Int8, count](uninitialized=True)
 
     @parameter
     fn qdq_piece[width: Int](i: Int):
@@ -427,7 +427,7 @@ def _asymmetric_quantize[
 ](ptr: UnsafePointer[Float32], *, iscale: Float32, min: Float32) -> InlineArray[
     UInt8, count
 ]:
-    quants = InlineArray[UInt8, count](unsafe_uninitialized=True)
+    quants = InlineArray[UInt8, count](uninitialized=True)
 
     @parameter
     fn quantize_piece[width: Int](i: Int):
@@ -692,7 +692,7 @@ def _quantize_superblock_params[
     # [M5][S5]
     # [M6][S6]
     # [M7][S7]
-    quant_scales = InlineArray[UInt8, K_SCALE_SIZE](unsafe_uninitialized=True)
+    quant_scales = InlineArray[UInt8, K_SCALE_SIZE](uninitialized=True)
     for subblock_idx in range(num_subblocks):
         q_scale = _unsigned_symmetric_quantize[nmax](
             scales[subblock_idx], iscale=inv_scale
@@ -789,8 +789,8 @@ struct Q4_KEncoding(QuantizationEncoding):
         )
 
         # First compute subblock statistics.
-        scales = InlineArray[Float32, num_subblocks](unsafe_uninitialized=True)
-        mins = InlineArray[Float32, num_subblocks](unsafe_uninitialized=True)
+        scales = InlineArray[Float32, num_subblocks](uninitialized=True)
+        mins = InlineArray[Float32, num_subblocks](uninitialized=True)
         for subblock_idx in range(num_subblocks):
             subblock_params = _pick_subblock_scale_min_q4_k_q5_k[
                 count=elems_per_subblock,
@@ -808,7 +808,7 @@ struct Q4_KEncoding(QuantizationEncoding):
             scales=scales, mins=mins
         )
 
-        qs = InlineArray[UInt8, QK_K // 2](unsafe_uninitialized=True)
+        qs = InlineArray[UInt8, QK_K // 2](uninitialized=True)
         # Quantize two subblocks at a time.
         for subblock_idx in range(0, num_subblocks, 2):
             subblock_lsb_iscale = 1 / scales[subblock_idx]
@@ -955,8 +955,8 @@ struct Q5_KEncoding(QuantizationEncoding):
         )
 
         # First compute subblock statistics.
-        scales = InlineArray[Float32, num_subblocks](unsafe_uninitialized=True)
-        mins = InlineArray[Float32, num_subblocks](unsafe_uninitialized=True)
+        scales = InlineArray[Float32, num_subblocks](uninitialized=True)
+        mins = InlineArray[Float32, num_subblocks](uninitialized=True)
         for subblock_idx in range(num_subblocks):
             subblock_params = _pick_subblock_scale_min_q4_k_q5_k[
                 count=elems_per_subblock,
@@ -977,7 +977,7 @@ struct Q5_KEncoding(QuantizationEncoding):
         # qs is fully overwritten, but qh is bit-or'ed into, so it needs to be
         # initialized to zeros.
         qh = InlineArray[UInt8, QK_K // 8](0)
-        qs = InlineArray[UInt8, QK_K // 2](unsafe_uninitialized=True)
+        qs = InlineArray[UInt8, QK_K // 2](uninitialized=True)
         # Quantize two subblocks at a time.
         for subblock_idx in range(0, num_subblocks, 2):
             subblock0_iscale = 1 / scales[subblock_idx]
@@ -1151,7 +1151,7 @@ struct Q6_KEncoding(QuantizationEncoding):
         ]()
 
         # First compute subblock statistics.
-        scales = InlineArray[Float32, QK_K // 16](unsafe_uninitialized=True)
+        scales = InlineArray[Float32, QK_K // 16](uninitialized=True)
         for subblock_idx in range(num_subblocks):
             scales[subblock_idx] = Self._pick_subblock_scale[
                 count=elems_per_subblock,
@@ -1162,8 +1162,8 @@ struct Q6_KEncoding(QuantizationEncoding):
         # the upcoming quantization.
         (d, quant_scales) = Self._quantize_superblock_params(scales)
 
-        qh = InlineArray[UInt8, QK_K // 4](unsafe_uninitialized=True)
-        ql = InlineArray[UInt8, QK_K // 2](unsafe_uninitialized=True)
+        qh = InlineArray[UInt8, QK_K // 4](uninitialized=True)
+        ql = InlineArray[UInt8, QK_K // 2](uninitialized=True)
         # Quantize, 4 subblocks at a time, in such a way to match llama.cpp's
         # elaborate indexing structure.
         for outer_subblock_idx in range(0, num_subblocks, 8):
@@ -1181,7 +1181,7 @@ struct Q6_KEncoding(QuantizationEncoding):
                 ]()
                 for elem_idx in range(0, elems_per_subblock, width):
                     subblock_quants = InlineArray[SIMD[DType.uint8, width], 4](
-                        unsafe_uninitialized=True
+                        uninitialized=True
                     )
                     for i in range(4):
                         subblock_quants[i] = _biased_symmetric_quantize[nmax](

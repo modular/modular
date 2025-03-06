@@ -484,7 +484,7 @@ fn test_construction_from_managed_tensor_slice() raises:
     )
 
     var stack_buffer = InlineArray[Scalar[dtype], rows * cols](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var dynamic_tensor_slice = ManagedTensorSlice[
         IOUnknown,

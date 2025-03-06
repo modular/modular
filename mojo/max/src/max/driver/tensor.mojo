@@ -175,7 +175,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement):
     fn _canonicalize_slices(
         self, slices: VariadicListMem[Slice, _]
     ) -> InlineArray[Slice, rank]:
-        var slice_array = InlineArray[Slice, rank](unsafe_uninitialized=True)
+        var slice_array = InlineArray[Slice, rank](uninitialized=True)
         for i in range(len(slices)):
             slice_array.unsafe_ptr().offset(i).init_pointee_copy(slices[i])
             slice_array[i].start = (slice_array[i].start or 0).value()

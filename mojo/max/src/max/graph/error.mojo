@@ -142,7 +142,7 @@ def format_system_stack[MAX_STACK_SIZE: Int = 128]() -> String:
         call per line.
     """
     var call_stack = InlineArray[UnsafePointer[NoneType], MAX_STACK_SIZE](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var frames = external_call["backtrace", Int](call_stack, MAX_STACK_SIZE)
     var frame_strs = external_call[
