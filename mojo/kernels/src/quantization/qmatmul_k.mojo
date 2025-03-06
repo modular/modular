@@ -423,14 +423,14 @@ fn _pack_block_Q4_K[
     ]()
 
     var q_scales_buf = InlineArray[UInt8, group_count * block_n](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var q_mins_buf = InlineArray[UInt8, group_count * block_n](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var q_bits_block_buf = InlineArray[
         UInt8, _block_QK_K.quantized_k * block_n
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
 
     for n in range(block_n):
         dst_ptr[].base_scales[n] = src_ptr[].base_scale
@@ -454,7 +454,7 @@ fn _pack_block_Q4_K[
             q_mins_buf[g * block_n + n] = q_min
 
         var q_bits_column_buf = InlineArray[UInt8, _block_QK_K.quantized_k](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
 
         _expand_q_bits_lo[width=32](
@@ -471,7 +471,7 @@ fn _pack_block_Q4_K[
     # blob and to do processor specific reordering of the values for the
     # compute kernel.
     var q_scales_and_mins_buf = InlineArray[UInt8, 2 * group_count * block_n](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var q_scales_reorder_buf = q_scales_and_mins_buf.unsafe_ptr()
     var q_mins_reorder_buf = q_scales_and_mins_buf.unsafe_ptr() + group_count * block_n

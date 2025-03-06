@@ -166,7 +166,7 @@ struct qgemm_Q4_0(QuantizedGemm):
         )
 
         var a_quant_data = InlineArray[Int8, _block_Q4_0.group_size](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
 
         var a_scale = quantize_a_Q8[_block_Q4_0.group_size](
@@ -174,7 +174,7 @@ struct qgemm_Q4_0(QuantizedGemm):
         )
 
         var b_quant_data = InlineArray[UInt8, _block_Q4_0.group_size](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
 
         # Decode the bits of the weight data.
@@ -255,7 +255,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         )
 
         var a_quant_data = InlineArray[Int8, _block_QK_K.quantized_k](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
 
         var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
@@ -263,7 +263,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         )
 
         var a_block_sums = InlineArray[Int32, _block_Q4_K.group_count](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         for i in range(_block_Q4_K.group_count):
             a_block_sums[i] = (
@@ -276,10 +276,10 @@ struct qgemm_Q4_K(QuantizedGemm):
             )
 
         var b_scales = InlineArray[UInt8, _block_Q4_K.group_count](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         var b_mins = InlineArray[UInt8, _block_Q4_K.group_count](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
 
         for i in range(_block_Q4_K.group_count):
@@ -295,7 +295,7 @@ struct qgemm_Q4_K(QuantizedGemm):
                 )
 
         var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
 
         # Decode the bits of the weight data.
@@ -383,7 +383,7 @@ struct qgemm_Q6_K(QuantizedGemm):
         )
 
         var a_quant_data = InlineArray[Int8, _block_QK_K.quantized_k](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
 
         var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
@@ -391,7 +391,7 @@ struct qgemm_Q6_K(QuantizedGemm):
         )
 
         var b_quant_data = InlineArray[UInt8, _block_QK_K.quantized_k](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
 
         # Decode the bottom bits of the weight data.

@@ -135,7 +135,7 @@ fn _read_write_to_tensors[
     # Allocate and populate tensor to encode
     # Buffer with the original data
     var data_matrix_backing = InlineArray[Float32, num_elements](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var data_matrix = NDBuffer[
         DType.float32,
@@ -150,7 +150,7 @@ fn _read_write_to_tensors[
     alias num_blocks = ceildiv(num_elements, group_size)
     alias block_size = sizeof[Q4sym[group_size]]()
     var packed_blob_backing = InlineArray[UInt8, num_blocks * block_size](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var packed_blob = NDBuffer[
         DType.uint8, rank, DimList(num_blocks * block_size)
@@ -158,7 +158,7 @@ fn _read_write_to_tensors[
 
     # Tensor to store the dequantized data
     var out_data_matrix_backing = InlineArray[Float32, num_elements](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var out_data_matrix = NDBuffer[
         DType.float32,
