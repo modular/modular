@@ -4,9 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from math import align_up, ceildiv
-from sys import alignof, simdwidthof
 
+from math import align_up, ceildiv
+from sys import (
+    alignof,
+    simdwidthof,
+    has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
+)
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -498,7 +503,7 @@ fn gemv_gpu_dispatch[
     var m = shape.M
     var n = shape.N
     var k = shape.K
-    alias WARPS_PER_BLOCK = 32
+    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
     alias simd_width = simdwidthof[a.type, target = _get_gpu_target()]()
 
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
@@ -530,46 +535,72 @@ fn gemv_gpu_dispatch[
         )
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
-        var max_access_policy_window_size = ctx.get_attribute(
-            DeviceAttribute.MAX_ACCESS_POLICY_WINDOW_SIZE
-        )
-        var launch_attributes = List[LaunchAttribute](
-            AccessPolicyWindow(
-                base_ptr=a.data,
-                count=min(a.size(), max_access_policy_window_size),
-                hit_ratio=1,
-                hit_prop=AccessProperty.PERSISTING,
-                miss_prop=AccessProperty.STREAMING,
-            ),
-        )
         if transpose_b == False:
             var block_dim = min(
                 align_up(k // simd_width, WARP_SIZE),
                 WARP_SIZE * WARPS_PER_BLOCK,
             )
 
-            alias kernel = gemv_kernel_vector[
-                c.type,
-                c.shape,
-                a.type,
-                a.shape,
-                b.type,
-                b.shape,
-                simd_width=simd_width,
-                reduction_method = warp.ReductionMethod.WARP,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-            ctx.enqueue_function[kernel](
-                c,
-                a,
-                b,
-                UInt(m),
-                UInt(n),
-                UInt(k),
-                grid_dim=ceildiv(m, block_dim // WARP_SIZE),
-                block_dim=block_dim,
-                attributes=launch_attributes,
-            )
+            @parameter
+            if has_nvidia_gpu_accelerator():
+                var max_access_policy_window_size = ctx.get_attribute(
+                    DeviceAttribute.MAX_ACCESS_POLICY_WINDOW_SIZE
+                )
+                var launch_attributes = List[LaunchAttribute](
+                    AccessPolicyWindow(
+                        base_ptr=a.data,
+                        count=min(a.size(), max_access_policy_window_size),
+                        hit_ratio=1,
+                        hit_prop=AccessProperty.PERSISTING,
+                        miss_prop=AccessProperty.STREAMING,
+                    ),
+                )
+                alias kernel = gemv_kernel_vector[
+                    c.type,
+                    c.shape,
+                    a.type,
+                    a.shape,
+                    b.type,
+                    b.shape,
+                    simd_width=simd_width,
+                    reduction_method = warp.ReductionMethod.WARP,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+                ctx.enqueue_function[kernel](
+                    c,
+                    a,
+                    b,
+                    UInt(m),
+                    UInt(n),
+                    UInt(k),
+                    grid_dim=ceildiv(m, block_dim // WARP_SIZE),
+                    block_dim=block_dim,
+                    attributes=launch_attributes,
+                )
+            else:
+                alias kernel = gemv_kernel_vector[
+                    c.type,
+                    c.shape,
+                    a.type,
+                    a.shape,
+                    b.type,
+                    b.shape,
+                    simd_width=simd_width,
+                    reduction_method = warp.ReductionMethod.WARP,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+                ctx.enqueue_function[kernel](
+                    c,
+                    a,
+                    b,
+                    UInt(m),
+                    UInt(n),
+                    UInt(k),
+                    grid_dim=ceildiv(m, block_dim // WARP_SIZE),
+                    block_dim=block_dim,
+                )
         else:
             var block_dim = min(
                 align_up(k // simd_width, WARP_SIZE),
@@ -733,7 +764,7 @@ fn gemv_gpu[
     elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
 
         @parameter
-        if a.type == DType.bfloat16:
+        if a.type == DType.bfloat16 and has_nvidia_gpu_accelerator():
             if (
                 k >= 4096
                 and n >= 4096
@@ -764,6 +795,11 @@ fn gemv_gpu[
                 kernel_func = GEMVAlgorithm.GEVM_KERNEL
         else:
             kernel_func = GEMVAlgorithm.GEVM_KERNEL
+
+        # GEVM_KERNEL does not work with AMDGPU yet
+        @parameter
+        if has_amd_gpu_accelerator():
+            kernel_func = GEMVAlgorithm.MATMUL_NAIVE
 
     else:
         kernel_func = GEMVAlgorithm.MATMUL_NAIVE
