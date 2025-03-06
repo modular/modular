@@ -52,7 +52,7 @@ fn bench_layer_norm_gpu[
     var data_buf = NDBuffer[type, rank](data_d.unsafe_ptr(), shape)
     var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
     var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
-    var epsilon = Scalar[type]()
+    var epsilon = Float32(0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -132,7 +132,7 @@ fn bench_rms_norm_gpu[
 
     var data_buf = NDBuffer[type, rank](data_d.unsafe_ptr(), shape)
     var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
-    var epsilon = Scalar[type](0.001)
+    var epsilon = Float32(0.001)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
