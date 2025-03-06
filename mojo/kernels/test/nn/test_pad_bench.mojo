@@ -502,7 +502,7 @@ fn test_pad_constant_nd[
 
     # Create a padding array
     var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var paddings = NDBuffer[DType.index, 1, 2 * rank](
         paddings_stack.unsafe_ptr()
@@ -584,7 +584,7 @@ fn test_pad_reflect_nd[
 
     # Create a padding array
     var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var paddings = NDBuffer[DType.index, 1, 2 * rank](
         paddings_stack.unsafe_ptr()

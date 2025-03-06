@@ -115,20 +115,20 @@ def test_static_conv():
     print("== test_static_conv")
 
     var output_stack = InlineArray[Scalar[value_type], N * HO * WO * F](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var output = NDBuffer[value_type, 4, DimList(N, HO, WO, F)](
         output_stack.unsafe_ptr()
     )
     var input_stack = InlineArray[Scalar[value_type], N * H * W * C](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[value_type, 4, DimList(N, H, W, C)](
         input_stack.unsafe_ptr()
     )
     var filter_stack = InlineArray[
         Scalar[value_type], num_micro_tile * R * S * C * micro_kernel_f_size
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var filter = NDBuffer[
         value_type,
         5,

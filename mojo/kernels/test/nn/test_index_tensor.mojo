@@ -105,7 +105,7 @@ fn test_index_tensor_DLRM() raises:
     ](input.make_dims_unknown(), indices.make_dims_unknown())
 
     var output_data_data = InlineArray[Scalar[input_type], dim_0 * index_len](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var output_data_buffer = NDBuffer[input_type, output_rank](
         output_data_data.unsafe_ptr(), output_shape
@@ -217,7 +217,7 @@ fn test_index_tensor_DLRM_batch() raises:
 
     var output_data_data = InlineArray[
         Scalar[input_type], dim_0 * dim_1 * index_len
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output_data_buffer = NDBuffer[input_type, output_rank](
         output_data_data.unsafe_ptr(), output_shape
     )
@@ -326,7 +326,7 @@ fn test_index_tensor_CLIPVIT() raises:
     ](input.make_dims_unknown(), indices.make_dims_unknown())
 
     var output_data_data = InlineArray[Scalar[input_type], dim_0 * dim_2](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var output_data_buffer = NDBuffer[input_type, output_rank](
         output_data_data.unsafe_ptr(), output_shape
@@ -416,7 +416,7 @@ fn test_index_tensor_llama2_mistral() raises:
 
     var output_data_data = InlineArray[
         Scalar[input_type], index_dim_0 * index_dim_1 * dim_1
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output_data_buffer = NDBuffer[input_type, output_rank](
         output_data_data.unsafe_ptr(), output_shape
     )

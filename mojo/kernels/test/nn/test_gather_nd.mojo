@@ -58,7 +58,7 @@ fn main():
         print("Output shape: ", output_shape)
 
         var output_data_data = InlineArray[Scalar[data_type], 2](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data.unsafe_ptr(), output_shape
@@ -106,7 +106,7 @@ fn main():
         print("Output shape: ", output_shape)
 
         var output_data_data = InlineArray[Scalar[data_type], 4](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data.unsafe_ptr(), output_shape
@@ -167,7 +167,7 @@ fn main():
         print("Output shape: ", output_shape)
 
         var output_data_data = InlineArray[Scalar[data_type], 4](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data.unsafe_ptr(), output_shape
@@ -228,7 +228,7 @@ fn main():
         print("Output shape: ", output_shape)
 
         var output_data_data = InlineArray[Scalar[data_type], 4](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data.unsafe_ptr(), output_shape
@@ -287,7 +287,7 @@ fn main():
         print("Output shape: ", output_shape)
 
         var output_data_data = InlineArray[Scalar[data_type], 4](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data.unsafe_ptr(), output_shape
@@ -371,7 +371,7 @@ fn main():
         print("Output shape: ", output_shape)
 
         var output_data_data = InlineArray[Scalar[data_type], 6](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data.unsafe_ptr(), output_shape
@@ -434,7 +434,7 @@ fn main():
         print("Output shape: ", output_shape)
 
         var output_data_data = InlineArray[Scalar[data_type], 8](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data.unsafe_ptr(), output_shape
@@ -500,7 +500,7 @@ fn main():
         print("Output shape: ", output_shape)
 
         var output_data_data = InlineArray[Scalar[data_type], 6](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
         var output_data_buffer = NDBuffer[data_type, output_rank](
             output_data_data.unsafe_ptr(), output_shape

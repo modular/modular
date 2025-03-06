@@ -36,7 +36,7 @@ fn test_pad_1d():
     # [0, 0, 0, 0, 0, 0]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 1, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 
@@ -80,7 +80,7 @@ fn test_pad_reflect_1d():
     # [0, 0, 0, 0, 0, 0, 0, 0]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 1, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 
@@ -131,7 +131,7 @@ fn test_pad_repeat_1d():
     # [0, 0, 0, 0, 0, 0, 0, 0]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 1, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 
@@ -175,7 +175,7 @@ fn test_pad_2d():
     # [[1, 2],
     #  [3, 4]]
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[DType.index, 2, in_shape](input_stack.unsafe_ptr())
     input[IndexList[2](0, 0)] = 1
@@ -194,7 +194,7 @@ fn test_pad_2d():
     #  [0, 0, 0, 0]]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 2, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 
@@ -245,7 +245,7 @@ fn test_pad_reflect_2d():
     # [[1, 2],
     #  [3, 4]]
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[DType.index, 2, in_shape](input_stack.unsafe_ptr())
     input[IndexList[2](0, 0)] = 1
@@ -267,7 +267,7 @@ fn test_pad_reflect_2d():
     #  [0 0 0]]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 2, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 
@@ -331,7 +331,7 @@ fn test_pad_repeat_2d():
     # [[1, 2],
     #  [3, 4]]
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[DType.index, 2, in_shape](input_stack.unsafe_ptr())
     input[IndexList[2](0, 0)] = 1
@@ -353,7 +353,7 @@ fn test_pad_repeat_2d():
     #  [0 0 0]]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 2, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 
@@ -417,7 +417,7 @@ fn test_pad_3d():
     # [[[1, 2],
     #   [3, 4]]]
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[DType.index, 3, in_shape](input_stack.unsafe_ptr())
     input[IndexList[3](0, 0, 0)] = 1
@@ -439,7 +439,7 @@ fn test_pad_3d():
     #   [0, 0, 0]]]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 3, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 
@@ -506,7 +506,7 @@ fn test_pad_reflect_3d():
     #  [[1, 2],
     #   [3 ,4]]]
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
 
     var input = NDBuffer[DType.index, 3, in_shape](input_stack.unsafe_ptr())
@@ -539,7 +539,7 @@ fn test_pad_reflect_3d():
     #   [0 0 0]]]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 3, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 
@@ -643,7 +643,7 @@ fn test_pad_reflect_3d_singleton():
     # Create an input matrix of the form
     # [[[1]]]
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[DType.index, 3, in_shape](input_stack.unsafe_ptr())
     input[IndexList[3](0, 0, 0)] = 1
@@ -662,7 +662,7 @@ fn test_pad_reflect_3d_singleton():
     #   [0 0 0 0 0]]]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 3, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 
@@ -765,7 +765,7 @@ fn test_pad_repeat_3d():
     #  [[1, 2],
     #   [3 ,4]]]
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[DType.index, 3, in_shape](input_stack.unsafe_ptr())
     input[IndexList[3](0, 0, 0)] = 1
@@ -785,7 +785,7 @@ fn test_pad_repeat_3d():
     # Create an output array equivalent to np.zeros((5, 4, 3))
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     var output = NDBuffer[DType.index, 3, out_shape](output_stack.unsafe_ptr())
     output.fill(0)
 

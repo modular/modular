@@ -32,15 +32,15 @@ def print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 def test_arange[
     dtype: DType,
 ](start: Int, stop: Int, step: Int):
-    var memory1 = InlineArray[Scalar[dtype], 1](unsafe_uninitialized=True)
+    var memory1 = InlineArray[Scalar[dtype], 1](uninitialized=True)
     var start_tensor = NDBuffer[dtype, 1](memory1.unsafe_ptr(), IndexList[1](1))
     start_tensor[0] = start
 
-    var memory2 = InlineArray[Scalar[dtype], 1](unsafe_uninitialized=True)
+    var memory2 = InlineArray[Scalar[dtype], 1](uninitialized=True)
     var stop_tensor = NDBuffer[dtype, 1](memory2.unsafe_ptr(), IndexList[1](1))
     stop_tensor[0] = stop
 
-    var memory3 = InlineArray[Scalar[dtype], 1](unsafe_uninitialized=True)
+    var memory3 = InlineArray[Scalar[dtype], 1](uninitialized=True)
     var step_tensor = NDBuffer[dtype, 1](memory3.unsafe_ptr(), IndexList[1](1))
     step_tensor[0] = step
 
@@ -61,7 +61,7 @@ def test_arange[
         return
 
     var memory4 = InlineArray[Scalar[dtype], max_output_size](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var out_tensor = NDBuffer[dtype, 1](memory4.unsafe_ptr(), outshape)
 

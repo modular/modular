@@ -21,17 +21,17 @@ def test_roi_align_avg[scale_type: DType]():
     alias roi_shape = DimList(1, 5)
 
     var input_stack = InlineArray[Float32, Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[DType.float32, 4, in_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Float32, Int(out_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var output = NDBuffer[DType.float32, 4, out_shape](
         output_stack.unsafe_ptr()
     )
     var rois_stack = InlineArray[Float32, Int(roi_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var rois = NDBuffer[DType.float32, 2, roi_shape](rois_stack.unsafe_ptr())
 
@@ -94,17 +94,17 @@ def test_roi_align_max():
     alias roi_shape = DimList(1, 5)
 
     var input_stack = InlineArray[Float32, Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[DType.float32, 4, in_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Float32, Int(out_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var output = NDBuffer[DType.float32, 4, out_shape](
         output_stack.unsafe_ptr()
     )
     var rois_stack = InlineArray[Float32, Int(roi_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var rois = NDBuffer[DType.float32, 2, roi_shape](rois_stack.unsafe_ptr())
 
@@ -167,17 +167,17 @@ def test_roi_align_KERN_692():
     alias roi_shape = DimList(1, 5)
 
     var input_stack = InlineArray[Float32, Int(in_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[DType.float32, 4, in_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Float32, Int(out_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var output = NDBuffer[DType.float32, 4, out_shape](
         output_stack.unsafe_ptr()
     )
     var rois_stack = InlineArray[Float32, Int(roi_shape.product())](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var rois = NDBuffer[DType.float32, 2, roi_shape](rois_stack.unsafe_ptr())
 

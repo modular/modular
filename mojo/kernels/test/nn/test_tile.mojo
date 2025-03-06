@@ -22,7 +22,7 @@ fn test_tile_eg1() raises:
     alias rank = 2
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 4](unsafe_uninitialized=True)
+    var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -39,9 +39,7 @@ fn test_tile_eg1() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -53,7 +51,7 @@ fn test_tile_eg1() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 16](unsafe_uninitialized=True)
+    var output_stack = InlineArray[Scalar[type], 16](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -86,7 +84,7 @@ fn test_tile_eg2() raises:
     alias rank = 2
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 4](unsafe_uninitialized=True)
+    var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -103,9 +101,7 @@ fn test_tile_eg2() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -117,9 +113,7 @@ fn test_tile_eg2() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 6 * 4](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 6 * 4](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -150,7 +144,7 @@ fn test_tile_eg3() raises:
     alias rank = 2
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 4](unsafe_uninitialized=True)
+    var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -167,9 +161,7 @@ fn test_tile_eg3() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -181,9 +173,7 @@ fn test_tile_eg3() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 4 * 6](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 4 * 6](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -218,9 +208,7 @@ fn test_tile_eg4() raises:
     alias rank = 3
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](
-        unsafe_uninitialized=True
-    )
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -242,9 +230,7 @@ fn test_tile_eg4() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -257,9 +243,7 @@ fn test_tile_eg4() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 4 * 2 * 2](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 4 * 2 * 2](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -296,9 +280,7 @@ fn test_tile_eg5() raises:
     alias rank = 3
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](
-        unsafe_uninitialized=True
-    )
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -320,9 +302,7 @@ fn test_tile_eg5() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -335,9 +315,7 @@ fn test_tile_eg5() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 4 * 2 * 4](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 4 * 2 * 4](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -368,9 +346,7 @@ fn test_tile_eg6() raises:
     alias rank = 2
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 2 * 2](
-        unsafe_uninitialized=True
-    )
+    var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
 
     var input = NDBuffer[
         type,
@@ -388,9 +364,7 @@ fn test_tile_eg6() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -402,9 +376,7 @@ fn test_tile_eg6() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 2 * 4](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 2 * 4](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -435,9 +407,7 @@ fn test_tile_eg7() raises:
     alias rank = 2
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 2 * 2](
-        unsafe_uninitialized=True
-    )
+    var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -454,9 +424,7 @@ fn test_tile_eg7() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -468,9 +436,7 @@ fn test_tile_eg7() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 4 * 2](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 4 * 2](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -501,7 +467,7 @@ fn test_tile_eg8() raises:
     alias rank = 2
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 4](unsafe_uninitialized=True)
+    var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -518,9 +484,7 @@ fn test_tile_eg8() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 2](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -532,9 +496,7 @@ fn test_tile_eg8() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 4 * 4](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 4 * 4](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -581,9 +543,7 @@ fn test_tile_eg9() raises:
     alias rank = 3
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](
-        unsafe_uninitialized=True
-    )
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -605,9 +565,7 @@ fn test_tile_eg9() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -620,9 +578,7 @@ fn test_tile_eg9() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 4 * 4 * 2](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 4 * 4 * 2](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -680,9 +636,7 @@ fn test_tile_eg10() raises:
     alias rank = 3
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](
-        unsafe_uninitialized=True
-    )
+    var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -704,9 +658,7 @@ fn test_tile_eg10() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -719,9 +671,7 @@ fn test_tile_eg10() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 6 * 4 * 6](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 6 * 4 * 6](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -786,9 +736,7 @@ fn test_tile_eg11() raises:
     alias rank = 3
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 3 * 2 * 2](
-        unsafe_uninitialized=True
-    )
+    var input_stack = InlineArray[Scalar[type], 3 * 2 * 2](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -815,9 +763,7 @@ fn test_tile_eg11() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 3](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -830,9 +776,7 @@ fn test_tile_eg11() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 6 * 6 * 2](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 6 * 6 * 2](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -870,9 +814,7 @@ fn test_tile_eg12() raises:
     alias rank = 4
     alias type = DType.float32
 
-    var input_stack = InlineArray[Scalar[type], 2 * 2](
-        unsafe_uninitialized=True
-    )
+    var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
     var input = NDBuffer[
         type,
         rank,
@@ -889,9 +831,7 @@ fn test_tile_eg12() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 4](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -905,9 +845,7 @@ fn test_tile_eg12() raises:
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
-    var output_stack = InlineArray[Scalar[type], 4 * 6](
-        unsafe_uninitialized=True
-    )
+    var output_stack = InlineArray[Scalar[type], 4 * 6](uninitialized=True)
     var output = NDBuffer[
         type,
         rank,
@@ -961,7 +899,7 @@ fn test_tile_eg13() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[
         type,
@@ -994,9 +932,7 @@ fn test_tile_eg13() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 4](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -1011,7 +947,7 @@ fn test_tile_eg13() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 2 * 4 * 4 * 6](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var output = NDBuffer[
         type,
@@ -1082,7 +1018,7 @@ fn test_tile_eg14() raises:
     alias type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var input = NDBuffer[
         type,
@@ -1115,9 +1051,7 @@ fn test_tile_eg14() raises:
     # type_repeats is always DType.int64
     alias type_repeats = DType.int64
 
-    var repeats_stack = InlineArray[Scalar[type_repeats], 4](
-        unsafe_uninitialized=True
-    )
+    var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
@@ -1132,7 +1066,7 @@ fn test_tile_eg14() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 4 * 4 * 6](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var output = NDBuffer[
         type,

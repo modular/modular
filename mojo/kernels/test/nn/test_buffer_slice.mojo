@@ -40,13 +40,9 @@ def test_slice[
     use_copy: Bool,
 ):
     # Isn't always used but is used for the output buffer if we copy.
-    var output_mem = InlineArray[Scalar[dtype], numelems](
-        unsafe_uninitialized=True
-    )
+    var output_mem = InlineArray[Scalar[dtype], numelems](uninitialized=True)
 
-    var memory1 = InlineArray[Scalar[dtype], numelems](
-        unsafe_uninitialized=True
-    )
+    var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = NDBuffer[
         dtype,
         outer_rank,
@@ -57,21 +53,21 @@ def test_slice[
     print("In strides:", in_tensor.get_strides())
 
     var start_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var start_tensor = NDBuffer[DType.index, 1](
         start_tensor_mem.unsafe_ptr(), IndexList[1](outer_rank)
     )
 
     var end_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var end_tensor = NDBuffer[DType.index, 1](
         end_tensor_mem.unsafe_ptr(), IndexList[1](outer_rank)
     )
 
     var step_tensor_mem = InlineArray[Scalar[DType.index], outer_rank](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     var step_tensor = NDBuffer[DType.index, 1](
         step_tensor_mem.unsafe_ptr(), IndexList[1](outer_rank)

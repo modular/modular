@@ -19,7 +19,7 @@ def test_maybe_partial_load():
     alias simd_size = 4
     alias size = simd_size + 1
 
-    var a = InlineArray[Float32, size](unsafe_uninitialized=True)
+    var a = InlineArray[Float32, size](uninitialized=True)
     for i in range(size):
         a[i] = 1.0
 
@@ -41,9 +41,7 @@ def test_accumulate[
     #     [ 1.0, 1.0 ],
     #     [ 2.0, 2.0 ],
     #     [ 3.0, 3.0 ]]
-    var a = InlineArray[Scalar[type], 2 * num_rows * length](
-        unsafe_uninitialized=True
-    )
+    var a = InlineArray[Scalar[type], 2 * num_rows * length](uninitialized=True)
     for i in range(2 * num_rows):
         var a_ptr = a.unsafe_ptr() + i * length
         a_ptr[0] = Scalar[type](i)
@@ -54,7 +52,7 @@ def test_accumulate[
     #     [4 x 2.0, 4 x 2.0, 4 x 3.0, 4 x 3.0]]
     alias b_size = 2 * num_cols * simd_size * length
     alias kernel_width = num_cols * simd_size
-    var b = InlineArray[Scalar[type], b_size](unsafe_uninitialized=True)
+    var b = InlineArray[Scalar[type], b_size](uninitialized=True)
 
     for i in range(2 * length):
         var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
@@ -135,9 +133,7 @@ def test_accumulate_with_offsets[
     #     [ 1.0, 1.0 ],
     #     [ 2.0, 2.0 ],
     #     [ 3.0, 3.0 ]]
-    var a = InlineArray[Scalar[type], 2 * num_rows * length](
-        unsafe_uninitialized=True
-    )
+    var a = InlineArray[Scalar[type], 2 * num_rows * length](uninitialized=True)
     for i in range(2 * num_rows):
         var a_ptr = a.unsafe_ptr() + i * length
         a_ptr[0] = Scalar[type](i)
@@ -148,7 +144,7 @@ def test_accumulate_with_offsets[
     #     [4 x 2.0, 4 x 2.0, 4 x 3.0, 4 x 3.0]]
     alias b_size = 2 * num_cols * simd_size * length
     alias kernel_width = num_cols * simd_size
-    var b = InlineArray[Scalar[type], b_size](unsafe_uninitialized=True)
+    var b = InlineArray[Scalar[type], b_size](uninitialized=True)
 
     for i in range(2 * length):
         var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
@@ -157,7 +153,7 @@ def test_accumulate_with_offsets[
         for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
-    var a_base_stack = InlineArray[Int32, num_rows](unsafe_uninitialized=True)
+    var a_base_stack = InlineArray[Int32, num_rows](uninitialized=True)
     var a_base_offsets = NDBuffer[DType.int32, 1, num_rows](
         a_base_stack.unsafe_ptr()
     )
@@ -252,9 +248,7 @@ def test_load_store[
     alias one_vec = SIMD[type, simd_size](1.0)
     alias residual_vec = SIMD[type, simd_size](-1.0, 0.0, 0.0, 0.0)
 
-    var a = InlineArray[Scalar[type], num_rows * row_size](
-        unsafe_uninitialized=True
-    )
+    var a = InlineArray[Scalar[type], num_rows * row_size](uninitialized=True)
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
     #     [ 4x1.0, 4x2.0, -1.0]]

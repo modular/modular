@@ -32,13 +32,9 @@ def test_slice_dim[
     dtype: DType, numelems: Int, outer_rank: Int, dim: Int
 ](dims: DimList, start: Int, stop: Int, step: Int):
     # Isn't always used but is used for the output buffer if we copy.
-    var output_mem = InlineArray[Scalar[dtype], numelems](
-        unsafe_uninitialized=True
-    )
+    var output_mem = InlineArray[Scalar[dtype], numelems](uninitialized=True)
 
-    var memory1 = InlineArray[Scalar[dtype], numelems](
-        unsafe_uninitialized=True
-    )
+    var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = NDBuffer[
         dtype,
         outer_rank,
