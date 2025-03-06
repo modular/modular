@@ -170,7 +170,10 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
     @classmethod
     def get_kv_params(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        n_devices: int,
     ) -> KVCacheParams:
         num_kv_heads = cls._get_num_kv_heads(huggingface_config)
         hidden_size = cls._get_hidden_size(huggingface_config)
@@ -182,6 +185,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
             enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
             page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
+            n_devices=n_devices,
         )
 
     def load_kv_manager(
@@ -195,7 +199,9 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
         return load_kv_manager(
             params=self.get_kv_params(
-                self.pipeline_config, self.huggingface_config
+                self.pipeline_config,
+                self.huggingface_config,
+                n_devices=len(self.devices),
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -221,7 +227,9 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         num_layers = cls.get_num_layers(huggingface_config=huggingface_config)
 
         return estimate_kv_cache_size(
-            params=cls.get_kv_params(pipeline_config, huggingface_config),
+            params=cls.get_kv_params(
+                pipeline_config, huggingface_config, n_devices=len(devices)
+            ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=pipeline_config.max_length,
             num_layers=num_layers,

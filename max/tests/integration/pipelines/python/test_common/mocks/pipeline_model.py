@@ -84,7 +84,10 @@ class MockPipelineModel(PipelineModel):
 
     @classmethod
     def get_kv_params(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        n_devices: int,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=DType.float32,
@@ -93,7 +96,7 @@ class MockPipelineModel(PipelineModel):
             enable_prefix_caching=False,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             page_size=None,
-            n_devices=1,
+            n_devices=n_devices,
         )
 
     @classmethod
@@ -106,6 +109,7 @@ class MockPipelineModel(PipelineModel):
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
         huggingface_config: AutoConfig,
+        devices: list[Device],
     ) -> int:
         return 16
 
