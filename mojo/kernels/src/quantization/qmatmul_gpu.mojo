@@ -179,7 +179,7 @@ fn multistage_mma_q[
     @parameter
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor, src: LayoutTensor,):
+    ](dst: LayoutTensor, src: LayoutTensor):
         copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle](
             dst.vectorize[1, simd_size](),
             src.vectorize[1, simd_size](),
