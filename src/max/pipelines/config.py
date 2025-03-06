@@ -960,6 +960,12 @@ class PipelineConfig(MAXConfig):
                 revision=self.huggingface_revision,
             )
             hf_quant_config = hf_config.quantization_config
+
+            if hf_config.torch_dtype is not torch.float16:
+                raise ValueError(
+                    "bfloat16 scales are not supported for GPTQ-quantized models."
+                )
+
             self._quant_config = QuantizationConfig(
                 quant_method=hf_quant_config["quant_method"],
                 bits=hf_quant_config["bits"],
