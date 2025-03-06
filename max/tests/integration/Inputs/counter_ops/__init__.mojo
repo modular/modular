@@ -76,7 +76,7 @@ struct ReadCounter:
     @staticmethod
     fn execute[
         stride: Int
-    ](output: OutputTensor[type = DType.int32, rank=1], c: Counter[stride],):
+    ](output: OutputTensor[type = DType.int32, rank=1], c: Counter[stride]):
         output[0] = c.a
         output[1] = c.b
 
