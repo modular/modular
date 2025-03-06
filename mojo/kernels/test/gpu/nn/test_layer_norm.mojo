@@ -51,7 +51,7 @@ fn run_layer_norm_block[
     var data_buf = NDBuffer[type, 2](data_d.unsafe_ptr(), data_shape)
     var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
     var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
-    var epsilon = Float32(0)
+    var epsilon = Scalar[type]()
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -98,7 +98,7 @@ fn run_layer_norm_block[
         var vec = NDBuffer[type, 1](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon.cast[type]())
+        var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -146,7 +146,7 @@ fn run_layer_norm_gpu[
     var data_buf = NDBuffer[type, rank](data_d.unsafe_ptr(), shape)
     var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
     var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
-    var epsilon = Float32(0)
+    var epsilon = Scalar[type]()
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -176,7 +176,7 @@ fn run_layer_norm_gpu[
         var vec = NDBuffer[type, 1](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon.cast[type]())
+        var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
@@ -224,7 +224,7 @@ fn run_layer_norm_warp_tiling[
     var data_buf = NDBuffer[type, 2](data_d.unsafe_ptr(), data_shape)
     var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
     var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
-    var epsilon = Float32(0)
+    var epsilon = Scalar[type]()
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -271,7 +271,7 @@ fn run_layer_norm_warp_tiling[
         var vec = NDBuffer[type, 1](data_h + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = isqrt(var_ref + epsilon.cast[type]())
+        var norm_factor_ref = isqrt(var_ref + epsilon)
         for c in range(cols):
             var idx = r * cols + c
             var val = ((data_h[idx] - mean_ref) * norm_factor_ref) * gamma_h[
