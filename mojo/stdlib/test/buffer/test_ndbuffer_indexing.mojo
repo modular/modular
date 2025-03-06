@@ -20,7 +20,7 @@ fn test_ndbuffer_indexing():
     var _data = InlineArray[
         Scalar[DType.index],
         total_buffer_size,
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
 
     # Fill data with increasing order, so that the value of each element in
     #  the test buffer is equal to it's linear index.:

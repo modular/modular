@@ -15,7 +15,7 @@ fn test_ndbuffer_dynamic_shape():
     print("== test_ndbuffer_dynamic_shape")
 
     # Create a buffer of size 16
-    var buffer = InlineArray[Scalar[DType.index], 16](unsafe_uninitialized=True)
+    var buffer = InlineArray[Scalar[DType.index], 16](uninitialized=True)
 
     var matrix = NDBuffer[DType.index, 2](buffer.unsafe_ptr(), DimList(4, 4))
 

@@ -19,7 +19,7 @@ fn test_sub_matrix():
     alias num_col = 4
 
     var matrix_stack = InlineArray[Float32, num_row * num_col](
-        unsafe_uninitialized=True
+        uninitialized=True
     )
     # Create a 4x4 matrix.
     var matrix = NDBuffer[
@@ -81,7 +81,7 @@ fn test_broadcast():
     print("== test_broadcast")
 
     # Create a buffer holding a single value with zero stride.
-    var arr = InlineArray[Float32, 1](unsafe_uninitialized=True)
+    var arr = InlineArray[Float32, 1](uninitialized=True)
     var stride_buf = NDBuffer[DType.float32, 1, DimList(100)](
         arr.unsafe_ptr(),
         DimList(100),
