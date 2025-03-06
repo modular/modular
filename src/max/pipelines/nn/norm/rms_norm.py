@@ -59,12 +59,12 @@ class RMSNormV2(LayerV2):
         self.eps = eps
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        weight: TensorValue = self.weight
+        weight: TensorValue = ops.cast(self.weight, x.dtype)
         if x.device:
             weight = weight.to(x.device)
         return ops.custom(
             "rms_norm",
-            [x, ops.cast(self.weight, x.dtype), ops.cast(self.eps, x.dtype)],
+            [x, weight, ops.cast(self.eps, x.dtype)],
             [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
         )[0].tensor
 
