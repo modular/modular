@@ -158,7 +158,10 @@ what we publish.
   provide high performance for these types and may have missing operations like
   divide, remainder, etc.
 
-- The `compile` package is now documented.
+- Several more packages are now documented.
+  - `gpu` package - some modules in `gpu.host` subpackage are still in progress.
+  - `compile` package
+  - `layout` package is underway, beginning with core types, functions, and traits.
 
 ### GPU changes
 
