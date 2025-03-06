@@ -17,13 +17,7 @@ from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
 from max.pipelines import PipelineConfig
-from max.pipelines.nn import (
-    Conv1D,
-    Embedding,
-    LayerNorm,
-    Linear,
-    Sequential,
-)
+from max.pipelines.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
 from transformers import AutoConfig
 
 from .encoder import WhisperEncoder, WhisperEncoderLayer, WhisperSdpaAttention
@@ -235,8 +229,9 @@ def encoder(
             attention=attention(
                 pipeline_config,
                 weights.language_model.model.layers[i],
-                layer_idx=ops.constant(i, DType.uint32),  # type: ignore
+                layer_index=i,
                 huggingface_config=huggingface_config,
+                dtype=dtype,
             ),
             mlp=feed_forward(
                 dtype,

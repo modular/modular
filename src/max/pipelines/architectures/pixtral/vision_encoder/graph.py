@@ -42,14 +42,14 @@ def _patch_conv2d(
     """
     # Loaded torch weights shape = torch.Size([1024, 3, 16, 16]).
     # Conv2D expects (height, width, in_channels, out_channels) = [16, 16, 3, 1024].
-    weights = ops.permute(  # type: ignore
+    filter_weights = ops.permute(
         weights.weight.allocate(
             dtype, [out_channels, in_channels, patch_size, patch_size], None
         ),
         [2, 3, 1, 0],
     )
     return Conv2D(
-        weights,  # type: ignore
+        filter_weights,
         stride=(patch_size, patch_size),
     )
 

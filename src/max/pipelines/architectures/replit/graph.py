@@ -80,6 +80,8 @@ def _attention(
     k_in_dim = kv_params.n_kv_heads * kv_params.head_dim
     v_in_dim = kv_params.n_kv_heads * kv_params.head_dim
     q_in_dim = huggingface_config.d_model
+
+    assert pipeline_config.quantization_encoding is not None
     wqkv = TensorValue(
         weights.attn_qkv.weight.allocate(
             dtype,
@@ -87,7 +89,7 @@ def _attention(
                 k_in_dim + v_in_dim + q_in_dim,
                 huggingface_config.d_model,
             ],
-            pipeline_config.quantization_encoding.quantization_encoding,  # type: ignore
+            pipeline_config.quantization_encoding.quantization_encoding,
         )
     )
 
@@ -102,7 +104,7 @@ def _attention(
                     huggingface_config.d_model,
                     huggingface_config.d_model,
                 ],
-                pipeline_config.quantization_encoding.quantization_encoding,  # type: ignore
+                pipeline_config.quantization_encoding.quantization_encoding,
             )
         ),
         layer_idx=ops.constant(layer_index, dtype=DType.uint32),
@@ -119,6 +121,7 @@ def _transformer(
     huggingface_config: AutoConfig,
     dtype: DType,
 ):
+    assert pipeline_config.quantization_encoding is not None
     with graph:
         # Initialize Attention.
         layers = [
@@ -133,7 +136,7 @@ def _transformer(
                 ),
                 mlp=_feed_forward(
                     dtype,
-                    pipeline_config.quantization_encoding.quantization_encoding,  # type: ignore
+                    pipeline_config.quantization_encoding.quantization_encoding,
                     huggingface_config.d_model,
                     12288,
                     weights.blk[i],
@@ -159,7 +162,7 @@ def _transformer(
                 huggingface_config.vocab_size,
                 huggingface_config.d_model,
             ],
-            pipeline_config.quantization_encoding.quantization_encoding,  # type: ignore
+            pipeline_config.quantization_encoding.quantization_encoding,
         )
 
         return Transformer(

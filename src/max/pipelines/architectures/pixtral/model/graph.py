@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.dtype import DType
-from max.graph import Graph, TensorType
+from max.graph import Graph, TensorType, TensorValue
 from max.graph.weights import SafetensorWeights
 from max.pipelines import PipelineConfig
 from max.pipelines.kv_cache import KVCacheManager, KVCacheParams
@@ -226,11 +226,15 @@ def _build_graph(
             input_row_offsets,
             *kv_cache_inputs,
         ) = graph.inputs
+        # Convert list to tuple for type checking purposes only
+        kv_inputs: tuple[TensorValue, TensorValue, TensorValue, TensorValue] = (
+            tuple(kv_cache_inputs)  # type: ignore[assignment]
+        )
         outputs = model(
             input_ids=input_ids.tensor,
             pixel_values=pixel_values.tensor,
             attention_mask=attention_mask.tensor,
-            kv_cache_inputs=kv_cache_inputs,  # type: ignore
+            kv_cache_inputs=kv_inputs,
             input_row_offsets=input_row_offsets,
         )
         graph.output(*outputs)
@@ -339,10 +343,14 @@ def _build_text_graph(
             input_row_offsets,
             *kv_cache_inputs,
         ) = graph.inputs
+        # Convert list to tuple for type checking purposes only
+        kv_inputs: tuple[TensorValue, TensorValue, TensorValue, TensorValue] = (
+            tuple(kv_cache_inputs)  # type: ignore[assignment]
+        )
         outputs = model(
             input_ids=input_ids.tensor,
             image_embeds=image_embeds.tensor,
-            kv_cache_inputs=kv_cache_inputs,  # type: ignore
+            kv_cache_inputs=kv_inputs,
             input_row_offsets=input_row_offsets,
         )
         graph.output(*outputs)
