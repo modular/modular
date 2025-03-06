@@ -540,7 +540,7 @@ struct TMATensorTile[
     fn replace_tensormap_global_address_in_gmem[
         dtype: DType,
         src_layout: Layout,
-    ](self, new_src: LayoutTensor[dtype, src_layout]):
+    ](self, new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin]):
         var desc_ptr = UnsafePointer.address_of(self.descriptor).bitcast[
             NoneType
         ]()
@@ -579,7 +579,7 @@ struct TMATensorTile[
         smem_tma_descriptor_ptr: UnsafePointer[
             TMADescriptor, address_space = _GPUAddressSpace.SHARED
         ],
-        new_src: LayoutTensor[dtype, src_layout],
+        new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
     ):
         # NOTE: Only one thread should call this
         inlined_assembly[
