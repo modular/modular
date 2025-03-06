@@ -262,9 +262,10 @@ def execute_flash_attention[
         @parameter
         for blf in range(2):
             # FIXME illegal address if using larger BK and nps
-            alias BK = (UInt(32) if type is DType.float32 else UInt(64)) // (
-                1 if nps == 2 else 2
-            )
+            alias BK = (
+                (UInt(32) if type is DType.float32 else UInt(64))
+                // (1 if nps == 2 else 2)
+            ) if has_nvidia_gpu_accelerator() else 128
             alias config = MHAConfig(
                 type,
                 num_q_heads,
@@ -286,7 +287,8 @@ def execute_flash_attention[
             @parameter
             if (config.block_k() % (mma_shape[2] << blf)) != 0:
                 continue
-            alias width = 32 if type is DType.float32 or not has_nvidia_gpu_accelerator() else 64
+            alias width = 32 if type is DType.float32 else 64
+
             # fmt: off
             var config_str = String(
                 "ampere_", type, "_",

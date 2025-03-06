@@ -18,7 +18,7 @@ from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
-
+from sys import has_nvidia_gpu_accelerator
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
@@ -304,7 +304,15 @@ def execute_flash_attention[
                 for hd in range(kv_params.head_size):
                     var ref_val = ref_out[bs, Int(s), h, hd]
                     var test_val = test_out[bs, Int(s), h, hd]
-                    assert_almost_equal(ref_val, test_val, atol=1e-5, rtol=8e-3)
+                    assert_almost_equal(
+                        ref_val,
+                        test_val,
+                        atol=1e-5,
+                        # for nvidia we are comparing flash attention with
+                        # flash attention, but for amd we are comparing flash attention
+                        # with naive attention as flash attention does not support masked tensor.
+                        rtol=8e-3 if has_nvidia_gpu_accelerator() else 2e-2,
+                    )
 
     _ = q_device^
     _ = q_host^

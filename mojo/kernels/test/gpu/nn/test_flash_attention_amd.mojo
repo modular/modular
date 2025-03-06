@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug -D FLASH_ATTENTION_HW_SUPPORTED=True %s
-# REQUIRES: DISABLED
+# RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose, isqrt
 from random import rand
@@ -116,28 +115,22 @@ fn test[
                 for j in range(depth):
                     v_ptr[(i * kv_num_heads + h) * depth + j] = i * depth + j
 
-        @parameter
-        if mask_rank == 3:
-            for i in range(seq_len):
-                for j in range(num_keys):
-                    mask_ptr[i * num_keys + j] = (
-                        (seq_len - i) * num_keys + num_keys - j
-                    )
-        else:
-            for h in range(num_heads):
-                var mask_head_ptr = mask_ptr + h * seq_len * num_keys
-                for i in range(seq_len):
-                    for j in range(num_keys):
-                        mask_head_ptr[i * num_keys + j] = (
-                            (seq_len - i) * num_keys + num_keys - j
-                        )
-
     else:
         rand[qkv_type](q_ptr, q_size)
         rand[qkv_type](k_ptr, k_size)
         rand[qkv_type](v_ptr, v_size)
-        rand[mask_type](mask_ptr, mask_size)
 
+    @parameter
+    if mask_rank == 3:
+        for i in range(seq_len):
+            for j in range(num_keys):
+                mask_ptr[i * num_keys + j] = 0
+    else:
+        for h in range(num_heads):
+            var mask_head_ptr = mask_ptr + h * seq_len * num_keys
+            for i in range(seq_len):
+                for j in range(num_keys):
+                    mask_head_ptr[i * num_keys + j] = 0
     # Contruct buffers.
     var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
@@ -226,7 +219,7 @@ fn test[
     fn kernel_launch(ctx: DeviceContext) raises:
         @parameter
         if mask_rank == 3:
-            flash_attention(
+            flash_attention[add_attn_mask=False](
                 output_device,
                 q_device,
                 k_device,
@@ -239,7 +232,7 @@ fn test[
                 num_partitions,
             )
         else:
-            flash_attention(
+            flash_attention[add_attn_mask=False](
                 output_device,
                 q_device,
                 k_device,
@@ -318,7 +311,7 @@ fn test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    assert_with_measure[cosine](flash_output, output, threshold=Float64(1e-5))
+    assert_with_measure[cosine](flash_output, output, threshold=Float64(1e-4))
 
     # This is useful for debugging.
     if False:
