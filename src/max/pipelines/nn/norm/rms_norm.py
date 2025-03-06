@@ -36,11 +36,7 @@ class RMSNorm(Layer):
     def __call__(self, x: TensorValue) -> TensorValue:
         return ops.custom(
             "rms_norm",
-            [
-                x,
-                ops.cast(self.weight, x.dtype),
-                ops.constant(self.eps, DType.float32),
-            ],
+            [x, ops.cast(self.weight, x.dtype), ops.cast(self.eps, x.dtype)],
             [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
         )[0].tensor
 
@@ -68,11 +64,7 @@ class RMSNormV2(LayerV2):
             weight = weight.to(x.device)
         return ops.custom(
             "rms_norm",
-            [
-                x,
-                ops.cast(self.weight, x.dtype),
-                ops.constant(self.eps, DType.float32),
-            ],
+            [x, ops.cast(self.weight, x.dtype), ops.cast(self.eps, x.dtype)],
             [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
         )[0].tensor
 
