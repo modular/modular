@@ -928,7 +928,7 @@ fn buffer_load[
 @always_inline
 fn buffer_store[
     type: DType, width: Int
-](src_resource: _buffer_resource, gds_offset: Int32, val: SIMD[type, width],):
+](src_resource: _buffer_resource, gds_offset: Int32, val: SIMD[type, width]):
     """Stores a register variable to global memory.
 
     Writes to global memory from a register.
