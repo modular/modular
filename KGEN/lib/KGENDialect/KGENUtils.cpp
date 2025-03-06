@@ -1544,7 +1544,7 @@ KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
   return KGEN::EnvAttr::get(envAttrs.getDictionary(ctx));
 }
 
-static KGEN::EnvAttr getModuleEnvAttr(ModuleOp moduleOp) {
+KGEN::EnvAttr KGEN::getModuleEnvAttr(ModuleOp moduleOp) {
   if (moduleOp->hasAttrOfType<KGEN::EnvAttr>(KGEN::EnvAttr::getEnvAttrName()))
     return moduleOp->getAttrOfType<KGEN::EnvAttr>(
         KGEN::EnvAttr::getEnvAttrName());
