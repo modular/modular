@@ -769,7 +769,9 @@ struct TensorCore[
 
             @parameter
             for i in range(num_frags):
-                var mma_tile = warp_tile.tile[K, N](mma_tile_coord_k, i)
+                var mma_tile = warp_tile.tile[K * k_group_size, N](
+                    mma_tile_coord_k, i
+                )
                 var frag = load_to_simd(self.load_b[swizzle](mma_tile))
                 fragments[i, 0] = rebind[frag_type](frag)
 
@@ -1040,7 +1042,11 @@ struct TensorCore[
 
         constrained[
             c_frag.shape[0]() == num_m_mmas * num_n_mmas,
-            "Fragments size mismatch.",
+            "Fragments size mismatch. Expected c_frag shape[0] to be num_m_mmas"
+            " * num_n_mmas = "
+            + String(num_m_mmas * num_n_mmas)
+            + ", got "
+            + String(c_frag.shape[0]()),
         ]()
 
         @parameter

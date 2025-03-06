@@ -175,17 +175,22 @@ fn load_to_simd(
 
 
 @always_inline
-fn _get_size(tensor: LayoutTensor) -> Int:
-    @parameter
-    if tensor.layout.all_dims_known():
-        alias size = tensor.layout.size()
-        return size
-    else:
-        return tensor.runtime_layout.size()
+fn _get_bounds(tensor: LayoutTensor) -> Int:
+    constrained[
+        tensor.element_layout.all_dims_known(),
+        "Element layout must be known for _get_bounds",
+    ]()
+    alias element_layout = tensor.element_layout
+    alias element_offset = element_layout(element_layout.size() - 1)
+    return (
+        tensor._offset(tensor.dim(0) - 1, tensor.dim(1) - 1)
+        + element_offset
+        + 1
+    )
 
 
 @always_inline
 fn get_amd_buffer_descriptor(tensor: LayoutTensor) -> _buffer_resource:
     var ptr = tensor.ptr
-    var size = _get_size(tensor)
+    var size = _get_bounds(tensor)
     return make_buffer_resource(ptr, size)
