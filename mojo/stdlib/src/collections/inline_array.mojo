@@ -116,19 +116,19 @@ struct InlineArray[
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
-    fn __init__(out self, *, unsafe_uninitialized: Bool):
+    fn __init__(out self, *, uninitialized: Bool):
         """Create an InlineArray with uninitialized memory.
 
         This constructor is unsafe and should be used with caution. The array elements
         will be uninitialized and accessing them before initialization is undefined behavior.
 
         Args:
-            unsafe_uninitialized: A boolean to indicate if the array should be initialized.
+            uninitialized: A boolean to indicate if the array should be initialized.
                 Always set to `True` (it's not actually used inside the constructor).
 
         Example:
             ```mojo
-                var uninitialized_array = InlineArray[Int, 10](unsafe_uninitialized=True)
+                var uninitialized_array = InlineArray[Int, 10](uninitialized=True)
             ```
         """
         _inline_array_construction_checks[size]()
@@ -238,7 +238,7 @@ struct InlineArray[
         .
         """
 
-        var copy = Self(unsafe_uninitialized=True)
+        var copy = Self(uninitialized=True)
 
         for idx in range(size):
             var ptr = copy.unsafe_ptr() + idx

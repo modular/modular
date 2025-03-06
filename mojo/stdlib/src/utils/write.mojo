@@ -299,7 +299,7 @@ struct _WriteBufferStack[
 
     @implicit
     fn __init__(out self, ref [origin]writer: W):
-        self.data = InlineArray[UInt8, capacity](unsafe_uninitialized=True)
+        self.data = InlineArray[UInt8, capacity](uninitialized=True)
         self.pos = 0
         self.writer = Pointer.address_of(writer)
 

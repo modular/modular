@@ -49,6 +49,8 @@ what we publish.
 
 - The `Buffer` struct has been removed in favor of `Span` and `NDBuffer`.
 
+- The `InlineArray(unsafe_uninitialized=True)` constructor is now spelled `InlineArray(uninitialized=True)`.
+
 - `Optional`, `Span`, and `InlineArray` have been added to the prelude.  You
    now no longer need to explicitly import these types to use them in your program.
 

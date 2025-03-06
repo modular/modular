@@ -288,7 +288,7 @@ struct _FixedString[CAP: Int](
 
     fn __init__(out self):
         """Constructs a new empty string."""
-        self.buffer = InlineArray[UInt8, CAP](unsafe_uninitialized=True)
+        self.buffer = InlineArray[UInt8, CAP](uninitialized=True)
         self.size = 0
 
     fn copy(self) -> Self:
