@@ -47,7 +47,7 @@ config.test_source_root = Path(__file__).parent.resolve()
 config.substitutions.insert(0, ("%mojo", "mojo"))
 
 pre_built_packages_path = os.environ.get(
-    "MODULAR_MOJO_NIGHTLY_IMPORT_PATH",
+    "MODULAR_MOJO_IMPORT_PATH",
     Path(os.environ["MODULAR_HOME"])
     / "pkg"
     / "packages.modular.com_nightly_mojo"
@@ -56,7 +56,7 @@ pre_built_packages_path = os.environ.get(
 )
 
 os.environ[
-    "MODULAR_MOJO_NIGHTLY_IMPORT_PATH"
+    "MODULAR_MOJO_IMPORT_PATH"
 ] = f"{build_root},{pre_built_packages_path}"
 
 # Pass through several environment variables
@@ -65,7 +65,7 @@ lit.llvm.initialize(lit_config, config)
 lit.llvm.llvm_config.with_system_environment(
     [
         "MODULAR_HOME",
-        "MODULAR_MOJO_NIGHTLY_IMPORT_PATH",
+        "MODULAR_MOJO_IMPORT_PATH",
         "PATH",
     ]
 )

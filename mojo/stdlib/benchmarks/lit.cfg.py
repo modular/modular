@@ -48,11 +48,8 @@ else:
     # still right now and is always used by the benchmarks.
     pre_built_packages_path = Path(
         os.environ.get(
-            "MODULAR_MOJO_NIGHTLY_IMPORT_PATH",
-            os.environ.get(
-                "MODULAR_MOJO_IMPORT_PATH",
-                repo_root / ".magic" / "envs" / "default" / "lib" / "mojo",
-            ),
+            "MODULAR_MOJO_IMPORT_PATH",
+            repo_root / ".magic" / "envs" / "default" / "lib" / "mojo",
         )
     )
 
@@ -69,8 +66,6 @@ else:
     # These environment variables are interpreted by the mojo parser
     # when resolving imports.
     joint_path = f"{build_root.resolve()},{pre_built_packages_path.resolve()}"
-    os.environ["MODULAR_MOJO_NIGHTLY_IMPORT_PATH"] = joint_path
-    os.environ["MODULAR_MOJO_MAX_NIGHTLY_IMPORT_PATH"] = joint_path
     os.environ["MODULAR_MOJO_IMPORT_PATH"] = joint_path
     os.environ["MODULAR_MOJO_MAX_IMPORT_PATH"] = joint_path
 
@@ -80,8 +75,7 @@ else:
     lit.llvm.llvm_config.with_system_environment(
         [
             "MODULAR_HOME",
-            "MODULAR_MOJO_NIGHTLY_IMPORT_PATH",
-            "MODULAR_MOJO_MAX_NIGHTLY_IMPORT_PATH",
+            "MODULAR_MOJO_IMPORT_PATH",
             "PATH",
         ]
     )
