@@ -19,11 +19,11 @@ from utils.index import Index, IndexList
 
 fn compute_rms[
     type: DType
-](data: NDBuffer[type, 1], size: Int, eps: Float32) -> Scalar[type]:
+](data: NDBuffer[type, 1], size: Int, eps: Scalar[type]) -> Scalar[type]:
     var sum_of_squares = Scalar[type]()
     for i in range(size):
         sum_of_squares += data[i] * data[i]
-    return sqrt((sum_of_squares / len(data)) + eps.cast[type]()).cast[type]()
+    return sqrt((sum_of_squares / len(data)) + eps).cast[type]()
 
 
 fn run_rms_norm_cpu[
@@ -48,7 +48,7 @@ fn run_rms_norm_cpu[
     var input_buf = NDBuffer[type, rank](input_ptr, shape)
     var output_buf = NDBuffer[type, rank](output_ptr, shape)
     var gamma = NDBuffer[type, 1](gamma_ptr, param_shape)
-    var epsilon = Float32(0.0001)
+    var epsilon = Scalar[type](0.0001)
 
     @__copy_capture(input_buf)
     @always_inline

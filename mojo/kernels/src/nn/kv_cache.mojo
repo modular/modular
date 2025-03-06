@@ -878,7 +878,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     ],
     gamma: NDBuffer[type, 1],
-    epsilon: Float32,
+    epsilon: Scalar[type],
     layer_idx: UInt32,
     total_seq_len: UInt32,
     input_row_offsets: NDBuffer[DType.uint32, 1],
