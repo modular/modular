@@ -47,6 +47,28 @@ class CPU(Device):
         """
 
 class Device:
+    def can_access(self, other: Device) -> bool:
+        """
+        Checks if this device can directly access memory of another device.
+
+        Args:
+            other (Device): The other device to check peer access against.
+
+        Returns:
+            bool: True if peer access is possible, False otherwise.
+
+        Example:
+            .. code-block:: python
+
+                from max import driver
+
+                gpu0 = driver.Accelerator(id=0)
+                gpu1 = driver.Accelerator(id=1)
+
+                if gpu0.can_access(gpu1):
+                    print("GPU0 can directly access GPU1 memory.")
+        """
+
     def synchronize(self) -> None:
         """
         Ensures all operations on this device complete before returning.
