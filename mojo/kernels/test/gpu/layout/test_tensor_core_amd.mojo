@@ -30,7 +30,7 @@ fn test_load_a[
     inst_shape: IndexList[3],
 ](
     a: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    a_lane: LayoutTensor[dtype, Layout(WARP_SIZE)],
+    a_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutableAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var a_reg_tile = mma.load_a(a)
@@ -46,7 +46,7 @@ fn test_load_b[
     transpose_b: Bool,
 ](
     b: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    b_lane: LayoutTensor[dtype, Layout(WARP_SIZE)],
+    b_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutableAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var b_reg_tile = mma.load_b(b)
@@ -61,7 +61,9 @@ fn test_load_c[
     inst_shape: IndexList[3],
 ](
     c: LayoutTensor[dst_dtype, layout, MutableAnyOrigin],
-    c_lane: LayoutTensor[dst_dtype, Layout.row_major(WARP_SIZE, 4)],
+    c_lane: LayoutTensor[
+        dst_dtype, Layout.row_major(WARP_SIZE, 4), MutableAnyOrigin
+    ],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var c_reg_tile = mma.load_c(c)
