@@ -61,7 +61,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         var b_ptr = b_packed._offset(Index(n_outer_idx, tile_n_k_idx[1], 0))
 
         var a_vals = InlineArray[SIMD[c_local.type, a_col_size], kernel_rows](
-            unsafe_uninitialized=True
+            uninitialized=True
         )
 
         @parameter

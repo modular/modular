@@ -181,7 +181,7 @@ struct _Accumulator[
                 c_bound[1] - tile_n_idx, num_cols * simd_width
             )
             var row_ptrs = InlineArray[UnsafePointer[Scalar[type]], num_rows](
-                unsafe_uninitialized=True
+                uninitialized=True
             )
 
             @parameter
@@ -815,7 +815,7 @@ struct _Accumulator[
         @always_inline
         fn micro_kernel[num_lanes: Int](offset: Int):
             var a_vecs = InlineArray[SIMD[a_type, num_lanes], num_rows](
-                unsafe_uninitialized=True
+                uninitialized=True
             )
 
             # Load vectors of size num_lanes from input.
@@ -875,7 +875,7 @@ struct _Accumulator[
         @always_inline
         fn micro_kernel[num_lanes: Int](offset: Int):
             var a_vecs = InlineArray[SIMD[a_type, num_lanes], num_rows](
-                unsafe_uninitialized=True
+                uninitialized=True
             )
 
             # Load vectors of size num_lanes from input.
