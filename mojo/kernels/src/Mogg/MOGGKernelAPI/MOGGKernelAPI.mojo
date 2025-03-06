@@ -486,31 +486,6 @@ fn _int_bitwidth_safety_check[simd_dtype: DType]():
     ]()
 
 
-# Extract a Bool from a managed tensor slice.
-@register_internal("get_bool_from_managed_tensor_slice")
-@always_inline
-fn get_bool_from_managed_tensor_slice[
-    dtype: DType, read: Bool, write: Bool
-](
-    tensor: ManagedTensorSlice[
-        io_spec = IOSpec[read, write](),
-        static_spec = StaticTensorSpec[dtype, 1].create_unknown(),
-    ]
-) -> Bool:
-    constrained[
-        dtype is DType.bool,
-        String(
-            (
-                "get_bool_from_managed_tensor_slice expects a bool tensor but"
-                " got a tensor of type '"
-            ),
-            dtype,
-            "'",
-        ),
-    ]()
-    return Bool(_get_scalar_from_managed_tensor_slice(tensor))
-
-
 @register_internal("get_int_from_shape")
 @always_inline
 fn get_int_from_shape[
@@ -3946,7 +3921,7 @@ struct BottomK:
         input: InputTensor[type=type, rank=rank],
         k: Scalar,
         axis: Scalar,
-        sorted: Bool,
+        sorted: Scalar[DType.bool],
         ctx: DeviceContextPtr,
     ) raises:
         top_k[largest=False, target=target](
@@ -3964,7 +3939,7 @@ struct BottomK:
         input: ManagedTensorSlice,
         k: Scalar,
         axis: Scalar,
-        sorted: Bool,
+        sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input), Int(k), Int(axis)
@@ -3984,7 +3959,7 @@ struct TopK:
         input: InputTensor[type=type, rank=rank],
         k: Scalar,
         axis: Scalar,
-        sorted: Bool,
+        sorted: Scalar[DType.bool],
         ctx: DeviceContextPtr,
     ) raises:
         top_k[largest=True, target=target](
@@ -4002,7 +3977,7 @@ struct TopK:
         input: ManagedTensorSlice,
         k: Scalar,
         axis: Scalar,
-        sorted: Bool,
+        sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input), Int(k), Int(axis)
