@@ -111,7 +111,7 @@ fn matmul[
 fn get_tile[
     type: DType, layout: Layout, //, tile_size: Int
 ](
-    input_tensor: LayoutTensor[type, layout],
+    input_tensor: LayoutTensor[type, layout, MutableAnyOrigin],
     n: Int,
     h: Int,
     w: Int,
