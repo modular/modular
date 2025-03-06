@@ -68,8 +68,47 @@ def test_random():
             ),
         )
 
-    var random_normal = randn_float64(0, 1)
-    # it's quite hard to verify that the values returned are forming a normal distribution
+    # verify `randn_float64` values are normally distributed
+    var samples = List[Float64]()
+    var num_samples = 1_000_000
+    for _ in range(num_samples):
+        samples.append(randn_float64(0, 2))
+
+    var sum: Float64 = 0.0
+    for sample in samples:
+        sum += sample[]
+
+    var mean: Float64 = sum / num_samples
+
+    var sum_sq: Float64 = 0.0
+    for sample in samples:
+        sum_sq += (sample[] - mean) * (sample[] - mean)
+
+    var variance = sum_sq / num_samples
+
+    # Calculate absolute differences (errors)
+    var mean_error = mean if mean > 0 else -mean
+    var variance_error = variance - 4 if variance > 4 else 4 - variance
+
+    var tolerance: Float64 = 0.01
+    assert_true(
+        mean_error < tolerance,
+        String(
+            "Mean error ",
+            mean_error,
+            " is above the accepted tolerance ",
+            tolerance,
+        ),
+    )
+    assert_true(
+        variance_error < tolerance,
+        String(
+            "Variance error ",
+            variance_error,
+            " is above the accepted tolerance ",
+            tolerance,
+        ),
+    )
 
 
 def test_seed():
