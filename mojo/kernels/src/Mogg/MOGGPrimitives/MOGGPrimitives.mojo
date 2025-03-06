@@ -219,7 +219,7 @@ fn create_buffer_ref_with_borrow_async[
 @no_inline
 fn create_tensor_spec_async[
     spec_rank: Int
-](spec: StaticTensorSpec[spec_rank], async_ptr: UnsafePointer[NoneType],):
+](spec: StaticTensorSpec[spec_rank], async_ptr: UnsafePointer[NoneType]):
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
