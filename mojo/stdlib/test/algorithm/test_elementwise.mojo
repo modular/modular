@@ -19,17 +19,17 @@ from utils.index import Index, IndexList
 def test_elementwise[
     numelems: Int, outer_rank: Int, is_blocking: Bool
 ](dims: DimList):
-    var memory1 = InlineArray[Float32, numelems](unsafe_uninitialized=True)
+    var memory1 = InlineArray[Float32, numelems](uninitialized=True)
     var buffer1 = NDBuffer[DType.float32, outer_rank](
         memory1.unsafe_ptr(), dims
     )
 
-    var memory2 = InlineArray[Float32, numelems](unsafe_uninitialized=True)
+    var memory2 = InlineArray[Float32, numelems](uninitialized=True)
     var buffer2 = NDBuffer[DType.float32, outer_rank](
         memory2.unsafe_ptr(), dims
     )
 
-    var memory3 = InlineArray[Float32, numelems](unsafe_uninitialized=True)
+    var memory3 = InlineArray[Float32, numelems](uninitialized=True)
     var out_buffer = NDBuffer[DType.float32, outer_rank](
         memory3.unsafe_ptr(), dims
     )
@@ -60,9 +60,7 @@ def test_elementwise[
 
 def test_elementwise_implicit_runtime():
     print("== test_elementwise_implicit_runtime")
-    var vector_stack = InlineArray[Scalar[DType.index], 20](
-        unsafe_uninitialized=True
-    )
+    var vector_stack = InlineArray[Scalar[DType.index], 20](uninitialized=True)
     var vector = NDBuffer[DType.index, 1, 20](vector_stack.unsafe_ptr())
 
     for i in range(len(vector)):
