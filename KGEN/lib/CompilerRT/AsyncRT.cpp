@@ -416,9 +416,8 @@ KGEN_CompilerRT_CreateAsyncTensorWithBorrow(
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
-                                      int8_t rawDType,
-                                      AsyncRTWrapper<AnyAsyncValueRef> async) {
+KGEN_CompilerRT_CreateAsyncTensorShape(ssize_t *data, ssize_t rank,
+                                       AsyncRTWrapper<AnyAsyncValueRef> async) {
   Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
   AnyAsyncValueRef &value = unwrap(async);
   llvm::SmallVector<ssize_t> dims;
@@ -426,12 +425,11 @@ KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
     dims.push_back(data[i]);
 
   if (value.getPointer() && value.getPointer()->isIndirect()) {
-    value.copy().emplaceIndirect<TensorSpec>(TensorSpec(dims, DType(rawDType)));
+    value.copy().emplaceIndirect<TensorShape>(dims);
   } else {
     assert(!value.isReady() &&
            "Value needs to not be ready so we can construct it.");
-    value = AnyAsyncValueRef::createReady<TensorSpec>(
-        runtime, TensorSpec(dims, DType(rawDType)));
+    value = AnyAsyncValueRef::createReady<TensorShape>(runtime, dims);
   }
 }
 
@@ -503,15 +501,14 @@ KGEN_CompilerRT_GetDataFromBuffer(AsyncRTWrapper<AnyAsyncValueRef> async,
   return buffer.getBuffer();
 }
 
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint8_t
-KGEN_CompilerRT_GetTensorSpecFromAsync(ssize_t *data, ssize_t rank,
-                                       AsyncRTWrapper<AnyAsyncValueRef> async) {
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_GetTensorShapeFromAsync(
+    ssize_t *data, ssize_t rank, AsyncRTWrapper<AnyAsyncValueRef> async) {
   AnyAsyncValueRef &value = unwrap(async);
   assert(value.isReady());
-  auto &spec = value.get<TensorSpec>();
+  auto &shape = value.get<TensorShape>();
   for (int i = 0; i < rank; ++i)
-    data[i] = spec[i];
-  return spec.getEltType().getValue();
+    data[i] = shape[i];
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
