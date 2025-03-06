@@ -625,7 +625,7 @@ struct UnsafePointer[
         *,
         alignment: Int = _default_alignment[type](),
         volatile: Bool = False,
-    ](self: UnsafePointer[Scalar[type], **_], offset: I, val: Scalar[type],):
+    ](self: UnsafePointer[Scalar[type], **_], offset: I, val: Scalar[type]):
         """Stores a single element value at the given offset.
 
         Constraints:

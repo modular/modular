@@ -87,7 +87,7 @@ struct OwnedPointer[T: AnyType]:
 
     fn __init__[
         T: ExplicitlyCopyable
-    ](mut self: OwnedPointer[T], *, other: OwnedPointer[T],):
+    ](mut self: OwnedPointer[T], *, other: OwnedPointer[T]):
         """Construct a new `OwnedPointer` by explicitly copying the value from another `OwnedPointer`.
 
         Parameters:
