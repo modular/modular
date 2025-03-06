@@ -18,12 +18,15 @@ fn test_sub_matrix():
     alias num_row = 4
     alias num_col = 4
 
+    var matrix_stack = InlineArray[Float32, num_row * num_col](
+        unsafe_uninitialized=True
+    )
     # Create a 4x4 matrix.
     var matrix = NDBuffer[
         DType.float32,
         2,
         DimList(num_row, num_col),
-    ].stack_allocation()
+    ](matrix_stack.unsafe_ptr())
     for i in range(num_row):
         for j in range(num_col):
             matrix[Index(i, j)] = Float32(i * num_col + j)

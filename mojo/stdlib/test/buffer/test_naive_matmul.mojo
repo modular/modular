@@ -118,25 +118,28 @@ fn print_matrix[
 # CHECK-LABEL: test_naive_matmul
 fn test_naive_matmul[size: Int]():
     print("== test_naive_matmul")
+    var c_stack = InlineArray[Float32, size * size](unsafe_uninitialized=True)
     var c = NDBuffer[
         DType.float32,
         2,
         DimList(size, size),
-    ].stack_allocation()
+    ](c_stack.unsafe_ptr())
     c.fill(0)
 
+    var b_stack = InlineArray[Float32, size * size](unsafe_uninitialized=True)
     var b = NDBuffer[
         DType.float32,
         2,
         DimList(size, size),
-    ].stack_allocation()
+    ](b_stack.unsafe_ptr())
     fill_b[size](b)
 
+    var a_stack = InlineArray[Float32, size * size](unsafe_uninitialized=True)
     var a = NDBuffer[
         DType.float32,
         2,
         DimList(size, size),
-    ].stack_allocation()
+    ](a_stack.unsafe_ptr())
     fill_a[size](a)
 
     test_my_naive_matmul[
