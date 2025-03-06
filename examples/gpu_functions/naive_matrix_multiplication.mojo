@@ -33,9 +33,9 @@ fn naive_matrix_multiplication(
     i: Int,
     j: Int,
     k: Int,
-    m: LayoutTensor[float_dtype],
-    n: LayoutTensor[float_dtype],
-    p: LayoutTensor[float_dtype],
+    m: LayoutTensor[float_dtype, _, MutableAnyOrigin],
+    n: LayoutTensor[float_dtype, _, MutableAnyOrigin],
+    p: LayoutTensor[float_dtype, _, MutableAnyOrigin],
 ):
     """Naive matrix multiplication of M_ij x N_jk = P_ik."""
     row = block_dim.y * block_idx.y + thread_idx.y
