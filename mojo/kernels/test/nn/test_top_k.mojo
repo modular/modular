@@ -107,7 +107,7 @@ fn test_case[
         _
     ] -> None,
     largest: Bool = True,
-](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True,):
+](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True):
     var input = TestTensor[rank, type](input_shape)
 
     var output_shape = input_shape

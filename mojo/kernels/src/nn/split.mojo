@@ -114,7 +114,7 @@ fn _split[
 
 fn _split_inner[
     type: DType, rank: Int, axis: Int
-](input: NDBuffer[type, rank], outputs: _NDBufferVector[type, rank],):
+](input: NDBuffer[type, rank], outputs: _NDBufferVector[type, rank]):
     constrained[axis == 0, "_split_inner only supports axis 0"]()
     var num_elems_copied: Int = 0
     for i in range(len(outputs)):

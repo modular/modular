@@ -242,7 +242,7 @@ fn resize_linear[
     antialias: Bool,
     rank: Int,
     type: DType,
-](input: NDBuffer[type, rank], output: NDBuffer[type, rank],):
+](input: NDBuffer[type, rank], output: NDBuffer[type, rank]):
     """Resizes input to output shape using linear interpolation.
 
     Does not use anti-aliasing filter for downsampling (coming soon).
@@ -271,7 +271,7 @@ fn _resize[
     antialias: Bool,
     rank: Int,
     type: DType,
-](input: NDBuffer[type, rank], output: NDBuffer[type, rank],):
+](input: NDBuffer[type, rank], output: NDBuffer[type, rank]):
     if input.get_shape() == output.get_shape():
         return memcpy(output.data, input.data, input.size())
     var scales = StaticTuple[Float32, rank]()

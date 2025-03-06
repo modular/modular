@@ -916,7 +916,7 @@ fn rms_norm_cpu[
     output_fn: fn[width: Int] (
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
-](shape: IndexList[rank], gamma: NDBuffer[type, 1], epsilon: Scalar[type],):
+](shape: IndexList[rank], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
 

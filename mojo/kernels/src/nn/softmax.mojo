@@ -684,7 +684,7 @@ fn softmax_kernel[
     type: DType,
     rank: Int,
     accum_type: DType = get_accum_type[type](),
-](shape: IndexList[rank], output: NDBuffer[type, rank], axis: Int,):
+](shape: IndexList[rank], output: NDBuffer[type, rank], axis: Int):
     var row_size = _temp_uint_from_int(shape[axis])
     var num_rows = _temp_uint_from_int(shape.flattened_length()) // row_size
 

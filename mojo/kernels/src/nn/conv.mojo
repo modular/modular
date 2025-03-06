@@ -2937,7 +2937,7 @@ fn conv_nhwc_direct[
         @parameter
         fn elementwise_epilogue[
             rank: Int
-        ](coords: IndexList[rank], f_size: Int,):
+        ](coords: IndexList[rank], f_size: Int):
             alias simd_size = simdwidthof[output_type]()
 
             @always_inline
