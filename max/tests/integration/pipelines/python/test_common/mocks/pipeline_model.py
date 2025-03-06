@@ -9,7 +9,7 @@ from typing import Optional, Sequence, cast
 from unittest.mock import MagicMock
 
 import numpy as np
-from max.driver import Tensor
+from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines import (
@@ -47,12 +47,19 @@ class MockPipelineModel(PipelineModel):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        devices: list[Device] = [],
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
         self.vocab_size = pipeline_config.vocab_size  # type: ignore
         self.eos_token = pipeline_config.eos_token  # type: ignore
         self.encoding = encoding
+
+        if not devices:
+            self.devices = [CPU()]
+        else:
+            self.devices = devices
+
         # This is required to smuggle these parameters in.
         self.max_length = pipeline_config.max_length
         self.kv_manager = MagicMock()
