@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for layer_norm."""
 
+from max.dtype import DType
 from max.mlir.dialects import mo
 
 from .. import dtype_promotion
@@ -38,5 +39,5 @@ def layer_norm(
         input,
         gamma,
         beta,
-        constant(epsilon, input.dtype),
+        constant(epsilon, DType.float32),
     )[0].tensor
