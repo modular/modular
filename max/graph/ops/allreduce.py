@@ -82,3 +82,60 @@ def sum(
         inputs,
     )
     return [res.tensor for res in results]
+
+
+def sum_naive(inputs: Iterable[TensorValue]) -> list[TensorValue]:
+    """Collective allreduce summation operation.
+
+    This op is a collective op which takes in tensors from different devices and
+    outputs tensors on different devices.
+    In particular, this operation will gather the inputs across different
+    devices and reduce them via a summation operation.
+    The result is then broadcasted back to the same devices that the inputs
+    came from.
+
+    This version of the allreduce sum op uses device-to-device transfers and
+    hence is expected to be much slower than the :obj:`ops.allreduce.sum` version.
+
+    Args:
+        inputs: The input tensors to reduce.
+        signal_buffers: Device buffer values used for synchronization.
+
+    Returns:
+        An iterable outputs which all hold the reduction output.
+    """
+    # Convert `inputs` to list since we'll iterate over it twice.
+    inputs = list(inputs)
+
+    shape = None
+    devices = []
+
+    for input in inputs:
+        if not shape:
+            shape = input.shape
+        if input.shape != shape:
+            msg = (
+                "allreduce.sum operation must have the same shape across all"
+                " input tensors."
+            )
+            raise ValueError(msg)
+        if not input.device:
+            msg = (
+                f"allreduce.sum operation input = {input} needs to have an"
+                " explicit device."
+            )
+            raise ValueError(msg)
+        if input.device in devices:
+            msg = (
+                "allreduce.sum operation must have unique devices across its"
+                " input tensors."
+            )
+            raise ValueError(msg)
+        devices.append(input.device)
+
+    results = Graph.current._add_op(
+        mo.distributed_allreduce_sum,
+        [x.type.to_mlir() for x in inputs],
+        inputs,
+    )
+    return [res.tensor for res in results]

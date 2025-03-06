@@ -109,16 +109,39 @@ def test_allreduce_execution() -> None:
     assert np.allclose(out_np, output[3].to(host).to_numpy())
 
 
-class AllreduceAdd(LayerV2):
-    """A fused allreduce with an elementwise add."""
+class AllreduceAddBase(LayerV2):
+    """Base class for allreduce variants with elementwise add."""
 
     num_devices: int
     """Number of devices to allreduce between."""
 
     def __init__(self, num_devices: int) -> None:
         super().__init__()
-
         self.num_devices = num_devices
+
+    def __call__(
+        self,
+        *args: TensorValue | BufferValue,
+    ) -> list[TensorValue]:
+        raise NotImplementedError
+
+
+class AllreduceAddNaive(AllreduceAddBase):
+    """A naive allreduce with an elementwise add."""
+
+    def __call__(
+        self,
+        *args: TensorValue | BufferValue,
+    ) -> list[TensorValue]:
+        inputs = [cast(TensorValue, arg) for arg in args[: self.num_devices]]
+
+        # Allreduce implementation using device-to-device transfers.
+        results = ops.allreduce.sum_naive(inputs)
+        return [x + 42 for x in results]
+
+
+class AllreduceAdd(AllreduceAddBase):
+    """A fused allreduce with an elementwise add."""
 
     def __call__(
         self,
@@ -131,32 +154,32 @@ class AllreduceAdd(LayerV2):
             cast(BufferValue, arg) for arg in args[self.num_devices :]
         ]
 
+        # Fused Mojo kernel allreduce implementation.
         results = ops.allreduce.sum(
             inputs=inputs, signal_buffers=signal_buffers
         )
-
-        # Elementwise add that should fuse into allreduce's epilogue.
         return [x + 42 for x in results]
 
 
+@pytest.mark.parametrize("layer_cls", [AllreduceAdd, AllreduceAddNaive])
 @pytest.mark.parametrize("num_gpus", [1, 2, 4])
-def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
-    """Tests that an elementwise fuses into the preceding allreduce."""
+def test_allreduce_epilogue_fusion(
+    layer_cls: type[AllreduceAddBase], num_gpus: int
+) -> None:
+    """Tests that an elementwise add correctly follows an allreduce operation."""
     M = 30
     N = 1000
 
     graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
     signals = Signals(devices=graph_devices)
 
-    # Initialize devices and session.
     host = CPU()
     devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
     session = InferenceSession(devices=[host] + devices)
 
-    # Create model and build graph.
-    model = AllreduceAdd(num_devices=len(devices))
+    model = layer_cls(num_devices=len(devices))
     graph = Graph(
-        "allreduce_add_fusion",
+        f"{layer_cls.__name__}_fusion",
         forward=model,
         input_types=[
             *[
@@ -167,10 +190,8 @@ def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
         ],
     )
 
-    # Compile and execute.
     compiled = session.load(graph)
 
-    # Create input tensors based on number of devices.
     inputs = []
     a_np = np.ones((M, N), np.float32)
     for i in range(num_gpus):
@@ -181,7 +202,6 @@ def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
 
     outputs = compiled.execute(*inputs, *signals.buffers())
 
-    # Calculate expected value based on number of devices.
     expected = np.full((M, N), num_gpus + 42.0, dtype=np.float32)
 
     for tensor in outputs:
