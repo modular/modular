@@ -114,6 +114,11 @@ class Settings(BaseSettings):
         description="Logs file path",
         alias="MAX_SERVE_LOGS_FILE_PATH",
     )
+    structured_logging: bool = Field(
+        default=False,
+        description="Structured logging for deployed services",
+        alias="MODULAR_STRUCTURED_LOGGING",
+    )
 
     disable_telemetry: bool = Field(
         default=False,

@@ -121,8 +121,11 @@ def configure_logging(settings: Settings) -> None:
     # Create a console handler
     console_handler = logging.StreamHandler()
     console_formatter: logging.Formatter
-    if os.getenv("MODULAR_STRUCTURED_LOGGING") == "1":
-        console_formatter = jsonlogger.JsonFormatter()
+    if settings.structured_logging:
+        console_formatter = jsonlogger.JsonFormatter(
+            "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s",
+            timestamp=True,
+        )
     else:
         console_formatter = logging.Formatter(
             (
@@ -142,8 +145,11 @@ def configure_logging(settings: Settings) -> None:
         # Create a file handler
         file_handler = logging.FileHandler(settings.logs_file_path)
         file_formatter: logging.Formatter
-        if os.getenv("MODULAR_STRUCTURED_LOGGING") == "1":
-            file_formatter = jsonlogger.JsonFormatter()
+        if settings.structured_logging:
+            file_formatter = jsonlogger.JsonFormatter(
+                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s",
+                timestamp=True,
+            )
         else:
             file_formatter = logging.Formatter(
                 (
