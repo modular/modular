@@ -2862,7 +2862,7 @@ fn copy_dram_to_sram[
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor,):
+](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor):
     """
     Used to copy data from DRAM to SRAM for AMD GPUs. It uses buffer_load intrinsic
     to load data and can check for bounds. In addition to dst and src, it takes
@@ -3030,7 +3030,7 @@ fn copy_dram_to_sram[
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor,):
+](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor):
     copy_dram_to_sram[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
