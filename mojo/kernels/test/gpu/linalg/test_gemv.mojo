@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from math import ceildiv
@@ -15,12 +13,14 @@ from gpu import WARP_SIZE
 import gpu.warp as warp
 from gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
-from linalg.matmul_gpu import matmul_kernel, matmul_kernel_naive
+from linalg.matmul_gpu import matmul_kernel
 from memory import UnsafePointer
 
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
+
+from sys import has_nvidia_gpu_accelerator
 
 
 def run_matvec[
@@ -53,7 +53,7 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    alias WARPS_PER_BLOCK = 32
+    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
     @parameter
@@ -100,9 +100,13 @@ def run_matvec[
     var nstime = 0.0
     var kernelType = ""
     if N == 1:
+        run_func_gemv(ctx)
+        ctx.enqueue_copy(c_host, c_device)
         nstime = ctx.execution_time[run_func_gemv](iterations)
         kernelType = "GEMV"
     elif M == 1:
+        run_func_gevm(ctx)
+        ctx.enqueue_copy(c_host, c_device)
         nstime = ctx.execution_time[run_func_gevm](iterations)
         kernelType = "GEVM"
     else:
@@ -114,8 +118,6 @@ def run_matvec[
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
-
-    ctx.enqueue_copy(c_host, c_device)
 
     # running naive
     ctx.enqueue_copy(a_device, a_host)
@@ -144,6 +146,10 @@ def run_matvec[
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
 
+    run_func_naive(ctx)
+    ctx.enqueue_copy(c_host_naive, c_device)
+    ctx.synchronize()
+
     nstime = 0.0
     nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
@@ -151,9 +157,6 @@ def run_matvec[
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
-
-    ctx.enqueue_copy(c_host_naive, c_device)
-    ctx.synchronize()
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
@@ -187,7 +190,7 @@ def run_matvec[
     _ = c_host_naive
 
 
-fn test_gevm_with_epilogue_fn[
+fn run_matvec_with_epilogue_fn[
     reduction_method: warp.ReductionMethod
 ](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     alias c_stride = 5
@@ -233,7 +236,7 @@ fn test_gevm_with_epilogue_fn[
             idx, rebind[SIMD[DType.float32, width]](val + 4.0)
         )
 
-    alias WARPS_PER_BLOCK = 32
+    alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
     @parameter
@@ -284,9 +287,13 @@ fn test_gevm_with_epilogue_fn[
     var nstime = 0.0
     var kernelType = ""
     if N == 1:
+        run_func_gemv(ctx)
+        ctx.enqueue_copy(c_host, c_device)
         nstime = ctx.execution_time[run_func_gemv](iterations)
         kernelType = "GEMV"
     elif M == 1:
+        run_func_gevm(ctx)
+        ctx.enqueue_copy(c_host, c_device)
         nstime = ctx.execution_time[run_func_gevm](iterations)
         kernelType = "GEVM"
     else:
@@ -301,8 +308,6 @@ fn test_gevm_with_epilogue_fn[
     print(flops * 1e-9 / sectime, " GFLOPS")
     print()
 
-    ctx.enqueue_copy(c_host, c_device)
-
     # running naive
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -313,7 +318,7 @@ fn test_gevm_with_epilogue_fn[
     @parameter
     fn run_func_naive(ctx: DeviceContext) raises:
         ctx.enqueue_function[
-            matmul_kernel_naive[
+            matmul_kernel[
                 DType.float32,
                 DType.float32,
                 DType.float32,
@@ -331,7 +336,8 @@ fn test_gevm_with_epilogue_fn[
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
 
-    ctx.enqueue_copy(c_device, c_host_naive)
+    run_func_naive(ctx)
+    ctx.enqueue_copy(c_host_naive, c_device)
 
     nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
@@ -340,11 +346,9 @@ fn test_gevm_with_epilogue_fn[
     print(flops * 1e-9 / sectime2, " GFLOPS")
     print()
 
-    ctx.enqueue_copy(c_host_naive, c_device)
-
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
     # accurate. Hence relative tolerance needs to be checked.
-    alias errorTolerance = 0.005
+    alias errorTolerance = 0.0001
     var failed = False
     for i in range(M * N * c_stride):
         var outVal = c_host.load(i)
@@ -376,23 +380,24 @@ fn test_gevm_with_epilogue_fn[
 
 
 def main():
+    def run_tests[reduction_method: warp.ReductionMethod](ctx: DeviceContext):
+        # gemv for matrix vector multiply
+        run_matvec[reduction_method=reduction_method](4096, 1, 4096, ctx=ctx)
+        run_matvec_with_epilogue_fn[reduction_method=reduction_method](
+            4096, 1, 4096, ctx=ctx
+        )
+        # gevm for vector matrix multiply
+        if has_nvidia_gpu_accelerator():
+            run_matvec[reduction_method=reduction_method](
+                1, 4096, 4096, ctx=ctx
+            )
+            run_matvec_with_epilogue_fn[reduction_method=reduction_method](
+                1, 4096, 4096, ctx=ctx
+            )
+
     with DeviceContext() as ctx:
+        run_tests[warp.ReductionMethod.WARP](ctx)
 
         @parameter
-        for i in range(2):
-            alias reduction_method = List[warp.ReductionMethod](
-                warp.ReductionMethod.WARP, warp.ReductionMethod.TENSOR_CORE
-            )[i]
-            # gemv for matrix vector multiply and gevm for vector matrix multiply
-            run_matvec[reduction_method=reduction_method](
-                4096, 1, 4096, ctx=ctx
-            )
-            run_matvec[reduction_method=reduction_method](
-                1, 4096, 4096, ctx=ctx
-            )
-            test_gevm_with_epilogue_fn[reduction_method=reduction_method](
-                1, 4096, 4096, ctx=ctx
-            )
-            test_gevm_with_epilogue_fn[reduction_method=reduction_method](
-                4096, 1, 4096, ctx=ctx
-            )
+        if has_nvidia_gpu_accelerator():
+            run_tests[warp.ReductionMethod.TENSOR_CORE](ctx)
