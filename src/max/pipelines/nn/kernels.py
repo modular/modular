@@ -898,7 +898,7 @@ def rms_norm_key_cache(
         values=[
             kv_collection,
             gamma,
-            ops.constant(epsilon, gamma.dtype),
+            ops.constant(epsilon, DType.float32),
             ops.constant(layer_idx, DType.uint32),
             ops.cast(TensorValue.from_dim(total_seq_len), DType.uint32),
             input_row_offsets,
