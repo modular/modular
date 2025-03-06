@@ -230,8 +230,8 @@ constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
 //===----------------------------------------------------------------------===//
 
 // Names of common params. We use these strings as the key to a parameter ref.
-static constexpr llvm::StringLiteral kParameterMut = "mut";
-static constexpr llvm::StringLiteral kParameterInput = "input";
+static constexpr llvm::StringLiteral kParameterRead = "read";
+static constexpr llvm::StringLiteral kParameterWrite = "write";
 static constexpr llvm::StringLiteral kParameterDType = "type";
 static constexpr llvm::StringLiteral kParameterRank = "rank";
 static constexpr llvm::StringLiteral kParameterIOSpec = "io_spec";
@@ -241,21 +241,15 @@ static constexpr llvm::StringLiteral kParameterStaticSpec = "static_spec";
 static constexpr llvm::StringLiteral kParameterSize = "size";
 static constexpr llvm::StringLiteral kParameterStaticSpecs = "static_specs";
 
-static constexpr bool kIOSpecImmutable = false;
-static constexpr bool kIOSpecMutable = true;
-
-static constexpr size_t kIOSpecIOOutput = 0;
-static constexpr size_t kIOSpecIOInput = 1;
-static constexpr size_t kIOSpecIOUnknown = 2;
-
 static constexpr llvm::StringLiteral kInputTensor = "InputTensor";
 static constexpr llvm::StringLiteral kOutputTensor = "OutputTensor";
 static constexpr llvm::StringLiteral kMutableInputTensor = "MutableInputTensor";
 
 enum class IOSpec {
-  InputTensor,        // Input tensor, read-only
-  OutputTensor,       // Output tensor, write-only
-  MutableInputTensor, // Input tensor that can be modified
+  InputTensor,        // Input tensor, read-only (read=true, write=false)
+  OutputTensor,       // Output tensor, write-only (read=false, write=true)
+  MutableInputTensor, // Input tensor that can be modified (read=true,
+                      // write=true)
 };
 
 } // namespace M::KGEN::MOGGPreElab

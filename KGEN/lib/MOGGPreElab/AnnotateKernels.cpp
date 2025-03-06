@@ -46,8 +46,8 @@ static constexpr std::array<StringLiteral, 4> kMaxList = {
 // TODO(GEX-1822): Should be able to query this information from
 // The lit.struct.decl ops for each of these types rather than hard-coding them.
 enum class ManagedTensorSliceParams {
-  kMut,
-  kInput,
+  kRead,
+  kWrite,
   kDType,
   kRank,
   kIOSpec,
@@ -56,8 +56,8 @@ enum class ManagedTensorSliceParams {
 };
 
 enum class VariadicTensorsParams {
-  kMut,
-  kInput,
+  kRead,
+  kWrite,
   kDType,
   kRank,
   kSize,
@@ -221,20 +221,20 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
   return success();
 }
 
-/// Extract the mut and input fields from a ManagedTensorSlice struct type
-/// Returns a pair of (mut, input) TypedAttrs
+/// Extract the read and write fields from a ManagedTensorSlice struct type
+/// Returns a pair of (read, write) TypedAttrs
 static std::pair<TypedAttr, TypedAttr>
-extractMutInputFromTensorStruct(LIT::StructType structType) {
+extractReadWriteFromTensorStruct(LIT::StructType structType) {
   auto allParameters = structType.getParamValues();
   ASSERT_STREAM(
       allParameters.size() >= toIndex(ManagedTensorSliceParams::kNumParams),
       << "Expected at least " << toIndex(ManagedTensorSliceParams::kNumParams)
       << " parameters on the tensor type");
 
-  auto mut = allParameters[toIndex(ManagedTensorSliceParams::kMut)];
-  auto input = allParameters[toIndex(ManagedTensorSliceParams::kInput)];
+  auto read = allParameters[toIndex(ManagedTensorSliceParams::kRead)];
+  auto write = allParameters[toIndex(ManagedTensorSliceParams::kWrite)];
 
-  return std::make_pair(mut, input);
+  return std::make_pair(read, write);
 }
 
 /// Return a set of named attributes mapping all unbound parameters in the
@@ -247,8 +247,8 @@ getUnboundParametersForTensor(LIT::StructType &structType, Builder &builder) {
       << "Expected at least " << toIndex(ManagedTensorSliceParams::kNumParams)
       << " parameters on the tensor type");
 
-  auto mut = allParameters[toIndex(ManagedTensorSliceParams::kMut)];
-  auto input = allParameters[toIndex(ManagedTensorSliceParams::kInput)];
+  auto read = allParameters[toIndex(ManagedTensorSliceParams::kRead)];
+  auto write = allParameters[toIndex(ManagedTensorSliceParams::kWrite)];
   auto dtype = allParameters[toIndex(ManagedTensorSliceParams::kDType)];
   auto rank = allParameters[toIndex(ManagedTensorSliceParams::kRank)];
   auto spec = allParameters[toIndex(ManagedTensorSliceParams::kStaticSpec)];
@@ -266,13 +266,13 @@ getUnboundParametersForTensor(LIT::StructType &structType, Builder &builder) {
     tensorSpecNamedAttrs.emplace_back(
         builder.getStringAttr(kParameterStaticSpec), spec);
 
-  if (mut)
-    tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterMut),
-                                      mut);
+  if (read)
+    tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterRead),
+                                      read);
 
-  if (input)
-    tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterInput),
-                                      input);
+  if (write)
+    tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterWrite),
+                                      write);
 
   return tensorSpecNamedAttrs;
 }
@@ -301,12 +301,12 @@ getUnboundParametersForSIMD(LIT::StructType structType, Builder &builder) {
 /// Return a set of named attributes mapping all unbound parameters in the tuple
 /// of tensor struct
 ///
-//  mut: Bool,
-//  input: IO, //,
+//  read: Bool,
+//  write: Bool, //,
 //  type: DType,
 //  rank: Int,
 //  size: Int,
-//  ioSpec: IOSpec[mut, input],
+//  ioSpec: IOSpec[read, write],
 //  *,
 //  static_specs: StaticTuple[StaticTensorSpec[type, rank], size],
 static SmallVector<NamedAttribute>
@@ -318,19 +318,19 @@ getUnboundParametersForVariadicTensors(LIT::StructType structType,
       << "Expected at least " << toIndex(VariadicTensorsParams::kNumParams)
       << " parameters on the tuple-of-tensors type");
 
-  auto mut = allParameters[toIndex(VariadicTensorsParams::kMut)];
-  auto input = allParameters[toIndex(VariadicTensorsParams::kInput)];
+  auto read = allParameters[toIndex(VariadicTensorsParams::kRead)];
+  auto write = allParameters[toIndex(VariadicTensorsParams::kWrite)];
   auto type = allParameters[toIndex(VariadicTensorsParams::kDType)];
   auto rank = allParameters[toIndex(VariadicTensorsParams::kRank)];
   auto size = allParameters[toIndex(VariadicTensorsParams::kSize)];
   auto spec = allParameters[toIndex(VariadicTensorsParams::kStaticSpecs)];
 
   SmallVector<NamedAttribute> namedAttrs;
-  if (mut)
-    namedAttrs.emplace_back(builder.getStringAttr(kParameterMut), mut);
+  if (read)
+    namedAttrs.emplace_back(builder.getStringAttr(kParameterRead), read);
 
-  if (input)
-    namedAttrs.emplace_back(builder.getStringAttr(kParameterInput), input);
+  if (write)
+    namedAttrs.emplace_back(builder.getStringAttr(kParameterWrite), write);
 
   if (type)
     namedAttrs.emplace_back(builder.getStringAttr(kParameterDType), type);
@@ -495,13 +495,13 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
   return registrationInfo.registrationName != nullptr;
 }
 
-/// Extract the mut and input fields from various tensor-related struct types
-/// Returns a pair of (mut, input) TypedAttrs
+/// Extract the read and write fields from various tensor-related struct types
+/// Returns a pair of (read, write) TypedAttrs
 static std::pair<TypedAttr, TypedAttr>
 extractIOSpecSubFields(LIT::StructType structType) {
   // Check if this is a ManagedTensorSlice
   if (symbolMatches(structType.getSymbol(), kMaxManagedTensorSlice)) {
-    return extractMutInputFromTensorStruct(structType);
+    return extractReadWriteFromTensorStruct(structType);
   }
 
   // Check if this is a VariadicTensors
@@ -511,9 +511,9 @@ extractIOSpecSubFields(LIT::StructType structType) {
         allParameters.size() >= 7,
         << "Expected at least 7 parameters on the variadic tensors type");
 
-    auto mut = allParameters[toIndex(VariadicTensorsParams::kMut)];
-    auto input = allParameters[toIndex(VariadicTensorsParams::kInput)];
-    return std::make_pair(mut, input);
+    auto read = allParameters[toIndex(VariadicTensorsParams::kRead)];
+    auto write = allParameters[toIndex(VariadicTensorsParams::kWrite)];
+    return std::make_pair(read, write);
   }
 
   // Check if this is a list of tensors
@@ -534,148 +534,69 @@ extractIOSpecSubFields(LIT::StructType structType) {
       return std::make_pair(TypedAttr(), TypedAttr());
     }
 
-    return extractMutInputFromTensorStruct(elementTypeStruct);
+    return extractReadWriteFromTensorStruct(elementTypeStruct);
   }
 
   // Unsupported type
   return std::make_pair(TypedAttr(), TypedAttr());
 }
 
-// This is basically a duplicate of checkSpecializedIOSpecParams, but that
-// function will go away quite soon anyways.
-static LogicalResult enforceUnspecializedIOParams(LIT::FnOp func) {
-  for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
-    auto structType = getAsDeclRefOrNull(argType);
-
-    if (!structType)
-      continue;
-
-    // Lists are only used for mo.concat_from_list atm and autoparameteriation
-    // currently fails on them so they need to have mut/input specialized. We
-    // don't want errors emitted in this case so just skip them.
-    //
-    // TODO(GEX-1882): Hammer out the paramterization story for list types.
-    if (symbolMatches(structType.getSymbol(), kMaxList))
-      continue;
-
-    auto [mutRaw, inputRaw] = extractIOSpecSubFields(structType);
-
-    if (!mutRaw && !inputRaw)
-      continue;
-
-    auto mut = isa<KGEN::ParamDeclRefAttr>(mutRaw);
-    auto input = isa<KGEN::ParamDeclRefAttr>(inputRaw);
-
-    if (!mut || !input) {
-      auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
-      auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
-
-      emitError(loc)
-          << "'mut' and/or 'input' of the io_spec parameter were"
-          << " specialized in argument " << argName
-          << " this is not necessary for shape functions and will be ignored.";
-
-      return failure();
-    }
-  }
-  return success();
-}
-
-// Run standard checks and mutations on a function. emits an
-// error and returns false if an issue was present.
-//
-// `structDeclOp` the parent struct the function being process lives in
-// `registrationInfo` the metadata about registration info
-// `func` the func being processed
-// `annotation` the annotation name to attach to this function to be used in
-//    later lowering.
-// `builder` builder for ops
-LogicalResult processStructFuncCommon(
-    LIT::StructDeclOp structDeclOp, ExtensibilityAPIStructInfo registrationInfo,
-    LIT::FnOp func, StringLiteral annotation, Builder &builder) {
-  if (!func.getIsStatic()) {
-    func->emitError("This function must be static");
-    return failure();
-  }
-
-  if (annotation == kMOGGShapeFunctionLabel) {
-    if (failed(enforceUnspecializedIOParams(func)))
-      return failure();
-  }
-
-  func->setAttr(builder.getStringAttr(annotation),
-                registrationInfo.registrationName);
-  func.setExported();
-  if (failed(annotateTypes(func)))
-    return failure();
-
-  return success();
-}
-
-static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
-                                            TypedAttr inputAttr, Location loc,
+static std::optional<IOSpec> maybeGetIOSpec(TypedAttr readAttr,
+                                            TypedAttr writeAttr, Location loc,
                                             StringRef argName) {
-  auto processMut = [&]() -> std::optional<bool> {
-    auto mutStruct = dyn_cast<LIT::LITStructAttr>(mutAttr);
-    if (!mutStruct) {
+  auto processRead = [&]() -> std::optional<bool> {
+    auto readStruct = dyn_cast<LIT::LITStructAttr>(readAttr);
+    if (!readStruct) {
       emitError(loc, "Error for argument '" + argName +
-                         "': 'mut' inferred parameter must be set");
+                         "': 'read' inferred parameter must be set");
       return std::nullopt;
     }
 
-    auto [_, mutValueAttr] = mutStruct.getValues().front();
-    auto mutIntAttr = dyn_cast<IntegerAttr>(mutValueAttr);
-    ASSERT_STREAM(mutIntAttr,
+    auto [_, readValueAttr] = readStruct.getValues().front();
+    auto readIntAttr = dyn_cast<IntegerAttr>(readValueAttr);
+    ASSERT_STREAM(readIntAttr,
                   << "Error for argument '" << argName
-                  << "': Expected integer attribute for mut parameter value");
-    return mutIntAttr.getValue().getBoolValue();
+                  << "': Expected integer attribute for read parameter value");
+    return readIntAttr.getValue().getBoolValue();
   };
 
-  auto processInput = [&]() -> std::optional<int64_t> {
-    auto inputStruct = dyn_cast<LIT::LITStructAttr>(inputAttr);
-    if (!inputStruct) {
+  auto processWrite = [&]() -> std::optional<bool> {
+    auto writeStruct = dyn_cast<LIT::LITStructAttr>(writeAttr);
+    if (!writeStruct) {
       emitError(loc, "Error for argument '" + argName +
-                         "': 'input' inferred parameter must be set");
+                         "': 'write' inferred parameter must be set");
       return std::nullopt;
     }
 
-    auto [_, inputValueAttr] = inputStruct.getValues().front();
-    auto inputStructAttr = dyn_cast<LIT::LITStructAttr>(inputValueAttr);
-    ASSERT_STREAM(
-        inputStructAttr && !inputStructAttr.getValues().empty(),
-        << "Error for argument '" << argName
-        << "': Expected struct attribute with value for input parameter");
-
-    auto [__, inputIntValueAttr] = inputStructAttr.getValues().front();
-    auto inputIntAttr = dyn_cast<IntegerAttr>(inputIntValueAttr);
-    ASSERT_STREAM(inputIntAttr,
+    auto [_, writeValueAttr] = writeStruct.getValues().front();
+    auto writeIntAttr = dyn_cast<IntegerAttr>(writeValueAttr);
+    ASSERT_STREAM(writeIntAttr,
                   << "Error for argument '" << argName
-                  << "': Expected integer attribute for input parameter value");
-
-    return inputIntAttr.getValue().getSExtValue();
+                  << "': Expected integer attribute for write parameter value");
+    return writeIntAttr.getValue().getBoolValue();
   };
 
-  auto mutValue = processMut();
-  auto inputValue = processInput();
+  auto readValue = processRead();
+  auto writeValue = processWrite();
 
-  if (!mutValue || !inputValue) {
+  if (!readValue || !writeValue) {
     return std::nullopt;
   }
 
-  auto mut = mutValue.value();
-  auto input = inputValue.value();
+  auto read = readValue.value();
+  auto write = writeValue.value();
 
-  if (mut == kIOSpecMutable && input == kIOSpecIOOutput)
+  if (!read && write)
     return IOSpec::OutputTensor;
-  else if (mut == kIOSpecImmutable && input == kIOSpecIOInput)
+  else if (read && !write)
     return IOSpec::InputTensor;
-  else if (mut == kIOSpecMutable && input == kIOSpecIOInput)
+  else if (read && write)
     return IOSpec::MutableInputTensor;
 
   emitError(loc, "Error for argument '" + argName + "': Invalid " +
                      kIOSpec.back() +
-                     " param. Valid configs are: [False,IO.Input]=Input, "
-                     "[True,IO.Output]=Output, [True,IO.Input]=MutableInput");
+                     " param. Valid configs are: [True,False]=Input, "
+                     "[False,True]=Output, [True,True]=MutableInput");
 
   return std::nullopt;
 }
@@ -695,14 +616,14 @@ processIOSpecs(LIT::FnOp func) {
       continue;
     }
 
-    auto [mut, input] = extractIOSpecSubFields(structType);
+    auto [read, write] = extractIOSpecSubFields(structType);
 
-    if (!mut && !input)
+    if (!read && !write)
       continue;
 
     auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
     auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
-    auto ioSpec = maybeGetIOSpec(mut, input, loc, argName);
+    auto ioSpec = maybeGetIOSpec(read, write, loc, argName);
 
     if (!ioSpec) {
       error = true;
@@ -735,6 +656,74 @@ processIOSpecs(LIT::FnOp func) {
     return std::nullopt;
 
   return specs;
+}
+
+static LogicalResult enforceUnspecializedIOParams(LIT::FnOp func) {
+  for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
+    auto structType = getAsDeclRefOrNull(argType);
+
+    if (!structType)
+      continue;
+
+    // Lists are only used for mo.concat_from_list atm and autoparameteriation
+    // currently fails on them so they need to have mut/input specialized. We
+    // don't want errors emitted in this case so just skip them.
+    //
+    // TODO(GEX-1882): Hammer out the paramterization story for list types.
+    if (symbolMatches(structType.getSymbol(), kMaxList))
+      continue;
+
+    auto [mutRaw, inputRaw] = extractIOSpecSubFields(structType);
+
+    if (!mutRaw && !inputRaw)
+      continue;
+
+    auto mut = isa<KGEN::ParamDeclRefAttr>(mutRaw);
+    auto input = isa<KGEN::ParamDeclRefAttr>(inputRaw);
+
+    if (!mut || !input) {
+      auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
+      auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
+
+      emitError(loc)
+          << "'read' and/or 'write' of the io_spec parameter were"
+          << " specialized in argument " << argName
+          << " this is not necessary for shape functions and will be ignored.";
+
+      return failure();
+    }
+  }
+  return success();
+}
+
+// Run standard checks and mutations on a function. emits an
+// error and returns false if an issue was present.
+//
+// `structDeclOp` the parent struct the function being process lives in
+// `registrationInfo` the metadata about registration info
+// `func` the func being processed
+// `annotation` the annotation name to attach to this function to be used in
+//    later lowering.
+// `builder` builder for ops
+LogicalResult processStructFuncCommon(
+    LIT::StructDeclOp structDeclOp, ExtensibilityAPIStructInfo registrationInfo,
+    LIT::FnOp func, StringLiteral annotation, Builder &builder) {
+  if (!func.getIsStatic()) {
+    func->emitError("This function must be static");
+    return failure();
+  }
+
+  if (annotation == kMOGGShapeFunctionLabel) {
+    if (failed(enforceUnspecializedIOParams(func)))
+      return failure();
+  }
+  func->setAttr(builder.getStringAttr(annotation),
+                registrationInfo.registrationName);
+  func.setExported();
+  if (failed(annotateTypes(func)))
+    return failure();
+
+  return success();
 }
 
 // Run checks and mutations on an execute function. emits an
