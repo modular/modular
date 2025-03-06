@@ -15,7 +15,7 @@
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
 from math import ceildiv
-from layout import LayoutTensor
+from layout import LayoutTensor, Layout
 from max.driver import (
     Accelerator,
     Device,
@@ -44,11 +44,14 @@ def print_image[h: Int, w: Int](t: Tensor[channel_dtype, 3]):
         print("")
 
 
-fn color_to_grayscale_conversion(
+fn color_to_grayscale_conversion[
+    image_layout: Layout,
+    out_layout: Layout,
+](
     width: Int,
     height: Int,
-    image: LayoutTensor[channel_dtype],
-    out: LayoutTensor[channel_dtype],
+    image: LayoutTensor[channel_dtype, image_layout, MutableAnyOrigin],
+    out: LayoutTensor[channel_dtype, out_layout, MutableAnyOrigin],
 ):
     """Converting each RGB pixel to grayscale, parallelized across the output tensor on the GPU.
     """
@@ -96,10 +99,15 @@ def main():
             (IMAGE_HEIGHT, IMAGE_WIDTH, 1), gpu_device
         )
 
+        rgb_layout_tensor = rgb_tensor.to_layout_tensor()
+        gray_layout_tensor = gray_tensor.to_layout_tensor()
+
         # Compile the function to run across a grid on the GPU.
-        gpu_function = Accelerator.compile[color_to_grayscale_conversion](
-            gpu_device
-        )
+        gpu_function = Accelerator.compile[
+            color_to_grayscale_conversion[
+                rgb_layout_tensor.layout, gray_layout_tensor.layout
+            ]
+        ](gpu_device)
 
         # The grid is divided up into blocks, making sure there's an extra
         # full block for any remainder. This hasn't been tuned for any specific
@@ -115,8 +123,8 @@ def main():
             gpu_device,
             IMAGE_WIDTH,
             IMAGE_HEIGHT,
-            rgb_tensor.to_layout_tensor(),
-            gray_tensor.to_layout_tensor(),
+            rgb_layout_tensor,
+            gray_layout_tensor,
             grid_dim=Dim(num_col_blocks, num_row_blocks),
             block_dim=Dim(BLOCK_SIZE, BLOCK_SIZE),
         )

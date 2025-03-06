@@ -15,7 +15,7 @@ from collections.string import StringSlice
 from complex import ComplexSIMD
 from gpu.host import Dim
 from gpu.id import thread_idx, block_dim, block_idx
-from layout import LayoutTensor
+from layout import LayoutTensor, Layout
 from math import ceildiv
 from max.driver import Accelerator, Tensor, accelerator, cpu
 from sys import has_nvidia_gpu_accelerator
@@ -40,13 +40,15 @@ def draw_mandelbrot[h: Int, w: Int](t: Tensor[int_dtype, 2], max: Int):
         print("")
 
 
-fn mandelbrot(
+fn mandelbrot[
+    layout: Layout
+](
     min_x: Scalar[float_dtype],
     min_y: Scalar[float_dtype],
     scale_x: Scalar[float_dtype],
     scale_y: Scalar[float_dtype],
     max_iterations: Scalar[int_dtype],
-    out: LayoutTensor[int_dtype],
+    out: LayoutTensor[int_dtype, layout, MutableAnyOrigin],
 ):
     """The per-element calculation of iterations to escape in the Mandelbrot set.
     """
@@ -83,9 +85,6 @@ def main():
         gpu_device = accelerator()
         host_device = cpu()
 
-        # Compile the function to run across a grid on the GPU.
-        gpu_function = Accelerator.compile[mandelbrot](gpu_device)
-
         # Set the resolution of the Mandelbrot set grid that will be calculated.
         alias GRID_WIDTH = 60
         alias GRID_HEIGHT = 25
@@ -109,6 +108,13 @@ def main():
         # Allocate a tensor on the target device to hold the resulting set.
         out_tensor = Tensor[int_dtype, 2]((GRID_HEIGHT, GRID_WIDTH), gpu_device)
 
+        out_layout_tensor = out_tensor.to_layout_tensor()
+
+        # Compile the function to run across a grid on the GPU.
+        gpu_function = Accelerator.compile[
+            mandelbrot[out_layout_tensor.layout]
+        ](gpu_device)
+
         # Launch the compiled function on the GPU. The target device is specified
         # first, followed by all function arguments. The last two named parameters
         # are the dimensions of the grid in blocks, and the block dimensions.
@@ -119,7 +125,7 @@ def main():
             SCALE_X,
             SCALE_Y,
             MAX_ITERATIONS,
-            out_tensor.to_layout_tensor(),
+            out_layout_tensor,
             grid_dim=Dim(num_col_blocks, num_row_blocks),
             block_dim=Dim(BLOCK_SIZE, BLOCK_SIZE),
         )

@@ -296,10 +296,10 @@ fn fused_attention_kernel[
     BN: Int,
     BD: Int,
 ](
-    Q: LayoutTensor[q_dtype, q_layout],
-    K: LayoutTensor[k_dtype, k_layout],
-    V: LayoutTensor[v_dtype, v_layout],
-    O: LayoutTensor[o_dtype, o_layout],
+    Q: LayoutTensor[q_dtype, q_layout, MutableAnyOrigin],
+    K: LayoutTensor[k_dtype, k_layout, MutableAnyOrigin],
+    V: LayoutTensor[v_dtype, v_layout, MutableAnyOrigin],
+    O: LayoutTensor[o_dtype, o_layout, MutableAnyOrigin],
 ):
     alias N = Q.shape[0]()
     alias D = Q.shape[1]()

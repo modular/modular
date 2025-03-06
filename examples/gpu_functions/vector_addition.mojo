@@ -13,7 +13,7 @@
 
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
-from layout import LayoutTensor
+from layout import LayoutTensor, Layout
 from math import ceildiv
 from max.driver import (
     Accelerator,
@@ -28,11 +28,15 @@ alias float_dtype = DType.float32
 alias tensor_rank = 1
 
 
-fn vector_addition(
+fn vector_addition[
+    lhs_layout: Layout,
+    rhs_layout: Layout,
+    out_layout: Layout,
+](
     length: Int,
-    lhs: LayoutTensor[float_dtype, _, MutableAnyOrigin],
-    rhs: LayoutTensor[float_dtype, _, MutableAnyOrigin],
-    out: LayoutTensor[float_dtype, _, MutableAnyOrigin],
+    lhs: LayoutTensor[float_dtype, lhs_layout, MutableAnyOrigin],
+    rhs: LayoutTensor[float_dtype, rhs_layout, MutableAnyOrigin],
+    out: LayoutTensor[float_dtype, out_layout, MutableAnyOrigin],
 ):
     """The calculation to perform across the vector on the GPU."""
     tid = block_dim.x * block_idx.x + thread_idx.x
@@ -68,9 +72,18 @@ def main():
         out_tensor = Tensor[float_dtype, tensor_rank](
             (VECTOR_WIDTH), gpu_device
         )
+        lhs_layout_tensor = lhs_tensor.to_layout_tensor()
+        rhs_layout_tensor = rhs_tensor.to_layout_tensor()
+        out_layout_tensor = out_tensor.to_layout_tensor()
 
         # Compile the function to run across a grid on the GPU.
-        gpu_function = Accelerator.compile[vector_addition](gpu_device)
+        gpu_function = Accelerator.compile[
+            vector_addition[
+                lhs_layout_tensor.layout,
+                rhs_layout_tensor.layout,
+                out_layout_tensor.layout,
+            ]
+        ](gpu_device)
 
         # The grid is divided up into blocks, making sure there's an extra
         # full block for any remainder. This hasn't been tuned for any specific
@@ -83,10 +96,10 @@ def main():
         # are the dimensions of the grid in blocks, and the block dimensions.
         gpu_function(
             gpu_device,
+            lhs_layout_tensor,
+            rhs_layout_tensor,
+            out_layout_tensor,
             VECTOR_WIDTH,
-            lhs_tensor.to_layout_tensor(),
-            rhs_tensor.to_layout_tensor(),
-            out_tensor.to_layout_tensor(),
             grid_dim=Dim(num_blocks),
             block_dim=Dim(BLOCK_SIZE),
         )

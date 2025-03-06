@@ -14,7 +14,7 @@
 
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
-from layout import LayoutTensor
+from layout import LayoutTensor, Layout
 from math import ceildiv
 from max.driver import (
     Accelerator,
@@ -29,13 +29,17 @@ alias float_dtype = DType.float32
 alias tensor_rank = 2
 
 
-fn naive_matrix_multiplication(
+fn naive_matrix_multiplication[
+    m_layout: Layout,
+    n_layout: Layout,
+    p_layout: Layout,
+](
     i: Int,
     j: Int,
     k: Int,
-    m: LayoutTensor[float_dtype, _, MutableAnyOrigin],
-    n: LayoutTensor[float_dtype, _, MutableAnyOrigin],
-    p: LayoutTensor[float_dtype, _, MutableAnyOrigin],
+    m: LayoutTensor[float_dtype, m_layout, MutableAnyOrigin],
+    n: LayoutTensor[float_dtype, n_layout, MutableAnyOrigin],
+    p: LayoutTensor[float_dtype, p_layout, MutableAnyOrigin],
 ):
     """Naive matrix multiplication of M_ij x N_jk = P_ik."""
     row = block_dim.y * block_idx.y + thread_idx.y
@@ -81,10 +85,18 @@ def main():
         # Allocate a tensor on the accelerator to host the calculation results.
         p_tensor = Tensor[float_dtype, tensor_rank]((I, K), gpu_device)
 
+        m_layout_tensor = m_tensor.to_layout_tensor()
+        n_layout_tensor = n_tensor.to_layout_tensor()
+        p_layout_tensor = p_tensor.to_layout_tensor()
+
         # Compile the function to run across a grid on the GPU.
-        gpu_function = Accelerator.compile[naive_matrix_multiplication](
-            gpu_device
-        )
+        gpu_function = Accelerator.compile[
+            naive_matrix_multiplication[
+                m_layout_tensor.layout,
+                n_layout_tensor.layout,
+                p_layout_tensor.layout,
+            ]
+        ](gpu_device)
 
         # The grid is divided up into blocks, making sure there's an extra
         # full block for any remainder. This hasn't been tuned for any specific
@@ -101,9 +113,9 @@ def main():
             I,
             J,
             K,
-            m_tensor.to_layout_tensor(),
-            n_tensor.to_layout_tensor(),
-            p_tensor.to_layout_tensor(),
+            m_layout_tensor,
+            n_layout_tensor,
+            p_layout_tensor,
             grid_dim=Dim(num_col_blocks, num_row_blocks),
             block_dim=Dim(BLOCK_SIZE, BLOCK_SIZE),
         )
