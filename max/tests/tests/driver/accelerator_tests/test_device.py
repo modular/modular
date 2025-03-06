@@ -3,7 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from max.driver import CPU, Accelerator
+
+import pytest
+from max.driver import CPU, Accelerator, accelerator_count
 from max.graph import DeviceKind, DeviceRef
 
 
@@ -63,3 +65,50 @@ def test_stats():
     stats = accel.stats
     assert "free_memory" in stats
     assert "total_memory" in stats
+
+
+def test_accelerator_can_access_self():
+    """Accelerator should not be able to access itself."""
+    accel = Accelerator()
+    assert not accel.can_access(accel), "Device should not access itself."
+
+
+def test_accelerator_can_access_cpu():
+    """Accelerator should typically not have direct peer access to CPU."""
+    gpu = Accelerator()
+    cpu = CPU()
+    assert not gpu.can_access(cpu), "GPU should not directly access CPU memory."
+
+
+def test_cpu_can_access_accelerator():
+    """CPUs normally cannot directly access accelerator memory."""
+    gpu = Accelerator()
+    cpu = CPU()
+    assert not cpu.can_access(gpu), (
+        "CPUs shouldn't be able to access accelerator memory."
+    )
+
+
+def test_accelerator_peer_access():
+    """Test peer access between multiple accelerators."""
+    num_accelerators = accelerator_count()
+    if num_accelerators < 2:
+        pytest.skip("Test requires at least two accelerators.")
+
+    gpu0 = Accelerator(id=0)
+    gpu1 = Accelerator(id=1)
+
+    can_access_0_to_1 = gpu0.can_access(gpu1)
+    can_access_1_to_0 = gpu1.can_access(gpu0)
+
+    # Typically, peer access is symmetric, but hardware-dependent.
+    assert can_access_0_to_1 == can_access_1_to_0, (
+        "Peer access should be symmetric."
+    )
+
+
+def test_cpu_can_access_cpu():
+    """CPU should not report peer access to itself."""
+    cpu = CPU()
+    another_cpu = CPU()
+    assert not cpu.can_access(another_cpu), "CPU should not access another CPU."
