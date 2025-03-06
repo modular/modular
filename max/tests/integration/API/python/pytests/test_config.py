@@ -77,6 +77,23 @@ def test_config_weights_format__raises_with_conflicting_weights_path():
         config.weights_format
 
 
+def test_config_weights_format__raises_with_unsupported_GPTQ_format():
+    # this should work
+    config = PipelineConfig(
+        model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
+        quantization_encoding="gptq",
+    )
+    config.finalize_encoding_config()
+
+    # We expect this to fail.
+    with pytest.raises(ValueError):
+        unsupported_config = PipelineConfig(
+            model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
+            quantization_encoding="gptq",
+        )
+        unsupported_config.finalize_encoding_config()
+
+
 def test_config_weights_format__correct_weights_format():
     config = PipelineConfig(
         model_path="modularai/llama-3.1",
