@@ -1441,7 +1441,7 @@ fn test_layout_tensor_iterator():
     alias size = 64
     alias type = DType.float32
 
-    var arr = InlineArray[Scalar[type], size](unsafe_uninitialized=True)
+    var arr = InlineArray[Scalar[type], size](uninitialized=True)
     for i in range(size):
         arr[i] = i
 
@@ -1542,7 +1542,7 @@ fn test_nested_layout_tensor_iterator():
     alias size = N * K
     alias type = DType.float32
 
-    var arr = InlineArray[Scalar[type], size](unsafe_uninitialized=True)
+    var arr = InlineArray[Scalar[type], size](uninitialized=True)
     for i in range(size):
         arr[i] = i
 

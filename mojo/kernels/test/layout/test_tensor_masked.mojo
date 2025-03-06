@@ -56,7 +56,7 @@ fn test_subtile_masked():
 
 fn test_tile_dynamic_no_bounds():
     print("== test_tile_dynamic_no_bounds")
-    arr_4x4_f32 = InlineArray[Float32, 16](unsafe_uninitialized=True)
+    arr_4x4_f32 = InlineArray[Float32, 16](uninitialized=True)
     tensor_UxU = (
         tb[DType.float32]().row_major(4, 4).view(arr_4x4_f32.unsafe_ptr())
     )
@@ -75,7 +75,7 @@ fn test_tile_dynamic_no_bounds():
 
 fn test_tile_dynamic_with_bounds():
     print("== test_tile_dynamic_with_bounds")
-    arr_5x3_f32 = InlineArray[Float32, 15](unsafe_uninitialized=True)
+    arr_5x3_f32 = InlineArray[Float32, 15](uninitialized=True)
     tensor_UxU = (
         tb[DType.float32]().row_major(5, 3).view(arr_5x3_f32.unsafe_ptr())
     )
@@ -94,7 +94,7 @@ fn test_tile_dynamic_with_bounds():
 
 fn test_tile_and_distribute():
     print("== test_tile_and_distribute")
-    arr_5x3_f32 = InlineArray[Float32, 15](unsafe_uninitialized=True)
+    arr_5x3_f32 = InlineArray[Float32, 15](uninitialized=True)
     tensor_UxU = (
         tb[DType.float32]().row_major(5, 3).view(arr_5x3_f32.unsafe_ptr())
     )
@@ -119,7 +119,7 @@ fn test_tile_and_distribute():
 
 fn test_tile_iterator_masked():
     print("== test_tile_iterator_masked")
-    arr_5x3_f32 = InlineArray[Float32, 15](unsafe_uninitialized=True)
+    arr_5x3_f32 = InlineArray[Float32, 15](uninitialized=True)
     tensor_UxU = (
         tb[DType.float32]().row_major(5, 3).view(arr_5x3_f32.unsafe_ptr())
     )
@@ -136,7 +136,7 @@ fn test_tile_iterator_masked():
 
 fn test_tile_and_vectorize():
     print("== test_tile_and_vectorize")
-    arr_3x4_f32 = InlineArray[Float32, 12](unsafe_uninitialized=True)
+    arr_3x4_f32 = InlineArray[Float32, 12](uninitialized=True)
     tensor_UxU = (
         tb[DType.float32]().row_major(3, 4).view(arr_3x4_f32.unsafe_ptr())
     )
