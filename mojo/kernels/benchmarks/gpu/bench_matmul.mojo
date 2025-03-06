@@ -264,7 +264,7 @@ fn main() raises:
     )
     alias cache_busting = True
     alias transpose_b = True
-    alias use_vendor_blas = False
+    alias use_vendor_blas = env_get_bool["use_vendor_blas", False]()
 
     var m = Bench()
     with DeviceContext() as ctx:
