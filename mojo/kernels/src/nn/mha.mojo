@@ -57,6 +57,7 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
+from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
@@ -104,6 +105,7 @@ fn flash_attention[
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
     decoding_warp_split_k: Bool = False,
+    naive_kernel: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, q_shape, *_],
@@ -138,6 +140,7 @@ fn flash_attention[
             use_score_mod=use_score_mod,
             config=config,
             decoding_warp_split_k=decoding_warp_split_k,
+            naive_kernel=naive_kernel,
         ](
             output,
             q,
@@ -165,10 +168,15 @@ fn get_mha_decoding_num_partitions[
     return 1
 
 
-fn flash_attention_hw_supported() -> Bool:
+fn flash_attention_hw_supported[qkv_type: DType, add_attn_mask: Bool]() -> Bool:
     return (
         has_nvidia_gpu_accelerator()
         or env_get_bool["FLASH_ATTENTION_HW_SUPPORTED", False]()
+        or (
+            has_amd_gpu_accelerator()
+            and qkv_type == DType.bfloat16
+            and (not add_attn_mask)
+        )
     )
 
 
@@ -188,6 +196,7 @@ fn flash_attention[
     ),
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
+    naive_kernel: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, q_shape, *_],
@@ -277,7 +286,7 @@ fn flash_attention[
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]()
         # Current impl has only been verified for depth = 128.
-        alias flash_attention_applicable = flash_attention_hw_supported() and head_depth_known and q.shape.get[rank-1]() == 128
+        alias flash_attention_applicable = flash_attention_hw_supported[type, add_attn_mask]() and head_depth_known and q.shape.get[rank-1]() == 128 and not naive_kernel
         # fmt: on
         alias kv_num_heads = cache_t.kv_params.num_heads
 
@@ -516,9 +525,11 @@ fn flash_attention_dispatch[
         elif q_half_float and is_token_generation:
             alias BM = 16
             alias BN = depth
-            alias BK = 16 if q.type is DType.float32 else 32
+            alias BK = Int(depth) if has_amd_gpu_accelerator() else (
+                16 if q.type is DType.float32 else 32
+            )
             alias WM = BM
-            alias WN = 32
+            alias WN = BN if has_amd_gpu_accelerator() else 32
             # num warps in M and N, multipled by warp size.
             alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
@@ -604,11 +615,20 @@ fn flash_attention_dispatch[
                     valid_length,
                     mask_functor,
                     score_mod_functor,
-                    grid_dim=(1, Int(num_blocks_y), Int(batch_size)),
+                    grid_dim=(
+                        1,
+                        Int(
+                            num_blocks_y
+                        ) if has_nvidia_gpu_accelerator() else Int(num_heads),
+                        Int(batch_size),
+                    ),
                     block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=shared_mem_bytes,
+                    shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        ctx.device_info.shared_memory_per_multiprocessor - 4096
+                        (
+                            ctx.device_info.shared_memory_per_multiprocessor
+                            - 4096
+                        ) if has_nvidia_gpu_accelerator() else 0
                     ),
                 )
             else:
@@ -767,6 +787,7 @@ fn flash_attention[
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
     decoding_warp_split_k: Bool = False,
+    naive_kernel: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, q_shape, *_],
@@ -795,7 +816,7 @@ fn flash_attention[
     # fmt: off
     alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
     # Current impl has only been verified for depth = 128.
-    alias flash_attention_applicable = flash_attention_hw_supported() and head_depth_known and q.shape.get[3]() == 128
+    alias flash_attention_applicable = flash_attention_hw_supported[type, add_attn_mask]() and head_depth_known and q.shape.get[3]() == 128 and not naive_kernel
 
     alias q_half_float = q.type in (DType.float16, DType.bfloat16)
     alias kv_num_heads = k.shape.get[2]()
@@ -957,51 +978,74 @@ fn mha[
         start_pos = num_keys - seq_len
 
     @parameter
-    if is_shared_kv:
-        mha_single_batch_pipelined[
-            mask_rank,
-            config=config,
-            group=group,
-            use_mask_tensor=use_mask_tensor,
-            use_score_mod=use_score_mod,
-        ](
-            q_ptr.offset(q_batch_offset),
-            k,
-            v,
-            mask_ptr.offset(mask_batch_offset),
-            output_ptr.offset(q_batch_offset),
-            scale,
-            seq_len,
-            max_seq_len,
-            start_pos,
-            num_keys,
-            mask_tensor_col,
-            mask,
-            score_mod,
-            batch_idx,
-        )
+    if is_nvidia_gpu():
+
+        @parameter
+        if is_shared_kv:
+            mha_single_batch_pipelined[
+                mask_rank,
+                config=config,
+                group=group,
+                use_mask_tensor=use_mask_tensor,
+                use_score_mod=use_score_mod,
+            ](
+                q_ptr.offset(q_batch_offset),
+                k,
+                v,
+                mask_ptr.offset(mask_batch_offset),
+                output_ptr.offset(q_batch_offset),
+                scale,
+                seq_len,
+                max_seq_len,
+                start_pos,
+                num_keys,
+                mask_tensor_col,
+                mask,
+                score_mod,
+                batch_idx,
+            )
+        else:
+            mha_single_batch[
+                mask_rank,
+                config=config,
+                group=group,
+                use_mask_tensor=use_mask_tensor,
+                use_score_mod=use_score_mod,
+            ](
+                q_ptr.offset(q_batch_offset),
+                k,
+                v,
+                mask_ptr.offset(mask_batch_offset),
+                output_ptr.offset(q_batch_offset),
+                scale,
+                seq_len,
+                max_seq_len,
+                start_pos,
+                num_keys,
+                mask_tensor_col,
+                mask,
+                score_mod,
+                batch_idx,
+            )
     else:
-        mha_single_batch[
-            mask_rank,
-            config=config,
-            group=group,
-            use_mask_tensor=use_mask_tensor,
-            use_score_mod=use_score_mod,
-        ](
+        constrained[
+            use_mask_tensor == False and use_score_mod == False,
+            (
+                "use_mask_tensor and use_score_mod must be False for AMD flash"
+                " attention"
+            ),
+        ]()
+        amd_mha_single_batch[group=group, config=config](
+            output_ptr.offset(q_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
             v,
-            mask_ptr.offset(mask_batch_offset),
-            output_ptr.offset(q_batch_offset),
-            scale,
             seq_len,
-            max_seq_len,
-            start_pos,
             num_keys,
-            mask_tensor_col,
-            mask,
-            score_mod,
+            scale,
             batch_idx,
+            Int(start_pos),
+            mask,
         )
 
 
@@ -2639,69 +2683,104 @@ fn mha_decoding[
     )
 
     @parameter
-    if is_shared_kv:
-        mha_decoding_single_batch_pipelined[
-            mask_rank,
-            BM=BM,
-            BN=BN,
-            BK=BK,
-            WM=WM,
-            WN=WN,
-            depth=depth,
-            num_heads=num_heads,
-            num_threads=num_threads,
-            num_pipeline_stages=num_pipeline_stages,
-            group=group,
-            use_mask_tensor=use_mask_tensor,
-            use_score_mod=use_score_mod,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
-            q_ptr.offset(q_batch_offset),
-            k,
-            v,
-            mask_ptr.offset(mask_batch_offset),
-            output_ptr.offset(output_batch_offset),
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            scale,
-            num_keys,
-            num_partitions,
-            max_cache_valid_length,
-            mask,
-            score_mod,
-            batch_idx,
-        )
+    if is_nvidia_gpu():
+
+        @parameter
+        if is_shared_kv:
+            mha_decoding_single_batch_pipelined[
+                mask_rank,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                num_heads=num_heads,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                group=group,
+                use_mask_tensor=use_mask_tensor,
+                use_score_mod=use_score_mod,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q_ptr.offset(q_batch_offset),
+                k,
+                v,
+                mask_ptr.offset(mask_batch_offset),
+                output_ptr.offset(output_batch_offset),
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                scale,
+                num_keys,
+                num_partitions,
+                max_cache_valid_length,
+                mask,
+                score_mod,
+                batch_idx,
+            )
+        else:
+            mha_decoding_single_batch[
+                mask_rank,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                num_heads=num_heads,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                group=group,
+                use_mask_tensor=use_mask_tensor,
+                use_score_mod=use_score_mod,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q_ptr.offset(q_batch_offset),
+                k,
+                v,
+                mask_ptr.offset(mask_batch_offset),
+                output_ptr.offset(output_batch_offset),
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                scale,
+                num_keys,
+                num_partitions,
+                max_cache_valid_length,
+                mask,
+                score_mod,
+                batch_idx,
+            )
     else:
-        mha_decoding_single_batch[
-            mask_rank,
-            BM=BM,
-            BN=BN,
+        alias config = MHAConfig(
+            q_type,
+            num_heads,
+            depth,
+            num_queries_per_block=BM,
+            num_keys_per_block=BN,
             BK=BK,
             WM=WM,
             WN=WN,
-            depth=depth,
-            num_heads=num_heads,
-            num_threads=num_threads,
             num_pipeline_stages=num_pipeline_stages,
-            group=group,
-            use_mask_tensor=use_mask_tensor,
-            use_score_mod=use_score_mod,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
+            k_group_size=group,
+        )
+        constrained[
+            use_mask_tensor == False and use_score_mod == False,
+            (
+                "use_mask_tensor and use_score_mod must be False for AMD flash"
+                " attention"
+            ),
+        ]()
+        amd_mha_single_batch[group=group, config=config, token_gen=True](
+            output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,
             v,
-            mask_ptr.offset(mask_batch_offset),
-            output_ptr.offset(output_batch_offset),
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            scale,
+            1,
             num_keys,
-            num_partitions,
-            max_cache_valid_length,
-            mask,
-            score_mod,
+            scale,
             batch_idx,
+            Int(0),
+            mask,
         )
 
 

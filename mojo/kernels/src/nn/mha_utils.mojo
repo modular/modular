@@ -98,7 +98,7 @@ struct MHAConfig:
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        return num_smem_elements
+        return num_smem_elements if has_nvidia_gpu_accelerator() else 0
 
     fn __init__(
         mut self,
@@ -123,14 +123,15 @@ struct MHAConfig:
         # Currently, all are `OptionalReg` for consistency.
         # BM
         self.num_queries_per_block = num_queries_per_block.or_else(
-            32 if type
-            is DType.float32 else (64 if has_nvidia_gpu_accelerator() else 32)
+            32 if type is DType.float32 else 64
         )
         # BN
         self.num_keys_per_block = num_keys_per_block.or_else(depth)
         var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
         var bk_type_factor = 1 if type is DType.float32 else 2
-        self.BK = BK.or_else(16 * bk_arch_factor * bk_type_factor)
+        self.BK = BK.or_else(
+            16 * bk_arch_factor * bk_type_factor
+        ) if has_nvidia_gpu_accelerator() else depth
         self.WM = WM.or_else(32 if type is DType.float32 else 16)
         self.WN = WN.or_else(32 if type is DType.float32 else depth)
 
