@@ -162,7 +162,10 @@ class ReplitModel(PipelineModel[TextContext]):
 
     @classmethod
     def get_kv_params(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        n_devices: int,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=pipeline_config.cache_dtype,
@@ -171,6 +174,7 @@ class ReplitModel(PipelineModel[TextContext]):
             cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
             page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
             enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
+            n_devices=n_devices,
         )
 
     @classmethod
@@ -198,7 +202,9 @@ class ReplitModel(PipelineModel[TextContext]):
     ) -> KVCacheManager:
         return load_kv_manager(
             params=self.get_kv_params(
-                self.pipeline_config, huggingface_config=self.huggingface_config
+                self.pipeline_config,
+                huggingface_config=self.huggingface_config,
+                n_devices=len(self.devices),
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -224,6 +230,7 @@ class ReplitModel(PipelineModel[TextContext]):
             params=cls.get_kv_params(
                 pipeline_config,
                 huggingface_config=huggingface_config,
+                n_devices=len(devices),
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -277,6 +284,7 @@ class ReplitModel(PipelineModel[TextContext]):
                 self.get_kv_params(
                     self.pipeline_config,
                     huggingface_config=self.huggingface_config,
+                    n_devices=len(self.devices),
                 ),
                 kv_manager=self.kv_manager,
                 huggingface_config=self.huggingface_config,

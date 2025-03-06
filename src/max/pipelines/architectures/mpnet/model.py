@@ -83,7 +83,10 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
 
     @classmethod
     def get_kv_params(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        n_devices: int,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=pipeline_config.cache_dtype,
@@ -93,6 +96,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
                 // huggingface_config.num_attention_heads
             ),
             cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
+            n_devices=n_devices,
             enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
         )
 

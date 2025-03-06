@@ -221,7 +221,10 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
 
     @classmethod
     def get_kv_params(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        n_devices: int,
     ) -> KVCacheParams:
         return KVCacheParams(
             page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
@@ -230,6 +233,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             head_dim=huggingface_config.text_config.head_dim,
             cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
             enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
+            n_devices=n_devices,
         )
 
     @classmethod
@@ -257,7 +261,9 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
     ) -> KVCacheManager:
         return load_kv_manager(
             params=self.get_kv_params(
-                self.pipeline_config, huggingface_config=self.huggingface_config
+                self.pipeline_config,
+                huggingface_config=self.huggingface_config,
+                n_devices=len(self.devices),
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -283,7 +289,9 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
-                pipeline_config, huggingface_config=huggingface_config
+                pipeline_config,
+                huggingface_config=huggingface_config,
+                n_devices=len(devices),
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -381,6 +389,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                     kv_params=self.get_kv_params(
                         self.pipeline_config,
                         huggingface_config=self.huggingface_config,
+                        n_devices=len(self.devices),
                     ),
                     kv_manager=self.kv_manager,
                     huggingface_config=self.huggingface_config,

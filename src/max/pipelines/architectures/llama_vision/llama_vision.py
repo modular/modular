@@ -821,6 +821,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 kv_params=self.get_kv_params(
                     self.pipeline_config,
                     huggingface_config=self.huggingface_config,
+                    n_devices=len(self.devices),
                 ),
                 max_seq_len=self.calculate_max_seq_len(
                     self.pipeline_config,
@@ -1075,7 +1076,10 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
 
     @classmethod
     def get_kv_params(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        n_devices: int,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=pipeline_config.cache_dtype,
@@ -1087,6 +1091,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
             cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
             enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
+            n_devices=n_devices,
         )
 
     def load_kv_manager(
@@ -1107,7 +1112,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         num_cross_attn_layers = len(self.text_config.cross_attention_layers)
         return MultimodalKVCacheManager(
             params=self.get_kv_params(
-                self.pipeline_config, huggingface_config=self.huggingface_config
+                self.pipeline_config,
+                huggingface_config=self.huggingface_config,
+                n_devices=len(self.devices),
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             text_max_seq_len=self.calculate_max_seq_len(
@@ -1139,7 +1146,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         )
         return MultimodalKVCacheManager.estimated_memory_size(
             params=cls.get_kv_params(
-                pipeline_config, huggingface_config=huggingface_config
+                pipeline_config,
+                huggingface_config=huggingface_config,
+                n_devices=len(devices),
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -1161,11 +1170,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
         huggingface_config: AutoConfig,
+        devices: list[Device],
     ) -> int:
-        if (
-            len(pipeline_config.devices) == 1
-            and pipeline_config.devices[0].is_host
-        ):
+        if len(devices) == 1 and devices[0].is_host:
             return 1
 
         num_cross_attn_layers = len(
@@ -1173,7 +1180,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         )
         optimal_batch_size = MultimodalKVCacheManager.infer_optimal_batch_size(
             params=cls.get_kv_params(
-                pipeline_config, huggingface_config=huggingface_config
+                pipeline_config,
+                huggingface_config=huggingface_config,
+                n_devices=len(devices),
             ),
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
@@ -1187,7 +1196,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             # should more accurately measure a model's memory consumption via
             # an interface in the graph compiler.
             available_cache_memory=int(available_cache_memory * 0.8),
-            devices=pipeline_config.devices,
+            devices=devices,
             max_vision_seq_len=cls._calculate_vision_max_seq_len(
                 huggingface_config
             ),

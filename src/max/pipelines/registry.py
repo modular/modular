@@ -22,6 +22,7 @@ from io import StringIO
 from typing import Callable, Optional, Type, Union, cast
 
 import torch
+from max.driver import Device
 from max.graph.weights import WeightsAdapter
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig, AutoTokenizer
@@ -534,6 +535,7 @@ class PipelineRegistry:
                 model_cls,
                 available_kv_cache_memory,
                 huggingface_config=huggingface_config,
+                devices=pipeline_config.devices,
             )
 
         actual_kv_cache_size = self._calculate_kv_cache_size(
@@ -743,6 +745,7 @@ class PipelineRegistry:
                     model_cls,
                     available_kv_cache_memory,
                     huggingface_config,
+                    devices=pipeline_config.devices,
                 )
 
             kv_cache_size = self._calculate_kv_cache_size(
@@ -995,11 +998,13 @@ class PipelineRegistry:
         model_cls: Type[PipelineModel],
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
+        devices: list[Device],
     ) -> int:
         return model_cls.infer_optimal_batch_size(
             pipeline_config,
             available_kv_cache_memory,
             huggingface_config=huggingface_config,
+            devices=devices,
         )
 
     def _load_logging_message(

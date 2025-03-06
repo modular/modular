@@ -201,7 +201,10 @@ class PipelineModel(ABC, Generic[T]):
     @classmethod
     @abstractmethod
     def get_kv_params(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        n_devices: int,
     ) -> KVCacheParams:
         """Returns the KV cache params for the pipeline model."""
         ...
@@ -218,6 +221,7 @@ class PipelineModel(ABC, Generic[T]):
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
         huggingface_config: AutoConfig,
+        devices: list[Device],
     ) -> int:
         """Returns the estimated optimal batch size to run the model
         given current memory constraints."""
@@ -225,10 +229,7 @@ class PipelineModel(ABC, Generic[T]):
             # we rely on the KVCache setup to know optimal batch size.
             # If we don't have that, default to BS=1.
             return 1
-        elif (
-            len(pipeline_config.devices) == 1
-            and pipeline_config.devices[0].is_host
-        ):
+        elif len(devices) == 1 and devices[0].is_host:
             # batching on CPU is generally not useful, so we hard-code a batch size of 1.
             return 1
 
@@ -240,6 +241,7 @@ class PipelineModel(ABC, Generic[T]):
         kv_params = cls.get_kv_params(
             pipeline_config,
             huggingface_config=huggingface_config,
+            n_devices=len(devices),
         )
         inferred_batch_size = infer_optimal_batch_size(
             params=kv_params,
@@ -249,7 +251,7 @@ class PipelineModel(ABC, Generic[T]):
             ),
             num_layers=n_layers,
             available_cache_memory=available_cache_memory,
-            devices=pipeline_config.devices,
+            devices=devices,
         )
 
         # clamp the floor of the inferred batch size to 1 and the ceiling to 4096
