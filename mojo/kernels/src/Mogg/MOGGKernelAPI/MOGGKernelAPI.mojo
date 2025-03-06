@@ -43,7 +43,13 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
-from gpu.all_reduce import MAX_GPUS, MAX_NUM_BLOCKS_DEFAULT, Signal, all_reduce
+from gpu.all_reduce import (
+    MAX_GPUS,
+    MAX_NUM_BLOCKS_DEFAULT,
+    Signal,
+    all_reduce,
+    _all_reduce_naive,
+)
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
@@ -7573,6 +7579,8 @@ struct Struct_swishGLU:
 
 @compiler.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
+    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
+
     @always_inline
     @staticmethod
     fn execute[
@@ -7582,12 +7590,32 @@ struct DistributedAllReduceSum:
     ](
         outputs: OutputVariadicTensors[type, rank, *_],
         inputs: InputVariadicTensors[type, rank, *_],
-        dev_ctxs: StaticTuple[DeviceContextPtr, *_],
+        dev_ctxs_input: StaticTuple[DeviceContextPtr, *_],
     ) raises:
-        # Stub for now
-        outputs[0][0] = inputs[0][0]
-        print(
-            "Hello! You should not run this kernel: `DistributedAllReduceSum`"
+        var dev_ctxs = List[DeviceContext]()
+        for i in range(len(dev_ctxs_input)):
+            dev_ctxs.append(dev_ctxs_input[i][])
+
+        # Marshal input and output variadic tensors into the expected format.
+        alias ngpus = inputs.size
+        var in_bufs = InlineArray[NDBuffer[type, rank], size=ngpus](
+            managed_tensor_slice_to_ndbuffer(inputs[0])
+        )
+
+        @parameter
+        for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+
+        var out_bufs = InlineArray[NDBuffer[type, rank], size=ngpus](
+            managed_tensor_slice_to_ndbuffer(outputs[0])
+        )
+
+        @parameter
+        for i in range(outputs.size):
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
+
+        _all_reduce_naive[max_num_blocks = Self.max_num_blocks](
+            dev_ctxs, in_bufs, out_bufs
         )
 
 
