@@ -60,9 +60,15 @@ fn gemm_kernel[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.GLOBAL],
-    a: LayoutTensor[a_type, a_layout, address_space = AddressSpace.GLOBAL],
-    b: LayoutTensor[b_type, b_layout, address_space = AddressSpace.GLOBAL],
+    c: LayoutTensor[
+        c_type, c_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
+    ],
+    a: LayoutTensor[
+        a_type, a_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
+    ],
+    b: LayoutTensor[
+        b_type, b_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
+    ],
 ):
     constrained[transpose_b, "Transpose b must be true"]()
     constrained[
