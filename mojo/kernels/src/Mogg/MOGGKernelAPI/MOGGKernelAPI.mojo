@@ -3835,7 +3835,7 @@ struct LayerNorm:
         input: InputTensor[type=type, rank=rank],
         gamma: InputTensor[type=type, rank=1],
         beta: InputTensor[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3874,7 +3874,7 @@ struct LayerNorm:
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
         beta: ManagedTensorSlice[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: Float32,
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -3891,7 +3891,7 @@ struct RMSNorm:
         output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
         gamma: InputTensor[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3917,7 +3917,7 @@ struct RMSNorm:
     ](
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: Float32,
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -7177,7 +7177,7 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
             KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         ],
         gamma: InputTensor[type=type, rank=1],
-        epsilon: Scalar[type],
+        epsilon: Float32,
         layer_idx: UInt32,
         total_seq_len: UInt32,
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
