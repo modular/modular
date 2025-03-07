@@ -13,7 +13,7 @@ from typing import Any, Sequence, cast
 from unittest.mock import PropertyMock, patch
 
 import pytest
-from max.driver import Device, DeviceSpec, Tensor
+from max.driver import Device, DeviceSpec, Tensor, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
@@ -196,6 +196,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         """Provided a PipelineConfig and InferenceSession, load the kv manager."""
         assert available_cache_memory is not None
         num_layers = self.get_num_layers(self.pipeline_config)
+        devices = load_devices(self.pipeline_config.device_specs)
 
         return load_kv_manager(
             params=self.get_kv_params(
@@ -208,7 +209,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
                 self.pipeline_config, self.huggingface_config
             ),
             num_layers=num_layers,
-            devices=self.pipeline_config.devices,
+            devices=devices,
             available_cache_memory=available_cache_memory,
             session=session,
         )

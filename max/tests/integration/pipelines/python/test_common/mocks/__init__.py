@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from typing import Generator, Optional, Tuple, Union
 from unittest.mock import MagicMock, PropertyMock, patch
 
-from max.driver import CPU, Device
+from max.driver import DeviceSpec, scan_available_devices
 from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.pipelines import (
@@ -31,14 +31,14 @@ def retrieve_mock_text_generation_pipeline(
     eos_prob: float = 0.1,
     max_length: Optional[int] = None,
     max_new_tokens: Union[int, None] = None,
-    devices: Optional[list[Device]] = None,
+    device_specs: Optional[list[DeviceSpec]] = None,
 ) -> Generator[Tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:
     if eos_token > vocab_size:
         msg = f"eos_token provided '{eos_token}' must be less than vocab_size provided '{vocab_size}'"
         raise ValueError(msg)
 
-    if not devices:
-        devices = [CPU()]
+    if not device_specs:
+        device_specs = scan_available_devices()
 
     # Create a mock Pipeline Config
     mock_config = MagicMock()
@@ -49,7 +49,7 @@ def retrieve_mock_text_generation_pipeline(
         enable_structured_output=False,
     )
 
-    mock_config.devices = devices
+    mock_config.device_specs = device_specs
     mock_config.model_path = "HuggingFaceTB/SmolLM-135M-Instruct"
     mock_config.eos_prob = eos_prob
     mock_config.max_length = max_length
