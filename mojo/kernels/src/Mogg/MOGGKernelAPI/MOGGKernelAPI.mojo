@@ -7360,9 +7360,9 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
         )
 
         var shape = blocks.shape()
-        var num_layers = Int(shape[0])
+        var total_num_pages = Int(shape[0])
         var kv_dim = Int(shape[1])
-        var total_num_pages = Int(shape[2])
+        var num_layers = Int(shape[2])
         var page_size = Int(shape[3])
         var n_kv_heads_per_device = Int(shape[4])
         var head_dim = Int(shape[5])
@@ -7375,9 +7375,9 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
 
         var strided_memcpy_shape = IndexList[6](
             batch_dim,
-            num_layers,
-            kv_dim,
             max_num_tokens,
+            kv_dim,
+            num_layers,
             n_kv_heads_per_device,
             head_dim,
         )
@@ -7389,9 +7389,9 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
             rank: Int = 6,
         ](index: IndexList[rank]) capturing:
             var batch_idx = Int(index[0])
-            var layers_idx = Int(index[1])
+            var tokens_idx = Int(index[1])
             var kv_dim_idx = Int(index[2])
-            var tokens_idx = Int(index[3])
+            var layers_idx = Int(index[3])
             var kv_heads_per_device_idx = Int(index[4])
             var head_idx = Int(index[5])
 
@@ -7422,17 +7422,17 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
                 return
 
             var src_idx_list = IndexList[6](
-                layers_idx,
-                kv_dim_idx,
                 block_src_idx,
+                kv_dim_idx,
+                layers_idx,
                 tokens_idx,
                 kv_heads_per_device_idx,
                 head_idx,
             )
             var dst_idx_list = IndexList[6](
-                layers_idx,
-                kv_dim_idx,
                 block_dst_idx,
+                kv_dim_idx,
+                layers_idx,
                 tokens_idx,
                 kv_heads_per_device_idx,
                 head_idx,
