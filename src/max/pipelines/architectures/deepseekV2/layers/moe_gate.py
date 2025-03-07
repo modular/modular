@@ -13,46 +13,77 @@
 
 """Mixture of Experts Gate Layer."""
 
-from dataclasses import dataclass
-
 from max.dtype import DType
 from max.graph import TensorValue, ops
-from max.pipelines.nn import Linear
+from max.pipelines.nn import LinearV2
 from max.pipelines.nn.layer import LayerV2
 
 
-@dataclass
 class MaxMoEGate(LayerV2):
-    """Mixture of Experts Gate Layer.
+    """Mixture of Experts Gate Layer."""
 
-    Args:
-        gate_score: Linear layer that projects from hidden_size to intermediate_size.
-        num_experts_per_tok: Number of experts to route each token to.
-        n_routed_experts: Total number of experts in the model.
-        routed_scaling_factor: Scaling factor for routing weights.
-        aux_loss_alpha: Weight for auxiliary loss.
-        n_group: Number of groups for expert routing.
-        topk_group: Number of top experts per group.
-        gating_dim: Hidden dimension size for gating.
+    num_experts_per_tok: int
+    """Number of experts to router each token to."""
 
-    Shape:
-        Input: (batch_size, seq_length, hidden_size)
-        Output: tuple of:
-            - topk_idx: (batch_size * seq_length, num_experts_per_tok)
-            - topk_weight: (batch_size * seq_length, num_experts_per_tok)
-    """
+    n_routed_experts: int
+    """Total number of experts in the model."""
 
-    def __post_init__(self):
+    routed_scaling_factor: float
+    """Scaling factor for routing weights."""
+
+    aux_loss_alpha: float
+    """Weight for auxiliary loss."""
+
+    n_group: int
+    """Number of groups for expert routing."""
+
+    topk_group: int
+    """Number of top experts per group."""
+
+    gating_dim: int
+    """Hidden dimension size for gating."""
+
+    def __init__(
+        self,
+        num_experts_per_tok: int = 6,
+        n_routed_experts: int = 64,
+        routed_scaling_factor: float = 1.0,
+        aux_loss_alpha: float = 0.001,
+        n_group: int = 1,
+        topk_group: int = 1,
+        gating_dim: int = 2048,  # equal to config.hidden_size
+    ):
+        """
+        Args:
+            gate_score: Linear layer that projects from hidden_size to intermediate_size.
+            num_experts_per_tok: Number of experts to route each token to.
+            n_routed_experts: Total number of experts in the model.
+            routed_scaling_factor: Scaling factor for routing weights.
+            aux_loss_alpha: Weight for auxiliary loss.
+            n_group: Number of groups for expert routing.
+            topk_group: Number of top experts per group.
+            gating_dim: Hidden dimension size for gating.
+        Shape:
+            Input: (batch_size, seq_length, hidden_size)
+            Output: tuple of:
+                - topk_idx: (batch_size * seq_length, num_experts_per_tok)
+                - topk_weight: (batch_size * seq_length, num_experts_per_tok)
+        """
         super().__init__()
-
-    gate_score: Linear
-    num_experts_per_tok: int = 6
-    n_routed_experts: int = 64
-    routed_scaling_factor: float = 1.0
-    aux_loss_alpha: float = 0.001
-    n_group: int = 1
-    topk_group: int = 1
-    gating_dim: int = 2048  # equal to config.hidden_size
+        self.gate_score = LinearV2(
+            in_dim=gating_dim,
+            out_dim=n_routed_experts,
+            dtype=DType.float32,
+            # device=DeviceRef.GPU(),  # TODO: GPU execution doesn't work
+            has_bias=False,
+        )
+        self.num_experts_per_tok = num_experts_per_tok
+        self.n_routed_experts = n_routed_experts
+        self.routed_scaling_factor = routed_scaling_factor
+        self.aux_loss_alpha = aux_loss_alpha
+        self.n_group = n_group
+        self.topk_group = topk_group
+        self.gating_dim = gating_dim
 
     def __call__(
         self, hidden_states: TensorValue
@@ -67,6 +98,7 @@ class MaxMoEGate(LayerV2):
                 - topk_idx: Indices of top-k selected experts of shape (batch_size * seq_length, num_experts_per_tok)
                 - topk_weight: Routing weights for selected experts of shape (batch_size * seq_length, num_experts_per_tok)
         """
+
         # compute gating score
         bsz, seq_len, h = hidden_states.shape
         hidden_states = hidden_states.reshape([bsz * seq_len, h])
