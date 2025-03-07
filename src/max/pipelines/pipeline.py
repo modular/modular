@@ -29,7 +29,7 @@ from typing import (
 )
 
 import torch
-from max.driver import Device, Tensor
+from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines.kv_cache import (
@@ -394,6 +394,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
     ) -> None:
         self._pipeline_config = pipeline_config
         self._huggingface_config: Optional[AutoConfig] = None
+        self._devices = load_devices(pipeline_config.device_specs)
 
         # Expand eos tokens if more are provided in pipeline_config
         if "eos_token_id" in self.huggingface_config:
@@ -432,7 +433,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             self._grammar_compiler = xgr.GrammarCompiler(tokenizer_info)
 
         # Initialize Session.
-        session = InferenceSession(devices=self._pipeline_config.devices)
+        session = InferenceSession(devices=self._devices)
 
         # Enable profiling if enabled.
         session.gpu_profiling(
@@ -453,7 +454,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             session=session,
             huggingface_config=self.huggingface_config,
             encoding=self._pipeline_config.quantization_encoding,
-            devices=self._pipeline_config.devices,
+            devices=self._devices,
         )
 
         # Load sampler.
@@ -658,7 +659,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         generated_tokens = Tensor.zeros(
             (len(context_batch), 0),
             dtype=DType.int64,
-            device=self._pipeline_config.devices[0],
+            device=self._devices[0],
         )
 
         curr_step_inputs = model_inputs
@@ -684,9 +685,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 ).to(torch.bool)
                 bitmask = bitmask[:, 0 : self.vocab_size]
 
-                bitmask = Tensor.from_dlpack(bitmask).to(
-                    self._pipeline_config.devices[0]
-                )
+                bitmask = Tensor.from_dlpack(bitmask).to(self._devices[0])
 
             # Sample next token.
             tracer.next("sample_next_token")

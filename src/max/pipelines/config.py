@@ -36,10 +36,8 @@ from huggingface_hub import constants as hf_hub_constants
 from huggingface_hub import errors as hf_hub_errors
 from huggingface_hub.utils import tqdm as hf_tqdm
 from max.driver import (
-    Device,
     DeviceSpec,
     devices_exist,
-    load_devices,
     scan_available_devices,
 )
 from max.dtype import DType
@@ -752,9 +750,6 @@ class PipelineConfig(MAXConfig):
     _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
     """The profiling config."""
 
-    _devices: list[Device] = field(default_factory=list)
-    """The underlying initialized devices, created by the specific `device_specs`."""
-
     _weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(
         default_factory=dict
     )
@@ -948,7 +943,6 @@ class PipelineConfig(MAXConfig):
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""
         state = self.__dict__.copy()
-        state["_devices"] = []
         return state
 
     @property
@@ -1000,14 +994,6 @@ class PipelineConfig(MAXConfig):
             )
 
         return self.quantization_encoding.cache_dtype
-
-    @property
-    def devices(self) -> list[Device]:
-        """Initialize and return a list of devices, given a list of device specs."""
-        if not self._devices:
-            self._devices = load_devices(self.device_specs)
-
-        return self._devices
 
     @property
     def weights_format(self) -> WeightsFormat:
