@@ -50,8 +50,18 @@ fn _compute_distribute_layout[
     threads_layout: Layout,
     axis: OptionalReg[Int] = None,
 ]() -> Layout:
-    """Distribute thread_layout into self layout, if axis is provided
-    distribute into threads_layout projected into this axis.
+    """Computes a layout for distributing threads across data.
+
+    Distributes thread_layout into data_layout. If axis is provided, distributes
+    into threads_layout projected into this axis.
+
+    Parameters:
+        data_layout: The layout of the data to be distributed.
+        threads_layout: The layout of the threads.
+        axis: Optional axis for projection-based distribution.
+
+    Returns:
+        A layout representing the distribution of threads across data.
     """
     var thread_tile = LayoutList()
 
@@ -68,11 +78,25 @@ fn _compute_distribute_layout[
         return zipped_divide(data_layout, thread_tile)
 
 
-# Returns an IntTuple with all ones except axis same as input t, when
-# submode_axis is provided the projection happens on the submode only.
 fn _project_on_axis[
     axis: Int, submode_axis: OptionalReg[Int] = None
 ](t: IntTuple) -> IntTuple:
+    """Projects an IntTuple onto a specific axis.
+
+    Creates an IntTuple with zeros in all positions except the specified axis,
+    which contains ones. When submode_axis is provided, the projection happens
+    only on that specific submode.
+
+    Parameters:
+        axis: The axis to project onto.
+        submode_axis: Optional submode axis for nested projection.
+
+    Args:
+        t: The input IntTuple to project.
+
+    Returns:
+        A projected IntTuple.
+    """
     if not submode_axis:
         var p_t = fill_like(t, 0)
         # p_t[axis] = fill_like(t[axis], 1)
@@ -88,6 +112,16 @@ fn _project_on_axis[
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:
+    """Determines the appropriate index type based on address space.
+
+    Returns `DType.int32` for shared or constant GPU memory, and `DType.index` otherwise.
+
+    Args:
+        address_space: The address space to determine the index type for.
+
+    Returns:
+        The appropriate `DType` for indexing in the given address space.
+    """
     if address_space in (
         _GPUAddressSpace.SHARED,
         _GPUAddressSpace.CONSTANT,
@@ -98,6 +132,18 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
 
 
 fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
+    """Determines the appropriate index type based on layout and address space.
+
+    Uses `DType.int32` if the layout size fits within int32 range, otherwise uses the
+    address space's default index type.
+
+    Args:
+        layout: The layout to determine the index type for.
+        address_space: The address space to determine the index type for.
+
+    Returns:
+        The appropriate `DType` for indexing with the given layout and address space.
+    """
     if layout.all_dims_known() and layout.cosize() < Int(
         max_finite[DType.int32]()
     ):
@@ -107,6 +153,18 @@ fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
 
 
 fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
+    """Determines the appropriate unsigned index type for a layout and address space.
+
+    Uses `DType.uint32` if the layout size fits within uint32 range or if the index type
+    is int32, otherwise uses the unsigned index type.
+
+    Args:
+        layout: The layout to determine the unsigned type for.
+        address_space: The address space to determine the unsigned type for.
+
+    Returns:
+        The appropriate unsigned DType for the given layout and address space.
+    """
     if layout.all_dims_known() and layout.cosize() < Int(
         max_finite[DType.uint32]()
     ):
@@ -119,24 +177,57 @@ fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
 alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 
 
-# Returns the size of variadic integer parameters.
-#
-fn _get_len[*var_int: Int]() -> Int:
-    return __mlir_op.`pop.variadic.size`(var_int)
+fn _get_len[*values: Int]() -> Int:
+    """Returns the number of variadic integer parameters.
+
+    This utility function counts the number of integer parameters passed to a
+    variadic template function. It's used internally for handling variable
+    numbers of dimensions, tile sizes, or other integer parameters.
+
+    Parameters:
+        values: Variadic integer parameters to count.
+
+    Returns:
+        The count of variadic integer parameters.
+    """
+    return __mlir_op.`pop.variadic.size`(values)
 
 
-# Returns the size of the slice in layout dim.
-#
 fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
+    """Calculates the size of a slice in a specific layout dimension.
+
+    Computes the number of elements in a slice for a given dimension of the layout.
+    This function handles the conversion between slice notation and actual element counts.
+
+    Args:
+        layout: The layout containing the dimension information.
+        slc: The slice specification (start:end:step).
+        dim: The dimension index to slice.
+
+    Returns:
+        The number of elements in the slice for the specified dimension.
+    """
     var start: Int
     var end: Int
     start, end, _ = slc.indices(Int(layout.shape[dim]))
     return end - start
 
 
-# Returns true if n isn't in `tuple`.
-#
 fn _not_in_tuple[n: Int, size: Int, tuple: IndexList[size]]() -> Bool:
+    """Checks if a value is *not* present in an `IndexList`.
+
+    This utility function searches through an `IndexList` to determine if a specific
+    value is absent. Used for dimension validation and filtering operations.
+
+    Parameters:
+        n: The value to check for in the `IndexList`.
+        size: The size of the `IndexList`.
+        tuple: The `IndexList` to search in.
+
+    Returns:
+        True if the value is not found in the `IndexList`, False if it is present.
+    """
+
     @parameter
     for i in range(size):
 
@@ -146,10 +237,21 @@ fn _not_in_tuple[n: Int, size: Int, tuple: IndexList[size]]() -> Bool:
     return True
 
 
-# Returns whether the resulting tiled layout with the specified tile sizes
-# requires masked access or not.
-#
 fn _tile_is_masked[layout: Layout, *tile_sizes: Int]() -> Bool:
+    """Determines if a tiled layout requires masked access.
+
+    When tiling a tensor, this function checks if any dimension of the layout is not
+    evenly divisible by its corresponding tile size. If any dimension requires padding,
+    masked access is needed to prevent out-of-bounds memory accesses.
+
+    Parameters:
+        layout: The layout to check for divisibility.
+        tile_sizes: The tile sizes for each dimension of the layout.
+
+    Returns:
+        True if masked access is required (any dimension not evenly divisible),
+        False if all dimensions are perfectly divisible by their tile sizes.
+    """
     if not layout.all_dims_known():
         return True
 
@@ -164,7 +266,24 @@ fn _tile_is_masked[layout: Layout, *tile_sizes: Int]() -> Bool:
 fn _distribute_is_masked[
     layout: Layout, threads_layout: Layout, axis: OptionalReg[Int] = None
 ]() -> Bool:
-    # TODO: relax this constrain
+    """Determines if a distributed layout requires masked access.
+
+    When distributing computation across threads, this function checks if the layout's
+    dimensions are evenly divisible by the corresponding thread dimensions. Masked access
+    is required when dimensions don't divide evenly to prevent out-of-bounds accesses.
+
+    Parameters:
+        layout: The layout to distribute across threads.
+        threads_layout: The layout representing thread organization.
+        axis: Optional axis for projection-based distribution. When specified,
+              distribution occurs along this axis only.
+
+    Returns:
+        True if masked access is required (dimensions not evenly divisible),
+        False if all dimensions are perfectly divisible by thread dimensions.
+    """
+
+    # TODO: relax this constraint
     @parameter
     if depth(threads_layout.shape) > 1:
         return False
@@ -203,12 +322,11 @@ struct LayoutTensor[
     masked: Bool = False,
     alignment: Int = alignof[dtype](),
 ](CollectionElement, CollectionElementNew, Stringable, Writable):
-    """This is a Tensor type that has a specified memory layout and rank. The
-    following example demonstrate a LayoutTensor of float32 with a row major
-    layout of shape (5, 4).
+    """A high-performance tensor with explicit memory layout and hardware-optimized access patterns.
 
-        alias f32 = DType.float32
-        var tensor_5x4 = LayoutTensor[f32, Layout.row_major(5,4)].stack_allocation()
+    LayoutTensor provides a powerful abstraction for multi-dimensional data with precise control
+    over memory organization. It supports various memory layouts (row-major, column-major, tiled),
+    hardware-specific optimizations, and efficient parallel access patterns.
 
     Parameters:
         mut: The inferred mutability of the underlying pointer.
@@ -220,6 +338,14 @@ struct LayoutTensor[
         layout_bitwidth: The bitwidth of each dimension of runtime layout.
         masked: If true the tensor is masked and runtime layouts determine the shape.
         alignment: Alignment of the data pointer.
+
+    Example:
+    ```mojo
+    from layout import Layout, LayoutTensor
+
+    var storage = InlineArray[Scalar[DType.float32], 5 * 4](uninitialized = True)
+    var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5,4)](storage)
+    ```
     """
 
     alias rank = layout.rank()
