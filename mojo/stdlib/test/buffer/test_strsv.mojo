@@ -96,9 +96,12 @@ fn test_strsv():
     print("== test_strsv")
 
     alias size: Int = 64
-    var L = NDBuffer[DType.float32, 1, size * size].stack_allocation()
-    var x0 = NDBuffer[DType.float32, 1, size].stack_allocation()
-    var x1 = NDBuffer[DType.float32, 1, size].stack_allocation()
+    var l_stack = InlineArray[Float32, size * size](uninitialized=True)
+    var L = NDBuffer[DType.float32, 1, size * size](l_stack.unsafe_ptr())
+    var x0_stack = InlineArray[Float32, size * size](uninitialized=True)
+    var x0 = NDBuffer[DType.float32, 1, size](x0_stack.unsafe_ptr())
+    var x1_stack = InlineArray[Float32, size * size](uninitialized=True)
+    var x1 = NDBuffer[DType.float32, 1, size](x1_stack.unsafe_ptr())
 
     fill_L[size](L)
     fill_x[size](x0)

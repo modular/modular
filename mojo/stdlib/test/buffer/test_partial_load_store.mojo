@@ -9,7 +9,6 @@ from math import exp
 
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
-from memory import stack_allocation
 
 from utils.index import IndexList
 
@@ -20,29 +19,20 @@ fn test_partial_load_store():
     # The total amount of data to allocate
     alias total_buffer_size: Int = 32
 
-    var read_data = stack_allocation[
-        total_buffer_size,
-        DType.index,
-        1,
-    ]()
+    var read_data = InlineArray[Scalar[DType.index], total_buffer_size](
+        uninitialized=True
+    )
+    var write_data = InlineArray[Scalar[DType.index], total_buffer_size](
+        uninitialized=True
+    )
 
-    var write_data = stack_allocation[
-        total_buffer_size,
-        DType.index,
-        1,
-    ]()
+    var read_buffer = NDBuffer[DType.index, 1, total_buffer_size](
+        read_data.unsafe_ptr()
+    )
 
-    var read_buffer = NDBuffer[
-        DType.index,
-        1,
-        total_buffer_size,
-    ](read_data)
-
-    var write_buffer = NDBuffer[
-        DType.index,
-        1,
-        total_buffer_size,
-    ](write_data)
+    var write_buffer = NDBuffer[DType.index, 1, total_buffer_size](
+        write_data.unsafe_ptr()
+    )
 
     for idx in range(total_buffer_size):
         # Fill read_bufer with 0->15
@@ -72,17 +62,13 @@ fn test_partial_load_store():
     print(partial_store_data)
 
     # Test NDBuffer partial load store
-    var read_nd_buffer = NDBuffer[
-        DType.index,
-        2,
-        DimList(8, 4),
-    ](read_data)
+    var read_nd_buffer = NDBuffer[DType.index, 2, DimList(8, 4)](
+        read_data.unsafe_ptr()
+    )
 
-    var write_nd_buffer = NDBuffer[
-        DType.index,
-        2,
-        DimList(8, 4),
-    ](write_data)
+    var write_nd_buffer = NDBuffer[DType.index, 2, DimList(8, 4)](
+        write_data.unsafe_ptr()
+    )
 
     # Test partial load:
     var nd_partial_load_data = partial_simd_load[4](
