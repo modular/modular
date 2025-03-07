@@ -25,9 +25,9 @@ def do_test[page_size: Int, layout_block_size: Int]():
     var max_num_blocks = 100
     var blocks = HostNDBuffer[DType.float32, 6](
         IndexList[6](
-            1,
-            2,
             100,
+            2,
+            1,
             page_size,
             kv_params.num_heads,
             kv_params.head_size,

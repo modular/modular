@@ -448,7 +448,7 @@ struct PagedKVCache[
     alias ValueIdx = 1
 
     """The entire region of memory for KVCache blocks with shape:
-    [num_layers, 2, total_num_blocks, page_size, num_heads, head_size].
+    [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
     """
     var blocks: NDBuffer[Self.type, 6]
     var cache_lengths: NDBuffer[DType.uint32, 1]
@@ -534,9 +534,9 @@ struct PagedKVCache[
         )
         block_idx = Int(self.lookup_table[bs, lut_block_index])
         return IndexList[6](
-            self.layer_idx,
-            self.kv_idx,
             block_idx,
+            self.kv_idx,
+            self.layer_idx,
             tok_in_block_idx,
             head_idx,
             head_dim_idx,
