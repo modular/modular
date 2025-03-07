@@ -11,10 +11,19 @@ import time
 from collections import InlineArray
 from math import floor
 from sys import sizeof
+from utils import IndexList, StaticTuple
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.all_reduce import MAX_GPUS, MAX_NUM_BLOCKS_DEFAULT, Signal, all_reduce
+from gpu.all_reduce import (
+    MAX_GPUS,
+    MAX_NUM_BLOCKS_DEFAULT,
+    Signal,
+    all_reduce,
+    can_enable_p2p,
+    _all_reduce_naive,
+)
+from gpu.all_reduce import elementwise_epilogue_type
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from testing import assert_almost_equal
@@ -107,6 +116,7 @@ fn all_reduce_test[
         NDBuffer[type, rank]()
     )
 
+    @parameter
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[type, rank](
             in_bufs_list[i].unsafe_ptr(), DimList(length)
@@ -115,14 +125,46 @@ fn all_reduce_test[
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
-    # Synchronize all devices to ensure setup has propagated.
     @parameter
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
+    var p2p_enabled = can_enable_p2p(list_of_ctx)
+
+    # Copy-capture in registers since the lambda will be used on GPU.
+    var out_bufs_capture = StaticTuple[NDBuffer[type, rank], ngpus](
+        NDBuffer[type, rank]()
+    )
+
+    @parameter
+    for i in range(ngpus):
+        out_bufs_capture[i] = NDBuffer[type, rank](
+            out_bufs_list[i].unsafe_ptr(), DimList(length)
+        )
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_bufs_capture)
+    fn outputs_lambda[
+        input_index: Int,
+        _type: DType,
+        _rank: Int,
+        _width: Int,
+        *,
+        _alignment: Int,
+    ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+        out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
+            rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val)
+        )
+
     # Warm up.
     for _ in range(num_warmups):
-        all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
+        if p2p_enabled:
+            all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+                list_of_ctx, in_bufs, out_bufs, rank_sigs
+            )
+        else:
+            _all_reduce_naive[max_num_blocks](list_of_ctx, in_bufs, out_bufs)
 
     # Synchronize all devices.
     @parameter
@@ -134,7 +176,12 @@ fn all_reduce_test[
 
     @parameter
     for _ in range(num_iters):
-        all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
+        if p2p_enabled:
+            all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+                list_of_ctx, in_bufs, out_bufs, rank_sigs
+            )
+        else:
+            _all_reduce_naive[max_num_blocks](list_of_ctx, in_bufs, out_bufs)
 
     # Synchronize all devices.
     @parameter
@@ -144,7 +191,7 @@ fn all_reduce_test[
     end_t = time.perf_counter_ns()
 
     # Quick and dirty benchmark since benchmark module doesn't support
-    # multi-device contexts.
+    # multi-device contexts
     print("Time taken (ms):", (end_t - start_t) / (1_000_000 * num_iters))
 
     # Copy results back and verify
@@ -188,11 +235,11 @@ def main():
     # Test configurations covering edge cases
     # fmt: off
     alias test_lengths = (
-        8 * 1024,           # Small latency bound.
-        128 * 1024,         # Larger latency bound.
-        256 * 1024,         # Smallest bandwidth bound.
-        16 * 1024 * 1024,   # Bandwidth bound.
-        64 * 1024 * 1024,   # Bandwidth bound: 8192 chunk size at dim = 8192.
+        8 * 1024,           # Small latency bound
+        128 * 1024,         # Larger latency bound
+        256 * 1024,         # Smallest bandwidth bound
+        16 * 1024 * 1024,   # Bandwidth bound
+        64 * 1024 * 1024,   # Bandwidth bound: 8192 chunk size at dim = 8192
     )
     # fmt: on
 
@@ -212,7 +259,7 @@ def main():
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
-        # Test all cases for this test configuration.
+        # Test all cases for this configuration.
         @parameter
         for dtype_idx in range(len(test_dtypes)):
             alias dtype = test_dtypes[dtype_idx]
@@ -221,8 +268,5 @@ def main():
             for length_idx in range(len(test_lengths)):
                 alias length = test_lengths[length_idx]
 
-                # Generate descriptive test name.
                 print(_get_test_str[dtype](num_gpus, length))
-
-                # Execute test.
                 all_reduce_test[type=dtype, rank=1, ngpus=num_gpus](ctx, length)
