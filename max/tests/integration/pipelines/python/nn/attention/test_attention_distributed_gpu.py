@@ -21,7 +21,7 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
-from max.pipelines.nn import Linear, Signals
+from max.pipelines.nn import Allreduce, Linear, Signals
 from max.pipelines.nn.attention import Attention
 
 ACCURACY_RTOL = 1e-2
@@ -243,7 +243,9 @@ def _attention_layer(
             )
             for dev_id in range(len(devices))
         ]
-        graph.output(*ops.allreduce.sum(attn_out, signal_buffers))
+
+        allreduce = Allreduce(num_accelerators=len(devices))
+        graph.output(*allreduce(attn_out, signal_buffers))
 
         return graph, kv_params, kv_manager
 

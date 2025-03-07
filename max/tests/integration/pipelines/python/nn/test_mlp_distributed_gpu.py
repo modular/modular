@@ -13,8 +13,9 @@ import torch.nn.functional as F
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.nn import MLP, Linear, Signals
+from max.pipelines.nn.comm.allreduce import Allreduce
 
 
 def torch_linear(weight, **kwargs):
@@ -100,12 +101,14 @@ def distributed_mlp_graph(devices: List[Device], model_parameters) -> Graph:
             for w1, w2, w3 in zip(w1_devs, w2_devs, w3_devs)
         ]
         mlp_out = [mlp_fn(x) for (x, mlp_fn) in zip(x_devs, mlp_fns)]
+
+        allreduce = Allreduce(num_accelerators=len(devices))
         graph.output(
-            *ops.allreduce.sum(
-                inputs=mlp_out,
-                signal_buffers=[v.buffer for v in signal_buffers],
+            *allreduce(
+                mlp_out, signal_buffers=[v.buffer for v in signal_buffers]
             )
         )
+
         return graph
 
 
