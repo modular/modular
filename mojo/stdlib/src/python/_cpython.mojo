@@ -1686,6 +1686,12 @@ struct CPython:
         """
         return self.lib.call["PyLong_AsSsize_t", c_ssize_t](py_object)
 
+    fn PyNumber_Long(mut self, py_object: PyObjectPtr) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/number.html#c.PyNumber_Long).
+        """
+        return self.lib.call["PyNumber_Long", PyObjectPtr](py_object)
+
     # ===-------------------------------------------------------------------===#
     # Floating-Point Objects
     # ===-------------------------------------------------------------------===#
