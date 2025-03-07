@@ -41,9 +41,18 @@ def test_concat():
     alias s2 = DimList(2, 2, 2, 2, 0)
     alias s3 = DimList(2, 2, 3, 2, 0)
 
-    var x1 = NDBuffer[type, rank, s1].stack_allocation()
-    var x2 = NDBuffer[type, rank, s2].stack_allocation()
-    var x3 = NDBuffer[type, rank, s3].stack_allocation()
+    var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
+        uninitialized=True
+    )
+    var x1 = NDBuffer[type, rank, s1](x1_stack.unsafe_ptr())
+    var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
+        uninitialized=True
+    )
+    var x2 = NDBuffer[type, rank, s2](x2_stack.unsafe_ptr())
+    var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
+        uninitialized=True
+    )
+    var x3 = NDBuffer[type, rank, s3](x3_stack.unsafe_ptr())
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
@@ -52,7 +61,10 @@ def test_concat():
     var x3_dyn = NDBuffer[type, rank](x3.data, s3)
 
     alias out_shape = DimList(2, 2, 6, 2, 0)
-    var output = NDBuffer[type, rank, out_shape].stack_allocation()
+    var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[type, rank, out_shape](out_stack.unsafe_ptr())
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
@@ -99,9 +111,18 @@ def test_concat_parallel():
     alias s2 = DimList(2, 2, 2, 2, 0)
     alias s3 = DimList(2, 2, 3, 2, 0)
 
-    var x1 = NDBuffer[type, rank, s1].stack_allocation()
-    var x2 = NDBuffer[type, rank, s2].stack_allocation()
-    var x3 = NDBuffer[type, rank, s3].stack_allocation()
+    var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
+        uninitialized=True
+    )
+    var x1 = NDBuffer[type, rank, s1](x1_stack.unsafe_ptr())
+    var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
+        uninitialized=True
+    )
+    var x2 = NDBuffer[type, rank, s2](x2_stack.unsafe_ptr())
+    var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
+        uninitialized=True
+    )
+    var x3 = NDBuffer[type, rank, s3](x3_stack.unsafe_ptr())
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
@@ -110,7 +131,10 @@ def test_concat_parallel():
     var x3_dyn = NDBuffer[type, rank](x3.data, s3)
 
     alias out_shape = DimList(2, 2, 6, 2, 0)
-    var output = NDBuffer[type, rank, out_shape]().stack_allocation()
+    var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[type, rank, out_shape](out_stack.unsafe_ptr())
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
@@ -159,9 +183,18 @@ def test_concat_inner():
     alias s2 = DimList(1, 1, 2, 2, 2)
     alias s3 = DimList(1, 1, 3, 2, 2)
 
-    var x1 = NDBuffer[type, rank, s1].stack_allocation()
-    var x2 = NDBuffer[type, rank, s2].stack_allocation()
-    var x3 = NDBuffer[type, rank, s3].stack_allocation()
+    var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
+        uninitialized=True
+    )
+    var x1 = NDBuffer[type, rank, s1](x1_stack.unsafe_ptr())
+    var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
+        uninitialized=True
+    )
+    var x2 = NDBuffer[type, rank, s2](x2_stack.unsafe_ptr())
+    var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
+        uninitialized=True
+    )
+    var x3 = NDBuffer[type, rank, s3](x3_stack.unsafe_ptr())
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
@@ -170,7 +203,10 @@ def test_concat_inner():
     var x3_dyn = NDBuffer[type, rank](x3.data, s3)
 
     alias out_shape = DimList(1, 1, 6, 2, 2)
-    var output = NDBuffer[type, rank, out_shape]().stack_allocation()
+    var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[type, rank, out_shape](out_stack.unsafe_ptr())
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 

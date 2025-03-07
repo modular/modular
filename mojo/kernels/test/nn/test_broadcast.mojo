@@ -21,15 +21,23 @@ fn test_broadcast_empty_shape():
     alias output_shape = DimList(0)
 
     # Create a 1D tensor of shape (1), of the form [1]
+    var input_stack = InlineArray[
+        Scalar[DType.index], Int(input_shape.product())
+    ](uninitialized=True)
     var input = NDBuffer[
         DType.index,
         1,
         input_shape,
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
     input[0] = 1
 
     # Create a 1D tensor of shape (0)
-    var output = NDBuffer[DType.index, 1, output_shape].stack_allocation()
+    var output_stack = InlineArray[
+        Scalar[DType.index], Int(output_shape.product())
+    ](uninitialized=True)
+    var output = NDBuffer[DType.index, 1, output_shape](
+        output_stack.unsafe_ptr()
+    )
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -51,16 +59,24 @@ fn test_broadcast_same_shape():
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
+    var input_stack = InlineArray[
+        Scalar[DType.index], Int(input_shape.product())
+    ](uninitialized=True)
     var input = NDBuffer[
         DType.index,
         3,
         input_shape,
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 1, 0)] = 2
 
     # Create a 3D tensor of shape (1, 2, 1)
-    var output = NDBuffer[DType.index, 3, output_shape].stack_allocation()
+    var output_stack = InlineArray[
+        Scalar[DType.index], Int(output_shape.product())
+    ](uninitialized=True)
+    var output = NDBuffer[DType.index, 3, output_shape](
+        output_stack.unsafe_ptr()
+    )
     output.fill(0)
 
     broadcast(output, input)
@@ -88,17 +104,25 @@ fn test_broadcast_single_axis():
 
     # Create a 2D tensor of shape (1, 2), of the form
     # [[1, 2]]
+    var input_stack = InlineArray[
+        Scalar[DType.index], Int(input_shape.product())
+    ](uninitialized=True)
     var input = NDBuffer[
         DType.index,
         2,
         input_shape,
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[2](0, 0)] = 1
     input[IndexList[2](0, 1)] = 2
 
     # Create a 2D tensor of shape (3, 2)
-    var output = NDBuffer[DType.index, 2, output_shape].stack_allocation()
+    var output_stack = InlineArray[
+        Scalar[DType.index], Int(output_shape.product())
+    ](uninitialized=True)
+    var output = NDBuffer[DType.index, 2, output_shape](
+        output_stack.unsafe_ptr()
+    )
     output.fill(0)
 
     broadcast(output, input)
@@ -134,17 +158,25 @@ fn test_broadcast_multi_axes():
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
+    var input_stack = InlineArray[
+        Scalar[DType.index], Int(input_shape.product())
+    ](uninitialized=True)
     var input = NDBuffer[
         DType.index,
         3,
         input_shape,
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 1, 0)] = 2
 
     # Create a 3D tensor of shape (2, 2, 3)
-    var output = NDBuffer[DType.index, 3, output_shape].stack_allocation()
+    var output_stack = InlineArray[
+        Scalar[DType.index], Int(output_shape.product())
+    ](uninitialized=True)
+    var output = NDBuffer[DType.index, 3, output_shape](
+        output_stack.unsafe_ptr()
+    )
     output.fill(0)
 
     broadcast(output, input)
@@ -190,11 +222,14 @@ fn test_broadcast_multi_axes_nested():
 
     # Create a 5D tensor of shape (2, 1, 2, 1, 2), of the form
     # [[[[[1, 2]], [[3, 4]]]], [[[[5, 6]], [[7, 8]]]]]
+    var input_stack = InlineArray[
+        Scalar[DType.index], Int(input_shape.product())
+    ](uninitialized=True)
     var input = NDBuffer[
         DType.index,
         5,
         input_shape,
-    ].stack_allocation()
+    ](input_stack.unsafe_ptr())
 
     input[IndexList[5](0, 0, 0, 0, 0)] = 1
     input[IndexList[5](0, 0, 0, 0, 1)] = 2
@@ -206,7 +241,12 @@ fn test_broadcast_multi_axes_nested():
     input[IndexList[5](1, 0, 1, 0, 1)] = 8
 
     # Create a 5D tensor of shape (2, 2, 2, 2, 2)
-    var output = NDBuffer[DType.index, 5, output_shape].stack_allocation()
+    var output_stack = InlineArray[
+        Scalar[DType.index], Int(output_shape.product())
+    ](uninitialized=True)
+    var output = NDBuffer[DType.index, 5, output_shape](
+        output_stack.unsafe_ptr()
+    )
     output.fill(0)
 
     broadcast(output, input)

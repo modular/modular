@@ -24,8 +24,12 @@ fn test_argn() raises:
 
     alias size = 93
 
-    var vector = NDBuffer[DType.int32, 1, DimList(size)].stack_allocation()
-    var output = NDBuffer[DType.index, 1, DimList(1)].stack_allocation()
+    var vector_stack = InlineArray[Int32, size](uninitialized=True)
+    var vector = NDBuffer[DType.int32, 1, DimList(size)](
+        vector_stack.unsafe_ptr()
+    )
+    var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
+    var output = NDBuffer[DType.index, 1, DimList(1)](output_stack.unsafe_ptr())
 
     for i in range(size):
         vector[i] = i
@@ -56,12 +60,18 @@ fn test_argn_2() raises:
     alias batch_size = 4
     alias size = 91
 
-    var vector = NDBuffer[
-        DType.float32, 2, DimList(batch_size, size)
-    ].stack_allocation()
-    var output = NDBuffer[
-        DType.index, 2, DimList(batch_size, 1)
-    ].stack_allocation()
+    var vector_stack = InlineArray[Float32, batch_size * size](
+        uninitialized=True
+    )
+    var vector = NDBuffer[DType.float32, 2, DimList(batch_size, size)](
+        vector_stack.unsafe_ptr()
+    )
+    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+        uninitialized=True
+    )
+    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+        output_stack.unsafe_ptr()
+    )
 
     for i in range(batch_size):
         for j in range(size):
@@ -101,12 +111,18 @@ fn test_argn_2_test_2() raises:
     alias batch_size = 2
     alias size = 3
 
-    var vector = NDBuffer[
-        DType.float32, 2, DimList(batch_size, size)
-    ].stack_allocation()
-    var output = NDBuffer[
-        DType.index, 2, DimList(batch_size, 1)
-    ].stack_allocation()
+    var vector_stack = InlineArray[Float32, batch_size * size](
+        uninitialized=True
+    )
+    var vector = NDBuffer[DType.float32, 2, DimList(batch_size, size)](
+        vector_stack.unsafe_ptr()
+    )
+    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+        uninitialized=True
+    )
+    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+        output_stack.unsafe_ptr()
+    )
 
     for i in range(batch_size):
         for j in range(size):
@@ -144,12 +160,18 @@ fn test_argn_2_neg_axis() raises:
     alias batch_size = 2
     alias size = 3
 
-    var vector = NDBuffer[
-        DType.float32, 2, DimList(batch_size, size)
-    ].stack_allocation()
-    var output = NDBuffer[
-        DType.index, 2, DimList(batch_size, 1)
-    ].stack_allocation()
+    var vector_stack = InlineArray[Float32, batch_size * size](
+        uninitialized=True
+    )
+    var vector = NDBuffer[DType.float32, 2, DimList(batch_size, size)](
+        vector_stack.unsafe_ptr()
+    )
+    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+        uninitialized=True
+    )
+    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+        output_stack.unsafe_ptr()
+    )
 
     for i in range(batch_size):
         for j in range(size):
@@ -187,12 +209,18 @@ fn test_argn_test_zeros() raises:
     alias batch_size = 1
     alias size = 16
 
-    var vector = NDBuffer[
-        DType.float32, 2, DimList(batch_size, size)
-    ].stack_allocation()
-    var output = NDBuffer[
-        DType.index, 2, DimList(batch_size, 1)
-    ].stack_allocation()
+    var vector_stack = InlineArray[Float32, batch_size * size](
+        uninitialized=True
+    )
+    var vector = NDBuffer[DType.float32, 2, DimList(batch_size, size)](
+        vector_stack.unsafe_ptr()
+    )
+    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+        uninitialized=True
+    )
+    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+        output_stack.unsafe_ptr()
+    )
 
     for i in range(batch_size):
         for j in range(size):
@@ -226,12 +254,16 @@ fn test_argn_test_identity() raises:
     alias batch_size = 3
     alias size = 5
 
-    var vector = NDBuffer[
-        DType.int64, 2, DimList(batch_size, size)
-    ].stack_allocation()
-    var output = NDBuffer[
-        DType.index, 2, DimList(batch_size, 1)
-    ].stack_allocation()
+    var vector_stack = InlineArray[Int64, batch_size * size](uninitialized=True)
+    var vector = NDBuffer[DType.int64, 2, DimList(batch_size, size)](
+        vector_stack.unsafe_ptr()
+    )
+    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+        uninitialized=True
+    )
+    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+        output_stack.unsafe_ptr()
+    )
 
     for i in range(batch_size):
         for j in range(size):
@@ -275,14 +307,21 @@ fn test_argn_3d_identity() raises:
     alias seq_len = 2
     alias hidden_dim = 5
 
-    var vector = NDBuffer[
-        DType.int64, 3, DimList(batch_size, seq_len, hidden_dim)
-    ].stack_allocation()
+    alias vector_shape = DimList(batch_size, seq_len, hidden_dim)
+    var vector_stack = InlineArray[Int64, Int(vector_shape.product())](
+        uninitialized=True
+    )
+    var vector = NDBuffer[DType.int64, 3, vector_shape](
+        vector_stack.unsafe_ptr()
+    )
     vector.fill(0)
 
-    var output = NDBuffer[
-        DType.index, 3, DimList(batch_size, seq_len, 1)
-    ].stack_allocation()
+    var output_stack = InlineArray[Scalar[DType.index], batch_size * seq_len](
+        uninitialized=True
+    )
+    var output = NDBuffer[DType.index, 3, DimList(batch_size, seq_len, 1)](
+        output_stack.unsafe_ptr()
+    )
     output.fill(0)
 
     vector[Index(0, 1, 4)] = 1
@@ -326,14 +365,20 @@ fn test_argn_less_than_simd() raises:
     alias batch_size = 2
     alias hidden_dim = 3  # assumes simd_width of 4
 
-    var vector = NDBuffer[
-        DType.int64, 2, DimList(batch_size, hidden_dim)
-    ].stack_allocation()
+    var vector_stack = InlineArray[Int64, batch_size * hidden_dim](
+        uninitialized=True
+    )
+    var vector = NDBuffer[DType.int64, 2, DimList(batch_size, hidden_dim)](
+        vector_stack.unsafe_ptr()
+    )
     vector.fill(0)
 
-    var output = NDBuffer[
-        DType.index, 2, DimList(batch_size, 1)
-    ].stack_allocation()
+    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+        uninitialized=True
+    )
+    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+        output_stack.unsafe_ptr()
+    )
     output.fill(0)
 
     vector[Index(0, 0)] = 0
@@ -379,9 +424,13 @@ fn test_argn_simd_index_order() raises:
     #          ^        ^
     alias size = 17
 
-    var vector = NDBuffer[DType.int32, 1, DimList(size)].stack_allocation()
+    var vector_stack = InlineArray[Int32, size](uninitialized=True)
+    var vector = NDBuffer[DType.int32, 1, DimList(size)](
+        vector_stack.unsafe_ptr()
+    )
     vector.fill(0)
-    var output = NDBuffer[DType.index, 1, DimList(1)].stack_allocation()
+    var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
+    var output = NDBuffer[DType.index, 1, DimList(1)](output_stack.unsafe_ptr())
 
     vector[5] = 1
     vector[4] = -1
@@ -421,9 +470,12 @@ fn test_argn_parallelize() raises:
     )
     input.fill(0)
 
-    var output = NDBuffer[
-        DType.index, 2, DimList(batch_size, 1)
-    ].stack_allocation()
+    var output_stack = InlineArray[Scalar[DType.index], batch_size](
+        uninitialized=True
+    )
+    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+        output_stack.unsafe_ptr()
+    )
 
     input[Index(0, 10)] = 100
     input[Index(0, 100)] = -100

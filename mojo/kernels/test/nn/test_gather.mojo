@@ -167,32 +167,39 @@ fn test_gather_empty_indices() raises:
         alias output_size = 0
 
         # Setup input.
+        var input_stack = InlineArray[Float32, num_rows * row_size](
+            uninitialized=True
+        )
         var input = NDBuffer[
             DType.float32,
             2,
             DimList(num_rows, row_size),
-        ].stack_allocation()
+        ](input_stack.unsafe_ptr())
 
         for i in range(num_rows):
             for j in range(row_size):
                 input[IndexList[2](i, j)] = Float32(i).value
 
         # Setup indices.
-        var indices = NDBuffer[
-            indices_type,
-            1,
-            DimList(num_indices),
-        ].stack_allocation()
+        # There isn't a way to represent a stack size of 0 with InlineArray
+        # so we use 1 here
+        var indices_stack = InlineArray[Scalar[indices_type], 1](
+            uninitialized=True
+        )
+        var indices = NDBuffer[indices_type, 1, DimList(num_indices)](
+            indices_stack.unsafe_ptr()
+        )
 
         for i in range(num_indices):
             indices[IndexList[1](i)] = i // 2
 
         # create output
-        var output = NDBuffer[
-            DType.float32,
-            2,
-            DimList(num_indices, row_size),
-        ].stack_allocation()
+        var output_stack = InlineArray[Float32, num_rows * row_size](
+            uninitialized=True
+        )
+        var output = NDBuffer[DType.float32, 2, DimList(num_indices, row_size)](
+            output_stack.unsafe_ptr()
+        )
 
         # Test gather
         alias simd_width = simdwidthof[DType.float32]()

@@ -27,9 +27,10 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 2
         alias data_type = DType.int32
-        var data = NDBuffer[
-            data_type, data_rank, DimList(2, 2)
-        ]().stack_allocation()
+        var data_stack = InlineArray[Scalar[data_type], 4](uninitialized=True)
+        var data = NDBuffer[data_type, data_rank, DimList(2, 2)](
+            data_stack.unsafe_ptr()
+        )
 
         data[IndexList[data_rank](0, 0)] = 0
         data[IndexList[data_rank](0, 1)] = 1
@@ -37,9 +38,10 @@ fn main():
         data[IndexList[data_rank](1, 1)] = 3
 
         alias indices_rank = 2
-        var indices = NDBuffer[
-            DType.int64, indices_rank, DimList(2, 2)
-        ]().stack_allocation()
+        var indices_stack = InlineArray[Int64, 4](uninitialized=True)
+        var indices = NDBuffer[DType.int64, indices_rank, DimList(2, 2)](
+            indices_stack.unsafe_ptr()
+        )
 
         indices[IndexList[indices_rank](0, 0)] = 0
         indices[IndexList[indices_rank](0, 1)] = 0
@@ -77,9 +79,10 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 2
         alias data_type = DType.int8
-        var data = NDBuffer[
-            data_type, data_rank, DimList(2, 2)
-        ]().stack_allocation()
+        var data_stack = InlineArray[Scalar[data_type], 4](uninitialized=True)
+        var data = NDBuffer[data_type, data_rank, DimList(2, 2)](
+            data_stack.unsafe_ptr()
+        )
 
         data[IndexList[data_rank](0, 0)] = 0
         data[IndexList[data_rank](0, 1)] = 1
@@ -87,9 +90,10 @@ fn main():
         data[IndexList[data_rank](1, 1)] = 3
 
         alias indices_rank = 2
-        var indices = NDBuffer[
-            DType.int64, indices_rank, DimList(2, 1)
-        ]().stack_allocation()
+        var indices_stack = InlineArray[Int64, 2](uninitialized=True)
+        var indices = NDBuffer[DType.int64, indices_rank, DimList(2, 1)](
+            indices_stack.unsafe_ptr()
+        )
 
         indices[IndexList[indices_rank](0, 0)] = 1
         indices[IndexList[indices_rank](1, 0)] = 0
@@ -132,9 +136,10 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 3
         alias data_type = DType.float32
-        var data = NDBuffer[
-            data_type, data_rank, DimList(2, 2, 2)
-        ]().stack_allocation()
+        var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
+        var data = NDBuffer[data_type, data_rank, DimList(2, 2, 2)](
+            data_stack.unsafe_ptr()
+        )
 
         data[IndexList[data_rank](0, 0, 0)] = 0
         data[IndexList[data_rank](0, 0, 1)] = 1
@@ -146,9 +151,10 @@ fn main():
         data[IndexList[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 2
-        var indices = NDBuffer[
-            DType.int64, indices_rank, DimList(2, 2)
-        ]().stack_allocation()
+        var indices_stack = InlineArray[Int64, 4](uninitialized=True)
+        var indices = NDBuffer[DType.int64, indices_rank, DimList(2, 2)](
+            indices_stack.unsafe_ptr()
+        )
 
         indices[IndexList[indices_rank](0, 0)] = 0
         indices[IndexList[indices_rank](0, 1)] = 1
@@ -193,9 +199,10 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 3
         alias data_type = DType.int8
-        var data = NDBuffer[
-            data_type, data_rank, DimList(2, 2, 2)
-        ]().stack_allocation()
+        var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
+        var data = NDBuffer[data_type, data_rank, DimList(2, 2, 2)](
+            data_stack.unsafe_ptr()
+        )
 
         data[IndexList[data_rank](0, 0, 0)] = 0
         data[IndexList[data_rank](0, 0, 1)] = 1
@@ -207,9 +214,10 @@ fn main():
         data[IndexList[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 3
-        var indices = NDBuffer[
-            DType.int64, indices_rank, DimList(2, 1, 2)
-        ]().stack_allocation()
+        var indices_stack = InlineArray[Int64, 4](uninitialized=True)
+        var indices = NDBuffer[DType.int64, indices_rank, DimList(2, 1, 2)](
+            indices_stack.unsafe_ptr()
+        )
 
         indices[IndexList[indices_rank](0, 0, 0)] = 0
         indices[IndexList[indices_rank](0, 0, 1)] = 1
@@ -254,9 +262,10 @@ fn main():
         alias batch_dims = 1
         alias data_rank = 3
         alias data_type = DType.int32
-        var data = NDBuffer[
-            data_type, data_rank, DimList(2, 2, 2)
-        ]().stack_allocation()
+        var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
+        var data = NDBuffer[data_type, data_rank, DimList(2, 2, 2)](
+            data_stack.unsafe_ptr()
+        )
 
         data[IndexList[data_rank](0, 0, 0)] = 0
         data[IndexList[data_rank](0, 0, 1)] = 1
@@ -268,9 +277,10 @@ fn main():
         data[IndexList[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 2
-        var indices = NDBuffer[
-            DType.int64, indices_rank, DimList(2, 1)
-        ]().stack_allocation()
+        var indices_stack = InlineArray[Int64, 2](uninitialized=True)
+        var indices = NDBuffer[DType.int64, indices_rank, DimList(2, 1)](
+            indices_stack.unsafe_ptr()
+        )
 
         indices[IndexList[indices_rank](0, 0)] = 1
         indices[IndexList[indices_rank](1, 0)] = 0
@@ -313,9 +323,12 @@ fn main():
         alias batch_dims = 2
         alias data_rank = 3
         alias data_type = DType.int8
-        var data = NDBuffer[
-            data_type, data_rank, DimList(2, 3, 4)
-        ]().stack_allocation()
+        var data_stack = InlineArray[Scalar[data_type], 2 * 3 * 4](
+            uninitialized=True
+        )
+        var data = NDBuffer[data_type, data_rank, DimList(2, 3, 4)](
+            data_stack.unsafe_ptr()
+        )
 
         data[IndexList[data_rank](0, 0, 0)] = 1
         data[IndexList[data_rank](0, 0, 1)] = 2
@@ -348,9 +361,10 @@ fn main():
         data[IndexList[data_rank](1, 2, 3)] = 24
 
         alias indices_rank = 4
-        var indices = NDBuffer[
-            DType.int64, indices_rank, DimList(2, 3, 1, 1)
-        ]().stack_allocation()
+        var indices_stack = InlineArray[Int64, 2 * 3](uninitialized=True)
+        var indices = NDBuffer[DType.int64, indices_rank, DimList(2, 3, 1, 1)](
+            indices_stack.unsafe_ptr()
+        )
 
         indices[IndexList[indices_rank](0, 0, 0, 0)] = 1
         indices[IndexList[indices_rank](0, 1, 0, 0)] = 0
@@ -401,9 +415,10 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 3
         alias data_type = DType.int8
-        var data = NDBuffer[
-            data_type, data_rank, DimList(2, 2, 2)
-        ]().stack_allocation()
+        var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
+        var data = NDBuffer[data_type, data_rank, DimList(2, 2, 2)](
+            data_stack.unsafe_ptr()
+        )
 
         data[IndexList[data_rank](0, 0, 0)] = 0
         data[IndexList[data_rank](0, 0, 1)] = 1
@@ -415,9 +430,10 @@ fn main():
         data[IndexList[data_rank](1, 1, 1)] = 7
 
         alias indices_rank = 3
-        var indices = NDBuffer[
-            DType.int64, indices_rank, DimList(2, 1, 1)
-        ]().stack_allocation()
+        var indices_stack = InlineArray[Int64, 2](uninitialized=True)
+        var indices = NDBuffer[DType.int64, indices_rank, DimList(2, 1, 1)](
+            indices_stack.unsafe_ptr()
+        )
 
         indices[IndexList[indices_rank](0, 0, 0)] = 0
         indices[IndexList[indices_rank](1, 0, 0)] = 1
@@ -469,9 +485,10 @@ fn main():
         alias batch_dims = 0
         alias data_rank = 2
         alias data_type = DType.int8
-        var data = NDBuffer[
-            data_type, data_rank, DimList(2, 3)
-        ]().stack_allocation()
+        var data_stack = InlineArray[Scalar[data_type], 6](uninitialized=True)
+        var data = NDBuffer[data_type, data_rank, DimList(2, 3)](
+            data_stack.unsafe_ptr()
+        )
 
         data[IndexList[data_rank](0, 0)] = 0
         data[IndexList[data_rank](0, 1)] = 1
@@ -481,9 +498,10 @@ fn main():
         data[IndexList[data_rank](1, 2)] = 5
 
         alias indices_rank = 2
-        var indices = NDBuffer[
-            DType.int64, indices_rank, DimList(2, 1)
-        ]().stack_allocation()
+        var indices_stack = InlineArray[Int64, 2](uninitialized=True)
+        var indices = NDBuffer[DType.int64, indices_rank, DimList(2, 1)](
+            indices_stack.unsafe_ptr()
+        )
 
         indices[IndexList[indices_rank](0, 0)] = 1
         indices[IndexList[indices_rank](1, 0)] = 0

@@ -31,14 +31,26 @@ fn test_convtranspose_pads():
     print("== test_convtranspose_pads")
     alias type = DType.float32
 
-    var input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    alias input_shape = DimList(1, 1, 3, 3, 1)
+    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+        uninitialized=True
+    )
+    var input = NDBuffer[type, 5, input_shape](input_stack.unsafe_ptr())
     for i in range(9):
         input.data[i] = i
 
-    var filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
+    alias filter_shape = DimList(1, 3, 3, 2, 1)
+    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+        uninitialized=True
+    )
+    var filter = NDBuffer[type, 5, filter_shape](filter_stack.unsafe_ptr())
     filter.fill(1.0)
 
-    var output = NDBuffer[type, 5, DimList(1, 1, 7, 3, 2)].stack_allocation()
+    alias output_shape = DimList(1, 1, 7, 3, 2)
+    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[type, 5, output_shape](output_stack.unsafe_ptr())
 
     var stride = Index(1, 3, 2)
     var dilation = Index(1, 1, 1)
@@ -82,14 +94,28 @@ fn test_convtranspose():
     print("== test_convtranspose")
     alias type = DType.float32
 
-    var input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    alias input_shape = DimList(1, 1, 3, 3, 1)
+    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+        uninitialized=True
+    )
+    var input = NDBuffer[type, 5, input_shape](input_stack.unsafe_ptr())
     for i in range(9):
         input.data[i] = i
 
-    var filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
+    alias filter_shape = DimList(1, 3, 3, 2, 1)
+    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+        uninitialized=True
+    )
+    var filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)](
+        filter_stack.unsafe_ptr()
+    )
     filter.fill(1.0)
 
-    var output = NDBuffer[type, 5, DimList(1, 1, 5, 5, 2)].stack_allocation()
+    alias output_shape = DimList(1, 1, 5, 5, 2)
+    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[type, 5, output_shape](output_stack.unsafe_ptr())
 
     var stride = Index(1, 1, 1)
     var dilation = Index(1, 1, 1)
@@ -128,7 +154,11 @@ fn test_convtranspose_dilation():
     print("== test_convtranspose_dilation")
     alias type = DType.float32
 
-    var input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    alias input_shape = DimList(1, 1, 3, 3, 1)
+    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+        uninitialized=True
+    )
+    var input = NDBuffer[type, 5, input_shape](input_stack.unsafe_ptr())
     input.data[0] = 3
     input.data[1] = 8
     input.data[2] = 1
@@ -139,13 +169,21 @@ fn test_convtranspose_dilation():
     input.data[7] = 2
     input.data[8] = 6
 
-    var filter = NDBuffer[type, 5, DimList(1, 2, 2, 1, 1)].stack_allocation()
+    alias filter_shape = DimList(1, 2, 2, 1, 1)
+    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+        uninitialized=True
+    )
+    var filter = NDBuffer[type, 5, filter_shape](filter_stack.unsafe_ptr())
     filter.data[0] = 7
     filter.data[1] = 2
     filter.data[2] = 1
     filter.data[3] = 9
 
-    var output = NDBuffer[type, 5, DimList(1, 1, 5, 5, 1)].stack_allocation()
+    alias output_shape = DimList(1, 1, 5, 5, 1)
+    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[type, 5, output_shape](output_stack.unsafe_ptr())
     var stride = Index(1, 1, 1)
     var dilation = Index(1, 2, 2)
     var pad_d = Index(0, 0)
@@ -198,14 +236,26 @@ fn test_convtranspose_attributes():
     print("== test_convtranspose_attributes")
     alias type = DType.float32
 
-    var input = NDBuffer[type, 5, DimList(1, 1, 3, 3, 1)].stack_allocation()
+    alias input_shape = DimList(1, 1, 3, 3, 1)
+    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+        uninitialized=True
+    )
+    var input = NDBuffer[type, 5, input_shape](input_stack.unsafe_ptr())
     for i in range(9):
         input.data[i] = i
 
-    var filter = NDBuffer[type, 5, DimList(1, 3, 3, 2, 1)].stack_allocation()
+    alias filter_shape = DimList(1, 3, 3, 2, 1)
+    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+        uninitialized=True
+    )
+    var filter = NDBuffer[type, 5, filter_shape](filter_stack.unsafe_ptr())
     filter.fill(1.0)
 
-    var output = NDBuffer[type, 5, DimList(1, 1, 10, 8, 2)].stack_allocation()
+    alias output_shape = DimList(1, 1, 10, 8, 2)
+    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+        uninitialized=True
+    )
+    var output = NDBuffer[type, 5, output_shape](output_stack.unsafe_ptr())
 
     var stride = Index(1, 3, 2)
     var dilation = Index(1, 1, 1)
