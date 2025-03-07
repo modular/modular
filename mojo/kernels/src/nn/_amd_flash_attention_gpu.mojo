@@ -40,6 +40,7 @@ from layout.layout_tensor import (
     copy_local_to_dram,
     copy_dram_to_local,
     copy_local_to_sram,
+    copy_sram_to_dram,
     ThreadScope,
 )
 from nn.softmax import (
@@ -188,6 +189,7 @@ fn _apply_mask[
     output_frag_size: Int,
     mask_t: MHAMask,
     not_last_iter: Bool,
+    group: Int,
 ](
     kv_tile_start_row: Int,
     kv_tile_num_rows: Int,
@@ -233,11 +235,15 @@ fn _apply_mask[
             if masked:
 
                 @parameter
-                for j in range(1 if token_gen else output_frag_size):
+                for j in range(group if token_gen else output_frag_size):
+                    var group_idx = (lane // 16) * output_frag_size + j
+                    var q_head_idx = (
+                        block_idx.y * group + group_idx
+                    ) if token_gen else block_idx.y
                     p_reg_vec2[mma_id, i][j] = mask.mask(
                         IndexList[4, element_bitwidth=32, unsigned=True,](
                             Int(block_idx.z),
-                            Int(block_idx.y),
+                            Int(q_head_idx),
                             Int(score_row_with_start_pos + j),
                             Int(score_col),
                         ),
@@ -246,11 +252,12 @@ fn _apply_mask[
             else:
                 p_reg_vec2[mma_id, i] = p_reg_vec2[mma_id, i] * scale_log2e
             if not not_last_iter or token_gen:
-                var bound_x = num_keys if token_gen else seq_len
                 var bound_y = kv_tile_start_row + kv_tile_num_rows if token_gen else num_keys
 
                 @parameter
-                for j in range(1 if token_gen else output_frag_size):
+                for j in range(group if token_gen else output_frag_size):
+                    var bound_x = num_keys + j if token_gen else seq_len
+
                     p_reg_vec2[mma_id, i][j] = _kernel_mask(
                         IndexList[2, element_bitwidth=32, unsigned=True,](
                             Int(score_row + j),
@@ -337,38 +344,41 @@ fn mha_single_batch[
 
     var warp_id = thread_idx.x // WARP_SIZE
 
-    var head_idx: UInt32 = block_idx.y
+    var kv_head_idx = block_idx.y if token_gen else block_idx.y // group
+
     var q_tile_idx: UInt32 = block_idx.x
 
     # Query global memory iterator
     alias q_gmem_layout = Layout(
         IntTuple(Int(BM), Int(depth)),
-        IntTuple(Int(num_heads * depth if not token_gen else depth), 1),
+        IntTuple(Int(num_heads * depth), 1),
+    ) if not token_gen else Layout.row_major(BM, depth)
+
+    var q_tile_num_rows = min(
+        BM, UInt(seq_len) - q_tile_idx * BM
+    ) if not token_gen else group
+    var q_offset = depth * (
+        (kv_head_idx * group if token_gen else block_idx.y)
+        + num_heads * q_tile_idx * BM
     )
-    var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
-    var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
+
+    var q_gmem_runtime_layout = RuntimeLayout(
+        RuntimeTuple[q_gmem_layout.shape, unsigned=True](
+            Int(q_tile_num_rows), depth
+        ),
+        RuntimeTuple[q_gmem_layout.stride, unsigned=True](
+            num_heads * depth if not token_gen else depth, 1
+        ),
+    )
+
     var q_tile = LayoutTensor[q_type, q_gmem_layout, masked=True](
         q + Int(q_offset),
-        RuntimeLayout(
-            RuntimeTuple[q_gmem_layout.shape, unsigned=True](
-                Int(q_tile_num_rows), depth
-            ),
-            RuntimeTuple[q_gmem_layout.stride, unsigned=True](
-                num_heads * depth, 1
-            ),
-        ),
+        q_gmem_runtime_layout,
     )
 
     var output_tile = LayoutTensor[output_type, q_gmem_layout, masked=True,](
         output + Int(q_offset),
-        RuntimeLayout(
-            RuntimeTuple[q_gmem_layout.shape, unsigned=True](
-                Int(q_tile_num_rows), depth
-            ),
-            RuntimeTuple[q_gmem_layout.stride, unsigned=True](
-                num_heads * depth, 1
-            ),
-        ),
+        q_gmem_runtime_layout,
     )
 
     alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
@@ -467,9 +477,7 @@ fn mha_single_batch[
             kv_gmem_layout,
             masked = not not_last_iter,
         ](
-            k.block_paged_ptr[BN](
-                batch_idx, kv_tile_start_row, Int(head_idx // group), 0
-            ),
+            k.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
             kv_runtime_layout,
         )
         var v_tile = LayoutTensor[
@@ -477,9 +485,7 @@ fn mha_single_batch[
             kv_gmem_layout,
             masked = not not_last_iter,
         ](
-            v.block_paged_ptr[BN](
-                batch_idx, kv_tile_start_row, Int(head_idx // group), 0
-            ),
+            v.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
             kv_runtime_layout,
         )
 
@@ -526,6 +532,7 @@ fn mha_single_batch[
             output_frag_size=output_frag_size,
             mask_t=mask_t,
             not_last_iter=not_last_iter,
+            group=group,
         ](
             kv_tile_start_row,
             kv_tile_num_rows,
@@ -594,13 +601,38 @@ fn mha_single_batch[
         out_reg_tile, rowsum
     )
 
-    copy_local_to_dram[
-        dst_thread_layout = Layout.row_major(4, 16),
+    var output_smem = LayoutTensor[
+        output_type,
+        Layout.row_major(BM, depth),
+        address_space = AddressSpace.SHARED,
+    ](q_smem.ptr.bitcast[Scalar[output_type]]())
+
+    var output_smem_warp_tile = output_smem.tile[WM, depth](warp_id, 0)
+
+    copy_local_to_sram[
+        thread_layout = Layout.row_major(4, 16),
         thread_scope = ThreadScope.WARP,
     ](
-        output_tile.tile[WM, depth](warp_id, 0).vectorize[
-            output_frag_size, 1
-        ](),
+        output_smem_warp_tile.vectorize[output_frag_size, 1](),
         out_reg_tile.vectorize[1, output_frag_size](),
-        output_tile,
+    )
+
+    barrier()
+
+    alias num_threads = config.num_threads()
+
+    alias copy_thread_layout = Layout.row_major(
+        num_threads * simd_width // depth,
+        depth // simd_width,
+    )
+
+    # TODO(KERN-1649): if swizzle is None, copy_sram_to_dram does not work
+    # correctly with masked tensor
+    copy_sram_to_dram[
+        thread_layout=copy_thread_layout,
+        num_threads=num_threads,
+        swizzle = Swizzle(0, 0, 1),
+    ](
+        output_tile.vectorize[1, simd_width](),
+        output_smem.vectorize[1, simd_width](),
     )

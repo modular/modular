@@ -617,9 +617,7 @@ fn flash_attention_dispatch[
                     score_mod_functor,
                     grid_dim=(
                         1,
-                        Int(
-                            num_blocks_y
-                        ) if has_nvidia_gpu_accelerator() else Int(num_heads),
+                        Int(num_blocks_y),
                         Int(batch_size),
                     ),
                     block_dim=(num_threads, 1, 1),
