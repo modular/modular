@@ -169,14 +169,15 @@ whether code is being executed at compile time or not. For example:
 ```mojo
 from sys import is_compile_time
 
-fn foo() -> String:
-   if is_compile_time:
+fn check_compile_time() -> String:
+   if is_compile_time():
       return "compile time"
    else:
       return "runtime"
+
 def main():
-    alias var0 = foo()
-    var var1 = foo()
+    alias var0 = check_compile_time()
+    var var1 = check_compile_time()
     print("var0 is evaluated at ", var0, " , while var1 is evaluated at ", var1)
 ```
 
