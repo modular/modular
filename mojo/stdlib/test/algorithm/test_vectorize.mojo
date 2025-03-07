@@ -15,13 +15,8 @@ fn test_vectorize():
     print("== test_vectorize")
 
     # Create a mem of size 5
-    var vector = NDBuffer[DType.float32, 1, 5].stack_allocation()
-
-    vector[0] = 1.0
-    vector[1] = 2.0
-    vector[2] = 3.0
-    vector[3] = 4.0
-    vector[4] = 5.0
+    var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
+    var vector = NDBuffer[DType.float32, 1, 5](vector_stack.unsafe_ptr())
 
     @__copy_capture(vector)
     @always_inline
@@ -73,8 +68,11 @@ fn test_vectorize_unroll():
     print("== test_vectorize_unroll")
 
     alias buf_len = 23
-    var vec = NDBuffer[DType.float32, 1, buf_len].stack_allocation()
-    var buf = NDBuffer[DType.float32, 1, buf_len].stack_allocation()
+
+    var vec_stack = InlineArray[Float32, buf_len](uninitialized=True)
+    var vec = NDBuffer[DType.float32, 1, buf_len](vec_stack.unsafe_ptr())
+    var buf_stack = InlineArray[Float32, buf_len](uninitialized=True)
+    var buf = NDBuffer[DType.float32, 1, buf_len](buf_stack.unsafe_ptr())
 
     for i in range(buf_len):
         vec[i] = i
