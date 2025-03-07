@@ -75,6 +75,7 @@ from .utils_gpu import (
     _get_block_warp_tile_shape,
     select_config,
 )
+from linalg.matmul_tile_scheduler import MatmulSchedule
 from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
 
 alias tile_shapes_64X64X32 = _get_block_warp_tile_shape[64, 64, 32]()
@@ -429,6 +430,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N2560_K8192_config,
+                            schedule = MatmulSchedule.NONE,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -458,6 +460,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M4096_N2560_K8192_config,
+                            schedule = MatmulSchedule.NONE,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -489,6 +492,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N8192_K2048_config,
+                            schedule = MatmulSchedule.NONE,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -518,6 +522,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M4096_N8192_K2048_config,
+                            schedule = MatmulSchedule.NONE,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -549,6 +554,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N14336_K8192_config,
+                            schedule = MatmulSchedule.NONE,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -578,6 +584,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M4096_N14336_K8192_config,
+                            schedule = MatmulSchedule.NONE,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -609,6 +616,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N8192_K7168_config,
+                            schedule = MatmulSchedule.NONE,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -638,6 +646,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M4096_N8192_K7168_config,
+                            schedule = MatmulSchedule.NONE,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -666,6 +675,7 @@ fn _matmul_gpu[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     config=default_config,
+                    schedule = MatmulSchedule.NONE,
                 ](
                     rebind[NDBuffer[c_type, 2, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a_shape]](a),
