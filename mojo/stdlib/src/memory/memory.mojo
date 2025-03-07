@@ -30,6 +30,7 @@ from sys import (
     simdbitwidth,
     simdwidthof,
     sizeof,
+    is_compile_time,
 )
 from math import iota
 
@@ -254,7 +255,7 @@ fn memcpy[
     """
     var n = count * sizeof[dest.type]()
 
-    if __mlir_op.`kgen.is_compile_time`():
+    if is_compile_time():
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](

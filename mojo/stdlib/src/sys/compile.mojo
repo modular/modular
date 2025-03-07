@@ -15,6 +15,16 @@
 from .param_env import env_get_int, env_get_string
 
 # ===----------------------------------------------------------------------=== #
+# is_compile_time
+# ===----------------------------------------------------------------------=== #
+
+
+alias is_compile_time = __mlir_op.`kgen.is_compile_time`
+"""Returns true if the current code is executed at compile time, false 
+otherwise.
+"""
+
+# ===----------------------------------------------------------------------=== #
 # OptimizationLevel
 # ===----------------------------------------------------------------------=== #
 

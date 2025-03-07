@@ -163,6 +163,25 @@ what we publish.
   - `compile` package
   - `layout` package is underway, beginning with core types, functions, and traits.
 
+- A new `sys.is_compile_time` function is added. This enables one to query
+whether code is being executed at compile time or not. For example:
+
+```mojo
+from sys import is_compile_time
+
+fn foo() -> String:
+   if is_compile_time:
+      return "compile time"
+   else:
+      return "runtime"
+def main():
+    alias var0 = foo()
+    var var1 = foo()
+    print("var0 is evaluated at ", var0, " , while var1 is evaluated at ", var1)
+```
+
+will print `var0 is evaluated at compile time, while var1 is evaluated at runtime`.
+
 ### GPU changes
 
 - You can now skip compiling a GPU kernel first and then enqueueing it:
