@@ -53,7 +53,7 @@
   "dependencies": {
     "@vscode/extension-telemetry": "^0.9.7",
     "async-mutex": "0.5.0",
-    "axios": "1.7.5",
+    "axios": "1.8.2",
     "chokidar": "^3.6.0",
     "fs-extra": "11.2.0",
     "ini": "4.1.1",
