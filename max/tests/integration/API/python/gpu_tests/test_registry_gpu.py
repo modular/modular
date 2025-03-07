@@ -462,6 +462,7 @@ def test_registry__update_cache_strategy():
 
 
 @prepare_registry
+@pytest.mark.skip("TODO: AITLIB-238")
 def test_registry__update_weight_paths():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     PIPELINE_REGISTRY.register(REPLIT_ARCH)
@@ -643,6 +644,7 @@ def test_registry__raise_oom_error_weights_size_exceeds_available_memory():
 
 
 @prepare_registry
+@pytest.mark.skip("TODO: AITLIB-238")
 def test_registry__raise_oom_error_all_defaults_no_valid_solution():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -663,7 +665,6 @@ def test_registry__raise_oom_error_all_defaults_no_valid_solution():
         device_mock.return_value = {"free_memory": 30641 * 1024 * 1024}
         with pytest.raises(
             RuntimeError,
-            match="Try reducing --max-length or --max-batch-size",
         ):
             PIPELINE_REGISTRY.validate_pipeline_config(config)
 

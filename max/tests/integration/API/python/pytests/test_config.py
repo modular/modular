@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from huggingface_hub import snapshot_download
+from max.driver import DeviceSpec
 from max.pipelines.config import (
     PipelineConfig,
     SupportedEncoding,
@@ -167,6 +168,21 @@ def test_config__with_local_huggingface_repo():
     _ = PipelineConfig(
         model_path=downloaded_path,
     )
+
+
+def test_config__validate_devices():
+    # This test should always have a cpu available.
+    _ = PipelineConfig(
+        model_path="HuggingFaceTB/SmolLM-135M",
+        device_specs=[DeviceSpec.cpu()],
+    )
+
+    # This test should never have a gpu available.
+    with pytest.raises(ValueError):
+        _ = PipelineConfig(
+            model_path="HuggingFaceTB/SmolLM-135M",
+            device_specs=[DeviceSpec.accelerator()],
+        )
 
 
 def test_config_post_init__other_repo_weights():
