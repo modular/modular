@@ -245,6 +245,14 @@ class PipelineDef:
 
 
 PIPELINES = {
+    # TODO(MODELS-454): Investigate sign flips.
+    # We have sign flips that are seen across many models.
+    # I definitely suspect a bug. The only place I don't see this is llama3_1-float32 on cpu.
+    # Many of these values are far enough away from zero that they shouldn't be cause by minor rounding errors.
+    # That said, they might be minor rounding errors that get magnified later in the model.
+    # Layer by layer golden tests would be exceptionally useful.
+    # For now, using atol alone to check correctness for these models.
+    # Setting rtol high hides other issues.
     "llama3_1-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
         run=lambda device_type,
@@ -259,14 +267,17 @@ PIPELINES = {
             # pipeline.  We only pass with these sky-high tolerances --
             # something is very wrong but at least we will be able to detect
             # further regressions with this.
-            kl_div_threshold=30.0,
-            cos_dist_threshold=2.0,
-            absolute_tolerance=25.0,
-            relative_tolerance=2.1,
+            # Example sign flip:
+            # `(26, array([12445])) |  -3.12881e+00 │  3.12882e+00`
+            absolute_tolerance=30,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=0.7,
+            kl_div_threshold=20,
         ),
     ),
     "llama3_1-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU],
+        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        tags=["big"],
         run=lambda device_type,
         devices,
         print_suggested_tolerances: run_llm_verification(
@@ -275,12 +286,14 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3_1",
             encoding="float32",
-            kl_div_threshold=0.005,
-            cos_dist_threshold=0.002,
-            # TODO(AIPIPE-134): The absolute and relative differences here seem
-            # too high.
-            absolute_tolerance=0.8,
-            relative_tolerance=2.1,
+            # TODO(AIPIPE-134): GPU has significantly worse tolerances than cpu.
+            # cpu passes with `2e-04` atol. Gpu requires 100x worse tolerances.
+            # Example sign flip (gpu only):
+            # `(2, array([1150])) │  2.25306e-03 │ -2.24400e-03`
+            absolute_tolerance=3e-02,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=1e-4,
+            kl_div_threshold=1e-4,
         ),
     ),
     "llama3_1-bfloat16": PipelineDef(
@@ -296,12 +309,14 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
             ),
-            kl_div_threshold=0.006,
-            cos_dist_threshold=0.002,
             # TODO(AIPIPE-134): The absolute and relative differences here seem
             # too high.
-            absolute_tolerance=0.8,
-            relative_tolerance=2.1,
+            # Example sign flip:
+            # `(13, array([57398])) │  6.65283e-03 │ -6.65283e-03`
+            absolute_tolerance=0.3,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=4e-4,
+            kl_div_threshold=2e-3,
         ),
     ),
     "Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
@@ -316,10 +331,12 @@ PIPELINES = {
             pipeline="llama3.3-70b",
             encoding="bfloat16",
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
-            kl_div_threshold=0.5,
-            cos_dist_threshold=0.002,
-            absolute_tolerance=0.8,
-            relative_tolerance=2.1,
+            # Example sign flip:
+            # `(31, array([109396])) │  2.55127e-02 │ -2.55127e-02`
+            absolute_tolerance=2.0,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=8e-4,
+            kl_div_threshold=2e-3,
         ),
     ),
     "replit-code-v1_5-3b-bfloat16": PipelineDef(
@@ -338,10 +355,12 @@ PIPELINES = {
             # somewhere, so these thresholds are extremely high.  Once the
             # deviation has been fixed, these thresholds should be adjusted
             # down to be more reasonable.
+            # Example sign flip:
+            # `(17, array([25123])) │ -7.65354e-01 │ 7.65625e-01`
+            absolute_tolerance=70,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=0.9,
             kl_div_threshold=float("inf"),
-            cos_dist_threshold=1.5,
-            absolute_tolerance=100,
-            relative_tolerance=2.5,
         ),
     ),
     "mistral-nemo-instruct-2407-bfloat16": PipelineDef(
@@ -357,10 +376,12 @@ PIPELINES = {
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_mistral_golden/torch_nemo-instruct-2407_bfloat16_golden.json",
             # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
-            kl_div_threshold=0.03,
-            cos_dist_threshold=0.02,
-            absolute_tolerance=1.5,
-            relative_tolerance=2.0,
+            # Example sign flip:
+            # `(18, array([113226])) │  5.44386e-02 │ -5.44434e-02`
+            absolute_tolerance=4.0,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=2e-2,
+            kl_div_threshold=3e-2,
         ),
     ),
     "llama3-vision-bfloat16": PipelineDef(
@@ -375,15 +396,18 @@ PIPELINES = {
             pipeline="llama3-vision",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_llama3-vision_golden/torch_llama3_2_bfloat16_golden.json",
-            kl_div_threshold=8e-3,
-            cos_dist_threshold=2e-3,
+            # Note: llama-vision is not yet using llama3 rope.
             # TODO(bduke): Absolute tolerance here is larger than expected.
-            absolute_tolerance=1.0,
             # TODO(bduke): Relative tolerance is high due to sign flips for
             # small values near zero.
             # We should account for this since otherwise relative elementwise
             # tolerance isn't useful.
-            relative_tolerance=2.5,
+            # Example sign flip:
+            # `(3, array([24040])) │  3.97949e-02 │ -3.97949e-02`
+            absolute_tolerance=0.6,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=1e-3,
+            kl_div_threshold=3e-3,
         ),
     ),
     "pixtral-bfloat16": PipelineDef(
@@ -398,14 +422,16 @@ PIPELINES = {
             pipeline="pixtral",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
-            kl_div_threshold=0.05,
-            cos_dist_threshold=0.005,
-            absolute_tolerance=1.0,
-            relative_tolerance=2.0,
+            # Example sign flip:
+            # `(5, array([46295])) │ 6.83594e-02 │ -6.83594e-02`
+            absolute_tolerance=2.0,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=2e-3,
+            kl_div_threshold=6e-3,
         ),
     ),
     "mpnet-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU],
+        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         run=lambda device_type,
         devices,
         print_suggested_tolerances: run_llm_verification(
@@ -415,9 +441,12 @@ PIPELINES = {
             pipeline="mpnet",
             encoding="float32",
             pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_float32_golden.json",
-            cos_dist_threshold=1e-5,
-            absolute_tolerance=1e-4,
-            relative_tolerance=0.5,
+            # On CPU, mpnet passes with all values set to `1e-4`
+            # GPU specifically requires these higher tolerances (30x worse).
+            absolute_tolerance=3e-3,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=1e-4,
+            kl_div_threshold=1e-4,
         ),
     ),
     "mpnet-bfloat16": PipelineDef(
@@ -431,9 +460,10 @@ PIPELINES = {
             pipeline="mpnet",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_bfloat16_golden.json",
+            absolute_tolerance=2e-2,
+            relative_tolerance=1e-4,
             cos_dist_threshold=2e-4,
-            # Relative/abs tolerances are a lot higher for bfloat16, but since
-            # the cosine distance is reasonable we just test one metric.
+            kl_div_threshold=1e-4,
         ),
     ),
     "Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
@@ -446,10 +476,12 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="qwen",
             encoding="bfloat16",
+            # Exmaple sign flip:
+            # `(3, array([90716])) │ -2.88086e-02 │ 2.88086e-02`
+            absolute_tolerance=2.0,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=2e-3,
             kl_div_threshold=0.2,
-            cos_dist_threshold=0.01,
-            absolute_tolerance=1.4,
-            relative_tolerance=2.1,
         ),
     ),
     "EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
@@ -465,10 +497,12 @@ PIPELINES = {
             encoding="float32",
             # TODO: Investigate why this is inf here.
             # Response text looks semantically close.
-            kl_div_threshold=float("inf"),
-            cos_dist_threshold=0.1,
+            # Example sign flip (seen on cpu and gpu for this model):
+            # `(31, array([65924]) │ -8.71094e-01 │ 8.71138e-01`
             absolute_tolerance=5.0,
-            relative_tolerance=2.0,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=6e-2,
+            kl_div_threshold=float("inf"),
         ),
     ),
     "OLMo-1B-float32": PipelineDef(
@@ -481,9 +515,14 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="olmo",
             encoding="float32",
-            cos_dist_threshold=2e-5,
-            absolute_tolerance=0.1,
-            relative_tolerance=0.05,
+            # On CPU, olmo passes with atol set to `5e-4`
+            # GPU specifically requires these higher tolerances (160x worse).
+            # Example sign flip (gpu only):
+            # `(36, array([48880])) │  5.52034e-03 │ -5.52034e-03`
+            absolute_tolerance=8e-2,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=1e-4,
+            kl_div_threshold=1e-4,
         ),
     ),
 }

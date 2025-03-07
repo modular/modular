@@ -150,7 +150,7 @@ class Llama3_1PipelineOracle(PipelineOracle):
             if encoding == "bfloat16":
                 return False
         elif device_spec.device_type == "gpu":
-            if encoding != "bfloat16":
+            if encoding not in ["bfloat16", "float32"]:
                 return False
         else:
             return False
@@ -363,7 +363,7 @@ class ReplitPipelineOracle(PipelineOracle):
             if encoding == "bfloat16":
                 return False
         elif device_spec.device_type == "gpu":
-            if encoding != "bfloat16":
+            if encoding not in ["bfloat16", "float32"]:
                 return False
         else:
             return False
