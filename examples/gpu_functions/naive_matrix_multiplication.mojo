@@ -34,9 +34,6 @@ fn naive_matrix_multiplication[
     n_layout: Layout,
     p_layout: Layout,
 ](
-    i: Int,
-    j: Int,
-    k: Int,
     m: LayoutTensor[float_dtype, m_layout, MutableAnyOrigin],
     n: LayoutTensor[float_dtype, n_layout, MutableAnyOrigin],
     p: LayoutTensor[float_dtype, p_layout, MutableAnyOrigin],
@@ -45,8 +42,12 @@ fn naive_matrix_multiplication[
     row = block_dim.y * block_idx.y + thread_idx.y
     col = block_dim.x * block_idx.x + thread_idx.x
 
-    if row < i and col < k:
-        for j_index in range(j):
+    var m_dim = p.dim(0)
+    var n_dim = p.dim(1)
+    var k_dim = m.dim(1)
+
+    if row < m_dim and col < n_dim:
+        for j_index in range(k_dim):
             p[row, col] = p[row, col] + m[row, j_index] * n[j_index, col]
 
 
@@ -110,9 +111,6 @@ def main():
         # are the dimensions of the grid in blocks, and the block dimensions.
         gpu_function(
             gpu_device,
-            I,
-            J,
-            K,
             m_layout_tensor,
             n_layout_tensor,
             p_layout_tensor,
