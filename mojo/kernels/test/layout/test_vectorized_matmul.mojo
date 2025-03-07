@@ -38,22 +38,25 @@ fn test_tiled_and_vectorized_matmul():
     alias TM = 2
     alias TN = 2
 
-    var tensor_a = LayoutTensor[
-        DType.float32, Layout(IntTuple(M, K), IntTuple(K, 1)), MutableAnyOrigin
-    ].stack_allocation()
-    var tensor_b = LayoutTensor[
-        DType.float32, Layout(IntTuple(K, N), IntTuple(N, 1)), MutableAnyOrigin
-    ].stack_allocation()
-    var tensor_c = LayoutTensor[
-        DType.float32, Layout(IntTuple(M, N), IntTuple(N, 1)), MutableAnyOrigin
-    ].stack_allocation()
+    alias a_layout = Layout(IntTuple(M, K), IntTuple(K, 1))
+    var a_stack = InlineArray[Float32, a_layout.size()](uninitialized=True)
+    var tensor_a = LayoutTensor[DType.float32, a_layout](a_stack)
+
+    alias b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
+    var b_stack = InlineArray[Float32, b_layout.size()](uninitialized=True)
+    var tensor_b = LayoutTensor[DType.float32, b_layout](b_stack)
+
+    alias c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
+    var c_stack = InlineArray[Float32, c_layout.size()](uninitialized=True)
+    var tensor_c = LayoutTensor[DType.float32, c_layout](c_stack)
+
     arange(tensor_a)
     arange(tensor_b)
     _ = tensor_c.fill(0)
 
     for bm in range(M // BK):
         for bn in range(N // BN):
-            var tile_c = tensor_c.tile[BM, BN](bm, bn)
+            var tile_c = tensor_c.get_immutable().tile[BM, BN](bm, bn)
             for bk in range(K // BK):
                 var tile_a = tensor_a.tile[BM, BK](bm, bk)
                 var tile_b = tensor_b.tile[BK, BN](bk, bn)

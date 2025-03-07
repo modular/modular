@@ -38,7 +38,7 @@ fn test_element_load():
     print("vector_1x4")
     for i in range(8):
         for j in range(2):
-            var tensor_8x8_v_1_4 = tensor_8x8.vectorize[1, 4]()
+            var tensor_8x8_v_1_4 = tensor_8x8.get_immutable().vectorize[1, 4]()
             var offset = tensor_8x8_v_1_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_1_4.dtype, tensor_8x8_v_1_4.element_layout
@@ -52,7 +52,7 @@ fn test_element_load():
     print("vector_4x1")
     for i in range(2):
         for j in range(8):
-            var tensor_8x8_v_4_1 = tensor_8x8.vectorize[4, 1]()
+            var tensor_8x8_v_4_1 = tensor_8x8.get_immutable().vectorize[4, 1]()
             var offset = tensor_8x8_v_4_1.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_1.dtype, tensor_8x8_v_4_1.element_layout
@@ -66,7 +66,7 @@ fn test_element_load():
     print("vector_4x4")
     for i in range(2):
         for j in range(2):
-            var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
+            var tensor_8x8_v_4_4 = tensor_8x8.get_immutable().vectorize[4, 4]()
             var offset = tensor_8x8_v_4_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_4.dtype, tensor_8x8_v_4_4.element_layout
@@ -95,7 +95,7 @@ fn test_element_store():
     print("vector_1x4")
     for i in range(8):
         for j in range(2):
-            var tensor_8x8_v_1_4 = tensor_8x8.vectorize[1, 4]()
+            var tensor_8x8_v_1_4 = tensor_8x8.get_immutable().vectorize[1, 4]()
             var offset = tensor_8x8_v_1_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_1_4.dtype, tensor_8x8_v_1_4.element_layout
@@ -116,7 +116,7 @@ fn test_element_store():
     print("vector_4x1")
     for i in range(2):
         for j in range(8):
-            var tensor_8x8_v_4_1 = tensor_8x8.vectorize[4, 1]()
+            var tensor_8x8_v_4_1 = tensor_8x8.get_immutable().vectorize[4, 1]()
             var offset = tensor_8x8_v_4_1.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_1.dtype, tensor_8x8_v_4_1.element_layout
@@ -137,7 +137,7 @@ fn test_element_store():
     print("vector_4x4")
     for i in range(2):
         for j in range(2):
-            var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
+            var tensor_8x8_v_4_4 = tensor_8x8.get_immutable().vectorize[4, 4]()
             var offset = tensor_8x8_v_4_4.layout(IntTuple(i, j))
             var elem = Element[
                 tensor_8x8_v_4_4.dtype, tensor_8x8_v_4_4.element_layout
@@ -260,15 +260,16 @@ fn test_element_dynamic_layout() raises:
 # CHECK-LABEL: test_element_masked_load
 fn test_element_masked_load():
     print("== test_element_masked_load")
-    var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4x4_stack = InlineArray[Float32, 4 * 4](uninitialized=True)
+    var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
+        tensor_4x4_stack
+    )
     arange(tensor_4x4)
     var tensor_1x3 = LayoutTensor[DType.float32, Layout.row_major(1, 3)](
         tensor_4x4.ptr
     )
 
-    var tensor_1x3_v4 = tensor_1x3.vectorize[1, 4]()
+    var tensor_1x3_v4 = tensor_1x3.get_immutable().vectorize[1, 4]()
     # CHECK: [0.0, 1.0, 2.0, 0.0]
     print(
         Element[tensor_1x3_v4.dtype, tensor_1x3_v4.element_layout].masked_load(
@@ -284,7 +285,7 @@ fn test_element_masked_load():
         tensor_4x4.ptr
     )
 
-    var tensor_3x1_v4 = tensor_3x4.vectorize[4, 1]()
+    var tensor_3x1_v4 = tensor_3x4.get_immutable().vectorize[4, 1]()
 
     print(
         Element[tensor_3x1_v4.dtype, tensor_3x1_v4.element_layout].masked_load(
@@ -295,7 +296,7 @@ fn test_element_masked_load():
         )
     )
 
-    var tensor_3x4_v4x4 = tensor_3x4.vectorize[4, 4]()
+    var tensor_3x4_v4x4 = tensor_3x4.get_immutable().vectorize[4, 4]()
 
     # CHECK: [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 0.0, 0.0, 0.0, 0.0]
     print(
@@ -313,11 +314,12 @@ fn test_element_masked_load():
 # CHECK-LABEL: test_element_masked_store
 fn test_element_masked_store():
     print("== test_element_masked_store")
-    var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-    ].stack_allocation().fill(-1)
+    var tensor_4x4_stack = InlineArray[Float32, 4 * 4](uninitialized=True)
+    var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
+        tensor_4x4_stack
+    ).fill(-1)
 
-    var tensor_4x4_vec_1_4 = tensor_4x4.vectorize[1, 4]()
+    var tensor_4x4_vec_1_4 = tensor_4x4.get_immutable().vectorize[1, 4]()
     var element_v_1_4 = Element[
         tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout
     ](
@@ -338,7 +340,7 @@ fn test_element_masked_store():
     print(tensor_4x4)
     _ = tensor_4x4.fill(-1)
 
-    var tensor_4x4_vec_4_1 = tensor_4x4.vectorize[4, 1]()
+    var tensor_4x4_vec_4_1 = tensor_4x4.get_immutable().vectorize[4, 1]()
     var element_v_4_1 = Element[
         tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout
     ](
@@ -359,7 +361,7 @@ fn test_element_masked_store():
     print(tensor_4x4)
     _ = tensor_4x4.fill(-1)
 
-    var tensor_4x4_vec_4_4 = tensor_4x4.vectorize[4, 4]()
+    var tensor_4x4_vec_4_4 = tensor_4x4.get_immutable().vectorize[4, 4]()
     var element_v_4_4 = Element[
         tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout
     ](

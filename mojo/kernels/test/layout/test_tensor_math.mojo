@@ -30,9 +30,10 @@ fn test_reduce_sum():
         var tensor_4_0 = sum[axis=0](tensor)
         print(tensor_4_0)
 
-    var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4x4_storage = InlineArray[Float32, 4 * 4](uninitialized=True)
+    var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
+        tensor_4x4_storage
+    )
     test_reduce_sum_impl(tensor_4x4)
 
 
@@ -56,18 +57,20 @@ fn test_reduce_max():
         # CHECK: 15.0
         print(tensor_4_1)
 
-    var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4x4_storage = InlineArray[Float32, 4 * 4](uninitialized=True)
+    var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
+        tensor_4x4_storage
+    )
     test_reduce_max_impl(tensor_4x4)
 
 
 # CHECK-LABEL: test_reduce_res_allocated
 fn test_reduce_res_allocated():
     print("== test_reduce_res_allocated")
-    var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4x4_storage = InlineArray[Float32, 4 * 4](uninitialized=True)
+    var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
+        tensor_4x4_storage
+    )
     arange(tensor_4x4)
     # CHECK: 12.0
     # CHECK: 13.0
@@ -84,9 +87,10 @@ fn test_reduce_res_allocated():
 # CHECK-LABEL: test_exp
 fn test_exp():
     print("== test_exp")
-    var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4x4_storage = InlineArray[Float32, 4 * 4](uninitialized=True)
+    var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
+        tensor_4x4_storage
+    )
     arange(tensor_4x4)
     # CHECK: 1.0 2.7182817 7.389056 20.085537
     # CHECK: 54.59815 148.41316 403.42877 1096.6332
@@ -98,9 +102,10 @@ fn test_exp():
 # CHECK-LABEL: test_unary_scalar
 fn test_unary_scalar():
     print("== test_unary_scalar")
-    var tensor_4x4 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4x4_storage = InlineArray[Float32, 4 * 4](uninitialized=True)
+    var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
+        tensor_4x4_storage
+    )
     arange(tensor_4x4)
 
     # CHECK: 2.0 3.0 4.0 5.0
@@ -127,9 +132,12 @@ fn test_unary_scalar():
     # CHECK: 120.0 130.0 140.0 150.0
     print(tensor_4x4 * 10.0)
 
+    var tensor_4x4_mul10_storage = InlineArray[Float32, 4 * 4](
+        uninitialized=True
+    )
     var tensor_4x4_mul_by_10 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-    ].stack_allocation()
+        DType.float32, Layout.row_major(4, 4)
+    ](tensor_4x4_mul10_storage)
     arange(tensor_4x4_mul_by_10, step=10.0)
 
     # CHECK: 0.0 1.0 2.0 3.0
@@ -170,15 +178,17 @@ fn test_unary_scalar():
 # CHECK-LABLE: test_binary_same_rank
 fn test_binary_same_rank():
     print("== test_binary_same_rank")
-    var tensor_4x5 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 5), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4x5_storage = InlineArray[Float32, 4 * 5](uninitialized=True)
+    var tensor_4x5 = LayoutTensor[DType.float32, Layout.row_major(4, 5)](
+        tensor_4x5_storage
+    )
     arange(tensor_4x5)
-    var tensor_4x5_2 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 5), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4x5_2_storage = InlineArray[Float32, 4 * 5](uninitialized=True)
+    var tensor_4x5_2 = LayoutTensor[DType.float32, Layout.row_major(4, 5)](
+        tensor_4x5_2_storage
+    )
     arange(tensor_4x5_2)
-    tensor_4x5_2 = tensor_4x5_2 + 2
+    tensor_4x5_2 += 2
 
     # CHECK: 2.0 4.0 6.0 8.0 10.0
     # CHECK: 12.0 14.0 16.0 18.0 20.0
@@ -196,13 +206,13 @@ fn test_binary_same_rank():
     # CHECK: 10.0 12.0 14.0 16.0 18.0
     # CHECK: 20.0 22.0 24.0 26.0 28.0
     # CHECK: 30.0 32.0 34.0 36.0 38.0
-    tensor_4x5 += tensor_4x5
+    tensor_4x5 += tensor_4x5._stack_copy()
     print(tensor_4x5)
 
     arange(tensor_4x5)
     tensor_4x5 += 1
 
-    tensor_4x5 /= tensor_4x5
+    tensor_4x5 /= tensor_4x5._stack_copy()
     # CHECK: 1.0 1.0 1.0 1.0 1.0
     # CHECK: 1.0 1.0 1.0 1.0 1.0
     # CHECK: 1.0 1.0 1.0 1.0 1.0
@@ -216,7 +226,7 @@ fn test_binary_same_rank():
     # CHECK: 10.0 10.0 10.0 10.0 10.0
     print(tensor_4x5)
 
-    tensor_4x5 -= tensor_4x5
+    tensor_4x5 -= tensor_4x5._stack_copy()
     # CHECK: 0.0 0.0 0.0 0.0 0.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0
@@ -227,15 +237,17 @@ fn test_binary_same_rank():
 # CHECK-LABEL: test_binary_broadcast_inner
 fn test_binary_broadcast_inner():
     print("== test_binary_broadcast_inner")
-    var tensor_4x5 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 5), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4x5_storage = InlineArray[Float32, 4 * 5](uninitialized=True)
+    var tensor_4x5 = LayoutTensor[DType.float32, Layout.row_major(4, 5)](
+        tensor_4x5_storage
+    )
     arange(tensor_4x5)
-    var tensor_4 = LayoutTensor[
-        DType.float32, Layout.row_major(4), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_4_storage = InlineArray[Float32, 4](uninitialized=True)
+    var tensor_4 = LayoutTensor[DType.float32, Layout.row_major(4)](
+        tensor_4_storage
+    )
     arange(tensor_4)
-    tensor_4 = tensor_4 + 1
+    tensor_4 += 1
     # CHECK: -1.0 0.0 1.0 2.0 3.0
     # CHECK: 3.0 4.0 5.0 6.0 7.0
     # CHECK: 7.0 8.0 9.0 10.0 11.0

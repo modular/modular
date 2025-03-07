@@ -120,12 +120,16 @@ fn and_all[rank: Int](mask: StaticTuple[Bool, rank]) -> Bool:
 fn test_copy_from_nd_buffer_scalars():
     print("== test_copy_from_nd_buffer_scalars")
 
-    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    var buff_stack = InlineArray[Float32, 64](uninitialized=True)
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)](
+        buff_stack.unsafe_ptr()
+    )
     linspace_fill(buff)
 
-    var layout_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
-    ].stack_allocation().fill(0)
+    var tensor_stack = InlineArray[Float32, 64](uninitialized=True)
+    var layout_tensor = LayoutTensor[DType.float32, Layout.row_major(8, 8)](
+        tensor_stack
+    ).fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
     for th_id in range(16):
@@ -150,12 +154,16 @@ fn test_copy_from_nd_buffer_scalars():
 fn test_copy_to_nd_buffer_scalars():
     print("== test_copy_to_nd_buffer_scalars")
 
-    var layout_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_stack = InlineArray[Float32, 64](uninitialized=True)
+    var layout_tensor = LayoutTensor[DType.float32, Layout.row_major(8, 8)](
+        tensor_stack
+    )
     arange(layout_tensor)
 
-    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    var buff_stack = InlineArray[Float32, 64](uninitialized=True)
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)](
+        buff_stack.unsafe_ptr()
+    )
     buff.zero()
 
     alias threads_layout = Layout.row_major(4, 4)
@@ -185,9 +193,10 @@ fn test_copy_from_nd_buffer_vectors():
     var buff = NDBuffer[DType.float32, 2, DimList(16, 16)](buff_storage)
     linspace_fill(buff)
 
-    var layout_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(16, 16), MutableAnyOrigin
-    ].stack_allocation().fill(0)
+    var tensor_stack = InlineArray[Float32, 16 * 16](uninitialized=True)
+    var layout_tensor = LayoutTensor[DType.float32, Layout.row_major(16, 16)](
+        tensor_stack
+    ).fill(0)
 
     alias threads_layout = Layout.row_major(4, 4)
     for th_id in range(16):
@@ -238,9 +247,10 @@ fn test_copy_from_nd_buffer_vectors():
 fn test_copy_to_nd_buffer_vectors():
     print("== test_copy_to_nd_buffer_vectors")
 
-    var layout_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(16, 16), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_stack = InlineArray[Float32, 16 * 16](uninitialized=True)
+    var layout_tensor = LayoutTensor[DType.float32, Layout.row_major(16, 16)](
+        tensor_stack
+    )
     arange(layout_tensor)
 
     var buff_storage = UnsafePointer[Float32].alloc(16 * 16)
@@ -306,7 +316,10 @@ fn test_copy_to_nd_buffer_vectors():
 # CHECK-LABEL: test_distribute
 fn test_distribute():
     print("== test_distribute")
-    var buff = NDBuffer[DType.float32, 2, DimList(8, 4)].stack_allocation()
+    var buff_storage = InlineArray[Float32, 8 * 4](uninitialized=True)
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 4)](
+        buff_storage.unsafe_ptr()
+    )
     linspace_fill(buff)
 
     # CHECK: ----fragments-data[ 0 ]----
@@ -341,7 +354,10 @@ fn test_distribute():
 # CHECK-LABEL: test_tile_and_distribute
 fn test_tile_and_distribute():
     print("== test_tile_and_distribute")
-    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    var buff_storage = InlineArray[Float32, 8 * 8](uninitialized=True)
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)](
+        buff_storage.unsafe_ptr()
+    )
     linspace_fill(buff)
 
     # CHECK: ----tile-data[ 0 , 0 ]----
@@ -431,7 +447,10 @@ fn test_tile_and_distribute():
 # CHECK-LABEL: test_1d_2d_vectorize
 fn test_1d_2d_vectorize():
     print("== test_1d_2d_vectorize")
-    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    var buff_storage = InlineArray[Float32, 8 * 8](uninitialized=True)
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)](
+        buff_storage.unsafe_ptr()
+    )
     linspace_fill(buff)
 
     var buff_v_1_and_element_layout = vectorize[1, 4](buff)
@@ -462,7 +481,10 @@ fn test_1d_2d_vectorize():
 # CHECK-LABEL: test_vectorize_and_distribute
 fn test_vectorize_and_distribute():
     print("== test_vectorize_and_distribute")
-    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    var buff_storage = InlineArray[Float32, 8 * 8](uninitialized=True)
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)](
+        buff_storage.unsafe_ptr()
+    )
     linspace_fill(buff)
 
     var buff_v_1_and_element_layout = vectorize[1, 4](buff)
@@ -511,9 +533,10 @@ fn test_copy_nd_buffer_to_layout_tensor():
 
     var buff_v_1_1_and_element_layout = vectorize[1, 1](buff)
 
-    var tensor_1_1 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
-    ].stack_allocation().fill(0)
+    var tensor_1_1_storage = InlineArray[Float32, 8 * 8](uninitialized=True)
+    var tensor_1_1 = LayoutTensor[DType.float32, Layout.row_major(8, 8)](
+        tensor_1_1_storage
+    ).fill(0)
 
     _copy_nd_buffer_to_layout_tensor(
         tensor_1_1,
@@ -532,9 +555,10 @@ fn test_copy_nd_buffer_to_layout_tensor():
 
     var buff_v_1_4_and_element_layout = vectorize[1, 4](buff)
 
-    var tensor_4_1 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
-    ].stack_allocation().vectorize[1, 4]().fill(0)
+    var tensor_4_1_storage = InlineArray[Float32, 8 * 8](uninitialized=True)
+    var tensor_4_1 = LayoutTensor[DType.float32, Layout.row_major(8, 8)](
+        tensor_4_1_storage
+    ).vectorize[1, 4]().fill(0)
 
     _copy_nd_buffer_to_layout_tensor(
         tensor_4_1,
@@ -553,9 +577,10 @@ fn test_copy_nd_buffer_to_layout_tensor():
     print(tensor_4_1)
 
     var buff_v_4_4_and_element_layout = vectorize[4, 4](buff)
-    var tensor_4_4 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
-    ].stack_allocation().vectorize[4, 4]().fill(0)
+    var tensor_4_4_storage = InlineArray[Float32, 8 * 8](uninitialized=True)
+    var tensor_4_4 = LayoutTensor[DType.float32, Layout.row_major(8, 8)](
+        tensor_4_4_storage
+    ).vectorize[4, 4]().fill(0)
 
     _copy_nd_buffer_to_layout_tensor(
         tensor_4_4,
@@ -573,12 +598,16 @@ fn test_copy_nd_buffer_to_layout_tensor():
 # CHECK-LABEL: test_copy_layout_tensor_to_buffer
 fn test_copy_layout_tensor_to_buffer():
     print("== test_copy_layout_tensor_to_buffer")
-    var tensor = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_stack = InlineArray[Float32, 8 * 8](uninitialized=True)
+    var tensor = LayoutTensor[DType.float32, Layout.row_major(8, 8)](
+        tensor_stack
+    )
     arange(tensor)
 
-    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    var buff_storage = InlineArray[Float32, 8 * 8](uninitialized=True)
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)](
+        buff_storage.unsafe_ptr()
+    )
     buff.zero()
 
     var buff_v_1_1_and_element_layout = vectorize[1, 1](buff)
@@ -1133,12 +1162,16 @@ fn test_composed_tile_vectorize_distribute_small():
 # CHECK-LABLE: test_copy_nd_buffer_to_layout_tensor_masked_scalar
 fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
     print("==test_copy_nd_buffer_to_layout_tensor_masked_scalar")
-    var buff_7x9 = NDBuffer[DType.float32, 2, DimList(7, 9)].stack_allocation()
+    var buff_stack = InlineArray[Float32, 7 * 9](uninitialized=True)
+    var buff_7x9 = NDBuffer[DType.float32, 2, DimList(7, 9)](
+        buff_stack.unsafe_ptr()
+    )
     linspace_fill(buff_7x9)
 
-    var dst_tensor_8x12 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 12), MutableAnyOrigin
-    ].stack_allocation().fill(0)
+    var tensor_stack = InlineArray[Float32, 8 * 12](uninitialized=True)
+    var dst_tensor_8x12 = LayoutTensor[DType.float32, Layout.row_major(8, 12)](
+        tensor_stack
+    ).fill(0)
 
     # CHECK: --tile[ 0 , 0 ]---
     # CHECK: 0.0 1.0 2.0 3.0
@@ -1208,12 +1241,16 @@ fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
 # CHECK-LABEL: test_copy_from_nd_buffer_masked_scalar
 fn test_copy_from_nd_buffer_masked_scalar():
     print("test_copy_from_nd_buffer_masked_scalar")
-    var buff_7x9 = NDBuffer[DType.float32, 2, DimList(7, 9)].stack_allocation()
+    var buff_stack = InlineArray[Float32, 7 * 9](uninitialized=True)
+    var buff_7x9 = NDBuffer[DType.float32, 2, DimList(7, 9)](
+        buff_stack.unsafe_ptr()
+    )
     linspace_fill(buff_7x9)
 
-    var dst_tensor_8x12 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 12), MutableAnyOrigin
-    ].stack_allocation().fill(0)
+    var tensor_stack = InlineArray[Float32, 8 * 12](uninitialized=True)
+    var dst_tensor_8x12 = LayoutTensor[DType.float32, Layout.row_major(8, 12)](
+        tensor_stack
+    ).fill(0)
 
     # CHECK: --tile[ 0 , 0 ]---
     # CHECK: 0.0 1.0 2.0 3.0
@@ -1273,12 +1310,16 @@ fn test_copy_from_nd_buffer_masked_scalar():
 fn test_copy_to_nd_buffer_masked_scalar():
     print("== test_copy_to_nd_buffer_masked_scalar")
 
-    var buff_7x9 = NDBuffer[DType.float32, 2, DimList(7, 9)].stack_allocation()
+    var buff_stack = InlineArray[Float32, 7 * 9](uninitialized=True)
+    var buff_7x9 = NDBuffer[DType.float32, 2, DimList(7, 9)](
+        buff_stack.unsafe_ptr()
+    )
     buff_7x9.zero()
 
-    var dst_tensor_8x12 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 12), MutableAnyOrigin
-    ].stack_allocation()
+    var tensor_stack = InlineArray[Float32, 8 * 12](uninitialized=True)
+    var dst_tensor_8x12 = LayoutTensor[DType.float32, Layout.row_major(8, 12)](
+        tensor_stack
+    )
     arange(dst_tensor_8x12)
 
     for tile_m in range(2):
