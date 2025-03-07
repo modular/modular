@@ -57,6 +57,7 @@ from .scatter import masked_scatter
 from .select import select
 from .shape_to_tensor import shape_to_tensor
 from .slice_tensor import slice_tensor
+from .split import split
 from .squeeze import squeeze
 from .stack import stack
 from .tile import tile
