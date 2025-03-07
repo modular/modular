@@ -403,9 +403,9 @@ class PagedKVCacheManager(KVCacheManager):
         # 1 = value
         kv_dim = 2
         return [
-            num_layers,
-            kv_dim,
             "total_num_pages" if is_parameterized else total_num_pages,
+            kv_dim,
+            num_layers,
             page_size,
             params.n_kv_heads_per_device,
             params.head_dim,
