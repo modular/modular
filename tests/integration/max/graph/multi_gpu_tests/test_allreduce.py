@@ -25,24 +25,19 @@ from max.graph import (
 )
 from max.pipelines.nn import Allreduce, LayerV2, Signals
 
+M = 512
+N = 1024
+
 
 def allreduce_graph(signals: Signals) -> Graph:
     devices = signals.devices
     with Graph(
         "allreduce",
         input_types=[
-            TensorType(
-                dtype=DType.float32, shape=[30, 1000], device=devices[0]
-            ),
-            TensorType(
-                dtype=DType.float32, shape=[30, 1000], device=devices[1]
-            ),
-            TensorType(
-                dtype=DType.float32, shape=[30, 1000], device=devices[2]
-            ),
-            TensorType(
-                dtype=DType.float32, shape=[30, 1000], device=devices[3]
-            ),
+            TensorType(dtype=DType.float32, shape=[M, N], device=devices[0]),
+            TensorType(dtype=DType.float32, shape=[M, N], device=devices[1]),
+            TensorType(dtype=DType.float32, shape=[M, N], device=devices[2]),
+            TensorType(dtype=DType.float32, shape=[M, N], device=devices[3]),
             *signals.input_types(),
         ],
     ) as graph:
@@ -84,7 +79,7 @@ def test_allreduce_execution() -> None:
         devices=[host, device0, device1, device2, device3]
     )
     compiled = session.load(graph)
-    a_np = np.ones((30, 1000)).astype(np.float32)
+    a_np = np.ones((M, N)).astype(np.float32)
     out_np = a_np * 10
     a = Tensor.from_numpy(a_np).to(device0)
     b = Tensor.from_numpy(a_np).to(device1)
@@ -179,9 +174,6 @@ def test_allreduce_epilogue_fusion(
     layer_cls: type[AllreduceAddBase], num_gpus: int
 ) -> None:
     """Tests that an elementwise add correctly follows an allreduce operation."""
-    M = 30
-    N = 1000
-
     graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
     signals = Signals(devices=graph_devices)
 
