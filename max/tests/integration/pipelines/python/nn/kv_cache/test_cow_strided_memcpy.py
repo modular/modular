@@ -71,8 +71,8 @@ def cow_strided_memcpy_reference(
         block_dst_idx = block_dst_idx_tensor[batch_idx]
         block_src_idx = block_src_idx_tensor[batch_idx]
         num_tokens = num_tokens_tensor[batch_idx]
-        blocks[:, :, block_dst_idx, :num_tokens, :, :] = blocks[
-            :, :, block_src_idx, :num_tokens, :, :
+        blocks[block_dst_idx, :, :, :num_tokens, :, :] = blocks[
+            block_src_idx, :, :, :num_tokens, :, :
         ]
 
 
