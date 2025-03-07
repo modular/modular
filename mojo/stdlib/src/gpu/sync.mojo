@@ -35,6 +35,17 @@ alias _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
 
 
 @always_inline("nodebug")
+fn named_barrier[num_threads: Int32, id: Int32 = 0]():
+    constrained[id <= 16, "barrier id should not exceed 16"]()
+    constrained[
+        is_nvidia_gpu(), "named barrier is only supported by NVIDIA GPUs"
+    ]()
+    __mlir_op.`nvvm.barrier`[
+        _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1>}`
+    ](to_i32(id), to_i32(num_threads))
+
+
+@always_inline("nodebug")
 fn barrier():
     """Performs a synchronization barrier at the block level.
 
