@@ -75,7 +75,7 @@ def generate_max_outputs(
     session.set_debug_print_options(style=PrintStyle.COMPACT)
     graph = Graph(
         "YarnRope",
-        YarnRotaryEmbedding(64),
+        YarnRotaryEmbedding(config.qk_rope_head_dim),
         input_types=(
             TensorType(
                 DType.bfloat16,
