@@ -49,12 +49,3 @@ from .anytensor import AnyMemory, AnyMojoValue, AnyTensor
 from .device import Device, cpu
 from .device_memory import DeviceMemory, DeviceTensor
 from .tensor import Tensor
-
-
-# TODO(GEX-1891): Remove deprecated legacy names for Device creation
-@deprecated("Please use the modern factory API accelerator().")
-alias accelerator_device = accelerator
-
-
-@deprecated("Please use the modern factory API cpu().")
-alias cpu_device = cpu
