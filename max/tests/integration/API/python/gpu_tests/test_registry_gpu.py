@@ -174,6 +174,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
+        kv_cache_config: KVCacheConfig,
     ) -> KVCacheParams:
         num_kv_heads = cls._get_num_kv_heads(huggingface_config)
         hidden_size = cls._get_hidden_size(huggingface_config)
@@ -182,9 +183,9 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             dtype=pipeline_config.cache_dtype,
             n_kv_heads=num_kv_heads,
             head_dim=hidden_size // num_kv_heads,
-            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
-            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
+            cache_strategy=kv_cache_config.cache_strategy,
+            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+            page_size=kv_cache_config.kv_cache_page_size,
             n_devices=n_devices,
         )
 
@@ -221,6 +222,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         available_cache_memory: int | None,
         devices: list[Device],
         huggingface_config: AutoConfig,
+        kv_cache_config: KVCacheConfig,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         assert available_cache_memory is not None
@@ -229,7 +231,10 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
-                pipeline_config, huggingface_config, n_devices=len(devices)
+                pipeline_config,
+                huggingface_config,
+                n_devices=len(devices),
+                kv_cache_config=kv_cache_config,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=pipeline_config.max_length,

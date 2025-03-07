@@ -13,6 +13,7 @@ from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines import (
+    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -47,6 +48,7 @@ class MockPipelineModel(PipelineModel):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
+        kv_cache_config: KVCacheConfig,
         devices: list[Device] = [],
     ) -> None:
         self.pipeline_config = pipeline_config
@@ -54,6 +56,7 @@ class MockPipelineModel(PipelineModel):
         self.vocab_size = pipeline_config.vocab_size  # type: ignore
         self.eos_token = pipeline_config.eos_token  # type: ignore
         self.encoding = encoding
+        self.kv_cache_config = kv_cache_config
 
         if not devices:
             self.devices = [CPU()]
@@ -88,6 +91,7 @@ class MockPipelineModel(PipelineModel):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
+        kv_cache_config: KVCacheConfig,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=DType.float32,
