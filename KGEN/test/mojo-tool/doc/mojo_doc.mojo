@@ -282,6 +282,31 @@ fn fn_with_params_and_return(arg: Int) -> Int:
     return arg
 
 
+# CHECK: "kind": "function",
+# CHECK: "name": "fn_with_fn_param_and_arg",
+# CHECK: "overloads":
+# CHECK:     "args":
+# CHECK:         "name": "arg_fn"
+# CHECK:         "type": "fn(S, S) capturing -> Bool"
+# CHECK:     "parameters":
+# CHECK:         "name": "T"
+# CHECK:         "type": "AnyType"
+# CHECK:         "name": "param_fn"
+# CHECK:         "type": "fn(T, T) capturing -> Bool"
+# CHECK:         "default": "T"
+# CHECK:         "name": "S"
+# CHECK:         "type": "AnyType"
+# CHECK:     "signature": "fn_with_fn_param_and_arg[: origin.set, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T](arg_fn: fn(S, S) capturing -> Bool) -> S"
+
+
+fn fn_with_fn_param_and_arg[
+    T: AnyType,
+    param_fn: fn (T, T) capturing [_] -> Bool,
+    S: AnyType = T,
+](arg_fn: fn (S, S) capturing [_] -> Bool) -> S:
+    pass
+
+
 @value
 struct MyStruct[x: Int]:
     pass
@@ -756,6 +781,27 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
 
 
 struct StructWithDefault[a: Int = 1]:
+    pass
+
+
+# CHECK:  "kind": "struct",
+# CHECK:  "name": "StructWithFnParam",
+# CHECK:  "parameters":
+# CHECK:      "name": "T"
+# CHECK:      "type": "AnyType"
+# CHECK:      "name": "param_fn"
+# CHECK:      "type": "fn(T, T) capturing -> Bool"
+# CHECK:      "default": "T",
+# CHECK:      "name": "S"
+# CHECK:      "type": "AnyType"
+# CHECK: "signature": "struct StructWithFnParam[__origins__: origin.set, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
+
+
+struct StructWithFnParam[
+    T: AnyType,
+    param_fn: fn (T, T) capturing [_] -> Bool,
+    S: AnyType = T,
+]:
     pass
 
 

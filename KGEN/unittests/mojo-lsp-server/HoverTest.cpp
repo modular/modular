@@ -673,7 +673,7 @@ fn fn2[f: fn [dt: DType, dt2: Int](arg1: Scalar[dt], arg2: Int) -> None]():
       .hover(doc, *doc.findFirstPos("foo"),
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(argument) foo: SIMD[$0, 1]
+(argument) foo: SIMD[p1, 1]
 ```)");
              })
       .hover(doc, *doc.findFirstPos("arg2"),
