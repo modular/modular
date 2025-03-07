@@ -7343,7 +7343,7 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
     ](
         blocks: InputTensor[type=type, rank=6],
         block_dst_idx_tensor: InputTensor[type = DType.uint32, rank=1],
-        block_src_ids_tensor: InputTensor[type = DType.uint32, rank=1],
+        block_src_idx_tensor: InputTensor[type = DType.uint32, rank=1],
         num_tokens_tensor: InputTensor[type = DType.uint32, rank=1],
         max_num_tokens_scalar: Scalar[DType.uint32],
         ctx: DeviceContextPtr,
@@ -7355,8 +7355,8 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
             "Incorrect batch dimension for block_dst_idx_tensor",
         )
         debug_assert(
-            block_src_ids_tensor.dim_size[0]() == batch_dim,
-            "Incorrect batch dimension for block_src_ids_tensor",
+            block_src_idx_tensor.dim_size[0]() == batch_dim,
+            "Incorrect batch dimension for block_src_idx_tensor",
         )
 
         var shape = blocks.shape()
@@ -7396,7 +7396,7 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
             var head_idx = Int(index[5])
 
             # Read memcpy inputs for the given batch
-            var block_src_idx = Int(block_src_ids_tensor[batch_idx])
+            var block_src_idx = Int(block_src_idx_tensor[batch_idx])
             var block_dst_idx = Int(block_dst_idx_tensor[batch_idx])
             var num_tokens = Int(num_tokens_tensor[batch_idx])
 
