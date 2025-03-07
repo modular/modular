@@ -156,8 +156,9 @@ def main(
         nonlocal any_failed
         if isinstance(pipeline_value, (int, float)):
             if pipeline_value != torch_value:
+                pf = "⚠️" if description.startswith("'next_token'") else ""
                 print(
-                    f"Got mismatching {description}: {pipeline_value} !="
+                    f"{pf}Got mismatching {description}: {pipeline_value} !="
                     f" {torch_value}"
                 )
             return
