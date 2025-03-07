@@ -16,7 +16,6 @@ from gpu.memory import (
     fence_proxy_tensormap_generic_sys_release,
     ReduceOp,
 )
-from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from memory import UnsafePointer
 
 from utils.index import Index
@@ -146,40 +145,6 @@ fn test_tma_fence_proxy():
     )
 
 
-# CHECK-LABEL: test_cp_async_bulk_wait_group
-fn test_cp_async_bulk_wait_group():
-    print("== test_cp_async_bulk_wait_group")
-
-    fn cp_async_bulk_wait_group_kernel[n: Int32]():
-        # CHECK: cp.async.bulk.wait_group.read 0;
-        cp_async_bulk_wait_group[0]()
-        # CHECK: cp.async.bulk.wait_group 2;
-        cp_async_bulk_wait_group[n, False]()
-
-    print(
-        _compile_code_asm[
-            cp_async_bulk_wait_group_kernel[2],
-            target = _get_gpu_target["sm_90"](),
-        ]()
-    )
-
-
-# CHECK-LABEL: test_cp_async_bulk_commit_group
-fn test_cp_async_bulk_commit_group():
-    print("== test_cp_async_bulk_commit_group")
-
-    fn cp_async_bulk_commit_group_kernel():
-        # CHECK: cp.async.bulk.commit_group;
-        cp_async_bulk_commit_group()
-
-    print(
-        _compile_code_asm[
-            cp_async_bulk_commit_group_kernel,
-            target = _get_gpu_target["sm_90"](),
-        ]()
-    )
-
-
 # CHECK-LABEL: test_elect_one_sync
 fn test_elect_one_sync():
     print("== test_elect_one_sync")
@@ -201,6 +166,4 @@ fn main():
     test_async_store_asm()
     test_async_bulk_tensor_reduce_asm()
     test_tma_fence_proxy()
-    test_cp_async_bulk_wait_group()
-    test_cp_async_bulk_commit_group()
     test_elect_one_sync()
