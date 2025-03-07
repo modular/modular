@@ -23,7 +23,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.pipelines.nn import LayerV2, Signals
+from max.pipelines.nn import Allreduce, LayerV2, Signals
 
 
 def allreduce_graph(signals: Signals) -> Graph:
@@ -54,10 +54,13 @@ def allreduce_graph(signals: Signals) -> Graph:
         add1 = graph.inputs[1] * 2
         add2 = graph.inputs[2] * 3
         add3 = graph.inputs[3] * 4
-        allreduce_outputs = ops.allreduce.sum(
-            inputs=[add0, add1, add2, add3],
-            signal_buffers=[inp.buffer for inp in graph.inputs[4:]],
+
+        allreduce = Allreduce(num_accelerators=len(devices))
+        allreduce_outputs = allreduce(
+            [add0, add1, add2, add3],
+            [inp.buffer for inp in graph.inputs[4:]],
         )
+
         graph.output(
             allreduce_outputs[0],
             allreduce_outputs[1],
@@ -143,6 +146,10 @@ class AllreduceAddNaive(AllreduceAddBase):
 class AllreduceAdd(AllreduceAddBase):
     """A fused allreduce with an elementwise add."""
 
+    def __init__(self, num_devices: int) -> None:
+        super().__init__(num_devices)
+        self.allreduce = Allreduce(num_accelerators=num_devices)
+
     def __call__(
         self,
         *args: TensorValue | BufferValue,
@@ -155,10 +162,15 @@ class AllreduceAdd(AllreduceAddBase):
         ]
 
         # Fused Mojo kernel allreduce implementation.
-        results = ops.allreduce.sum(
-            inputs=inputs, signal_buffers=signal_buffers
-        )
-        return [x + 42 for x in results]
+        results = self.allreduce(inputs, signal_buffers)
+
+        biases = [
+            ops.constant(42, dtype=DType.float32).to(DeviceRef.GPU(id))
+            for id in range(self.num_devices)
+        ]
+
+        # Elementwise add that should fuse into allreduce's epilogue.
+        return [x + y for x, y in zip(results, biases)]
 
 
 @pytest.mark.parametrize("layer_cls", [AllreduceAdd, AllreduceAddNaive])
