@@ -27,7 +27,8 @@ def test_tanh_tfvals_fp32():
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
-    var x = NDBuffer[dtype, 1, 4].stack_allocation()
+    var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var x = NDBuffer[dtype, 1, 4](x_stack.unsafe_ptr())
     x.store[width=4](
         0,
         SIMD[dtype, 4](
@@ -38,14 +39,16 @@ def test_tanh_tfvals_fp32():
         ),
     )
 
-    var y = NDBuffer[dtype, 1, 4].stack_allocation()
+    var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var y = NDBuffer[dtype, 1, 4](y_stack.unsafe_ptr())
     for i in range(4):
         y[i] = tanh(x[i])
 
     #################################################
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float32(x)))`
-    var tfvals_fp32 = NDBuffer[dtype, 1, 4].stack_allocation()
+    var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var tfvals_fp32 = NDBuffer[dtype, 1, 4](tfvals_stack.unsafe_ptr())
     tfvals_fp32.store[width=4](
         0, SIMD[dtype, 4](-0.850603521, -1, -1, -0.612388909)
     )
@@ -65,7 +68,8 @@ def test_tanh_tfvals_fp64():
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
-    var x = NDBuffer[dtype, 1, 4].stack_allocation()
+    var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var x = NDBuffer[dtype, 1, 4](x_stack.unsafe_ptr())
     x.store[width=4](
         0,
         SIMD[dtype, 4](
@@ -76,14 +80,16 @@ def test_tanh_tfvals_fp64():
         ),
     )
 
-    var y = NDBuffer[dtype, 1, 4].stack_allocation()
+    var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var y = NDBuffer[dtype, 1, 4](y_stack.unsafe_ptr())
     for i in range(4):
         y[i] = tanh(x[i])
 
     #################################################
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float64(x)))`
-    var tfvals_fp64 = NDBuffer[dtype, 1, 4].stack_allocation()
+    var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
+    var tfvals_fp64 = NDBuffer[dtype, 1, 4](tfvals_stack.unsafe_ptr())
     tfvals_fp64.store[width=4](
         0,
         SIMD[dtype, 4](
