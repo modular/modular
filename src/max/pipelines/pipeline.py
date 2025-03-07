@@ -40,7 +40,7 @@ from max.pipelines.kv_cache import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 
-from .config import PipelineConfig, SupportedEncoding
+from .config import KVCacheConfig, PipelineConfig, SupportedEncoding
 from .context import InputContext
 from .interfaces import (
     LogProbabilities,
@@ -152,15 +152,17 @@ class PipelineModel(ABC, Generic[T]):
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
         self.encoding = encoding
         self.devices = devices
+        self.kv_cache_config = kv_cache_config
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
-                session, pipeline_config.kv_cache_config._available_cache_memory
+                session, self.kv_cache_config._available_cache_memory
             )
 
     @property
@@ -205,6 +207,7 @@ class PipelineModel(ABC, Generic[T]):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
+        kv_cache_config: KVCacheConfig,
     ) -> KVCacheParams:
         """Returns the KV cache params for the pipeline model."""
         ...
@@ -222,6 +225,7 @@ class PipelineModel(ABC, Generic[T]):
         available_cache_memory: int,
         huggingface_config: AutoConfig,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> int:
         """Returns the estimated optimal batch size to run the model
         given current memory constraints."""
@@ -242,6 +246,7 @@ class PipelineModel(ABC, Generic[T]):
             pipeline_config,
             huggingface_config=huggingface_config,
             n_devices=len(devices),
+            kv_cache_config=kv_cache_config,
         )
         inferred_batch_size = infer_optimal_batch_size(
             params=kv_params,
@@ -377,6 +382,7 @@ class KVCacheMixin(Protocol):
         available_cache_memory: int,
         devices: list[Device],
         huggingface_config: AutoConfig,
+        kv_cache_config: KVCacheConfig,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         ...
@@ -455,6 +461,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             huggingface_config=self.huggingface_config,
             encoding=self._pipeline_config.quantization_encoding,
             devices=self._devices,
+            kv_cache_config=self._pipeline_config.kv_cache_config,
         )
 
         # Load sampler.

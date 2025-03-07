@@ -26,6 +26,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
 from max.pipelines import (
+    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -75,9 +76,15 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> None:
         super().__init__(
-            pipeline_config, session, huggingface_config, encoding, devices
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
         )
         self.model = self.load_model(session)
 
@@ -87,6 +94,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
+        kv_cache_config: KVCacheConfig,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=pipeline_config.cache_dtype,
@@ -95,9 +103,9 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
                 huggingface_config.hidden_size
                 // huggingface_config.num_attention_heads
             ),
-            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
+            cache_strategy=kv_cache_config.cache_strategy,
             n_devices=n_devices,
-            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
+            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
         )
 
     @classmethod

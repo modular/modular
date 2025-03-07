@@ -28,6 +28,7 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig, AutoTokenizer
 
 from .config import (
+    KVCacheConfig,
     PipelineConfig,
     PipelineEngine,
     RopeType,
@@ -537,6 +538,7 @@ class PipelineRegistry:
                 available_kv_cache_memory,
                 huggingface_config=huggingface_config,
                 devices=devices,
+                kv_cache_config=pipeline_config.kv_cache_config,
             )
 
         actual_kv_cache_size = self._calculate_kv_cache_size(
@@ -545,6 +547,7 @@ class PipelineRegistry:
             available_kv_cache_memory,
             huggingface_config,
             devices=devices,
+            kv_cache_config=pipeline_config.kv_cache_config,
         )
 
         pipeline_config.kv_cache_config._available_cache_memory = (
@@ -581,6 +584,7 @@ class PipelineRegistry:
                     available_kv_cache_memory,
                     huggingface_config,
                     devices=devices,
+                    kv_cache_config=pipeline_config.kv_cache_config,
                 )
                 total_size = model_weights_size + actual_kv_cache_size
 
@@ -755,6 +759,7 @@ class PipelineRegistry:
                     available_kv_cache_memory,
                     huggingface_config,
                     devices=devices,
+                    kv_cache_config=pipeline_config.kv_cache_config,
                 )
 
             kv_cache_size = self._calculate_kv_cache_size(
@@ -763,6 +768,7 @@ class PipelineRegistry:
                 available_kv_cache_memory,
                 huggingface_config,
                 devices=devices,
+                kv_cache_config=pipeline_config.kv_cache_config,
             )
 
             if lower > upper:
@@ -819,6 +825,7 @@ class PipelineRegistry:
                 available_kv_cache_memory,
                 huggingface_config,
                 devices=devices,
+                kv_cache_config=pipeline_config.kv_cache_config,
             )
 
             if lower > upper:
@@ -842,6 +849,7 @@ class PipelineRegistry:
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> int:
         """Calculate the KV cache size for the current configuration."""
         if issubclass(model_cls, KVCacheMixin):
@@ -850,6 +858,7 @@ class PipelineRegistry:
                 available_cache_memory=available_kv_cache_memory,
                 devices=devices,
                 huggingface_config=huggingface_config,
+                kv_cache_config=kv_cache_config,
             )
         return 0
 
@@ -1012,12 +1021,14 @@ class PipelineRegistry:
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> int:
         return model_cls.infer_optimal_batch_size(
             pipeline_config,
             available_kv_cache_memory,
             huggingface_config=huggingface_config,
             devices=devices,
+            kv_cache_config=kv_cache_config,
         )
 
     def _load_logging_message(

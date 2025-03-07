@@ -19,6 +19,7 @@ import time
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
 from max.pipelines import (
+    KVCacheConfig,
     ModelInputs,
     PipelineConfig,
     PipelineModel,
@@ -58,9 +59,15 @@ class Whisper(PipelineModel):
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> None:
         super().__init__(
-            pipeline_config, session, huggingface_config, encoding, devices
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
         )
         self.model = self.load_model(session)
 

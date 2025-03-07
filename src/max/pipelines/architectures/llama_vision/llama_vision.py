@@ -27,6 +27,7 @@ from max.engine import InferenceSession, Model
 from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
 from max.graph.weights import Weights
 from max.pipelines import (
+    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -682,6 +683,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
         self.vision_config = huggingface_config.vision_config
@@ -692,7 +694,12 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self.language_graph_input_size = -1
 
         super().__init__(
-            pipeline_config, session, huggingface_config, encoding, devices
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
@@ -822,6 +829,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                     self.pipeline_config,
                     huggingface_config=self.huggingface_config,
                     n_devices=len(self.devices),
+                    kv_cache_config=self.kv_cache_config,
                 ),
                 max_seq_len=self.calculate_max_seq_len(
                     self.pipeline_config,
@@ -915,10 +923,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
-        if (
-            self.pipeline_config.kv_cache_config.cache_strategy
-            != KVCacheStrategy.CONTINUOUS
-        ):
+        if self.kv_cache_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
             msg = "Llama Vision only supports continuous batching"
             raise ValueError(msg)
 
@@ -1080,6 +1085,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
+        kv_cache_config: KVCacheConfig,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=pipeline_config.cache_dtype,
@@ -1088,9 +1094,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 huggingface_config.text_config.hidden_size
                 // huggingface_config.text_config.num_attention_heads
             ),
-            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
-            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
+            page_size=kv_cache_config.kv_cache_page_size,
+            cache_strategy=kv_cache_config.cache_strategy,
+            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             n_devices=n_devices,
         )
 
@@ -1115,6 +1121,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 self.pipeline_config,
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             text_max_seq_len=self.calculate_max_seq_len(
@@ -1127,7 +1134,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             devices=self.devices,
             session=session,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
+            page_size=self.kv_cache_config.kv_cache_page_size,
         )
 
     @classmethod
@@ -1137,6 +1144,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         available_cache_memory: int,
         devices: list[Device],
         huggingface_config: AutoConfig,
+        kv_cache_config: KVCacheConfig,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         assert pipeline_config.max_batch_size is not None
@@ -1149,6 +1157,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
+                kv_cache_config=kv_cache_config,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -1171,6 +1180,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         available_cache_memory: int,
         huggingface_config: AutoConfig,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> int:
         if len(devices) == 1 and devices[0].is_host:
             return 1
@@ -1183,6 +1193,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
+                kv_cache_config=kv_cache_config,
             ),
             max_seq_len=cls.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config

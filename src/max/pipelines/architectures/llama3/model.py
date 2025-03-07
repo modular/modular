@@ -24,6 +24,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights
 from max.pipelines import (
+    KVCacheConfig,
     LogProbabilities,
     ModelInputs,
     ModelOutputs,
@@ -121,6 +122,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> None:
         """
         Args:
@@ -128,7 +130,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
             session: The container for the runtime for this model.
         """
         super().__init__(
-            pipeline_config, session, huggingface_config, encoding, devices
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
         )
         self.model = self.load_model(session)
 
@@ -156,6 +163,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
+        kv_cache_config: KVCacheConfig,
     ) -> KVCacheParams:
         return Llama3Config.get_kv_params(
             pipeline_config, huggingface_config, n_devices
@@ -177,7 +185,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
             copy_inputs_to_device=(
-                not self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque()
+                not self.kv_cache_config.cache_strategy.uses_opaque()
             ),
         )
 
@@ -245,7 +253,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Llama3Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
-        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
+        if self.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_initial_token_inputs(
                 context_batch, kv_cache_inputs
             )
@@ -280,7 +288,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         This should avoid any device synchronization or copy operations.
         """
         prev_model_inputs = cast(Llama3Inputs, prev_model_inputs)
-        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
+        if self.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_next_token_inputs(
                 next_tokens, prev_model_inputs
             )
@@ -307,6 +315,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 self.pipeline_config,
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -317,7 +326,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             ),
             devices=self.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
+            page_size=self.kv_cache_config.kv_cache_page_size,
             session=session,
         )
 
@@ -328,6 +337,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         available_cache_memory: int,
         devices: List[Device],
         huggingface_config: AutoConfig,
+        kv_cache_config: KVCacheConfig,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
@@ -335,6 +345,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
+                kv_cache_config=kv_cache_config,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -400,6 +411,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             self.pipeline_config,
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
+            kv_cache_config=self.kv_cache_config,
         )
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
@@ -515,7 +527,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 return graph
 
     def _build_graph(self, weights: Weights) -> Graph:
-        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
+        if self.kv_cache_config.cache_strategy.uses_opaque():
             return self._build_opaque_graph(weights)
 
         tokens_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
@@ -626,7 +638,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         ).to_numpy()
 
         sampled_tokens = next_tokens.to_numpy()
-        if self.pipeline_config.kv_cache_config.cache_strategy.uses_opaque():
+        if self.kv_cache_config.cache_strategy.uses_opaque():
             # Handle the ragged inputs
             tokens = cast(Tensor, llama3_inputs.tokens).to_numpy()
             input_row_offsets = cast(
@@ -698,7 +710,13 @@ class Llama3Model(LlamaModelBase):
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> None:
         super().__init__(
-            pipeline_config, session, huggingface_config, encoding, devices
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
         )

@@ -17,7 +17,7 @@ from typing import Literal
 
 from max.driver import Device
 from max.engine import InferenceSession
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
 from ..llama3.model import LlamaModelBase
@@ -36,7 +36,13 @@ class Phi3Model(LlamaModelBase):
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         device: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> None:
         super().__init__(
-            pipeline_config, session, huggingface_config, encoding, device
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            device,
+            kv_cache_config,
         )

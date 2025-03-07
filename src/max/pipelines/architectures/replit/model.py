@@ -24,6 +24,7 @@ from max.driver import Device, DeviceSpec, Tensor
 from max.engine import InferenceSession, Model
 from max.graph.weights import GGUFWeights
 from max.pipelines import (
+    KVCacheConfig,
     LogProbabilities,
     ModelInputs,
     ModelOutputs,
@@ -78,13 +79,19 @@ class ReplitModel(PipelineModel[TextContext]):
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         devices: list[Device],
+        kv_cache_config: KVCacheConfig,
     ) -> None:
         if pipeline_config.device_specs[0] == DeviceSpec.cpu():
             msg = "Replit currently only supported on gpu."
             raise ValueError(msg)
 
         super().__init__(
-            pipeline_config, session, huggingface_config, encoding, devices
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
         )
         self.model = self.load_model(session)
 
@@ -166,14 +173,15 @@ class ReplitModel(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
+        kv_cache_config: KVCacheConfig,
     ) -> KVCacheParams:
         return KVCacheParams(
             dtype=pipeline_config.cache_dtype,
             n_kv_heads=huggingface_config.attn_config["kv_n_heads"],
             head_dim=huggingface_config.d_model // huggingface_config.n_heads,
-            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
-            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
-            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
+            cache_strategy=kv_cache_config.cache_strategy,
+            page_size=kv_cache_config.kv_cache_page_size,
+            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             n_devices=n_devices,
         )
 
@@ -205,6 +213,7 @@ class ReplitModel(PipelineModel[TextContext]):
                 self.pipeline_config,
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -213,7 +222,7 @@ class ReplitModel(PipelineModel[TextContext]):
             num_layers=self.huggingface_config.n_layers,
             devices=self.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_config.kv_cache_page_size,
+            page_size=self.kv_cache_config.kv_cache_page_size,
             session=session,
         )
 
@@ -224,6 +233,7 @@ class ReplitModel(PipelineModel[TextContext]):
         available_cache_memory: int,
         devices: list[Device],
         huggingface_config: AutoConfig,
+        kv_cache_config: KVCacheConfig,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
@@ -231,6 +241,7 @@ class ReplitModel(PipelineModel[TextContext]):
                 pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
+                kv_cache_config=kv_cache_config,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -285,6 +296,7 @@ class ReplitModel(PipelineModel[TextContext]):
                     self.pipeline_config,
                     huggingface_config=self.huggingface_config,
                     n_devices=len(self.devices),
+                    kv_cache_config=self.kv_cache_config,
                 ),
                 kv_manager=self.kv_manager,
                 huggingface_config=self.huggingface_config,
