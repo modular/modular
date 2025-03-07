@@ -460,7 +460,6 @@ class MoEGate(nn.Module):
 
         if self.scoring_func == "softmax":
             scores = logits.softmax(dim=-1, dtype=torch.float32)
-
         else:
             raise NotImplementedError(
                 f"insupportable scoring function for MoE gating: {self.scoring_func}"

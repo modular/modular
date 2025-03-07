@@ -8,9 +8,8 @@ import pytest
 import torch
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Weight
+from max.graph import Graph, TensorType
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import MaxMoEGate
-from max.pipelines.nn import Linear
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import (
     DeepseekV2Config,
@@ -58,19 +57,13 @@ def generate_max_outputs(
     input_tensor: torch.Tensor,
     dummy_moe_weight: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    weights_registry = {}
-    weights_registry["gate_weight"] = dummy_moe_weight.to(torch.float32)
-
-    gate_weight = Weight(
-        name="gate_weight",
-        dtype=DType.float32,
-        shape=weights_registry["gate_weight"].shape,
-    )
-
+    state_dict = {"gate_score.weight": dummy_moe_weight.to(torch.float32)}
+    model = MaxMoEGate()
+    model.load_state_dict(state_dict)
     session = InferenceSession()
     graph = Graph(
         "MoEGate",
-        MaxMoEGate(Linear(gate_weight)),
+        model,
         input_types=(
             TensorType(
                 DType.bfloat16,
@@ -79,8 +72,7 @@ def generate_max_outputs(
         ),
     )
 
-    compiled = session.load(graph, weights_registry=weights_registry)
-
+    compiled = session.load(graph, weights_registry=model.state_dict())
     max_output = compiled.execute(input_tensor)
     max_topk_idxs = from_dlpack(max_output[0]).to(torch.bfloat16)
     max_topk_weights = from_dlpack(max_output[1]).to(torch.bfloat16)
