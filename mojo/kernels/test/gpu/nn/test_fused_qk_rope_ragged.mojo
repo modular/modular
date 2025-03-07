@@ -176,20 +176,19 @@ def execute_fused_qk_rope_ragged(
     # initialize our KVCache
     true_ce_kv_block_paged_host = HostNDBuffer[type, 6](
         IndexList[6](
-            num_layers,
-            2,
             num_paged_blocks,
+            2,
+            num_layers,
             page_size,
             kv_params.num_heads,
             kv_params.head_size,
         )
     )
-    # don't randomly initialize, we'll copy the output to this buffer after executing.
     mixed_ce_kv_block_paged_host = HostNDBuffer[type, 6](
         IndexList[6](
-            num_layers,
-            2,
             num_paged_blocks,
+            2,
+            num_layers,
             page_size,
             kv_params.num_heads,
             kv_params.head_size,

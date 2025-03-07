@@ -581,9 +581,9 @@ def execute_paged_fused_qkv_matmul[
 
     kv_block_host = HostNDBuffer[type, 6](
         IndexList[6](
-            num_layers,
-            2,
             num_paged_blocks,
+            2,
+            num_layers,
             page_size,
             kv_params.num_heads,
             kv_params.head_size,
