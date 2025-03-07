@@ -156,9 +156,9 @@ def execute_ragged_flash_attention[
 
     kv_block_paged = HostNDBuffer[type, 6](
         IndexList[6](
-            num_layers,
-            2,
             num_paged_blocks,
+            2,
+            num_layers,
             page_size,
             kv_params.num_heads,
             kv_params.head_size,
@@ -184,7 +184,7 @@ def execute_ragged_flash_attention[
             for kv_idx in range(2):
                 memcpy(
                     kv_block_paged.tensor._offset(
-                        IndexList[6](layer_idx, kv_idx, randval, 0, 0, 0)
+                        IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
                     ),
                     kv_block_continuous.tensor._offset(
                         IndexList[6](
