@@ -143,8 +143,7 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
     }
   }
 
-  if (!isKernel(func) && !isV1ShapeFunc(func) && !isDPSKernel(func) &&
-      !takesTensor)
+  if (!isKernel(func) && !isDPSKernel(func) && !takesTensor)
     return success();
 
   if (failed(checkByRefTensorArgs(func)))
