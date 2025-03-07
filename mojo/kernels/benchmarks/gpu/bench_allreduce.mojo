@@ -14,7 +14,7 @@ from sys import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
+from gpu.all_reduce import MAX_GPUS, Signal, all_reduce, can_enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from testing import assert_almost_equal
@@ -131,13 +131,41 @@ fn bench_reduce[
         # Ensure setup has propagated.
         list_of_ctx[i].synchronize()
 
+    # Copy-capture in registers since the lambda will be used on GPU.
+    var out_bufs_capture = StaticTuple[NDBuffer[type, rank], ngpus](
+        NDBuffer[type, rank]()
+    )
+
+    @parameter
+    for i in range(ngpus):
+        out_bufs_capture[i] = NDBuffer[type, rank](
+            out_bufs_list[i].unsafe_ptr(), DimList(length)
+        )
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_bufs_capture)
+    fn outputs_lambda[
+        input_index: Int,
+        _type: DType,
+        _rank: Int,
+        _width: Int,
+        *,
+        _alignment: Int,
+    ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+        out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
+            rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val)
+        )
+
     @parameter
     @always_inline
     fn bench_iter(mut b: Bencher) raises:
         @parameter
         @always_inline
         fn call_fn() raises:
-            all_reduce(list_of_ctx, in_bufs, out_bufs, rank_sigs)
+            all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+                list_of_ctx, in_bufs, out_bufs, rank_sigs
+            )
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
 
@@ -194,6 +222,11 @@ def main():
     var ctx = List[DeviceContext]()
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
+
+    if not can_enable_p2p(ctx):
+        # Don't benchmark the naive allreduce.
+        print("P2P not enabled, skipping benchmark.")
+        return
 
     # Generate descriptive test name.
     print(_get_test_str[dtype](num_gpus, num_bytes))
