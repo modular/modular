@@ -459,17 +459,96 @@ struct Scope:
     """System-wide scope. Memory operations ordered across the entire system."""
 
     fn __eq__(self, other: Self) -> Bool:
+        """Checks if two `Scope` instances are equal.
+
+        Uses pointer comparison for efficiency.
+
+        Args:
+            other: The other `Scope` instance to compare with.
+
+        Returns:
+            True if the instances are the same, False otherwise.
+        """
         return self is other
 
     fn __ne__(self, other: Self) -> Bool:
+        """Checks if two `Scope` instances are not equal.
+
+        Args:
+            other: The other `Scope` instance to compare with.
+
+        Returns:
+            True if the instances are different, False otherwise.
+        """
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
+        """Checks if two `Scope` instances have the same value.
+
+        Compares the underlying integer values.
+
+        Args:
+            other: The other `Scope` instance to compare with.
+
+        Returns:
+            True if the values are the same, False otherwise.
+        """
         return self._value == other._value
 
     fn __isnot__(self, other: Self) -> Bool:
+        """Checks if two `Scope` instances have different values.
+
+        Args:
+            other: The other `Scope` instance to compare with.
+
+        Returns:
+            True if the values are different, False otherwise.
+        """
         return not (self is other)
 
+    @no_inline
+    fn write_to[W: Writer](self, mut w: W):
+        """Writes the string representation of the scope to a writer.
+
+        Args:
+            w: The writer to write to.
+        """
+        if self is Self.NONE:
+            return w.write("none")
+        if self is Self.THREAD:
+            return w.write("thread")
+        if self is Self.WARP:
+            return w.write("warp")
+        if self is Self.BLOCK:
+            return w.write("block")
+        if self is Self.CLUSTER:
+            return w.write("cluster")
+        if self is Self.GPU:
+            return w.write("gpu")
+        if self is Self.SYSTEM:
+            return w.write("system")
+
+        return w.write("<<unknown scope>>")
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Returns the string representation of the memory scope.
+
+        Returns:
+            A string representation of the memory scope.
+        """
+        return String.write(self)
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Returns the string representation of the memory scope.
+
+        Returns:
+            A string representation of the memory scope.
+        """
+        return String("Scope(", self, ")")
+
+    @always_inline("nodebug")
     fn mnemonic(self) -> StringLiteral:
         """Returns the mnemonic string representation of the memory scope.
 
