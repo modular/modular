@@ -53,7 +53,23 @@ fn _align_down(value: Int, alignment: Int) -> Int:
 
 @always_inline
 fn _memcmp_impl_unconstrained[
-    type: DType
+    type: DType, //
+](
+    s1: UnsafePointer[Scalar[type], **_],
+    s2: UnsafePointer[Scalar[type], **_],
+    count: Int,
+) -> Int:
+    for i in range(count):
+        var s1i = s1[i]
+        var s2i = s2[i]
+        if s1i != s2i:
+            return 1 if s1i > s2i else -1
+    return 0
+
+
+@always_inline
+fn _memcmp_opt_impl_unconstrained[
+    type: DType, //
 ](
     s1: UnsafePointer[Scalar[type], **_],
     s2: UnsafePointer[Scalar[type], **_],
@@ -106,7 +122,10 @@ fn _memcmp_impl[
     count: Int,
 ) -> Int:
     constrained[type.is_integral(), "the input dtype must be integral"]()
-    return _memcmp_impl_unconstrained(s1, s2, count)
+    if is_compile_time():
+        return _memcmp_impl_unconstrained(s1, s2, count)
+    else:
+        return _memcmp_opt_impl_unconstrained(s1, s2, count)
 
 
 @always_inline
