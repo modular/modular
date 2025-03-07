@@ -13,6 +13,9 @@ from .driver import (
     DeviceSpec,
     accelerator_api,
     accelerator_count,
+    devices_exist,
+    load_devices,
+    scan_available_devices,
 )
 from .tensor import DLPackArray, MemMapTensor, Tensor
 
@@ -27,4 +30,7 @@ __all__ = [
     "DLPackArray",
     "MemMapTensor",
     "Tensor",
+    "load_devices",
+    "scan_available_devices",
+    "devices_exist",
 ]
