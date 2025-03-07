@@ -16,7 +16,6 @@ from max.driver import (
     DynamicTensor,
     ManagedTensorSlice,
     Tensor,
-    TensorSlice,
     cpu,
 )
 from max.tensor import Tensor as OldTensor
@@ -47,144 +46,6 @@ def test_tensor():
 
     assert_equal(tensor[0, 0], 0)
     assert_equal(tensor[1, 1], 3)
-
-
-def test_tensor_slice():
-    tensor = Tensor[DType.float32, 2](TensorShape(3, 3))
-
-    assert_equal(tensor.spec().rank, 2)
-    assert_equal(tensor.spec().type, DType.float32)
-
-    for i in range(3):
-        for j in range(3):
-            tensor[i, j] = i + j
-
-    # tensor
-    # 0 1 2
-    # 1 2 3
-    # 2 3 4
-
-    slice = tensor[0:2, :]
-
-    # slice
-    # 0 1 2
-    # 1 2 3
-
-    slice_spec = slice.spec()
-    assert_equal(slice_spec.rank(), 2)
-    assert_equal(slice_spec[0], 2)
-    assert_equal(slice_spec[1], 3)
-
-    assert_equal(slice[0, 0], 0)
-    assert_equal(slice[1, 2], 3)
-
-    slice = tensor[:]
-    slice_spec = slice.spec()
-    assert_equal(slice_spec[0], 3)
-    assert_equal(slice_spec[1], 3)
-    assert_equal(slice[2, 2], 4)
-
-    inner_slice = tensor[0:2, 1:2]
-
-    # inner_slice
-    # 1
-    # 2
-
-    inner_slice_spec = inner_slice.spec()
-    assert_equal(inner_slice_spec.rank(), 2)
-    assert_equal(inner_slice_spec[0], 2)
-    assert_equal(inner_slice_spec[1], 1)
-
-    assert_equal(inner_slice[0, 0], 1)
-    assert_equal(inner_slice[1, 0], 2)
-
-
-def test_slice_with_step():
-    tensor = Tensor[DType.float32, 1](
-        TensorShape(
-            18,
-        )
-    )
-
-    index = 0
-    for _ in range(3):
-        for j in range(6):
-            tensor[index] = j
-            index += 1
-
-    assert_equal(tensor[1], 1)
-
-    stepped_slice = tensor[0:18:3]
-    assert_equal(stepped_slice[1], 3)
-
-
-def test_2dslice_with_step():
-    tensor = Tensor[DType.float32, 2](TensorShape(10, 2))
-
-    val = 1
-    for i in range(10):
-        for j in range(2):
-            tensor[i, j] = val
-            val += 1
-
-    assert_equal(tensor[1, 0], 3)
-
-    stepped_slice = tensor[::2, :]
-    assert_equal(stepped_slice[1, 0], 5)
-
-
-def test_2dslice_with_step_row_column():
-    tensor = Tensor[DType.float32, 2](TensorShape(10, 10))
-
-    val = 1
-    for i in range(10):
-        for j in range(10):
-            tensor[i, j] = val
-            val += 1
-
-    assert_equal(tensor[1, 0], 11)
-    assert_equal(tensor[1, 1], 12)
-    assert_equal(tensor[2, 2], 23)
-
-    stepped_slice = tensor[1::2, 1::2]
-    assert_equal(stepped_slice[0, 0], 12)
-    assert_equal(stepped_slice[0, 1], 14)
-    assert_equal(stepped_slice[1, 1], 34)
-
-    var slice_spec = stepped_slice.spec()
-    assert_equal(slice_spec.rank(), 2)
-    assert_equal(slice_spec.dtype(), DType.float32)
-    assert_equal(slice_spec[0], 5)
-    assert_equal(slice_spec[1], 5)
-
-    var inner_slice = tensor[1::3, 1::3]
-    var inner_slice_spec = inner_slice.spec()
-    assert_equal(inner_slice_spec.rank(), 2)
-    assert_equal(inner_slice_spec.dtype(), DType.float32)
-    assert_equal(inner_slice_spec[0], 3)
-    assert_equal(inner_slice_spec[1], 3)
-    assert_equal(inner_slice[0, 0], 12)
-    assert_equal(inner_slice[1, 1], 45)
-
-
-def test_4dslice_with_step():
-    var shape = (7, 8, 13, 9)
-    var tensor = Tensor[DType.float32, 4](TensorShape(shape))
-
-    # np.arange
-    var val = 0
-    for i in range(shape[0]):
-        for j in range(shape[1]):
-            for k in range(shape[2]):
-                for w in range(shape[3]):
-                    tensor[i, j, k, w] = val
-                    val += 1
-
-    assert_equal(tensor[3, 7, 12, 0], 3735)
-
-    var stepped_slice = tensor[3::2, 1::, 1::3, 0::2]
-    assert_equal(stepped_slice[0, 0, 0, 0], 2934)
-    assert_equal(stepped_slice[1, 5, 2, 1], 5447)
 
 
 def test_round_trip():
@@ -241,26 +102,6 @@ def test_copy():
             assert_equal(src[i, j], dst2[i, j])
 
 
-def test_set_through_slice():
-    tensor = Tensor[DType.float32, 2](TensorShape(10, 2))
-
-    val = 1
-    for i in range(10):
-        for j in range(2):
-            tensor[i, j] = val
-            val += 1
-
-    assert_equal(tensor[1, 0], 3)
-
-    slice = tensor[1:, :]
-    assert_equal(slice[0, 0], 3)
-
-    slice[0, 0] = 4
-
-    assert_equal(slice[0, 0], 4)
-    assert_equal(tensor[1, 0], 4)
-
-
 def test_unsafe_slice():
     var shape = (10, 2)
     var tensor = Tensor[DType.float32, 2](TensorShape(shape))
@@ -280,37 +121,6 @@ def test_unsafe_slice():
     assert_equal(unsafe_slice[1, 1], 4)
 
     _ = tensor^
-
-
-def test_unsafe_slice_from_tensor():
-    var shape = (10, 2)
-    var tensor = Tensor[DType.float32, 2](TensorShape(shape))
-
-    var val = 1
-    for i in range(shape[0]):
-        for j in range(shape[1]):
-            tensor[i, j] = val
-            val += 1
-
-    assert_equal(tensor[1, 0], 3)
-
-    var unsafe_slice = tensor.unsafe_slice(
-        slice(1, None, 1), slice(None, None, None)
-    )
-
-    var slice = tensor[1::, ::]
-    assert_equal(unsafe_slice[0, 0], 3)
-    assert_equal(slice[0, 0], 3)
-
-    unsafe_slice[Index(0, 0)] = 4
-    slice[0, 1] = 5
-
-    assert_equal(unsafe_slice[0, 0], 4)
-    assert_equal(unsafe_slice[0, 1], 5)
-    assert_equal(slice[0, 0], 4)
-    assert_equal(slice[0, 1], 5)
-    assert_equal(tensor[1, 0], 4)
-    assert_equal(tensor[1, 1], 5)  # keeps slice alive
 
 
 def test_unsafe_slice_simd():
@@ -378,29 +188,6 @@ def test_take():
 
     for tensor in tensors:
         consume_and_check(tensor[].take())
-
-
-fn mutate_slice_in_fn(x: TensorSlice):
-    x[0] = 2
-
-
-def mutate_slice(x: TensorSlice):
-    x[0] = 1
-
-
-def test_slice_mutability():
-    x = Tensor[DType.float32, 1](
-        TensorShape(
-            1,
-        )
-    )
-    x[0] = 0
-    assert_equal(x[0], 0)
-    mutate_slice(x[:])
-    assert_equal(x[0], 1)
-    s = x[:]
-    mutate_slice_in_fn(s)
-    assert_equal(x[0], 2)
 
 
 def test_print():
@@ -554,21 +341,13 @@ fn test_construction_from_managed_tensor_slice() raises:
 
 def main():
     test_tensor()
-    test_tensor_slice()
     test_unsafe_slice()
-    test_unsafe_slice_from_tensor()
-    test_slice_with_step()
-    test_2dslice_with_step()
-    test_4dslice_with_step()
-    test_2dslice_with_step_row_column()
     test_round_trip()
     test_copy()
-    test_set_through_slice()
     test_kv_cache()
     test_raw_data()
     test_take()
     test_unsafe_slice_simd()
-    test_slice_mutability()
     test_print()
     test_move()
     test_from_max_tensor()

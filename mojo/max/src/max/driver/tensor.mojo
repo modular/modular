@@ -35,7 +35,6 @@ from utils._serialize import _serialize
 
 from ._utils import _convert_from
 from .device import Device, DeviceMemory, DeviceTensor
-from .tensor_slice import TensorSlice
 
 
 struct Tensor[type: DType, rank: Int](CollectionElement):
@@ -187,25 +186,6 @@ struct Tensor[type: DType, rank: Int](CollectionElement):
             slice_array[i].step = 1
 
         return slice_array
-
-    @always_inline
-    fn __getitem__(
-        ref self, *slices: Slice
-    ) raises -> TensorSlice[type, rank, __origin_of(self)]:
-        """Returns a view of the tensor conforming to given slices. If given
-        a single slice `:` the view would point to the entire tensor. The
-        returned slice has the origin of tensor and will extend the lifetime
-        of tensor accordingly.
-
-        Args:
-          slices: Dimension slices to slice against.
-
-        Returns:
-          View of the tensor according to given slices.
-        """
-        if len(slices) > rank:
-            raise "len(slices) exceeds rank"
-        return TensorSlice(self, self._canonicalize_slices(slices))
 
     @always_inline
     fn unsafe_slice(
