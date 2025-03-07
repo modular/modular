@@ -180,9 +180,9 @@ def execute_kv_cache_ragged_flash_attention[
 
     kv_block_paged_host = HostNDBuffer[dtype, 6](
         IndexList[6](
-            num_layers,
-            2,
             num_pages,
+            2,
+            num_layers,
             page_size,
             num_kv_heads,
             head_dim,
