@@ -26,11 +26,6 @@ inline bool isKernel(Operation *gen) {
 
 constexpr StringLiteral shapeFuncRegistrationAttr = "mogg.v1_shape_func";
 
-inline bool isV1ShapeFunc(Operation *gen) {
-  return gen != nullptr && gen->hasAttr(shapeFuncRegistrationAttr);
-}
-
-constexpr StringLiteral SLICED_ATTR = "mogg.sliced";
 constexpr StringLiteral ALLOCS_ATTR = "mogg.allocs";
 constexpr StringLiteral IS_VIEW_ATTR = "mogg.view";
 constexpr StringLiteral OUTLINED_ATTR = "mogg.outlined";
@@ -202,9 +197,6 @@ inline bool isDPSKernel(Operation *gen) {
 
 // The stored mojo type symbol name of Tensor type in extensibility kernels.
 constexpr StringLiteral MOJO_DPS_TENSOR_TYPE_NAME =
-    "tensor_internal::ManagedTensorSlice";
-
-constexpr StringLiteral MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME =
     "tensor_internal::ManagedTensorSlice";
 
 constexpr StringLiteral MOJO_INTERNAL_DPS_SIMD_TYPE_NAME = "stdlib::SIMD";
