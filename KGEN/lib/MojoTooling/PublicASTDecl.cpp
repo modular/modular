@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoTooling/PublicASTDecl.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -876,14 +878,57 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   if (isa<StructDeclOp>(*declRef.getParent()))
     selfType = declRef->getParentDecl()->getTypeDeclSelf();
 
+  // Update param / arg types with decl refs instead of index refs.
+  ParameterEvaluator evaluator;
+
+  // Grab the types of the parameters to the function.
+  PogListAttr paramListAttr = signature.getParamListAttrs();
+  DefaultValueHandler defaultParamHandler(paramListAttr);
+  for (size_t parIdx : llvm::seq<size_t>(0, paramTypes.size())) {
+    // Add input value here in case of early continue. It's ok to insert before
+    // getting rebound attribute for the default value since the signature is
+    // legalized separately.
+    // If the parameter doesn't have a name (name is empty), it must have been
+    // a synthesized parameter. Instead of using the empty string as name (which
+    // will appear as missing a name), keep using index references.
+    Type reboundType = evaluator.getReboundType(paramTypes[parIdx]);
+    StringAttr paramName = signature.getParamName(parIdx);
+    if (paramName.getValue().empty()) {
+      evaluator.addInputValue(
+          KGEN::ParamIndexRefAttr::get(parIdx, reboundType));
+    } else {
+      evaluator.addInputValue(
+          KGEN::ParamDeclRefAttr::get(paramName, reboundType));
+    }
+    // Ignore implicitly passed parameters.
+    PassingKind passingKind = paramListAttr.getPassingKind(parIdx);
+    if (passingKind == PassingKind::Implicit)
+      continue;
+    std::optional<std::string> defaultValue;
+    if (TypedAttr defaultAttr = defaultParamHandler.getDefault(parIdx)) {
+      TypedAttr reboundDefaultAttr =
+          cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
+      defaultValue = generatePValueString(shared, reboundDefaultAttr);
+    }
+    VariadicKind variadicKind =
+        getVariadicKind(signature.getParamListAttrs(), parIdx);
+    parameters.push_back(PublicParameterDecl(
+        paramName,
+        generateTypeString(shared, reboundType, variadicKind, selfType),
+        passingKind, variadicKind, std::move(defaultValue)));
+  }
+
   // Grab the types of the arguments to the function.
   DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());
   for (auto [argIdx, userType, sigType, conventionX, pogAttr] :
        llvm::enumerate(userArgTypes, sigTypes, argConventions, argPogs)) {
     ArgConvention convention = refineConventionForType(userType, conventionX);
     std::optional<std::string> defaultValue;
-    if (auto defaultAttr = defaultArgHandler.getDefault(argIdx))
-      defaultValue = generatePValueString(shared, defaultAttr);
+    if (auto defaultAttr = defaultArgHandler.getDefault(argIdx)) {
+      TypedAttr reboundDefaultAttr =
+          cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
+      defaultValue = generatePValueString(shared, reboundDefaultAttr);
+    }
 
     std::string prefix;
     auto passingKind = pogAttr.getPassingKind();
@@ -939,31 +984,13 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
       }
     }
 
-    args.push_back(
-        PublicArgumentDecl(pogAttr.getName(), std::move(prefix),
-                           generateTypeString(shared, userType, variadicKind,
-                                              selfType, convention),
-                           passingKind, variadicKind, std::move(defaultValue),
-                           declConvention, isSelf));
-  }
-
-  // Grab the types of the parameters to the function.
-  PogListAttr paramListAttr = signature.getParamListAttrs();
-  DefaultValueHandler defaultParamHandler(paramListAttr);
-  for (size_t parIdx : llvm::seq<size_t>(0, paramTypes.size())) {
-    // Ignore implicitly passed parameters.
-    PassingKind passingKind = paramListAttr.getPassingKind(parIdx);
-    if (passingKind == PassingKind::Implicit)
-      continue;
-    std::optional<std::string> defaultValue;
-    if (auto defaultAttr = defaultParamHandler.getDefault(parIdx))
-      defaultValue = generatePValueString(shared, defaultAttr);
-    VariadicKind variadicKind =
-        getVariadicKind(signature.getParamListAttrs(), parIdx);
-    parameters.push_back(PublicParameterDecl(
-        signature.getParamName(parIdx),
-        generateTypeString(shared, paramTypes[parIdx], variadicKind, selfType),
-        passingKind, variadicKind, std::move(defaultValue)));
+    Type reboundUserType = evaluator.getReboundType(userType);
+    args.push_back(PublicArgumentDecl(
+        pogAttr.getName(), std::move(prefix),
+        generateTypeString(shared, reboundUserType, variadicKind, selfType,
+                           convention),
+        passingKind, variadicKind, std::move(defaultValue), declConvention,
+        isSelf));
   }
 
   // Grab the result type, if it's non-none.
@@ -981,8 +1008,9 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
       str = "ref " + getRefPrefixAsString(shared, cast<RefType>(resultType),
                                           signature, /*isRefResult*/ true);
     }
-    str += generateTypeString(shared, userResultType, VariadicKind::kNone,
-                              selfType, convention);
+    Type reboundUserResultType = evaluator.getReboundType(userResultType);
+    str += generateTypeString(shared, reboundUserResultType,
+                              VariadicKind::kNone, selfType, convention);
     returnType = str;
   }
 
@@ -1259,20 +1287,28 @@ PublicStructDecl::PublicStructDecl(MojoASTDeclRef declRef)
 
   auto &shared = *declRef.getShared();
 
+  // Update param / arg types with decl refs instead of index refs.
+  ParameterEvaluator evaluator;
   // Grab the types of the parameters to the struct.
   PogListAttr paramListAttr = signature.getParamListAttrs();
   DefaultValueHandler defaultParamHandler(paramListAttr);
   for (auto [idx, param] : llvm::enumerate(structOp.getInputParams())) {
     std::optional<std::string> defaultValue;
-    if (auto defaultAttr = defaultParamHandler.getDefault(idx))
-      defaultValue = generatePValueString(shared, defaultAttr);
+    if (auto defaultAttr = defaultParamHandler.getDefault(idx)) {
+      TypedAttr reboundDefaultAttr =
+          cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
+      defaultValue = generatePValueString(shared, reboundDefaultAttr);
+    }
     VariadicKind variadicKind =
         getVariadicKind(signature.getParamListAttrs(), idx);
+    StringRef paramName = demangleIfNeeded(param).getName().getValue();
+    Type reboundType = evaluator.getReboundType(param.getType());
     parameters.push_back(PublicParameterDecl(
-        demangleIfNeeded(param).getName().getValue(),
-        generateTypeString(shared, param.getType(), variadicKind),
+        paramName, generateTypeString(shared, param.getType(), variadicKind),
         paramListAttr.getPassingKind(idx), variadicKind,
         std::move(defaultValue)));
+    evaluator.addInputValue(
+        KGEN::ParamDeclRefAttr::get(paramName, reboundType));
   }
 
   if (auto docStr = decl->getParsedDocString()) {
