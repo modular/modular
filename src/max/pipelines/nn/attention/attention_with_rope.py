@@ -34,6 +34,7 @@ from max.pipelines.kv_cache import (
 )
 
 from ..clamp import clamp
+from ..comm import Allreduce
 from ..kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
@@ -548,6 +549,7 @@ class DistributedAttentionWithRope(
             )
         # Shard weights into separate AttentionWithRope layers.
         n_devices = len(self.devices)
+        self.allreduce = Allreduce(n_devices)
 
         def col_sharding_strategy(weight: Weight, i) -> TensorValue:
             col_size = int(weight.shape[1]) // n_devices
@@ -593,19 +595,16 @@ class DistributedAttentionWithRope(
         assert isinstance(input_row_offsets, TensorValue)
         assert self.devices
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
-
-        return list(
-            ops.allreduce.sum(
-                inputs=[
-                    self.list_of_attentions[i](
-                        x[i],
-                        kv_collections[i],
-                        input_row_offsets=input_row_offsets_[i],
-                    )
-                    for i in range(len(self.devices))
-                ],
-                signal_buffers=signal_buffers,
-            )
+        return self.allreduce(
+            inputs=[
+                self.list_of_attentions[i](
+                    x[i],
+                    kv_collections[i],
+                    input_row_offsets=input_row_offsets_[i],
+                )
+                for i in range(len(self.devices))
+            ],
+            signal_buffers=signal_buffers,
         )
 
 

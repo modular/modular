@@ -27,6 +27,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
+from max.pipelines.nn.comm.allreduce import Allreduce
 
 from .layer import Layer, LayerV2
 
@@ -192,6 +193,7 @@ class VocabParallelEmbedding(LayerV2):
             device=DeviceRef.CPU(),
             quantization_encoding=quantization_encoding,
         )
+        self.allreduce = Allreduce(num_accelerators=self.num_devices)
 
     def __call__(
         self, indices: TensorValueLike, signal_buffers: list[BufferValue]
@@ -201,6 +203,7 @@ class VocabParallelEmbedding(LayerV2):
         Args:
             indices: A tensor of integer indices to look up.
                 Each index must be in the range ``[0, vocab_size)``.
+            signal_buffers: Buffers for peer-to-peer communication in allreduce.
 
         Returns:
             A tensor containing the embeddings corresponding to the input
@@ -212,7 +215,8 @@ class VocabParallelEmbedding(LayerV2):
         outputs = [
             self._per_device_call(input, n) for n in range(self.num_devices)
         ]
-        return ops.allreduce.sum(outputs, signal_buffers)
+
+        return self.allreduce(outputs, signal_buffers)
 
     def _per_device_call(
         self, indices: TensorValue, device_idx: int

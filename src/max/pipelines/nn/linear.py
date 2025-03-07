@@ -32,6 +32,7 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import Weights
 
 from .clamp import clamp
+from .comm import Allreduce
 from .kernels import swish_glu
 from .layer import Layer, LayerV2
 
@@ -627,6 +628,8 @@ class DistributedMLP(MLPV2):
 
             self.list_of_mlps.append(layer)
 
+        self.allreduce = Allreduce(num_accelerators=len(self.devices))
+
     def __call__(  # type: ignore[override]
         self, x: list[TensorValue], signal_buffers: list[BufferValue]
     ) -> list[TensorValue]:
@@ -636,6 +639,7 @@ class DistributedMLP(MLPV2):
             x: Input tensor of shape ``(..., in_dim)``.
                 The last dimension must match the layer's ``in_dim``.
                 The input tensor must reside on :obj:`device`.
+            signal_buffers: Buffers for peer-to-peer communication in allreduce.
 
         Returns:
             Output tensor of shape ``(..., out_dim)``.
@@ -645,4 +649,4 @@ class DistributedMLP(MLPV2):
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
         """
         mlp_outs = [self.list_of_mlps[i](x[i]) for i in range(self.num_devices)]
-        return ops.allreduce.sum(mlp_outs, signal_buffers)
+        return self.allreduce(mlp_outs, signal_buffers)

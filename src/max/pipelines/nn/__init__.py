@@ -25,7 +25,7 @@ from .attention import (
     GPTQAttentionWithRope,
     NaiveAttentionWithRope,
 )
-from .comm import Signals
+from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv2D, Conv3D
 from .embedding import Embedding, EmbeddingV2, VocabParallelEmbedding
 from .kernels import MHAMaskVariant
@@ -49,6 +49,7 @@ from .transformer import (
 )
 
 __all__ = [
+    "Allreduce",
     "Attention",
     "AttentionImpl",
     "AttentionImplQKV",
