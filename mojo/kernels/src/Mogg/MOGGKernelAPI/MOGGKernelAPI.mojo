@@ -7619,14 +7619,14 @@ struct DistributedAllReduceSum1Devices:
     alias num_devices = 1
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @always_inline
+    @compiler.enable_fusion_for("outputs")
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        output0: OutputTensor[type=type, rank=rank],
+        outputs: OutputVariadicTensors[type, rank, *_],
         signal_buffer0: InputTensor[type = DType.uint8, rank=1],
         inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
@@ -7643,7 +7643,9 @@ struct DistributedAllReduceSum1Devices:
             NDBuffer[type, rank]()
         )
 
-        out_bufs[0] = managed_tensor_slice_to_ndbuffer(output0)
+        @parameter
+        for i in range(Self.num_devices):
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
         var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
             NDBuffer[type, rank]()
@@ -7660,7 +7662,24 @@ struct DistributedAllReduceSum1Devices:
             Signal[Self.max_num_blocks]
         ]()
 
-        all_reduce[ngpus = Self.num_devices](
+        @always_inline
+        @parameter
+        fn outputs_lambda[
+            input_index: Int,
+            _type: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+            constrained[
+                input_index < Self.num_devices, "tensor index out of bounds"
+            ]()
+            return outputs[input_index]._fused_store[
+                width=_width, element_alignment=_alignment
+            ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
+
+        all_reduce[ngpus = Self.num_devices, outputs_lambda=outputs_lambda](
             dev_ctxs, in_bufs, out_bufs, rank_sigs
         )
 
@@ -7670,15 +7689,14 @@ struct DistributedAllReduceSum2Devices:
     alias num_devices = 2
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
+    @compiler.enable_fusion_for("outputs")
     @staticmethod
-    @always_inline
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        output0: OutputTensor[type=type, rank=rank],
-        output1: OutputTensor[type=type, rank=rank],
+        outputs: OutputVariadicTensors[type, rank, *_],
         signal_buffer0: InputTensor[type = DType.uint8, rank=1],
         signal_buffer1: InputTensor[type = DType.uint8, rank=1],
         inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
@@ -7699,8 +7717,9 @@ struct DistributedAllReduceSum2Devices:
             NDBuffer[type, rank]()
         )
 
-        out_bufs[0] = managed_tensor_slice_to_ndbuffer(output0)
-        out_bufs[1] = managed_tensor_slice_to_ndbuffer(output1)
+        @parameter
+        for i in range(Self.num_devices):
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
         var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
             NDBuffer[type, rank]()
@@ -7720,7 +7739,24 @@ struct DistributedAllReduceSum2Devices:
             Signal[Self.max_num_blocks]
         ]()
 
-        all_reduce[ngpus = Self.num_devices](
+        @always_inline
+        @parameter
+        fn outputs_lambda[
+            input_index: Int,
+            _type: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+            constrained[
+                input_index < Self.num_devices, "tensor index out of bounds"
+            ]()
+            return outputs[input_index]._fused_store[
+                width=_width, element_alignment=_alignment
+            ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
+
+        all_reduce[ngpus = Self.num_devices, outputs_lambda=outputs_lambda](
             dev_ctxs, in_bufs, out_bufs, rank_sigs
         )
 
@@ -7730,17 +7766,14 @@ struct DistributedAllReduceSum4Devices:
     alias num_devices = 4
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
+    @compiler.enable_fusion_for("outputs")
     @staticmethod
-    @always_inline
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        output0: OutputTensor[type=type, rank=rank],
-        output1: OutputTensor[type=type, rank=rank],
-        output2: OutputTensor[type=type, rank=rank],
-        output3: OutputTensor[type=type, rank=rank],
+        outputs: OutputVariadicTensors[type, rank, *_],
         signal_buffer0: InputTensor[type = DType.uint8, rank=1],
         signal_buffer1: InputTensor[type = DType.uint8, rank=1],
         signal_buffer2: InputTensor[type = DType.uint8, rank=1],
@@ -7771,10 +7804,9 @@ struct DistributedAllReduceSum4Devices:
             NDBuffer[type, rank]()
         )
 
-        out_bufs[0] = managed_tensor_slice_to_ndbuffer(output0)
-        out_bufs[1] = managed_tensor_slice_to_ndbuffer(output1)
-        out_bufs[2] = managed_tensor_slice_to_ndbuffer(output2)
-        out_bufs[3] = managed_tensor_slice_to_ndbuffer(output3)
+        @parameter
+        for i in range(Self.num_devices):
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
         var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
             NDBuffer[type, rank]()
@@ -7800,7 +7832,24 @@ struct DistributedAllReduceSum4Devices:
             Signal[Self.max_num_blocks]
         ]()
 
-        all_reduce[ngpus = Self.num_devices](
+        @always_inline
+        @parameter
+        fn outputs_lambda[
+            input_index: Int,
+            _type: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+            constrained[
+                input_index < Self.num_devices, "tensor index out of bounds"
+            ]()
+            return outputs[input_index]._fused_store[
+                width=_width, element_alignment=_alignment
+            ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
+
+        all_reduce[ngpus = Self.num_devices, outputs_lambda=outputs_lambda](
             dev_ctxs, in_bufs, out_bufs, rank_sigs
         )
 
@@ -7810,6 +7859,7 @@ struct DistributedAllReduceSum8Devices:
     alias num_devices = 8
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
+    @compiler.enable_fusion_for("outputs")
     @staticmethod
     @always_inline
     fn execute[
@@ -7817,14 +7867,7 @@ struct DistributedAllReduceSum8Devices:
         rank: Int,
         target: StringLiteral,
     ](
-        output0: OutputTensor[type=type, rank=rank],
-        output1: OutputTensor[type=type, rank=rank],
-        output2: OutputTensor[type=type, rank=rank],
-        output3: OutputTensor[type=type, rank=rank],
-        output4: OutputTensor[type=type, rank=rank],
-        output5: OutputTensor[type=type, rank=rank],
-        output6: OutputTensor[type=type, rank=rank],
-        output7: OutputTensor[type=type, rank=rank],
+        outputs: OutputVariadicTensors[type, rank, *_],
         signal_buffer0: InputTensor[type = DType.uint8, rank=1],
         signal_buffer1: InputTensor[type = DType.uint8, rank=1],
         signal_buffer2: InputTensor[type = DType.uint8, rank=1],
@@ -7878,14 +7921,9 @@ struct DistributedAllReduceSum8Devices:
             NDBuffer[type, rank]()
         )
 
-        out_bufs[0] = managed_tensor_slice_to_ndbuffer(output0)
-        out_bufs[1] = managed_tensor_slice_to_ndbuffer(output1)
-        out_bufs[2] = managed_tensor_slice_to_ndbuffer(output2)
-        out_bufs[3] = managed_tensor_slice_to_ndbuffer(output3)
-        out_bufs[4] = managed_tensor_slice_to_ndbuffer(output0)
-        out_bufs[5] = managed_tensor_slice_to_ndbuffer(output1)
-        out_bufs[6] = managed_tensor_slice_to_ndbuffer(output2)
-        out_bufs[7] = managed_tensor_slice_to_ndbuffer(output3)
+        @parameter
+        for i in range(Self.num_devices):
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
         var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
             NDBuffer[type, rank]()
@@ -7923,7 +7961,24 @@ struct DistributedAllReduceSum8Devices:
             Signal[Self.max_num_blocks]
         ]()
 
-        all_reduce[ngpus = Self.num_devices](
+        @always_inline
+        @parameter
+        fn outputs_lambda[
+            input_index: Int,
+            _type: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+            constrained[
+                input_index < Self.num_devices, "tensor index out of bounds"
+            ]()
+            return outputs[input_index]._fused_store[
+                width=_width, element_alignment=_alignment
+            ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
+
+        all_reduce[ngpus = Self.num_devices, outputs_lambda=outputs_lambda](
             dev_ctxs, in_bufs, out_bufs, rank_sigs
         )
 
