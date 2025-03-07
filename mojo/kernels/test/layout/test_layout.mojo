@@ -74,6 +74,16 @@ fn test_layout_basic() raises:
     assert_equal(is_row_major[2](Layout.col_major(3, 3)), False)
 
 
+fn test_unknowns() raises:
+    print("== test_unknowns")
+    alias shape = IntTuple(2, IntTuple(UNKNOWN_VALUE, 4))
+    alias stride = IntTuple(1, IntTuple(2, 6))
+    alias layout = Layout(shape, stride)
+    assert_equal(layout.shape.all_known(), False)
+    assert_equal(layout.stride.all_known(), True)
+    assert_equal(layout.all_dims_known(), False)
+
+
 fn validate_coalesce[layout: Layout]() raises:
     alias layoutR = coalesce(layout)
 
@@ -648,6 +658,7 @@ fn test_right_inverse() raises:
 
 def main():
     test_layout_basic()
+    test_unknowns()
     test_coalesce()
     test_composition()
     test_by_mode_composition()

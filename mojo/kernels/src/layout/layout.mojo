@@ -190,7 +190,6 @@ fn make_layout(*layouts: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-# Workaround MOCO-976.
 fn make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     """Creates a composite layout from two layouts.
 
@@ -205,13 +204,10 @@ fn make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     Returns:
         A new `Layout` with concatenated shapes and strides from the input layouts.
     """
-    var shape = IntTuple()
-    var stride = IntTuple()
-    shape.append(layout_a.shape)
-    shape.append(layout_b.shape)
-    stride.append(layout_a.stride)
-    stride.append(layout_b.stride)
-    return Layout(shape, stride)
+    return Layout(
+        IntTuple(layout_a.shape, layout_b.shape),
+        IntTuple(layout_a.stride, layout_b.stride),
+    )
 
 
 fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
@@ -284,7 +280,7 @@ struct _LayoutIter[origin: ImmutableOrigin]:
             self.layout[].stride[idx],
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn __has_next__(self) -> Bool:
         """Checks if there are more dimensions to iterate.
 
@@ -293,6 +289,7 @@ struct _LayoutIter[origin: ImmutableOrigin]:
         """
         return self.__len__() > 0
 
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Returns the number of remaining dimensions.
 
@@ -338,7 +335,7 @@ struct Layout(
     # Initializers
     # ===------------------------------------------------------------------===#
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self):
         """Initializes an empty layout with no dimensions.
 
@@ -348,7 +345,6 @@ struct Layout(
         self.shape = IntTuple()
         self.stride = IntTuple()
 
-    @always_inline
     @implicit
     fn __init__(out self, shape: IntTuple):
         """Initializes a layout with the given shape and column-major strides.
@@ -363,7 +359,6 @@ struct Layout(
         self.shape = shape.owned_copy()
         self.stride = prefix_product(self.shape)
 
-    @always_inline
     fn __init__(out self, shape: IntTuple, stride: IntTuple):
         """Initializes a layout with the given shape and stride.
 
@@ -380,6 +375,7 @@ struct Layout(
         else:
             self.stride = stride.owned_copy()
 
+    @always_inline("nodebug")
     fn __init__(out self, *, other: Self):
         """Explicitly constructs a deep copy of the provided layout.
 
@@ -388,7 +384,7 @@ struct Layout(
         """
         self = other
 
-    @always_inline
+    @always_inline("nodebug")
     fn idx2crd(self, idx: IntTuple) -> IntTuple:
         """Converts a linear index to logical coordinates.
 
@@ -426,9 +422,7 @@ struct Layout(
             ```
             .
         """
-        var shape = IntTuple()
-        for dim in dims:
-            shape.append(dim)
+        var shape = IntTuple(dims)
         return Self.col_major(shape)
 
     @staticmethod
@@ -480,23 +474,21 @@ struct Layout(
             ```
             .
         """
-        var shape = IntTuple()
-        for dim in dims:
-            shape.append(dim)
+        var shape = IntTuple(dims)
         return Self.row_major(shape)
 
     @staticmethod
     fn row_major[rank: Int](dims: DimList) -> Layout:
-        var shape = IntTuple()
-        var stride = IntTuple()
-        var unknown_flag = False
         var c_stride = 1
-        stride.append(c_stride)
+        var shape = IntTuple()
+        var stride = IntTuple(c_stride)
 
         @parameter
         for i in range(rank):
             var dim = dims.get[i]()
             shape.append(dim if dims.has_value[i]() else UNKNOWN_VALUE)
+
+        var unknown_flag = False
 
         @parameter
         for i in range(rank - 1):
@@ -584,17 +576,17 @@ struct Layout(
                     shape_with_unknown.append(to_unknown(self.shape[i]))
             return Layout(shape_with_unknown, self.stride)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __moveinit__(out self, owned existing: Self):
         self.shape = existing.shape^
         self.stride = existing.stride^
 
-    @always_inline
+    @always_inline("nodebug")
     fn __copyinit__(out self, existing: Self):
         self.shape = existing.shape
         self.stride = existing.stride
 
-    @always_inline
+    @always_inline("nodebug")
     fn copy(self) -> Self:
         """Explicitly constructs a copy of this layout.
 
@@ -632,6 +624,7 @@ struct Layout(
         """
         writer.write("(", self.shape, ":", self.stride, ")")
 
+    @always_inline("nodebug")
     fn __eq__(self, other: Layout) -> Bool:
         """Checks if this layout is equal to another layout.
 
@@ -645,6 +638,7 @@ struct Layout(
         """
         return self.shape == other.shape and self.stride == other.stride
 
+    @always_inline("nodebug")
     fn __ne__(self, other: Layout) -> Bool:
         """Checks if this layout is not equal to another layout.
 
@@ -656,7 +650,7 @@ struct Layout(
         """
         return not (self == other)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Returns the number of dimensions in the layout.
 
@@ -665,7 +659,7 @@ struct Layout(
         """
         return len(self.shape)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __iter__(self) -> _LayoutIter[__origin_of(self)]:
         """Returns an iterator over the layout's dimensions.
 
@@ -676,7 +670,6 @@ struct Layout(
         """
         return _LayoutIter(0, Pointer.address_of(self))
 
-    @always_inline
     fn size(self) -> Int:
         """Returns the total number of elements in the layout's domain.
 
@@ -687,7 +680,6 @@ struct Layout(
         """
         return product(self.shape)
 
-    @always_inline
     fn cosize(self) -> Int:
         """Returns the size of the memory region spanned by the layout.
 
@@ -701,7 +693,7 @@ struct Layout(
         # return math.max(1, inner_product(self.shape, self.stride))
 
     @staticmethod
-    @always_inline
+    @always_inline("nodebug")
     fn has_shape() -> Bool:
         """Indicates whether the layout has a valid shape.
 
@@ -710,7 +702,7 @@ struct Layout(
         """
         return True
 
-    @always_inline
+    @always_inline("nodebug")
     fn __getitem__(self, index: Int) -> Self:
         """Returns a sub-layout for the specified dimension.
 
@@ -722,7 +714,7 @@ struct Layout(
         """
         return Layout(self.shape[index], self.stride[index])
 
-    @always_inline
+    @always_inline("nodebug")
     fn rank(self) -> Int:
         """Returns the number of dimensions in the layout.
 
@@ -734,7 +726,7 @@ struct Layout(
         """
         return len(self.shape)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __call__(self, idx: IntTuple) -> Int:
         """Maps logical coordinates to a linear memory index.
 
@@ -749,7 +741,7 @@ struct Layout(
         """
         return crd2idx(idx, self.shape, self.stride)
 
-    @always_inline
+    @always_inline("nodebug")
     fn append(mut self, item: Layout):
         """Appends another layout to this layout.
 
@@ -762,7 +754,7 @@ struct Layout(
         self.shape.append(item.shape)
         self.stride.append(item.stride)
 
-    @always_inline
+    @always_inline("nodebug")
     fn all_dims_known(self) -> Bool:
         """Checks if all dimensions in the layout have known values.
 
@@ -772,15 +764,9 @@ struct Layout(
         Returns:
             True if all dimensions have known shape and stride values, False otherwise.
         """
-        for shape_i in flatten(self.shape):
-            if Int(shape_i) == UNKNOWN_VALUE:
-                return False
-        for stride_i in flatten(self.stride):
-            if Int(stride_i) == UNKNOWN_VALUE:
-                return False
-        return True
+        return self.shape.all_known() and self.stride.all_known()
 
-    @always_inline
+    @always_inline("nodebug")
     fn known_shape(self) -> Bool:
         """Checks if all shape dimensions in the layout have known values.
 
@@ -790,12 +776,10 @@ struct Layout(
         Returns:
             True if all shape dimensions have known values, False otherwise.
         """
-        for shape_i in flatten(self.shape):
-            if Int(shape_i) == UNKNOWN_VALUE:
-                return False
-        return True
+        return self.shape.all_known()
 
 
+@always_inline("nodebug")
 fn size(l: Layout) -> Int:
     """Returns the total number of elements in the layout's domain.
 
@@ -810,6 +794,7 @@ fn size(l: Layout) -> Int:
     return l.size()
 
 
+@always_inline("nodebug")
 fn cosize(l: Layout) -> Int:
     """Returns the size of the memory region spanned by the layout.
 
@@ -827,6 +812,7 @@ fn cosize(l: Layout) -> Int:
 alias LayoutList = List[Layout]
 
 
+@always_inline("nodebug")
 fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
     """Creates a list containing two layouts.
 
@@ -898,6 +884,13 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
         .
     """
     if keep_rank:
+        # Fast path for single-element layouts
+        if len(layout) == 1:
+            return Layout(
+                coalesce(layout[0], False).shape,
+                coalesce(layout[0], False).stride,
+            )
+
         # Coalesce each mode and concat the results to perserve rank.
         var shapes = IntTuple()
         var strides = IntTuple()
@@ -1087,8 +1080,8 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
     var sorted = sorted(zip(flatten(layout.stride), flatten(layout.shape)))
     var sorted_len = len(sorted)
 
-    var result_shape = IntTuple(num_elems=sorted_len + 1, size=sorted_len + 2)
-    var result_stride = IntTuple(num_elems=sorted_len + 1, size=sorted_len + 2)
+    var result_shape = IntTuple(num_elems=sorted_len + 1)
+    var result_stride = IntTuple(num_elems=sorted_len + 1)
 
     # for z in sorted(zip(flatten(layout.stride), flatten(layout.shape))):
     var i = 0
@@ -1412,12 +1405,10 @@ fn hier_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
     for i in range(len(tiler), len(layout_a)):
         res_2.append(layout_a[i])
 
-    var res = Layout()
-    res.shape.append(res_1.shape, res_2.shape)
-    res.stride.append(res_1.stride, res_2.stride)
-    return res
+    return make_layout(res_1, res_2)
 
 
+@always_inline("nodebug")
 fn hier_unzip(
     layout_a: Layout,
     layout_b: Layout,
@@ -1452,6 +1443,7 @@ fn hier_unzip(
     return logical_divide(layout_a, layout_b)
 
 
+@always_inline("nodebug")
 fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
     """Divides a layout into blocks according to another layout.
 
@@ -1483,6 +1475,7 @@ fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
     return hier_unzip(layout_a, layout_b)
 
 
+@always_inline("nodebug")
 fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     """Divides a layout into blocks according to a list of layouts.
 
@@ -1515,6 +1508,7 @@ fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     return hier_unzip(layout_a, tiler)
 
 
+@no_inline
 fn print_layout(layout: Layout):
     """Prints a 2D layout to the standard output.
 
@@ -1533,6 +1527,7 @@ fn print_layout(layout: Layout):
     format_layout(layout, stdout)
 
 
+@no_inline
 fn format_layout[W: Writer](layout: Layout, mut writer: W):
     """Formats a 2D layout as a table and writes it to the specified writer.
 

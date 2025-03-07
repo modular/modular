@@ -9,7 +9,7 @@ from os import abort
 
 from builtin.range import _StridedRange
 from memory import UnsafePointer, memcpy
-
+from collections import List
 from buffer import DimList
 
 alias INT_TUPLE_VALIDATION = False
@@ -87,10 +87,17 @@ struct IntArray:
 alias UNKNOWN_VALUE = -1
 
 
-@value
+@register_passable("trivial")
 struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin]:
     var src: Pointer[IntTuple[tuple_origin], origin]
     var idx: Int
+
+    @always_inline("nodebug")
+    fn __init__(
+        out self, src: Pointer[IntTuple[tuple_origin], origin], idx: Int
+    ):
+        self.src = src
+        self.idx = idx
 
     @always_inline("nodebug")
     fn __next__(mut self) -> IntTuple[origin]:
@@ -153,8 +160,8 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             self.validate_structure()
 
     @always_inline("nodebug")
-    fn __init__(out self, *, num_elems: Int, size: Int):
-        self._store = IntArray(size)
+    fn __init__(out self, *, num_elems: Int):
+        self._store = IntArray(num_elems + 1)
         self._store[0] = num_elems
 
         @parameter
@@ -164,6 +171,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @implicit
     @always_inline("nodebug")
     fn __init__(out self, *elements: Int):
+        self = Self(elements)
+
+    @implicit
+    @always_inline
+    fn __init__(out self, elements: VariadicList[Int]):
         var size = len(elements)
         self._store = IntArray(size + 1)
         self._store[0] = size
@@ -195,7 +207,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     fn __init__(out self, *, non_owned: IntArray):
         self._store = IntArray(non_owned=non_owned)
 
-    @always_inline("nodebug")
+    @always_inline
     fn __init__(out self, existing: Self, rng: _StridedRange):
         var size = 0
         var len = 0
@@ -287,52 +299,38 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
         self._store[idx + 1] = int_value
 
-    @always_inline
-    fn append_flatten(mut self, t: IntTuple):
-        """Append each element in t instead of t as one element."""
-
-        if not self._store.owning():
-            abort("Can't modify a sub-tuple.")
-
-        var len_t = len(t)
-        if len_t == 0:
-            return
-
-        var old_len = len(self)
-        var old_size = self.size()
-        var new_len = old_len + len_t
-        var new_size = old_size
-
-        for i in range(len_t):
-            new_size += t[i].size() + 1
-
-        var new_store = IntArray(new_size)
-        new_store[0] = new_len
-        var len_delta = new_len - old_len
-
-        # update old offsets
-        for i in range(old_len):
+    fn count_values(self) -> Int:
+        var count = 0
+        for i in range(len(self)):
             if self.is_value(i):
-                new_store[i + 1] = self.value(i)
+                count += 1
             else:
-                new_store[i + 1] = self._store[i + 1] - len_delta
+                count += self[i].count_values()
+        return count
 
-        # copy old data
-        var new_offset = new_len + 1
-        var old_data_size = old_size - old_len - 1
-        new_store.copy_from(new_offset, self._store, old_len + 1, old_data_size)
+    fn __fill(mut self, src: IntTuple, owned i: Int = 1) -> Int:
+        for j in range(len(src)):
+            if src.is_value(j):
+                self._store[i] = src.value(j)
+                i += 1
+            else:
+                i = self.__fill(src[j], i)
+        return i
 
-        var storage = new_len + 1 + old_data_size
-        for i in range(len_t):
-            # append each element in t
-            storage = Self._insert(new_store, i + old_len, storage, t[i])
+    @always_inline("nodebug")
+    fn flatten(self) -> IntTuple:
+        var result = IntTuple(num_elems=self.count_values())
+        _ = result.__fill(self)
+        return result
 
-        # Update store data
-        self._store = new_store
-
-        @parameter
-        if INT_TUPLE_VALIDATION:
-            self.validate_structure()
+    fn all_known(self) -> Bool:
+        for i in range(len(self)):
+            if self.is_tuple(i):
+                if not self[i].all_known():
+                    return False
+            elif self.value(i) == UNKNOWN_VALUE:
+                return False
+        return True
 
     @always_inline
     fn append(mut self, *elements: IntTuple):
@@ -422,11 +420,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         store.copy_from(storage, element._store, size)
         return storage + size
 
-    @always_inline
+    @always_inline("nodebug")
     fn _insert(mut self, idx: Int, storage: Int, element: IntTuple) -> Int:
         return Self._insert(self._store, idx, storage, element)
 
-    @always_inline
+    @always_inline("nodebug")
     fn size(self) -> Int:
         if self._store.owning():
             return self._store.size()
@@ -492,7 +490,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                 )
             )
 
-    @always_inline
+    @always_inline("nodebug")
     fn __getitem__(self, span: Slice) -> Self:
         var start: Int
         var end: Int
@@ -500,19 +498,19 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         start, end, step = span.indices(len(self))
         return Self(self, range(start, end, step))
 
-    @always_inline
+    @always_inline("nodebug")
     fn is_value(self) -> Bool:
         return len(self) == 1 and self._store[1] >= Self.MinimumValue
 
-    @always_inline
+    @always_inline("nodebug")
     fn is_tuple(self) -> Bool:
         return not self.is_value()
 
-    @always_inline
+    @always_inline("nodebug")
     fn value(self) -> Int:
         return self._store[1]
 
-    @always_inline
+    @always_inline("nodebug")
     fn is_value(self, i: Int) -> Bool:
         @parameter
         if INT_TUPLE_VALIDATION:
@@ -521,15 +519,15 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
         return self._store[i + 1] >= Self.MinimumValue
 
-    @always_inline
+    @always_inline("nodebug")
     fn is_tuple(self, i: Int) -> Bool:
         return not self.is_value(i)
 
-    @always_inline
+    @always_inline("nodebug")
     fn value(self, i: Int) -> Int:
         return self._store[i + 1]
 
-    @always_inline
+    @always_inline("nodebug")
     fn tuple(ref self) -> ref [self] Self:
         # Avoid making gratuitous copies
         return self
@@ -562,47 +560,48 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                 if a.value(i) != b.value(i):
                     return False
             else:
-                var value_a = a[i]
-                var value_b = b[i]
                 if a.is_tuple(i) and b.is_tuple(i):
-                    if not Self.is_equal(value_a, value_b):
+                    if not Self.is_equal(a[i], b[i]):
                         return False
-                elif len(value_a) == 1 and len(value_b) == 1:
-                    if Int(value_a) != Int(value_b):
+                elif a.is_tuple(i) and len(a[i]) == 1:
+                    if a[i].value() != b.value(i):
+                        return False
+                elif len(b[i]) == 1:  # b.is_tuple(i)
+                    if a.value(i) != b[i].value():
                         return False
                 else:
                     return False
 
         return True
 
-    @always_inline
+    @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
         return Self.is_equal(self, other)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __ne__(self, other: Self) -> Bool:
         return not Self.is_equal(self, other)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __repr__(self) -> String:
         return self.__str__()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __int__(self) -> Int:
         return self.value()
 
 
-@always_inline
+@always_inline("nodebug")
 fn signum(a: Int) -> Int:
     return 1 if (a > 0) else (-1 if (a < 0) else 0)
 
 
-@always_inline
+@always_inline("nodebug")
 fn is_int(t: IntTuple) -> Bool:
     return t.is_value()
 
 
-@always_inline
+@always_inline("nodebug")
 fn is_tuple(t: IntTuple) -> Bool:
     return t.is_tuple()
 
@@ -611,8 +610,23 @@ fn is_tuple(t: IntTuple) -> Bool:
 struct _ZipIter[origin: ImmutableOrigin, n: Int]:
     var index: Int
     var ts: InlineArray[Pointer[IntTuple, origin], n]
+    var len: Int
 
-    @always_inline
+    @always_inline("nodebug")
+    fn __init__(
+        out self, index: Int, ts: InlineArray[Pointer[IntTuple, origin], n]
+    ):
+        self.index = index
+        self.ts = ts
+
+        var min_len = len(self.ts[0][])
+
+        @parameter
+        for i in range(1, n):
+            min_len = min(min_len, len(self.ts[i][]))
+        self.len = min_len
+
+    @always_inline("nodebug")
     fn __next__(mut self) -> IntTuple[origin]:
         var idx = self.index
         self.index += 1
@@ -634,29 +648,24 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int]:
                 result.append(self.ts[i][][idx])
             return result
 
-    @always_inline
+    @always_inline("nodebug")
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
-    @always_inline
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
-        var min_len = len(self.ts[0][])
-
-        @parameter
-        for i in range(1, n):
-            min_len = min(min_len, len(self.ts[i][]))
-        return min_len - self.index
+        return self.len - self.index
 
 
 @value
 struct _zip[origin: ImmutableOrigin, n: Int]:
     var ts: InlineArray[Pointer[IntTuple, origin], n]
 
-    @always_inline
+    @always_inline("nodebug")
     fn __iter__(self) -> _ZipIter[origin, n]:
         return _ZipIter[origin, n](0, self.ts)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
         var min_len = len(self.ts[0][])
 
@@ -666,14 +675,14 @@ struct _zip[origin: ImmutableOrigin, n: Int]:
         return min_len
 
 
-@always_inline
+@always_inline("nodebug")
 fn zip[
     origin: ImmutableOrigin, n: Int
 ](ts: InlineArray[Pointer[IntTuple, origin], n]) -> _zip[origin, n]:
     return _zip[origin, n](ts)
 
 
-@always_inline
+@always_inline("nodebug")
 fn zip(
     out result: _zip[__origin_of(a, b), 2],
     a: IntTuple,
@@ -688,7 +697,7 @@ fn zip(
     )
 
 
-@always_inline
+@always_inline("nodebug")
 fn zip(
     out result: _zip[__origin_of(a, b, c), 3],
     a: IntTuple,
@@ -739,19 +748,9 @@ fn reduce[
 # IntTuple operations
 
 
-@always_inline
+@always_inline("nodebug")
 fn flatten(t: IntTuple) -> IntTuple:
-    @always_inline
-    @parameter
-    fn reducer(a: IntTuple, b: IntTuple) -> IntTuple:
-        var r = a.owned_copy()  # Avoid propagating a's origin
-        if b.is_value():
-            r.append(b)
-        else:
-            r.append_flatten(flatten(b))
-        return r
-
-    return reduce[reducer](t)
+    return t.flatten()
 
 
 fn to_nest(nested: IntTuple, flat: IntTuple) -> IntTuple:
@@ -787,14 +786,14 @@ fn _to_unknown(mut t: IntTuple):
 
 
 # Create a IntTuple with same structure but filled by UNKNOWN_VALUE.
-@always_inline
+@always_inline("nodebug")
 fn to_unknown(t: IntTuple) -> IntTuple:
     var res = t.owned_copy()
     _to_unknown(res)
     return res
 
 
-@always_inline
+@always_inline("nodebug")
 fn lt(a: IntTuple, b: IntTuple) -> Bool:
     for z in zip(a, b):
         var z0 = Int(z[0])
@@ -839,7 +838,7 @@ fn sorted[
     return _merge[cmp](sorted[cmp](tuple[:mid]), sorted[cmp](tuple[mid:]))
 
 
-@always_inline
+@always_inline("nodebug")
 fn sum(t: IntTuple) -> Int:
     @always_inline
     @parameter
@@ -851,7 +850,7 @@ fn sum(t: IntTuple) -> Int:
     return reduce[Int, reducer](t, 0)
 
 
-@always_inline
+@always_inline("nodebug")
 fn product(t: IntTuple) -> Int:
     @always_inline
     @parameter
@@ -865,7 +864,7 @@ fn product(t: IntTuple) -> Int:
 
 # TODO: Can't call this `max` otherwise the compiler incorrectly
 # fails to recurse when calling this local function.
-@always_inline
+@always_inline("nodebug")
 fn tuple_max(t: IntTuple) -> Int:
     @always_inline
     @parameter
@@ -892,6 +891,7 @@ fn shallow_apply[func: fn (IntTuple) -> Int](t: IntTuple) -> IntTuple:
     return res
 
 
+@always_inline("nodebug")
 fn apply_zip[
     func: fn (IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
@@ -901,6 +901,7 @@ fn apply_zip[
     return r
 
 
+@always_inline("nodebug")
 fn apply_zip[
     func: fn (IntTuple, IntTuple) capturing [_] -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
@@ -910,6 +911,7 @@ fn apply_zip[
     return r
 
 
+@always_inline("nodebug")
 fn apply_zip[
     func: fn (IntTuple, IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
@@ -919,6 +921,7 @@ fn apply_zip[
     return r
 
 
+@always_inline("nodebug")
 fn apply_zip[
     func: fn (IntTuple, IntTuple, IntTuple) capturing [_] -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
@@ -949,6 +952,7 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     return r
 
 
+@always_inline("nodebug")
 fn abs(t: IntTuple) -> IntTuple:
     @parameter
     fn int_abs(x: Int) -> Int:
@@ -957,6 +961,7 @@ fn abs(t: IntTuple) -> IntTuple:
     return apply[int_abs](t)
 
 
+@always_inline("nodebug")
 fn product_each(t: IntTuple) -> IntTuple:
     return shallow_apply[product](t)
 
@@ -977,6 +982,7 @@ fn _mul(mut lhs: IntTuple, rhs: Int):
             _mul(sub_tuple, rhs)
 
 
+@always_inline("nodebug")
 fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
     var res = lhs.owned_copy()
     _mul(res, rhs)
@@ -985,6 +991,7 @@ fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
 
 # Return the product of elements in a mode
 #
+@always_inline("nodebug")
 fn size(a: IntTuple) -> Int:
     return product(a)
 
@@ -1022,6 +1029,7 @@ fn apply_predicate[
 # Test if two IntTuple have the similar profiles up to Shape A (hierarchical rank division)
 # weakly_congruent is a partial order on A and B: A <= B
 #
+@always_inline("nodebug")
 fn weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
     fn predicate(a: IntTuple, b: IntTuple) -> Bool:
         return True
@@ -1034,6 +1042,7 @@ fn weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
 #    any coordinate into A can also be used as a coordinate into B
 # compatible is a partial order on A and B: A <= B
 #
+@always_inline("nodebug")
 fn compatible(a: IntTuple, b: IntTuple) -> Bool:
     fn predicate(a: IntTuple, b: IntTuple) -> Bool:
         return Int(a) == size(b)
@@ -1045,7 +1054,7 @@ fn compatible(a: IntTuple, b: IntTuple) -> Bool:
 #    there exists a Shape C congruent to A such that compatible(elem_scale(A,C), B)
 # weakly_compatible is a partial order on A and B: A <= B
 #
-@always_inline
+@always_inline("nodebug")
 fn weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
     fn predicate(a: IntTuple, b: IntTuple) -> Bool:
         return size(b) % Int(a) == 0
@@ -1055,12 +1064,12 @@ fn weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
 
 # Exclusive prefix product with output congruent to input a
 #
-
-
+@always_inline("nodebug")
 fn prefix_product(a: IntTuple) -> IntTuple:
     return prefix_product(a, IntTuple(1))
 
 
+@always_inline("nodebug")
 fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
     return prefix_product2(a, init)
 
@@ -1139,17 +1148,16 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
 #
 
 
-@always_inline
+@always_inline("nodebug")
 fn idx2crd(idx: IntTuple, shape: IntTuple) -> IntTuple:
     return idx2crd2(idx, shape, IntTuple())
 
 
-@always_inline
+@always_inline("nodebug")
 fn idx2crd(idx: IntTuple, shape: IntTuple, _stride: IntTuple) -> IntTuple:
     return idx2crd2(idx, shape, _stride)
 
 
-@always_inline
 fn idx2crd2(
     idx: IntTuple,
     shape: IntTuple,
@@ -1189,8 +1197,7 @@ fn idx2crd2(
 
 # Map a logical coordinate to a linear index
 #
-
-
+@always_inline("nodebug")
 fn crd2idx(crd: IntTuple, shape: IntTuple) -> Int:
     return crd2idx(crd, shape, IntTuple())
 
@@ -1264,11 +1271,15 @@ fn propagate_unknown(src: IntTuple, target: IntTuple) -> IntTuple:
 # Returns an IntTuple reversed e.g reverse(1, 2, (3, 4)) returns ((4, 3), 2, 1)
 #
 fn reverse(src: IntTuple) -> IntTuple:
+    if src.is_value():
+        return IntTuple(src.value())
     var res = IntTuple()
-    if is_int(src):
-        return src.owned_copy()
     for i in range(len(src)):
-        res.append(reverse(src[len(src) - i - 1]))
+        var idx = len(src) - i - 1
+        if src.is_value(idx):
+            res.append(src.value(idx))
+        else:
+            res.append(reverse(src[idx]))
     return res
 
 
@@ -1284,16 +1295,18 @@ fn depth(src: IntTuple) -> Int:
     return res
 
 
+alias IntList = List[Int, True]
+
+
 # Returns permutation indices that would sort the tuple
-fn _sorted_perm(tuple: IntTuple) -> IntTuple:
+fn _sorted_perm(tuple: IntTuple) -> IntList:
     """Returns permutation indices that would sort the tuple."""
     var n = len(tuple)
-    var indices = IntTuple()
-    var values = IntTuple()
+    var indices = IntList(capacity=n)
+    var values = tuple
 
     for i in range(n):
         indices.append(i)
-        values.append(tuple[i])
 
     # Insertion sort
     for i in range(1, n):
@@ -1303,16 +1316,16 @@ fn _sorted_perm(tuple: IntTuple) -> IntTuple:
 
         while j >= 0 and Int(values[j]) > Int(key_val):
             values.replace_entry(j + 1, int_value=Int(values[j]))
-            indices.replace_entry(j + 1, int_value=Int(indices[j]))
+            indices[j + 1] = indices[j]
             j -= 1
 
         values.replace_entry(j + 1, int_value=Int(key_val))
-        indices.replace_entry(j + 1, int_value=Int(key_idx))
+        indices[j + 1] = key_idx
 
     return indices
 
 
-fn _flat_apply_perm(tuple: IntTuple, perm: IntTuple) -> IntTuple:
+fn _flat_apply_perm(tuple: IntTuple, perm: IntList) -> IntTuple:
     """Applies a permutation to an IntTuple."""
     var n = len(tuple)
     var result = IntTuple()
@@ -1321,10 +1334,10 @@ fn _flat_apply_perm(tuple: IntTuple, perm: IntTuple) -> IntTuple:
     return result
 
 
-fn _flat_apply_invperm(tuple: IntTuple, perm: IntTuple) -> IntTuple:
+fn _flat_apply_invperm(tuple: IntTuple, perm: IntList) -> IntTuple:
     """Applies the inverse permutation to an IntTuple."""
     var n = len(tuple)
-    var result = IntTuple(num_elems=n, size=n + 1)
+    var result = IntTuple(num_elems=n)
     for i in range(n):
         result.replace_entry(Int(perm[i]), int_value=Int(tuple[i]))
     return result
@@ -1345,6 +1358,7 @@ fn _flat_compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
 # A shape and a compact stride forms a layout that is bijective.
 # E.g. `compact_order((2,3,4,5), (1, 4, 3, 5))` is `(1,8,2,24)` and
 # `compact_order((2,(3,4),5), (1, (2, 3), 4))` is `(1,(2,6),24)`.
+@always_inline("nodebug")
 fn compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
     """Create a compact stride such that lower order number implies faster varying stride.
     A shape and a compact stride forms a layout that is bijective.
