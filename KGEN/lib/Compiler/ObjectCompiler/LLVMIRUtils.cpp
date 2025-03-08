@@ -312,9 +312,8 @@ static unsigned getGPUSharedAddressSpace(const llvm::Triple &triple) {
           .c_str());
 }
 
-static bool isGlobalVarInGPUSharedMem(const std::string &tripleName,
+static bool isGlobalVarInGPUSharedMem(const llvm::Triple &triple,
                                       const llvm::GlobalVariable &global) {
-  llvm::Triple triple(tripleName);
   if (!isGPUTriple(triple))
     return false;
   if (global.getAddressSpace() != getGPUSharedAddressSpace(triple))
@@ -335,13 +334,13 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     collectImmediateDependencies(&value, &value);
   };
 
-  const std::string &tripleName = mainModule->getTargetTriple();
+  const llvm::Triple &triple = mainModule->getTargetTriple();
   // NOTE: The visitation of globals then functions has to line up with
   // `readAndMaterializeDependencies`.
   for (const llvm::GlobalVariable &global : mainModule->globals()) {
     computeDeps(global);
     if (!global.hasInternalLinkage() && !global.hasPrivateLinkage() &&
-        !(isGlobalVarInGPUSharedMem(tripleName, global)))
+        !(isGlobalVarInGPUSharedMem(triple, global)))
       transitiveDeps[&global];
   }
   for (const llvm::Function &fn : mainModule->functions()) {
@@ -397,7 +396,7 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
         // a block but never between kernels.
         // We also use a name handle "._gpu_shared_mem" to be sure
         // that this is from stack_allocation in GPU shared memory.
-        if (!isGlobalVarInGPUSharedMem(tripleName, *global)) {
+        if (!isGlobalVarInGPUSharedMem(triple, *global)) {
           splitAnchorUsers[global].insert(&deps);
         }
       }

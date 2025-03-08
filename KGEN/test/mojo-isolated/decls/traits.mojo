@@ -55,9 +55,9 @@ trait EmptyTrait:
 
 
 # CHECK-LABEL: lit.trait.decl @Trait1
-# CHECK-SAME: <?, [[T:.*]]: !Trait1_>
+# CHECK-SAME: <?, [[T:.*]]: !Trait1>
 trait Trait1:
-    # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__result__: !lit.ref<:!Trait1_ [[T]], mut {{.*}}> byref_result) -> !kgen.none
+    # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__result__: !lit.ref<:!Trait1 [[T]], mut {{.*}}> byref_result) -> !kgen.none
     fn f(self) -> Self:
         ...
 
@@ -67,7 +67,7 @@ trait Trait2:
         ...
 
 
-# CHECK-LABEL: lit.struct.decl @StructWithTraits(!Trait1_, {{.*}}, !Trait2_)
+# CHECK-LABEL: lit.struct.decl @StructWithTraits(!Trait1, {{.*}}, !Trait2)
 struct StructWithTraits(Trait1, Trait2):
     # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<!StructWithTraits, imm {{.*}}> read_mem, ?, %{{.*}}: !lit.ref<!StructWithTraits, mut {{.*}}> byref_result) -> !kgen.none
     fn f(self) -> Self:

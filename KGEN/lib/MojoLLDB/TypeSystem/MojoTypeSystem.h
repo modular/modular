@@ -217,7 +217,7 @@ public:
 
   lldb::TypeClass GetTypeClass(lldb::opaque_compiler_type_t type) override;
 
-  std::optional<uint64_t>
+  llvm::Expected<uint64_t>
   GetBitSize(lldb::opaque_compiler_type_t type,
              lldb_private::ExecutionContextScope *exeScope) override;
 

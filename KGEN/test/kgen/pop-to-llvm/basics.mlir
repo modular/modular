@@ -674,11 +674,11 @@ kgen.func @array_repeat0(%a: i32, %b: i32) -> !pop.array<3, i32> {
 // CHECK-LABEL: @call_intrinsic
 kgen.func @call_intrinsic(%inp: !pop.scalar<f32>) -> (!pop.scalar<f32>, !pop.scalar<f32>) {
   // CHECK: %[[INP_CAST:.*]] = builtin.unrealized_conversion_cast %arg0
-  // CHECK: %[[RESULT_1:.*]] = llvm.call_intrinsic "llvm.round"(%[[INP_CAST]]) : (f32) -> f32
+  // CHECK: %[[RESULT_1:.*]] = llvm.call_intrinsic "llvm.round"(%[[INP_CAST]])
   // CHECK-SAME: fastmathFlags = #llvm.fastmath<nnan, reassoc>
   // CHECK: %[[RES_CAST_1:.*]] = builtin.unrealized_conversion_cast %[[RESULT_1]]
   %0 = pop.call_llvm_intrinsic "llvm.round", (%inp) {fastmathFlags = #pop<fmf reassoc|nnan>} : (!pop.scalar<f32>) -> !pop.scalar<f32>
-  // CHECK: %[[RESULT_2:.*]] = llvm.call_intrinsic "llvm.round"(%[[INP_CAST]]) : (f32) -> f32
+  // CHECK: %[[RESULT_2:.*]] = llvm.call_intrinsic "llvm.round"(%[[INP_CAST]])
   // CHECK-SAME: fastmathFlags = #llvm.fastmath<fast>
   // CHECK: %[[RES_CAST_2:.*]] = builtin.unrealized_conversion_cast %[[RESULT_2]]
   %1 = pop.call_llvm_intrinsic "llvm.round", (%inp) {fastmathFlags = #pop<fmf fast>} : (!pop.scalar<f32>) -> !pop.scalar<f32>
