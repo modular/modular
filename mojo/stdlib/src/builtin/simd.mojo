@@ -230,9 +230,7 @@ fn _simd_construction_checks[type: DType, size: Int]():
 
 @always_inline("nodebug")
 fn _unchecked_zero[type: DType, size: Int]() -> SIMD[type, size]:
-    var zero = __mlir_op.`pop.cast`[
-        _type = __mlir_type[`!pop.scalar<`, type.value, `>`]
-    ](
+    var zero = __mlir_op.`pop.cast`[_type = Scalar[type]._mlir_type](
         __mlir_op.`kgen.param.constant`[
             _type = __mlir_type[`!pop.scalar<index>`],
             value = __mlir_attr[`#pop.simd<0> : !pop.scalar<index>`],
@@ -295,8 +293,11 @@ struct SIMD[type: DType, size: Int](
     alias _Mask = SIMD[DType.bool, size]
 
     alias element_type = type
+    alias _mlir_type = __mlir_type[
+        `!pop.simd<`, size.value, `, `, type.value, `>`
+    ]
 
-    var value: __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
+    var value: Self._mlir_type
     """The underlying storage for the vector."""
 
     alias MAX = Self(_max_or_inf[type]())
@@ -419,9 +420,7 @@ struct SIMD[type: DType, size: Int](
         var t0 = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<index>`
         ](value)
-        var casted = __mlir_op.`pop.cast`[
-            _type = __mlir_type[`!pop.simd<1,`, type.value, `>`]
-        ](t0)
+        var casted = __mlir_op.`pop.cast`[_type = Scalar[type]._mlir_type](t0)
         self = Scalar[type](casted)
 
     @always_inline
@@ -472,9 +471,7 @@ struct SIMD[type: DType, size: Int](
         var t0 = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<si128>`
         ](tn1)
-        var casted = __mlir_op.`pop.cast`[
-            _type = __mlir_type[`!pop.simd<1,`, type.value, `>`]
-        ](t0)
+        var casted = __mlir_op.`pop.cast`[_type = Scalar[type]._mlir_type](t0)
         self = Scalar[type](casted)
 
     @always_inline("nodebug")
@@ -490,7 +487,7 @@ struct SIMD[type: DType, size: Int](
         _simd_construction_checks[type, size]()
 
         var casted = __mlir_op.`pop.cast`[
-            _type = __mlir_type[`!pop.simd<1, bool>`]
+            _type = Scalar[DType.bool]._mlir_type
         ](value._as_scalar_bool())
         self = Scalar[DType.bool](casted)
 
@@ -498,7 +495,7 @@ struct SIMD[type: DType, size: Int](
     @implicit
     fn __init__(
         mut self,
-        value: __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`],
+        value: Self._mlir_type,
     ):
         """Initializes the SIMD vector with the underlying mlir value.
 
@@ -521,9 +518,9 @@ struct SIMD[type: DType, size: Int](
         _simd_construction_checks[type, size]()
 
         # Construct by broadcasting a scalar.
-        self.value = __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
-        ](value.value)
+        self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
+            value.value
+        )
 
     @always_inline("nodebug")
     @implicit
@@ -1874,15 +1871,9 @@ struct SIMD[type: DType, size: Int](
                 _f32_to_bfloat16(self.cast[DType.float32]())
             )
 
-        return __mlir_op.`pop.cast`[
-            _type = __mlir_type[
-                `!pop.simd<`,
-                size.value,
-                `, `,
-                target.value,
-                `>`,
-            ]
-        ](self.value)
+        return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
+            self.value
+        )
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -2122,9 +2113,7 @@ struct SIMD[type: DType, size: Int](
         ]()
         return __mlir_op.`pop.simd.shuffle`[
             mask = _convert_variadic_to_pop_array[*mask](),
-            _type = __mlir_type[
-                `!pop.simd<`, output_size.value, `, `, type.value, `>`
-            ],
+            _type = SIMD[type, output_size]._mlir_type,
         ](self.value, other.value)
 
     @always_inline("nodebug")
@@ -2156,9 +2145,7 @@ struct SIMD[type: DType, size: Int](
 
         return __mlir_op.`pop.simd.shuffle`[
             mask = mask.array,
-            _type = __mlir_type[
-                `!pop.simd<`, output_size.value, `, `, type.value, `>`
-            ],
+            _type = SIMD[type, output_size]._mlir_type,
         ](self.value, other.value)
 
     @always_inline("nodebug")
