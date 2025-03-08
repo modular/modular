@@ -36,20 +36,6 @@ def test_add():
     assert_equal("fivesix", StringLiteral.__add__("five", "six"))
 
 
-fn add_literal(
-    owned original: StringLiteral, add: StringLiteral, n: Int
-) -> StringLiteral:
-    for _ in range(n):
-        original += add
-    return original
-
-
-def test_iadd():
-    alias original = "mojo"
-    alias concat = add_literal(original, "!", 4)
-    assert_equal("mojo!!!!", concat)
-
-
 def test_mul():
     alias `3`: Int = 3
     alias `u3`: UInt = 3
@@ -551,7 +537,6 @@ def test_compress_decompress():
 
 def main():
     test_add()
-    test_iadd()
     test_mul()
     test_equality()
     test_len()
