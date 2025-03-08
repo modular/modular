@@ -22,6 +22,7 @@ from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
+from math import exp
 from memory import UnsafePointer
 
 alias MI300X_TARGET = _get_gpu_target["mi300x"]()
@@ -34,6 +35,10 @@ fn kernel(x: UnsafePointer[Int]):
 
 fn kernel_laneid(x: UnsafePointer[Int]):
     x[0] = lane_id()
+
+
+fn kernel_exp[type: DType](x: UnsafePointer[Scalar[type]]):
+    x[0] = exp(x[0])
 
 
 fn kernel_shuffle_down(x: UnsafePointer[UInt32]):
@@ -134,6 +139,34 @@ def test_shuffle_compile():
     print(
         _compile_code_asm[
             kernel_shuffle_idx, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
+
+
+# CHECK-LABEL: test_exp_f32_compile
+def test_exp_f32_compile():
+    print("== test_exp_f32_compile")
+
+    # CHECK: tail call float @llvm.amdgcn.exp2.f32(float %3)
+    print(
+        _compile_code_asm[
+            kernel_exp[DType.float32],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
+        ]()
+    )
+
+
+# CHECK-LABEL: test_exp_f16_compile
+def test_exp_f16_compile():
+    print("== test_exp_f16_compile")
+
+    # CHECK: tail call half @llvm.amdgcn.exp2.f16(half %3)
+    print(
+        _compile_code_asm[
+            kernel_exp[DType.float16],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
         ]()
     )
 
@@ -258,6 +291,8 @@ def test_schedule_group_barrier_compile():
 
 def main():
     test_shuffle_compile()
+    test_exp_f32_compile()
+    test_exp_f16_compile()
     test_laneid_compile()
     test_barrier_compile()
     test_threadid_compile()
