@@ -27,15 +27,11 @@ ssize_t DType::getWidthInBits() const {
   // size of each element and breaks for the overflow check.
   switch (getValue()) {
   default:
-    return isInt() ? getIntegerWidthInBits() : -1;
-
-    // Handle floating point types.
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
-                      BITCOUNT, APFLOAT_TYPE, ...)                             \
-  case DType::SHORT_NAME:                                                      \
-    return APFloat::getSizeInBits(APFLOAT_TYPE());
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
+    if (isInt())
+      return getIntegerWidthInBits();
+    if (auto *semantics = getFloatSemantics())
+      return APFloat::getSizeInBits(*semantics);
+    return -1;
 
     // Handle other types.
   case DType::kBool:
@@ -225,7 +221,7 @@ const llvm::fltSemantics *DType::getFloatSemantics() const {
     return nullptr;
 
 #define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
-                      BITCOUNT, APFLOAT_TYPE, ...)                             \
+                      APFLOAT_TYPE, ...)                                       \
   case DType::SHORT_NAME:                                                      \
     return &APFLOAT_TYPE();
 #include "Support/ML/FloatTypes.def"
