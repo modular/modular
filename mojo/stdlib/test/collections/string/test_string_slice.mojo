@@ -540,6 +540,50 @@ def test_find():
     )
 
 
+def test_find_compile_time():
+    alias haystack = String("abcdefg").as_string_slice()
+    alias haystack_with_special_chars = String("abcdefg@#$").as_string_slice()
+    alias haystack_repeated_chars = String(
+        "aaaaaaaaaaaaaaaaaaaaaaaa"
+    ).as_string_slice()
+
+    alias c1 = haystack.find(String("a").as_string_slice())
+    alias c2 = haystack.find(String("ab").as_string_slice())
+    alias c3 = haystack.find(String("abc").as_string_slice())
+    alias c4 = haystack.find(String("bcd").as_string_slice())
+    alias c5 = haystack.find(String("de").as_string_slice())
+    alias c6 = haystack.find(String("fg").as_string_slice())
+    alias c7 = haystack.find(String("g").as_string_slice())
+    alias c8 = haystack.find(String("z").as_string_slice())
+    alias c9 = haystack.find(String("zzz").as_string_slice())
+    alias c10 = haystack.find(String("@#$").as_string_slice())
+    alias c11 = haystack_with_special_chars.find(
+        String("@#$").as_string_slice()
+    )
+    alias c12 = haystack_repeated_chars.find(String("aaa").as_string_slice())
+    alias c13 = haystack_repeated_chars.find(String("AAa").as_string_slice())
+    alias c14 = haystack.find(String("hijklmnopqrstuvwxyz").as_string_slice())
+    alias c15 = String("").as_string_slice().find(
+        String("abc").as_string_slice()
+    )
+
+    assert_equal(c1, 0)
+    assert_equal(c2, 0)
+    assert_equal(c3, 0)
+    assert_equal(c4, 1)
+    assert_equal(c5, 3)
+    assert_equal(c6, 5)
+    assert_equal(c7, 6)
+    assert_equal(c8, -1)
+    assert_equal(c9, -1)
+    assert_equal(c10, -1)
+    assert_equal(c11, 7)
+    assert_equal(c12, 0)
+    assert_equal(c13, -1)
+    assert_equal(c14, -1)
+    assert_equal(c15, -1)
+
+
 def test_is_codepoint_boundary():
     var abc = StringSlice("abc")
     assert_equal(len(abc), 3)
@@ -1240,6 +1284,7 @@ def main():
     test_slice_repr()
     test_utf8_validation()
     test_find()
+    test_find_compile_time()
     test_is_codepoint_boundary()
     test_good_utf8_sequences()
     test_bad_utf8_sequences()

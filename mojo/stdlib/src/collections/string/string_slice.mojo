@@ -32,7 +32,7 @@ from collections.string._unicode import (
 )
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, abort
-from sys import bitwidthof, simdwidthof
+from sys import bitwidthof, simdwidthof, is_compile_time
 from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
@@ -2116,7 +2116,31 @@ fn _align_down(value: Int, alignment: Int) -> Int:
 
 @always_inline
 fn _memchr[
-    type: DType
+    type: DType, //
+](
+    source: UnsafePointer[Scalar[type]], char: Scalar[type], len: Int
+) -> UnsafePointer[Scalar[type]]:
+    if is_compile_time() or len < simdwidthof[type]():
+        return _memchr_simple(source, char, len)
+    else:
+        return _memchr_impl(source, char, len)
+
+
+@always_inline
+fn _memchr_simple[
+    type: DType, //
+](
+    source: UnsafePointer[Scalar[type]], char: Scalar[type], len: Int
+) -> UnsafePointer[Scalar[type]]:
+    for i in range(len):
+        if source[i] == char:
+            return source + i
+    return UnsafePointer[Scalar[type]]()
+
+
+@always_inline
+fn _memchr_impl[
+    type: DType, //
 ](
     source: UnsafePointer[Scalar[type]], char: Scalar[type], len: Int
 ) -> UnsafePointer[Scalar[type]]:
@@ -2140,7 +2164,7 @@ fn _memchr[
 
 @always_inline
 fn _memmem[
-    type: DType
+    type: DType, //
 ](
     haystack: UnsafePointer[Scalar[type]],
     haystack_len: Int,
@@ -2152,8 +2176,42 @@ fn _memmem[
     if needle_len > haystack_len:
         return UnsafePointer[Scalar[type]]()
     if needle_len == 1:
-        return _memchr[type](haystack, needle[0], haystack_len)
+        return _memchr(haystack, needle[0], haystack_len)
 
+    if is_compile_time() or haystack_len < simdwidthof[type]():
+        return _memmem_impl_simple(haystack, haystack_len, needle, needle_len)
+    else:
+        return _memmem_impl(haystack, haystack_len, needle, needle_len)
+
+
+@always_inline
+fn _memmem_impl_simple[
+    type: DType, //
+](
+    haystack: UnsafePointer[Scalar[type]],
+    haystack_len: Int,
+    needle: UnsafePointer[Scalar[type]],
+    needle_len: Int,
+) -> UnsafePointer[Scalar[type]]:
+    for i in range(haystack_len - needle_len + 1):
+        if haystack[i] != needle[0]:
+            continue
+
+        if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
+            return haystack + i
+
+    return UnsafePointer[Scalar[type]]()
+
+
+@always_inline
+fn _memmem_impl[
+    type: DType, //
+](
+    haystack: UnsafePointer[Scalar[type]],
+    haystack_len: Int,
+    needle: UnsafePointer[Scalar[type]],
+    needle_len: Int,
+) -> UnsafePointer[Scalar[type]]:
     alias bool_mask_width = simdwidthof[DType.bool]()
     var vectorized_end = _align_down(
         haystack_len - needle_len + 1, bool_mask_width

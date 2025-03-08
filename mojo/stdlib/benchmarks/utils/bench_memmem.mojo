@@ -159,7 +159,7 @@ fn _memmem_baseline[
     if needle_len > haystack_len:
         return UnsafePointer[Scalar[type]]()
     if needle_len == 1:
-        return _memchr[type](haystack, needle[0], haystack_len)
+        return _memchr(haystack, needle[0], haystack_len)
 
     alias bool_mask_width = simdwidthof[DType.bool]()
     var first_needle = SIMD[type, bool_mask_width](needle[0])
