@@ -562,6 +562,7 @@ class MLPV2(LayerV2):
             device=devices[0] if devices else None,
             quantization_encoding=quantization_encoding,
         )
+        self.quantization_encoding = quantization_encoding
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
         if (
@@ -579,10 +580,25 @@ class MLPV2(LayerV2):
                     self.up_proj.weight,
                 )
             )
-
-        return self.down_proj(
-            ops.silu(self.gate_proj(x)) * self.up_proj(x)  # type: ignore
-        )
+        if self.quantization_encoding:
+            return self.down_proj(
+                ops.silu(self.gate_proj(x)) * self.up_proj(x)  # type: ignore
+            )
+        else:
+            # Optimization to compute a single matmul by merging the
+            # gate and up projection weights.
+            feed_forward_length = self.gate_proj.weight.shape[0]
+            gate_proj_weight: TensorValue = self.gate_proj.weight
+            if self.gate_proj.device:
+                gate_proj_weight = gate_proj_weight.to(self.gate_proj.device)
+            up_proj_weight: TensorValue = self.up_proj.weight
+            if self.up_proj.device:
+                up_proj_weight = up_proj_weight.to(self.up_proj.device)
+            output = x @ ops.concat((gate_proj_weight, up_proj_weight)).T
+            gate_out, up_out = ops.split(
+                output, [feed_forward_length, feed_forward_length], axis=1
+            )
+            return self.down_proj(ops.silu(gate_out) * up_out)
 
 
 class DistributedMLP(MLPV2):
