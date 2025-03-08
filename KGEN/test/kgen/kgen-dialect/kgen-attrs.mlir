@@ -19,15 +19,15 @@ kgen.generator @return_one() -> index {
 // CHECK: #kgen.param.index.ref<0, 0> : index
 "some.op"() {ref = #kgen.param.index.ref<0, 0> : index} : () -> ()
 
-// CHECK: #kgen.int_literal<5> : !kgen.int_literal
-"some.op"() {data = #kgen.int_literal<5> : !kgen.int_literal} : () -> ()
+// CHECK: #pop.int_literal<5> : !pop.int_literal
+"some.op"() {data = #pop.int_literal<5> : !pop.int_literal} : () -> ()
 
-// CHECK: #kgen.float_literal<5|3> : !kgen.float_literal
-"some.op"() {data = #kgen.float_literal<5|3> : !kgen.float_literal} : () -> ()
-// CHECK: #kgen.float_literal<neg_zero> : !kgen.float_literal
-"some.op"() {data = #kgen.float_literal<neg_zero> : !kgen.float_literal} : () -> ()
-// CHECK: #kgen.float_literal<inf> : !kgen.float_literal
-"some.op"() {data = #kgen.float_literal<inf> : !kgen.float_literal} : () -> ()
+// CHECK: #pop.float_literal<5|3> : !pop.float_literal
+"some.op"() {data = #pop.float_literal<5|3> : !pop.float_literal} : () -> ()
+// CHECK: #pop.float_literal<neg_zero> : !pop.float_literal
+"some.op"() {data = #pop.float_literal<neg_zero> : !pop.float_literal} : () -> ()
+// CHECK: #pop.float_literal<inf> : !pop.float_literal
+"some.op"() {data = #pop.float_literal<inf> : !pop.float_literal} : () -> ()
 
 // CHECK: #kgen.env<{bar = 1 : index, foo}>
 "some.op"() {env = #kgen.env<{bar = 1 : index, foo}>} : () -> ()
@@ -35,10 +35,10 @@ kgen.generator @return_one() -> index {
 // CHECK: #kgen<decorators[1 : i64]>
 "some.op"() {decorators = #kgen<decorators[1 : i64]>} : () -> ()
 
-// CHECK: #kgen.int_literal<1234>
-// CHECK-SAME: #kgen.int_literal<12345678901234567899012345678901234567890>
-"some.op"() {a = #kgen.int_literal<1234> : !kgen.int_literal,
-             b = #kgen.int_literal<12345678901234567899012345678901234567890> : !kgen.int_literal} : () -> ()
+// CHECK: #pop.int_literal<1234>
+// CHECK-SAME: #pop.int_literal<12345678901234567899012345678901234567890>
+"some.op"() {a = #pop.int_literal<1234> : !pop.int_literal,
+             b = #pop.int_literal<12345678901234567899012345678901234567890> : !pop.int_literal} : () -> ()
 
 // CHECK-LABEL: @struct_constants
 kgen.generator @struct_constants<T: type, A: !kgen.param<T>, value: !pop.scalar<f32>>() {

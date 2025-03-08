@@ -16,8 +16,6 @@
 #include "KGEN/KGENDialect/KGENAttrInterfaces.h"
 #include "KGEN/KGENDialect/KGENEnums.h"
 #include "Support/ErrorOr.h"
-#include "Support/IPInt.h"
-#include "Support/IPRational.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
 

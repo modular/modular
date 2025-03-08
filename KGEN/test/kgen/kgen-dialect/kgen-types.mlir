@@ -10,14 +10,14 @@ kgen.generator @genericSugar<scalar: type, T: type>(
 }
 
 // CHECK-LABEL: @int_literal
-// CHECK-SAME: %arg0: !kgen.int_literal
-kgen.func @int_literal(%arg0: !kgen.int_literal) {
+// CHECK-SAME: %arg0: !pop.int_literal
+kgen.func @int_literal(%arg0: !pop.int_literal) {
   kgen.return
 }
 
 // CHECK-LABEL: @float_literal
-// CHECK-SAME: %arg0: !kgen.float_literal
-kgen.func @float_literal(%arg0: !kgen.float_literal) {
+// CHECK-SAME: %arg0: !pop.float_literal
+kgen.func @float_literal(%arg0: !pop.float_literal) {
   kgen.return
 }
 

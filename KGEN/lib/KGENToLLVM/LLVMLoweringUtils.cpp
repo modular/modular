@@ -1079,13 +1079,6 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
       return errorMessage.takeError();
   }
 
-  // If this is an IntLiteral or FloatLiteral attribute, we can't materialize
-  // them in a dynamic context.
-  if (isa<IntLiteralType>(attr.getType()))
-    return Error("can't materialize IntLiteral in dynamic context");
-  if (isa<FloatLiteralType>(attr.getType()))
-    return Error("can't materialize FloatLiteral in dynamic context");
-
   // Unknown attribute to convert.
   return Error("cannot lower unknown attribute to LLVM" +
                getParamAsString(attr));

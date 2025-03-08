@@ -9,135 +9,22 @@
 
 include "KGEN/KGENDialect/KGENAttrInterfaces.td"
 include "KGEN/POPDialect/POPDialect.td"
+include "KGEN/POPDialect/POPEnums.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/EnumAttr.td"
-
-class POP_Enum<string name, string summary, list<I32EnumAttrCase> cases> :
-  I32EnumAttr<name, summary, cases> {
-  let cppNamespace = "::M::KGEN::POP";
-  let genSpecializedAttr = 0;
-}
-
-class POP_EnumCase<string sym, int val, string str = sym> :
-  I32EnumAttrCase<sym, val, str>;
 
 class POP_Attr<string attrName, string attrMnemonic, list<Trait> traits = []>
     : AttrDef<POPDialect, attrName, traits> {
   let mnemonic = attrMnemonic;
 }
 
-//===----------------------------------------------------------------------===//
-// CmpPredicate
-//===----------------------------------------------------------------------===//
-
-def POP_CmpPredicate : POP_Enum<
-    "CmpPredicate", "pop.cmp comparison predicate", [
-      POP_EnumCase<"EQ", 0, "eq">,
-      POP_EnumCase<"NE", 1, "ne">,
-      POP_EnumCase<"LT", 2, "lt">,
-      POP_EnumCase<"GT", 3, "gt">,
-      POP_EnumCase<"LE", 4, "le">,
-      POP_EnumCase<"GE", 5, "ge">
-    ]>;
-
-def POP_CmpPredicateAttr : EnumAttr<POPDialect, POP_CmpPredicate, "cmp_pred">;
-
-//===----------------------------------------------------------------------===//
-// AtomicOrdering
-//===----------------------------------------------------------------------===//
-
-def POP_AtomicOrdering : POP_Enum<
-    "AtomicOrdering", "pop.atomic_cmp_xchg atomic ordering", [
-      POP_EnumCase<"NOT_ATOMIC", 0, "not_atomic">,
-      POP_EnumCase<"UNORDERED", 1, "unordered">,
-      POP_EnumCase<"MONOTONIC", 2, "monotonic">,
-      POP_EnumCase<"ACQUIRE", 3, "acquire">,
-      POP_EnumCase<"RELEASE", 4, "release">,
-      POP_EnumCase<"ACQUIRE_RELEASE", 5, "acq_rel">,
-      POP_EnumCase<"SEQUENTIALLY_CONSISTENT", 6, "seq_cst">
-    ]>;
-
-def POP_AtomicOrderingAttr : EnumAttr<POPDialect,
-                                      POP_AtomicOrdering,
-                                      "atomic_ordering">;
-
-//===----------------------------------------------------------------------===//
-// AtomicBinOp
-//===----------------------------------------------------------------------===//
-
-def POP_AtomicBinOp : POP_Enum<
-    "AtomicBinOp", "pop.atomic.rmw operator", [
-      POP_EnumCase<"XCHG", 0, "xchg">,
-      POP_EnumCase<"ADD", 1, "add">,
-      POP_EnumCase<"SUB", 2, "sub">,
-      POP_EnumCase<"AND", 3, "and">,
-      POP_EnumCase<"NAND", 4, "nand">,
-      POP_EnumCase<"OR", 5, "or">,
-      POP_EnumCase<"XOR", 6, "xor">,
-      POP_EnumCase<"MAX", 7, "max">,
-      POP_EnumCase<"MIN", 8, "min">
-    ]>;
-
-def POP_AtomicBinOpAttr : EnumAttr<POPDialect,
-                                   POP_AtomicBinOp,
-                                   "bin_op">;
-
-//===----------------------------------------------------------------------===//
- // GlobalAlloc
- //===----------------------------------------------------------------------===//
-
- def POP_GlobalAllocAddressSpace: POP_Enum<
-     "GlobalAllocAddressSpace", "pop.global_alloc address space", [
-       POP_EnumCase<"IGNORE", 0, "ignore">,
-       POP_EnumCase<"GPU_SHARED", 1, "gpu_shared">
-     ]>;
-
- def POP_GlobalAllocAddressSpaceAttr: EnumAttr<POPDialect,
-                                               POP_GlobalAllocAddressSpace,
-                                               "global_alloc_addr_space">;
-
-//===----------------------------------------------------------------------===//
-// FastmathFlags
-//===----------------------------------------------------------------------===//
-
-
-def FASTMATH_NONE            : I32BitEnumAttrCaseNone<"none"      >;
-def FASTMATH_NO_NANS         : I32BitEnumAttrCaseBit<"nnan",     0>;
-def FASTMATH_NO_INFS         : I32BitEnumAttrCaseBit<"ninf",     1>;
-def FASTMATH_NO_SIGNED_ZEROS : I32BitEnumAttrCaseBit<"nsz",      2>;
-def FASTMATH_ALLOW_RECIP     : I32BitEnumAttrCaseBit<"arcp",     3>;
-def FASTMATH_ALLOW_CONTRACT  : I32BitEnumAttrCaseBit<"contract", 4>;
-def FASTMATH_APPROX_FUNC     : I32BitEnumAttrCaseBit<"afn",      5>;
-def FASTMATH_REASSOC         : I32BitEnumAttrCaseBit<"reassoc",  6>;
-def FASTMATH_FAST            : I32BitEnumAttrCaseGroup<
-    "fast",
-    [
-      FASTMATH_NO_NANS,
-      FASTMATH_NO_INFS,
-      FASTMATH_NO_SIGNED_ZEROS,
-      FASTMATH_ALLOW_RECIP,
-      FASTMATH_ALLOW_CONTRACT,
-      FASTMATH_APPROX_FUNC,
-      FASTMATH_REASSOC
-    ]>;
-
-def POP_FastmathFlags : I32BitEnumAttr<"FastmathFlags", "fastmath flags", [
-      FASTMATH_NONE,
-      FASTMATH_NO_NANS,
-      FASTMATH_NO_INFS,
-      FASTMATH_NO_SIGNED_ZEROS,
-      FASTMATH_ALLOW_RECIP,
-      FASTMATH_ALLOW_CONTRACT,
-      FASTMATH_APPROX_FUNC,
-      FASTMATH_REASSOC,
-      FASTMATH_FAST
-]> {
-  let cppNamespace = "::M::KGEN::POP";
-  let genSpecializedAttr = 0;
-  let printBitEnumPrimaryGroups = 1;
-}
-
-def POP_FastmathFlagsAttr : EnumAttr<POPDialect, POP_FastmathFlags, "fmf">;
+/// The base class of all parameter expression attributes. Expression attributes
+/// are all typed attributes.
+class POP_ExprAttr<string attrName, string attrMnemonic,
+                    list<Trait> traits = []>
+    : POP_Attr<attrName, attrMnemonic,
+               [TypedAttrInterface,
+                DeclareAttrInterfaceMethods<ParameterAttrInterface>] # traits>;
 
 //===----------------------------------------------------------------------===//
 // UnionAttr
@@ -146,15 +33,15 @@ def POP_FastmathFlagsAttr : EnumAttr<POPDialect, POP_FastmathFlags, "fmf">;
 def POP_UnionAttr : POP_Attr<"Union", "union", [TypedAttrInterface]> {
   let summary = "a union with a specific typed value";
   let description = [{
-    The `#kgen.union` attribute represents a union with a value of one of the
+    The `#pop.union` attribute represents a union with a value of one of the
     union's element types. The attribute knows which union element the value is
     and contains an attribute of said value type.
 
     Example:
 
     ```mlir
-    #kgen.union<0> : !kgen.union<index, struct<()>>
-    #kgen.union<:i64 42> : !kgen.union<i64, none>
+    #pop.union<0> : !pop.union<index, struct<()>>
+    #pop.union<:i64 42> : !pop.union<i64, none>
     ```
   }];
 
@@ -174,8 +61,7 @@ def POP_UnionAttr : POP_Attr<"Union", "union", [TypedAttrInterface]> {
 // SIMDAttr
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+def POP_SIMDAttr : POP_ExprAttr<"SIMD", "simd"> {
   let summary = "A SIMD vector attribute.";
   let description = [{
     The `#pop.simd` attribute represents a constant SIMD vector value. It
@@ -235,9 +121,7 @@ def POP_SIMDAttr : POP_Attr<"SIMD", "simd", [TypedAttrInterface,
 // ArrayAttr
 //===----------------------------------------------------------------------===//
 
-def POP_ArrayAttr : POP_Attr<"Array", "array", [
-    TypedAttrInterface,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+def POP_ArrayAttr : POP_ExprAttr<"Array", "array"> {
   let summary = "An array attribute.";
   let description = [{
     The `#pop.array` attribute contains a homogeneous list of elements of an
@@ -265,6 +149,366 @@ def POP_ArrayAttr : POP_Attr<"Array", "array", [
   ];
 
   let genVerifyDecl = 1;
+}
+
+
+//===----------------------------------------------------------------------===//
+// IntLiteralAttr
+//===----------------------------------------------------------------------===//
+
+def POP_IntLiteralAttr : POP_ExprAttr<"IntLiteral", "int_literal"> {
+  let summary = "Attribute for holding infinite precision integer literals.";
+  let description = [{
+    The `#pop.int_literal` represents an integer literal, storing its
+    data in an IPInt.
+  }];
+
+  let parameters = (ins "IPInt":$value);
+
+  let assemblyFormat = "`<` custom<IntLiteral>($value) `>`";
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+
+  let builders = [
+    AttrBuilder<(ins "int64_t":$value), [{
+      return $_get($_ctxt, IPInt(value));
+    }]>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// IntLiteralConvertAttr
+//===----------------------------------------------------------------------===//
+
+def POP_IntLiteralConvertAttr : POP_ExprAttr<"IntLiteralConvert",
+                                         "int_literal_convert", [
+    DeclareAttrInterfaceMethods<ParameterAttrInterface,
+                                ["validateForElaborator"]>]> {
+  let summary = "Convert an integer literal to a different type.";
+  let description = [{
+    The `#pop.int_literal_convert` attribute is used to convert an integer
+    literal to a different type.  It is the parameter domain form of
+    the `pop.int_literal.convert` operation.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$input,
+    "bool":$treatIndexAsUnsigned
+  );
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($input, "IntLiteralType::get($_ctxt)")
+    `,` $treatIndexAsUnsigned `>`
+  }];
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can return a folded attribute.
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$input,
+                     "bool":$treatIndexAsUnsigned), "", "TypedAttr">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// IntLiteralBinAttr
+//===----------------------------------------------------------------------===//
+
+def POP_IntLiteralBinAttr : POP_ExprAttr<"IntLiteralBin",
+                                         "int_literal_bin"> {
+  let summary = "Convert an integer literal to a different type.";
+  let description = [{
+    The `#pop.int_literal_binop` attr does standard arithmetic binary
+    operations on `!pop.int_literal` values that return a `!pop.int_literal`.
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$lhs, "TypedAttr":$rhs,
+    "IntLiteralBinKindAttr":$oper
+  );
+
+  let assemblyFormat = "`<` $oper $lhs `,` $rhs `>`";
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can return a folded attribute.
+    AttrBuilder<(ins "TypedAttr":$lhs, "TypedAttr":$rhs,
+                     "IntLiteralBinKindAttr":$oper), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// IntLiteralCmpAttr
+//===----------------------------------------------------------------------===//
+
+def POP_IntLiteralCmpAttr : POP_ExprAttr<"IntLiteralCmp", "int_literal_cmp"> {
+  let summary = "Comparison operator for int_literals.";
+  let description = [{
+    The `#pop.int_literal_cmp` attr does comparison testing
+    operations on `!pop.int_literal` values that return an `i1`.
+  }];
+
+  let parameters = (ins
+    "IntLiteralCmpPredAttr":$pred,
+    "TypedAttr":$lhs, "TypedAttr":$rhs
+  );
+
+  let assemblyFormat = [{
+    `<` $pred custom<ParamValue>($lhs, "IntLiteralType::get($_ctxt)") `,`
+       custom<ParamValue>($rhs, "IntLiteralType::get($_ctxt)") `>`
+  }];
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an IntLiteralConvertAttr.
+    AttrBuilder<(ins "IntLiteralCmpPredAttr":$pred, "TypedAttr":$lhs,
+                     "TypedAttr":$rhs), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralAttr
+//===----------------------------------------------------------------------===//
+
+def POP_FloatLiteralAttr : POP_ExprAttr<"FloatLiteral", "float_literal"> {
+  let summary = "Attribute for holding infinite precision float literals.";
+  let description = [{
+    The `#pop<float_literal` represents an float literal, though it
+    is actually stored as a rational number IPRational.
+
+    The `special` field tells whether it is a normal number or one of
+    the special values (infinities, negative zero, or NAN).  When it
+    is a non-normal number, it does not include a rational number
+    value.
+
+    TODO(#23387): MLIR's AsmParser doesn't have `parseSlash` or a more
+    generic way to parse literal strings/characters, so we use
+    the pipe "|" character instead for rationals.
+
+    Example:
+
+    ```mlir
+    #pop.float_literal<normal(5|3)>
+    #pop.float_literal<neg_zero>
+    #pop.float_literal<inf>
+    #pop.float_literal<neg_inf>
+    #pop.float_literal<nan>
+    ```
+  }];
+
+  let parameters = (ins
+    POP_FloatLiteralSpecialValuesAttr:$special,
+    "std::optional<IPRational>":$rational
+  );
+
+  let hasCustomAssemblyFormat = 1;
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can canonicalize.
+    AttrBuilder<(ins "FloatLiteralSpecialValuesAttr":$input,
+                     "std::optional<IPRational>":$rational)>,
+    // Always a normal value, set the SpecialValue to Normal.
+    AttrBuilder<(ins "IPRational":$value)>,
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralIsaAttr
+//===----------------------------------------------------------------------===//
+
+def POP_FloatLiteralIsaAttr : POP_ExprAttr<"FloatLiteralIsa",
+                                           "float_literal_isa"> {
+  let summary = "Check if the float_literal is of the given special value.";
+  let description = [{
+    The `#pop<float_literal_isa` attribute is used to check if the float
+    literal is of the given special value.  It is the parameter domain form of
+    the `pop.float_literal.isa` operation.
+  }];
+
+  let parameters = (ins
+    "FloatLiteralSpecialValuesAttr":$kind,
+    "TypedAttr":$input
+  );
+
+  let assemblyFormat = [{
+    `<` $kind custom<ParamValue>($input, "FloatLiteralType::get($_ctxt)") `>`
+  }];
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can return a folded attribute.
+    AttrBuilder<(ins "FloatLiteralSpecialValuesAttr":$kind,
+                     "TypedAttr":$input), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralConvertAttr
+//===----------------------------------------------------------------------===//
+
+def POP_FloatLiteralConvertAttr : POP_ExprAttr<"FloatLiteralConvert",
+                                               "float_literal_convert", [
+    DeclareAttrInterfaceMethods<ParameterAttrInterface,
+                                ["validateForElaborator"]>]> {
+  let summary = "Convert an float literal to a different type.";
+  let description = [{
+    The `#pop<float_literal_convert` attribute is used to convert an float
+    literal to a different type.  It is the parameter domain form of
+    the `pop.float_literal.convert` operation.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "Type">:$type,
+    "TypedAttr":$input
+  );
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($input, "FloatLiteralType::get($_ctxt)") `>`
+  }];
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can return a folded attribute.
+    AttrBuilder<(ins "Type":$type, "TypedAttr":$input), "", "TypedAttr">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// IntToFloatLiteralAttr
+//===----------------------------------------------------------------------===//
+
+def POP_IntToFloatLiteralAttr : POP_ExprAttr<"IntToFloatLiteral",
+                                             "int_to_float_literal"> {
+  let summary = "Convert an int literal to an float literal";
+  let description = [{
+    The `#pop.int_to_float_literal` attr converts an int literal to an
+    float literal.
+  }];
+
+  let parameters = (ins "TypedAttr":$input);
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($input, "IntLiteralType::get($_ctxt)") `>`
+  }];
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override default builder so we can return a folded attribute.
+    AttrBuilder<(ins "TypedAttr":$input), "", "TypedAttr">,
+  ];
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// FloatToIntLiteralAttr
+//===----------------------------------------------------------------------===//
+
+def POP_FloatToIntLiteralAttr : POP_ExprAttr<"FloatToIntLiteral",
+                                             "float_to_int_literal"> {
+  let summary = "Convert an float literal to an int literal.";
+  let description = [{
+    The `#pop<float_to_int_literal` attr converts an float literal to an
+    int literal.
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$input
+  );
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($input, "FloatLiteralType::get($_ctxt)") `>`
+  }];
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an FloatToIntLiteralAttr.
+    AttrBuilder<(ins "TypedAttr":$input), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralBinAttr
+//===----------------------------------------------------------------------===//
+
+def POP_FloatLiteralBinAttr : POP_ExprAttr<"FloatLiteralBin",
+                                           "float_literal_bin"> {
+  let summary = "Convert an float literal to a different type.";
+  let description = [{
+    The `#pop<float_literal_bin` attr does standard arithmetic binary
+    operations on `!pop.float_literal` values that return a `!pop.float_literal`.
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$lhs, "TypedAttr":$rhs,
+    "FloatLiteralBinKindAttr":$oper
+  );
+
+  let assemblyFormat = [{
+    `<` $oper custom<ParamValue>($lhs, "FloatLiteralType::get($_ctxt)") `,`
+       custom<ParamValue>($rhs, "FloatLiteralType::get($_ctxt)") `>`
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an IntLiteralConvertAttr.
+    AttrBuilder<(ins "TypedAttr":$lhs, "TypedAttr":$rhs,
+                     "FloatLiteralBinKindAttr":$oper), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralCmpAttr
+//===----------------------------------------------------------------------===//
+
+def POP_FloatLiteralCmpAttr : POP_ExprAttr<"FloatLiteralCmp",
+                                           "float_literal_cmp"> {
+  let summary = "Comparison operator for float literals.";
+  let description = [{
+    The `#pop<float_literal_cmp` attr does comparison testing
+    operations on `!pop.float_literal` values that return an `i1`.
+  }];
+
+  let parameters = (ins
+    "FloatLiteralCmpPredAttr":$pred,
+    "TypedAttr":$lhs, "TypedAttr":$rhs
+  );
+
+  let assemblyFormat = [{
+    `<` $pred custom<ParamValue>($lhs, "FloatLiteralType::get($_ctxt)") `,`
+       custom<ParamValue>($rhs, "FloatLiteralType::get($_ctxt)") `>`
+  }];
+  
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an IntLiteralConvertAttr.
+    AttrBuilder<(ins "FloatLiteralCmpPredAttr":$pred, "TypedAttr":$lhs,
+                     "TypedAttr":$rhs), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
 }
 
 #endif // KGEN_POPDIALECT_POPATTRS_TD

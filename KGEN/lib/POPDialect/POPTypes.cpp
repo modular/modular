@@ -404,3 +404,111 @@ void POPDialect::printType(Type type, DialectAsmPrinter &p) const {
   }
   (void)generatedTypePrinter(type, p);
 }
+
+//===----------------------------------------------------------------------===//
+// IntLiteralType
+//===----------------------------------------------------------------------===//
+
+OptionalParseResult IntLiteralType::parseValue(AsmParser &p,
+                                               TypedAttr &value) const {
+  APInt resultAP;
+  OptionalParseResult parseResult = p.parseOptionalInteger(resultAP);
+  if (!parseResult.has_value())
+    return {};
+  if (failed(*parseResult))
+    return failure();
+  value = IntLiteralAttr::get(p.getContext(), IPInt(resultAP));
+  return mlir::success();
+}
+
+LogicalResult IntLiteralType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto v = ::dyn_cast<IntLiteralAttr>(value);
+  if (!v)
+    return failure();
+  p.getStream() << v.getValue();
+  return success();
+}
+
+std::optional<int64_t>
+IntLiteralType::getTypeSize(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerSize();
+}
+
+std::optional<int64_t>
+IntLiteralType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
+}
+
+/// Write an opaque symbolic attribute to memory.
+static ErrorOrSuccess
+writeSymbolicAttribute(DataLayoutInterface type, TypedAttr value, int64_t addr,
+                       InterpreterState &state,
+                       RegionMark regionMark = RegionMark::None) {
+  unsigned size = *type.getTypeSize(state.getTarget());
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  // The ptr to the symbol is written.
+  if (size != ptrSize && regionMark == RegionMark::Symbol)
+    size = ptrSize;
+  ErrorOr<void *> mem = state.getWritableMemory(addr, size, regionMark);
+  if (mem)
+    return mem.takeError();
+
+  // Without a concrete runtime representation, just make sure the value can be
+  // roundtripped.
+  llvm::StoreIntToMemory(
+      APInt(ptrSize * 8, (uint64_t)value.getAsOpaquePointer()), (uint8_t *)*mem,
+      ptrSize);
+  return success();
+}
+
+/// Read an opaque symbolic attribute from memory.
+static ErrorOr<TypedAttr> readSymbolicAttribute(DataLayoutInterface type,
+                                                int64_t addr,
+                                                InterpreterState &state) {
+  ErrorOr<const void *> mem =
+      state.getReadableMemory(addr, *type.getTypeSize(state.getTarget()));
+  if (mem)
+    return mem.takeError();
+
+  // Without a concrete runtime representation, just make sure the value can be
+  // roundtripped.
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  APInt opaque(ptrSize * 8, 0);
+  llvm::LoadIntFromMemory(opaque, (const uint8_t *)*mem, ptrSize);
+  return ::cast<TypedAttr>(
+      Attribute::getFromOpaquePointer((const void *)opaque.getLimitedValue()));
+}
+
+ErrorOrSuccess IntLiteralType::writeTo(TypedAttr value, int64_t addr,
+                                       InterpreterState &state) const {
+  return writeSymbolicAttribute(*this, value, addr, state);
+}
+
+ErrorOr<TypedAttr> IntLiteralType::readFrom(int64_t addr,
+                                            InterpreterState &state) const {
+  return readSymbolicAttribute(*this, addr, state);
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralType
+//===----------------------------------------------------------------------===//
+
+std::optional<int64_t>
+FloatLiteralType::getTypeSize(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerSize();
+}
+
+std::optional<int64_t>
+FloatLiteralType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
+}
+
+ErrorOrSuccess FloatLiteralType::writeTo(TypedAttr value, int64_t addr,
+                                         InterpreterState &state) const {
+  return writeSymbolicAttribute(*this, value, addr, state);
+}
+
+ErrorOr<TypedAttr> FloatLiteralType::readFrom(int64_t addr,
+                                              InterpreterState &state) const {
+  return readSymbolicAttribute(*this, addr, state);
+}
