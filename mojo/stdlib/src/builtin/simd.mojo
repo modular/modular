@@ -570,16 +570,13 @@ struct SIMD[type: DType, size: Int](
             type.is_floating_point(), "the SIMD type must be floating point"
         ]()
 
-        # Convert this to a scalar and then let splatting implicit constructor
-        # extend it if needed.
-        return Scalar[type](
-            __mlir_attr[
-                `#pop<float_literal_convert<`,
-                value.value,
-                `>> : `,
-                Scalar[type]._mlir_type,
-            ]
-        )
+        # float_literal_convert implicitly splats to !pop.simd as needed.
+        return __mlir_attr[
+            `#pop<float_literal_convert<`,
+            value.value,
+            `>> : `,
+            Self._mlir_type,
+        ]
 
     @staticmethod
     fn from_bits[
