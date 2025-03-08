@@ -762,7 +762,7 @@ gentbl_cc_library(
         ),
     ],
     tblgen = "@llvm-project//mlir:mlir-tblgen",
-    td_file = "include/KGEN/POPDialect/POPAttrs.td",
+    td_file = "include/KGEN/POPDialect/POPEnums.td",
     deps = [
         ":POPDialectIncGen",
         ":POPDialectTdFiles",

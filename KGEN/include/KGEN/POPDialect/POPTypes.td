@@ -270,4 +270,40 @@ class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value, "POP::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
     "DTypeConstantAttr::get($_self.getContext(), KGENDType::kBool))">;
 
+//===----------------------------------------------------------------------===//
+// IntLiteralType
+//===----------------------------------------------------------------------===//
+
+def POP_IntLiteralType : POPType<"IntLiteral", "int_literal",[
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
+  let summary = "Arbitrary-precision integer type for literals.";
+  let description = [{
+    The `!pop.int_literal` type represents an infinite precision
+    integer value.  It can't be materialized, but allows for arbitrary
+    integer size for compile time computations.
+  }];
+
+  let assemblyFormat = "";
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralType
+//===----------------------------------------------------------------------===//
+
+def POP_FloatLiteralType : POPType<"FloatLiteral", "float_literal", [
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
+  let summary = "Arbitrary-precision float type for literals.";
+  let description = [{
+    The `!pop.float_literal` type is for use in arbitrary precision
+    compile time computations.  They are implemented as infinite precision
+    rational number values.  It can't be materialized, but allows for
+    arbitrary precision for compile time computations.
+  }];
+
+  let assemblyFormat = "";
+}
+
 #endif // KGEN_POPDIALECT_POPTYPES_TD

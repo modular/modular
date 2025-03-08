@@ -27,8 +27,6 @@ def DTypeType : DialectType<(type)>;
 
 def StringType : DialectType<(type)>;
 
-def IntLiteralType : DialectType<(type)>;
-
 def GeneratorType : DialectType<(type
   TypeArray:$inputParamTypes,
   Type:$body,
@@ -79,8 +77,6 @@ def WrappedVariantType : DialectType<(type
   TypedAttr:$variadic
 )>;
 
-def FloatLiteralType : DialectType<(type)>;
-
 def KGENDialectTypes : DialectTypes<"kgen"> {
   let elems = [
     WrappedParamRefType,
@@ -88,7 +84,6 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     TypeType,
     DTypeType,
     StringType,
-    IntLiteralType,
     GeneratorType,
     FuncType,
     PointerType,
@@ -100,7 +95,6 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     StructInstanceType,
     PackType,
     WrappedVariantType,
-    FloatLiteralType
   ];
 }
 
@@ -179,31 +173,6 @@ def DTypeConstantAttr : DialectAttribute<(attr
   Custom<"KGENDType">:$dType
 )>;
 
-def IntLiteralAttr : DialectAttribute<(attr
-  Custom<"IPInt">:$value
-)>;
-
-def IntLiteralConvertAttr : DialectAttribute<(attr
-  Type:$type,
-  TypedAttr:$input,
-  ConcreteAttribute<"UnitAttr">:$treatIndexAsUnsigned
-)>;
-
-def IntLiteralBinOpAttr : DialectAttribute<(attr
-  Type:$type,
-  TypedAttr:$lhs, TypedAttr:$rhs,
-  ConcreteAttribute<"IntLiteralBinopKindAttr">:$kind
-)>;
-
-
-def IntLiteralCmpPredAttr : DialectAttribute<(attr
-  EnumAttr<"IntLiteralCmpPred">:$value
-)>;
-
-def IntLiteralBinopKindAttr : DialectAttribute<(attr
-  EnumAttr<"IntLiteralBinopKind">:$value
-)>;
-
 def SymbolConstantAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
@@ -275,23 +244,6 @@ def LinkDependencyArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"FlatSymbolRefAttr">:$value
 )>;
 
-def FloatLiteralAttr : DialectAttribute<(attr
-  ConcreteAttribute<"FloatLiteralSpecialValuesAttr">:$special,
-  Custom<"OptionalIPRational">:$rational
-)>;
-
-def FloatLiteralSpecialValuesAttr : DialectAttribute<(attr
-  EnumAttr<"FloatLiteralSpecialValues">:$value
-)>;
-
-def FloatLiteralBinopKindAttr : DialectAttribute<(attr
-  EnumAttr<"FloatLiteralBinopKind">:$value
-)>;
-
-def FloatLiteralCmpPredAttr : DialectAttribute<(attr
-  EnumAttr<"FloatLiteralCmpPred">:$value
-)>;
-
 def PreservedAttr : DialectAttribute<(attr
   Attribute:$value
 )>;
@@ -302,11 +254,6 @@ def TailKindAttr : DialectAttribute<(attr
 
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
-    IntLiteralCmpPredAttr,
-    IntLiteralBinopKindAttr,
-    FloatLiteralSpecialValuesAttr,
-    FloatLiteralCmpPredAttr,
-    FloatLiteralBinopKindAttr,
     ParameterExprArrayAttr,
     ParamDeclAttr,
     ParamDeclArrayAttr,
@@ -322,8 +269,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     BindParamsAttr,
     TypeConstantRefAttr,
     DTypeConstantAttr,
-    IntLiteralAttr,
-    FloatLiteralAttr,
     SymbolConstantAttr,
     TargetParamAttr,
     StructDefFieldAttr,

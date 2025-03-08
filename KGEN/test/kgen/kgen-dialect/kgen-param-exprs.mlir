@@ -854,9 +854,9 @@ kgen.generator @apply_result_slot() {
 }
 
 // CHECK-LABEL: @int_literal_param
-kgen.generator @int_literal_param<abcd: !kgen.int_literal>() {
-  // CHECK-NEXT: constant: !kgen.int_literal = <abcd>
-  kgen.param.constant: !kgen.int_literal = <abcd>
+kgen.generator @int_literal_param<abcd: !pop.int_literal>() {
+  // CHECK-NEXT: constant: !pop.int_literal = <abcd>
+  kgen.param.constant: !pop.int_literal = <abcd>
   kgen.return
 }
 

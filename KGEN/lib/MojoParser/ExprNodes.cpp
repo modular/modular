@@ -404,12 +404,12 @@ static AnyValue handleIntOrFPLiteral(TypedAttr value, ASTType type,
     return {}; // Sanity check the returned declaration.
   ASTDecl *decl = type.getDecl(emitter.shared);
 
-  // We expect: IntLiteral[value: __mlir_type.`!kgen.int_literal`]
-  // or FloatLiteral[value: __mlir_type.`!kgen.float_literal`]
+  // We expect: IntLiteral[value: __mlir_type.`!pop.int_literal`]
+  // or FloatLiteral[value: __mlir_type.`!pop.float_literal`]
   auto litStruct = dyn_cast_if_present<StructDeclOp>(decl);
 
   if (!litStruct || litStruct.getParams().size() != 1 ||
-      !isa<IntLiteralType, FloatLiteralType>(
+      !isa<POP::IntLiteralType, POP::FloatLiteralType>(
           litStruct.getParams()[0].getType())) {
     emitter.emitError(expr->getLoc(), "malformed Literal type");
     return {};
@@ -429,7 +429,7 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // sign bit.
   if (value.slt(APInt::getZero(value.getBitWidth())))
     value = value.zext(value.getBitWidth() + 1);
-  auto attr = KGEN::IntLiteralAttr::get(emitter.getContext(), IPInt(value));
+  auto attr = POP::IntLiteralAttr::get(emitter.getContext(), IPInt(value));
 
   // Look up the IntLiteral type.
   ASTType type =
@@ -440,7 +440,7 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   IPRational value = Lexer::getFloatLiteralValue(spelling);
-  auto attr = FloatLiteralAttr::get(emitter.getContext(), value);
+  auto attr = POP::FloatLiteralAttr::get(emitter.getContext(), value);
   ASTType type =
       emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
   return handleIntOrFPLiteral(attr, type, this, dest, emitter);

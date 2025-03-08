@@ -20,6 +20,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -805,42 +806,42 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto convert = dyn_cast<IntLiteralConvertAttr>(param)) {
+  if (auto convert = dyn_cast<POP::IntLiteralConvertAttr>(param)) {
     printDemangledParam(os, convert.getInput(), diagShared);
     return;
   }
 
-  if (auto intLitBin = dyn_cast<IntLiteralBinAttr>(param)) {
+  if (auto intLitBin = dyn_cast<POP::IntLiteralBinAttr>(param)) {
     const char *binOp = nullptr;
     switch (intLitBin.getOper().getValue()) {
-    case IntLiteralBinopKind::Add:
+    case POP::IntLiteralBinKind::Add:
       binOp = " + ";
       break;
-    case IntLiteralBinopKind::Sub:
+    case POP::IntLiteralBinKind::Sub:
       binOp = " - ";
       break;
-    case IntLiteralBinopKind::Mul:
+    case POP::IntLiteralBinKind::Mul:
       binOp = " * ";
       break;
-    case IntLiteralBinopKind::FloorDiv:
+    case POP::IntLiteralBinKind::FloorDiv:
       binOp = " // ";
       break;
-    case IntLiteralBinopKind::Mod:
+    case POP::IntLiteralBinKind::Mod:
       binOp = " % ";
       break;
-    case IntLiteralBinopKind::Lshift:
+    case POP::IntLiteralBinKind::Lshift:
       binOp = " << ";
       break;
-    case IntLiteralBinopKind::Rshift:
+    case POP::IntLiteralBinKind::Rshift:
       binOp = " >> ";
       break;
-    case IntLiteralBinopKind::And:
+    case POP::IntLiteralBinKind::And:
       binOp = " & ";
       break;
-    case IntLiteralBinopKind::Or:
+    case POP::IntLiteralBinKind::Or:
       binOp = " | ";
       break;
-    case IntLiteralBinopKind::Xor:
+    case POP::IntLiteralBinKind::Xor:
       binOp = " ^ ";
       break;
     }
@@ -849,26 +850,27 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
                          /*separator=*/binOp);
   }
 
-  if (auto fpLit = dyn_cast<FloatLiteralAttr>(param)) {
+  if (auto fpLit = dyn_cast<POP::FloatLiteralAttr>(param)) {
     switch (fpLit.getSpecial().getValue()) {
-    case FloatLiteralSpecialValues::NegZero:
+    case POP::FloatLiteralSpecialValues::NegZero:
       os << "-0.0";
       return;
-    case FloatLiteralSpecialValues::Inf:
+    case POP::FloatLiteralSpecialValues::Inf:
       os << "inf";
       return;
-    case FloatLiteralSpecialValues::NegInf:
+    case POP::FloatLiteralSpecialValues::NegInf:
       os << "-inf";
       return;
-    case FloatLiteralSpecialValues::Nan:
+    case POP::FloatLiteralSpecialValues::Nan:
       os << "nan";
       return;
-    case FloatLiteralSpecialValues::Normal:
+    case POP::FloatLiteralSpecialValues::Normal:
       // Convert to f64 to print out the value.  TODO: we print float literals
       // in generally really ugly, like "1.000000e+00" which is not great.
       auto ctx = fpLit.getContext();
       printDemangledParam(
-          os, FloatLiteralConvertAttr::get(ctx, Float64Type::get(ctx), fpLit),
+          os,
+          POP::FloatLiteralConvertAttr::get(ctx, Float64Type::get(ctx), fpLit),
           diagShared);
       return;
     }

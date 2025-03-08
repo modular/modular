@@ -27,11 +27,17 @@ def SIMDType : DialectType<(type
   TypedAttr:$dType
 )>;
 
+def IntLiteralType : DialectType<(type)>;
+
+def FloatLiteralType : DialectType<(type)>;
+
 def POPDialectTypes : DialectTypes<"pop"> {
   let elems = [
     ArrayType,
     UnionType,
-    SIMDType
+    SIMDType,
+    IntLiteralType,
+    FloatLiteralType
   ];
 }
 
@@ -75,6 +81,48 @@ def ArrayAttr : DialectAttribute<(attr
   ConcreteType<"ArrayType">:$type
 )>;
 
+def IntLiteralAttr : DialectAttribute<(attr
+  Custom<"IPInt">:$value
+)>;
+
+def IntLiteralConvertAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$input,
+  ConcreteAttribute<"UnitAttr">:$treatIndexAsUnsigned
+)>;
+
+def IntLiteralBinOpAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$lhs, TypedAttr:$rhs,
+  ConcreteAttribute<"IntLiteralBinKindAttr">:$kind
+)>;
+
+
+def IntLiteralCmpPredAttr : DialectAttribute<(attr
+  EnumAttr<"IntLiteralCmpPred">:$value
+)>;
+
+def IntLiteralBinKindAttr : DialectAttribute<(attr
+  EnumAttr<"IntLiteralBinKind">:$value
+)>;
+
+def FloatLiteralAttr : DialectAttribute<(attr
+  ConcreteAttribute<"FloatLiteralSpecialValuesAttr">:$special,
+  Custom<"OptionalIPRational">:$rational
+)>;
+
+def FloatLiteralSpecialValuesAttr : DialectAttribute<(attr
+  EnumAttr<"FloatLiteralSpecialValues">:$value
+)>;
+
+def FloatLiteralBinKindAttr : DialectAttribute<(attr
+  EnumAttr<"FloatLiteralBinKind">:$value
+)>;
+
+def FloatLiteralCmpPredAttr : DialectAttribute<(attr
+  EnumAttr<"FloatLiteralCmpPred">:$value
+)>;
+
 def POPDialectAttributes : DialectAttributes<"pop"> {
   let elems = [
     CmpPredicateAttr,
@@ -83,7 +131,16 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     FastmathFlagsAttr,
     UnionAttr,
     SIMDAttr,
-    ArrayAttr
+    ArrayAttr,
+
+    IntLiteralCmpPredAttr,
+    IntLiteralBinKindAttr,
+    FloatLiteralSpecialValuesAttr,
+    FloatLiteralCmpPredAttr,
+    FloatLiteralBinKindAttr,
+
+    IntLiteralAttr,
+    FloatLiteralAttr,
   ];
 }
 

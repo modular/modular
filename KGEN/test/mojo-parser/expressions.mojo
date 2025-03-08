@@ -592,7 +592,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   alias i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl *"j{{.*}}@SIMD<:!DType {:dtype f64}, :!Int {1}> = <cond(#lit.struct.extract<:!Bool cond, "value">,
-  # CHECK-SAME: :!kgen.float_literal #kgen.float_literal<2|1>{{.*}}:!kgen.int_literal 3> 
+  # CHECK-SAME: :!pop.float_literal #pop.float_literal<2|1>{{.*}}:!pop.int_literal 3> 
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = <cond(#lit.struct.extract<:!Bool cond, "value">, {2}, {3})>
@@ -800,7 +800,7 @@ def literals():
     a = 0O711         # CHECK: 457
     # Test parsing for this value with lots of underscores here because mblack
     # can't handle it.
-    alias b = 1_2.3__1e+1_1 # CHECK: #kgen.float_literal<1231000000000|1>
+    alias b = 1_2.3__1e+1_1 # CHECK: #pop.float_literal<1231000000000|1>
     c = False         # CHECK: !Bool = <{:i1 0}>
     c = True          # CHECK: !Bool = <{:i1 1}>
 
@@ -1228,7 +1228,7 @@ fn testTransferWarning():
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl *"bigggNumber{{.*}}@IntLiteral<:!kgen.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936> = <*?>
+# CHECK: lit.alias.decl *"bigggNumber{{.*}}@IntLiteral<:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936> = <*?>
 alias bigggNumber = 2 << 255
 fn useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{512}>

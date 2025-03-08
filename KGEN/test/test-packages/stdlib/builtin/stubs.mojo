@@ -160,12 +160,12 @@ struct NoneType:
 @value
 @nonmaterializable(Int)
 @register_passable("trivial")
-struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     alias _zero = IntLiteral[
-        __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
+        __mlir_attr.`#pop.int_literal<0> : !pop.int_literal`
     ]()
     alias _one = IntLiteral[
-        __mlir_attr.`#kgen.int_literal<1> : !kgen.int_literal`
+        __mlir_attr.`#pop.int_literal<1> : !pop.int_literal`
     ]()
 
     @always_inline("builtin")
@@ -176,11 +176,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
     @always_inline("builtin")
     fn __ne__(self, rhs: IntLiteral[_]) -> Bool:
         return __mlir_attr[
-            `#kgen<int_literal_cmp<ne `,
+            `#pop<int_literal_cmp<ne `,
             self.value,
             `,`,
             rhs.value,
-            `>> : !kgen.int_literal`,
+            `>> : !pop.int_literal`,
         ]
 
     @always_inline("builtin")
@@ -193,11 +193,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<mul `,
+                `#pop<int_literal_bin<mul `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -207,7 +207,7 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
 @value
 @nonmaterializable(FloatDyn)
 @register_passable("trivial")
-struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`]:
+struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     @always_inline("builtin")
     fn __init__(out self):
         pass
@@ -218,9 +218,9 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`]:
         value: IntLiteral[_],
         out result: FloatLiteral[
             __mlir_attr[
-                `#kgen<int_to_float_literal<`,
+                `#pop<int_to_float_literal<`,
                 value.value,
-                `>> : !kgen.float_literal`,
+                `>> : !pop.float_literal`,
             ]
         ],
     ):
@@ -241,7 +241,7 @@ struct FloatDyn:
     @implicit
     fn __init__(out self, value: FloatLiteral):
         self = __mlir_attr[
-            `#kgen<float_literal_convert<`, +value.value, `>> : f64`
+            `#pop<float_literal_convert<`, +value.value, `>> : f64`
         ]
 
     @always_inline("builtin")
@@ -268,7 +268,7 @@ struct Int(Copyable):
     @implicit
     fn __init__(out self, value: IntLiteral[_]):
         self.value = __mlir_attr[
-            `#kgen<int_literal_convert<`, +value.value, `, 0>> : index`
+            `#pop<int_literal_convert<`, +value.value, `, 0>> : index`
         ]
 
     @always_inline("builtin")
