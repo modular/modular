@@ -29,11 +29,11 @@ def dummy_moe_weight(config: DeepseekV2Config) -> torch.Tensor:
 
 
 @pytest.fixture
-def input_tensor(config: DeepseekV2Config) -> torch.Tensor:
-    torch.manual_seed(42)  # Set fixed seed for reproducibility
+def input_tensor(config: DeepseekV2Config, seq_len: int = 7) -> torch.Tensor:
+    torch.manual_seed(1234)  # Set fixed seed for reproducibility
     return torch.randn(
         1,
-        1,
+        seq_len,
         config.hidden_size,
         dtype=torch.bfloat16,
     )
@@ -67,7 +67,7 @@ def generate_max_outputs(
         input_types=(
             TensorType(
                 DType.bfloat16,
-                (1, 1, config.hidden_size),
+                (1, input_tensor.shape[1], config.hidden_size),
             ),
         ),
     )
@@ -93,14 +93,14 @@ def test_moe_gate(
 
     # Top_k does not return values in sorted order, so we sort outputs here to compare.
     torch.testing.assert_close(
-        torch.sort(torch_topk_idxs.squeeze(0))[0],
+        torch.sort(torch_topk_idxs)[0],
         torch.sort(max_topk_idxs)[0],
         rtol=1e-3,
         atol=1e-6,
     )
 
     torch.testing.assert_close(
-        torch.sort(torch_topk_weights.squeeze(0))[0],
+        torch.sort(torch_topk_weights)[0],
         torch.sort(max_topk_weights)[0],
         rtol=1e-3,
         atol=1e-6,
