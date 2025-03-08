@@ -46,8 +46,9 @@ lldb::ChildCacheState MojoListSyntheticFrontEnd::Update() {
   if (elementType.IsValid()) {
     auto exeCtxScope = ExecutionContext(m_backend.GetExecutionContextRef())
                            .GetBestExecutionContextScope();
-    if (auto eltSize = elementType.GetByteSize(exeCtxScope)) {
-      elementSize = eltSize.value();
+    if (llvm::Expected<uint64_t> eltSize =
+            elementType.GetByteSize(exeCtxScope)) {
+      elementSize = eltSize.get();
       // This means that we were able to parse everything we needed, so this is
       // where we set the size.
       size = parsed->second;

@@ -370,7 +370,8 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
       type = dwarf->MakeType(
           die.GetID(), attrs.name,
           attrs.byteSize.value_or(
-              mojoType.GetByteSize(/*exe_scope=*/nullptr).value_or(0)),
+              expectedToStdOptional(mojoType.GetByteSize(/*exe_scope=*/nullptr))
+                  .value_or(0)),
           nullptr, attrs.type.Reference().GetID(),
           lldb_private::Type::eEncodingIsUID, &attrs.decl, mojoType,
           lldb_private::Type::ResolveState::Full);
@@ -441,7 +442,8 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
         type = dwarf->MakeType(
             die.GetID(), ConstString(),
             attrs.byteSize.value_or(
-                mojoType.GetByteSize(/*exe_ctx=*/nullptr).value_or(0)),
+                expectedToStdOptional(mojoType.GetByteSize(/*exe_ctx=*/nullptr))
+                    .value_or(0)),
             nullptr, die.GetID(), lldb_private::Type::eEncodingIsUID,
             &attrs.decl, mojoType, lldb_private::Type::ResolveState::Full);
         type->SetEncodingType(elementType);
@@ -470,15 +472,15 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     // from the one that produced the debug info, in which case we discard the
     // MLIR type and do regular DWARF parsing.
     if (mojoType.IsValid()) {
-      std::optional<uint64_t> mlirByteSize =
+      llvm::Expected<uint64_t> mlirByteSize =
           mojoType.GetByteSize(/*exe_scope=*/nullptr);
       if (!mlirByteSize) {
         mojoType = {};
         dwarf->GetObjectFile()->GetModule()->ReportError(
             "The parsed MLIR structure type '{0}' has not byte size. The "
             "MLIR type won't be used and regular MLIR-agnostic DWARF parsing "
-            "will be performed.",
-            attrs.name.AsCString());
+            "will be performed. Error: {1}",
+            attrs.name.AsCString(), llvm::toString(mlirByteSize.takeError()));
       } else if (attrs.byteSize && *attrs.byteSize != *mlirByteSize) {
         mojoType = {};
         dwarf->GetObjectFile()->GetModule()->ReportError(
@@ -554,13 +556,14 @@ bool MojoDWARFParser::CompleteStructureTypeFromDWARF(
         return false;
       }
 
-      std::optional<uint64_t> typeSize = memberType->GetByteSize(nullptr);
+      llvm::Expected<uint64_t> typeSize = memberType->GetByteSize(nullptr);
       if (!typeSize) {
         dwarf->GetObjectFile()->GetModule()->ReportError(
             "[MojoDWARFParser::CompleteTypeFromDWARF]: Couldn't complete "
             "the struct type '{0}' because one of its fields has no size. Die "
-            "= {1:x}, member die = {2:x}.",
-            die.GetName(), die.GetOffset(), memberDie.GetOffset());
+            "= {1:x}, member die = {2:x}: {3}",
+            die.GetName(), die.GetOffset(), memberDie.GetOffset(),
+            llvm::toString(typeSize.takeError()));
         return false;
       }
       typeSystem.addFieldToStruct(
@@ -569,14 +572,23 @@ bool MojoDWARFParser::CompleteStructureTypeFromDWARF(
     }
   }
   ParsedDWARFTypeAttributes attrs(die);
-  if (attrs.byteSize && attrs.byteSize != compilerType.GetByteSize(
-                                              /*exe_scope=*/nullptr)) {
-    dwarf->GetObjectFile()->GetModule()->ReportError(
-        "[MojoDWARFParser::CompleteTypeFromDWARF]: The struct type '{0}' "
-        "doesn't have the same size as reported in the DWARF after type "
-        "completion. Die = {1:x}.",
-        die.GetName(), die.GetOffset());
-    return false;
+  if (attrs.byteSize) {
+    llvm::Expected<uint64_t> mlirByteSize = compilerType.GetByteSize(
+        /*exe_scope=*/nullptr);
+    if (!mlirByteSize) {
+      dwarf->GetObjectFile()->GetModule()->ReportError(
+          "[MojoDWARFParser::CompleteTypeFromDWARF]: {0}",
+          llvm::toString(mlirByteSize.takeError()));
+      return false;
+    }
+    if (mlirByteSize.get() != attrs.byteSize) {
+      dwarf->GetObjectFile()->GetModule()->ReportError(
+          "[MojoDWARFParser::CompleteTypeFromDWARF]: The struct type '{0}' "
+          "doesn't have the same size as reported in the DWARF after type "
+          "completion. Die = {1:x}.",
+          die.GetName(), die.GetOffset());
+      return false;
+    }
   }
   completedDecls.insert(&*structDecl);
   return true;

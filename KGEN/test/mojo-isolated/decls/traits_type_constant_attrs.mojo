@@ -15,7 +15,7 @@
 
 # Binding `t` to `MainTraitT2` triggers the following type constants
 # CHECK-DAG: #ImplT2 = #kgen.type<!ImplT, {"subget2" : !lit.generator<("self": !ImplT) -> index> = @{{.*}}::@ImplT::@"subget2{{.*}}", "__del__" : {{.*}}}> : !SubTraitT2
-# CHECK-DAG: #MainImplT1 = #kgen.type<!MainImplT, {"ret_type" : !SubTraitT2_ = #ImplT2, "get2" : !lit.generator<("self": !MainImplT) -> !ImplT> = @{{.*}}::@MainImplT::@"get{{.*}}", "__del__" : {{.*}}}> : !MainTraitT
+# CHECK-DAG: #MainImplT1 = #kgen.type<!MainImplT, {"ret_type" : !SubTraitT2 = #ImplT2, "get2" : !lit.generator<("self": !MainImplT) -> !ImplT> = @{{.*}}::@MainImplT::@"get{{.*}}", "__del__" : {{.*}}}> : !MainTraitT
 
 @register_passable("trivial")
 trait SubTraitT:

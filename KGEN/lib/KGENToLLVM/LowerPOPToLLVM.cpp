@@ -1389,16 +1389,17 @@ struct ConvertPOPCallLLVMIntrinsic
     if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), types)))
       return failure();
     rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, types, cast<StringAttr>(op.getIntrin()).getValue(),
+        op, types, cast<StringAttr>(op.getIntrin()),
         expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
-        convertFastmathFlags(op.getFastmathFlags()),
-        /*op_bundle_operands=*/ArrayRef<ValueRange>{}, mlir::ArrayAttr{});
+        convertFastmathFlags(op.getFastmathFlags(), rewriter));
     return success();
   }
 
   /// POP dialect fastmath flags match the LLVM ones.
-  static LLVM::FastmathFlags convertFastmathFlags(FastmathFlags fmf) {
-    return static_cast<LLVM::FastmathFlags>(fmf);
+  static LLVM::FastmathFlagsAttr
+  convertFastmathFlags(FastmathFlags fmf, ConversionPatternRewriter &rewriter) {
+    return rewriter.getAttr<LLVM::FastmathFlagsAttr>(
+        static_cast<LLVM::FastmathFlags>(fmf));
   }
 };
 

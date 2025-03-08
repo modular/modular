@@ -482,17 +482,17 @@ uint32_t MojoTypeSystem::GetPointerByteSize() {
   return impl->targetInfo.getDataLayout().getPointerSize();
 }
 
-std::optional<uint64_t>
+llvm::Expected<uint64_t>
 MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
                            lldb_private::ExecutionContextScope *exeScope) {
   MojoASTTypeRef astType(type);
   if (!astType)
-    return {};
+    return llvm::createStringError("Invalid type: Cannot determine size");
 
   if (auto &layout = impl->dataLayoutContext->getOrCalculate(astType))
     return layout->getByteSize() * CHAR_BIT;
 
-  return {};
+  return llvm::createStringError("Unknown type: Cannot determine size");
 }
 
 std::optional<size_t>
