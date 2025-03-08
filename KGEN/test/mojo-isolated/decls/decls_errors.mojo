@@ -24,7 +24,7 @@ fn missing_ret_val() -> __mlir_type.index:
   return # expected-error {{cannot implicitly convert 'None' value to 'index' in return value}}
 
 fn ret_type_mismatch() -> __mlir_type.index:
-  return 4.0 # expected-error {{cannot implicitly convert 'FloatLiteral[4.000000e+00]' value to 'index' in return value}}
+  return 4.0 # expected-error {{cannot implicitly convert 'FloatLiteral[4]' value to 'index' in return value}}
 
 async fn testAsyncVoid(): pass
 async fn testAsyncInt() -> Int: return 42
@@ -40,7 +40,7 @@ struct ThingWithStaticMethod:
      pass
 
 fn testThingWithStaticMethod():
-  # expected-error @+1 {{invalid call to 'splat': argument #0 cannot be converted from 'FloatLiteral[4.000000e+00]' to 'Int'}}
+  # expected-error @+1 {{invalid call to 'splat': argument #0 cannot be converted from 'FloatLiteral[4]' to 'Int'}}
   ThingWithStaticMethod.splat(4.0)
 
 
@@ -136,7 +136,7 @@ fn defaultArgumentUnknownDeclaration(a: Int = unknown): pass
 # expected-error @+1 {{cannot use a dynamic value in default argument}}
 fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
-# expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1.000000e+00]' value to 'Int'}}
+# expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1]' value to 'Int'}}
 fn defaultArgumentBadType(a: Int = 1.0): pass
 
 # expected-error @+1 {{'mut' arguments may not have defaults}}
@@ -181,11 +181,11 @@ struct TestTuple[*Ts: AnyTrivialRegType]:
         pass
 
 fn badCalls(arg: Int):
-  # expected-error @+1 {{argument #1 cannot be converted from 'FloatLiteral[1.000000e+00]' to 'Int'}}
+  # expected-error @+1 {{argument #1 cannot be converted from 'FloatLiteral[1]' to 'Int'}}
   exampleVariadic(1.0, 1.0)
-  # expected-error @+1 {{argument #3 cannot be converted from 'FloatLiteral[1.000000e+00]' to 'Int'}}
+  # expected-error @+1 {{argument #3 cannot be converted from 'FloatLiteral[1]' to 'Int'}}
   exampleVariadic(1.0, 1, 2, 1.0)
-  # expected-error @+1 {{argument #3 cannot be converted from 'FloatLiteral[4.000000e+00]' to 'Int'}}
+  # expected-error @+1 {{argument #3 cannot be converted from 'FloatLiteral[4]' to 'Int'}}
   exampleVariadicAndKeyword(1, 2, 3, b=4.0)
 
   var x: Int
@@ -1055,7 +1055,7 @@ fn take_foo(x: Foo): pass
 fn return_foo(x: Int) -> Foo:
     return x # expected-error {{cannot implicitly convert 'Int' value to 'Foo'}}
 
-    return 1.2 # expected-error {{cannot implicitly convert 'FloatLiteral[1.200000e+00]' value to 'Foo'}}
+    return 1.2 # expected-error {{cannot implicitly convert 'FloatLiteral[1.2]' value to 'Foo'}}
 
 # When attempting to do implicit conversions without an @implicit decorator
 fn implicit_conversions():

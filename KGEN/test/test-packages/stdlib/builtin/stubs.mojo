@@ -230,18 +230,18 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
 @value
 @register_passable("trivial")
 struct FloatDyn:
-    var value: __mlir_type.f64
+    var value: __mlir_type.`!pop.scalar<f64>`
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: __mlir_type.f64):
+    fn __init__(out self, value: __mlir_type.`!pop.scalar<f64>`):
         self.value = value
 
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: FloatLiteral):
         self = __mlir_attr[
-            `#pop<float_literal_convert<`, +value.value, `>> : f64`
+            `#pop<float_literal_convert<`, +value.value, `>> : !pop.scalar<f64>`
         ]
 
     @always_inline("builtin")

@@ -868,10 +868,10 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       // Convert to f64 to print out the value.  TODO: we print float literals
       // in generally really ugly, like "1.000000e+00" which is not great.
       auto ctx = fpLit.getContext();
-      printDemangledParam(
-          os,
-          POP::FloatLiteralConvertAttr::get(ctx, Float64Type::get(ctx), fpLit),
-          diagShared);
+      auto f64Type = POP::SIMDType::get(ctx, 1, DType::f64);
+      auto simdVal = cast<POP::SIMDAttr>(
+          POP::FloatLiteralConvertAttr::get(ctx, f64Type, fpLit));
+      os << simdVal.getValues()[0].getFloatVal();
       return;
     }
   }

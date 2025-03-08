@@ -818,16 +818,20 @@ Type IntLiteralCmpAttr::getType() const {
 
 /// Take an IPRational along with a specification for an output float type and
 /// return the IEEE-style float bit string as an APInt.
-static APInt floatLiteralConvertGetBitstring(IPRational input,
-                                             unsigned totalLength,
-                                             unsigned exponentLength,
-                                             unsigned bias) {
+static APInt
+floatLiteralConvertGetBitstring(const IPRational &input,
+                                const llvm::fltSemantics &fltSemantics) {
+  unsigned totalLength = APFloat::getSizeInBits(fltSemantics);
+  unsigned bias = APFloat::semanticsMaxExponent(fltSemantics);
+  unsigned exponentLength =
+      llvm::Log2_64(APFloat::semanticsMaxExponent(fltSemantics) -
+                    APFloat::semanticsMinExponent(fltSemantics) + 3);
+
   // Throughout this function I use “significand” to mean the float value
   // including the digit before the decimal, and “mantissa” to mean just the
   // part after the decimal, IE the bit pattern that is actually present in the
   // float value.  That's not technically correct, but it was helpful for me to
   // distinguish the two.
-
   unsigned mantissaLength = totalLength - exponentLength - 1;
   IPInt maxExponentZeroBias = (IPInt(1) << exponentLength) - 1;
   IPInt maxExponent = maxExponentZeroBias - bias;
@@ -1025,44 +1029,15 @@ static ErrorOr<TypedAttr> foldFloatLiteralConvert(TypedAttr input,
   if (!inputLitAttr)
     return Error("input must be FloatLiteralAttr");
 
-  unsigned totalLength = 0;
-  unsigned exponentLength = 0;
-  unsigned bias = 0;
   const llvm::fltSemantics *fltSemantics = nullptr;
 
-  // Handle builtin float types like 'f32'.
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
-                      BITCOUNT, APFLOAT_TYPE, LLVM_SEMANTICS,                  \
-                      SIGNIFICAND_PRECISION, EXPONENT_LENGTH, BIAS)            \
-  if (isa<MLIR_TYPE>(outType)) {                                               \
-    totalLength = BITCOUNT;                                                    \
-    exponentLength = EXPONENT_LENGTH;                                          \
-    bias = BIAS;                                                               \
-    fltSemantics = &APFLOAT_TYPE();                                            \
-  }
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
-
   // Handle !scalar<f32> aka !simd<f32, 1>
-  if (auto simd = dyn_cast<SIMDType>(outType)) {
-    if (auto dtype = simd.getResolvedDType())
-      if (simd.isScalar() && dtype->isFloat()) {
-        fltSemantics = &DTypeValue::getFloatSemantics(*dtype);
+  auto simd = dyn_cast<SIMDType>(outType);
+  if (auto dtype = simd.getResolvedDType())
+    if (simd.getResolvedSize() && dtype->isFloat())
+      fltSemantics = &DTypeValue::getFloatSemantics(*dtype);
 
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
-                      BITCOUNT, APFLOAT_TYPE, LLVM_SEMANTICS,                  \
-                      SIGNIFICAND_PRECISION, EXPONENT_LENGTH, BIAS)            \
-  if (fltSemantics == &APFLOAT_TYPE()) {                                       \
-    totalLength = BITCOUNT;                                                    \
-    exponentLength = EXPONENT_LENGTH;                                          \
-    bias = BIAS;                                                               \
-  }
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
-      }
-  }
-
-  if (!fltSemantics || bias == 0) {
+  if (!fltSemantics) {
     std::string str;
     llvm::raw_string_ostream os(str);
     os << outType;
@@ -1092,23 +1067,24 @@ static ErrorOr<TypedAttr> foldFloatLiteralConvert(TypedAttr input,
   case FloatLiteralSpecialValues::Normal: {
     std::optional<IPRational> inRat = inputLitAttr.getRational();
     assert(inRat.has_value() && "normal FloatLiteral values have a rational");
-    APInt floatBits = floatLiteralConvertGetBitstring(
-        inRat.value(), totalLength, exponentLength, bias);
+    APInt floatBits =
+        floatLiteralConvertGetBitstring(inRat.value(), *fltSemantics);
     resultValue = APFloat(*fltSemantics, floatBits);
     break;
   }
   }
 
-  // Form a SIMDAttr for values of !simd type.
-  if (auto simd = dyn_cast<SIMDType>(outType))
-    return SIMDAttr::get(DTypeValue(resultValue, *simd.getResolvedDType()),
-                         simd);
-  // MLIR float type.
-  return FloatAttr::get(outType, resultValue);
+  // Form a SIMDAttr for values of !simd type, splating the value out as needed.
+  DTypeValue value(resultValue, *simd.getResolvedDType());
+  SmallVector<DTypeValue> values(*simd.getResolvedSize(), value);
+  return SIMDAttr::get(values, simd);
 }
 
 TypedAttr FloatLiteralConvertAttr::get(MLIRContext *ctx, Type type,
                                        TypedAttr input) {
+  assert(!::isa<FloatLiteralType>(type) && !type.isF64() &&
+         "should convert to SIMD type");
+
   // If this is a literal constant coming in, we can fold this.  If not, stage
   // it until elaboration simplifies things.
   auto errOrAttr = foldFloatLiteralConvert(input, type);
