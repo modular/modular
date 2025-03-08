@@ -14,7 +14,8 @@
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
-from collections.string.string_slice import _align_down, _memchr, _memmem
+from math import align_down
+from collections.string.string_slice import _memchr, _memmem
 from sys import simdwidthof
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
@@ -163,7 +164,7 @@ fn _memmem_baseline[
 
     alias bool_mask_width = simdwidthof[DType.bool]()
     var first_needle = SIMD[type, bool_mask_width](needle[0])
-    var vectorized_end = _align_down(
+    var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
     )
     for i in range(0, vectorized_end, bool_mask_width):

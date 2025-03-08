@@ -36,6 +36,7 @@ from sys import bitwidthof, simdwidthof, is_compile_time
 from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
+from math import align_down
 from bit import count_leading_zeros, count_trailing_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
@@ -2110,11 +2111,6 @@ fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
 
 
 @always_inline
-fn _align_down(value: Int, alignment: Int) -> Int:
-    return value._positive_div(alignment) * alignment
-
-
-@always_inline
 fn _memchr[
     type: DType, //
 ](
@@ -2148,7 +2144,7 @@ fn _memchr_impl[
         return UnsafePointer[Scalar[type]]()
     alias bool_mask_width = simdwidthof[DType.bool]()
     var first_needle = SIMD[type, bool_mask_width](char)
-    var vectorized_end = _align_down(len, bool_mask_width)
+    var vectorized_end = align_down(len, bool_mask_width)
 
     for i in range(0, vectorized_end, bool_mask_width):
         var bool_mask = source.load[width=bool_mask_width](i) == first_needle
@@ -2213,7 +2209,7 @@ fn _memmem_impl[
     needle_len: Int,
 ) -> UnsafePointer[Scalar[type]]:
     alias bool_mask_width = simdwidthof[DType.bool]()
-    var vectorized_end = _align_down(
+    var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
     )
 

@@ -32,19 +32,9 @@ from sys import (
     sizeof,
     is_compile_time,
 )
-from math import iota
+from math import iota, align_down
 
 from memory.pointer import AddressSpace, _GPUAddressSpace
-
-# ===----------------------------------------------------------------------=== #
-# Utilities
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn _align_down(value: Int, alignment: Int) -> Int:
-    return value._positive_div(alignment) * alignment
-
 
 # ===-----------------------------------------------------------------------===#
 # memcmp
@@ -187,7 +177,7 @@ fn _memcpy_impl(
     @parameter
     if is_gpu():
         alias chunk_size = simdbitwidth()
-        var vector_end = _align_down(n, chunk_size)
+        var vector_end = align_down(n, chunk_size)
         for i in range(0, vector_end, chunk_size):
             dest_data.store(i, src_data.load[width=chunk_size](i))
         for i in range(vector_end, n):
@@ -247,7 +237,7 @@ fn _memcpy_impl(
 
     # Copy in 32-byte chunks.
     alias chunk_size = 32
-    var vector_end = _align_down(n, chunk_size)
+    var vector_end = align_down(n, chunk_size)
     for i in range(0, vector_end, chunk_size):
         dest_data.store(i, src_data.load[width=chunk_size](i))
     for i in range(vector_end, n):
@@ -304,7 +294,7 @@ fn _memset_impl[
     count: Int,
 ):
     alias simd_width = simdwidthof[Byte]()
-    var vector_end = _align_down(count, simd_width)
+    var vector_end = align_down(count, simd_width)
 
     for i in range(0, vector_end, simd_width):
         ptr.store(i, SIMD[DType.uint8, simd_width](value))
@@ -372,7 +362,7 @@ fn memset_zero[
         ptr: UnsafePointer to the beginning of the memory block to fill.
     """
     alias simd_width = simdwidthof[type]()
-    alias vector_end = _align_down(count, simd_width)
+    alias vector_end = align_down(count, simd_width)
 
     @parameter
     if count > 128:
