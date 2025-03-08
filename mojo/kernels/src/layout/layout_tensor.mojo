@@ -3358,7 +3358,7 @@ fn copy_sram_to_dram[
 
     # TODO: copy_from only allows static layout
     @parameter
-    if src.dtype == dst.dtype and not swizzle:
+    if src.dtype == dst.dtype and not swizzle and not dst.masked:
         dst_fragments.copy_from(src_fragments)
     else:
         constrained[
