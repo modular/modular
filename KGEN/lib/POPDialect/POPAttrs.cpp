@@ -50,23 +50,6 @@ LogicalResult UnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // DTypeValue
 //===----------------------------------------------------------------------===//
 
-bool DTypeValue::isValidFloatDType(KGENDType dtype) {
-  return dtype.isFloat() && dtype != DType::tf32;
-}
-
-const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
-  switch (dtype.getValue()) {
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
-                      BITCOUNT, APFLOAT_TYPE, ...)                             \
-  case DType::SHORT_NAME:                                                      \
-    return APFLOAT_TYPE();
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
-  default:
-    llvm_unreachable("unknown float dtype");
-  }
-}
-
 DTypeValue::DTypeValue(APInt data, KGENDType dtype)
     : data(std::move(data)), dtype(dtype) {
   assert(dtype.isAddress() || dtype.isIndex() ||
@@ -78,7 +61,7 @@ DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
 
 DTypeValue::DTypeValue(APFloat value, KGENDType dtype)
     : DTypeValue(value.bitcastToAPInt(), dtype) {
-  assert(isValidFloatDType(dtype));
+  assert(dtype.getFloatSemantics());
 }
 
 DTypeValue::DTypeValue(bool value, KGENDType dtype)
@@ -95,8 +78,9 @@ APSInt DTypeValue::getIntVal() const {
 }
 
 APFloat DTypeValue::getFloatVal() const {
-  assert(isValidFloatDType(dtype));
-  return APFloat(getFloatSemantics(dtype), data);
+  auto *sem = dtype.getFloatSemantics();
+  assert(sem && "not a float type");
+  return APFloat(*sem, data);
 }
 
 bool DTypeValue::getBoolVal() const {
@@ -164,7 +148,13 @@ parseDTypeValue(AsmParser &p, KGENDType dtype) {
       if (p.parseString(&strVal))
         return failure();
     }
-    APFloat apFp(DTypeValue::getFloatSemantics(dtype));
+    auto *semantics = dtype.getFloatSemantics();
+    if (!semantics) {
+      p.emitError(loc, "unknown float semantics for type");
+      return failure();
+    }
+
+    APFloat apFp(*semantics);
     llvm::Expected<APFloat::opStatus> status =
         apFp.convertFromString(strVal, APFloat::rmNearestTiesToEven);
     if (llvm::errorToBool(status.takeError())) {
@@ -292,9 +282,8 @@ SIMDAttr SIMDAttr::getZeroValue(SIMDType type) {
   } else if (dtype.isInt()) {
     APSInt aps(dtype.getIntegerWidthInBits(), /*isUnsigned=*/dtype.isUInt());
     zeroValue = DTypeValue(aps, dtype);
-  } else if (DTypeValue::isValidFloatDType(dtype)) {
-    auto apf = APFloat::getZero(DTypeValue::getFloatSemantics(dtype));
-    zeroValue = DTypeValue(apf, dtype);
+  } else if (auto *sem = dtype.getFloatSemantics()) {
+    zeroValue = DTypeValue(APFloat::getZero(*sem), dtype);
   }
 
   if (!zeroValue)
@@ -359,8 +348,8 @@ parseSplatOrVector(AsmParser &p, SmallVector<DTypeValue> &values,
   std::optional<KGENDType> dtype = type.getResolvedDType();
   std::optional<int64_t> size = type.getResolvedSize();
   auto checkDType = [&]() -> ParseResult {
-    if (dtype->isInt() || DTypeValue::isValidFloatDType(*dtype) ||
-        dtype->isBool() || dtype->isIndex() || dtype->isAddress())
+    if (dtype->isInt() || dtype->getFloatSemantics() || dtype->isBool() ||
+        dtype->isIndex() || dtype->isAddress())
       return success();
     return p.emitError(
         p.getCurrentLocation(),
@@ -1035,7 +1024,7 @@ static ErrorOr<TypedAttr> foldFloatLiteralConvert(TypedAttr input,
   auto simd = dyn_cast<SIMDType>(outType);
   if (auto dtype = simd.getResolvedDType())
     if (simd.getResolvedSize() && dtype->isFloat())
-      fltSemantics = &DTypeValue::getFloatSemantics(*dtype);
+      fltSemantics = dtype->getFloatSemantics();
 
   if (!fltSemantics) {
     std::string str;

@@ -26,12 +26,6 @@ namespace M::KGEN::POP {
 /// as signed.
 class DTypeValue {
 public:
-  /// Returns true if this is a supported float dtype.
-  static bool isValidFloatDType(KGENDType dtype);
-
-  /// Get the floating semantics for the given dtype.
-  static const llvm::fltSemantics &getFloatSemantics(KGENDType dtype);
-
   /// Get an integer value.
   DTypeValue(APSInt value, KGENDType dtype);
 
