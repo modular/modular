@@ -191,3 +191,20 @@ ErrorOr<std::pair<int32_t, int32_t>> DType::getMaxAndMinValue() const {
         return Error("Unsupported quantization dtype " + getAsString());
       });
 }
+
+/// This method returns the LLVM floating point semantics for the given DType,
+/// or nullptr if the DType is not a floating point type LLVM knows about
+/// (e.g. TF32).
+const llvm::fltSemantics *DType::getFPSemantics() const {
+  switch (getValue()) {
+  default:
+    return nullptr;
+
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
+                      BITCOUNT, APFLOAT_TYPE, ...)                             \
+  case DType::SHORT_NAME:                                                      \
+    return &APFLOAT_TYPE();
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
+  }
+}
