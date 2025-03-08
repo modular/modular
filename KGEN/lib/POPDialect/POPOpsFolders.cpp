@@ -717,13 +717,13 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   }
   assert(dtype->isFloat());
   // Check to make sure we have a supported float dtype.
-  if (!DTypeValue::isValidFloatDType(*dtype))
+  const llvm::fltSemantics *sem = dtype->getFloatSemantics();
+  if (!sem)
     return {};
-  const llvm::fltSemantics &sem = DTypeValue::getFloatSemantics(*dtype);
   return foldSIMDOpResult<::Detail::kNoIndex>(
       adaptor.getOperands(), *dtype,
-      [&](const APSInt &in) { return APFloat(sem, in); },
-      [&](const APFloat &in) { return APFloat(sem, in.bitcastToAPInt()); });
+      [&](const APSInt &in) { return APFloat(*sem, in); },
+      [&](const APFloat &in) { return APFloat(*sem, in.bitcastToAPInt()); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -777,22 +777,22 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
 
   if (dtype->isFloat()) {
     // Cannot fold cast to unsupported float dtype.
-    if (!DTypeValue::isValidFloatDType(*dtype))
+    const llvm::fltSemantics *sem = dtype->getFloatSemantics();
+    if (!sem)
       return {};
-    const llvm::fltSemantics &sem = DTypeValue::getFloatSemantics(*dtype);
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
         [&](const APSInt &in) -> APFloat {
-          APFloat fp(sem);
+          APFloat fp(*sem);
           fp.convertFromAPInt(in, in.isSigned(), APFloat::rmNearestTiesToEven);
           return fp;
         },
         [&](APFloat in) {
           bool ignored;
-          in.convert(sem, APFloat::rmNearestTiesToEven, &ignored);
+          in.convert(*sem, APFloat::rmNearestTiesToEven, &ignored);
           return in;
         },
-        [&](bool in) { return APFloat(sem, in); });
+        [&](bool in) { return APFloat(*sem, in); });
   }
   if (dtype->isInt()) {
     // Note that float to integer casts are undefined if the float value is

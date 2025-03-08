@@ -227,7 +227,7 @@ public:
   /// This method returns the LLVM floating point semantics for the given DType,
   /// or nullptr if the DType is not a floating point type LLVM knows about
   /// (e.g. TF32).
-  const llvm::fltSemantics *getFPSemantics() const;
+  const llvm::fltSemantics *getFloatSemantics() const;
 
   /// Return the in-memory size for an array of the specified type with the
   /// specified number of elements, or -1 for non-numeric types or too large

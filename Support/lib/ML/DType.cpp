@@ -195,7 +195,7 @@ ErrorOr<std::pair<int32_t, int32_t>> DType::getMaxAndMinValue() const {
 /// This method returns the LLVM floating point semantics for the given DType,
 /// or nullptr if the DType is not a floating point type LLVM knows about
 /// (e.g. TF32).
-const llvm::fltSemantics *DType::getFPSemantics() const {
+const llvm::fltSemantics *DType::getFloatSemantics() const {
   switch (getValue()) {
   default:
     return nullptr;

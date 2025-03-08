@@ -124,13 +124,6 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
     return buildIntFpDebugType<DIBasicUIntType>(ctx, targetInfo, dtype, 64, 64);
     // Any integral type larger than 64 bits is handled generically in the
     // `default` clause.
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
-                      BITCOUNT, ...)                                           \
-  case DType::SHORT_NAME:                                                      \
-    return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype,       \
-                                                 BITCOUNT, BITCOUNT);
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
   case DType::tf32:
     return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype, 32,
                                                  32);
@@ -153,6 +146,12 @@ static DIType buildDebugTypeFromDType(MLIRContext *ctx,
     if (type.isUInt())
       return buildIntFpDebugType<DIBasicUIntType>(
           ctx, targetInfo, dtype, type.getIntegerWidthInBits(), 64);
+    if (auto *semantics = type.getFloatSemantics()) {
+      size_t bitwidth = APFloat::getSizeInBits(*semantics);
+      return buildIntFpDebugType<DIBasicFloatType>(ctx, targetInfo, dtype,
+                                                   bitwidth, bitwidth);
+    }
+
     return nullptr;
   }
 }
