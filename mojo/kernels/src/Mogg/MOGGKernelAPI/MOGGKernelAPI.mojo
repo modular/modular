@@ -211,6 +211,36 @@ from utils.static_tuple import _create_array, _set_array_elem
 # ===-----------------------------------------------------------------------===#
 
 
+@register_internal("float8_e5m2")
+fn DTypeFloat8E5M2TypeDef(ty: DType.type) -> DType.type:
+    return DType.float8_e5m2.value
+
+
+@register_internal("float8_e5m2fnuz")
+fn DTypeFloat8E5M2FnuzTypeDef(ty: DType.type) -> DType.type:
+    return DType.float8_e5m2fnuz.value
+
+
+@register_internal("float8_e3m4")
+fn DTypeFloat8E3M4TypeDef(ty: DType.type) -> DType.type:
+    return DType.float8_e3m4.value
+
+
+@register_internal("float8_e4m3")
+fn DTypeFloat8E4M3TypeDef(ty: DType.type) -> DType.type:
+    return DType.float8_e4m3.value
+
+
+@register_internal("float8_e4m3fn")
+fn DTypeFloat8E4M3FnTypeDef(ty: DType.type) -> DType.type:
+    return DType.float8_e4m3fn.value
+
+
+@register_internal("float8_e4m3fnuz")
+fn DTypeFloat8E4M3FnuzTypeDef(ty: DType.type) -> DType.type:
+    return DType.float8_e4m3fnuz.value
+
+
 @register_internal("bfloat16")
 fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.bfloat16.value
