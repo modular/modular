@@ -11,6 +11,40 @@
 #include <limits>
 using namespace M;
 
+/// Return the width of this element in bits.  This returns -1 for unknown
+/// width values.
+ssize_t DType::getWidthInBits() const {
+  // Handle complex separately from per-element types below.  We know that
+  // complex element types are always at least a byte in size.
+  if (isComplex()) {
+    ssize_t strippedWidth = stripComplex().getWidthInBits();
+    if (strippedWidth == -1)
+      return -1;
+    return strippedWidth * 2;
+  }
+
+  // This switch handles special cases inline, or determines the logarithmic
+  // size of each element and breaks for the overflow check.
+  switch (getValue()) {
+  default:
+    return isInt() ? getIntegerWidthInBits() : -1;
+
+    // Handle floating point types.
+#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
+                      BITCOUNT, APFLOAT_TYPE, ...)                             \
+  case DType::SHORT_NAME:                                                      \
+    return APFloat::getSizeInBits(APFLOAT_TYPE());
+#include "Support/ML/FloatTypes.def"
+#undef DECLARE_FLOAT
+
+    // Handle other types.
+  case DType::kBool:
+    return 8;
+  case DType::tf32:
+    return 19;
+  }
+}
+
 /// Return the in-memory size for an array of the specified type with the
 /// specified number of elements, or -1 for non-numeric types or too large
 /// values.  This supports densely packed sub-byte types like i1, i2, i4.
@@ -26,13 +60,10 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
   // This switch handles special cases inline, or determines the logarithmic
   // size of each element and breaks for the overflow check.
   size_t widthShift;
-  switch (getValue()) {
-  default: {
+
+  if (isInt()) {
     // For integers, we just return the bit-width turned into bytes.  We treat
     // i1/i2/i4 types as being a single byte.
-    if (!isInt())
-      return -1;
-
     widthShift = getIntegerWidthInLogBits();
     // i1,i2,i4 values are packed densely in memory.
     if (widthShift < 3) {
@@ -43,29 +74,22 @@ ssize_t DType::getSizeInBytes(size_t numElements) const {
 
     // Otherwise, we're growing this convert shift amount to byte shift amount.
     widthShift -= 3;
-    break;
-  }
-
-  // Handle floating point types.
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
-                      BITCOUNT, ...)                                           \
-  case DType::SHORT_NAME: {                                                    \
-    constexpr ssize_t BYTECOUNT = BITCOUNT / CHAR_BIT;                         \
-    ssize_t result = numElements * BYTECOUNT;                                  \
-    if (result / BYTECOUNT != ssize_t(numElements))                            \
-      return -1;                                                               \
-    return result;                                                             \
-  };
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
-
-  // Handle other types.
-  case DType::kBool:
-    widthShift = 0;
-    break;
-  case DType::tf32: // tf32 has 19bits, store as 4 bytes.
-    widthShift = 2;
-    break;
+  } else if (isFloat() && getValue() != DType::tf32) {
+    ssize_t bitCount = getWidthInBits();
+    assert(llvm::isPowerOf2_32(bitCount) && "all FP types are power of 2 size");
+    widthShift = llvm::Log2_32(bitCount) - 3;
+  } else {
+    switch (getValue()) {
+    default:
+      return -1;
+    // Handle other types.
+    case DType::kBool:
+      widthShift = 0; // kBool is stored in a single byte each.
+      break;
+    case DType::tf32: // tf32 has 19bits, store as 4 bytes.
+      widthShift = 2;
+      break;
+    }
   }
 
   // Check that the result doesn't overflow.

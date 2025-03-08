@@ -222,7 +222,7 @@ public:
 
   /// Return the width of this element in bits.  This returns -1 for unknown
   /// width values.
-  constexpr ssize_t getWidthInBits() const;
+  ssize_t getWidthInBits() const;
 
   /// This method returns the LLVM floating point semantics for the given DType,
   /// or nullptr if the DType is not a floating point type LLVM knows about
@@ -264,44 +264,6 @@ static_assert(sizeof(DType) == 1, "DType should not grow");
 inline raw_ostream &operator<<(raw_ostream &os, DType value) {
   value.print(os);
   return os;
-}
-
-//===----------------------------------------------------------------------===//
-// Method implementation for constexpr methods.
-//===----------------------------------------------------------------------===//
-
-/// Return the width of this element in bits.  This returns -1 for unknown
-/// width values.
-inline constexpr ssize_t DType::getWidthInBits() const {
-  // Handle complex separately from per-element types below.  We know that
-  // complex element types are always at least a byte in size.
-  if (isComplex()) {
-    ssize_t strippedWidth = stripComplex().getWidthInBits();
-    if (strippedWidth == -1)
-      return -1;
-    return strippedWidth * 2;
-  }
-
-  // This switch handles special cases inline, or determines the logarithmic
-  // size of each element and breaks for the overflow check.
-  switch (getValue()) {
-  default:
-    return isInt() ? getIntegerWidthInBits() : -1;
-
-    // Handle floating point types.
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
-                      BITCOUNT, ...)                                           \
-  case DType::SHORT_NAME:                                                      \
-    return BITCOUNT;
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
-
-    // Handle other types.
-  case DType::kBool:
-    return 8;
-  case DType::tf32:
-    return 19;
-  }
 }
 
 //===----------------------------------------------------------------------===//
