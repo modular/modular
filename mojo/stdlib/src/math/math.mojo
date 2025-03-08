@@ -25,6 +25,7 @@ from sys import (
     has_avx512f,
     is_amd_gpu,
     is_nvidia_gpu,
+    is_gpu,
     llvm_intrinsic,
     simdwidthof,
     sizeof,
@@ -406,6 +407,31 @@ fn exp2[
             ](x)
 
     @parameter
+    if is_amd_gpu():
+
+        @parameter
+        if type in (DType.float16, DType.float32):
+            var res = SIMD[type, simd_width]()
+
+            @parameter
+            for i in range(simd_width):
+
+                @parameter
+                if type is DType.float16:
+                    res[i] = llvm_intrinsic[
+                        "llvm.amdgcn.exp2.f16",
+                        Scalar[type],
+                        has_side_effect=False,
+                    ](x[i])
+                else:
+                    res[i] = llvm_intrinsic[
+                        "llvm.amdgcn.exp2.f32",
+                        Scalar[type],
+                        has_side_effect=False,
+                    ](x[i])
+            return res
+
+    @parameter
     if type not in (DType.float32, DType.float64):
         return exp2(x.cast[DType.float32]()).cast[type]()
 
@@ -579,7 +605,7 @@ fn exp[
     alias neg_ln2 = -0.69314718055966295651160180568695068359375
 
     @parameter
-    if is_nvidia_gpu():
+    if is_gpu():
 
         @parameter
         if type in (DType.float16, DType.float32):
