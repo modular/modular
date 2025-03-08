@@ -570,107 +570,16 @@ struct SIMD[type: DType, size: Int](
             type.is_floating_point(), "the SIMD type must be floating point"
         ]()
 
-        var result: Scalar[type]
-
-        @parameter
-        if type is DType.float8_e4m3fn:
-            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                __mlir_op.`pop.cast_from_builtin`[
-                    _type = __mlir_type[`!pop.scalar<f8e4m3fn>`]
-                ](
-                    __mlir_attr[
-                        `#pop<float_literal_convert<`,
-                        value.value,
-                        `>> : f8E4M3FN`,
-                    ]
-                )
-            )
-        elif type is DType.float8_e4m3fnuz:
-            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                __mlir_op.`pop.cast_from_builtin`[
-                    _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`]
-                ](
-                    __mlir_attr[
-                        `#pop<float_literal_convert<`,
-                        value.value,
-                        `>> : f8E4M3FNUZ`,
-                    ]
-                )
-            )
-        elif type is DType.float8_e5m2:
-            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                __mlir_op.`pop.cast_from_builtin`[
-                    _type = __mlir_type[`!pop.scalar<f8e5m2>`]
-                ](
-                    __mlir_attr[
-                        `#pop<float_literal_convert<`,
-                        value.value,
-                        `>> : f8E5M2`,
-                    ]
-                )
-            )
-        elif type is DType.float8_e5m2fnuz:
-            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                __mlir_op.`pop.cast_from_builtin`[
-                    _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`]
-                ](
-                    __mlir_attr[
-                        `#pop<float_literal_convert<`,
-                        value.value,
-                        `>> : f8E5M2FNUZ`,
-                    ]
-                )
-            )
-        elif type is DType.float16:
-            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                __mlir_op.`pop.cast_from_builtin`[
-                    _type = __mlir_type[`!pop.scalar<f16>`]
-                ](
-                    __mlir_attr[
-                        `#pop<float_literal_convert<`,
-                        value.value,
-                        `>> : f16`,
-                    ]
-                )
-            )
-        elif type is DType.bfloat16:
-            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                __mlir_op.`pop.cast_from_builtin`[
-                    _type = __mlir_type[`!pop.scalar<bf16>`]
-                ](
-                    __mlir_attr[
-                        `#pop<float_literal_convert<`,
-                        value.value,
-                        `>> : bf16`,
-                    ]
-                )
-            )
-        elif type is DType.float32:
-            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                __mlir_op.`pop.cast_from_builtin`[
-                    _type = __mlir_type[`!pop.scalar<f32>`]
-                ](
-                    __mlir_attr[
-                        `#pop<float_literal_convert<`,
-                        value.value,
-                        `>> : f32`,
-                    ]
-                )
-            )
-        else:
-            result = rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                __mlir_op.`pop.cast_from_builtin`[
-                    _type = __mlir_type[`!pop.scalar<f64>`]
-                ](
-                    __mlir_attr[
-                        `#pop<float_literal_convert<`,
-                        value.value,
-                        `>> : f64`,
-                    ]
-                )
-            )
-        # Finally, splat the scalar to a SIMD if needed.
-        self = result
+        # Convert this to a scalar and then let splatting implicit constructor
+        # extend it if needed.
+        return Scalar[type](
+            __mlir_attr[
+                `#pop<float_literal_convert<`,
+                value.value,
+                `>> : `,
+                Scalar[type]._mlir_type,
+            ]
+        )
 
     @staticmethod
     fn from_bits[
