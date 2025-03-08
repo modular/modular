@@ -179,8 +179,8 @@ fn returnTup1b() -> (Int,):
 # CHECK-LABEL: lit.fn @"returnTup2
 # CHECK-SAME:  %__result__: !lit.ref<{{.*}}@Tuple<:variadic<!AnyType> [#Int1, #FloatDyn1]>
 fn returnTup2() -> Tuple[Int, FloatDyn]:
-    # CHECK:  = kgen.param.constant{{.*}}4
-    # CHECK:  = kgen.param.constant{{.*}}:f64 2.0
+    # CHECK:  = kgen.param.constant: !Int = <{4}>
+    # CHECK:  = kgen.param.constant: !FloatDyn = <{:scalar<f64> "2"}>
     # CHECK: lit.ref.pack.create({{.*}}) : !lit.ref.pack<:variadic<!AnyType> [#Int1, #FloatDyn1]
     return (Int(4), 2.0)
 

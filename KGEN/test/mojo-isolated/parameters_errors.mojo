@@ -36,7 +36,7 @@ fn MultipleThingMetaparams(a: Thing[1, 2][1]):
     pass
 
 
-# expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1.500000e+00]' value to 'Int'}}
+# expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1.5]' value to 'Int'}}
 fn WeirdMetaParams(a: Thing[1, 1.5]):
     pass
 
@@ -179,7 +179,7 @@ fn variadic_int_params[*a: Int]():
 
 
 fn callVariadic():
-    # expected-error @below {{cannot implicitly convert 'FloatLiteral[1.000000e+00]' value to 'Int'}}
+    # expected-error @below {{cannot implicitly convert 'FloatLiteral[1]' value to 'Int'}}
     variadic_int_params[1.0]()
 
 
@@ -265,7 +265,7 @@ fn testAliases(variable: Int):
 
 
 fn testConversionQoI():
-    # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1.200000e+00]' value to 'Int'}}
+    # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1.2]' value to 'Int'}}
     alias intVal: Int = 1.2
 
 

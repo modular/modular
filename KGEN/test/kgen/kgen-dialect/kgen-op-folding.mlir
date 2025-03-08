@@ -234,24 +234,24 @@ kgen.func @float_literal_binop_uniques() ->
 
 // CHECK-LABEL: @float_literal_convert
 kgen.func @float_literal_convert()
-  -> (f64, f64, f64, f64, f64, f64, f64) {
-  // CHECK: kgen.param.constant: f64 = <1.666666{{.*}}>
-  %r1 = kgen.param.constant: f64 = <#pop<float_literal_convert<#pop.float_literal<5|3>>>>
-  // CHECK: kgen.param.constant: f64 = <-1.666666{{.*}}>
-  %r2 = kgen.param.constant: f64 = <#pop<float_literal_convert<#pop.float_literal<-5|3>>>>
-  // CHECK: kgen.param.constant: f64 = <0.000{{.*}}>
-  %r3 = kgen.param.constant: f64 = <#pop<float_literal_convert<#pop.float_literal<0|1>>>>
-  // CHECK: kgen.param.constant: f64 = <-0.000{{.*}}>
-  %r4 = kgen.param.constant: f64 = <#pop<float_literal_convert<#pop.float_literal<neg_zero>>>>
-  // CHECK: kgen.param.constant: f64 = <0x7FF0000000000000>
-  %r5 = kgen.param.constant: f64 = <#pop<float_literal_convert<#pop.float_literal<inf>>>>
-  // CHECK: kgen.param.constant: f64 = <0xFFF0000000000000>
-  %r6 = kgen.param.constant: f64 = <#pop<float_literal_convert<#pop.float_literal<neg_inf>>>>
-  // CHECK: kgen.param.constant: f64 = <0x7FFFFFFFFFFFFFFF>
-  %r7 = kgen.param.constant: f64 = <#pop<float_literal_convert<#pop.float_literal<nan>>>>
+  -> (!pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>) {
+  // CHECK: kgen.param.constant: scalar<f64> = <"1.666666{{.*}}">
+  %r1 = kgen.param.constant: scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<5|3>>>>
+  // CHECK: kgen.param.constant: scalar<f64> = <"-1.666666{{.*}}">
+  %r2 = kgen.param.constant: scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<-5|3>>>>
+  // CHECK: kgen.param.constant: scalar<f64> = <"0">
+  %r3 = kgen.param.constant: scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<0|1>>>>
+  // CHECK: kgen.param.constant: scalar<f64> = <"-0">
+  %r4 = kgen.param.constant: scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<neg_zero>>>>
+  // CHECK: kgen.param.constant: scalar<f64> = <"+Inf">
+  %r5 = kgen.param.constant: scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<inf>>>>
+  // CHECK: kgen.param.constant: scalar<f64> = <"-Inf">
+  %r6 = kgen.param.constant: scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<neg_inf>>>>
+  // CHECK: kgen.param.constant: scalar<f64> = <"NaN">
+  %r7 = kgen.param.constant: !pop.scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<nan>>>>
 
   kgen.return %r1, %r2, %r3, %r4, %r5, %r6, %r7
-    : f64, f64, f64, f64, f64, f64, f64
+    : !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>
 }
 
 // CHECK-LABEL: @float_literal_to_int_literal
