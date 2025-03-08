@@ -23,7 +23,7 @@ These are Mojo built-ins, so you don't need to import them.
 @value
 @nonmaterializable(Float64)
 @register_passable("trivial")
-struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
+struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     ImplicitlyBoolable,
     Intable,
     Stringable,
@@ -50,9 +50,9 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         value: IntLiteral[_],
         out result: FloatLiteral[
             __mlir_attr[
-                `#kgen<int_to_float_literal<`,
+                `#pop<int_to_float_literal<`,
                 value.value,
-                `>> : !kgen.float_literal`,
+                `>> : !pop.float_literal`,
             ]
         ],
     ):
@@ -63,13 +63,13 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         """
         out = __type_of(result)()
 
-    alias nan = FloatLiteral[__mlir_attr.`#kgen.float_literal<nan>`]()
-    alias infinity = FloatLiteral[__mlir_attr.`#kgen.float_literal<inf>`]()
+    alias nan = FloatLiteral[__mlir_attr.`#pop.float_literal<nan>`]()
+    alias infinity = FloatLiteral[__mlir_attr.`#pop.float_literal<inf>`]()
     alias negative_infinity = FloatLiteral[
-        __mlir_attr.`#kgen.float_literal<neg_inf>`
+        __mlir_attr.`#pop.float_literal<neg_inf>`
     ]()
     alias negative_zero = FloatLiteral[
-        __mlir_attr.`#kgen.float_literal<neg_zero>`
+        __mlir_attr.`#pop.float_literal<neg_zero>`
     ]()
 
     @always_inline("builtin")
@@ -81,9 +81,7 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         Returns:
             True, if the value is nan, False otherwise.
         """
-        return __mlir_attr[
-            `#kgen<float_literal_isa<nan `, self.value, `>> : i1`
-        ]
+        return __mlir_attr[`#pop<float_literal_isa<nan `, self.value, `>> : i1`]
 
     @always_inline("builtin")
     fn is_neg_zero(self) -> Bool:
@@ -96,7 +94,7 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
             True, if the value is negative zero, False otherwise.
         """
         return __mlir_attr[
-            `#kgen<float_literal_isa<neg_zero `, self.value, `>> : i1`
+            `#pop<float_literal_isa<neg_zero `, self.value, `>> : i1`
         ]
 
     @always_inline("builtin")
@@ -107,7 +105,7 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
             True, if the value is a normal float, False otherwise.
         """
         return __mlir_attr[
-            `#kgen<float_literal_isa<normal `, self.value, `>> : i1`
+            `#pop<float_literal_isa<normal `, self.value, `>> : i1`
         ]
 
     # ===------------------------------------------------------------------===#
@@ -128,9 +126,9 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         self,
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<float_to_int_literal<`,
+                `#pop<float_to_int_literal<`,
                 value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -207,11 +205,11 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         rhs: FloatLiteral,
         out result: FloatLiteral[
             __mlir_attr[
-                `#kgen<float_literal_bin<add `,
+                `#pop<float_literal_bin<add `,
                 value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.float_literal`,
+                `>> : !pop.float_literal`,
             ]
         ],
     ):
@@ -231,11 +229,11 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         rhs: FloatLiteral,
         out result: FloatLiteral[
             __mlir_attr[
-                `#kgen<float_literal_bin<sub `,
+                `#pop<float_literal_bin<sub `,
                 value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.float_literal`,
+                `>> : !pop.float_literal`,
             ]
         ],
     ):
@@ -255,11 +253,11 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         rhs: FloatLiteral,
         out result: FloatLiteral[
             __mlir_attr[
-                `#kgen<float_literal_bin<mul `,
+                `#pop<float_literal_bin<mul `,
                 value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.float_literal`,
+                `>> : !pop.float_literal`,
             ]
         ],
     ):
@@ -279,11 +277,11 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         rhs: FloatLiteral,
         out result: FloatLiteral[
             __mlir_attr[
-                `#kgen<float_literal_bin<truediv `,
+                `#pop<float_literal_bin<truediv `,
                 value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.float_literal`,
+                `>> : !pop.float_literal`,
             ]
         ],
     ):
@@ -304,11 +302,11 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         rhs: FloatLiteral,
         out result: FloatLiteral[
             __mlir_attr[
-                `#kgen<float_literal_bin<floordiv `,
+                `#pop<float_literal_bin<floordiv `,
                 value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.float_literal`,
+                `>> : !pop.float_literal`,
             ]
         ],
     ):
@@ -457,7 +455,7 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         """
         return Bool(
             __mlir_attr[
-                `#kgen<float_literal_cmp<eq `,
+                `#pop<float_literal_cmp<eq `,
                 self.value,
                 `,`,
                 rhs.value,
@@ -477,7 +475,7 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         """
         return Bool(
             __mlir_attr[
-                `#kgen<float_literal_cmp<ne `,
+                `#pop<float_literal_cmp<ne `,
                 self.value,
                 `,`,
                 rhs.value,
@@ -497,7 +495,7 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         """
         return Bool(
             __mlir_attr[
-                `#kgen<float_literal_cmp<lt `,
+                `#pop<float_literal_cmp<lt `,
                 self.value,
                 `,`,
                 rhs.value,
@@ -517,7 +515,7 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         """
         return Bool(
             __mlir_attr[
-                `#kgen<float_literal_cmp<le `,
+                `#pop<float_literal_cmp<le `,
                 self.value,
                 `,`,
                 rhs.value,
@@ -537,7 +535,7 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         """
         return Bool(
             __mlir_attr[
-                `#kgen<float_literal_cmp<gt `,
+                `#pop<float_literal_cmp<gt `,
                 self.value,
                 `,`,
                 rhs.value,
@@ -557,7 +555,7 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`](
         """
         return Bool(
             __mlir_attr[
-                `#kgen<float_literal_cmp<ge `,
+                `#pop<float_literal_cmp<ge `,
                 self.value,
                 `,`,
                 rhs.value,

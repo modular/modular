@@ -62,7 +62,7 @@ values with a `StaticConstantOrigin`.
 
 Mojo implements this by representing these compile time values as MLIR
 attributes.  Integers are an arbitrary precision integer of type
-`!kgen.int_literal` and floating point values are `!kgen.float_literal` and
+`!pop.int_literal` and floating point values are `!pop.float_literal` and
 strings use `!kgen.string` as you might expect.
 
 The details of the representation are more complex than is obvious: besides
@@ -102,16 +102,16 @@ implementation of `IntLiteral` , a simplified version of which looks like this:
 ```mojo
 @nonmaterializable(Int)
 struct IntLiteral:
-    var value: __mlir_type.`!kgen.int_literal`
+    var value: __mlir_type.`!pop.int_literal`
     
     fn __sub__(self, rhs: Self) -> Self:
         return Self(
-            __mlir_op.`kgen.int_literal.binop<sub>`(self.value, rhs.value)
+            __mlir_op.`pop.int_literal.binop<sub>`(self.value, rhs.value)
         )    
 ```
 
 This implementation works because the comp-time interpreter knows how to
-constant fold the `kgen.int_literal.binop` MLIR operation when doing calculation
+constant fold the `pop.int_literal.binop` MLIR operation when doing calculation
 in the compile time domain.
 
 This is simple enough, and works in many common cases, but unfortunately this
@@ -134,11 +134,11 @@ fn test(a: IntLiteral) -> IntLiteral: return a-1
    ^
 example.mojo:3:4: note: see current operation: 
 "kgen.func"() ({
-^bb0(%arg0: !kgen.int_literal):
-  %0 = "kgen.param.constant"() {value = #kgen.int_literal<1> : !kgen.int_literal} : () -> !kgen.int_literal
-  %1 = "kgen.int_literal.binop"(%arg0, %0) {oper = #kgen<int_literal.binop_kind sub>} : (!kgen.int_literal, !kgen.int_literal) -> !kgen.int_literal
-  "kgen.return"(%1) : (!kgen.int_literal) -> ()
-}) {LLVMMetadata = {}, crossDeviceCaptures = #M<strings[]>, decorators = #kgen<decorators[]>, exportKind = #kgen.export<exported>, funcTypeGenerator = !kgen.generator<(!kgen.int_literal) -> !kgen.int_literal>, inlineLevel = 0 : i32, sym_name = "test"} : () -> ()
+^bb0(%arg0: !pop.int_literal):
+  %0 = "kgen.param.constant"() {value = #pop.int_literal<1> : !pop.int_literal} : () -> !pop.int_literal
+  %1 = "pop.int_literal.binop"(%arg0, %0) {oper = #pop<int_literal.binop_kind sub>} : (!pop.int_literal, !pop.int_literal) -> !pop.int_literal
+  "kgen.return"(%1) : (!pop.int_literal) -> ()
+}) {LLVMMetadata = {}, crossDeviceCaptures = #M<strings[]>, decorators = #kgen<decorators[]>, exportKind = #kgen.export<exported>, funcTypeGenerator = !kgen.generator<(!pop.int_literal) -> !pop.int_literal>, inlineLevel = 0 : i32, sym_name = "test"} : () -> ()
 ```
 
 Ugh, what is that?
@@ -146,7 +146,7 @@ Ugh, what is that?
 The problem here is that the `IntLiteral` type is infinite precision compile
 time type - the compiler doesn’t know how to lower it to a runtime
 representation.  Furthermore, it doesn’t know how to codegen the
-`kgen.int_literal.binop` operation either.
+`pop.int_literal.binop` operation either.
 
 We can definitely improve this error message, but there is still a core issue:
 we are expressing computation with an MLIR operation that cannot be lowered to
@@ -220,12 +220,12 @@ into this slowly and discuss the implications.  First the top level of
 # Old design we are replacing:
 # @nonmaterializable(Int)
 # struct IntLiteral:
-#    var value: __mlir_type.`!kgen.int_literal`
+#    var value: __mlir_type.`!pop.int_literal`
 #    ...
 
 # New design:
 @nonmaterializable(Int)
-struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     # no var or other state
     ...
 ```
@@ -245,7 +245,7 @@ generates a call of `alias x = IntLiteral[42]()`.
 We enable this easily in our literal type with an initializer:
 
 ```mojo
-struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     # no var or other state
 
     fn __init__(out self): pass
@@ -272,7 +272,7 @@ are different because the parameters are different.  This means that the
 makes this easy enough:
 
 ```mojo
-struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     ...
     fn __sub__(
         self,
@@ -296,26 +296,26 @@ implementation of `IntLiteral` needs to ever see.  One possible implementation
 of `__sub__` looks like:
 
 ```mojo
- struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
    fn __sub__(
         self,
         rhs: IntLiteral[_]) -> IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<sub `,
+                `#pop<int_literal_bin<sub `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
         return IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<sub `,
+                `#pop<int_literal_bin<sub `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ]()
 ```
@@ -332,17 +332,17 @@ reduce the redundancy a bit.  An improved implementation of `__sub__` looks
 like:
 
 ```mojo
- struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
      fn __sub__(
         self,
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<sub `,
+                `#pop<int_literal_bin<sub `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -388,7 +388,7 @@ are aggregates of more primitive things, for example, `-x` is just `0-x` and
 `~x` is the same as `x^-1`, and we can write it like this:
 
 ```mojo
-struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     ...
     fn __neg__(self) -> __type_of(0 - self):
         # Equivalently: return __type_of(0 - self)()
@@ -411,15 +411,15 @@ done with an MLIR attribute, but don’t require dependent types.  An
 implementation of less than looks like:
 
 ```mojo
-struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     ...
     fn __lt__(self, rhs: IntLiteral[_]) -> Bool:
         return __mlir_attr[
-            `#kgen<int_literal_cmp<lt `,
+            `#pop<int_literal_cmp<lt `,
             self.value,
             `,`,
             rhs.value,
-            `>> : !kgen.int_literal`,
+            `>> : !pop.int_literal`,
         ]
 ```
 
@@ -438,7 +438,7 @@ pieces work, we can take more at once:
 
 ```mojo
 @nonmaterializable(Float64)
-struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`]:
+struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     # Create from a float literal parameter expression.
     fn __init__(out self):
         pass
@@ -448,11 +448,11 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`]:
         rhs: FloatLiteral,
         out result: FloatLiteral[
             __mlir_attr[
-                `#kgen<float_literal_bin<sub `,
+                `#pop<float_literal_bin<sub `,
                 value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.float_literal`,
+                `>> : !pop.float_literal`,
             ]
         ],
     ):
@@ -466,7 +466,7 @@ operations: we want `4 - 1.0` to turn into `1.0.__rsub__(4)`.  No problem, we
 can implement these operations using the same pattern:
 
 ```mojo
-struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`]:
+struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
 ...
 
     @implicit
@@ -474,9 +474,9 @@ struct FloatLiteral[value: __mlir_type.`!kgen.float_literal`]:
         value: IntLiteral[_],
         out result: FloatLiteral[
             __mlir_attr[
-                `#kgen<int_to_float_literal<`,
+                `#pop<int_to_float_literal<`,
                 value.value,
-                `>> : !kgen.float_literal`,
+                `>> : !pop.float_literal`,
             ]
         ],
     ):
@@ -513,7 +513,7 @@ this, it would be easy enough to fix: just add an implicit constructor from
 empty tuple, and use an empty tuple literal:
 
 ```mojo
-struct IntLiteral[value: __mlir_type.`!kgen.int_literal`]:
+struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     @implicit
     fn __init__(out self, unused: Tuple[]): pass
 ```

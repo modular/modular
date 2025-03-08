@@ -18,7 +18,7 @@ from math import Ceilable, Floorable, Truncable
 @value
 @nonmaterializable(Int)
 @register_passable("trivial")
-struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
+struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Ceilable,
     Floorable,
     ImplicitlyBoolable,
@@ -62,11 +62,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
             True if this IntLiteral is less-than the RHS IntLiteral and False otherwise.
         """
         return __mlir_attr[
-            `#kgen<int_literal_cmp<lt `,
+            `#pop<int_literal_cmp<lt `,
             self.value,
             `,`,
             rhs.value,
-            `>> : !kgen.int_literal`,
+            `>> : !pop.int_literal`,
         ]
 
     @always_inline("builtin")
@@ -81,11 +81,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
             otherwise.
         """
         return __mlir_attr[
-            `#kgen<int_literal_cmp<le `,
+            `#pop<int_literal_cmp<le `,
             self.value,
             `,`,
             rhs.value,
-            `>> : !kgen.int_literal`,
+            `>> : !pop.int_literal`,
         ]
 
     @always_inline("builtin")
@@ -99,11 +99,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
             True if this IntLiteral is equal to the RHS IntLiteral and False otherwise.
         """
         return __mlir_attr[
-            `#kgen<int_literal_cmp<eq `,
+            `#pop<int_literal_cmp<eq `,
             self.value,
             `,`,
             rhs.value,
-            `>> : !kgen.int_literal`,
+            `>> : !pop.int_literal`,
         ]
 
     @always_inline("builtin")
@@ -117,11 +117,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
             True if this IntLiteral is non-equal to the RHS IntLiteral and False otherwise.
         """
         return __mlir_attr[
-            `#kgen<int_literal_cmp<ne `,
+            `#pop<int_literal_cmp<ne `,
             self.value,
             `,`,
             rhs.value,
-            `>> : !kgen.int_literal`,
+            `>> : !pop.int_literal`,
         ]
 
     @always_inline("builtin")
@@ -135,11 +135,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
             True if this IntLiteral is greater-than the RHS IntLiteral and False otherwise.
         """
         return __mlir_attr[
-            `#kgen<int_literal_cmp<gt `,
+            `#pop<int_literal_cmp<gt `,
             self.value,
             `,`,
             rhs.value,
-            `>> : !kgen.int_literal`,
+            `>> : !pop.int_literal`,
         ]
 
     @always_inline("builtin")
@@ -154,11 +154,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
             otherwise.
         """
         return __mlir_attr[
-            `#kgen<int_literal_cmp<ge `,
+            `#pop<int_literal_cmp<ge `,
             self.value,
             `,`,
             rhs.value,
-            `>> : !kgen.int_literal`,
+            `>> : !pop.int_literal`,
         ]
 
     @always_inline("builtin")
@@ -194,11 +194,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<add `,
+                `#pop<int_literal_bin<add `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -218,11 +218,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<sub `,
+                `#pop<int_literal_bin<sub `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -242,11 +242,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<mul `,
+                `#pop<int_literal_bin<mul `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -268,11 +268,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<floordiv `,
+                `#pop<int_literal_bin<floordiv `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -292,11 +292,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<mod `,
+                `#pop<int_literal_bin<mod `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -316,11 +316,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<lshift `,
+                `#pop<int_literal_bin<lshift `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -340,11 +340,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<rshift `,
+                `#pop<int_literal_bin<rshift `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -364,11 +364,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<and `,
+                `#pop<int_literal_bin<and `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -388,11 +388,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<xor `,
+                `#pop<int_literal_bin<xor `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -412,11 +412,11 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
         rhs: IntLiteral[_],
         out result: IntLiteral[
             __mlir_attr[
-                `#kgen<int_literal_bin<or `,
+                `#pop<int_literal_bin<or `,
                 self.value,
                 `,`,
                 rhs.value,
-                `>> : !kgen.int_literal`,
+                `>> : !pop.int_literal`,
             ]
         ],
     ):
@@ -478,7 +478,7 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
             The value as an unsigned integer of platform-specific width.
         """
         return __mlir_attr[
-            `#kgen<int_literal_convert<`, self.value, `, 1>> : index`
+            `#pop<int_literal_convert<`, self.value, `, 1>> : index`
         ]
 
     @always_inline("builtin")
@@ -546,5 +546,5 @@ struct IntLiteral[value: __mlir_type.`!kgen.int_literal`](
             The corresponding __mlir_type.index value, interpreting as signed.
         """
         return __mlir_attr[
-            `#kgen<int_literal_convert<`, self.value, `, 0>> : index`
+            `#pop<int_literal_convert<`, self.value, `, 0>> : index`
         ]
