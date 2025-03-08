@@ -219,12 +219,10 @@ public:
   /// width values.
   constexpr ssize_t getWidthInBits() const;
 
-  /// Return the width of the floating point significand precision in bits.
-  /// Precision includes the actual significand width in bits and the implicit
-  /// leading bit (if present). This returns a nullopt for non-float dtypes.
-  /// It also returns a nullopt for f8 and f24 because they have unclear formats
-  /// in our stack.
-  constexpr std::optional<ssize_t> getSignificandPrecisionInBits() const;
+  /// This method returns the LLVM floating point semantics for the given DType,
+  /// or nullptr if the DType is not a floating point type LLVM knows about
+  /// (e.g. TF32).
+  const llvm::fltSemantics *getFPSemantics() const;
 
   /// Return the in-memory size for an array of the specified type with the
   /// specified number of elements, or -1 for non-numeric types or too large
@@ -298,31 +296,6 @@ inline constexpr ssize_t DType::getWidthInBits() const {
     return 8;
   case DType::tf32:
     return 19;
-  }
-}
-
-/// Return the width of the floating point significand precision in bits.
-/// Precision includes the actual significand width in bits and the implicit
-/// leading bit (if present). This returns a nullopt for non-float dtypes.
-/// It also returns a nullopt for f8 and f24 because they have unclear formats
-/// in our stack.
-inline constexpr std::optional<ssize_t>
-DType::getSignificandPrecisionInBits() const {
-  // For floating point types, this is the number of significand bits + 1.
-  // The addition of the leading bit is written out explicitly for clarity.
-  switch (getValue()) {
-  default:
-    return std::nullopt;
-
-#define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, CXX_TYPE,      \
-                      BITCOUNT, APFLOAT_TYPE, LLVM_SEMANTICS,                  \
-                      SIGNIFICAND_PRECISION, ...)                              \
-  case DType::SHORT_NAME:                                                      \
-    return SIGNIFICAND_PRECISION + 1;
-
-#include "Support/ML/FloatTypes.def"
-
-#undef DECLARE_FLOAT
   }
 }
 
