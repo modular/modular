@@ -104,7 +104,7 @@ class MaxMoEGate(LayerV2):
         hidden_states = hidden_states.reshape([bsz * seq_len, h])
 
         logits = self.gate_score(hidden_states.cast(DType.float32))
-        scores = ops.softmax(logits[-1].cast(DType.float32))
+        scores = ops.softmax(logits.cast(DType.float32))
 
         # select top k experts
         topk_weight, topk_idx = ops.top_k(
