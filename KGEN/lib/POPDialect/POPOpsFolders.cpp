@@ -17,8 +17,6 @@
 #include "llvm/ADT/bit.h"
 #include "llvm/Support/Base64.h"
 #include "llvm/Support/Compression.h"
-#include "llvm/Support/xxhash.h"
-
 #include <unistd.h>
 
 using namespace M;
@@ -1975,8 +1973,8 @@ ErrorTreeOrSuccess StringAddressOp::interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 OpFoldResult StringSizeOp::fold(FoldAdaptor adaptor) {
-  if (auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr()))
-    return Builder(getContext()).getIndexAttr(str.getValue().size());
+  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
+    return StringSizeAttr::get(getContext(), str);
   return {};
 }
 
@@ -1985,43 +1983,25 @@ OpFoldResult StringSizeOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult StringConcatOp::fold(FoldAdaptor adaptor) {
-  auto lhs = dyn_cast_or_null<StringAttr>(adaptor.getLhs());
-  auto rhs = dyn_cast_or_null<StringAttr>(adaptor.getRhs());
-  if (!lhs || !rhs)
-    return {};
-  return StringAttr::get(lhs.getValue() + rhs.getValue(),
-                         StringType::get(getContext()));
+  if (auto lhs = dyn_cast_or_null<TypedAttr>(adaptor.getLhs()))
+    if (auto rhs = dyn_cast_or_null<TypedAttr>(adaptor.getRhs()))
+      if (auto concat = StringConcatAttr::get(getContext(), lhs, rhs))
+        return concat;
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
 // StringReplaceOp
 //===----------------------------------------------------------------------===//
 
-static void replaceAll(std::string &str, const std::string &from,
-                       const std::string &to) {
-  if (from.empty())
-    return;
-  size_t startPos = 0;
-  while ((startPos = str.find(from, startPos)) != std::string::npos) {
-    str.replace(startPos, from.length(), to);
-    startPos += to.length();
-  }
-}
-
 OpFoldResult StringReplaceOp::fold(FoldAdaptor adaptor) {
-  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
-  auto src = dyn_cast_or_null<StringAttr>(adaptor.getSrc());
-  auto target = dyn_cast_or_null<StringAttr>(adaptor.getTarget());
+  auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr());
+  auto src = dyn_cast_or_null<TypedAttr>(adaptor.getSrc());
+  auto target = dyn_cast_or_null<TypedAttr>(adaptor.getTarget());
   if (!str || !src || !target)
     return {};
 
-  int occurrences = str.getValue().count(src.getValue());
-  if (occurrences == 0)
-    return str;
-
-  std::string replacement = str.str();
-  replaceAll(replacement, src.str(), target.str());
-  return StringAttr::get(replacement, StringType::get(getContext()));
+  return StringReplaceAttr::get(getContext(), str, src, target);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2029,15 +2009,9 @@ OpFoldResult StringReplaceOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult StringHashOp::fold(FoldAdaptor adaptor) {
-  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
-  if (!str)
-    return {};
-
-  llvm::XXH128_hash_t hash =
-      llvm::xxh3_128bits(arrayRefFromStringRef(str.getValue()));
-  StringRef hashStr(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
-  return StringAttr::get(llvm::toHex(hashStr, true),
-                         StringType::get(getContext()));
+  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
+    return StringHashAttr::get(getContext(), str);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -2045,12 +2019,9 @@ OpFoldResult StringHashOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult StringBase64EncodeOp::fold(FoldAdaptor adaptor) {
-  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
-  if (!str)
-    return {};
-
-  return StringAttr::get(llvm::encodeBase64(str.getValue()),
-                         StringType::get(getContext()));
+  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
+    return StringBase64EncodeAttr::get(getContext(), str);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -2058,59 +2029,29 @@ OpFoldResult StringBase64EncodeOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult StringBase64DecodeOp::fold(FoldAdaptor adaptor) {
-  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
-  if (!str)
-    return {};
-
-  std::vector<char> decoded;
-  if (auto err = llvm::decodeBase64(str.getValue(), decoded))
-    return {};
-  return StringAttr::get(std::string(decoded.begin(), decoded.end()),
-                         StringType::get(getContext()));
+  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
+    return StringBase64DecodeAttr::get(getContext(), str);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
 // StringCompressOp
 //===----------------------------------------------------------------------===//
 
-static constexpr llvm::compression::Format kCompressionFormat =
-    llvm::compression::Format::Zlib;
-static constexpr int kCompressionLevel =
-    llvm::compression::zlib::BestSizeCompression;
-
-static constexpr llvm::compression::Params
-    kCompressionParams(kCompressionFormat, kCompressionLevel);
-
 OpFoldResult StringCompressOp::fold(FoldAdaptor adaptor) {
-  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
-  if (!str)
-    return {};
-
-  SmallVector<uint8_t, 1024> compressed;
-  llvm::compression::compress(
-      kCompressionParams, arrayRefFromStringRef(str.getValue()), compressed);
-
-  return StringAttr::get(toStringRef(compressed),
-                         StringType::get(getContext()));
+  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
+    return StringCompressAttr::get(getContext(), str);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
-// StringDeompressOp
+// StringDecompressOp
 //===----------------------------------------------------------------------===//
 
 OpFoldResult StringDecompressOp::fold(FoldAdaptor adaptor) {
-  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
-  if (!str)
-    return {};
-
-  SmallVector<uint8_t, 1024> decompressed;
-  if (auto err = llvm::compression::decompress(
-          kCompressionFormat, arrayRefFromStringRef(str.getValue()),
-          decompressed, str.getValue().size()))
-    return {};
-
-  return StringAttr::get(toStringRef(decompressed),
-                         StringType::get(getContext()));
+  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
+    return StringDecompressAttr::get(getContext(), str);
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

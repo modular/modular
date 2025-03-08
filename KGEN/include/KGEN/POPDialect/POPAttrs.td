@@ -511,4 +511,220 @@ def POP_FloatLiteralCmpAttr : POP_ExprAttr<"FloatLiteralCmp",
   let extraClassDeclaration = [{ Type getType() const; }];
 }
 
+//===----------------------------------------------------------------------===//
+// StringSizeAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StringSizeAttr : POP_ExprAttr<"StringSize", "string_size"> {
+  let summary = "Get the size of a string.";
+  let description = [{
+    The `#pop.string_size` attribute gets the size of a !kgen.string value.
+  }];
+
+  let parameters = (ins "TypedAttr":$str);
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($str, "StringType::get($_ctxt)") `>`
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a StringSizeAttr.
+    AttrBuilder<(ins "TypedAttr":$str), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// StringConcatAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StringConcatAttr : POP_ExprAttr<"StringConcat", "string_concat"> {
+  let summary = "Concatenate two strings.";
+  let description = [{
+    The `#pop.string_concat` attribute concatenates two !kgen.string values.
+  }];
+
+  let parameters = (ins "TypedAttr":$lhs, "TypedAttr":$rhs);
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($lhs, "StringType::get($_ctxt)") `,`
+       custom<ParamValue>($rhs, "StringType::get($_ctxt)") `>`
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an StringConcatAttr.
+    AttrBuilder<(ins "TypedAttr":$lhs, "TypedAttr":$rhs), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// StringReplaceAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StringReplaceAttr : POP_ExprAttr<"StringReplace", "string_replace"> {
+  let summary = "Replace all occurrences of a substring with another string.";
+  let description = [{
+    The `#pop.string_replace` attribute replaces all occurrences of the
+    substring `src` with the `target` substring.
+  }];
+
+  let parameters = (ins "TypedAttr":$str, "TypedAttr":$src, "TypedAttr":$target);
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($str, "StringType::get($_ctxt)") `,`
+       custom<ParamValue>($src, "StringType::get($_ctxt)") `,`
+       custom<ParamValue>($target, "StringType::get($_ctxt)") `>`
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an StringReplaceAttr.
+    AttrBuilder<(ins "TypedAttr":$str, "TypedAttr":$src, "TypedAttr":$target),
+                 "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+} 
+
+//===----------------------------------------------------------------------===//
+// StringHashAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StringHashAttr : POP_ExprAttr<"StringHash", "string_hash"> {
+  let summary = "Hash a string using XXH3 128-bit hash function.";
+  let description = [{
+    The `#pop.string_hash` attribute hashes a !kgen.string value using the XXH3
+    hash algorithm.
+  }];
+
+  let parameters = (ins "TypedAttr":$str);
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($str, "StringType::get($_ctxt)") `>`
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a StringHashAttr.
+    AttrBuilder<(ins "TypedAttr":$str), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// StringBase64EncodeAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StringBase64EncodeAttr : POP_ExprAttr<"StringBase64Encode", "string_base64_encode"> {
+  let summary = "Encode a string using Base64 encoding.";
+  let description = [{
+    The `#pop.string_base64_encode` attribute encodes a !kgen.string value using 
+    Base64 encoding.
+  }];
+
+  let parameters = (ins "TypedAttr":$str);
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($str, "StringType::get($_ctxt)") `>`
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a StringBase64EncodeAttr.
+    AttrBuilder<(ins "TypedAttr":$str), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// StringBase64DecodeAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StringBase64DecodeAttr : POP_ExprAttr<"StringBase64Decode", "string_base64_decode"> {
+  let summary = "Decode a Base64 encoded string.";
+  let description = [{
+    The `#pop.string_base64_decode` attribute decodes a Base64 encoded !kgen.string value.
+  }];
+
+  let parameters = (ins "TypedAttr":$str);
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($str, "StringType::get($_ctxt)") `>`
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a StringBase64DecodeAttr.
+    AttrBuilder<(ins "TypedAttr":$str), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// StringCompressAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StringCompressAttr : POP_ExprAttr<"StringCompress", "string_compress"> {
+  let summary = "Compress a string using zlib compression.";
+  let description = [{
+    The `#pop.string_compress` attribute compresses a !kgen.string value using
+    zlib compression.
+  }];
+
+  let parameters = (ins "TypedAttr":$str);
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($str, "StringType::get($_ctxt)") `>`
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a StringCompressAttr.
+    AttrBuilder<(ins "TypedAttr":$str), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
+// StringDecompressAttr
+//===----------------------------------------------------------------------===//
+
+def POP_StringDecompressAttr : POP_ExprAttr<"StringDecompress", "string_decompress"> {
+  let summary = "Decompress a zlib compressed string.";
+  let description = [{
+    The `#pop.string_decompress` attribute decompresses a zlib compressed !kgen.string value.
+  }];
+
+  let parameters = (ins "TypedAttr":$str);
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($str, "StringType::get($_ctxt)") `>`
+  }];
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return a StringDecompressAttr.
+    AttrBuilder<(ins "TypedAttr":$str), "", "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
 #endif // KGEN_POPDIALECT_POPATTRS_TD
