@@ -12,13 +12,13 @@ from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..type import Dim
+from ..type import Dim, DimLike
 from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
 
 
 def split(
-    x: TensorValueLike, split_sizes: list[int], axis: int = 0
+    x: TensorValueLike, split_sizes: list[DimLike], axis: int = 0
 ) -> list[TensorValue]:
     """Splits the input tensor into multiple tensors along a given dimension.
 
