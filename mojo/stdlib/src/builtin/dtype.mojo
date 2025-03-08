@@ -110,6 +110,20 @@ struct DType(
     - fn: finite (no inf or -inf encodings)
     - uz: unsigned zero (no -0 encoding)
     """
+    alias float8_e4m3 = DType(
+        __mlir_attr.`#kgen.dtype.constant<f8e4m3> : !kgen.dtype`
+    )
+    """Represents a FP8E4M3 floating point format from the [OFP8
+    standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
+
+    The 8 bits are encoded as `seeeemmm`:
+    - (s)ign: 1 bit
+    - (e)xponent: 4 bits
+    - (m)antissa: 3 bits
+    - exponent bias: 7
+    - nan: 01111111, 11111111
+    - -0: 10000000
+    """
     alias float8_e4m3fn = DType(
         __mlir_attr.`#kgen.dtype.constant<f8e4m3fn> : !kgen.dtype`
     )
@@ -122,6 +136,21 @@ struct DType(
     - (m)antissa: 3 bits
     - exponent bias: 7
     - nan: 01111111, 11111111
+    - -0: 10000000
+    - fn: finite (no inf or -inf encodings)
+    """
+    alias float8_e3m4 = DType(
+        __mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
+    )
+    """Represents a FP8E3M4 floating point format from the [OFP8
+    standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
+
+    The 8 bits are encoded as `seeeemmm`:
+    - (s)ign: 1 bit
+    - (e)xponent: 3 bits
+    - (m)antissa: 4 bits
+    - exponent bias: 6
+    - nan: 00111111, 11111111
     - -0: 10000000
     - fn: finite (no inf or -inf encodings)
     """
@@ -208,6 +237,10 @@ struct DType(
             return DType.uint64
         elif str == "index":
             return DType.index
+        elif str == "float8_e3m4":
+            return DType.float8_e3m4
+        elif str == "float8_e4m3":
+            return DType.float8_e4m3
         elif str == "float8_e5m2":
             return DType.float8_e5m2
         elif str == "float8_e5m2fnuz":
@@ -273,6 +306,8 @@ struct DType(
             return writer.write("uint64")
         if self == DType.index:
             return writer.write("index")
+        if self == DType.float8_e3m4:
+            return writer.write("float8_e3m4")
         if self == DType.float8_e5m2:
             return writer.write("float8_e5m2")
         if self == DType.float8_e5m2fnuz:
@@ -281,6 +316,8 @@ struct DType(
             return writer.write("float8_e4m3fn")
         if self == DType.float8_e4m3fnuz:
             return writer.write("float8_e4m3fnuz")
+        if self == DType.float8_e4m3:
+            return writer.write("float8_e4m3")
         if self == DType.bfloat16:
             return writer.write("bfloat16")
         if self == DType.float16:
@@ -491,9 +528,11 @@ struct DType(
 
         return self in (
             DType.float8_e5m2,
+            DType.float8_e4m3,
             DType.float8_e4m3fn,
             DType.float8_e5m2fnuz,
             DType.float8_e4m3fnuz,
+            DType.float8_e3m4,
         )
 
     @always_inline("nodebug")
@@ -552,10 +591,14 @@ struct DType(
             return sizeof[DType.float8_e5m2]()
         if self == DType.float8_e5m2fnuz:
             return sizeof[DType.float8_e5m2fnuz]()
+        if self == DType.float8_e4m3:
+            return sizeof[DType.float8_e4m3]()
         if self == DType.float8_e4m3fn:
             return sizeof[DType.float8_e4m3fn]()
         if self == DType.float8_e4m3fnuz:
             return sizeof[DType.float8_e4m3fnuz]()
+        if self == DType.float8_e3m4:
+            return sizeof[DType.float8_e3m4]()
         if self == DType.bfloat16:
             return sizeof[DType.bfloat16]()
         if self == DType.float16:
