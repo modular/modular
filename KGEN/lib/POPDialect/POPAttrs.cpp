@@ -16,7 +16,10 @@
 #include "mlir/IR/DialectImplementation.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Base64.h"
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1614,6 +1617,203 @@ bool FloatLiteralIsaAttr::isConstant() const { return false; }
 
 Type FloatLiteralIsaAttr::getType() const {
   return IntegerType::get(getContext(), 1);
+}
+
+//===----------------------------------------------------------------------===//
+// StringSizeAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr StringSizeAttr::get(MLIRContext *ctx, TypedAttr str) {
+  // If input is a string literal, we can fold this
+  if (auto strAttr = ::dyn_cast_or_null<StringAttr>(str))
+    return IntegerAttr::get(IndexType::get(ctx), strAttr.getValue().size());
+
+  return Base::get(ctx, str);
+}
+
+bool StringSizeAttr::isConstant() const { return false; }
+
+Type StringSizeAttr::getType() const { return IndexType::get(getContext()); }
+
+//===----------------------------------------------------------------------===//
+// StringConcatAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr StringConcatAttr::get(MLIRContext *ctx, TypedAttr lhs,
+                                TypedAttr rhs) {
+  // If both inputs are string literals, we can fold this
+  if (auto lhsStr = ::dyn_cast_or_null<StringAttr>(lhs))
+    if (auto rhsStr = ::dyn_cast_or_null<StringAttr>(rhs)) {
+      return StringAttr::get(lhsStr.getValue() + rhsStr.getValue(),
+                             lhsStr.getType());
+    }
+
+  return Base::get(ctx, lhs, rhs);
+}
+
+bool StringConcatAttr::isConstant() const { return false; }
+
+Type StringConcatAttr::getType() const { return StringType::get(getContext()); }
+
+//===----------------------------------------------------------------------===//
+// StringReplaceAttr
+//===----------------------------------------------------------------------===//
+
+static void replaceAll(std::string &str, const std::string &from,
+                       const std::string &to) {
+  if (from.empty())
+    return;
+  size_t startPos = 0;
+  while ((startPos = str.find(from, startPos)) != std::string::npos) {
+    str.replace(startPos, from.length(), to);
+    startPos += to.length();
+  }
+}
+
+TypedAttr StringReplaceAttr::get(MLIRContext *ctx, TypedAttr strA,
+                                 TypedAttr srcA, TypedAttr targetA) {
+  // If all inputs are string literals, we can fold this
+  auto strAttr = ::dyn_cast_or_null<StringAttr>(strA);
+  auto srcAttr = ::dyn_cast_or_null<StringAttr>(srcA);
+  auto targetAttr = ::dyn_cast_or_null<StringAttr>(targetA);
+  if (!strAttr || !srcAttr || !targetAttr)
+    return Base::get(ctx, strA, srcA, targetA);
+
+  StringRef str = strAttr.strref(), src = srcAttr.strref();
+
+  auto occurrences = str.count(src);
+  if (occurrences == 0)
+    return strA;
+
+  std::string replacement = str.str();
+  replaceAll(replacement, src.str(), targetAttr.str());
+  return StringAttr::get(replacement, strA.getType());
+}
+
+bool StringReplaceAttr::isConstant() const { return false; }
+
+Type StringReplaceAttr::getType() const {
+  return StringType::get(getContext());
+}
+
+//===----------------------------------------------------------------------===//
+// StringHashAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr StringHashAttr::get(MLIRContext *ctx, TypedAttr str) {
+  // If input is a string literal, we can fold this
+  auto strAttr = ::dyn_cast_or_null<StringAttr>(str);
+  if (!strAttr)
+    return Base::get(ctx, str);
+
+  llvm::XXH128_hash_t hash =
+      llvm::xxh3_128bits(arrayRefFromStringRef(strAttr.getValue()));
+  StringRef hashStr(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
+  return StringAttr::get(llvm::toHex(hashStr, true), StringType::get(ctx));
+}
+
+bool StringHashAttr::isConstant() const { return false; }
+
+Type StringHashAttr::getType() const { return StringType::get(getContext()); }
+
+//===----------------------------------------------------------------------===//
+// StringBase64EncodeAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr StringBase64EncodeAttr::get(MLIRContext *ctx, TypedAttr str) {
+  // If input is a string literal, we can fold this
+  auto strAttr = ::dyn_cast_or_null<StringAttr>(str);
+  if (!strAttr)
+    return Base::get(ctx, str);
+
+  return StringAttr::get(llvm::encodeBase64(strAttr.getValue()),
+                         StringType::get(ctx));
+}
+
+bool StringBase64EncodeAttr::isConstant() const { return false; }
+
+Type StringBase64EncodeAttr::getType() const {
+  return StringType::get(getContext());
+}
+
+//===----------------------------------------------------------------------===//
+// StringBase64DecodeAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr StringBase64DecodeAttr::get(MLIRContext *ctx, TypedAttr str) {
+  // If input is a string literal, we can fold this
+  auto strAttr = ::dyn_cast_or_null<StringAttr>(str);
+  if (!strAttr)
+    return Base::get(ctx, str);
+
+  std::vector<char> decoded;
+  if (auto err = llvm::decodeBase64(strAttr.getValue(), decoded))
+    return {};
+  return StringAttr::get(std::string(decoded.begin(), decoded.end()),
+                         StringType::get(ctx));
+}
+
+bool StringBase64DecodeAttr::isConstant() const { return false; }
+
+Type StringBase64DecodeAttr::getType() const {
+  return StringType::get(getContext());
+}
+
+//===----------------------------------------------------------------------===//
+// StringCompressAttr
+//===----------------------------------------------------------------------===//
+
+static constexpr llvm::compression::Format kCompressionFormat =
+    llvm::compression::Format::Zlib;
+static constexpr int kCompressionLevel =
+    llvm::compression::zlib::BestSizeCompression;
+
+static constexpr llvm::compression::Params
+    kCompressionParams(kCompressionFormat, kCompressionLevel);
+
+TypedAttr StringCompressAttr::get(MLIRContext *ctx, TypedAttr str) {
+  // If input is a string literal, we can fold this
+  auto strAttr = ::dyn_cast_or_null<StringAttr>(str);
+  if (!strAttr)
+    return Base::get(ctx, str);
+
+  SmallVector<uint8_t, 1024> compressed;
+  llvm::compression::compress(kCompressionParams,
+                              arrayRefFromStringRef(strAttr.getValue()),
+                              compressed);
+
+  return StringAttr::get(toStringRef(compressed), StringType::get(ctx));
+}
+
+bool StringCompressAttr::isConstant() const { return false; }
+
+Type StringCompressAttr::getType() const {
+  return StringType::get(getContext());
+}
+
+//===----------------------------------------------------------------------===//
+// StringDecompressAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr StringDecompressAttr::get(MLIRContext *ctx, TypedAttr str) {
+  // If input is a string literal, we can fold this
+  auto strAttr = ::dyn_cast_or_null<StringAttr>(str);
+  if (!strAttr)
+    return Base::get(ctx, str);
+
+  SmallVector<uint8_t, 1024> decompressed;
+  if (auto err = llvm::compression::decompress(
+          kCompressionFormat, arrayRefFromStringRef(strAttr.getValue()),
+          decompressed, strAttr.strref().size()))
+    return {};
+
+  return StringAttr::get(toStringRef(decompressed), StringType::get(ctx));
+}
+
+bool StringDecompressAttr::isConstant() const { return false; }
+
+Type StringDecompressAttr::getType() const {
+  return StringType::get(getContext());
 }
 
 //===----------------------------------------------------------------------===//
