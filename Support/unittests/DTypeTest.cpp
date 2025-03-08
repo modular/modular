@@ -113,6 +113,12 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(32, DType::getComplex(DType::bf16).getWidthInBits());
   EXPECT_EQ(38, DType::getComplex(DType::tf32).getWidthInBits());
   EXPECT_EQ(16, DType::getComplex(DType::kBool).getWidthInBits());
+
+  // Verify these aliases line up with getComplex.
+  EXPECT_EQ(DType(DType::complex_f32).getValue(),
+            DType::getComplex(DType::f32).getValue());
+  EXPECT_EQ(DType(DType::complex_f64).getValue(),
+            DType::getComplex(DType::f64).getValue());
 }
 
 TEST(DType, getSizeInBytesPacked) {

@@ -111,6 +111,11 @@ public:
 
     tf32 = 10 | mIsFloat,
 
+    // Helpers for common complex types.  We don't need to enumerate all of
+    // them, though, use DType::getComplex(eltType) for generality.
+    complex_f32 = f32 | mIsComplex,
+    complex_f64 = f64 | mIsComplex,
+
     //===--- Encodings for other types ------------------------------------===//
 
     // kBool != ui1.  Like it, this only contains 1-bit of data, but it occupies
@@ -175,7 +180,7 @@ public:
 
   /// Given a valid element type for a complex number, return the complex type.
   /// We do not support sub-byte element types in order to simplify clients.
-  constexpr static DType getComplex(DType eltType) {
+  static DType getComplex(DType eltType) {
     assert(eltType.getWidthInBits() >= 8 && "invalid element type for complex");
     assert(!eltType.isComplex() &&
            "cannot construct a complex type with complex type as element");
