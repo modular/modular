@@ -421,7 +421,7 @@ fn _matmul_gpu[
                             mma_shape = Index(64, 256, 16),
                         ](
                             block_tile_shape=Index(128, 256, 64),
-                            cluster_shape=Index(1, 2, 1),
+                            cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
@@ -430,7 +430,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N2560_K8192_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -451,7 +451,7 @@ fn _matmul_gpu[
                             mma_shape = Index(64, 256, 16),
                         ](
                             block_tile_shape=Index(128, 256, 64),
-                            cluster_shape=Index(2, 2, 1),
+                            cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
@@ -460,7 +460,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M4096_N2560_K8192_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -483,7 +483,7 @@ fn _matmul_gpu[
                             mma_shape = Index(64, 256, 16),
                         ](
                             block_tile_shape=Index(128, 256, 64),
-                            cluster_shape=Index(1, 1, 1),
+                            cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
@@ -492,7 +492,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N8192_K2048_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -513,7 +513,7 @@ fn _matmul_gpu[
                             mma_shape = Index(64, 256, 16),
                         ](
                             block_tile_shape=Index(128, 256, 64),
-                            cluster_shape=Index(1, 1, 1),
+                            cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
@@ -522,7 +522,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M4096_N8192_K2048_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -545,7 +545,7 @@ fn _matmul_gpu[
                             mma_shape = Index(64, 256, 16),
                         ](
                             block_tile_shape=Index(128, 256, 64),
-                            cluster_shape=Index(1, 1, 1),
+                            cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
@@ -554,7 +554,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N14336_K8192_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -575,7 +575,7 @@ fn _matmul_gpu[
                             mma_shape = Index(64, 256, 16),
                         ](
                             block_tile_shape=Index(128, 256, 64),
-                            cluster_shape=Index(1, 1, 1),
+                            cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
@@ -584,7 +584,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M4096_N14336_K8192_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -607,7 +607,7 @@ fn _matmul_gpu[
                             mma_shape = Index(64, 256, 16),
                         ](
                             block_tile_shape=Index(128, 256, 64),
-                            cluster_shape=Index(1, 1, 1),
+                            cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
@@ -616,7 +616,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N8192_K7168_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -637,7 +637,7 @@ fn _matmul_gpu[
                             mma_shape = Index(64, 256, 16),
                         ](
                             block_tile_shape=Index(128, 256, 64),
-                            cluster_shape=Index(1, 1, 1),
+                            cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
@@ -646,7 +646,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M4096_N8192_K7168_config,
-                            schedule = MatmulSchedule.NONE,
+                            schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a_shape]](a),
@@ -666,7 +666,7 @@ fn _matmul_gpu[
                     mma_shape = Index(64, 256, 16),
                 ](
                     block_tile_shape=Index(128, 256, 64),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=Index(2, 1, 1),
                     num_pipeline_stages=4,
                     num_consumer=2,
                     partitioned_multicast=False,
@@ -675,7 +675,7 @@ fn _matmul_gpu[
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     config=default_config,
-                    schedule = MatmulSchedule.NONE,
+                    schedule = MatmulSchedule.TILE2D,
                 ](
                     rebind[NDBuffer[c_type, 2, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a_shape]](a),
