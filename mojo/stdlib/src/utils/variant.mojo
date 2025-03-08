@@ -44,16 +44,6 @@ from sys.intrinsics import _type_is_eq
 
 from memory import UnsafePointer
 
-# ===----------------------------------------------------------------------=== #
-# Utilities
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn _align_up(value: Int, alignment: Int) -> Int:
-    var div_ceil = (value + alignment - 1)._positive_div(alignment)
-    return div_ceil * alignment
-
 
 # ===----------------------------------------------------------------------=== #
 # Variant
