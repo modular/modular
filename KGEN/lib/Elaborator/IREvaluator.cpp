@@ -136,6 +136,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
                             StringType::get(op.getContext()))};
   case POC::DataToStr:
     return evaluateDataToStr(op);
+  case POC::StringAddress:
+    return evaluateStringAddress(op);
   case POC::Rebind:
     // Catch unfolded rebinds to emit a nicer error message.
     emitError(ErrorTree(
@@ -259,6 +261,33 @@ FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
 
   // Success!
   return {StringAttr::get(result, StringType::get(getContext()))};
+}
+
+FailureOr<TypedAttr> IREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
+  // Ensure the string is null-terminated. This is safe because `StringAttr`
+  // always stores a null terminator.
+  auto value = dyn_cast<StringAttr>(op.getOperand(0));
+  if (!value) {
+    emitError({*errorLoc, "argument is not a concrete string"});
+    return failure();
+  }
+  StringRef str(value.data(), value.size() + 1);
+  if (value.getValue().empty())
+    str = "\0";
+
+  MemoryHandleAttr hdl = MemoryHandleAttr::get(getContext(), str);
+  ErrorOr<int64_t> addr = mapConstGlobalMemory(hdl);
+  if (addr.isError()) {
+    emitError({*errorLoc, addr.takeError()});
+    return failure();
+  }
+
+  auto ptr = PointerAttr::get(getContext(), addr.takeValue(), op.getType());
+  if (ErrorOrSuccess err = externalizeMemory(ptr)) {
+    emitError({*errorLoc, err.takeError()});
+    return failure();
+  }
+  return {ptr};
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {

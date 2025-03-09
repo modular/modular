@@ -72,7 +72,7 @@ def StoreToMemAttr : InterpreterAttr<"StoreToMem", "store_to_mem",
 }
 
 //===----------------------------------------------------------------------===//
-// MemoryHandleAttr
+// AlignedBlob
 //===----------------------------------------------------------------------===//
 
 def AlignedBlob : AttrParameter<"AlignedBlob", "an aligned byte array"> {
@@ -87,6 +87,10 @@ def AlignedBlob : AttrParameter<"AlignedBlob", "an aligned byte array"> {
   }];
   let cppStorageType = "OwnedAlignedBlob";
 }
+
+//===----------------------------------------------------------------------===//
+// MemoryHandleAttr
+//===----------------------------------------------------------------------===//
 
 def MemoryHandleAttr : InterpreterAttr<"MemoryHandle", "memory_handle"> {
   let summary = "reference to a physical blob of memory";
