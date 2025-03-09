@@ -88,8 +88,8 @@ struct VariantTypeKey {
 private:
   template <typename T>
   static bool getUnderlyingHash(KeyTy key, std::string &out) {
-    if (std::holds_alternative<T>(std::forward<KeyTy>(key))) {
-      out = TypeKey<T>::hashKey(std::get<T>(std::forward<KeyTy>(key)));
+    if (auto val = std::get_if<T>(&key)) {
+      out = TypeKey<T>::hashKey(*val);
       return true;
     }
     return false;
