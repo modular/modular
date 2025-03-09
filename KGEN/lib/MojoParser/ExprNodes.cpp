@@ -397,55 +397,6 @@ bool ExprNode::isEmptyTuple() const {
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
 
-static AnyValue handleIntOrFPLiteral(TypedAttr value, ASTType type,
-                                     const ExprNode *expr, ValueDest &dest,
-                                     ExprEmitter &emitter) {
-  if (isa<TypeCheckErrorType>(type))
-    return {}; // Sanity check the returned declaration.
-  ASTDecl *decl = type.getDecl(emitter.shared);
-
-  // We expect: IntLiteral[value: __mlir_type.`!pop.int_literal`]
-  // or FloatLiteral[value: __mlir_type.`!pop.float_literal`]
-  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl);
-
-  if (!litStruct || litStruct.getParams().size() != 1 ||
-      !isa<POP::IntLiteralType, POP::FloatLiteralType>(
-          litStruct.getParams()[0].getType())) {
-    emitter.emitError(expr->getLoc(), "malformed Literal type");
-    return {};
-  }
-
-  // Bind the IntLiteral[value] parameter.
-  type = litStruct.bindReference({value});
-
-  // Create an instance of IntLiteral[val]()
-  return emitter.emitConstructorCall(type, CallOperands(), expr,
-                                     CallSyntax::kTypeCall, dest);
-}
-
-AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  APInt value = Lexer::getIntegerLiteralValue(spelling);
-  // Values produced are sometimes produced unsigned, so we must add an extra
-  // sign bit.
-  if (value.slt(APInt::getZero(value.getBitWidth())))
-    value = value.zext(value.getBitWidth() + 1);
-  auto attr = POP::IntLiteralAttr::get(emitter.getContext(), IPInt(value));
-
-  // Look up the IntLiteral type.
-  ASTType type =
-      emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
-
-  return handleIntOrFPLiteral(attr, type, this, dest, emitter);
-}
-
-AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  IPRational value = Lexer::getFloatLiteralValue(spelling);
-  auto attr = POP::FloatLiteralAttr::get(emitter.getContext(), value);
-  ASTType type =
-      emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
-  return handleIntOrFPLiteral(attr, type, this, dest, emitter);
-}
-
 AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Create the SIMDAttr to represent the constant.
   auto boolAttr = BoolAttr::get(emitter.getContext(), value);
@@ -492,6 +443,64 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
   return emitter.emitResult(astDecl->getTypeDeclSelf(), this, dest);
 }
 
+// Handle generation of a constructor call to one of::
+//     IntLiteral[value: __mlir_type.`!pop.int_literal`]
+//     FloatLiteral[value: __mlir_type.`!pop.float_literal`]
+//     StringLiteral[value: __mlir_type.`!kgen.string`]
+static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
+                                       const ExprNode *expr, ValueDest &dest,
+                                       ExprEmitter &emitter) {
+  if (isa<TypeCheckErrorType>(type))
+    return {}; // Sanity check the returned declaration.
+  ASTDecl *decl = type.getDecl(emitter.shared);
+
+  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl);
+
+  // FIXME: remove legacy StringLiteral format.
+  if (litStruct && litStruct.getParams().empty()) {
+    return emitter.emitConstructorCall(
+        type, CallOperands({{AnyValue(value), expr}}), expr,
+        CallSyntax::kImplicitConvert, dest);
+  }
+
+  if (!litStruct || litStruct.getParams().size() != 1 ||
+      !isa<POP::IntLiteralType, POP::FloatLiteralType, StringType>(
+          litStruct.getParams()[0].getType())) {
+    emitter.emitError(expr->getLoc(), "malformed Literal type");
+    return {};
+  }
+
+  // Bind the IntLiteral[value] parameter.
+  type = litStruct.bindReference({value});
+
+  // Create an instance of IntLiteral[val]()
+  return emitter.emitConstructorCall(type, CallOperands(), expr,
+                                     CallSyntax::kTypeCall, dest);
+}
+
+AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  APInt value = Lexer::getIntegerLiteralValue(spelling);
+  // Values produced are sometimes produced unsigned, so we must add an extra
+  // sign bit.
+  if (value.slt(APInt::getZero(value.getBitWidth())))
+    value = value.zext(value.getBitWidth() + 1);
+  auto attr = POP::IntLiteralAttr::get(emitter.getContext(), IPInt(value));
+
+  // Look up the IntLiteral type.
+  ASTType type =
+      emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
+
+  return handleIntFPStringLiteral(attr, type, this, dest, emitter);
+}
+
+AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  IPRational value = Lexer::getFloatLiteralValue(spelling);
+  auto attr = POP::FloatLiteralAttr::get(emitter.getContext(), value);
+  ASTType type =
+      emitter.shared.getBuiltinFloatLiteralType(emitter.declScope, getLoc());
+  return handleIntFPStringLiteral(attr, type, this, dest, emitter);
+}
+
 /// The value of a string is the concatenated value with escapes and quotes
 /// removed.
 std::string StringLiteralNode::getValue() const {
@@ -501,17 +510,22 @@ std::string StringLiteralNode::getValue() const {
   return result;
 }
 
+/// Emit a constructor call for a string literal with the specified data, that
+/// does not include enclosing quotes.  The specified expression specifies the
+/// location but need not by a StringLiteral.
+CValue StringLiteralNode::emitCtorCall(StringRef bytes, const ExprNode *expr,
+                                       ValueDest &dest, ExprEmitter &emitter) {
+  auto attr = StringAttr::get(bytes, StringType::get(emitter.getContext()));
+  ASTType type = emitter.shared.getBuiltinStringLiteralType(emitter.declScope,
+                                                            expr->getLoc());
+  return handleIntFPStringLiteral(attr, type, expr, dest, emitter);
+}
+
 AnyValue StringLiteralNode::emitIR(ValueDest &dest,
                                    ExprEmitter &emitter) const {
+  // Flatten multiple concat'd strings, remove """'s and "'s etc.
   std::string value = getValue();
-  auto attr = StringAttr::get(value, StringType::get(emitter.getContext()));
-
-  // Convert this to an instance of StringLiteral.
-  ASTType type =
-      emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(attr), this}}),
-                                     this, CallSyntax::kImplicitConvert, dest);
+  return emitCtorCall(value, this, dest, emitter);
 }
 
 bool Operand::isPositionalStringLiteral(StringRef str) const {

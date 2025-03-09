@@ -323,17 +323,13 @@ struct UInt8:
 
 @value
 @register_passable("trivial")
-struct StringLiteral:
-    alias type = __mlir_type.`!kgen.string`
-    var value: Self.type
-
+struct StringLiteral[value: __mlir_type.`!kgen.string`]:
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: Self.type):
-        self.value = value
+    fn __init__(out self):
+        pass
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    fn __eq__(self, other: StringLiteral) -> Bool:
         return Bool()
 
 

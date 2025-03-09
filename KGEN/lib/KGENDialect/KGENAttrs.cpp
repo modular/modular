@@ -375,6 +375,7 @@ TypedAttr BindParamsAttr::get(TypedAttr generator,
     return generator;
   auto genType = ::cast<GeneratorType>(generator.getType());
   Type resultType = genType.getSpecializedGenerator(paramValues);
+  assert(resultType && "Failed to specialize generator");
   return get(generator.getContext(), generator, paramValues, resultType);
 }
 

@@ -205,7 +205,7 @@ static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
   // Helper lambda to extract name from a symbol reference
   auto extractFromSymbolRef = [](SymbolRefAttr ref) -> StringRef {
     StringRef name = ref.getLeafReference().getValue();
-    return name.substr(0, name.find_first_of('('));
+    return name.substr(0, name.find_first_of("(["));
   };
 
   if (auto cst = dyn_cast<SymbolConstantAttr>(attr))
@@ -242,10 +242,19 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
   std::function<bool(TypedAttr)> validateOperand = [&](TypedAttr attr) {
     if (auto var = dyn_cast<VariadicAttr>(attr))
       return llvm::all_of(var.getValues(), validateOperand);
-    auto arg = dyn_cast<LITStructAttr>(attr);
-    if (!arg || arg.getValues().size() != 1)
+    // Handle Int{42} and StringLiteral["foo"] both.
+    if (auto arg = dyn_cast<LITStructAttr>(attr)) {
+      if (arg.getValues().size() == 1)
+        attr = std::get<1>(arg.getValues().front());
+      else
+        return false;
+    } else if (isa<UnknownAttr>(attr) &&
+               ASTType(attr.getType()).getParamBindings().size() == 1) {
+      attr = ASTType(attr.getType()).getParamBindings().front();
+    } else {
       return false;
-    attr = std::get<1>(arg.getValues().front());
+    }
+
     if (auto str = dyn_cast<StringAttr>(attr))
       return llvm::Regex("^[a-z0-9A-Z\\._:]*$").match(str.getValue());
     return isa<IntegerAttr>(attr);
@@ -257,6 +266,7 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
 
   if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
     return success(
+        call.getOpcode() == POC::Apply &&
         llvm::is_contained(plainDre, *symbolName) &&
         call.getOperands().size() <= 3 &&
         llvm::all_of(call.getOperands().drop_front(), validateOperand));

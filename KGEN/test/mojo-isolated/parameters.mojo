@@ -221,13 +221,13 @@ fn fnWithCall[array: __mlir_type[`!pop.array<10, f32>`]]():
    # CHECK: lit.call @parameters::@"fnToCall{{.*}}"<10, :array<10, f32> array>()
    fnToCall[Int(10).value, array]()
 
-# CHECK-LABEL: lit.fn @"meta_str{{.*}}"<type: !StringLiteral>() -> !kgen.none
+# CHECK-LABEL: lit.fn @"meta_str{{.*}}"<[""]*"value`": string, +, type: @stdlib::@builtin::@stubs::@StringLiteral<:string *"value`">>() -> !kgen.none
 fn meta_str[type: StringLiteral]():
   pass
 
 # CHECK-LABEL: lit.fn @"str_input_param()"() -> !kgen.none
 fn str_input_param():
-  # CHECK: %0 = lit.call @parameters::@"meta_str{{.*}}"<:!StringLiteral {{.*}}"123"{{.*}}>()
+  # CHECK: %0 = lit.call @parameters::@"meta_str{{.*}}"<{{.*}}@StringLiteral<:string "123">{{.*}}>()
   meta_str["123"]()
 
 @value
@@ -241,16 +241,16 @@ struct TwoParams[a: Int, b: Int]:
 fn signature_capture[a: Int, f: fn[b: Int]() -> TwoParams[a, b]]():
     _ = f[2]()
 
-# CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<cond: !Bool, message: !StringLiteral>
+# CHECK-LABEL: lit.fn @"my_constrained{{.*}}"<{{.*}}cond: !Bool, message: {{.*}}@StringLiteral<:string *"value`">>()
 fn my_constrained[cond: Bool, message: StringLiteral]():
-    # CHECK: kgen.param.assert <#lit.struct.extract<:!Bool cond, "value">>, #lit.struct.extract<:!StringLiteral message, "value">
+    # CHECK: kgen.param.assert <#lit.struct.extract<:!Bool cond, "value">>, *"value`"
     __mlir_op.`kgen.param.assert`[cond=cond.__mlir_i1__(), message=message.value]()
     return
 
 
 # CHECK-LABEL: lit.fn @"pass_str_param
 fn pass_str_param():
-    # CHECK: lit.call {{.+}}my_constrained{{.*}}"<:!Bool {:i1 1}, :!StringLiteral {{.*}}"foo"{{.*}}>()
+    # CHECK: lit.call {{.+}}my_constrained{{.*}}"<{{.*}}:!Bool {:i1 1}, {{.*}}StringLiteral<:string "foo">{{.*}}>()
     my_constrained[1==1, "foo"]()
 
 # CHECK-LABEL: lit.fn @"implicit_params
@@ -1173,38 +1173,38 @@ fn auto_param_dependent(value: DependentParam[*_]):
 # Default function parameters
 ##===----------------------------------------------------------------------===##
 
-fn default_params[a: Int, b: Int = 7, c: StringLiteral = "woof"]():
+fn default_params[a: Int, b: Int = 7, c: String = "woof"]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_default_params()"
 fn test_default_params():
-    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::StringLiteral]()"
-    # CHECK-SAME: <:!Int {1}, :!Int {7}, :!StringLiteral {:string "woof"}>
+    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::String]()"
+    # CHECK-SAME: <:!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     default_params[1]()
 
-    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::StringLiteral]()"
-    # CHECK-SAME: <:!Int {2}, :!Int {8}, :!StringLiteral {:string "woof"}>
+    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::String]()"
+    # CHECK-SAME: <:!Int {2}, :!Int {8}, {{.*}}#StringLiteral <:string "woof">
     default_params[2, 8]()
 
-    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::StringLiteral]()"
-    # CHECK-SAME: <:!Int {4}, :!Int {9}, :!StringLiteral {:string "meow"}>
+    # CHECK: lit.call @{{.*}}@"default_params[::Int,::Int,::String]()"
+    # CHECK-SAME: <:!Int {4}, :!Int {9}, {{.*}}#StringLiteral <:string "meow">
     default_params[4, 9, "meow"]()
 
 
 fn test_indirect_default_params[
-    callee: fn[a: Int, b: Int = 7, c: StringLiteral = "woof"]()->None]():
+    callee: fn[a: Int, b: Int = 7, c: String = "woof"]()->None]():
 
     # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
-    # CHECK-SAME: {1}, {7}, {:string "woof"})]()
+    # CHECK-SAME: {1}, {7}, {{.*}}#StringLiteral <:string "woof"
     callee[1]()
 
     # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
-    # CHECK-SAME: {2}, {8}, {:string "woof"})]()
+    # CHECK-SAME: {2}, {8}, {{.*}}#StringLiteral <:string "woof"
     callee[2, 8]()
 
     # CHECK: lit.call[!lit.generator<() -> !kgen.none>: bind_params(:!lit.generator<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
-    # CHECK-SAME: {4}, {9}, {:string "meow"})]()
+    # CHECK-SAME: {4}, {9}, {{.*}}#StringLiteral <:string "meow"
     callee[4, 9, "meow"]()
 
 
@@ -1282,34 +1282,34 @@ fn test_optional_inference(value: ParamType[`3`]):
 # Default struct parameters
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.struct.decl @DefaultParams<{{.*}}: !Int, {{.*}}: !Int = {7}, {{.*}}: !StringLiteral = {:string "woof"}
+# CHECK: lit.struct.decl @DefaultParams<{{.*}}: !Int, {{.*}}: !Int = {7}, {{.*}}: {{.*}}#StringLiteral <:string "woof">
 @value
-struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral = "woof"]: pass
+struct DefaultParams[a: Int, b: Int = 7, msg: String = "woof"]: pass
 
 # CHECK-LABEL: lit.fn @"test_default_param_struct()"
 fn test_default_param_struct():
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
-    # CHECK-SAME: :!Int {1}, :!Int {7}, :!StringLiteral {:string "woof"}
+    # CHECK-SAME: :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     alias T = DefaultParams[1]
     # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
-    # CHECK-SAME:   :!Int {1}, :!Int {7}, :!StringLiteral {:string "woof"}
-    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {1}, :!Int {7}, :!StringLiteral {:string "woof"}
+    # CHECK-SAME:   :!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
+    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {1}, :!Int {7}, {{.*}}#StringLiteral <:string "woof">
     _ = DefaultParams[1]()
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
-    # CHECK-SAME: :!Int {2}, :!Int {3}, :!StringLiteral {:string "woof"}
+    # CHECK-SAME: :!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
     alias U = DefaultParams[2, 3]
     # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
-    # CHECK-SAME:   :!Int {2}, :!Int {3}, :!StringLiteral {:string "woof"}
-    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {2}, :!Int {3}, :!StringLiteral {:string "woof"}
+    # CHECK-SAME:   :!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
+    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {2}, :!Int {3}, {{.*}}#StringLiteral <:string "woof">
     _ = DefaultParams[2, 3]()
 
     # CHECK: lit.alias.decl {{.*}}@DefaultParams<
-    # CHECK-SAME: :!Int {4}, :!Int {5}, :!StringLiteral {:string "meow"}
+    # CHECK-SAME: :!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
     alias S = DefaultParams[4, 5, "meow"]
     # CHECK-NEXT: %[[INIT:.*]] = lit.var.decl {{.*}} synth : !lit.ref<@{{.*}}::@DefaultParams<
-    # CHECK-SAME:   :!Int {4}, :!Int {5}, :!StringLiteral {:string "meow"}
-    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {4}, :!Int {5}, :!StringLiteral {:string "meow"}
+    # CHECK-SAME:   :!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
+    # CHECK-NEXT: lit.call @{{.*}}@DefaultParams::@"__init__({{.*}}<:!Int {4}, :!Int {5}, {{.*}}#StringLiteral <:string "meow">
     _ = DefaultParams[4, 5, "meow"]()
 
 

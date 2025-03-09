@@ -143,6 +143,12 @@ struct StringLiteralNode final : public ExprNode {
   /// concatenation.
   std::string getValue() const;
 
+  /// Emit a constructor call for a string literal with the specified data, that
+  /// does not include enclosing quotes.  The specified expression specifies the
+  /// location but need not by a StringLiteral.
+  static CValue emitCtorCall(StringRef bytes, const ExprNode *expr,
+                             ValueDest &dest, ExprEmitter &emitter);
+
   static bool classof(const ExprNode *node) {
     return node->kind == kStringLiteral;
   }
