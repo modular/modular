@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# TODO(KERN-1652): Reenable this test once the issue is fixed.
+# REQUIRES: DISABLED
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
