@@ -1351,6 +1351,10 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'data_to_str' expects two operands, one 'index' "
                             "length and one pointer";
     break;
+  case POC::StringAddress:
+    if (operands.size() != 1 || !::isa<StringType>(operands[0].getType()))
+      return emitError() << "'string_address' expects one '!kgen.string'";
+    break;
   case POC::StrConcat:
     // Already checked the input/result types all match.
     if (operands.size() != 2 || !::isa<StringType>(operands[0].getType()))
@@ -2669,6 +2673,8 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::DataToStr:
     resultType = StringType::get(ctx);
     break;
+  case POC::StringAddress: // Can't simplify.
+    break;
   case POC::StrConcat:
     result = simplifyStrConcat(operands[0], operands[1]);
     resultType = StringType::get(ctx);
@@ -2756,16 +2762,16 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
     resultType = operandsIn.front().getType();
-  assert(llvm::is_contained({POC::Apply, POC::ApplyResultSlot,
-                             POC::TargetHasFeature, POC::TargetGetField,
-                             POC::AcceleratorArch, POC::GetSizeOf,
-                             POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
-                             POC::CompileAssembly, POC::GetLinkageName,
-                             POC::CompileOffloadClosure, POC::GetVTableEntry,
-                             POC::VariadicPtrMap, POC::VariadicPtrRemoveMap},
-                            opcode) ||
-         llvm::all_of(operandsIn.drop_front(),
-                      [&](auto op) { return op.getType() == resultType; }));
+  assert(
+      llvm::is_contained(
+          {POC::Apply, POC::ApplyResultSlot, POC::TargetHasFeature,
+           POC::TargetGetField, POC::AcceleratorArch, POC::GetSizeOf,
+           POC::GetAlignOf, POC::VariadicGet, POC::GetEnv, POC::CompileAssembly,
+           POC::GetLinkageName, POC::CompileOffloadClosure, POC::GetVTableEntry,
+           POC::VariadicPtrMap, POC::VariadicPtrRemoveMap, POC::StringAddress},
+          opcode) ||
+      llvm::all_of(operandsIn.drop_front(),
+                   [&](auto op) { return op.getType() == resultType; }));
 
   return getParamOperator(operandsIn.front().getContext(), opcode, operandsIn,
                           resultType);

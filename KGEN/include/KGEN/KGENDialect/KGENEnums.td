@@ -95,10 +95,12 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   /// !kgen.string, used to convert comp-time String (and related types) to
   /// StringLiteral.
   I32EnumAttrCase<"DataToStr", 40, "data_to_str">,
+  /// Get the address of a string.
+  I32EnumAttrCase<"StringAddress", 41, "string_address">,
   /// Concatenate two values of !kgen.string type.
-  I32EnumAttrCase<"StrConcat", 41, "str_concat">,
+  I32EnumAttrCase<"StrConcat", 42, "str_concat">,
   /// Get the arguments from a function signature as a kgen.variadic.
-  I32EnumAttrCase<"FunctionGetArgTypes", 42, "function_get_arg_types">,
+  I32EnumAttrCase<"FunctionGetArgTypes", 43, "function_get_arg_types">,
 
   /// HELLO INTREPID COMPILER DEVELOPER!  Are you thinking about adding another
   /// POC opcode for something that isn't a trivial expression like add or sub?

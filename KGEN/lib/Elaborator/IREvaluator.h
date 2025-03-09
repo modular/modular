@@ -86,6 +86,7 @@ private:
   FailureOr<TypedAttr> evaluateCompileOffloadClosure(ParamOperatorAttr op);
   /// Evaluate POC::DataToStr "data_to_str" operator.
   FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op);
+  FailureOr<TypedAttr> evaluateStringAddress(ParamOperatorAttr op);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
