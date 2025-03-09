@@ -865,8 +865,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       os << "nan";
       return;
     case POP::FloatLiteralSpecialValues::Normal:
-      // Convert to f64 to print out the value.  TODO: we print float literals
-      // in generally really ugly, like "1.000000e+00" which is not great.
+      // Convert to f64 to print out the value.
       auto ctx = fpLit.getContext();
       auto f64Type = POP::SIMDType::get(ctx, 1, DType::f64);
       auto simdVal = cast<POP::SIMDAttr>(
@@ -876,14 +875,15 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     }
   }
 
-  // IntLiteral and FloatLiteral are stateless values that end up as
+  // IntLiteral/FloatLiteral/StringLiteral are stateless values that end up as
   // UnknownAttr.
   if (isa<UnknownAttr>(param) && diagShared) {
     ASTDecl *decl = ASTType(param.getType()).getDecl(*diagShared);
     StringRef typeName;
     if (decl && isa<LIT::StructDeclOp>(*decl))
       typeName = cast<LIT::StructDeclOp>(*decl).getDeclName().strref();
-    if (typeName == "IntLiteral" || typeName == "FloatLiteral") {
+    if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
+        typeName == "StringLiteral") {
       auto structType = cast<LIT::StructType>(param.getType());
       if (structType.getParamValues().size() == 1) {
         printDemangledParam(os, structType.getParamValues()[0], diagShared);

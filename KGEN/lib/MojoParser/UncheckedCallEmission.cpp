@@ -594,14 +594,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     SMLoc loc = operand.expr->getLoc();
 
-    // We first construct a String key from the operand name.
-    ASTType stringLiteralType =
-        emitter.shared.getBuiltinStringLiteralType(emitter.declScope, loc);
-    auto nameAttr = StringAttr::get(operand.keyword.strref(),
-                                    StringType::get(emitter.getContext()));
-    CValue literalKey = emitter.emitConstructorCall(
-        stringLiteralType, CallOperands({{PValue(nameAttr), operand.expr}}),
-        callExpr, CallSyntax::kImplicitConvert, kwargsDest);
+    SyntheticNode tmpNode(loc);
+    CValue literalKey = StringLiteralNode::emitCtorCall(
+        operand.keyword.strref(), &tmpNode, kwargsDest, emitter);
+    if (!literalKey)
+      return {};
 
     // Then we set the element with the given key and the operand as value.
     CallOperands insertOperands(

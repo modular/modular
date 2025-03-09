@@ -501,7 +501,7 @@ struct GetAttrNotString:
 
 fn invalid_getattr():
     var obj = GetAttrNotString()
-    # expected-error @below {{invalid call to '__getattr__': attribute name cannot be converted from 'StringLiteral' to 'Int}}
+    # expected-error @below {{invalid call to '__getattr__': attribute name cannot be converted from 'StringLiteral["attr"]' to 'Int}}
     obj.attr
 
 

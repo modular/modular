@@ -52,13 +52,13 @@ fn test_variadic_kwargs():
     # CHECK-SAME: @OwnedKwargsDict<:!CollectionElement #[[INDEX_TYPE]]>
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"__init__{{.*}}(%[[DICT_VAR]])
 
-    # CHECK: %[[X_KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "x"}>
+    # CHECK: %[[X_KEY:.*]] = kgen.param.constant: {{.*}}StringLiteral<:string "x">
     # CHECK: %[[X_VAL:.*]] = lit.var.decl {{.*}}index,
     # CHECK: %[[IDX9:.*]] = kgen.param.constant = <9>
     # CHECK: lit.ref.store %[[IDX9]], %[[X_VAL]]
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[X_KEY]], %[[X_VAL]])
 
-    # CHECK: %[[S_KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "stuff"}>
+    # CHECK: %[[S_KEY:.*]] = kgen.param.constant: {{.*}}StringLiteral<:string "stuff">
     # CHECK: %[[S_VAL:.*]] = lit.var.decl {{.*}}index,
     # CHECK: %[[IDX8:.*]] = kgen.param.constant = <8>
     # CHECK: lit.ref.store %[[IDX8]], %[[S_VAL]]
@@ -92,14 +92,14 @@ fn test_variadic_kwargs_param_inference():
 
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl {{.*}}@OwnedKwargsDict<:!CollectionElement #[[MEM_ONLY]]>
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"__init__{{.*}}(%[[DICT_VAR]])
-    # CHECK: %[[Y_KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "y"}>
+    # CHECK: %[[Y_KEY:.*]] = kgen.param.constant: {{.*}}@StringLiteral<:string "y">
 
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[Y_KEY]], %[[M]])
 
     # CHECK: %[[S:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemOnly,
     # CHECK: %[[S_REF:.*]] = lit.ref.immut %s
     # CHECK: lit.call {{.*}}@MemOnly::@"__copyinit__{{.*}}(%[[S_REF]], %[[S]])
-    # CHECK: %[[Z_KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "z"}>
+    # CHECK: %[[Z_KEY:.*]] = kgen.param.constant: {{.*}}@StringLiteral<:string "z">
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[Z_KEY]], %[[S]])
     infers_param_from_kwargs(y=MemOnly(), z=s)
 

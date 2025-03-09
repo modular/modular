@@ -182,9 +182,9 @@ struct ParamIndex:
 # CHECK-LABEL: lit.fn @"test_param_indexing
 fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
   # Issue #35662: Support parameter input to getattr
-  # CHECK: lit.call {{.*}}__getattr__{{.*}}<:!StringLiteral {:string "x"}>(%a)
+  # CHECK: lit.call {{.*}}__getattr__{{.*}}@StringLiteral<:string "x"> *?>(%a)
   _ = a.x
-  # CHECK: lit.call {{.*}}__getattr__{{.*}}<:!StringLiteral {:string "y"}>(%a)
+  # CHECK: lit.call {{.*}}__getattr__{{.*}}@StringLiteral<:string "y"> *?>(%a)
   _ = a.y
   # CHECK: lit.call {{.*}}__getitem__{{.*}}<:!Int {2}, :!Int {4}>(%b)
   _ = b[2, 4]

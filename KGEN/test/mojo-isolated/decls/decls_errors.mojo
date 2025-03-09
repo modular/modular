@@ -458,10 +458,10 @@ fn test_param_deduction_failure[
     func[_](u, v)
 
 struct InitOverloaded:
-  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral' to 'Int'}}
+  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral["foo"]' to 'Int'}}
   # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to 'Int'}}
   fn __init__(out self, a: Int): pass
-  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral' to 'index'}}
+  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral["foo"]' to 'index'}}
   # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to 'index'}}
   fn __init__(out self, a: Index): pass
 
