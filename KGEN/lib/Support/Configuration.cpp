@@ -19,9 +19,9 @@ using namespace M::KGEN;
 #endif
 
 ErrorOr<std::filesystem::path> MojoConfig::getConfigFilePath() const {
-  if (!std::holds_alternative<Config>(configSource))
-    return Error("Configuration file path unavailable from settings");
-  return std::get<Config>(configSource).getConfigFilePath();
+  if (const Config *val = std::get_if<Config>(&configSource))
+    return val->getConfigFilePath();
+  return Error("Configuration file path unavailable from settings");
 }
 
 static StringRef getValueFrom(Config &config, StringLiteral key) {
