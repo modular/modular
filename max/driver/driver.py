@@ -75,9 +75,6 @@ def load_devices(device_specs: list[DeviceSpec]) -> list[Device]:
 
             devices.append(Accelerator(device_spec.id))
 
-    print(f"device_specs: {device_specs}")
-    print(f"devices: {devices}")
-
     return devices
 
 
