@@ -81,7 +81,9 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if type in (DType.float8_e4m3, DType.float8_e4m3fnuz):
+            return 7
+        elif type is DType.float8_e4m3fn:
             return 8
         elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 16
@@ -101,7 +103,11 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if type in (
+            DType.float8_e4m3,
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+        ):
             return 4
         elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 5
