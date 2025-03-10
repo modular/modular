@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef SUPPORT_GLOBALS_GLOBALS_H
+#define SUPPORT_GLOBALS_GLOBALS_H
+
 #include "Support/SymbolExport.h"
 
 #include <functional>
@@ -31,3 +34,5 @@ getTypeInfoTableSingleton(const std::function<Detail::TypeInfoTable *()> &ctor);
 } // namespace Globals
 
 } // namespace M
+
+#endif // SUPPORT_GLOBALS_GLOBALS_H
