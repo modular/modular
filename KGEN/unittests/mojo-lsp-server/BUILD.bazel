@@ -28,6 +28,7 @@ inputs = [
     "HoverTest",
     "InitFileTest",
     "KernelAPIDecoratorsTest",
+    "MOGGAnnotateDiags",
     "NotebookTest",
     "ReferencesTest",
     "RenameTest",
