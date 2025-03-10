@@ -43,7 +43,7 @@ struct AddConstantCustom[value: Int]:
     # output shapes in the graph.
     @staticmethod
     fn shape(
-        x: ManagedTensorSlice,
+        x: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise "NotImplemented"
 
@@ -73,6 +73,6 @@ struct AddOneCustom:
     # output shapes in the graph.
     @staticmethod
     fn shape(
-        x: ManagedTensorSlice,
+        x: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise "NotImplemented"
