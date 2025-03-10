@@ -1141,7 +1141,7 @@ fn warp_specialize_gemm_with_multicasting[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape],
     grid_shape: OptionalReg[IndexList[2]] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    schedule: MatmulSchedule = MatmulSchedule.TILE2D,
+    schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](
     c_device: NDBuffer[c_type, 2, c_shape],
     a_device: NDBuffer[a_type, 2, a_shape],
