@@ -16,6 +16,8 @@ from sys import (
     simdwidthof,
     sizeof,
 )
+from collections import Optional, OptionalReg
+from linalg.matmul import elementwise_epilogue_type
 
 from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
@@ -961,6 +963,7 @@ fn _matmul_qint4_m_1[
     group_size: Int,
     aq_type: DType,
     b_static_shape: DimList = DimList.create_unknown[2](),
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_quant: NDBuffer[aq_type, 2],
     a_scale: NDBuffer[DType.float32, 2],
@@ -1012,6 +1015,17 @@ fn _matmul_qint4_m_1[
 
             c_float.store(c._offset(Index(0, n)), N)
 
+            @parameter
+            if elementwise_lambda_fn:
+                alias func = elementwise_lambda_fn.value()
+
+                @parameter
+                for nn in range(tile_n):
+                    var val = c_float[0, nn]
+                    func[DType.float32, simd_width](
+                        Index(0, n + nn * simd_width), val
+                    )
+
         tile[process_cols, VariadicList[Int](2, 1)](
             0, ceildiv(task_n_count, simd_width)
         )
@@ -1024,6 +1038,7 @@ fn _matmul_qint4_m_any[
     group_size: Int,
     aq_type: DType,
     b_static_shape: DimList = DimList.create_unknown[2](),
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_quant: NDBuffer[aq_type, 2],
     a_scale: NDBuffer[DType.float32, 2],
@@ -1142,6 +1157,24 @@ fn _matmul_qint4_m_any[
 
                     c_float.store(c_ptr, N)
 
+                    @parameter
+                    if elementwise_lambda_fn:
+                        alias func = elementwise_lambda_fn.value()
+
+                        @parameter
+                        for mm in range(tile_m):
+
+                            @parameter
+                            for nn in range(tile_n):
+                                var val = c_float[mm, nn]
+                                func[DType.float32, simd_width](
+                                    Index(
+                                        m + mm,
+                                        n + nn * simd_width,
+                                    ),
+                                    val,
+                                )
+
                 tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
 
             tile[process_cols, VariadicList[Int](2, 1)](
@@ -1155,6 +1188,7 @@ fn _matmul_qint4[
     kernel: _MatmulQInt4Kernel,
     group_size: Int,
     b_static_shape: DimList = DimList.create_unknown[2](),
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a: NDBuffer[DType.float32, 2],
     b: NDBuffer[DType.uint8, 2, b_static_shape],
@@ -1184,9 +1218,13 @@ fn _matmul_qint4[
     kernel.quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     if M == 1:
-        _matmul_qint4_m_1[kernel, group_size](a_quant, a_scale, b, c)
+        _matmul_qint4_m_1[
+            kernel, group_size, elementwise_lambda_fn=elementwise_lambda_fn
+        ](a_quant, a_scale, b, c)
     else:
-        _matmul_qint4_m_any[kernel, group_size](a_quant, a_scale, b, c)
+        _matmul_qint4_m_any[
+            kernel, group_size, elementwise_lambda_fn=elementwise_lambda_fn
+        ](a_quant, a_scale, b, c)
 
     a_quant_base_ptr.free()
     a_scale_base_ptr.free()
@@ -1195,6 +1233,7 @@ fn _matmul_qint4[
 fn matmul_qint4[
     group_size: Int,
     b_static_shape: DimList = DimList.create_unknown[2](),
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a: NDBuffer[DType.float32, 2],
     b: NDBuffer[DType.uint8, 2, b_static_shape],
@@ -1202,7 +1241,11 @@ fn matmul_qint4[
 ):
     @parameter
     fn kernel_dispatch[kernel: _MatmulQInt4Kernel]():
-        return _matmul_qint4[kernel, group_size=group_size](a, b, c)
+        return _matmul_qint4[
+            kernel,
+            group_size=group_size,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](a, b, c)
 
     @parameter
     if has_vnni():
