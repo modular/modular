@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.graph.weights import WeightsFormat
 from max.pipelines import (
     PipelineTask,
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
-    WeightsFormat,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 

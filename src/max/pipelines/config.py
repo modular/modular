@@ -48,6 +48,8 @@ from max.graph.weights import (
     SafetensorWeights,
     Weights,
     WeightsAdapter,
+    WeightsFormat,
+    weights_format,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 from requests.exceptions import ConnectionError as RequestsConnectionError
@@ -161,12 +163,6 @@ _SUPPORTED_DEVICES: dict[SupportedEncoding, tuple[str, ...]] = {
     SupportedEncoding.q6_k: ("cpu",),
     SupportedEncoding.gptq: ("gpu",),
 }
-
-
-class WeightsFormat(str, Enum):
-    gguf = "gguf"
-    safetensors = "safetensors"
-    pytorch = "pytorch"
 
 
 class RepoType(str, Enum):
@@ -996,36 +992,6 @@ class PipelineConfig(MAXConfig):
 
         return self.quantization_encoding.cache_dtype
 
-    @property
-    def weights_format(self) -> WeightsFormat:
-        """Identify which format our weights are expected in."""
-
-        if not self.weight_path:
-            raise ValueError(
-                "no weight_path provided cannot infer weights format."
-            )
-
-        # Get all weight paths.
-        if all(
-            [weight_path.suffix == ".gguf" for weight_path in self.weight_path]
-        ):
-            return WeightsFormat.gguf
-        elif all(
-            [
-                weight_path.suffix == ".safetensors"
-                for weight_path in self.weight_path
-            ]
-        ):
-            return WeightsFormat.safetensors
-        elif all(
-            [weight_path.suffix == ".bin" for weight_path in self.weight_path]
-        ):
-            return WeightsFormat.pytorch
-        else:
-            raise ValueError(
-                f"weights type cannot be inferred from {self.weight_path}"
-            )
-
     def weights_size(self) -> int:
         size = 0
         hf_repo = HuggingFaceRepo(
@@ -1087,17 +1053,21 @@ class PipelineConfig(MAXConfig):
     def load_weights(self) -> Weights:
         self.download_weights()
 
-        if self.weights_format == WeightsFormat.gguf:
+        _weights_format = weights_format(
+            self.weight_path,
+        )
+
+        if _weights_format == WeightsFormat.gguf:
             if len(self.weight_path) > 1:
                 raise ValueError("loading multiple gguf files is not supported")
             return GGUFWeights(self.weight_path[0])
 
-        elif self.weights_format == WeightsFormat.safetensors:
+        elif _weights_format == WeightsFormat.safetensors:
             return SafetensorWeights(self.weight_path)
 
         else:
             raise ValueError(
-                f"loading weights format '{self.weights_format}' not supported"
+                f"loading weights format '{_weights_format}' not supported"
             )
 
     @staticmethod

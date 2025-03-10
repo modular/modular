@@ -24,7 +24,7 @@ from typing import Callable, Optional, Type, Union, cast
 import torch
 from max.driver import Device, load_devices
 from max.dtype import DType
-from max.graph.weights import WeightsAdapter
+from max.graph.weights import WeightsAdapter, WeightsFormat, weights_format
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig, AutoTokenizer
 
@@ -34,7 +34,6 @@ from .config import (
     PipelineEngine,
     RopeType,
     SupportedEncoding,
-    WeightsFormat,
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
@@ -295,11 +294,15 @@ class PipelineRegistry:
 
         # If weight_path and quantization_encoding are provided, verify that they are consistent.
         huggingface_weights_repo = pipeline_config.huggingface_weights_repo()
+        try:
+            _weights_format = weights_format(pipeline_config.weight_path)
+        except ValueError:
+            _weights_format = None
         if (
             pipeline_config.weight_path
             and pipeline_config.quantization_encoding
             # Cannot validate quantization_encoding for pytorch.
-            and pipeline_config.weights_format != WeightsFormat.pytorch
+            and _weights_format != WeightsFormat.pytorch
         ):
             # Get the encoding of the first weight path file.
             if os.path.exists(pipeline_config.weight_path[0]):
@@ -319,7 +322,7 @@ class PipelineRegistry:
         elif (
             pipeline_config.weight_path
             and not pipeline_config.quantization_encoding
-            and pipeline_config.weights_format != WeightsFormat.pytorch
+            and _weights_format != WeightsFormat.pytorch
         ):
             if os.path.exists(pipeline_config.weight_path[0]):
                 # Not currently supported. Infer encoding from local path.

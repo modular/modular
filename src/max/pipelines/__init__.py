@@ -25,7 +25,6 @@ from .config import (
     RopeType,
     SamplingConfig,
     SupportedEncoding,
-    WeightsFormat,
 )
 from .context import InputContext, TextAndVisionContext, TextContext
 from .embeddings_pipeline import EmbeddingsPipeline
@@ -93,7 +92,6 @@ __all__ = [
     "TextTokenizer",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
-    "WeightsFormat",
     "RopeType",
     "PipelineModel",
     "ModelInputs",

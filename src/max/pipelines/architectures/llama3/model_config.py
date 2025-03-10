@@ -21,14 +21,13 @@ from typing import Callable, Literal, Optional
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.graph.weights import WeightData
+from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.pipelines import upper_bounded_default
 from max.pipelines.config import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
     RopeType,
-    WeightsFormat,
 )
 from max.pipelines.kv_cache import KVCacheParams
 from max.pipelines.nn import Llama3RopeScalingParams
@@ -150,8 +149,9 @@ class Llama3Config(MAXModelConfig):
         kv_cache_config: KVCacheConfig,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
     ) -> Llama3Config:
+        _weights_format = weights_format(pipeline_config.weight_path)
         interleaved_rope_weights = (
-            pipeline_config.weights_format == WeightsFormat.gguf
+            _weights_format == WeightsFormat.gguf
             and pipeline_config.rope_type == RopeType.normal
         )
         rms_norm_eps = None

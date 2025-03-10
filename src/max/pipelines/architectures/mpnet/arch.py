@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.graph.weights import WeightsFormat
 from max.pipelines import (
     PipelineTask,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
-    WeightsFormat,
 )
 
 from .model import MPNetPipelineModel

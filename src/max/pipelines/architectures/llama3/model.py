@@ -22,7 +22,7 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.graph.weights import Weights
+from max.graph.weights import Weights, weights_format
 from max.pipelines import (
     KVCacheConfig,
     LogProbabilities,
@@ -424,8 +424,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
         huggingface_config = self.huggingface_config
+        _weights_format = weights_format(self.pipeline_config.weight_path)
         adapter = self.pipeline_config._weight_adapters.get(
-            self.pipeline_config.weights_format
+            _weights_format,
         )
         if adapter:
             state_dict = adapter(
@@ -529,9 +530,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         kv_inputs = self.kv_manager.input_symbols()[0]
 
-        adapter = self.pipeline_config._weight_adapters.get(
-            self.pipeline_config.weights_format
-        )
+        _weights_format = weights_format(self.pipeline_config.weight_path)
+        adapter = self.pipeline_config._weight_adapters.get(_weights_format)
         if adapter:
             state_dict = adapter(
                 dict(weights.items()),
