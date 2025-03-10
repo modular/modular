@@ -14,7 +14,9 @@
 
 from sys import os_is_macos
 
-from testing import assert_false, assert_true
+from memory import UnsafePointer
+from testing import assert_false, assert_true, assert_equal
+from test_utils import DelRecorder
 
 
 def test_tuple_contains():
@@ -112,5 +114,56 @@ def test_tuple_contains():
     assert_false(d_alias.__contains__(String("Hello world")))
 
 
+def test_tuple_init():
+    var destructor_counter = List[Int]()
+    var pointer_to_destructor_counter = UnsafePointer.address_of(
+        destructor_counter
+    )
+    var a = DelRecorder(1, pointer_to_destructor_counter)
+    var b = DelRecorder(2, pointer_to_destructor_counter)
+    var t = (a^, b^)
+    assert_equal(t[0].value, 1)
+    assert_equal(t[1].value, 2)
+    __type_of(t).__del__(t^)
+    assert_equal(len(destructor_counter), 2)
+    assert_equal(destructor_counter[0], 1)
+    assert_equal(destructor_counter[1], 2)
+
+
+def test_tuple_del():
+    var destructor_counter = List[Int]()
+    var pointer_to_destructor_counter = UnsafePointer.address_of(
+        destructor_counter
+    )
+    var t = (
+        DelRecorder(1, pointer_to_destructor_counter),
+        DelRecorder(2, pointer_to_destructor_counter),
+    )
+    assert_equal(t[0].value, 1)
+    assert_equal(t[1].value, 2)
+    __type_of(t).__del__(t^)
+    assert_equal(len(destructor_counter), 2)
+    assert_equal(destructor_counter[0], 1)
+    assert_equal(destructor_counter[1], 2)
+
+
+def test_tuple_assigned_into_multiple_variables():
+    var destructor_counter = List[Int]()
+    var pointer_to_destructor_counter = UnsafePointer.address_of(
+        destructor_counter
+    )
+    var t = (
+        DelRecorder(1, pointer_to_destructor_counter),
+        DelRecorder(2, pointer_to_destructor_counter),
+    )
+    a, b = t^
+    assert_equal(a.value, 1)
+    assert_equal(b.value, 2)
+    assert_equal(len(destructor_counter), 2)  # FIXME (result: 4)
+
+
 def main():
     test_tuple_contains()
+    test_tuple_init()
+    test_tuple_del()
+    # test_tuple_assigned_into_multiple_variables() #FIXME
