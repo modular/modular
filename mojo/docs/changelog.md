@@ -258,6 +258,24 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 
 ### Tooling changes
 
+- Mojo doc gen is now able to display function / struct parameter references
+  inside nested parametric types using names instead of indices. For example,
+  instead of
+
+  ```mojo
+
+  sort[type: CollectionElement, //, cmp_fn: fn($1|0, $1|0) capturing -> Bool](span: Span[type, origin])
+
+  ```
+
+    it now displays
+
+  ```mojo
+
+  sort[type: CollectionElement, //, cmp_fn: fn(type, type) capturing -> Bool](span: Span[type, origin])
+
+  ```
+
 #### Mojo Compiler
 
 - Mojo compiler now warns about parameter for with large loop unrolling factor
