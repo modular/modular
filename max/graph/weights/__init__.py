@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Methods for loading weights into the Graph API."""
 
+from .format import WeightsFormat, weights_format
 from .load_gguf import GGUFWeights
 from .load_pytorch import PytorchWeights
 from .load_safetensors import SafetensorWeights
@@ -19,4 +20,6 @@ __all__ = [
     "WeightData",
     "Weights",
     "WeightsAdapter",
+    "WeightsFormat",
+    "weights_format",
 ]
