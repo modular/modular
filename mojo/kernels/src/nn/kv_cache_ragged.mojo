@@ -18,6 +18,7 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
+from quantization.qmatmul import matmul_qint4
 from linalg.matmul import elementwise_epilogue_type, matmul
 from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from memory import UnsafePointer
@@ -883,6 +884,331 @@ fn _matmul_kv_cache_ragged_impl[
     _matmul_common[
         target=target, elementwise_lambda_fn=write_to_cache_continuous
     ](hidden_state, weight, ctx)
+
+
+# ===-----------------------------------------------------------------------===#
+# Unfused gguf quantized QKV cache matmul (ragged)
+# ===-----------------------------------------------------------------------===#
+
+
+fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
+    type: DType,
+    num_heads: Int,
+    head_dim: Int, //,
+    quantization_encoding_q: StringLiteral,
+    quantization_encoding_k: StringLiteral,
+    quantization_encoding_v: StringLiteral,
+](
+    hidden_state: NDBuffer[DType.float32, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q_weight: NDBuffer[DType.uint8, 2, _],
+    k_weight: NDBuffer[DType.uint8, 2, _],
+    v_weight: NDBuffer[DType.uint8, 2, _],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[DType.float32, 2, _],
+    ctx: DeviceContextPtr,
+) raises:
+    """Performs a quantized matmul, writing the output into a mutable ContinuousBatchingKVCacheCollection object.
+
+    Unlike the un-quantized version (kv_matmul_ragged_continuous_batching), this
+    implementation does not concat the q, k, and v weights together. Instead, it
+    performs three matmuls. This allows the q, k, and v weights to have different
+    quantization encodings.
+
+    This is only supported on CPU.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        q_weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        k_weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        v_weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The Collection object storing KVCache entries.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        output: Tensor with shape (sum(seq_lens), num_kv_heads * head_size).
+            This is the output buffer for the Q matmul.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("q_weight", q_weight),
+            trace_arg("k_weight", k_weight),
+            trace_arg("v_weight", v_weight),
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
+            "quantization_encoding_q=" + quantization_encoding_q,
+            "quantization_encoding_k=" + quantization_encoding_k,
+            "quantization_encoding_v=" + quantization_encoding_v,
+        )
+
+    with Trace[TraceLevel.OP, target="cpu"](
+        "mo.kv_matmul.ragged.continuous_batching.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size)
+        + ".quantization_encoding_q="
+        + quantization_encoding_q
+        + ".quantization_encoding_k="
+        + quantization_encoding_k
+        + ".quantization_encoding_v="
+        + quantization_encoding_v,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return (
+            _unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized_impl[
+                quantization_encoding_q,
+                quantization_encoding_k,
+                quantization_encoding_v,
+            ](
+                hidden_state,
+                input_row_offsets,
+                q_weight,
+                k_weight,
+                v_weight,
+                kv_collection,
+                layer_idx,
+                output,
+                ctx,
+            )
+        )
+
+
+@always_inline
+fn _unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized_impl[
+    quantization_encoding_q: StringLiteral,
+    quantization_encoding_k: StringLiteral,
+    quantization_encoding_v: StringLiteral,
+](
+    hidden_state: NDBuffer[DType.float32, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q_weight: NDBuffer[DType.uint8, 2, _],
+    k_weight: NDBuffer[DType.uint8, 2, _],
+    v_weight: NDBuffer[DType.uint8, 2, _],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    output: NDBuffer[DType.float32, 2, _],
+    context: DeviceContextPtr,
+) raises:
+    layer_idx_cast = Int(layer_idx)
+    k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    v_cache = kv_collection.get_value_cache(layer_idx_cast)
+
+    alias cache_t = ContinuousBatchingKVCache[
+        DType.float32, kv_collection.kv_params
+    ]
+    k_cache_reg = rebind[cache_t](k_cache)
+    v_cache_reg = rebind[cache_t](v_cache)
+
+    _matmul_kv_cache_ragged_gguf_quantized_impl[
+        cache_t,
+        quantization_encoding_q,
+        quantization_encoding_k,
+        quantization_encoding_v,
+    ](
+        hidden_state,
+        input_row_offsets,
+        q_weight,
+        k_weight,
+        v_weight,
+        k_cache_reg,
+        v_cache_reg,
+        output,
+    )
+
+
+@always_inline
+fn _matmul_kv_cache_ragged_gguf_quantized_impl[
+    cache_t: KVCacheT,
+    quantization_encoding_q: StringLiteral,
+    quantization_encoding_k: StringLiteral,
+    quantization_encoding_v: StringLiteral,
+](
+    hidden_state: NDBuffer[DType.float32, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q_weight: NDBuffer[DType.uint8, 2, _],
+    k_weight: NDBuffer[DType.uint8, 2, _],
+    v_weight: NDBuffer[DType.uint8, 2, _],
+    k_cache: cache_t,
+    v_cache: cache_t,
+    output: NDBuffer[DType.float32, 2, _],
+) raises:
+    """Helper for performing quantized matmul with custom KVCacheT types.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_kv_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        q_weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size)
+        k_weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size)
+        v_weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size)
+        k_cache: The Collection object storing KVCache K entries.
+        v_cache: The Collection object storing KVCache V entries.
+        output: Tensor with shape (sum(seq_lens), num_kv_heads * head_size).
+            This is the output buffer for the Q matmul.
+    """
+    if hidden_state.num_elements() == 0:
+        # Nothing to do.
+        return
+
+    # K matmul with epilogue
+    _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
+        cache_t, quantization_encoding_k
+    ](hidden_state, input_row_offsets, k_weight, k_cache)
+
+    # V matmul with epilogue
+    _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
+        cache_t, quantization_encoding_v
+    ](hidden_state, input_row_offsets, v_weight, v_cache)
+
+    # Q matmul without epilogue which writes to output buffer
+    _qmatmul_gguf_quantized_common[quantization_encoding_q](
+        hidden_state, q_weight, output
+    )
+
+
+@always_inline
+fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
+    cache_t: KVCacheT,
+    quantization_encoding: StringLiteral,
+](
+    hidden_state: NDBuffer[DType.float32, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, _],
+    k_or_v_weight: NDBuffer[DType.uint8, 2, _],
+    k_or_v_cache: cache_t,
+) raises:
+    alias kv_params = cache_t.kv_params
+    alias N: UInt = k_or_v_weight.shape.get[0]()
+    alias K: UInt = k_or_v_weight.shape.get[1]()
+
+    batch_size = input_row_offsets.dim[0]() - 1
+
+    @parameter
+    @__copy_capture(input_row_offsets, batch_size)
+    @always_inline
+    fn write_to_cache_common[
+        type_: DType, cache_t: KVCacheT, width: Int
+    ](k_or_v_cache: cache_t, idx: IndexList[2], val: SIMD[type_, width],):
+        alias k_or_v_type = cache_t.type
+
+        constrained[
+            k_or_v_type == type_,
+            "Mismatch in type between hidden state and KV tensors",
+        ]()
+
+        # Token index in the "ragged" combined sequence dimension.
+        global_token_idx = idx[0]
+
+        batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+
+        # Write this element to the K or V cache.
+        cache = k_or_v_cache
+        h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
+
+        cache_length = cache.cache_length(batch_idx)
+        cache_token_idx = token_idx + cache_length
+
+        cache.store(
+            batch_idx,
+            h_idx,
+            cache_token_idx,
+            hd_idx,
+            rebind[SIMD[k_or_v_type, width]](val),
+        )
+
+    @parameter
+    @__copy_capture(k_or_v_cache)
+    fn write_to_k_or_v_cache_continuous[
+        type_: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[type_, width]):
+        write_to_cache_common(k_or_v_cache, idx, val)
+
+    _qmatmul_gguf_quantized_alloc_output[
+        quantization_encoding,
+        elementwise_lambda_fn=write_to_k_or_v_cache_continuous,
+    ](hidden_state, k_or_v_weight)
+
+
+@always_inline
+fn _qmatmul_gguf_quantized_alloc_output[
+    quantization_encoding: StringLiteral,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    hidden_state: NDBuffer[DType.float32, 2, _],
+    weight: NDBuffer[DType.uint8, 2, _],
+) raises:
+    var TOTAL_SEQ_LEN = hidden_state.dim[0]()
+    alias N = weight.shape.get[0]()
+    alias K = weight.shape.get[1]()
+    var c_nd: NDBuffer[DType.float32, 2, DimList(Dim(), N)]
+
+    # The CPU matmul codepath uses the C buffer as a workspace
+    # even if an epilogue is provided, here we just allocate
+    # something to ensure we don't segfault.
+    var c_ptr = UnsafePointer[Scalar[DType.float32]].alloc(TOTAL_SEQ_LEN * N)
+
+    c_nd = __type_of(c_nd)(
+        c_ptr,
+        IndexList[2](TOTAL_SEQ_LEN, N),
+    )
+
+    _qmatmul_gguf_quantized_common[
+        quantization_encoding, elementwise_lambda_fn
+    ](hidden_state, weight, c_nd)
+
+    c_nd.data.free()
+
+
+@always_inline
+fn _qmatmul_gguf_quantized_common[
+    quantization_encoding: StringLiteral,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    hidden_state: NDBuffer[DType.float32, 2, _],
+    weight: NDBuffer[DType.uint8, 2, _],
+    output: NDBuffer[DType.float32, 2, _],
+) raises:
+    @parameter
+    if quantization_encoding == "q4_0":
+        matmul_qint4[32, elementwise_lambda_fn=elementwise_lambda_fn](
+            hidden_state,
+            weight,
+            output,
+        )
+    elif quantization_encoding == "q4_k":
+        raise Error("KVCache epilogue is not yet implemented for q4_k matmul")
+
+        # TODO: E2EOPT-42. Enable q4_k matmul
+        # matmul_Q4_K(
+        #     hidden_state,
+        #     weight,
+        #     output,
+        # )
+    elif quantization_encoding == "q6_k":
+        raise Error("KVCache epilogue is not yet implemented for q6_k matmul")
+
+        # TODO: E2EOPT-42. Enable q6_k matmul
+        # matmul_Q6_K(
+        #     hidden_state,
+        #     weight,
+        #     output,
+        # )
+    else:
+        raise Error(
+            "Unsupported quantization encoding: ", quantization_encoding
+        )
 
 
 # ===-----------------------------------------------------------------------===#
