@@ -252,13 +252,13 @@ class Qwen2Model(PipelineModel[TextContext]):
     @classmethod
     def get_kv_params(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> KVCacheParams:
         return KVCacheParams(
-            dtype=pipeline_config.cache_dtype,
+            dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.hidden_size
             // huggingface_config.num_attention_heads,
@@ -297,10 +297,10 @@ class Qwen2Model(PipelineModel[TextContext]):
     ) -> KVCacheManager:
         return load_kv_manager(
             params=self.get_kv_params(
-                self.pipeline_config,
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -321,14 +321,15 @@ class Qwen2Model(PipelineModel[TextContext]):
         devices: List[Device],
         huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
-                pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -393,10 +394,10 @@ class Qwen2Model(PipelineModel[TextContext]):
         self, kv_inputs_flat: Sequence[Tensor]
     ) -> List[tuple[Tensor, ...]]:
         kv_params = self.get_kv_params(
-            self.pipeline_config,
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
             kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()
@@ -443,10 +444,10 @@ class Qwen2Model(PipelineModel[TextContext]):
                 self.pipeline_config,
                 weights,
                 self.get_kv_params(
-                    self.pipeline_config,
                     huggingface_config=self.huggingface_config,
                     n_devices=len(self.devices),
                     kv_cache_config=self.kv_cache_config,
+                    cache_dtype=self.encoding.cache_dtype,
                 ),
                 huggingface_config=self.huggingface_config,
                 dtype=self.dtype,

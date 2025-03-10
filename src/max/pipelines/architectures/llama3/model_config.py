@@ -24,6 +24,7 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData
 from max.pipelines import upper_bounded_default
 from max.pipelines.config import (
+    KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
     RopeType,
@@ -65,9 +66,10 @@ class Llama3Config(MAXModelConfig):
 
     @staticmethod
     def calculate_attention_multiplier(
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> float:
         """The attention multiplier is a scalar that scales the attention scores.
         It is used to control the variance of the attention scores.
@@ -81,31 +83,35 @@ class Llama3Config(MAXModelConfig):
             "attention_multiplier",
             math.sqrt(
                 1.0
-                / Llama3Config.get_kv_params(
-                    pipeline_config,
-                    huggingface_config=huggingface_config,
-                    n_devices=n_devices,
-                ).head_dim
+                / float(
+                    Llama3Config.get_kv_params(
+                        huggingface_config=huggingface_config,
+                        n_devices=n_devices,
+                        kv_cache_config=kv_cache_config,
+                        cache_dtype=cache_dtype,
+                    ).head_dim
+                )
             ),
         )
 
     # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     @staticmethod
     def get_kv_params(
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> KVCacheParams:
         return KVCacheParams(
-            dtype=pipeline_config.cache_dtype,
+            dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=(
                 huggingface_config.hidden_size
                 // huggingface_config.num_attention_heads
             ),
-            page_size=pipeline_config.kv_cache_config.kv_cache_page_size,
-            cache_strategy=pipeline_config.kv_cache_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.kv_cache_config.enable_prefix_caching,
+            page_size=kv_cache_config.kv_cache_page_size,
+            cache_strategy=kv_cache_config.cache_strategy,
+            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             n_devices=n_devices,
         )
 
@@ -140,6 +146,8 @@ class Llama3Config(MAXModelConfig):
         dtype: DType,
         n_devices: int,
         logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
+        cache_dtype: DType,
+        kv_cache_config: KVCacheConfig,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
     ) -> Llama3Config:
         interleaved_rope_weights = (
@@ -201,9 +209,10 @@ class Llama3Config(MAXModelConfig):
                 pipeline_config, huggingface_config=huggingface_config
             ),
             kv_params=Llama3Config.get_kv_params(
-                pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=n_devices,
+                kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
             ),
             norm_method=norm_method,
             tie_word_embeddings=tie_word_embeddings,
@@ -211,7 +220,10 @@ class Llama3Config(MAXModelConfig):
             stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
             logits_postprocessor=logits_postprocessor,
             attention_multiplier=Llama3Config.calculate_attention_multiplier(
-                pipeline_config, huggingface_config, n_devices
+                huggingface_config,
+                n_devices,
+                kv_cache_config,
+                cache_dtype,
             ),
             embedding_multiplier=embedding_multiplier,
             residual_multiplier=residual_multiplier,

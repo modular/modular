@@ -23,6 +23,7 @@ from typing import Callable, Optional, Type, Union, cast
 
 import torch
 from max.driver import Device, load_devices
+from max.dtype import DType
 from max.graph.weights import WeightsAdapter
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig, AutoTokenizer
@@ -531,6 +532,10 @@ class PipelineRegistry:
                 huggingface_config=huggingface_config,
             )
 
+        if not pipeline_config.quantization_encoding:
+            msg = "quantization_encoding must be provided in pipeline_config"
+            raise ValueError(msg)
+
         if not user_provided_max_batch_size:
             pipeline_config.max_batch_size = self._infer_optimal_batch_size(
                 pipeline_config,
@@ -539,6 +544,7 @@ class PipelineRegistry:
                 huggingface_config=huggingface_config,
                 devices=devices,
                 kv_cache_config=pipeline_config.kv_cache_config,
+                cache_dtype=pipeline_config.quantization_encoding.cache_dtype,
             )
 
         actual_kv_cache_size = self._calculate_kv_cache_size(
@@ -548,6 +554,7 @@ class PipelineRegistry:
             huggingface_config,
             devices=devices,
             kv_cache_config=pipeline_config.kv_cache_config,
+            cache_dtype=pipeline_config.quantization_encoding.cache_dtype,
         )
 
         pipeline_config.kv_cache_config._available_cache_memory = (
@@ -578,6 +585,10 @@ class PipelineRegistry:
                     f"Truncated model's default max_length from {original_max_length} to {inferred_max_length} to fit in memory."
                 )
                 pipeline_config.max_length = inferred_max_length
+                if not pipeline_config.quantization_encoding:
+                    msg = "quantization_encoding must be provided in PipelineConfig"
+                    raise ValueError(msg)
+
                 actual_kv_cache_size = self._calculate_kv_cache_size(
                     model_cls,
                     pipeline_config,
@@ -585,6 +596,7 @@ class PipelineRegistry:
                     huggingface_config,
                     devices=devices,
                     kv_cache_config=pipeline_config.kv_cache_config,
+                    cache_dtype=pipeline_config.quantization_encoding.cache_dtype,
                 )
                 total_size = model_weights_size + actual_kv_cache_size
 
@@ -748,6 +760,10 @@ class PipelineRegistry:
         upper = pipeline_config.max_length
         inferred_max_length = upper
 
+        if not pipeline_config.quantization_encoding:
+            msg = "quantization_encoding must be provided in pipeline_config"
+            raise ValueError(msg)
+
         while not found_valid_max_length:
             inferred_max_length = (lower + upper) // 2
             pipeline_config.max_length = inferred_max_length
@@ -760,6 +776,7 @@ class PipelineRegistry:
                     huggingface_config,
                     devices=devices,
                     kv_cache_config=pipeline_config.kv_cache_config,
+                    cache_dtype=pipeline_config.quantization_encoding.cache_dtype,
                 )
 
             kv_cache_size = self._calculate_kv_cache_size(
@@ -769,6 +786,7 @@ class PipelineRegistry:
                 huggingface_config,
                 devices=devices,
                 kv_cache_config=pipeline_config.kv_cache_config,
+                cache_dtype=pipeline_config.quantization_encoding.cache_dtype,
             )
 
             if lower > upper:
@@ -819,6 +837,12 @@ class PipelineRegistry:
             inferred_max_batch_size = (lower + upper) // 2
             pipeline_config.max_batch_size = inferred_max_batch_size
 
+            if not pipeline_config.quantization_encoding:
+                msg = (
+                    "quantization_encoding must be provided in pipeline_config"
+                )
+                raise ValueError(msg)
+
             kv_cache_size = self._calculate_kv_cache_size(
                 model_cls,
                 pipeline_config,
@@ -826,6 +850,7 @@ class PipelineRegistry:
                 huggingface_config,
                 devices=devices,
                 kv_cache_config=pipeline_config.kv_cache_config,
+                cache_dtype=pipeline_config.quantization_encoding.cache_dtype,
             )
 
             if lower > upper:
@@ -850,6 +875,7 @@ class PipelineRegistry:
         huggingface_config: AutoConfig,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Calculate the KV cache size for the current configuration."""
         if issubclass(model_cls, KVCacheMixin):
@@ -859,6 +885,7 @@ class PipelineRegistry:
                 devices=devices,
                 huggingface_config=huggingface_config,
                 kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
             )
         return 0
 
@@ -1022,6 +1049,7 @@ class PipelineRegistry:
         huggingface_config: AutoConfig,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         return model_cls.infer_optimal_batch_size(
             pipeline_config,
@@ -1029,6 +1057,7 @@ class PipelineRegistry:
             huggingface_config=huggingface_config,
             devices=devices,
             kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     def _load_logging_message(

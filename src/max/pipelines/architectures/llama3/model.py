@@ -160,13 +160,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
     @classmethod
     def get_kv_params(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> KVCacheParams:
         return Llama3Config.get_kv_params(
-            pipeline_config, huggingface_config, n_devices
+            huggingface_config,
+            n_devices,
+            kv_cache_config,
+            cache_dtype,
         )
 
     @classmethod
@@ -312,10 +315,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
     ) -> KVCacheManager:
         return load_kv_manager(
             params=self.get_kv_params(
-                self.pipeline_config,
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -338,14 +341,15 @@ class LlamaModelBase(PipelineModel[TextContext]):
         devices: List[Device],
         huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
-                pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -408,10 +412,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
         self, kv_inputs_flat: Sequence[TensorValue]
     ) -> List[tuple[TensorValue, ...]]:
         kv_params = self.get_kv_params(
-            self.pipeline_config,
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
             kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
@@ -458,6 +462,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
             n_devices=len(self.devices),
             logits_postprocessor=self.logits_postprocessor,
             norm_method=self.norm_method,
+            cache_dtype=self.encoding.cache_dtype,
+            kv_cache_config=self.kv_cache_config,
         )
         nn_model: LayerV2
         if len(self.devices) > 1:
@@ -561,6 +567,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
             n_devices=len(self.devices),
             logits_postprocessor=self.logits_postprocessor,
             norm_method=self.norm_method,
+            cache_dtype=self.encoding.cache_dtype,
+            kv_cache_config=self.kv_cache_config,
         )
         nn_model = NaiveLlama3(model_config)
 

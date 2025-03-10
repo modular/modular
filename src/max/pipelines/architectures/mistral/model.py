@@ -19,6 +19,7 @@ from typing import Sequence, cast
 
 import numpy as np
 from max.driver import Device, Tensor
+from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import SafetensorWeights
 from max.pipelines import (
@@ -148,14 +149,14 @@ class MistralModel(PipelineModel[TextContext]):
     @classmethod
     def get_kv_params(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> KVCacheParams:
         return KVCacheParams(
             page_size=kv_cache_config.kv_cache_page_size,
-            dtype=pipeline_config.cache_dtype,
+            dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
             cache_strategy=kv_cache_config.cache_strategy,
@@ -193,10 +194,10 @@ class MistralModel(PipelineModel[TextContext]):
         assert self.devices, "devices must be provided to load kv manager."
         return load_kv_manager(
             params=self.get_kv_params(
-                self.pipeline_config,
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -217,15 +218,16 @@ class MistralModel(PipelineModel[TextContext]):
         devices: list[Device],
         huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         assert devices, "devices must be provided to estimate kv cache size."
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
-                pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -280,10 +282,10 @@ class MistralModel(PipelineModel[TextContext]):
                     huggingface_config=self.huggingface_config,
                 ),
                 kv_params=self.get_kv_params(
-                    self.pipeline_config,
                     huggingface_config=self.huggingface_config,
                     n_devices=len(self.devices),
                     kv_cache_config=self.kv_cache_config,
+                    cache_dtype=self.encoding.cache_dtype,
                 ),
                 kv_manager=self.kv_manager,
                 huggingface_config=self.huggingface_config,

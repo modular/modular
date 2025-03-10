@@ -204,10 +204,10 @@ class PipelineModel(ABC, Generic[T]):
     @abstractmethod
     def get_kv_params(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> KVCacheParams:
         """Returns the KV cache params for the pipeline model."""
         ...
@@ -226,6 +226,7 @@ class PipelineModel(ABC, Generic[T]):
         huggingface_config: AutoConfig,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Returns the estimated optimal batch size to run the model
         given current memory constraints."""
@@ -242,11 +243,12 @@ class PipelineModel(ABC, Generic[T]):
         n_layers = cls.get_num_layers(
             huggingface_config=huggingface_config,
         )
+
         kv_params = cls.get_kv_params(
-            pipeline_config,
             huggingface_config=huggingface_config,
             n_devices=len(devices),
             kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
         inferred_batch_size = infer_optimal_batch_size(
             params=kv_params,
@@ -383,6 +385,7 @@ class KVCacheMixin(Protocol):
         devices: list[Device],
         huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         ...

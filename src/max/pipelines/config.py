@@ -110,11 +110,12 @@ class SupportedEncoding(str, Enum):
 
     @property
     def cache_dtype(self) -> DType:
-        """The dtype that must be used in the kvcache for correctness."""
+        """The underlying dtype used in the kvcache for correctness."""
         if self not in _SUPPORTED_ENCODING_TO_CACHE_DTYPE:
             raise ValueError(
                 f"SupportedEncoding({self}) does not have corresponding cache dtype."
             )
+
         return _SUPPORTED_ENCODING_TO_CACHE_DTYPE[self]
 
     def supported_on(self, device_spec: DeviceSpec) -> bool:

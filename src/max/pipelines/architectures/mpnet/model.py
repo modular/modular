@@ -24,6 +24,7 @@ from typing import cast
 
 import numpy as np
 from max.driver import Device, Tensor
+from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.pipelines import (
     KVCacheConfig,
@@ -91,13 +92,13 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
     @classmethod
     def get_kv_params(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> KVCacheParams:
         return KVCacheParams(
-            dtype=pipeline_config.cache_dtype,
+            dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_attention_heads,
             head_dim=(
                 huggingface_config.hidden_size
