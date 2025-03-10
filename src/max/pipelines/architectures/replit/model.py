@@ -275,48 +275,29 @@ class ReplitModel(PipelineModel[TextContext]):
             msg = "only gguf weights supported in Replit."
             raise ValueError(msg)
 
-        if serialized_path := self.pipeline_config.serialized_model_path:
-            # Hydrate all weights to be referenced by the serialized path.
-            weights_registry = {}
-            for name, weight in self.weights.items():
-                weights_registry[name] = weight.raw_tensor()
-
-            logger.info("Loading serialized model from ", serialized_path)
-
-            return session.load(
-                serialized_path, weights_registry=weights_registry
-            )
-
-        else:
-            logger.info("Building and compiling model...")
-            before = time.perf_counter()
-            graph = _build_graph(
-                self.pipeline_config,
-                self.weights,
-                self.get_kv_params(
-                    huggingface_config=self.huggingface_config,
-                    n_devices=len(self.devices),
-                    kv_cache_config=self.kv_cache_config,
-                    cache_dtype=self.encoding.cache_dtype,
-                ),
-                kv_manager=self.kv_manager,
+        logger.info("Building and compiling model...")
+        before = time.perf_counter()
+        graph = _build_graph(
+            self.pipeline_config,
+            self.weights,
+            self.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                dtype=self.dtype,
-            )
-            model = session.load(
-                graph, weights_registry=self.weights.allocated_weights
-            )
-            after = time.perf_counter()
-            logger.info(
-                f"Building and compiling model took {after - before:.6f} seconds"
-            )
-            if (
-                export_path
-                := self.pipeline_config.save_to_serialized_model_path
-            ):
-                logger.info("Exporting serialized model to %s", export_path)
-                model._export_mef(export_path)
-            return model
+                n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
+            ),
+            kv_manager=self.kv_manager,
+            huggingface_config=self.huggingface_config,
+            dtype=self.dtype,
+        )
+        model = session.load(
+            graph, weights_registry=self.weights.allocated_weights
+        )
+        after = time.perf_counter()
+        logger.info(
+            f"Building and compiling model took {after - before:.6f} seconds"
+        )
+        return model
 
     def compute_log_probabilities(
         self,

@@ -319,7 +319,10 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             devices=devices,
         )
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
+    def load_model(
+        self,
+        session: InferenceSession,
+    ) -> tuple[Model, Model]:
         if self.pipeline_config.enable_echo:
             msg = "Pixtral model does not currently implement enable echo."
             raise ValueError(msg)
@@ -340,78 +343,57 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             )
             raise ValueError(msg)
 
-        if serialized_path := self.pipeline_config.serialized_model_path:
-            # Hydrate all weights to be referenced by the serialized path.
-            weights_registry = {}
-            for name, weight in self.weights.items():
-                weights_registry[name] = weight.raw_tensor()
+        def build_and_compile_model(build, label):
+            logger.info(f"Building and compiling {label} model...")
+            graph = build()
+            before = time.perf_counter()
+            model = session.load(
+                graph,
+                weights_registry=self.weights.allocated_weights,
+            )
+            after = time.perf_counter()
+            logger.info(
+                f"Building and compiling {label} model took {after - before:.6f} seconds"
+            )
+            return model
 
-            def serialized_load(serialized_path):
-                logger.info("Loading serialized model from %s", serialized_path)
-                model = session.load(
-                    f"{serialized_path}", weights_registry=weights_registry
-                )
-                return model
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            build = lambda: _build_vision_graph(
+                pipeline_config=self.pipeline_config,
+                weights=self.weights,
+                huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
+            )
+            vision_model_future = executor.submit(
+                build_and_compile_model, build, "vision"
+            )
 
-            vision_model = serialized_load(f"{serialized_path}.vision")
-            text_model = serialized_load(f"{serialized_path}.text")
+            assert isinstance(self.weights, SafetensorWeights), (
+                "weights provided must be SafetensorWeights"
+            )
 
-        else:
-
-            def build_and_compile_model(build, label, export_path=None):
-                logger.info(f"Building and compiling {label} model...")
-                graph = build()
-                before = time.perf_counter()
-                model = session.load(
-                    graph,
-                    weights_registry=self.weights.allocated_weights,
-                )
-                after = time.perf_counter()
-                logger.info(
-                    f"Building and compiling {label} model took {after - before:.6f} seconds"
-                )
-                if export_path:
-                    mef_path = f"{export_path}.{label}"
-                    logger.info(
-                        f"Exporting serialized {label} model to {mef_path}"
-                    )
-                    model._export_mef(mef_path)
-                return model
-
-            export_path = self.pipeline_config.save_to_serialized_model_path
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                build = lambda: _build_vision_graph(
-                    pipeline_config=self.pipeline_config,
-                    weights=self.weights,
+            build = lambda: _build_text_graph(
+                pipeline_config=self.pipeline_config,
+                weights=self.weights,
+                max_seq_len=self.calculate_max_seq_len(
+                    self.pipeline_config,
                     huggingface_config=self.huggingface_config,
-                    dtype=self.dtype,
-                )
-                vision_model_future = executor.submit(
-                    build_and_compile_model, build, "vision", export_path
-                )
-
-                build = lambda: _build_text_graph(
-                    pipeline_config=self.pipeline_config,
-                    weights=self.weights,
-                    max_seq_len=self.calculate_max_seq_len(
-                        self.pipeline_config,
-                        huggingface_config=self.huggingface_config,
-                    ),
-                    kv_params=self.get_kv_params(
-                        huggingface_config=self.huggingface_config,
-                        n_devices=len(self.devices),
-                        kv_cache_config=self.kv_cache_config,
-                        cache_dtype=self.encoding.cache_dtype,
-                    ),
-                    kv_manager=self.kv_manager,
+                ),
+                kv_params=self.get_kv_params(
                     huggingface_config=self.huggingface_config,
-                    dtype=self.dtype,
-                )
-                text_model_future = executor.submit(
-                    build_and_compile_model, build, "text", export_path
-                )
+                    n_devices=len(self.devices),
+                    kv_cache_config=self.kv_cache_config,
+                    cache_dtype=self.encoding.cache_dtype,
+                ),
+                kv_manager=self.kv_manager,
+                huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
+            )
+            text_model_future = executor.submit(
+                build_and_compile_model, build, "text"
+            )
 
-                vision_model = vision_model_future.result()
-                text_model = text_model_future.result()
+            vision_model = vision_model_future.result()
+            text_model = text_model_future.result()
 
         return vision_model, text_model

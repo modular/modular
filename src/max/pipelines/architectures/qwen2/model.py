@@ -359,35 +359,16 @@ class Qwen2Model(PipelineModel[TextContext]):
             np.arange(batch_size, dtype=np.uint32)
         ).to(self.devices[0])
 
-        if serialized_path := self.pipeline_config.serialized_model_path:
-            # Hydrate all weights to be referenced by the serialized path.
-            weights_registry = {}
-            for name, weight in self.weights.items():
-                weights_registry[name] = weight.raw_tensor()
-
-            logging.info("Loading serialized model from %s", serialized_path)
-
-            return session.load(
-                serialized_path, weights_registry=weights_registry
-            )
-
-        else:
-            logging.info("Building model...")
-            graph = self._build_graph(self.weights)
-            logging.info("Compiling...")
-            before = time.perf_counter()
-            model = session.load(
-                graph, weights_registry=self.weights.allocated_weights
-            )
-            after = time.perf_counter()
-            logging.info(f"Compiling model took {after - before:.6f} seconds")
-            if (
-                export_path
-                := self.pipeline_config.save_to_serialized_model_path
-            ):
-                logging.info("Exporting serialized model to %s", export_path)
-                model._export_mef(export_path)
-            return model
+        logging.info("Building model...")
+        graph = self._build_graph(self.weights)
+        logging.info("Compiling...")
+        before = time.perf_counter()
+        model = session.load(
+            graph, weights_registry=self.weights.allocated_weights
+        )
+        after = time.perf_counter()
+        logging.info(f"Compiling model took {after - before:.6f} seconds")
+        return model
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Tensor]

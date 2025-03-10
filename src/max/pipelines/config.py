@@ -686,10 +686,10 @@ class PipelineConfig(MAXConfig):
     """Weight encoding type."""
 
     serialized_model_path: Optional[str] = None
-    """If specified, tries to load a serialized model from this path."""
+    """DEPRECATED: Serialization paths no longer supported."""
 
     save_to_serialized_model_path: Optional[str] = None
-    """If specified, tries to save a serialized model to this path."""
+    """DEPRECATED: Serialization paths no longer supported."""
 
     max_length: Optional[int] = None
     """Maximum sequence length of the model."""
@@ -1109,8 +1109,8 @@ class PipelineConfig(MAXConfig):
             "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
-            "serialized_model_path": "If specified, this flag attempts to load a serialized MEF model from the given path. This is useful for reusing previously saved models.",
-            "save_to_serialized_model_path": "If specified, this flag attempts to save the current model state to a serialized format at the given path for later use.",
+            "serialized_model_path": "DEPRECATED: Serialization paths no longer supported.",
+            "save_to_serialized_model_path": "DEPRECATED: Serialization paths no longer supported.",
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",

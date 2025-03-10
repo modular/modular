@@ -81,7 +81,6 @@ class Whisper(PipelineModel):
         """
         Load the Whisper speech recognition model.
         """
-
         logger.info("Building and compiling Whisper encoder-decoder model...")
         before = time.perf_counter()
         graph = build_graph(

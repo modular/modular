@@ -241,7 +241,10 @@ class MistralModel(PipelineModel[TextContext]):
             devices=devices,
         )
 
-    def load_model(self, session: InferenceSession) -> Model:
+    def load_model(
+        self,
+        session: InferenceSession,
+    ) -> Model:
         if self.pipeline_config.enable_echo:
             msg = "Mistral model does not currently implement enable echo."
             raise ValueError(msg)
@@ -259,49 +262,30 @@ class MistralModel(PipelineModel[TextContext]):
             msg = "only safetensors weights are currently supported in Mistral models."
             raise ValueError(msg)
 
-        if serialized_path := self.pipeline_config.serialized_model_path:
-            # Hydrate all weights to be referenced by the serialized graph.
-            weights_registry = {}
-            for name, weight in self.weights.items():
-                weights_registry[name] = weight.raw_tensor()
-            logger.info(
-                "Loading serialized model from ", serialized_path, "..."
-            )
-            return session.load(
-                serialized_path,
-                weights_registry=weights_registry,
-            )
-        else:
-            logger.info("Building and compiling model...")
-            before = time.perf_counter()
-            graph = _build_graph(
-                pipeline_config=self.pipeline_config,
-                weights=self.weights,
-                max_seq_len=self.calculate_max_seq_len(
-                    self.pipeline_config,
-                    huggingface_config=self.huggingface_config,
-                ),
-                kv_params=self.get_kv_params(
-                    huggingface_config=self.huggingface_config,
-                    n_devices=len(self.devices),
-                    kv_cache_config=self.kv_cache_config,
-                    cache_dtype=self.encoding.cache_dtype,
-                ),
-                kv_manager=self.kv_manager,
+        logger.info("Building and compiling model...")
+        before = time.perf_counter()
+        graph = _build_graph(
+            pipeline_config=self.pipeline_config,
+            weights=self.weights,
+            max_seq_len=self.calculate_max_seq_len(
+                self.pipeline_config,
                 huggingface_config=self.huggingface_config,
-                dtype=self.dtype,
-            )
-            model = session.load(
-                graph, weights_registry=self.weights.allocated_weights
-            )
-            after = time.perf_counter()
-            logger.info(
-                f"Building and compiling model took {after - before:.6f} seconds"
-            )
-            if (
-                export_path
-                := self.pipeline_config.save_to_serialized_model_path
-            ):
-                logger.info("Exporting serialized model to %s", export_path)
-                model._export_mef(export_path)
-            return model
+            ),
+            kv_params=self.get_kv_params(
+                huggingface_config=self.huggingface_config,
+                n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
+            ),
+            kv_manager=self.kv_manager,
+            huggingface_config=self.huggingface_config,
+            dtype=self.dtype,
+        )
+        model = session.load(
+            graph, weights_registry=self.weights.allocated_weights
+        )
+        after = time.perf_counter()
+        logger.info(
+            f"Building and compiling model took {after - before:.6f} seconds"
+        )
+        return model
