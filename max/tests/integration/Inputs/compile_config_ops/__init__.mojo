@@ -56,6 +56,6 @@ struct AddOneCustom:
 
     @staticmethod
     fn shape(
-        x: ManagedTensorSlice,
+        x: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise "NotImplemented"
