@@ -44,7 +44,11 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/SourceMgr.h"
@@ -60,6 +64,8 @@
 using namespace M;
 using namespace KGEN;
 using namespace Cache;
+
+#define DEBUG_TYPE "object-compiler"
 
 //===----------------------------------------------------------------------===//
 // ObjectCompiler
@@ -1396,6 +1402,154 @@ static LogicalResult linkBitcodeLibraries(Location loc,
   return success();
 }
 
+namespace {
+using TmpFile = std::pair<llvm::SmallString<128>, llvm::FileRemover>;
+}
+
+static ErrorOr<TmpFile> createTemp(StringRef name, StringRef suffix) {
+  llvm::SmallString<128> filename;
+  std::error_code ec =
+      llvm::sys::fs::createTemporaryFile(name, suffix, filename);
+  if (ec)
+    return Error("Couldn't create the temp file: `" + filename +
+                 "`, error message: " + ec.message());
+
+  return TmpFile(filename, llvm::FileRemover(filename.c_str()));
+}
+
+// Adapted from:
+// https://github.com/llvm/llvm-project/blob/cf5aa559a8b69bc39ba134148ace4172fd6de0a8/mlir/lib/Target/LLVM/NVVM/Target.cpp#L346
+static ErrorOr<BufferRef>
+compilePTXToCUBINViaPTXAS(AsyncRT::DeviceContextRef &ctx,
+                          llvm::Module &inputModule, StringRef ptxasCompiler,
+                          StringRef ptx, CompilationOptions options) {
+
+  ErrorOr<int> computeCapability = ctx->device().computeCapability();
+  if (computeCapability.isError())
+    return computeCapability.takeError();
+
+  // Base name for all temp files: mojo-<module name>-<target triple>-<chip>.
+  std::string basename =
+      llvm::formatv("mojo-{0}-{1}-{2}", inputModule.getName(),
+                    options.targetTriple, std::to_string(*computeCapability));
+
+  // Create temp files:
+  ErrorOr<TmpFile> ptxFile = createTemp(basename, "ptx");
+  if (ptxFile.isError())
+    return ptxFile.takeError();
+  ErrorOr<TmpFile> logFile = createTemp(basename, "log");
+  if (logFile.isError())
+    return logFile.takeError();
+  ErrorOr<TmpFile> cubinFile = createTemp(basename, "cubin");
+  if (cubinFile.isError())
+    return cubinFile.takeError();
+
+  std::error_code ec;
+  // Dump the PTX to a temp file.
+  {
+    llvm::raw_fd_ostream ptxStream(ptxFile->first, ec);
+    if (ec)
+      return Error("Couldn't open the file: `" + ptxFile->first +
+                   "`, error message: " + ec.message());
+
+    ptxStream << ptx;
+    if (ptxStream.has_error())
+      return Error("An error occurred while writing the PTX to: `" +
+                   ptxFile->first + "`.");
+
+    ptxStream.flush();
+  }
+
+  // Command redirects.
+  std::optional<StringRef> redirects[] = {
+      std::nullopt,
+      logFile->first,
+      logFile->first,
+  };
+
+  auto getArch = [](int computeCapability) -> std::string {
+    std::string arch = "sm_" + std::to_string(computeCapability);
+    if (computeCapability >= 90)
+      arch += "a";
+    return arch;
+  };
+
+  auto getOptimizationLevel = [](int optLevel) -> std::string {
+    if (optLevel == 3)
+      return "4";
+    return std::to_string(optLevel);
+  };
+
+  // Create ptxas args.
+  SmallVector<StringRef, 12> ptxasArgs(
+      {"ptxas", StringRef("-arch"), getArch(*computeCapability),
+       StringRef(ptxFile->first), StringRef("-o"), StringRef(cubinFile->first),
+       "--opt-level", getOptimizationLevel(options.optimizationLevel)});
+
+  // Generate debug information for device code.
+  if (options.getDebugLevelString() == "full")
+    ptxasArgs.push_back("-g");
+  else if (options.getDebugLevelString() == "line-tables")
+    ptxasArgs.push_back("--generate-line-info");
+  else
+    ptxasArgs.push_back("--suppress-debug-info");
+
+  // Helper function for printing tool error logs.
+  std::string message;
+  // Invoke PTXAS.
+  if (llvm::sys::ExecuteAndWait(ptxasCompiler, ptxasArgs,
+                                /*Env=*/std::nullopt,
+                                /*Redirects=*/redirects,
+                                /*SecondsToWait=*/0,
+                                /*MemoryLimit=*/0,
+                                /*ErrMsg=*/&message)) {
+    if (message.empty()) {
+      llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> toolStderr =
+          llvm::MemoryBuffer::getFile(logFile->first);
+      if (toolStderr)
+        return Error("`ptxas` invocation failed. Log:\n" +
+                     toolStderr->get()->getBuffer());
+      return Error("`ptxas` invocation failed.");
+    }
+    return Error("`ptxas` invocation failed, error message: " + message);
+  }
+
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> binaryBuffer =
+      llvm::MemoryBuffer::getFile(cubinFile->first);
+  if (!binaryBuffer)
+    return Error("Couldn't open the file: `" + cubinFile->first +
+                 "`, error message: " + binaryBuffer.getError().message());
+
+  LLVM_DEBUG(llvm::outs() << "Successfully compiled PTX to CUBIN via ptxas.\n");
+  return M::Buffer::get((*binaryBuffer)->getBuffer());
+}
+
+static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
+                                            llvm::Module &inputModule,
+                                            StringRef ptx,
+                                            CompilationOptions options) {
+  // If the environment variable MODULAR_USE_PTXAS is set, we use ptxas if
+  // available on the system. This allows for temporary experimentation. If this
+  // pathway is always benificial, then we will bundle ptxas into the modular
+  // distribution and make it the default.
+  if (llvm::sys::Process::GetEnv("MODULAR_USE_PTXAS")) {
+    std::optional<std::string> ptxasCompiler =
+        llvm::sys::Process::FindInEnvPath("PATH", "ptxas");
+    // Compile to CUBIN via ptxas if you can. We always fallback to using the
+    // driver if we failed.
+    if (ptxasCompiler) {
+      ErrorOr<BufferRef> buf = compilePTXToCUBINViaPTXAS(
+          ctx, inputModule, *ptxasCompiler, ptx, options);
+      if (!buf.isError())
+        return buf.takeValue();
+    }
+  }
+
+  LLVM_DEBUG(llvm::outs()
+             << "Falling back to using the driver to compile PTX to CUBIN.\n");
+  return ctx->compileFunction(ptx, options.getDebugLevelString(),
+                              options.optimizationLevel);
+}
 static AnyAsyncValueRef
 lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
                         RCRef<Cache::TransformCache> transformCache,
@@ -1524,6 +1678,8 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
                 "llc failed to codegen LLVM IR to object code", loc));
           }
 
+          StringRef ptx(codeBuf->getBufferStart(), codeBuf->getBufferSize());
+
           ErrorOr<AsyncRT::DeviceContextRef> errCtx =
               AsyncRT::DeviceContext::create(AsyncRT::Device::cudaAPI);
           if (errCtx.isError()) {
@@ -1532,13 +1688,8 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
                 loc));
           }
 
-          AsyncRT::DeviceContextRef ctx = *errCtx;
-          StringRef ptx(codeBuf->getBufferStart(), codeBuf->getBufferSize());
-
-          // Compile to CUBIN.
-          ErrorOr<BufferRef> cubinOr = ctx->compileFunction(
-              ptx, options.getDebugLevelString(), options.optimizationLevel);
-
+          ErrorOr<BufferRef> cubinOr =
+              compilePTXToCUBIN(*errCtx, inputModule, ptx, options);
           if (cubinOr.isError()) {
             return std::move(output).setToError(
                 AsyncRT::getMLIRDiagnostic(cubinOr.takeError(), loc));
