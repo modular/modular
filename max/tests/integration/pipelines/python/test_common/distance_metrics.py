@@ -26,6 +26,27 @@ def is_euclidean_distance_close(
     )
 
 
+def kl_divergence_from_logits(
+    predicted: npt.NDArray[np.floating],
+    expected: npt.NDArray[np.floating],
+) -> float:
+    """Computes the KL divergence between predicted and expected logits."""
+    logits_predicted = torch.from_numpy(predicted)
+    logits_expected = torch.from_numpy(expected)
+
+    # Convert logits to log-probabilities.
+    log_probs_expected = F.log_softmax(logits_expected, dim=-1)
+    log_probs_predicted = F.log_softmax(logits_predicted, dim=-1)
+
+    # Compute the KL divergence.
+    return F.kl_div(
+        log_probs_predicted,
+        log_probs_expected,
+        reduction="sum",
+        log_target=True,
+    )
+
+
 def kl_divergence_verifier(
     predicted: npt.NDArray[np.floating],
     expected: npt.NDArray[np.floating],
@@ -54,20 +75,7 @@ def kl_divergence_verifier(
         )
         return
 
-    logits_predicted = torch.from_numpy(predicted)
-    logits_expected = torch.from_numpy(expected)
-
-    # Convert logits to log-probabilities.
-    log_probs_expected = F.log_softmax(logits_expected, dim=-1)
-    log_probs_predicted = F.log_softmax(logits_predicted, dim=-1)
-
-    # Compute the KL divergence.
-    kl_divergence = F.kl_div(
-        log_probs_predicted,
-        log_probs_expected,
-        reduction="sum",
-        log_target=True,
-    )
+    kl_divergence = kl_divergence_from_logits(predicted, expected)
 
     # Assert that the KL divergence between predicted and expected log
     # probabilities is below the threshold.

@@ -29,6 +29,7 @@ from model.cli.commands._internal._verify_utils import construct_validator
 from model.utils.custom_args import CommaSeparatedList
 from model.utils.exceptions import AccuracyError
 from model.utils.logging import CONSOLE
+from test_common.distance_metrics import kl_divergence_from_logits
 from test_common.evaluate import compare_values
 from test_common.numpy_encoder import NumpyDecoder
 from typing_extensions import NotRequired
@@ -189,7 +190,7 @@ def main(
                 " where the results differ."
             )
 
-        print_norms(pipeline_results, torch_results)
+        print_discrepancy_report(pipeline_results, torch_results)
         raise AccuracyError(
             f'The outputs when using the "{first_framework}"'
             " framework is not within tolerance to the"
@@ -197,7 +198,7 @@ def main(
             " framework."
         )
 
-    print_norms(pipeline_results, torch_results)
+    print_discrepancy_report(pipeline_results, torch_results)
     # the results are within tolerance, so we log a good message
     CONSOLE.print(
         f'👍 The outputs when using the "{first_framework}" framework'
@@ -207,11 +208,10 @@ def main(
     )
 
 
-def print_norms(
+def print_discrepancy_report(
     results: List[ModelOutput], references: List[ModelOutput]
 ) -> None:
-    """
-    Calculate and print the L1 and L2 norms between outputs from two model runs.
+    """Calculate and print discrepancy metrics between outputs from two model runs.
 
     Args:
         results: List of model outputs to evaluate
@@ -220,107 +220,176 @@ def print_norms(
     if len(results) != len(references):
         raise ValueError("The two lists must have the same length")
 
-    # Calculate norms for each prompt
-    l1_errors = []
-    l2_errors = []
+    mae_per_prompt, rmse_per_prompt, kl_div_per_prompt = [], [], []
     for result, reference in zip(results, references):
         verify_matching_prompts(result, reference)
-        l1_error = None
-        l2_error = None
+        kl_div = None
         if "embeddings" in result and "embeddings" in reference:
-            l1_error, l2_error = calculate_embedding_norms(
-                result["embeddings"], reference["embeddings"]
+            mae, rmse = calculate_mae_and_rmse(
+                result["embeddings"].astype(np.float64),
+                reference["embeddings"].astype(np.float64),
             )
         elif "values" in result and "values" in reference:
-            l1_error, l2_error = calculate_logit_norms(
+            mae, rmse, kl_div = calculate_logit_discrepancies(
                 result["values"], reference["values"]
             )
-        l1_errors.append(l1_error)
-        l2_errors.append(l2_error)
+        else:
+            raise ValueError(
+                "Unknown model output type, did not find embeddings or values"
+            )
+        mae_per_prompt.append(mae)
+        rmse_per_prompt.append(rmse)
+        if kl_div is not None:
+            kl_div_per_prompt.append(kl_div)
 
-    # Print the results
-    print_norm_results(l1_errors, l2_errors)
+    kl_div_parameter = (
+        None if len(kl_div_per_prompt) == 0 else kl_div_per_prompt
+    )
+    print_discrepancy_results(mae_per_prompt, rmse_per_prompt, kl_div_parameter)
 
 
 def verify_matching_prompts(
     result: ModelOutput, reference: ModelOutput
 ) -> None:
-    """Verify that the prompts match between result and reference."""
+    """Verify that the prompts match between result and reference.
+
+    Args:
+        result: Model output from the model being evaluated
+        reference: Model output from the reference model
+
+    Returns:
+        None
+    """
     if result["prompt"] != reference["prompt"]:
         raise ValueError(
             f"Mismatched prompts:\nResult: {result['prompt']}\nReference: {reference['prompt']}"
         )
 
 
-def calculate_embedding_norms(
-    result_embeddings: np.ndarray, reference_embeddings: np.ndarray
+def calculate_mae_and_rmse(
+    result: np.ndarray, reference: np.ndarray
 ) -> tuple[float, float]:
-    """Calculate L1 and L2 norms between result and reference embeddings."""
-    diff = result_embeddings - reference_embeddings
-    l1_norm = np.mean(np.abs(diff))
-    l2_norm = np.sqrt(np.mean(diff**2))
-    return float(l1_norm), float(l2_norm)
+    """Calculate MAE and RMSE between result and reference embeddings.
+
+    Args:
+        result: Vector of floats
+        reference: Reference vector of floats
+
+    Returns:
+        A tuple containing (MAE, RMSE) as float values
+    """
+    diff = result - reference
+    mae = np.mean(np.abs(diff))
+    rmse = np.sqrt(np.mean(diff**2))
+    return float(mae), float(rmse)
 
 
-def calculate_logit_norms(
+def calculate_logit_discrepancies(
     result_values: List[TokenInfo], reference_values: List[TokenInfo]
-) -> tuple[Optional[float], Optional[float]]:
-    """
-    Calculate L1 and L2 norms between result and reference outputs until tokens diverge.
-    We stop computing the norms when the tokens diverge, because the values
-    will then be misleading.
+) -> tuple[float, float, float]:
+    """Calculate MAE, RMSE and KL Divergence between result and reference logits.
 
-    Returns (None, None) if tokens immediately diverge.
+    Args:
+        result_values: List of token logits from the model being evaluated
+        reference_values: List of token logits from the reference model
+
+    Returns:
+        A tuple containing (MAE, RMSE, KL_divergence) as float values
     """
-    total_l1 = 0
-    total_l2 = 0
-    token_count = 0
+    total_mae = 0.0
+    total_rmse = 0.0
+    total_kl_div = 0.0
+    steps = 0
 
     for res_token, ref_token in zip(result_values, reference_values):
-        # Stop if tokens diverge
+        res_logits_float64 = res_token["logits"].astype(np.float64)
+        ref_logits_float64 = ref_token["logits"].astype(np.float64)
+        mae, rmse = calculate_mae_and_rmse(
+            res_logits_float64, ref_logits_float64
+        )
+
+        total_mae += mae
+        total_rmse += rmse
+        total_kl_div += kl_divergence_from_logits(
+            res_logits_float64, ref_logits_float64
+        )
+        steps += 1
+
+        # If the tokens diverge, stop computing the discrepancies
         if res_token["next_token"] != ref_token["next_token"]:
             break
 
-        # Calculate norms for current token
-        diff = res_token["logits"] - ref_token["logits"]
-        token_l1 = np.mean(np.abs(diff))
-        token_l2 = np.sqrt(np.mean(diff**2))
-        total_l1 += token_l1
-        total_l2 += token_l2
-        token_count += 1
+    mae_average = total_mae / steps
+    rmse_average = total_rmse / steps
+    kl_div_average = total_kl_div / steps
 
-    if token_count == 0:
-        return None, None
-    return float(total_l1 / token_count), float(total_l2 / token_count)
+    return float(mae_average), float(rmse_average), float(kl_div_average)
 
 
-def print_norm_results(
-    l1_errors: Sequence[Optional[float]], l2_errors: Sequence[Optional[float]]
+def print_discrepancy_results(
+    mae_per_prompt: Sequence[float],
+    rmse_per_prompt: Sequence[float],
+    kl_div_per_prompt: Optional[Sequence[float]],
 ) -> None:
-    """Print formatted L1 and L2 norm results."""
-    valid_l1_errors = [error for error in l1_errors if error is not None]
-    valid_l2_errors = [error for error in l2_errors if error is not None]
+    """Print discrepancy results in a standardized format.
 
-    if not valid_l1_errors or not valid_l2_errors:
-        CONSOLE.print("Unable to compute any valid norm values")
-        return
+    Args:
+        mae_per_prompt: Sequence of mean absolute error values
+        rmse_per_prompt: Sequence of root mean square error values
+        kl_div_per_prompt: Optional sequence of KL divergence values
 
-    avg_l1 = sum(valid_l1_errors) / len(valid_l1_errors)
-    avg_l2 = sum(valid_l2_errors) / len(valid_l2_errors)
+    Returns:
+        None
+    """
+    # TODO: Add reference values as to what are good/ok/bad numbers once
+    # we gain experience with them
+
+    # Determine if we're working with logits or embeddings
+    output_type = "logit" if kl_div_per_prompt is not None else "embedding"
+
+    # Calculate averages
+    # TODO: These averages can be misleading if the number of steps is different
+    # for each prompt (happens when there's a token mismatch).
+    avg_mae = sum(mae_per_prompt) / len(mae_per_prompt)
+    avg_rmse = sum(rmse_per_prompt) / len(rmse_per_prompt)
+
+    # Format the per-prompt values
+    formatter = "{:.2e}".format
+    formatted_mae = ", ".join(formatter(error) for error in mae_per_prompt)
+    formatted_rmse = ", ".join(formatter(error) for error in rmse_per_prompt)
+
+    CONSOLE.print(f"\n===== {output_type} discrepancy report =====\n")
+
+    if kl_div_per_prompt is not None:
+        avg_kl_div = sum(kl_div_per_prompt) / len(kl_div_per_prompt)
+        formatted_kl_div = ", ".join(
+            formatter(error) for error in kl_div_per_prompt
+        )
+        CONSOLE.print(
+            f"KL Div: {formatter(avg_kl_div)} <— Use this number if unsure"
+        )
+
+    CONSOLE.print(f"RMSE:   {formatter(avg_rmse)}")
+    CONSOLE.print(f"MAE:    {formatter(avg_mae)}")
+    CONSOLE.print("\nPer prompt discrepancy numbers:")
+
+    if kl_div_per_prompt is not None:
+        CONSOLE.print(f"KL Div: [{formatted_kl_div}]")
+
+    CONSOLE.print(f"RMSE:   [{formatted_rmse}]")
+    CONSOLE.print(f"MAE:    [{formatted_mae}]")
+
+    CONSOLE.print("\nLower numbers are better.")
     CONSOLE.print(
-        "\nL1 and L2 norms of the outputs (up until a potential token mismatch)"
+        f"They measure how close the {output_type}s are between the two frameworks."
     )
-    CONSOLE.print(f"Average output L1 norm: {avg_l1:.2e}")
-    CONSOLE.print(f"Average output L2 norm: {avg_l2:.2e}")
 
-    formatted_l1 = ", ".join(
-        f"{error:.2e}" if error is not None else "N/A" for error in l1_errors
-    )
-    formatted_l2 = ", ".join(
-        f"{error:.2e}" if error is not None else "N/A" for error in l2_errors
-    )
-    CONSOLE.print(f"Per prompt L1 norm: [{formatted_l1}]")
-    CONSOLE.print(f"Per prompt L2 norm: [{formatted_l2}]\n")
+    if kl_div_per_prompt is not None:
+        CONSOLE.print(
+            "The numbers are computed until the first token mismatch, if any."
+        )
+
+    CONSOLE.print("\n===== end discrepancy report =====\n")
 
 
 if __name__ == "__main__":
