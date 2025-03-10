@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: AMD-GPU
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose, isqrt
