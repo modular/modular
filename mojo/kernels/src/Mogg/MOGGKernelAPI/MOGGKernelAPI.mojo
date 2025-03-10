@@ -693,8 +693,8 @@ fn export():
 
 
 @compiler.register("mo.range")
-@compiler.elementwise
 struct Range:
+    @compiler.enable_fusion_for("output")
     @staticmethod
     fn execute[
         type: DType,
@@ -703,15 +703,15 @@ struct Range:
         _trace_name: StringLiteral,
     ](
         output: OutputTensor[type=type, rank=1],
-        start: InputTensor[type=type, rank=1],
-        stop: InputTensor[type=type, rank=1],
-        step: InputTensor[type=type, rank=1],
+        start: Scalar[type],
+        stop: Scalar[type],
+        step: Scalar[type],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[1]) -> SIMD[type, width]:
-            return start[0] + step[0] * (iota[type, width](idx[0]))
+            return start + step * (iota[type, width](idx[0]))
 
         foreach[
             func,
@@ -724,14 +724,14 @@ struct Range:
     fn shape[
         type: DType
     ](
-        start: InputTensor[type=type, rank=1],
-        stop: InputTensor[type=type, rank=1],
-        step: InputTensor[type=type, rank=1],
+        start: Scalar[type],
+        stop: Scalar[type],
+        step: Scalar[type],
     ) raises -> IndexList[1]:
         return arange_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(start),
-            managed_tensor_slice_to_ndbuffer(stop),
-            managed_tensor_slice_to_ndbuffer(step),
+            start,
+            stop,
+            step,
         )
 
 

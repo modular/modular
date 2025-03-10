@@ -762,6 +762,7 @@ struct SupportsScalarKernel:
         y: Scalar[type],
     ) raises:
         print("datatype is", type)
+        print("value is", y)
 
 
 @compiler.register("kernel_with_no_target")
