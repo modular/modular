@@ -699,7 +699,7 @@ class PipelineConfig(MAXConfig):
     running a local server to test out MAX. For users launching in a server scenario, the expectation
     is that this value should be set higher based on server capacity."""
 
-    max_ce_batch_size: int = 32
+    max_ce_batch_size: int = 192
     """Maximum cache size to reserve for a single context encoding batch.
     The actual limit is the lesser of this and `max_batch_size`."""
 
