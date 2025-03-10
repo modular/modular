@@ -86,6 +86,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
+    DefaultValuedAttr<DictArrayAttr, "std::nullopt">:$LLVMArgMetadata,
     DefaultValuedAttr<StringArrayAttr, "std::nullopt">:$crossDeviceCaptures,
     OptionalAttr<TypeAttr>:$coroutineType
   );
@@ -121,13 +122,16 @@ def KGEN_FuncOp : KGENOp<"func", [
                         "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators,
-                   CArg<"DictionaryAttr", "{}">:$llvmMetadata), [{
+                   CArg<"DictionaryAttr", "{}">:$llvmMetadata,
+                   CArg<"ArrayAttr", "{}">:$llvmArgMetadata), [{
       if (!llvmMetadata)
         llvmMetadata = DictionaryAttr::get(name.getContext());
+      if (!llvmArgMetadata)
+        llvmArgMetadata = ArrayAttr::get(name.getContext(), {});
       auto sigGen = GeneratorType::get(/*inputParamTypes=*/{}, type);
       build($_builder, $_state, name, sigGen, decorators, inlineLevel,
-            exportKind, llvmMetadata, /*crossDeviceCaptures=*/{},
-            /*coroutineType=*/{});
+            exportKind, llvmMetadata, llvmArgMetadata,
+            /*crossDeviceCaptures=*/{}, /*coroutineType=*/{});
     }]>,
   ];
 
@@ -175,7 +179,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray
+    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMArgMetadataArray
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -205,17 +210,21 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
-                   CArg<"ArrayAttr", "{}">:$llvmMetadataArray), [{
+                   CArg<"ArrayAttr", "{}">:$llvmMetadataArray,
+                   CArg<"ArrayAttr", "{}">:$llvmArgMetadataArray), [{
       if (!llvmMetadataArray)
         llvmMetadataArray = ArrayAttr::get(name.getContext(), {});
+      if (!llvmArgMetadataArray)
+        llvmArgMetadataArray = ArrayAttr::get(name.getContext(), {});
       build($_builder, $_state, name, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
-            llvmMetadataArray);
+            llvmMetadataArray, llvmArgMetadataArray);
     }]>,
     OpBuilder<(ins "StringAttr":$name, "FuncTypeGeneratorType":$type), [{
       build($_builder, $_state, name, type, type.getBody().getValues(), {}, {});
     }]>
   ];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -657,6 +666,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
     DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMArgMetadataArray,
     UnitAttr:$isolated
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -694,9 +704,11 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
       build($_builder, $_state, paramDecl, funcTypeGenerator, functionType,
             inputParams, inlineLevel,
             /*llvmMetadata=*/ArrayAttr::get(paramDecl.getContext(), {}),
+            /*llvmArgMetadata=*/ArrayAttr::get(paramDecl.getContext(), {}),
             /*isolated=*/false);
     }]>,
   ];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

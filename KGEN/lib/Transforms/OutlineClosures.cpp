@@ -188,7 +188,8 @@ void OutlineClosuresPass::runOnOperation() {
       auto liftedWrapper = b.create<GeneratorOp>(
           uniqueName, wrapperSignature, regionDecl.getFunctionType(),
           inputParamDecls, regionDecl.getInlineLevel(),
-          regionDecl.getLLVMMetadataArray());
+          regionDecl.getLLVMMetadataArray(),
+          regionDecl.getLLVMArgMetadataArray());
       symtab.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(liftedWrapper);
 
