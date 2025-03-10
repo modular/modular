@@ -528,9 +528,6 @@ fn get_int_from_shape[
 # Helpers
 # ===-----------------------------------------------------------------------===#
 
-# TODO(GEX-1449): Replace remaining uses of ScalarTensor with Scalar
-alias ScalarTensor = ManagedTensorSlice[rank=1]
-
 
 # Used by the graph compiler -- which right now does not support static spec
 @register_internal("managed_tensor_slice_to_ndbuffer")
@@ -727,9 +724,9 @@ struct Range:
     fn shape[
         type: DType
     ](
-        start: ScalarTensor[type=type],
-        stop: ScalarTensor[type=type],
-        step: ScalarTensor[type=type],
+        start: InputTensor[type=type, rank=1],
+        stop: InputTensor[type=type, rank=1],
+        step: InputTensor[type=type, rank=1],
     ) raises -> IndexList[1]:
         return arange_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(start),
@@ -1719,8 +1716,8 @@ struct SqueezeShape:
     fn shape[
         type: DType, indices_type: DType
     ](
-        input_shape: ManagedTensorSlice[type=type, rank=1],
-        remove_indices: ManagedTensorSlice[type=indices_type, rank=1],
+        input_shape: InputTensor[type=type, rank=1],
+        remove_indices: InputTensor[type=indices_type, rank=1],
     ) raises -> IndexList[1]:
         var out_dim = input_shape.dim_size[0]() - remove_indices.dim_size[0]()
 
@@ -1794,8 +1791,8 @@ struct UnsqueezeShape:
     fn shape[
         type: DType, indices_type: DType
     ](
-        input_shape: ManagedTensorSlice[type=type, rank=1],
-        remove_indices: ManagedTensorSlice[type=indices_type, rank=1],
+        input_shape: InputTensor[type=type, rank=1],
+        remove_indices: InputTensor[type=indices_type, rank=1],
     ) -> IndexList[1]:
         var out_dim = input_shape.dim_size[0]() + remove_indices.dim_size[0]()
         return IndexList[1](out_dim)
@@ -1844,9 +1841,9 @@ struct ScatterND:
     fn shape[
         _synchronous: Bool,
     ](
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, *_],
-        indices: ManagedTensorSlice,
+        input: InputTensor,
+        updates: InputTensor[type = input.type, *_],
+        indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
             managed_tensor_slice_to_ndbuffer(input),
@@ -1903,9 +1900,9 @@ struct ScatterNDAdd:
     fn shape[
         _synchronous: Bool,
     ](
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, *_],
-        indices: ManagedTensorSlice,
+        input: InputTensor,
+        updates: InputTensor[type = input.type, *_],
+        indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
             managed_tensor_slice_to_ndbuffer(input),
@@ -1962,9 +1959,9 @@ struct ScatterNDMul:
     fn shape[
         _synchronous: Bool,
     ](
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, *_],
-        indices: ManagedTensorSlice,
+        input: InputTensor,
+        updates: InputTensor[type = input.type, *_],
+        indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
             managed_tensor_slice_to_ndbuffer(input),
@@ -2021,9 +2018,9 @@ struct ScatterNDMin:
     fn shape[
         _synchronous: Bool,
     ](
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, *_],
-        indices: ManagedTensorSlice,
+        input: InputTensor,
+        updates: InputTensor[type = input.type, *_],
+        indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
             managed_tensor_slice_to_ndbuffer(input),
@@ -2080,9 +2077,9 @@ struct ScatterNDMax:
     fn shape[
         _synchronous: Bool,
     ](
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, *_],
-        indices: ManagedTensorSlice,
+        input: InputTensor,
+        updates: InputTensor[type = input.type, *_],
+        indices: InputTensor,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=_synchronous](
             managed_tensor_slice_to_ndbuffer(input),
@@ -2127,9 +2124,9 @@ struct Scatter:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
-        indices: ManagedTensorSlice[rank = input.rank],
+        input: InputTensor,
+        updates: InputTensor[type = input.type, rank = input.rank],
+        indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
@@ -2171,9 +2168,9 @@ struct ScatterAdd:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
-        indices: ManagedTensorSlice[rank = input.rank],
+        input: InputTensor,
+        updates: InputTensor[type = input.type, rank = input.rank],
+        indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
@@ -2215,9 +2212,9 @@ struct ScatterMax:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
-        indices: ManagedTensorSlice[rank = input.rank],
+        input: InputTensor,
+        updates: InputTensor[type = input.type, rank = input.rank],
+        indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
@@ -2259,9 +2256,9 @@ struct ScatterMin:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
-        indices: ManagedTensorSlice[rank = input.rank],
+        input: InputTensor,
+        updates: InputTensor[type = input.type, rank = input.rank],
+        indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
@@ -2303,9 +2300,9 @@ struct ScatterMul:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
-        updates: ManagedTensorSlice[type = input.type, rank = input.rank],
-        indices: ManagedTensorSlice[rank = input.rank],
+        input: InputTensor,
+        updates: InputTensor[type = input.type, rank = input.rank],
+        indices: InputTensor[rank = input.rank],
         axis: Scalar,
     ) raises -> IndexList[input.rank]:
         var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
@@ -2335,8 +2332,8 @@ struct BroadcastTo:
     fn shape_impl[
         input_rank: Int, output_rank: Int
     ](
-        input: ManagedTensorSlice[rank=input_rank],
-        shape: ManagedTensorSlice[rank=1],
+        input: InputTensor[rank=input_rank],
+        shape: InputTensor[rank=1],
     ) raises -> IndexList[output_rank]:
         if output_rank != shape.dim_size[0]():
             raise Error(
@@ -2369,8 +2366,8 @@ struct BroadcastTo:
     fn shape[
         input_rank: Int, output_rank: Int
     ](
-        input: ManagedTensorSlice[rank=input_rank],
-        shape: ManagedTensorSlice[rank=1],
+        input: InputTensor[rank=input_rank],
+        shape: InputTensor[rank=1],
     ) raises -> IndexList[output_rank]:
         return BroadcastTo.shape_impl[output_rank=output_rank](input, shape)
 
@@ -2434,7 +2431,7 @@ struct BroadcastShape:
 
     @staticmethod
     fn shape(
-        lhs_buf: ManagedTensorSlice[rank=1], rhs_buf: ManagedTensorSlice[rank=1]
+        lhs_buf: InputTensor[rank=1], rhs_buf: InputTensor[rank=1]
     ) raises -> IndexList[1]:
         var lhs_dim = lhs_buf.dim_size[0]()
         var rhs_dim = rhs_buf.dim_size[0]()
@@ -2468,7 +2465,7 @@ struct StaticBroadcastTo:
     @staticmethod
     fn build_view[
         out_rank: Int,
-    ](x: ManagedTensorSlice,) -> IndexList[out_rank]:
+    ](x: InputTensor,) -> IndexList[out_rank]:
         var new_strides = IndexList[out_rank]()
         alias delta = out_rank - x.rank
 
@@ -2612,9 +2609,9 @@ struct Reshape:
     @staticmethod
     fn shape[
         output_rank: Int
-    ](
-        input: ManagedTensorSlice, shape: ManagedTensorSlice[rank=1]
-    ) raises -> IndexList[output_rank]:
+    ](input: InputTensor, shape: InputTensor[rank=1]) raises -> IndexList[
+        output_rank
+    ]:
         return reshape_shape[
             output_rank=output_rank, single_thread_blocking_override=True
         ](
@@ -2629,8 +2626,8 @@ struct Transpose:
     @always_inline
     @staticmethod
     fn transpose_in_place(
-        input: ManagedTensorSlice,
-        permutations: ManagedTensorSlice[rank=1],
+        input: InputTensor,
+        permutations: InputTensor[rank=1],
         out result: (IndexList[input.rank], IndexList[input.rank]),
     ):
         var new_shape = IndexList[input.rank]()
@@ -2697,8 +2694,8 @@ struct Transpose:
     @no_inline
     @staticmethod
     fn shape_impl(
-        input: ManagedTensorSlice,
-        permutations: ManagedTensorSlice[rank=1],
+        input: InputTensor,
+        permutations: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
         if permutations.dim_size[0]() != input.rank:
             raise Error("[transpose] permutation size must match input rank")
@@ -2723,8 +2720,8 @@ struct Transpose:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
-        permutations: ManagedTensorSlice[rank=1],
+        input: InputTensor,
+        permutations: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
         return Self.shape_impl(input, permutations)
 
@@ -2788,10 +2785,10 @@ struct Slice:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
-        starts: ManagedTensorSlice[rank=1],
-        stops: ManagedTensorSlice[rank=1],
-        steps: ManagedTensorSlice[rank=1],
+        input: InputTensor,
+        starts: InputTensor[rank=1],
+        stops: InputTensor[rank=1],
+        steps: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
         return slice_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -2991,7 +2988,7 @@ struct ArgNonZero:
         arg_nonzero.arg_nonzero(in_ndbuffer, out_ndbuffer)
 
     @staticmethod
-    fn shape(input_buffer: ManagedTensorSlice) -> IndexList[2]:
+    fn shape(input_buffer: InputTensor) -> IndexList[2]:
         return arg_nonzero.arg_nonzero_shape[
             single_thread_blocking_override=True
         ](managed_tensor_slice_to_ndbuffer(input_buffer))
@@ -3043,7 +3040,7 @@ struct Mean:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[type=input_type, rank=input_rank],
+        input: InputTensor[type=input_type, rank=input_rank],
         axis: Int,
     ) raises -> IndexList[input_rank]:
         return reduce_shape(input, axis)
@@ -3096,7 +3093,7 @@ struct ReduceAdd:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[type=input_type, rank=input_rank],
+        input: InputTensor[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape(input, Int(axis))
@@ -3151,7 +3148,7 @@ struct ReduceMul:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[type=input_type, rank=input_rank],
+        input: InputTensor[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape(input, Int(axis))
@@ -3206,7 +3203,7 @@ struct ReduceMax:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[type=input_type, rank=input_rank],
+        input: InputTensor[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape(input, Int(axis))
@@ -3261,7 +3258,7 @@ struct ReduceMin:
         input_rank: Int,
         input_type: DType,
     ](
-        input: ManagedTensorSlice[type=input_type, rank=input_rank],
+        input: InputTensor[type=input_type, rank=input_rank],
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape(input, Int(axis))
@@ -3377,7 +3374,7 @@ struct ReduceMinMax:
         _ = axis
 
     @staticmethod
-    fn shape(input: ManagedTensorSlice, axis: Scalar) -> IndexList[input.rank]:
+    fn shape(input: InputTensor, axis: Scalar) -> IndexList[input.rank]:
         var new_shape = input.shape()
         new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
 
@@ -3419,11 +3416,11 @@ struct AvgPool:
         type: DType,
         int_type: DType,
     ](
-        input: ManagedTensorSlice[type=type, rank=4],
-        filter: ManagedTensorSlice[type=int_type, rank=1],
-        strides: ManagedTensorSlice[type=int_type, rank=1],
-        dilations: ManagedTensorSlice[type=int_type, rank=1],
-        paddings: ManagedTensorSlice[type=int_type, rank=1],
+        input: InputTensor[type=type, rank=4],
+        filter: InputTensor[type=int_type, rank=1],
+        strides: InputTensor[type=int_type, rank=1],
+        dilations: InputTensor[type=int_type, rank=1],
+        paddings: InputTensor[type=int_type, rank=1],
     ) raises -> IndexList[input.rank]:
         return pool_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3464,11 +3461,11 @@ struct AvgPoolCeilModeTrue:
         type: DType,
         int_type: DType,
     ](
-        input: ManagedTensorSlice[type=type, rank=4],
-        filter: ManagedTensorSlice[type=int_type, rank=1],
-        strides: ManagedTensorSlice[type=int_type, rank=1],
-        dilations: ManagedTensorSlice[type=int_type, rank=1],
-        paddings: ManagedTensorSlice[type=int_type, rank=1],
+        input: InputTensor[type=type, rank=4],
+        filter: InputTensor[type=int_type, rank=1],
+        strides: InputTensor[type=int_type, rank=1],
+        dilations: InputTensor[type=int_type, rank=1],
+        paddings: InputTensor[type=int_type, rank=1],
         ctx: DeviceContextPtr,
     ) raises -> IndexList[input.rank]:
         return pool_shape_ceil[single_thread_blocking_override=True](
@@ -3509,11 +3506,11 @@ struct MaxPool:
         type: DType,
         int_type: DType,
     ](
-        input: ManagedTensorSlice[type=type, rank=4],
-        filter: ManagedTensorSlice[type=int_type, rank=1],
-        strides: ManagedTensorSlice[type=int_type, rank=1],
-        dilations: ManagedTensorSlice[type=int_type, rank=1],
-        paddings: ManagedTensorSlice[type=int_type, rank=1],
+        input: InputTensor[type=type, rank=4],
+        filter: InputTensor[type=int_type, rank=1],
+        strides: InputTensor[type=int_type, rank=1],
+        dilations: InputTensor[type=int_type, rank=1],
+        paddings: InputTensor[type=int_type, rank=1],
     ) raises -> IndexList[input.rank]:
         return pool_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3553,11 +3550,11 @@ struct MaxPoolCeilModeTrue:
         type: DType,
         int_type: DType,
     ](
-        input: ManagedTensorSlice[type=type, rank=4],
-        filter: ManagedTensorSlice[type=int_type, rank=1],
-        strides: ManagedTensorSlice[type=int_type, rank=1],
-        dilations: ManagedTensorSlice[type=int_type, rank=1],
-        paddings: ManagedTensorSlice[type=int_type, rank=1],
+        input: InputTensor[type=type, rank=4],
+        filter: InputTensor[type=int_type, rank=1],
+        strides: InputTensor[type=int_type, rank=1],
+        dilations: InputTensor[type=int_type, rank=1],
+        paddings: InputTensor[type=int_type, rank=1],
     ) raises -> IndexList[input.rank]:
         return pool_shape_ceil[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3610,8 +3607,8 @@ struct PadConstant:
         type: DType,
         rank: Int,
     ](
-        input: ManagedTensorSlice[type=type, rank=rank],
-        padding: ManagedTensorSlice[rank=1],
+        input: InputTensor[type=type, rank=rank],
+        padding: InputTensor[rank=1],
     ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3640,8 +3637,8 @@ struct PadRepeat:
         type: DType,
         rank: Int,
     ](
-        input: ManagedTensorSlice[type=type, rank=rank],
-        padding: ManagedTensorSlice[rank=1],
+        input: InputTensor[type=type, rank=rank],
+        padding: InputTensor[rank=1],
     ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3670,8 +3667,8 @@ struct PadReflect:
         type: DType,
         rank: Int,
     ](
-        input: ManagedTensorSlice[type=type, rank=rank],
-        padding: ManagedTensorSlice[rank=1],
+        input: InputTensor[type=type, rank=rank],
+        padding: InputTensor[rank=1],
     ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -3712,9 +3709,11 @@ struct GatherND:
     fn shape[
         batch_dims: Int, output_rank: Int, _synchronous: Bool
     ](
-        data: ManagedTensorSlice,
-        indices: ManagedTensorSlice,
-    ) raises -> IndexList[output_rank]:
+        data: InputTensor,
+        indices: InputTensor,
+    ) raises -> IndexList[
+        output_rank
+    ]:
         return gather_nd_shape[
             batch_dims=batch_dims,
             output_rank=output_rank,
@@ -3789,8 +3788,8 @@ struct Gather:
     fn shape[
         output_rank: Int,
     ](
-        input: ManagedTensorSlice,
-        indices: ManagedTensorSlice,
+        input: InputTensor,
+        indices: InputTensor,
         axis: Scalar,
     ) raises -> IndexList[output_rank]:
         return gather_shape[
@@ -3882,9 +3881,9 @@ struct LayerNorm:
         type: DType,
         rank: Int,
     ](
-        input: ManagedTensorSlice[type=type, rank=rank],
-        gamma: ManagedTensorSlice[type=type, rank=1],
-        beta: ManagedTensorSlice[type=type, rank=1],
+        input: InputTensor[type=type, rank=rank],
+        gamma: InputTensor[type=type, rank=1],
+        beta: InputTensor[type=type, rank=1],
         epsilon: Scalar[type=type],
     ) -> IndexList[rank]:
         return input.shape()
@@ -3926,8 +3925,8 @@ struct RMSNorm:
         type: DType,
         rank: Int,
     ](
-        input: ManagedTensorSlice[type=type, rank=rank],
-        gamma: ManagedTensorSlice[type=type, rank=1],
+        input: InputTensor[type=type, rank=rank],
+        gamma: InputTensor[type=type, rank=1],
         epsilon: Scalar[type=type],
     ) -> IndexList[rank]:
         return input.shape()
@@ -3966,7 +3965,7 @@ struct BottomK:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
+        input: InputTensor,
         k: Scalar,
         axis: Scalar,
         sorted: Scalar[DType.bool],
@@ -4004,7 +4003,7 @@ struct TopK:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
+        input: InputTensor,
         k: Scalar,
         axis: Scalar,
         sorted: Scalar[DType.bool],
@@ -4049,8 +4048,8 @@ struct NonMaximumSupression:
     fn shape[
         type: DType
     ](
-        boxes: ManagedTensorSlice[type=type, rank=3],
-        scores: ManagedTensorSlice[type=type, rank=3],
+        boxes: InputTensor[type=type, rank=3],
+        scores: InputTensor[type=type, rank=3],
         max_output_boxes_per_class: Int64,
         iou_threshold: Float32,
         score_threshold: Float32,
@@ -4175,8 +4174,8 @@ struct BatchMatmul:
         a_type: DType,
         b_type: DType,
     ](
-        a: ManagedTensorSlice[type=a_type, rank=rank],
-        b: ManagedTensorSlice[type=b_type, rank=rank],
+        a: InputTensor[type=a_type, rank=rank],
+        b: InputTensor[type=b_type, rank=rank],
     ) raises -> IndexList[rank]:
         var a_buffer = managed_tensor_slice_to_ndbuffer(a)
         var b_buffer = managed_tensor_slice_to_ndbuffer(b)
@@ -4207,8 +4206,8 @@ struct LinalgSolve:
         type: DType,
         rank: Int,
     ](
-        a: ManagedTensorSlice[type=type, rank=rank],
-        b: ManagedTensorSlice[type=type, rank=rank],
+        a: InputTensor[type=type, rank=rank],
+        b: InputTensor[type=type, rank=rank],
     ) raises -> IndexList[a.rank]:
         return matrix_solve_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(a),
@@ -4290,9 +4289,11 @@ struct ResizeNearest:
     fn shape[
         rank: Int
     ](
-        input: ManagedTensorSlice[rank=rank],
-        size: ManagedTensorSlice[rank=1],
-    ) -> IndexList[rank]:
+        input: InputTensor[rank=rank],
+        size: InputTensor[rank=1],
+    ) -> IndexList[
+        rank
+    ]:
         var shape = IndexList[rank]()
         for i in range(rank):
             shape[i] = Int(size[i])
@@ -4322,9 +4323,11 @@ struct ResizeLinear:
     fn shape[
         rank: Int
     ](
-        input: ManagedTensorSlice[rank=rank],
-        size: ManagedTensorSlice[rank=1],
-    ) -> IndexList[rank]:
+        input: InputTensor[rank=rank],
+        size: InputTensor[rank=1],
+    ) -> IndexList[
+        rank
+    ]:
         var shape = IndexList[rank]()
         for i in range(rank):
             shape[i] = Int(size[i])
@@ -4365,8 +4368,8 @@ struct ROIAlign:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice[rank=4],
-        rois: ManagedTensorSlice[rank=2],
+        input: InputTensor[rank=4],
+        rois: InputTensor[rank=2],
         output_height: Int64,
         output_width: Int64,
         spatial_scale: Scalar,
@@ -4407,8 +4410,8 @@ struct Tile:
 
     @staticmethod
     fn shape(
-        input: ManagedTensorSlice,
-        repeats: ManagedTensorSlice[rank=1],
+        input: InputTensor,
+        repeats: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
         return tile_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -4435,7 +4438,7 @@ struct RandomNormal:
     ):
         seed(Int(seed_value))
         var num_elements = 1
-        # TODO: Add __len__ support in ManagedTensorSlice.
+        # TODO: Add __len__ support in InputTensor.
         for i in range(shape.dim_size[0]()):
             num_elements *= Int(shape[i])
         randn(
@@ -4448,7 +4451,7 @@ struct RandomNormal:
     @staticmethod
     fn shape[
         output_rank: Int
-    ](shape: ManagedTensorSlice[rank=1]) -> IndexList[output_rank]:
+    ](shape: InputTensor[rank=1]) -> IndexList[output_rank]:
         var unrolled_shape = IndexList[output_rank]()
         for i in range(output_rank):
             unrolled_shape[i] = Int(shape[i])
@@ -4685,7 +4688,7 @@ struct Concat:
         rank: Int,
         _synchronous: Bool,
     ](
-        axis: Scalar, inputs: VariadicTensors[type, rank, *_]
+        axis: Scalar, inputs: InputVariadicTensors[type, rank, *_]
     ) raises -> IndexList[rank]:
         return concat_shape_impl(Int(axis), inputs)
 
@@ -4886,8 +4889,8 @@ struct SplitOutputShapeHelper:
         split_size_type: DType,
         _synchronous: Bool,
     ](
-        input_buf: ManagedTensorSlice[type=input_type, rank=rank],
-        split_sizes_buf: ManagedTensorSlice[type=split_size_type, rank=1],
+        input_buf: InputTensor[type=input_type, rank=rank],
+        split_sizes_buf: InputTensor[type=split_size_type, rank=1],
         split_axis: Scalar,
         output_idx: Scalar,
     ) raises -> IndexList[rank]:
@@ -5072,12 +5075,12 @@ struct Conv:
     fn shape[
         type: DType
     ](
-        input: ManagedTensorSlice,
-        filter: ManagedTensorSlice,
-        strides: ManagedTensorSlice[rank=1],
-        dilations: ManagedTensorSlice[rank=1],
-        paddings: ManagedTensorSlice[rank=1],
-        num_groups: ManagedTensorSlice[rank=1],
+        input: InputTensor,
+        filter: InputTensor,
+        strides: InputTensor[rank=1],
+        dilations: InputTensor[rank=1],
+        paddings: InputTensor[rank=1],
+        num_groups: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
         return conv_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -5196,12 +5199,12 @@ struct ConvTranspose:
     fn shape[
         type: DType
     ](
-        input: ManagedTensorSlice[type=type],
-        filter: ManagedTensorSlice[type=type],
-        strides: ManagedTensorSlice[rank=1],
-        dilations: ManagedTensorSlice[rank=1],
-        paddings: ManagedTensorSlice[rank=1],
-        output_paddings: ManagedTensorSlice[rank=1],
+        input: InputTensor[type=type],
+        filter: InputTensor[type=type],
+        strides: InputTensor[rank=1],
+        dilations: InputTensor[rank=1],
+        paddings: InputTensor[rank=1],
+        output_paddings: InputTensor[rank=1],
     ) raises -> IndexList[input.rank]:
         return conv_transpose_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -5416,7 +5419,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         )
 
     @staticmethod
-    fn shape(q: ManagedTensorSlice) -> IndexList[q.rank]:
+    fn shape(q: InputTensor) -> IndexList[q.rank]:
         return q.shape()
 
 
@@ -5496,9 +5499,7 @@ struct GGMLQ40Dequantize:
 
     @staticmethod
     @always_inline
-    fn shape(
-        input: ManagedTensorSlice[type = DType.uint8, rank=2]
-    ) -> IndexList[2]:
+    fn shape(input: InputTensor[type = DType.uint8, rank=2]) -> IndexList[2]:
         alias block_nbytes = sizeof[Q4sym[group_size=32]]()
         alias quants_per_block = 32
         var num_block_per_batch = (
@@ -5528,8 +5529,8 @@ struct VroomQ40Matmul:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5553,8 +5554,8 @@ struct VroomQ40RepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -5582,9 +5583,7 @@ struct GGMLQ4KDequantize:
 
     @staticmethod
     @always_inline
-    fn shape(
-        input: ManagedTensorSlice[type = DType.uint8, rank=2]
-    ) -> IndexList[2]:
+    fn shape(input: InputTensor[type = DType.uint8, rank=2]) -> IndexList[2]:
         alias block_nbytes = sizeof[block_Q4_K]()
         alias elements_per_block = block_QK_K.quantized_k
 
@@ -5619,8 +5618,8 @@ struct VroomQ4KMatmul:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5644,8 +5643,8 @@ struct VroomQ4KRepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -5674,9 +5673,7 @@ struct GGMLQ6KDequantize:
 
     @staticmethod
     @always_inline
-    fn shape(
-        input: ManagedTensorSlice[type = DType.uint8, rank=2]
-    ) -> IndexList[2]:
+    fn shape(input: InputTensor[type = DType.uint8, rank=2]) -> IndexList[2]:
         alias block_nbytes = sizeof[block_Q6_K]()
         alias elements_per_block = block_QK_K.quantized_k
 
@@ -5711,8 +5708,8 @@ struct VroomQ6KMatmul:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5736,8 +5733,8 @@ struct VroomQ6KRepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -5773,8 +5770,8 @@ struct QMatmulGPU_b4_g32:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5805,8 +5802,8 @@ struct QMatmulGPU_b4_g128:
     @staticmethod
     @always_inline
     fn shape(
-        a: ManagedTensorSlice[type = DType.float32, rank=2],
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        a: InputTensor[type = DType.float32, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
@@ -5835,7 +5832,7 @@ struct QMatmulGPURepackGGUF:
     @staticmethod
     @always_inline
     fn shape(
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
 
@@ -5864,7 +5861,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     @staticmethod
     @always_inline
     fn shape(
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
+        b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return IndexList[2](b.dim_size[1](), b.dim_size[0]())
 
@@ -5897,8 +5894,8 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     @staticmethod
     @always_inline
     fn shape(
-        b: ManagedTensorSlice[type = DType.uint8, rank=2],
-        perm_idx: ManagedTensorSlice[type = DType.int32, rank=1],
+        b: InputTensor[type = DType.uint8, rank=2],
+        perm_idx: InputTensor[type = DType.int32, rank=1],
     ) -> IndexList[2]:
         return IndexList[2](b.dim_size(1), b.dim_size(0))
 
@@ -6960,7 +6957,7 @@ struct PackConvFilterShape:
         paddings: DimList,
         num_groups: Int,
         _synchronous: Bool,
-    ](filter_buf: ManagedTensorSlice[type=filter_type, rank=rank]) -> IndexList[
+    ](filter_buf: InputTensor[type=filter_type, rank=rank]) -> IndexList[
         rank + 1
     ]:
         """
@@ -7155,7 +7152,7 @@ struct PackMatmulBShapeFunc:
         c_shape: DimList,
         transpose_in_0: Bool,
         _synchronous: Bool,
-    ](b_input: ManagedTensorSlice[type=b_type, rank=2]) -> IndexList[2]:
+    ](b_input: InputTensor[type=b_type, rank=2]) -> IndexList[2]:
         return pack_matmul_b_shape_func[
             a_type,
             a_shape,
@@ -7216,10 +7213,10 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
 fn print_kv_cache_cont_batch_generic_kernel_api[
     type: DType, //, target: StringLiteral
 ](
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: InputTensor[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection[type, _],
     layer_idx: UInt32,
-    is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
+    is_print_compact: InputTensor[type = DType.bool, rank=1],
     context: DeviceContextPtr,
 ) raises:
     @parameter
@@ -7245,10 +7242,10 @@ fn print_kv_cache_paged_generic_kernel_api[
     type: DType, //,
     target: StringLiteral,
 ](
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: InputTensor[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection[type, *_],
     layer_idx: UInt32,
-    is_print_compact: ManagedTensorSlice[type = DType.bool, rank=1],
+    is_print_compact: InputTensor[type = DType.bool, rank=1],
     context: DeviceContextPtr,
 ) raises:
     @parameter
@@ -7628,7 +7625,7 @@ struct DistributedAllReduceSum:
 fn _check_signal_buffer_size[
     max_num_blocks: Int
 ](
-    signal_buffer: ManagedTensorSlice[type = DType.uint8, rank=1],
+    signal_buffer: InputTensor[type = DType.uint8, rank=1],
     input_size_bytes: Int,
 ) raises:
     # The signal buffer has to be large enough to hold the entire input buffer.

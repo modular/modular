@@ -195,7 +195,7 @@ struct Foo:
         foreach[func](z)
 
     @staticmethod
-    fn shape(x: ManagedTensorSlice, y: ManagedTensorSlice) -> IndexList[x.rank]:
+    fn shape(x: InputTensor, y: InputTensor) -> IndexList[x.rank]:
         return x.shape()
 
 
@@ -253,8 +253,8 @@ struct ImposterMatmul:
 
     @staticmethod
     fn shape(
-        a: ManagedTensorSlice,
-        b: ManagedTensorSlice,
+        a: InputTensor,
+        b: InputTensor,
     ) -> IndexList[2]:
         var shape = a.shape()
         shape[1] = b.dim_size[1]()
@@ -282,7 +282,7 @@ struct PrintTensorSpecOp:
         foreach[func](out)
 
     @staticmethod
-    fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
+    fn shape(x: InputTensor) -> IndexList[x.rank]:
         return x.shape()
 
 
@@ -308,7 +308,7 @@ struct PrintTensorSpecViewOp:
         foreach[func](out)
 
     @staticmethod
-    fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
+    fn shape(x: InputTensor) -> IndexList[x.rank]:
         return x.shape()
 
 
@@ -334,7 +334,7 @@ struct PrintTensorSpecFusedOp:
         foreach[func](out)
 
     @staticmethod
-    fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
+    fn shape(x: InputTensor) -> IndexList[x.rank]:
         return x.shape()
 
 
@@ -440,8 +440,8 @@ struct MatmulFuseOut:
 
     @staticmethod
     fn shape(
-        a: ManagedTensorSlice,
-        b: ManagedTensorSlice,
+        a: InputTensor,
+        b: InputTensor,
     ) -> IndexList[2]:
         var shape = a.shape()
         shape[1] = b.dim_size[1]()
@@ -567,7 +567,7 @@ struct Transpose2DOp:
     @staticmethod
     fn build_view[
         type: DType,
-    ](x: ManagedTensorSlice[type=type, rank=2]) -> StaticTuple[IndexList[2], 2]:
+    ](x: InputTensor[type=type, rank=2]) -> StaticTuple[IndexList[2], 2]:
         var new_stride = IndexList[2]()
         var new_shape = IndexList[2]()
         new_stride[0] = x._runtime_strides[1]
@@ -622,7 +622,7 @@ struct ElementwisePrintShape:
         foreach[func](z)
 
     @staticmethod
-    fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
+    fn shape(x: InputTensor) -> IndexList[x.rank]:
         return x.shape()
 
 
@@ -645,7 +645,7 @@ struct CustomOpThatRaises:
         foreach[func](z)
 
     @staticmethod
-    fn shape(x: ManagedTensorSlice) raises -> IndexList[x.rank]:
+    fn shape(x: InputTensor) raises -> IndexList[x.rank]:
         print("Hello")
         var out_shape = x.shape()
         if out_shape[0] == 20:
@@ -833,7 +833,7 @@ struct TestCustomOp:
     @staticmethod
     fn shape[
         type: DType, rank: Int
-    ](input: ManagedTensorSlice[type=type, rank=rank]) -> IndexList[rank]:
+    ](input: InputTensor[type=type, rank=rank]) -> IndexList[rank]:
         print("Hello")
         return input.shape()
 
