@@ -408,6 +408,17 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
       /*inputParamTypes=*/{},
       FuncType::get(fnType, convs, sig.getFnEffects())));
 
+  // Extend LLVM per-arg metadata.
+  if (ArrayRef<Attribute> oldLLVMArgMetadata =
+          func.getLLVMArgMetadata().getValue();
+      !oldLLVMArgMetadata.empty()) {
+    SmallVector<Attribute> llvmArgMetadata(oldLLVMArgMetadata);
+    llvmArgMetadata.insert(llvmArgMetadata.end(), newTypes.size(),
+                           DictionaryAttr::get(func.getContext()));
+    func.setLLVMArgMetadataAttr(
+        ArrayAttr::get(func->getContext(), llvmArgMetadata));
+  }
+
   // If captures went up to an exported function, propagate them through
   // the ABI boundary by encoding the capture names on the function.
   if (func.isExported() && !node->requiredPromises.empty()) {

@@ -44,6 +44,8 @@ using namespace AsyncRT;
 /// survive Elaborator.
 static constexpr StringRef kLLVMMetadataArrayAttrName =
     "kgen.elaborator.llvm_metadata_array";
+static constexpr StringRef kLLVMArgMetadataArrayAttrName =
+    "kgen.elaborator.llvm_arg_metadata_array";
 
 //===----------------------------------------------------------------------===//
 // InterpreterCache
@@ -288,6 +290,21 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
 // processGenericOp
 //===----------------------------------------------------------------------===//
 
+/// Convert llvm metadata array attrs into dicts by treating every pair of
+/// attributes in the array as (key, value) pairs, where the key is always a
+/// StringAttr.
+static ErrorTreeOr<DictionaryAttr>
+concretizeLLVMMetadataArrays(Location loc, ArrayAttr array) {
+  NamedAttrList llvmMetadata;
+  for (int i = 0, e = array.size(); i < e; i += 2) {
+    auto name = dyn_cast<StringAttr>(array[i]);
+    if (!name)
+      return ErrorTree(loc, "cannot concretize name in 'llvm_metadata'");
+    llvmMetadata.append(name, array[i + 1]);
+  }
+  return llvmMetadata.getDictionary(array.getContext());
+}
+
 /// Unknown operations are allowed to use types and attributes with parameter
 /// references. Substitute in concrete values for their references. Optionally
 /// elaborate their locations.
@@ -308,18 +325,30 @@ static ElaborationState processGenericOp(ImplNode *parent, Operation *op) {
   if (auto func = dyn_cast<FuncOp>(op)) {
     if (auto llvmMetadataArray = dyn_cast_or_null<ArrayAttr>(
             func->getAttr(kLLVMMetadataArrayAttrName))) {
-      NamedAttrList llvmMetadata;
-      for (int i = 0, e = llvmMetadataArray.size(); i < e; i += 2) {
-        auto name = dyn_cast<StringAttr>(llvmMetadataArray[i]);
-        if (!name) {
-          parent->setToError(ErrorTree(
-              op->getLoc(), "cannot concretize name in 'llvm_metadata'"));
+      ErrorTreeOr<DictionaryAttr> result =
+          concretizeLLVMMetadataArrays(op->getLoc(), llvmMetadataArray);
+      if (result.isError()) {
+        parent->setToError(result.takeError());
+        return ElaborationState::error();
+      }
+      func.setLLVMMetadataAttr(result.takeValue());
+      func->removeAttr(kLLVMMetadataArrayAttrName);
+    }
+    if (auto llvmArgMetadataArray = dyn_cast_or_null<ArrayAttr>(
+            func->getAttr(kLLVMArgMetadataArrayAttrName))) {
+      SmallVector<Attribute> resultArray;
+      for (Attribute perArgMetadataArray : llvmArgMetadataArray) {
+        ErrorTreeOr<DictionaryAttr> result = concretizeLLVMMetadataArrays(
+            op->getLoc(), cast<ArrayAttr>(perArgMetadataArray));
+        if (result.isError()) {
+          parent->setToError(result.takeError());
           return ElaborationState::error();
         }
-        llvmMetadata.append(name, llvmMetadataArray[i + 1]);
+        resultArray.push_back(result.takeValue());
       }
-      func.setLLVMMetadataAttr(llvmMetadata.getDictionary(func.getContext()));
-      func->removeAttr(kLLVMMetadataArrayAttrName);
+      func.setLLVMArgMetadataAttr(
+          ArrayAttr::get(op->getContext(), resultArray));
+      func->removeAttr(kLLVMArgMetadataArrayAttrName);
     }
   }
 
@@ -1477,6 +1506,10 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     if (!generatorOp.getLLVMMetadataArray().empty()) {
       newFunc->setAttr(kLLVMMetadataArrayAttrName,
                        generatorOp.getLLVMMetadataArray());
+    }
+    if (!generatorOp.getLLVMArgMetadataArray().empty()) {
+      newFunc->setAttr(kLLVMArgMetadataArrayAttrName,
+                       generatorOp.getLLVMArgMetadataArray());
     }
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);

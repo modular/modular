@@ -11,9 +11,22 @@ kgen.generator @call_region<fn: <index>() capturing ->index>() -> index {
   kgen.return %0 : index
 }
 
+// CHECK-LABEL: @call_region_2_args<fn: <index>(index, index) capturing -> index>() -> index
+kgen.generator @call_region_2_args<fn: <index>(index, index) capturing ->index>() -> index {
+  // CHECK-NEXT: %[[CST:.*]] = index.constant 0
+  %cst = index.constant 0
+  // CHECK-NEXT: kgen.param.declare BoundFn: (index, index) capturing -> index = <bind_params(:<index>(index, index) capturing -> index fn, 2)>
+  kgen.param.declare BoundFn: (index, index) capturing -> index = <bind_params(:<index>(index, index) capturing -> index fn, 2)>
+  // CHECK-NEXT: %[[CALL:.*]] = kgen.call_param[(index, index) capturing -> index: BoundFn](%[[CST]], %[[CST]])
+  %0 = kgen.call_param[(index, index) capturing -> index: BoundFn](%cst, %cst)
+  // CHECK-NEXT: kgen.return %[[CALL]] : index
+  kgen.return %0 : index
+}
+
 // COM: This is the region hoisted out into a generator.
 // COM: This is the wrapper that loads values from the global variable.
-// CHECK-LABEL: kgen.generator @raiseClosure_Fn<Jefffffffffff, C, A, B>() capturing -> index
+// CHECK-LABEL: kgen.generator @raiseClosure_Fn<Jefffffffffff, C, A, B>(%arg0: index, %arg1: index) capturing -> index
+// CHECK-SAME{LITERAL}:   LLVMArgMetadataArray = [[], ["llvm.someattr", 3 : index]]
 // CHECK-SAME:   LLVMMetadataArray = ["llvm.someattr", 4 : index]
 // CHECK-NEXT:   [[ARG0:%.*]] = pop.compiler.global_load "raiseClosure_context_var_0" : index
 // CHECK-NEXT:   [[ARG1:%.*]] = pop.compiler.global_load "raiseClosure_context_var_1" : index
@@ -27,16 +40,19 @@ kgen.generator @raiseClosure<Jefffffffffff>(%arg0: index) -> index {
   // CHECK: pop.compiler.global_store "raiseClosure_context_var_0", %idx0 : index
   // CHECK-NEXT: pop.compiler.global_store "raiseClosure_context_var_1", %arg0 : index
   kgen.param.declare C = <15>
-  kgen.param.declare.region Fn = <A, B>() capturing -> index {
+  kgen.param.declare.region Fn = <A, B>(%a: index, %b: index) capturing -> index {
     %0 = kgen.param.constant = <mul(add(sub(A, B), C), Jefffffffffff)>
     %1 = index.add %cst, %arg0
     kgen.return %1 : index
-  } {LLVMMetadataArray = ["llvm.someattr", 4 : index]}
-  // CHECK: kgen.param.declare Fn: <index, index>() capturing -> index = <@raiseClosure_Fn<Jefffffffffff, C, ?, ?>>
-  // CHECK: kgen.param.declare BoundFn: <index>() capturing -> index = <bind_params(:<index, index>() capturing -> index Fn, ?, 1)>
-  kgen.param.declare BoundFn: <index>() capturing -> index = <bind_params(:<index, index>() capturing -> index Fn, ?, 1)>
-  // CHECK: kgen.call @call_region<:<index>() capturing -> index BoundFn>() : () -> index
-  %0 = kgen.call @call_region<:<index>() capturing -> index BoundFn>() : () -> index
+  } {
+    LLVMArgMetadataArray = [[], ["llvm.someattr", 3 : index]],
+    LLVMMetadataArray = ["llvm.someattr", 4 : index]
+  }
+  // CHECK: kgen.param.declare Fn: <index, index>(index, index) capturing -> index = <@raiseClosure_Fn<Jefffffffffff, C, ?, ?>>
+  // CHECK: kgen.param.declare BoundFn: <index>(index, index) capturing -> index = <bind_params(:<index, index>(index, index) capturing -> index Fn, ?, 1)>
+  kgen.param.declare BoundFn: <index>(index, index) capturing -> index = <bind_params(:<index, index>(index, index) capturing -> index Fn, ?, 1)>
+  // CHECK: kgen.call @call_region_2_args<:<index>(index, index) capturing -> index BoundFn>() : () -> index
+  %0 = kgen.call @call_region_2_args<:<index>(index, index) capturing -> index BoundFn>() : () -> index
   kgen.return %0 : index
 }
 

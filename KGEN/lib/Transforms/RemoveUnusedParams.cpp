@@ -529,6 +529,18 @@ void RemoveUnusedParams::runOnOperation() {
     newFunc.setSymName((Twine(newFunc.getSymName()) + "_REMOVED_ARG").str());
     symTab.insert(newFunc);
 
+    // Update LLVM per-arg metadata.
+    if (ArrayRef<Attribute> oldLLVMArgMetadata =
+            newFunc.getLLVMArgMetadataArray().getValue();
+        !oldLLVMArgMetadata.empty()) {
+      SmallVector<Attribute> llvmArgMetadata;
+      for (unsigned i = 0, e = oldLLVMArgMetadata.size(); i < e; ++i)
+        if (!unusedArgs[i])
+          llvmArgMetadata.emplace_back(oldLLVMArgMetadata[i]);
+      newFunc.setLLVMArgMetadataArrayAttr(
+          mlir::ArrayAttr::get(ctx, llvmArgMetadata));
+    }
+
     // The DISubroutineType of the function may reference unused parameters.
     // This just means this function has a shared implementation across all
     // possible instantiations of this parameter. Concretize unused parameters

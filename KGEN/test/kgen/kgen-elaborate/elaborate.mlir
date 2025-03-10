@@ -1416,15 +1416,22 @@ kgen.generator @elaborate() {
 // -----
 
 // CHECK-LABEL: kgen.func @"metadata,x=16,y=16,z=8"
+// CHECK-SAME: LLVMArgMetadata = [{}, {nvvm.maxntid = #pop.array<16, 16, 8>
 // CHECK-SAME: LLVMMetadata = {nvvm.maxntid = #pop.array<16, 16, 8>
-kgen.generator @metadata<x: i32, y: i32, z: i32>() attributes {LLVMMetadataArray = [
-  "nvvm.maxntid",  #pop.array<x, y, z> : !pop.array<3, i32>
-]}{
+kgen.generator @metadata<x: i32, y: i32, z: i32>(%a: i32, %b: i32) attributes {
+  LLVMArgMetadataArray = [
+    [],
+    ["nvvm.maxntid",  #pop.array<x, y, z> : !pop.array<3, i32>]
+  ],
+  LLVMMetadataArray = [
+    "nvvm.maxntid",  #pop.array<x, y, z> : !pop.array<3, i32>
+  ]
+}{
   kgen.return
 }
 
-kgen.generator @kernel() {
-  kgen.call @metadata<:i32 16, :i32 16, :i32 8>() : () -> ()
+kgen.generator @kernel(%a: i32, %b: i32) {
+  kgen.call @metadata<:i32 16, :i32 16, :i32 8>(%a, %b) : (i32, i32) -> ()
   kgen.return
 }
 
