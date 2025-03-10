@@ -20,7 +20,8 @@ from enum import Enum
 import numpy as np
 from max.dtype import DType
 from max.graph import Dim, TensorType, TensorValue, TensorValueLike, ops
-from max.graph.quantization import QuantizationConfig
+from max.graph.ops.quantized import repack_gguf_quantized_weights
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
@@ -116,6 +117,97 @@ def fused_qkv_ragged_matmul(
     return ops.inplace_custom(
         op_name,
         values=[input, input_row_offsets, wqkv, kv_collection, layer_idx],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def unfused_qkv_ragged_matmul_gguf_quantized(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    n_heads: int,
+    q_weight: TensorValue,
+    k_weight: TensorValue,
+    v_weight: TensorValue,
+    quantization_encoding_q: QuantizationEncoding,
+    quantization_encoding_k: QuantizationEncoding,
+    quantization_encoding_v: QuantizationEncoding,
+    kv_collection: ContinuousBatchingKVCacheCollection | PagedKVCacheCollection,
+    layer_idx: TensorValue,
+) -> TensorValue:
+    """Computes fused query, key, and value projections with ragged input and
+    quantized weight matrices. A `quantization_config` must be provided.
+
+    `input` and `input_row_offsets` are used together to implement the ragged
+    tensor.
+    `input_row_offsets` indicates where each batch starts and ends in `input`
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+
+    input_rank_expected = 2
+    if input.rank != input_rank_expected:
+        msg = f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        raise ValueError(msg)
+
+    if input.dtype != DType.float32:
+        msg = f"expected input to have dtype float32, was {input.dtype}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = (
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy not in {
+        KVCacheStrategy.CONTINUOUS,
+    }:
+        msg = f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    if (
+        not quantization_encoding_q.is_gguf
+        or not quantization_encoding_k.is_gguf
+        or not quantization_encoding_v.is_gguf
+    ):
+        raise ValueError(
+            f"expected quantization_encoding_q, quantization_encoding_k, and quantization_encoding_v to be gguf, was {quantization_encoding_q}, {quantization_encoding_k}, and {quantization_encoding_v}"
+        )
+
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "quantization_encoding_q": quantization_encoding_q.name,
+        "quantization_encoding_k": quantization_encoding_k.name,
+        "quantization_encoding_v": quantization_encoding_v.name,
+    }
+
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    return ops.inplace_custom(
+        name=f"mo.unfused_qkv_matmul.ragged.{cache_strategy_str}.gguf_quantized",
+        values=[
+            input,
+            input_row_offsets,
+            repack_gguf_quantized_weights(q_weight, quantization_encoding_q),
+            repack_gguf_quantized_weights(k_weight, quantization_encoding_k),
+            repack_gguf_quantized_weights(v_weight, quantization_encoding_v),
+            kv_collection,
+            layer_idx,
+        ],
         out_types=[
             TensorType(
                 dtype=input.dtype,

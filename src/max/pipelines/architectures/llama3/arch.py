@@ -41,7 +41,10 @@ llama_arch = SupportedArchitecture(
             KVCacheStrategy.PAGED,
         ],
         SupportedEncoding.q4_k: [KVCacheStrategy.NAIVE],
-        SupportedEncoding.q4_0: [KVCacheStrategy.NAIVE],
+        SupportedEncoding.q4_0: [
+            KVCacheStrategy.NAIVE,
+            KVCacheStrategy.CONTINUOUS,
+        ],
         SupportedEncoding.q6_k: [KVCacheStrategy.NAIVE],
         SupportedEncoding.float32: [
             KVCacheStrategy.PAGED,

@@ -460,7 +460,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
 
             nn_model = DistributedLlama3(model_config)
-            nn_model.load_state_dict(state_dict)
+
+            # Load weights. We allow the weight types to be overriden due to
+            # multiple quantization encodings in GGUF checkpoints.
+            nn_model.load_state_dict(
+                state_dict, override_quantization_encoding=True
+            )
             self.state_dict = nn_model.state_dict()
             with Graph(
                 getattr(self.huggingface_config, "model_type", "llama3"),
@@ -495,7 +500,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 return graph
         else:
             nn_model = Llama3(model_config)
-            nn_model.load_state_dict(state_dict)
+
+            # Load weights. We allow the weight types to be overriden due to
+            # multiple quantization encodings in GGUF checkpoints.
+            nn_model.load_state_dict(
+                state_dict, override_quantization_encoding=True
+            )
             self.state_dict = nn_model.state_dict()
             with Graph(
                 "llama3",
@@ -554,7 +564,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         nn_model = NaiveLlama3(model_config)
 
         # Load weights. We allow the weight types to be overriden due to
-        # multiple quantization enodings in GGUF checkpoints.
+        # multiple quantization encodings in GGUF checkpoints.
         nn_model.load_state_dict(
             state_dict, override_quantization_encoding=True
         )

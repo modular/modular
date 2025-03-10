@@ -19,13 +19,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional, Union
 
 from max.dtype import DType
-from max.graph import (
-    BufferValue,
-    DeviceRef,
-    TensorValue,
-    Weight,
-    ops,
-)
+from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
@@ -41,6 +35,7 @@ from ..kernels import (
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     fused_qkv_ragged_matmul_quantized,
+    unfused_qkv_ragged_matmul_gguf_quantized,
 )
 from ..layer import LayerV2
 from ..linear import LinearV2
@@ -338,6 +333,193 @@ class AttentionWithRopeV2(LayerV2):
 
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
 
+        return self.o_proj(attn_out)
+
+
+class GGUFQAttentionWithRope(AttentionWithRopeV2):
+    """Implementation of attention with GGUF quantized weights."""
+
+    # This class will not use the RotaryEmbedding to
+    # calculate rope, but it already includes a freqs_cis
+    # calculation, which we will borrow
+    rope: OptimizedRotaryEmbedding
+
+    def __init__(
+        self,
+        *,
+        rope: OptimizedRotaryEmbedding,
+        num_attention_heads: int,
+        num_key_value_heads: int,
+        hidden_size: int,
+        kv_params: KVCacheParams,
+        layer_idx: int,
+        dtype: DType,
+        quantization_encoding: QuantizationEncoding,
+        devices: list[DeviceRef] | None = None,
+        linear_cls: Callable[..., LinearV2] = LinearV2,
+        scale: float | None = None,
+        has_bias: bool = False,
+        clip_qkv: float | None = None,
+    ):
+        """Initializes the attention layer.
+
+        Args:
+            rope: The rope layer to borrow the freq_cis value from.
+            num_attention_heads: The number of attention heads.
+            num_key_value_heads: Number of key/value heads.
+            hidden_size: The dimension of the hidden states.
+            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            layer_idx: The layer number associated with this Attention block.
+            dtype: DType of the weights, should always be uint8.
+            devices: Device to place the weights and run the computation. If
+                multiple are provided, the first device is used. Use
+                `DistributedAttentionWithRope` to use all devices during
+                attention computation.
+            quantization_encoding: Quantization encoding of the weights.
+            linear_cls: Linear class to use for the outputs dense layer.
+            scale: Value used to scale the results of the attention output.
+            has_bias: Whether to use an attention bias.
+            clip_qkv: If provided, the QKV weights are clamped between
+                `[-clip_qkv, clip_qkv]`
+        """
+        # Skip AttentionWithRopeV2.__init__ because the weights are created
+        # differently.
+        LayerV2.__init__(self)
+
+        if dtype != DType.uint8:
+            raise ValueError(
+                f"GGUFQAttentionWithRope only supports uint8 dtype weights but got {dtype}"
+            )
+
+        if clip_qkv is not None:
+            raise ValueError(
+                "clip_qkv is not supported for GGUFQAttentionWithRope"
+            )
+
+        if has_bias:
+            raise ValueError("GGUFQAttentionWithRope does not support bias")
+
+        if not quantization_encoding.is_gguf:
+            raise ValueError(
+                f"Only GGUF quantization encoding is supported for GGUFQAttentionWithRope. Found: {quantization_encoding}"
+            )
+
+        if not kv_params.cache_strategy.uses_opaque():
+            raise ValueError(
+                f"{self.kv_params.cache_strategy} cache strategy, not supported"
+                " in Attention layer."
+            )
+
+        self.quantization_encoding = quantization_encoding
+        self.rope = rope
+        self.n_heads = num_attention_heads
+        self.layer_idx = layer_idx
+        self.kv_params = kv_params
+        self.num_key_value_heads = num_key_value_heads
+        self.hidden_size = hidden_size
+        self.scale = (
+            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+        )
+        self.devices = devices
+
+        self.q_proj = Weight(
+            name="q_proj.weight",
+            dtype=DType.uint8,
+            shape=(1, 1),  # Shape will be overridden at load_state_dict.
+            quantization_encoding=quantization_encoding,
+        )
+
+        self.k_proj = Weight(
+            name="k_proj.weight",
+            dtype=DType.uint8,
+            shape=(1, 1),  # Shape will be overridden at load_state_dict.
+            quantization_encoding=quantization_encoding,
+        )
+        self.v_proj = Weight(
+            name="v_proj.weight",
+            dtype=DType.uint8,
+            shape=(1, 1),  # Shape will be overridden at load_state_dict.
+            quantization_encoding=quantization_encoding,
+        )
+
+        self.o_proj = linear_cls(
+            in_dim=1,  # Shape will be overridden at load_state_dict.
+            out_dim=1,  # Shape will be overridden at load_state_dict.
+            dtype=DType.uint8,
+            quantization_encoding=quantization_encoding,  # Shape will be overridden at load_state_dict.
+        )
+
+    @property
+    def wqkv(self) -> TensorValue:
+        raise NotImplementedError(
+            "wqkv is not implemented for unfused GGUFQAttentionWithRope"
+        )
+
+    @property
+    def wqkv_bias(self) -> TensorValue | None:
+        raise NotImplementedError(
+            "wqkv_bias is not implemented for unfused GGUFQAttentionWithRope"
+        )
+
+    def __call__(
+        self,
+        x: TensorValue,
+        kv_collection: Union[
+            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
+        ],
+        **kwargs,
+    ) -> TensorValue:
+        # Get attributes from input.
+        total_seq_len = x.shape[0]
+
+        assert self.q_proj.quantization_encoding is not None
+        assert self.k_proj.quantization_encoding is not None
+        assert self.v_proj.quantization_encoding is not None
+
+        layer_idx = ops.constant(self.layer_idx, DType.uint32)
+
+        # Call into unfused qkv ragged matmul.
+        xq = unfused_qkv_ragged_matmul_gguf_quantized(
+            self.kv_params,
+            input=x,
+            input_row_offsets=kwargs["input_row_offsets"],
+            n_heads=self.n_heads,
+            q_weight=self.q_proj,
+            k_weight=self.k_proj,
+            v_weight=self.v_proj,
+            quantization_encoding_q=self.q_proj.quantization_encoding,
+            quantization_encoding_k=self.k_proj.quantization_encoding,
+            quantization_encoding_v=self.v_proj.quantization_encoding,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+        )
+
+        # Apply rope.
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
+        freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+
+        xq = fused_qk_ragged_rope(
+            self.kv_params,
+            xq,
+            kwargs["input_row_offsets"],
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved=self.rope.interleaved,
+        )
+
+        # Calculate Flash Attention.
+        attn_out = flash_attention_ragged(
+            self.kv_params,
+            input=xq,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            input_row_offsets=kwargs["input_row_offsets"],
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=self.scale,
+        )
+
+        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         return self.o_proj(attn_out)
 
 

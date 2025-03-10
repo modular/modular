@@ -28,6 +28,7 @@ from max.pipelines.nn import (
     MLPV2,
     AttentionWithRopeV2,
     EmbeddingV2,
+    GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     GPTQLinearV2,
     LayerV2,
@@ -79,10 +80,17 @@ class Llama3(Transformer):
             linear_cls = LinearV2
         mlp_cls = StackedMLP if config.stacked_mlp else MLPV2
         attention_cls: Callable[..., AttentionWithRopeV2]
-        if config.quantization_config:
+        if config.quantization_encoding == QuantizationEncoding.GPTQ:
+            assert config.quantization_config is not None
             attention_cls = functools.partial(
                 GPTQAttentionWithRope,
                 quantization_config=config.quantization_config,
+                scale=config.attention_multiplier,
+            )
+        elif config.quantization_encoding is not None:
+            attention_cls = functools.partial(
+                GGUFQAttentionWithRope,
+                quantization_encoding=config.quantization_encoding,
                 scale=config.attention_multiplier,
             )
         else:

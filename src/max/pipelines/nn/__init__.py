@@ -22,6 +22,7 @@ from .attention import (
     AttentionWithRopeV2,
     DistributedAttentionImpl,
     DistributedAttentionWithRope,
+    GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     NaiveAttentionWithRope,
 )
@@ -69,6 +70,7 @@ __all__ = [
     "DistributedTransformerBlock",
     "Embedding",
     "EmbeddingV2",
+    "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinearV2",
     "Layer",
