@@ -542,41 +542,31 @@ extractIOSpecSubFields(LIT::StructType structType) {
 
 static std::optional<IOSpec> maybeGetIOSpec(TypedAttr readAttr,
                                             TypedAttr writeAttr, Location loc,
-                                            StringRef argName) {
-  auto processRead = [&]() -> std::optional<bool> {
-    auto readStruct = dyn_cast<LIT::LITStructAttr>(readAttr);
-    if (!readStruct) {
-      emitError(loc, "Error for argument '" + argName +
-                         "': 'read' inferred parameter must be set");
+                                            StringRef argName,
+                                            bool isShapeFunc) {
+  auto processAttribute =
+      [&](TypedAttr attr,
+          llvm::StringLiteral paramName) -> std::optional<bool> {
+    auto structAttr = dyn_cast<LIT::LITStructAttr>(attr);
+    if (!structAttr) {
+      if (!isShapeFunc) {
+        emitError(loc, "Error for argument '" + argName + "': '" +
+                           paramName.str() +
+                           "' inferred parameter must be set");
+      }
       return std::nullopt;
     }
 
-    auto [_, readValueAttr] = readStruct.getValues().front();
-    auto readIntAttr = dyn_cast<IntegerAttr>(readValueAttr);
-    ASSERT_STREAM(readIntAttr,
-                  << "Error for argument '" << argName
-                  << "': Expected integer attribute for read parameter value");
-    return readIntAttr.getValue().getBoolValue();
+    auto [_, valueAttr] = structAttr.getValues().front();
+    auto intAttr = dyn_cast<IntegerAttr>(valueAttr);
+    ASSERT_STREAM(intAttr, << "Error for argument '" << argName
+                           << "': Expected integer attribute for "
+                           << paramName.str() << " parameter value");
+    return intAttr.getValue().getBoolValue();
   };
 
-  auto processWrite = [&]() -> std::optional<bool> {
-    auto writeStruct = dyn_cast<LIT::LITStructAttr>(writeAttr);
-    if (!writeStruct) {
-      emitError(loc, "Error for argument '" + argName +
-                         "': 'write' inferred parameter must be set");
-      return std::nullopt;
-    }
-
-    auto [_, writeValueAttr] = writeStruct.getValues().front();
-    auto writeIntAttr = dyn_cast<IntegerAttr>(writeValueAttr);
-    ASSERT_STREAM(writeIntAttr,
-                  << "Error for argument '" << argName
-                  << "': Expected integer attribute for write parameter value");
-    return writeIntAttr.getValue().getBoolValue();
-  };
-
-  auto readValue = processRead();
-  auto writeValue = processWrite();
+  auto readValue = processAttribute(readAttr, kParameterRead);
+  auto writeValue = processAttribute(writeAttr, kParameterWrite);
 
   if (!readValue || !writeValue) {
     return std::nullopt;
@@ -601,7 +591,7 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr readAttr,
 }
 
 static std::optional<SmallVector<std::pair<size_t, IOSpec>>>
-processIOSpecs(LIT::FnOp func) {
+processIOSpecs(LIT::FnOp func, bool isShapeFunc = false) {
   SmallVector<std::pair<size_t, IOSpec>> specs;
 
   bool error = false;
@@ -622,9 +612,19 @@ processIOSpecs(LIT::FnOp func) {
 
     auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
     auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
-    auto ioSpec = maybeGetIOSpec(read, write, loc, argName);
+    auto ioSpec = maybeGetIOSpec(read, write, loc, argName, isShapeFunc);
 
-    if (!ioSpec) {
+    auto hasIOSpec = ioSpec.has_value();
+
+    if (isShapeFunc && (!hasIOSpec || *ioSpec != IOSpec::InputTensor)) {
+      emitError(loc, "Error for argument '" + argName.strref() +
+                         "': Tensor arguments to shape functions must be "
+                         "'InputTensor'");
+      error = true;
+      continue;
+    }
+
+    if (!hasIOSpec) {
       error = true;
       continue;
     }
@@ -657,44 +657,6 @@ processIOSpecs(LIT::FnOp func) {
   return specs;
 }
 
-static LogicalResult enforceUnspecializedIOParams(LIT::FnOp func) {
-  for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
-    auto structType = getAsDeclRefOrNull(argType);
-
-    if (!structType)
-      continue;
-
-    // Lists are only used for mo.concat_from_list atm and autoparameteriation
-    // currently fails on them so they need to have mut/input specialized. We
-    // don't want errors emitted in this case so just skip them.
-    //
-    // TODO(GEX-1882): Hammer out the paramterization story for list types.
-    if (symbolMatches(structType.getSymbol(), kMaxList))
-      continue;
-
-    auto [mutRaw, inputRaw] = extractIOSpecSubFields(structType);
-
-    if (!mutRaw && !inputRaw)
-      continue;
-
-    auto mut = isa<KGEN::ParamDeclRefAttr>(mutRaw);
-    auto input = isa<KGEN::ParamDeclRefAttr>(inputRaw);
-
-    if (!mut || !input) {
-      auto argName = func.getFuncTypeGenerator().getArgName(argIdx);
-      auto loc = func.getBodyRegion().getArgument(argIdx).getLoc();
-
-      emitError(loc)
-          << "'read' and/or 'write' of the io_spec parameter were"
-          << " specialized in argument " << argName
-          << " this is not necessary for shape functions and will be ignored.";
-
-      return failure();
-    }
-  }
-  return success();
-}
-
 // Run standard checks and mutations on a function. emits an
 // error and returns false if an issue was present.
 //
@@ -713,9 +675,11 @@ LogicalResult processStructFuncCommon(
   }
 
   if (annotation == kMOGGShapeFunctionLabel) {
-    if (failed(enforceUnspecializedIOParams(func)))
+    auto result = processIOSpecs(func, /*isShapeFunc=*/true);
+    if (!result.has_value())
       return failure();
   }
+
   func->setAttr(builder.getStringAttr(annotation),
                 registrationInfo.registrationName);
   func.setExported();
