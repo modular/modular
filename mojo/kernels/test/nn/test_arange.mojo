@@ -31,24 +31,10 @@ def print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):
 # slice_dim
 def test_arange[
     dtype: DType,
-](start: Int, stop: Int, step: Int):
-    var memory1 = InlineArray[Scalar[dtype], 1](uninitialized=True)
-    var start_tensor = NDBuffer[dtype, 1](memory1.unsafe_ptr(), IndexList[1](1))
-    start_tensor[0] = start
-
-    var memory2 = InlineArray[Scalar[dtype], 1](uninitialized=True)
-    var stop_tensor = NDBuffer[dtype, 1](memory2.unsafe_ptr(), IndexList[1](1))
-    stop_tensor[0] = stop
-
-    var memory3 = InlineArray[Scalar[dtype], 1](uninitialized=True)
-    var step_tensor = NDBuffer[dtype, 1](memory3.unsafe_ptr(), IndexList[1](1))
-    step_tensor[0] = step
-
+](start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]):
     var outshape = IndexList[1]()
     try:
-        outshape = arange_shape[dtype, True](
-            start_tensor, stop_tensor, step_tensor
-        )
+        outshape = arange_shape[dtype, True](start, stop, step)
     except e:
         print(e)
     print("Expected output shape: ")
@@ -66,13 +52,11 @@ def test_arange[
     var out_tensor = NDBuffer[dtype, 1](memory4.unsafe_ptr(), outshape)
 
     @always_inline
-    @__copy_capture(out_tensor, step_tensor, start_tensor, stop_tensor)
+    @__copy_capture(out_tensor, step, start, stop)
     @parameter
     fn arange_lambda[simd_width: Int, rank: Int](idx: IndexList[rank]):
         var index = rebind[IndexList[1]](idx)
-        var range_val = arange[dtype, simd_width](
-            start_tensor, stop_tensor, step_tensor, index
-        )
+        var range_val = arange[dtype, simd_width](start, stop, step, index)
         out_tensor.store[width=simd_width](index, range_val)
 
     elementwise[arange_lambda, 1](

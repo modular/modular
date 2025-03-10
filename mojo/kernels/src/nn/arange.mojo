@@ -21,12 +21,12 @@ from utils.index import IndexList
 fn arange[
     type: DType, simd_width: Int
 ](
-    start_buf: NDBuffer[type, 1],
-    stop_buf: NDBuffer[type, 1],
-    step_buf: NDBuffer[type, 1],
+    start: Scalar[type],
+    stop: Scalar[type],
+    step: Scalar[type],
     index: IndexList[1],
 ) -> SIMD[type, simd_width]:
-    return start_buf[0] + (iota[type, simd_width](index[0]) * step_buf[0])
+    return start + (iota[type, simd_width](index[0]) * step)
 
 
 @always_inline
@@ -34,13 +34,10 @@ fn arange_shape[
     type: DType,
     single_thread_blocking_override: Bool,
 ](
-    start_buf: NDBuffer[type, 1],
-    stop_buf: NDBuffer[type, 1],
-    step_buf: NDBuffer[type, 1],
+    start: Scalar[type],
+    stop: Scalar[type],
+    step: Scalar[type],
 ) raises -> IndexList[1]:
-    var start: Scalar[type] = start_buf[0]
-    var stop: Scalar[type] = stop_buf[0]
-    var step: Scalar[type] = step_buf[0]
     if step == 0:
         raise Error("[range] step must be non-zero")
 
