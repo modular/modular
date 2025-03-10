@@ -23,7 +23,12 @@ from collections.string import StringSlice
 
 from collections import List, Optional
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from collections.string._utf8_validation import _is_valid_utf8
+from collections.string._utf8 import (
+    _is_valid_utf8,
+    _count_utf8_continuation_bytes,
+    _utf8_first_byte_sequence_length,
+    _utf8_byte_type,
+)
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -2243,88 +2248,6 @@ fn _memmem_impl[
             return haystack + i
 
     return UnsafePointer[Scalar[type]]()
-
-
-@always_inline
-fn _is_utf8_continuation_byte[
-    w: Int
-](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
-    return vec.cast[DType.int8]() < -(0b1000_0000 >> 1)
-
-
-fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
-    alias sizes = (256, 128, 64, 32, 16, 8)
-    var ptr = str_slice.unsafe_ptr()
-    var num_bytes = str_slice.byte_length()
-    var amnt: Int = 0
-    var processed = 0
-
-    @parameter
-    for i in range(len(sizes)):
-        alias s = sizes[i]
-
-        @parameter
-        if simdwidthof[DType.uint8]() >= s:
-            var rest = num_bytes - processed
-            for _ in range(rest // s):
-                var vec = (ptr + processed).load[width=s]()
-                var comp = _is_utf8_continuation_byte(vec)
-                amnt += Int(comp.cast[DType.uint8]().reduce_add())
-                processed += s
-
-    for i in range(num_bytes - processed):
-        amnt += Int(_is_utf8_continuation_byte(ptr[processed + i]))
-
-    return amnt
-
-
-@always_inline
-fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
-    """Get the length of the sequence starting with given byte. Do note that
-    this does not work correctly if given a continuation byte."""
-
-    debug_assert(
-        not _is_utf8_continuation_byte(b),
-        "Function does not work correctly if given a continuation byte.",
-    )
-
-    if is_compile_time():
-        var amnt_bytes = (
-            __type_of(b)(b > 0b1000_0000)
-            + __type_of(b)(b > 0b1110_0000)
-            + __type_of(b)(b > 0b1111_0000)
-        )
-        return Int(1 + amnt_bytes)
-    else:
-        return Int(
-            count_leading_zeros(~b) | (b < 0b1000_0000).cast[DType.uint8]()
-        )
-
-
-fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
-    """UTF-8 byte type.
-
-    Returns:
-        The byte type.
-
-    Notes:
-
-        - 0 -> ASCII byte.
-        - 1 -> continuation byte.
-        - 2 -> start of 2 byte long sequence.
-        - 3 -> start of 3 byte long sequence.
-        - 4 -> start of 4 byte long sequence.
-    """
-
-    if is_compile_time():
-        return 4 - (
-            __type_of(b)(b < 0b1000_0000)
-            + __type_of(b)(b < 0b1100_0000)
-            + __type_of(b)(b < 0b1110_0000)
-            + __type_of(b)(b < 0b1111_0000)
-        )
-    else:
-        return count_leading_zeros(~b)
 
 
 @always_inline
