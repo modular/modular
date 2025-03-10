@@ -14,7 +14,6 @@ from max.driver import DeviceSpec
 from max.pipelines.config import (
     PipelineConfig,
     SupportedEncoding,
-    WeightsFormat,
 )
 
 
@@ -48,37 +47,7 @@ def test_config_init__reformats_with_str_weights_path():
     assert isinstance(config.weight_path[0], Path)
 
 
-def test_config_weights_format__raises_with_no_weights_path():
-    config = PipelineConfig(model_path="modularai/llama-3.1", weight_path=[])
-
-    with pytest.raises(ValueError):
-        config.weights_format
-
-
-def test_config_weights_format__raises_with_bad_weights_path():
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-        weight_path=[Path("this_is_a_random_weight_path_without_extension")],
-    )
-
-    with pytest.raises(ValueError):
-        config.weights_format
-
-
-def test_config_weights_format__raises_with_conflicting_weights_path():
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-        weight_path=[
-            Path("this_is_a_random_weight_path_without_extension"),
-            Path("this_is_a_gguf_file.gguf"),
-        ],
-    )
-
-    with pytest.raises(ValueError):
-        config.weights_format
-
-
-def test_config_weights_format__raises_with_unsupported_GPTQ_format():
+def test_config__raises_with_unsupported_GPTQ_format():
     # this should work
     config = PipelineConfig(
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
@@ -93,21 +62,6 @@ def test_config_weights_format__raises_with_unsupported_GPTQ_format():
             quantization_encoding="gptq",
         )
         unsupported_config.finalize_encoding_config()
-
-
-def test_config_weights_format__correct_weights_format():
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-        weight_path=[Path("model_a.gguf")],
-    )
-
-    assert config.weights_format == WeightsFormat.gguf
-
-    config.weight_path = [
-        Path("model_b.safetensors"),
-        Path("model_c.safetensors"),
-    ]
-    assert config.weights_format == WeightsFormat.safetensors
 
 
 def test_validate_model_path__correct_repo_id_provided():

@@ -17,6 +17,7 @@ from max.driver import Device, DeviceSpec, Tensor, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
+from max.graph.weights import WeightsFormat
 from max.pipelines import (
     PIPELINE_REGISTRY,
     ModelInputs,
@@ -28,7 +29,6 @@ from max.pipelines import (
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
-    WeightsFormat,
     upper_bounded_default,
 )
 from max.pipelines.context import InputContext
