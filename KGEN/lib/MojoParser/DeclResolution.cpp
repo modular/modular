@@ -411,7 +411,9 @@ struct FnSigDecorators : public SharedStateUser {
   }
 
   /// Apply a function signature decorator.
-  LogicalResult apply(ExprNode *decorator);
+  LogicalResult applyOne(ExprNode *decorator);
+  /// Finalize application of all signature decorators.
+  void finalize();
 
   static LogicalResult checkAlwaysInlineBuiltin(FnOp funcBody,
                                                 SharedState &shared);
@@ -421,13 +423,25 @@ private:
   void applyImplicitDecorator(const DeclRefNode &node);
   void applyCopyOrMoveCapture(const CallNode &node, bool isMove,
                               StringRef decorator);
+
+  ArrayAttr getLLVMMetadataArray(ArrayRef<Operand> operands);
   void applyLLVMMetadata(const CallNode &node);
+
+  /// Register an LLVM arg metadata in the internal list to avoid churning mlir
+  /// attributes as these arg metadata decorators are parsed. Must call finalize
+  /// to actually apply metadata onto the function.
+  void registerLLVMArgMetadata(const CallNode &node);
 
   ASTDecl &decl;
   ASTDecl &sigDecl;
   FnOp funcOp;
   StringRef baseName;
   TypeCheckedFnSignature &tcSignature;
+
+  /// The working list of LLVMArgMetadata. Either empty, or initialized to a
+  /// list with the same length as the total number of function arguments on
+  /// first use.
+  SmallVector<Attribute> llvmArgMetadata;
 };
 } // namespace
 
@@ -460,7 +474,7 @@ LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp fnOp,
   return failure();
 }
 
-LogicalResult FnSigDecorators::apply(ExprNode *decorator) {
+LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
   // Process all the decorators we know about.
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "export")
@@ -502,6 +516,8 @@ LogicalResult FnSigDecorators::apply(ExprNode *decorator) {
         applyCopyOrMoveCapture(*callNode, /*isMove=*/false, declRef->spelling);
       else if (declRef->spelling == "__llvm_metadata")
         applyLLVMMetadata(*callNode);
+      else if (declRef->spelling == "__llvm_arg_metadata")
+        registerLLVMArgMetadata(*callNode);
       else
         return failure();
       return success();
@@ -668,7 +684,7 @@ void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
 /// not an alias.
 static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
                                                            ASTDecl &funcDecl,
-                                                           Operand value) {
+                                                           StringAttr name) {
   ASTDecl *parent = &funcDecl;
   // Analyze all parent scopes of the function in order to find closed
   // declaration with the value.name. Fully resolve that declaration if needed.
@@ -677,7 +693,7 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
     if (!parent)
       return {};
 
-    ArrayRef<ASTDecl *> nameDecls = parent->lookupInCurrentScope(value.name);
+    ArrayRef<ASTDecl *> nameDecls = parent->lookupInCurrentScope(name);
     // Not interesting scope. Keep looking up for the declaration with
     // value.name.
     if (nameDecls.empty())
@@ -687,7 +703,7 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
       if (failed(shared.getDeclResolver().resolveFully(*nameDecls.back(),
                                                        funcDecl.getLoc()))) {
         shared.emitError(funcDecl.getLoc(), "cannot resolve alias '")
-            << value.name << "' used in '@__llvm_metadata'";
+            << name << "' used in '@__llvm_metadata'";
         return {};
       }
     }
@@ -695,32 +711,110 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
       return aliasOp;
 
     shared.emitError(funcDecl.getLoc(), "name '")
-        << value.name << "' cannot be used in '@__llvm_metadata'";
+        << name << "' cannot be used in '@__llvm_metadata'";
     return {};
   } while (!isa<FileModuleOp>(parent));
   return {};
 }
 
-void FnSigDecorators::applyLLVMMetadata(const CallNode &node) {
-  SmallVector<Attribute> metadata;
+ArrayAttr FnSigDecorators::getLLVMMetadataArray(ArrayRef<Operand> operands) {
   ExprEmitter emitter(sigDecl, EC_Decorator);
-  for (Operand value : node.operands) {
-    if (!value.name) {
-      emitError(value.getLoc(), "LLVM metadata requires a name");
-      continue;
+  SmallVector<Attribute> metadata;
+  for (Operand value : operands) {
+    StringAttr metadataName;
+    ExprNode *metadataValue;
+    // Handle the case of only a metadata name, with no value associated.
+    if (value.passKind == Operand::PassKind::kPositional) {
+      auto declRef = dyn_cast<DeclRefNode>(value.expr);
+      if (!declRef) {
+        emitError(value.getLoc(), "Expected LLVM metadata name");
+        continue;
+      }
+      metadataName = StringAttr::get(getContext(), declRef->spelling);
+      metadataValue = nullptr;
+    } else {
+      if (!value.name) {
+        emitError(value.getLoc(), "LLVM metadata requires a name");
+        continue;
+      }
+      metadataName = value.name;
+      metadataValue = value.expr;
     }
+
     // It might be possible that name comes from alias, therefore need to
     // analyze all module's aliases to see if alias's value needs to be used.
     if (std::optional<AliasDeclOp> aliasOp =
-            getLLVMMetadataNameAlias(shared, sigDecl, value))
+            getLLVMMetadataNameAlias(shared, sigDecl, metadataName))
       metadata.push_back(*aliasOp->getValue());
     else
-      metadata.push_back(value.name);
+      metadata.push_back(metadataName);
 
-    if (PValue attr = emitter.emitExprPValue(value.expr, EC_Decorator))
-      metadata.push_back(attr);
+    if (metadataValue) {
+      if (PValue attr = emitter.emitExprPValue(value.expr, EC_Decorator))
+        metadata.push_back(attr);
+    } else {
+      // Store unit attr as value.
+      metadata.push_back(UnitAttr::get(getContext()));
+    }
   }
-  funcOp.setLLVMMetadataArrayAttr(ArrayAttr::get(getContext(), metadata));
+  return ArrayAttr::get(getContext(), metadata);
+}
+
+void FnSigDecorators::applyLLVMMetadata(const CallNode &node) {
+  // Ignore empty metadata list.
+  if (node.operands.empty())
+    return;
+  funcOp.setLLVMMetadataArrayAttr(getLLVMMetadataArray(node.operands));
+}
+
+void FnSigDecorators::registerLLVMArgMetadata(const CallNode &node) {
+  if (node.operands.empty()) {
+    emitError(node.getLoc(), "LLVM arg metadata requires an argument name");
+    return;
+  }
+
+  Operand targetArg = node.operands[0];
+  auto declRef = dyn_cast<DeclRefNode>(targetArg.expr);
+  // We expect the first operand to be "positional", i.e. it should just be a
+  // standalone name.
+  if (targetArg.passKind != Operand::PassKind::kPositional || !declRef) {
+    emitError(targetArg.getLoc(),
+              "First argument of LLVM arg metadata must be an argument name");
+    return;
+  }
+
+  // Ignore empty metadata list.
+  if (node.operands.size() == 1)
+    return;
+
+  // Find argument number corresponding to this arg name.
+  int64_t argIdx = -1;
+  for (auto [index, arg] : llvm::enumerate(tcSignature.argList.parsedArgs)) {
+    if (arg.name.getValue() == declRef->spelling) {
+      argIdx = index;
+      break;
+    }
+  }
+
+  if (argIdx < 0) {
+    emitError(targetArg.getLoc(), "No argument named ") << declRef->spelling;
+    return;
+  }
+
+  // First time setting arg metadata, initialize with array of empty attributes.
+  if (llvmArgMetadata.empty())
+    llvmArgMetadata.insert(llvmArgMetadata.begin(),
+                           tcSignature.argList.parsedArgs.size(),
+                           ArrayAttr::get(getContext(), {}));
+
+  llvmArgMetadata[argIdx] = getLLVMMetadataArray(node.operands.drop_front());
+}
+
+void FnSigDecorators::finalize() {
+  if (llvmArgMetadata.empty())
+    return;
+  funcOp.setLLVMArgMetadataArrayAttr(
+      ArrayAttr::get(getContext(), llvmArgMetadata));
 }
 
 static void processFunctionConformances(FnOp func, SharedState &shared,
@@ -1053,7 +1147,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   FnSigDecorators fnDecorators(decl, sigDecl, shared, baseName, tcSignature);
   Decorators(decl).applySignatureDecorators(
       decoratorExprs,
-      [&](ExprNode *decorator) { return fnDecorators.apply(decorator); });
+      [&](ExprNode *decorator) { return fnDecorators.applyOne(decorator); });
+  fnDecorators.finalize();
 
   // Propagate errors and the parsed decls in the signature.
   decl.takeDecls(sigDecl);

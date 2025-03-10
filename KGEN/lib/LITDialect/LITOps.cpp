@@ -779,6 +779,8 @@ void FnOp::print(OpAsmPrinter &p) {
       (ArrayRef<StringRef>(disallowedAttrNames)));
   if (getLLVMMetadataArray().empty())
     ignoredAttrNames.push_back(getLLVMMetadataArrayAttrName());
+  if (getLLVMArgMetadataArray().empty())
+    ignoredAttrNames.push_back(getLLVMArgMetadataArrayAttrName());
 
   p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs(),
                                      ignoredAttrNames);
@@ -801,6 +803,13 @@ void FnOp::getAsmBlockArgumentNames(
 LogicalResult FnOp::verify() {
   if ((getLLVMMetadataArray().size() & 1) != 0)
     return emitOpError("expected an even number elements in LLVMMetadataArray");
+  if (ArrayAttr argsArray = getLLVMArgMetadataArray();
+      !argsArray.empty() && argsArray.size() != getNumArguments()) {
+    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+                       "arguments, got ")
+           << argsArray.size();
+  }
+
   // Check that the number of argument labels matches the number of argument
   // types.
   if (getFuncTypeGenerator().getBody().getMetadata().getNumArgs() !=
@@ -904,6 +913,8 @@ void FnOp::build(OpBuilder &builder, OperationState &result) {
                       InlineLevelAttr::get(ctx, InlineLevel::Automatic));
   result.addAttribute(getLLVMMetadataArrayAttrName(result.name),
                       ArrayAttr::get(ctx, {}));
+  result.addAttribute(getLLVMArgMetadataArrayAttrName(result.name),
+                      ArrayAttr::get(ctx, {}));
 
   result.addRegion()->push_back(new Block());
 }
@@ -929,7 +940,7 @@ void FnOp::build(OpBuilder &b, OperationState &state, StringAttr declName,
         InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
         FlatSymbolRefAttr(), StringAttr(), b.getStringAttr(sourceName),
         StringAttr(), DocStringAttr(), StringAttr(), ArrayAttr::get(ctx, {}),
-        Attribute());
+        ArrayAttr::get(ctx, {}), Attribute());
   state.regions[0]->push_back(new Block());
 }
 
@@ -949,7 +960,7 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
         StringAttr(), sourceName, StringAttr(), DocStringAttr(), StringAttr(),
-        ArrayAttr::get(ctx, {}), Attribute());
+        ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute());
   result.regions[0]->push_back(new Block());
 }
 

@@ -1112,3 +1112,22 @@ top_level_func_param[a]()
 var y = 7
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
 y += 1
+
+##===----------------------------------------------------------------------===##
+# Decorators
+##===----------------------------------------------------------------------===##
+
+# expected-error @below {{LLVM arg metadata requires an argument name}}
+@__llvm_arg_metadata()
+fn llvm_arg_meta_no_arg[x: Int](a: Int, b: Int):
+    pass
+
+# expected-error @below {{First argument of LLVM arg metadata must be an argument name}}
+@__llvm_arg_metadata(1 + 1)
+fn llvm_arg_meta_wrong_type[x: Int](a: Int, b: Int):
+    pass
+
+# expected-error @below {{No argument named c}}
+@__llvm_arg_metadata(c, myMeta)
+fn llvm_arg_meta_wrong_name[x: Int](a: Int, b: Int):
+    pass
