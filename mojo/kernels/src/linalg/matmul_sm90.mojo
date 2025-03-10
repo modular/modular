@@ -1101,7 +1101,10 @@ fn _is_valid_cluster_shape[
 ](grid_shape: IndexList[2]) -> Bool:
     @parameter
     for i in range(2):
-        if grid_shape[i] % cluster_shape[i] != 0:
+        if (
+            grid_shape[i] < cluster_shape[i]
+            or grid_shape[i] % cluster_shape[i] != 0
+        ):
             return False
 
     return True
@@ -1126,6 +1129,23 @@ fn _get_grid_shape[
         return Index(8, 16)
 
     return adjusted_grid_shape
+
+
+fn _is_valid_grid_shape[
+    grid_shape: IndexList[2], cluster_shape: IndexList[3]
+](num_tiles_n: Int) -> Bool:
+    constrained[
+        grid_shape[0] * grid_shape[1] > H100.sm_count,
+        "Total grid size exceed number of SMs in H100.",
+    ]()
+
+    if not _is_valid_cluster_shape[cluster_shape](grid_shape):
+        return False
+
+    if grid_shape[0] <= num_tiles_n:
+        return num_tiles_n % grid_shape[0] == 0
+
+    return grid_shape[0] % num_tiles_n == 0
 
 
 fn warp_specialize_gemm_with_multicasting[
@@ -1160,6 +1180,23 @@ fn warp_specialize_gemm_with_multicasting[
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
     alias BK = config.block_tile_shape[2]
+
+    @parameter
+    if grid_shape:
+        constrained[
+            _is_valid_grid_shape[grid_shape.value(), config.cluster_shape](
+                N_static
+            ),
+            String(
+                "grid shape:",
+                grid_shape.value(),
+                "is not compatible with cluster shape:",
+                config.cluster_shape,
+                "and static N:",
+                N_static,
+                sep=" ",
+            ),
+        ]()
 
     alias grid_shape_adjusted = grid_shape.value() if grid_shape else _get_grid_shape[
         config.cluster_shape
