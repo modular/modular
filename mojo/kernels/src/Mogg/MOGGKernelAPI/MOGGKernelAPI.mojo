@@ -132,6 +132,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     kv_matmul_ragged_continuous_batching,
+    unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized,
 )
 from nn.mha import flash_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -7507,6 +7508,49 @@ struct Struct_kv_matmul_ragged_continuous_batching:
             managed_tensor_slice_to_ndbuffer(weight),
             kv_collection,
             layer_idx,
+            ctx,
+        )
+
+
+@compiler.register(
+    "mo.unfused_qkv_matmul.ragged.continuous_batching.gguf_quantized"
+)
+struct Struct_unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized:
+    @always_inline
+    @staticmethod
+    fn execute[
+        num_heads: Int,
+        head_dim: Int, //,
+        quantization_encoding_q: StringLiteral,
+        quantization_encoding_k: StringLiteral,
+        quantization_encoding_v: StringLiteral,
+    ](
+        output: OutputTensor[type = DType.float32, rank=2],
+        hidden_state: InputTensor[type = DType.float32, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        q_weight: InputTensor[type = DType.uint8, rank=2],
+        k_weight: InputTensor[type = DType.uint8, rank=2],
+        v_weight: InputTensor[type = DType.uint8, rank=2],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            DType.float32,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        ],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
+            quantization_encoding_q,
+            quantization_encoding_k,
+            quantization_encoding_v,
+        ](
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(q_weight),
+            managed_tensor_slice_to_ndbuffer(k_weight),
+            managed_tensor_slice_to_ndbuffer(v_weight),
+            kv_collection,
+            layer_idx,
+            managed_tensor_slice_to_ndbuffer(output),
             ctx,
         )
 
