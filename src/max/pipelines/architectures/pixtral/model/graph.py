@@ -13,7 +13,7 @@
 
 from max.dtype import DType
 from max.graph import Graph, TensorType, TensorValue
-from max.graph.weights import SafetensorWeights
+from max.graph.weights import Weights
 from max.pipelines import PipelineConfig
 from max.pipelines.kv_cache import KVCacheManager, KVCacheParams
 from max.pipelines.nn import Linear
@@ -33,7 +33,7 @@ def _linear(
     dtype: DType,
     in_features: int,
     out_features: int,
-    weights: SafetensorWeights,
+    weights: Weights,
 ) -> Linear:
     """Unlike the vision encoder's version, this linear layer has a bias.
     This linear layer is used by the LlavaMultiModalConnector
@@ -47,7 +47,7 @@ def _linear(
 def _multi_modal_projector(
     dtype: DType,
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     huggingface_config: AutoConfig,
 ) -> LlavaMultiModalConnector:
     """Connects the vision encoder to the text decoder.
@@ -74,7 +74,7 @@ def _multi_modal_projector(
 def _llava_vision_encoder_and_projector(
     graph: Graph,
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     huggingface_config: AutoConfig,
     dtype: DType,
 ) -> LlavaVisionEncoder:
@@ -97,7 +97,7 @@ def _llava_vision_encoder_and_projector(
 def _llava_decoder(
     graph: Graph,
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     max_seq_len: int,
     kv_params: KVCacheParams,
     huggingface_config: AutoConfig,
@@ -124,7 +124,7 @@ def _llava_decoder(
 def _llava(
     graph: Graph,
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     max_seq_len: int,
     kv_params: KVCacheParams,
     huggingface_config: AutoConfig,
@@ -169,7 +169,7 @@ def _llava(
 
 def _build_graph(
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     max_seq_len: int,
     kv_params: KVCacheParams,
     kv_manager: KVCacheManager,
@@ -243,7 +243,7 @@ def _build_graph(
 
 def _build_vision_graph(
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     huggingface_config: AutoConfig,
     dtype: DType,
 ) -> Graph:
@@ -287,7 +287,7 @@ def _build_vision_graph(
 
 def _build_text_graph(
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     max_seq_len: int,
     kv_params: KVCacheParams,
     kv_manager: KVCacheManager,

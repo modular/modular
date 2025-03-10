@@ -32,6 +32,7 @@ import torch
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph.weights import Weights
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -153,12 +154,14 @@ class PipelineModel(ABC, Generic[T]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
         self.encoding = encoding
         self.devices = devices
         self.kv_cache_config = kv_cache_config
+        self.weights = weights
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
@@ -458,6 +461,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         if not self._pipeline_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
+        weights = self._pipeline_config.load_weights()
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -465,6 +469,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             encoding=self._pipeline_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=self._pipeline_config.kv_cache_config,
+            weights=weights,
         )
 
         # Load sampler.

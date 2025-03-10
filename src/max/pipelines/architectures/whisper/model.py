@@ -18,6 +18,7 @@ import time
 
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
+from max.graph.weights import Weights
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -60,6 +61,7 @@ class Whisper(PipelineModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -68,6 +70,7 @@ class Whisper(PipelineModel):
             encoding,
             devices,
             kv_cache_config,
+            weights,
         )
         self.model = self.load_model(session)
 
@@ -78,7 +81,6 @@ class Whisper(PipelineModel):
         """
         Load the Whisper speech recognition model.
         """
-        self.weights = self.pipeline_config.load_weights()
 
         logger.info("Building and compiling Whisper encoder-decoder model...")
         before = time.perf_counter()

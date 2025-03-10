@@ -54,6 +54,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         if not self._pipeline_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
+        weights = self._pipeline_config.load_weights()
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -61,6 +62,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             encoding=self._pipeline_config.quantization_encoding,
             devices=devices,
             kv_cache_config=self._pipeline_config.kv_cache_config,
+            weights=weights,
         )
 
     @traced

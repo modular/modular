@@ -23,7 +23,7 @@ import numpy as np
 from max.driver import Device, DeviceSpec, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph.weights import GGUFWeights
+from max.graph.weights import GGUFWeights, Weights
 from max.pipelines import (
     KVCacheConfig,
     LogProbabilities,
@@ -81,6 +81,7 @@ class ReplitModel(PipelineModel[TextContext]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         if pipeline_config.device_specs[0] == DeviceSpec.cpu():
             msg = "Replit currently only supported on gpu."
@@ -93,6 +94,7 @@ class ReplitModel(PipelineModel[TextContext]):
             encoding,
             devices,
             kv_cache_config,
+            weights,
         )
         self.model = self.load_model(session)
 
@@ -269,17 +271,14 @@ class ReplitModel(PipelineModel[TextContext]):
         ).to(self.devices[0])
 
         # Read in weights.
-        weights = self.pipeline_config.load_weights()
-        if not isinstance(weights, GGUFWeights):
+        if not isinstance(self.weights, GGUFWeights):
             msg = "only gguf weights supported in Replit."
             raise ValueError(msg)
-
-        self._weights = weights
 
         if serialized_path := self.pipeline_config.serialized_model_path:
             # Hydrate all weights to be referenced by the serialized path.
             weights_registry = {}
-            for name, weight in self._weights.items():
+            for name, weight in self.weights.items():
                 weights_registry[name] = weight.raw_tensor()
 
             logger.info("Loading serialized model from ", serialized_path)
@@ -293,7 +292,7 @@ class ReplitModel(PipelineModel[TextContext]):
             before = time.perf_counter()
             graph = _build_graph(
                 self.pipeline_config,
-                self._weights,
+                self.weights,
                 self.get_kv_params(
                     huggingface_config=self.huggingface_config,
                     n_devices=len(self.devices),
@@ -305,7 +304,7 @@ class ReplitModel(PipelineModel[TextContext]):
                 dtype=self.dtype,
             )
             model = session.load(
-                graph, weights_registry=self._weights.allocated_weights
+                graph, weights_registry=self.weights.allocated_weights
             )
             after = time.perf_counter()
             logger.info(

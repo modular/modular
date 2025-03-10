@@ -17,7 +17,7 @@ from typing import Union
 
 from max.dtype import DType
 from max.graph import Graph, ops
-from max.graph.weights import SafetensorWeights
+from max.graph.weights import Weights
 from max.pipelines import PipelineConfig
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
@@ -43,7 +43,7 @@ def feed_forward(
     dtype: DType,
     hidden_dim: int,
     feed_forward_length: int,
-    weights: SafetensorWeights,
+    weights: Weights,
 ):
     return MLP(
         linear(
@@ -71,14 +71,14 @@ def linear(
     dtype: DType,
     in_features: int,
     out_features: int,
-    weights: SafetensorWeights,
+    weights: Weights,
 ) -> Linear:
     return Linear(
         weights.weight.allocate(dtype, [in_features, out_features], None)
     )
 
 
-def rms_norm(dims: int, eps: float, weights: SafetensorWeights) -> RMSNorm:
+def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
     return RMSNorm(weights.weight.allocate(DType.bfloat16, [dims]), eps)
 
 
@@ -86,7 +86,7 @@ def embedding(
     params: PipelineConfig,
     vocab_size: int,
     hidden_dim: int,
-    weights: SafetensorWeights,
+    weights: Weights,
     dtype: DType,
 ):
     return Embedding(
@@ -101,7 +101,7 @@ def _attention_opaque(
     kv_params: KVCacheParams,
     params: PipelineConfig,
     rope: OptimizedRotaryEmbedding,
-    weights: SafetensorWeights,
+    weights: Weights,
     layer_idx: int,
     huggingface_config: AutoConfig,
     dtype: DType,
@@ -149,7 +149,7 @@ def _attention_opaque(
 def _transformer(
     graph: Graph,
     params: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     max_seq_len: int,
     kv_params: KVCacheParams,
     huggingface_config: AutoConfig,

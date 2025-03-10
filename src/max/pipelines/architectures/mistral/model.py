@@ -21,7 +21,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph.weights import SafetensorWeights
+from max.graph.weights import SafetensorWeights, Weights
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -77,6 +77,7 @@ class MistralModel(PipelineModel[TextContext]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -85,6 +86,7 @@ class MistralModel(PipelineModel[TextContext]):
             encoding,
             devices,
             kv_cache_config,
+            weights,
         )
         self.model = self.load_model(session)
 
@@ -253,16 +255,14 @@ class MistralModel(PipelineModel[TextContext]):
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
-        self._weights = self.pipeline_config.load_weights()
-
-        if not isinstance(self._weights, SafetensorWeights):
+        if not isinstance(self.weights, SafetensorWeights):
             msg = "only safetensors weights are currently supported in Mistral models."
             raise ValueError(msg)
 
         if serialized_path := self.pipeline_config.serialized_model_path:
             # Hydrate all weights to be referenced by the serialized graph.
             weights_registry = {}
-            for name, weight in self._weights.items():
+            for name, weight in self.weights.items():
                 weights_registry[name] = weight.raw_tensor()
             logger.info(
                 "Loading serialized model from ", serialized_path, "..."
@@ -276,7 +276,7 @@ class MistralModel(PipelineModel[TextContext]):
             before = time.perf_counter()
             graph = _build_graph(
                 pipeline_config=self.pipeline_config,
-                weights=self._weights,
+                weights=self.weights,
                 max_seq_len=self.calculate_max_seq_len(
                     self.pipeline_config,
                     huggingface_config=self.huggingface_config,
@@ -292,7 +292,7 @@ class MistralModel(PipelineModel[TextContext]):
                 dtype=self.dtype,
             )
             model = session.load(
-                graph, weights_registry=self._weights.allocated_weights
+                graph, weights_registry=self.weights.allocated_weights
             )
             after = time.perf_counter()
             logger.info(

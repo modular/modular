@@ -16,6 +16,7 @@ from __future__ import annotations
 from max.driver import Device
 from max.engine import InferenceSession
 from max.graph import ops
+from max.graph.weights import Weights
 from max.pipelines import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
@@ -33,6 +34,7 @@ class GraniteModel(Llama3Model):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -41,6 +43,7 @@ class GraniteModel(Llama3Model):
             encoding,
             devices,
             kv_cache_config,
+            weights,
         )
 
         logits_scaling = getattr(huggingface_config, "logits_scaling", 1.0)

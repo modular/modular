@@ -87,6 +87,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -95,6 +96,7 @@ class Qwen2Model(PipelineModel[TextContext]):
             encoding,
             devices,
             kv_cache_config,
+            weights,
         )
         self.model = self.load_model(session)
 
@@ -357,13 +359,10 @@ class Qwen2Model(PipelineModel[TextContext]):
             np.arange(batch_size, dtype=np.uint32)
         ).to(self.devices[0])
 
-        # Read in weights.
-        self._weights = self.pipeline_config.load_weights()
-
         if serialized_path := self.pipeline_config.serialized_model_path:
             # Hydrate all weights to be referenced by the serialized path.
             weights_registry = {}
-            for name, weight in self._weights.items():
+            for name, weight in self.weights.items():
                 weights_registry[name] = weight.raw_tensor()
 
             logging.info("Loading serialized model from %s", serialized_path)
@@ -374,11 +373,11 @@ class Qwen2Model(PipelineModel[TextContext]):
 
         else:
             logging.info("Building model...")
-            graph = self._build_graph(self._weights)
+            graph = self._build_graph(self.weights)
             logging.info("Compiling...")
             before = time.perf_counter()
             model = session.load(
-                graph, weights_registry=self._weights.allocated_weights
+                graph, weights_registry=self.weights.allocated_weights
             )
             after = time.perf_counter()
             logging.info(f"Compiling model took {after - before:.6f} seconds")

@@ -26,6 +26,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.graph.weights import Weights
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -78,6 +79,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -86,6 +88,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             encoding,
             devices,
             kv_cache_config,
+            weights,
         )
         self.model = self.load_model(session)
 
@@ -183,14 +186,10 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         self,
         session: InferenceSession,
     ) -> Model:
-        # Read in weights.
-        weights = self.pipeline_config.load_weights()
-        self._weights = weights
-
         if serialized_path := self.pipeline_config.serialized_model_path:
             # Hydrate all weights to be referenced by the serialized path.
             weights_registry = {}
-            for name, weight in self._weights.items():
+            for name, weight in self.weights.items():
                 weights_registry[name] = weight.raw_tensor()
 
             logger.info("Loading serialized model from ", serialized_path)
@@ -204,12 +203,12 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             before = time.perf_counter()
             graph = build_graph(
                 self.pipeline_config,
-                self._weights,
+                self.weights,
                 self.huggingface_config,
                 self.dtype,
             )
             model = session.load(
-                graph, weights_registry=self._weights.allocated_weights
+                graph, weights_registry=self.weights.allocated_weights
             )
             after = time.perf_counter()
             logger.info(

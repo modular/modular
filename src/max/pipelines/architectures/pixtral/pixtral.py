@@ -23,7 +23,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph.weights import SafetensorWeights
+from max.graph.weights import SafetensorWeights, Weights
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -100,6 +100,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -108,6 +109,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             encoding,
             devices,
             kv_cache_config,
+            weights,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
@@ -331,21 +333,17 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
-        weights = self.pipeline_config.load_weights()
-
-        if not isinstance(weights, SafetensorWeights):
+        if not isinstance(self.weights, SafetensorWeights):
             msg = (
                 "only safetensors weights are currently supported in Pixtral"
                 " models."
             )
             raise ValueError(msg)
 
-        self._weights = weights
-
         if serialized_path := self.pipeline_config.serialized_model_path:
             # Hydrate all weights to be referenced by the serialized path.
             weights_registry = {}
-            for name, weight in self._weights.items():
+            for name, weight in self.weights.items():
                 weights_registry[name] = weight.raw_tensor()
 
             def serialized_load(serialized_path):
@@ -366,7 +364,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 before = time.perf_counter()
                 model = session.load(
                     graph,
-                    weights_registry=self._weights.allocated_weights,
+                    weights_registry=self.weights.allocated_weights,
                 )
                 after = time.perf_counter()
                 logger.info(
@@ -384,7 +382,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 build = lambda: _build_vision_graph(
                     pipeline_config=self.pipeline_config,
-                    weights=self._weights,
+                    weights=self.weights,
                     huggingface_config=self.huggingface_config,
                     dtype=self.dtype,
                 )
@@ -394,7 +392,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
 
                 build = lambda: _build_text_graph(
                     pipeline_config=self.pipeline_config,
-                    weights=self._weights,
+                    weights=self.weights,
                     max_seq_len=self.calculate_max_seq_len(
                         self.pipeline_config,
                         huggingface_config=self.huggingface_config,

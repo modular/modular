@@ -123,6 +123,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         """
         Args:
@@ -136,6 +137,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             encoding,
             devices,
             kv_cache_config,
+            weights,
         )
         self.model = self.load_model(session)
 
@@ -376,13 +378,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
-        # Read in weights.
-        self._weights = self.pipeline_config.load_weights()
-
         if serialized_path := self.pipeline_config.serialized_model_path:
             # Hydrate all weights to be referenced by the serialized path.
             weights_registry = {}
-            for name, weight in self._weights.items():
+            for name, weight in self.weights.items():
                 weights_registry[name] = weight.raw_tensor()
 
             logger.info("Loading serialized model from %s", serialized_path)
@@ -394,7 +393,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         else:
             logger.info("Building and compiling model...")
             before = time.perf_counter()
-            graph = self._build_graph(self._weights)
+            graph = self._build_graph(self.weights)
             model = session.load(graph, weights_registry=self.state_dict)
             after = time.perf_counter()
             logger.info(
@@ -719,6 +718,7 @@ class Llama3Model(LlamaModelBase):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -727,4 +727,5 @@ class Llama3Model(LlamaModelBase):
             encoding,
             devices,
             kv_cache_config,
+            weights,
         )

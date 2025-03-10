@@ -14,7 +14,7 @@
 
 from max.dtype import DType
 from max.graph import Graph, ops
-from max.graph.weights import SafetensorWeights
+from max.graph.weights import Weights
 from max.pipelines import PipelineConfig
 from max.pipelines.nn import Conv2D, Linear, RMSNorm
 from transformers import AutoConfig
@@ -30,7 +30,7 @@ def _patch_conv2d(
     in_channels: int,
     patch_size: int,
     out_channels: int,
-    weights: SafetensorWeights,
+    weights: Weights,
 ) -> Conv2D:
     """Creates a 2D convolution layer with the following assumptions:
     - kernel size = (patch_size, patch_size)
@@ -58,7 +58,7 @@ def _linear(
     dtype: DType,
     in_features: int,
     out_features: int,
-    weights: SafetensorWeights,
+    weights: Weights,
 ) -> Linear:
     return Linear(
         weights.weight.allocate(dtype, [in_features, out_features], None)
@@ -69,7 +69,7 @@ def _feed_forward(
     dtype: DType,
     hidden_dim: int,
     feed_forward_length: int,
-    weights: SafetensorWeights,
+    weights: Weights,
 ):
     return MLP(
         _linear(  # gate_proj
@@ -93,13 +93,13 @@ def _feed_forward(
     )
 
 
-def _rms_norm(dims: int, eps: float, weights: SafetensorWeights) -> RMSNorm:
+def _rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
     return RMSNorm(weights.weight.allocate(DType.bfloat16, [dims]), eps)
 
 
 def _encoder_attention(
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     huggingface_config: AutoConfig,
     dtype: DType,
 ) -> Attention:
@@ -145,7 +145,7 @@ def _encoder_attention(
 def _transformer(
     graph: Graph,
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     huggingface_config: AutoConfig,
     dtype: DType,
 ):
@@ -188,7 +188,7 @@ def _transformer(
 def _vision_encoder(
     graph: Graph,
     pipeline_config: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     huggingface_config: AutoConfig,
     dtype: DType,
 ) -> VisionEncoder:
