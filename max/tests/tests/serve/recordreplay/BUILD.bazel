@@ -1,0 +1,11 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "test_recordreplay",
+    size = "small",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        "//SDK/lib/API/python/max/serve/recordreplay",
+        requirement("msgspec"),
+    ],
+)
