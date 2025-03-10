@@ -66,20 +66,7 @@ struct FPUtils[
             The mantissa width.
         """
 
-        @parameter
-        if type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-            return 3
-        elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz):
-            return 2
-        elif type is DType.float16:
-            return 10
-        elif type is DType.bfloat16:
-            return 7
-        elif type is DType.float32:
-            return 23
-        else:
-            constrained[type is DType.float64, "unsupported float type"]()
-            return 52
+        return bitwidthof[type]() - Self.exponent_width() - 1
 
     @staticmethod
     @always_inline("nodebug")
