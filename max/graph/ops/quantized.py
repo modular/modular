@@ -15,6 +15,18 @@ from ..value import TensorValue
 from .custom import custom
 
 
+def repack_gguf_quantized_weights(
+    weight: TensorValue,
+    quantization_encoding: QuantizationEncoding,
+) -> TensorValue:
+    quantization_encoding_str = quantization_encoding.name
+    return _repack_quantized_weights(
+        f"vroom_{quantization_encoding_str}_repack_weights",
+        (weight,),
+        "vroom",
+    )
+
+
 def _repack_quantized_weights(
     op_name: str,
     rhs: Tuple[TensorValue, ...],
@@ -78,8 +90,10 @@ def _repack_then_matmul(
                 f"Right-hand side must be a matrix, but got {rhs[0]=}"
             )
 
+        lhs_matrix = lhs
         # Reshape LHS to a matrix, which is expected by the q4_0 matmul op.
-        lhs_matrix = lhs.reshape((-1, lhs.shape[-1]))
+        if len(lhs.shape) != 2:
+            lhs_matrix = lhs_matrix.reshape((-1, lhs.shape[-1]))
         # TODO(MSDK-775): Rebinding here breaks the reshape later.
         # Fortunately things work without the rebind.
         # prod_dim = Graph.current.unique_symbolic_dim("qmatmul")
@@ -95,9 +109,17 @@ def _repack_then_matmul(
 
         if mode == "vroom":
             # Reshape matmul output to restore the original rank(lhs) - 1 dimensions.
-            return qmatmul_out.reshape((*lhs.shape[:-1], rhs[0].shape[0]))
+            if len(lhs.shape) != 2:
+                qmatmul_out = qmatmul_out.reshape(
+                    (*lhs.shape[:-1], rhs[0].shape[0])
+                )
+            return qmatmul_out
         elif mode == "gptq":
-            return qmatmul_out.reshape((*lhs.shape[:-1], rhs_repack.shape[0]))
+            if len(lhs.shape) != 2:
+                qmatmul_out = qmatmul_out.reshape(
+                    (*lhs.shape[:-1], rhs_repack.shape[0])
+                )
+            return qmatmul_out
         else:
             assert False
 

@@ -64,6 +64,19 @@ class QuantizationEncoding(enum.Enum):
         """
         return self.block_parameters.block_size
 
+    @property
+    def name(self) -> str:
+        return self.value.lower()
+
+    @property
+    def is_gguf(self) -> bool:
+        return self in [
+            QuantizationEncoding.Q4_0,
+            QuantizationEncoding.Q4_K,
+            QuantizationEncoding.Q5_K,
+            QuantizationEncoding.Q6_K,
+        ]
+
 
 _BLOCK_PARAMETERS: Dict[QuantizationEncoding, BlockParameters] = {
     # Block: d, q (4 bits)
