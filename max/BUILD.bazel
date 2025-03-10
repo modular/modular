@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
-load("//bazel:api.bzl", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library", "modular_python_binding_py_library")
+load("//bazel:api.bzl", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library", "modular_python_binding_py_library", "requirement")
 
 modular_nanobind_extension(
     name = "_core.bindings",
@@ -44,8 +44,9 @@ modular_genrule(
 
     # Fix missing `typing` imports, since these are manually replaced
     # These will get merged with other `typing` imports during formatting.
+    # Also add a max._core.driver import to appease mypy
     echo "from typing import Any\n$(cat $(location {driver}))" > $(location {driver})
-    echo "from typing import Any, Mapping\n$(cat $(location {engine}))" > $(location {engine})
+    echo "from typing import Any, Mapping\nimport max._core.driver\n$(cat $(location {engine}))" > $(location {engine})
 
     # Add copyright headers
     header="
@@ -84,6 +85,10 @@ modular_python_binding_py_library(
     srcs = glob(["_core/*.pyi"]),
     bindings_data = [":_core.bindings"],
     imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max/mlir",
+        requirement("numpy"),
+    ],
 )
 
 # Compare the generated stubs to the committed ones.
