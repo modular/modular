@@ -81,6 +81,7 @@ def LIT_FnOp : LITOp<"fn", [
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
     DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "std::nullopt">:$LLVMArgMetadataArray,
     OptionalAttr<AnyAttr>:$thunkKey
   );
   let regions = (region SizedRegion<1>:$bodyRegion);

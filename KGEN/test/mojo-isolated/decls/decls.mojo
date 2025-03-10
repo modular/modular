@@ -333,9 +333,11 @@ fn orvalueInferType():
 fn kernel[x: Int]():
     pass
 
+
 # CHECK-LABEL: lit.fn @"kernel1{{.*}}"<x:
 # CHECK-SAME: LLVMMetadataArray = [#kgen.unknown : !lit.struct<#StringLiteral <:string "nvvm.maxntid">>, {{.*}}#pop.array<x> : !pop.array<
-alias mname= "nvvm.maxntid"
+alias mname = "nvvm.maxntid"
+
 
 @__llvm_metadata(
     mname=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
@@ -343,14 +345,28 @@ alias mname= "nvvm.maxntid"
 fn kernel1[x: Int]():
     pass
 
+
 # CHECK-LABEL: lit.fn @"kernel2{{.*}}"<x:
 # CHECK-SAME: LLVMMetadataArray = [#kgen.unknown : !lit.struct<#StringLiteral <:string "nvvm.maxntid">>, {{.*}}#pop.array<x> : !pop.array<
+
 
 @__llvm_metadata(
     `mname`=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
 )
 fn kernel2[x: Int]():
     pass
+
+
+# CHECK-LABEL: lit.fn @"llvm_arg_meta
+# CHECK-SAME{LITERAL}: LLVMArgMetadataArray = [[], ["nvvm.grid_constant", unit, "myMeta", unit], [], [#kgen.unknown : !lit.struct<#StringLiteral <:string "nvvm.maxntid">>, #pop.array<x> : !pop.array<1, !Int>], []]
+@__llvm_arg_metadata(b, `nvvm.grid_constant`, `myMeta`)
+@__llvm_arg_metadata(c)
+@__llvm_arg_metadata(
+    d, mname=__mlir_attr[`#pop.array<`, x, `> : !pop.array<1, `, Int, `>`]
+)
+fn llvm_arg_meta[x: Int](a: Int, b: Int, c: Int, d: Int, e: Int):
+    pass
+
 
 fn alias_parametric_fn() -> String:
     @parameter
@@ -359,17 +375,20 @@ fn alias_parametric_fn() -> String:
     else:
         return "amdgpu-flat-work-group-size"
 
+
 # alias mname1 = alias_parametric_fn().value
 
 # CHECK-LABEL: lit.fn @"kernel3{{.*}}"<x:
 
+
 # TODO: Figure out how to get the value of the alias.
 # HECK-SAME: LLVMMetadataArray = [#lit.struct.extract<:!StringLiteral apply(:!lit.generator<() -> !StringLiteral> @decls::@"alias_parametric_fn()"), "value"> : !kgen.string, #kgen.unknown : !lit.struct<#IntLiteral <:!pop.int_literal 128>>
-#@__llvm_metadata(
+# @__llvm_metadata(
 #    mname1=128
-#)
+# )
 fn kernel3[x: Int]():
     pass
+
 
 # https://github.com/modular/mojo/issues/1152
 # Allow mutable self argument when overloading operators using dunder methods
