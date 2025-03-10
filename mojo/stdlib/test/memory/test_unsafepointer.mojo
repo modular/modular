@@ -101,6 +101,11 @@ def test_address_of():
     _ = local
 
 
+def test_pointer_to():
+    var local = 1
+    assert_not_equal(0, UnsafePointer(to=local)[])
+
+
 def test_explicit_copy_of_pointer_address():
     var local = 1
     var ptr = UnsafePointer[Int].address_of(local)
@@ -358,6 +363,7 @@ def test_volatile_load_and_store_simd():
 
 def main():
     test_address_of()
+    test_pointer_to()
 
     test_refitem()
     test_refitem_offset()

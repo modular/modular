@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, assert_not_equal
 
 
 def test_copy_reference_explicitly():
@@ -41,7 +41,13 @@ def test_str():
     assert_true(String(a_ref).startswith("0x"))
 
 
+def test_pointer_to():
+    var local = 1
+    assert_not_equal(0, Pointer(to=local)[])
+
+
 def main():
     test_copy_reference_explicitly()
     test_equality()
     test_str()
+    test_pointer_to()
