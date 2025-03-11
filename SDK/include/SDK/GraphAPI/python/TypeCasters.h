@@ -94,14 +94,21 @@ struct type_caster<::mlir::Type> {
 /// Casts object <-> DType.
 template <>
 struct type_caster<::M::DType> {
-  NB_TYPE_CASTER(::M::DType, const_name("DType"))
-  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) {
-    value = M::DType(nb::cast<uint8_t>(src));
-    return true;
+  NB_TYPE_CASTER(::M::DType, const_name("max._core.dtype.DType"))
+  using DTypeCaster = make_caster<M::DType::Cases>;
+  DTypeCaster dtypeCaster;
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    if (dtypeCaster.from_python(src, flags, cleanup)) {
+      value = M::DType(dtypeCaster.value);
+      return true;
+    }
+    return false;
   }
   static handle from_cpp(::M::DType t, rv_policy policy,
-                         cleanup_list *cleanup) {
-    return nb::cast(t.getValue());
+                         cleanup_list *cleanup) noexcept {
+    return DTypeCaster::from_cpp(static_cast<M::DType::Cases>(t.getValue()),
+                                 policy, cleanup);
   }
 };
 
