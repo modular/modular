@@ -6,6 +6,9 @@ modular_py_test(
     srcs = glob(["**/*.py"]),
     deps = [
         "//SDK/lib/API/python/max/serve/recordreplay",
+        requirement("fastapi"),
+        requirement("httpx"),
         requirement("msgspec"),
+        requirement("pydantic"),
     ],
 )
