@@ -142,7 +142,7 @@ struct Variant[*Ts: CollectionElement](
         for i in range(len(VariadicList(Ts))):
             alias T = Ts[i]
             if copy._get_discr() == i:
-                copy._get_ptr[T]().init_pointee_move(self._get_ptr[T]()[])
+                copy._get_ptr[T]().init_pointee_copy(self._get_ptr[T]()[])
                 return
 
     fn __copyinit__(out self, other: Self):

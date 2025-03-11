@@ -87,17 +87,25 @@ def test_basic():
 
 
 def test_copy():
-    var v1 = TestVariant(MoveCopyCounter())
+    var v1 = TestVariant(MoveCopyCounter())  # initial move value in
+    assert_equal(v1[MoveCopyCounter].moved, 1)
     var v2 = v1
-    # didn't call copyinit
+
     assert_equal(v1[MoveCopyCounter].copied, 0)
     assert_equal(v2[MoveCopyCounter].copied, 1)
+    assert_equal(v1[MoveCopyCounter].moved, 1)  # same initial move value in
+    assert_equal(
+        v2[MoveCopyCounter].moved, 1
+    )  # carry the initial move value in
+
     # test that we didn't call the other copyinit too!
     assert_no_poison()
 
 
 def test_explicit_copy():
-    var v1 = TestVariant(MoveCopyCounter())
+    var v1 = TestVariant(MoveCopyCounter())  # initial move value in
+    assert_equal(v1[MoveCopyCounter].moved, 1)
+    assert_equal(v1[MoveCopyCounter].copied, 0)
 
     # Perform explicit copy
     var v2 = v1.copy()
@@ -105,17 +113,24 @@ def test_explicit_copy():
     # Test copy counts
     assert_equal(v1[MoveCopyCounter].copied, 0)
     assert_equal(v2[MoveCopyCounter].copied, 1)
+    assert_equal(v1[MoveCopyCounter].moved, 1)  # same initial move value in
+    assert_equal(
+        v2[MoveCopyCounter].moved, 1
+    )  # carry the initial move value in
 
     # test that we didn't call the other copyinit too!
     assert_no_poison()
 
 
 def test_move():
-    var v1 = TestVariant(MoveCopyCounter())
-    var v2 = v1
-    # didn't call moveinit
+    var v1 = TestVariant(MoveCopyCounter())  # initial move value in
     assert_equal(v1[MoveCopyCounter].moved, 1)
+
+    var v2 = v1^
+
     assert_equal(v2[MoveCopyCounter].moved, 2)
+    assert_equal(v2[MoveCopyCounter].copied, 0)
+
     # test that we didn't call the other moveinit too!
     assert_no_poison()
 
