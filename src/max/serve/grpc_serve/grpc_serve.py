@@ -353,11 +353,11 @@ async def grpc_serve(
     reflection.enable_server_reflection(SERVICE_NAMES, server)
 
     tokenizer = TextTokenizer(
-        pipeline_config.model_path,
-        revision=pipeline_config.huggingface_revision,
+        pipeline_config.model_config.model_path,
+        revision=pipeline_config.model_config.huggingface_revision,
         max_length=pipeline_config.max_length,
         max_new_tokens=pipeline_config.max_new_tokens,
-        trust_remote_code=pipeline_config.trust_remote_code,
+        trust_remote_code=pipeline_config.model_config.trust_remote_code,
     )
     assert tokenizer.delegate
 
