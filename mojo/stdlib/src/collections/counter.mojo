@@ -405,8 +405,8 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
         var result = Counter[V]()
         for item_ref in self.items():
             var item = item_ref[]
-            if item.value > 0:
-                result[item.key] = item.value
+            if item[1] > 0:
+                result[item[0]] = item[1]
         return result^
 
     fn __neg__(self) -> Self:
@@ -419,8 +419,8 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
         var result = Counter[V]()
         for item_ref in self.items():
             var item = item_ref[]
-            if item.value < 0:
-                result[item.key] = -item.value
+            if item[1] < 0:
+                result[item[0]] = -item[1]
         return result
 
     # ===------------------------------------------------------------------=== #
@@ -521,7 +521,7 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
             "KeyError" if the Counter is empty.
         """
         var item_ref = self._data.popitem()
-        return CountTuple[V](item_ref.key, item_ref.value)
+        return CountTuple[V](item_ref[0], item_ref[1])
 
     # Special methods for counter
 
@@ -549,7 +549,7 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
         var items: List[CountTuple[V]] = List[CountTuple[V]]()
         for item_ref in self._data.items():
             var item = item_ref[]
-            var t = CountTuple[V](item.key, item.value)
+            var t = CountTuple[V](item[0], item[1])
             items.append(t)
 
         @parameter
@@ -569,8 +569,8 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
         var elements: List[V] = List[V]()
         for item_ref in self._data.items():
             var item = item_ref[]
-            for _ in range(item.value):
-                elements.append(item.key)
+            for _ in range(item[1]):
+                elements.append(item[0])
         return elements
 
     fn update(mut self, other: Self):
@@ -582,7 +582,7 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
         """
         for item_ref in other.items():
             var item = item_ref[]
-            self._data[item.key] = self._data.get(item.key, 0) + item.value
+            self._data[item[0]] = self._data.get(item[0], 0) + item[1]
 
     fn subtract(mut self, other: Self):
         """Subtract count. Both inputs and outputs may be zero or negative.
@@ -592,7 +592,7 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
         """
         for item_ref in other.items():
             var item = item_ref[]
-            self[item.key] = self.get(item.key, 0) - item.value
+            self[item[0]] = self.get(item[0], 0) - item[1]
 
 
 struct CountTuple[V: KeyElement](

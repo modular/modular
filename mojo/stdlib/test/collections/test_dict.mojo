@@ -34,8 +34,8 @@ def test_dict_fromkeys():
     assert_equal(len(dict), len(expected_dict))
 
     for k_v in expected_dict.items():
-        var k = k_v[].key
-        var v = k_v[].value
+        var k = k_v[][0]
+        var v = k_v[][1]
         assert_true(k in dict)
         assert_equal(dict[k], v)
 
@@ -51,8 +51,8 @@ def test_dict_fromkeys_optional():
     assert_equal(len(dict), len(expected_dict))
 
     for k_v in expected_dict.items():
-        var k = k_v[].key
-        var v = k_v[].value
+        var k = k_v[][0]
+        var v = k_v[][1]
         assert_true(k in dict)
         assert_false(v)
 
@@ -226,8 +226,8 @@ def test_iter_items():
     var keys = String("")
     var sum = 0
     for entry in dict.items():
-        keys += entry[].key
-        sum += entry[].value
+        keys += entry[][0]
+        sum += entry[][1]
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)
@@ -503,8 +503,8 @@ def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
     keys = String("")
     sum = 0
     for entry in kwargs.items():
-        keys += entry[].key
-        sum += entry[].value
+        keys += entry[][0]
+        sum += entry[][1]
     assert_equal(keys, "dessertsalad")
     assert_equal(sum, 19)
 
@@ -531,11 +531,11 @@ def test_dict_popitem():
     dict["b"] = 2
 
     var item = dict.popitem()
-    assert_equal(item.key, "b")
-    assert_equal(item.value, 2)
+    assert_equal(item[0], "b")
+    assert_equal(item[1], 2)
     item = dict.popitem()
-    assert_equal(item.key, "a")
-    assert_equal(item.value, 1)
+    assert_equal(item[0], "a")
+    assert_equal(item[1], 1)
     with assert_raises(contains="KeyError"):
         _ = dict.popitem()
 

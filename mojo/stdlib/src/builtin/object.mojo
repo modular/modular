@@ -618,7 +618,7 @@ struct _ObjectImpl(
         for entry in ptr[].impl[].items():
             if print_sep:
                 writer.write(", ")
-            writer.write("'", entry[].key, "' = ", object(entry[].value.copy()))
+            writer.write("'", entry[][0], "' = ", object(entry[][1].copy()))
             print_sep = True
         writer.write("}")
         return

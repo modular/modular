@@ -15,7 +15,6 @@
 # the -t flag. Remember to replace it again before pushing any code.
 
 from collections import Dict, Optional
-from collections.dict import DictEntry
 from math import ceil
 from random import *
 from sys import sizeof
@@ -103,7 +102,7 @@ fn bench_dict_lookup[size: Int](mut b: Bencher) raises:
 
 fn total_bytes_used(items: Dict[Int, Int]) -> Int:
     # the allocated memory by entries:
-    var entry_size = sizeof[Optional[DictEntry[Int, Int]]]()
+    var entry_size = sizeof[Optional[Tuple[Int, Int]]]()
     var amnt_bytes = items._entries.capacity * entry_size
     amnt_bytes += sizeof[Dict[Int, Int]]()
 

@@ -526,7 +526,7 @@ struct PythonObject(
         self.py_object = cpython.PyDict_New()
         for entry in value.items():
             var result = cpython.PyDict_SetItem(
-                self.py_object, entry[].key.py_object, entry[].value.py_object
+                self.py_object, entry[][0].py_object, entry[][1].py_object
             )
 
     fn __copyinit__(out self, existing: Self):
@@ -1369,11 +1369,9 @@ struct PythonObject(
 
         var dict_obj = cpython.PyDict_New()
         for entry in kwargs.items():
-            var key = cpython.PyUnicode_DecodeUTF8(
-                entry[].key.as_string_slice()
-            )
+            var key = cpython.PyUnicode_DecodeUTF8(entry[][0].as_string_slice())
             var result = cpython.PyDict_SetItem(
-                dict_obj, key, entry[].value.py_object
+                dict_obj, key, entry[][1].py_object
             )
             if result != 0:
                 raise Error("internal error: PyDict_SetItem failed")

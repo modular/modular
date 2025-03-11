@@ -186,8 +186,8 @@ def test_iter_items():
     var keys = String("")
     var sum = 0
     for entry in c.items():
-        keys += entry[].key
-        sum += entry[].value
+        keys += entry[][0]
+        sum += entry[][1]
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)

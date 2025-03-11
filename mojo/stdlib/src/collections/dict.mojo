@@ -68,7 +68,7 @@ struct _DictEntryIter[
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
 ]:
-    """Iterator over immutable DictEntry references.
+    """Iterator over immutable Tuple references.
 
     Parameters:
         dict_mutability: Whether the reference to the dictionary is mutable.
@@ -95,7 +95,7 @@ struct _DictEntryIter[
     @always_inline
     fn __next__(
         mut self,
-    ) -> Pointer[DictEntry[K, V], __origin_of(self.src[]._entries[0].value())]:
+    ) -> Pointer[Tuple[K, V], __origin_of(self.src[]._entries[0].value())]:
         while True:
             var opt_entry_ref = Pointer.address_of(
                 self.src[]._entries[self.index]
@@ -146,8 +146,8 @@ struct _DictKeyIter[
 
     fn __next__(
         mut self,
-    ) -> Pointer[K, __origin_of(self.iter.__next__()[].key)]:
-        return Pointer.address_of(self.iter.__next__()[].key)
+    ) -> Pointer[K, __origin_of(self.iter.__next__()[][0])]:
+        return Pointer.address_of(self.iter.__next__()[][0])
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -196,7 +196,7 @@ struct _DictValueIter[
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
         return Self.ref_type.address_of(
-            UnsafePointer.address_of(entry_ref[].value).origin_cast[
+            UnsafePointer.address_of(entry_ref[][1]).origin_cast[
                 origin=dict_origin
             ]()[]
         )
@@ -207,50 +207,6 @@ struct _DictValueIter[
 
     fn __len__(self) -> Int:
         return self.iter.__len__()
-
-
-@value
-struct DictEntry[K: KeyElement, V: CollectionElement](
-    CollectionElement, CollectionElementNew
-):
-    """Store a key-value pair entry inside a dictionary.
-
-    Parameters:
-        K: The key type of the dict. Must be Hashable+EqualityComparable.
-        V: The value type of the dict.
-    """
-
-    var key: K
-    """The unique key for the entry."""
-    var value: V
-    """The value associated with the key."""
-
-    fn __init__(out self, owned key: K, owned value: V):
-        """Create an entry from a key and value, computing the hash.
-
-        Args:
-            key: The key of the entry.
-            value: The value of the entry.
-        """
-        self.key = key^
-        self.value = value^
-
-    fn copy(self) -> Self:
-        """Copy an existing entry.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
-    fn reap_value(owned self, out result: V):
-        """Take the value from an owned entry.
-
-        Returns:
-            The value of the entry.
-        """
-        result = self.value^
-        __disable_del self
 
 
 alias _EMPTY = -1
@@ -482,7 +438,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
     # We use everything available in the list. Which means that
     # len(self._entries) == self._entries.capacity == self._reserved()
-    var _entries: List[Optional[DictEntry[K, V]]]
+    var _entries: List[Optional[Tuple[K, V]]]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -493,9 +449,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         """Initialize an empty dictiontary."""
         self.size = 0
         self._n_entries = 0
-        self._entries = Self._new_list[DictEntry[K, V]](
-            Self._initial_reservation
-        )
+        self._entries = Self._new_list[Tuple[K, V]](Self._initial_reservation)
         self._key_hashes = Self._new_list[UInt64](Self._initial_reservation)
         self._index = _DictIndex(len(self._entries))
 
@@ -523,7 +477,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         )
         self.size = 0
         self._n_entries = 0
-        self._entries = Self._new_list[DictEntry[K, V]](
+        self._entries = Self._new_list[Tuple[K, V]](
             power_of_two_initial_capacity
         )
         self._key_hashes = Self._new_list[UInt64](power_of_two_initial_capacity)
@@ -605,7 +559,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
     fn __getitem__(
         self, key: K
-    ) raises -> ref [self._entries[0].value().value] Self.V:
+    ) raises -> ref [self._entries[0].value()[1]] Self.V:
         """Retrieve a value out of the dictionary.
 
         Args:
@@ -741,7 +695,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
         var i = 0
         for key_value in self.items():
-            result += repr(key_value[].key) + ": " + repr(key_value[].value)
+            result += repr(key_value[][0]) + ": " + repr(key_value[][1])
             if i < len(self) - 1:
                 result += ", "
             i += 1
@@ -779,7 +733,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
     fn _find_ref(
         ref self, key: K
-    ) raises -> ref [self._entries[0].value().value] Self.V:
+    ) raises -> ref [self._entries[0].value()[1]] Self.V:
         """Find a value in the dictionary by key.
 
         Args:
@@ -797,7 +751,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
     fn get_ptr(
         ref self, key: K
-    ) -> Optional[Pointer[V, __origin_of(self._entries[0].value().value)]]:
+    ) -> Optional[Pointer[V, __origin_of(self._entries[0].value()[1])]]:
         """Get a pointer to a value in the dictionary by key.
 
         Args:
@@ -816,7 +770,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
             var entry = Pointer.address_of(self._entries[index])
             debug_assert(entry[].__bool__(), "entry in index must be full")
             # SAFETY: We just checked that `entry` is present.
-            return Pointer.address_of(entry[].unsafe_value().value)
+            return Pointer.address_of(entry[].unsafe_value()[1])
 
         return None
 
@@ -889,10 +843,10 @@ struct Dict[K: KeyElement, V: CollectionElement](
             entry[] = None
             entry_hash[] = None
             self.size -= 1
-            return entry_value^.reap_value()
+            return entry_value[1]
         raise "KeyError"
 
-    fn popitem(mut self) raises -> DictEntry[K, V]:
+    fn popitem(mut self) raises -> Tuple[K, V]:
         """Remove and return a (key, value) pair from the dictionary. Pairs are returned in LIFO order.
         popitem() is useful to destructively iterate over a dictionary, as often used in set algorithms.
         If the dictionary is empty, calling popitem() raises a KeyError.
@@ -910,13 +864,13 @@ struct Dict[K: KeyElement, V: CollectionElement](
         var val = Optional[V](None)
 
         for item in reversed(self.items()):
-            key = Optional(item[].key)
-            val = Optional(item[].value)
+            key = Optional(item[][0])
+            val = Optional(item[][1])
             break
 
         if key:
             _ = self.pop(key.value())
-            return DictEntry[K, V](key.value(), val.value())
+            return Tuple[K, V](key.value(), val.value())
 
         raise "KeyError: popitem(): dictionary is empty"
 
@@ -950,7 +904,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         my_dict["b"] = 2
 
         for e in my_dict.items():
-            print(e[].key, e[].value)
+            print(e[][0], e[][1])
         ```
 
         Returns:
@@ -966,15 +920,13 @@ struct Dict[K: KeyElement, V: CollectionElement](
             other: The dictionary to update from.
         """
         for entry in other.items():
-            self[entry[].key] = entry[].value
+            self[entry[][0]] = entry[][1]
 
     fn clear(mut self):
         """Remove all elements from the dictionary."""
         self.size = 0
         self._n_entries = 0
-        self._entries = Self._new_list[DictEntry[K, V]](
-            Self._initial_reservation
-        )
+        self._entries = Self._new_list[Tuple[K, V]](Self._initial_reservation)
         self._key_hashes = Self._new_list[UInt64](Self._initial_reservation)
         self._index = _DictIndex(self._reserved())
 
@@ -1008,19 +960,17 @@ struct Dict[K: KeyElement, V: CollectionElement](
         return items
 
     fn _insert(mut self, owned key: K, owned value: V):
-        self._insert(DictEntry[K, V](key^, value^))
+        self._insert(Tuple[K, V](key^, value^))
 
-    fn _insert[
-        safe_context: Bool = False
-    ](mut self, owned entry: DictEntry[K, V]):
+    fn _insert[safe_context: Bool = False](mut self, owned entry: Tuple[K, V]):
         @parameter
         if not safe_context:
             self._maybe_resize()
         var found: Bool
         var slot: UInt64
         var index: Int
-        var entry_hash: UInt64 = hash(entry.key)
-        found, slot, index = self._find_index(entry_hash, entry.key)
+        var entry_hash: UInt64 = hash(entry[0])
+        found, slot, index = self._find_index(entry_hash, entry[0])
 
         self._entries[index] = entry^
         self._key_hashes[index] = entry_hash
@@ -1064,7 +1014,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
                 var entry_hash = self._key_hashes[index]
                 debug_assert(entry.__bool__(), "entry in index must be full")
                 debug_assert(entry_hash.__bool__(), "hash must exist for entry")
-                if hash == entry_hash.value() and key == entry.value().key:
+                if hash == entry_hash.value() and key == entry.value()[0]:
                     return (True, slot, index)
             self._next_index_slot(slot, perturb)
 
@@ -1083,7 +1033,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         self.size = 0
         self._n_entries = 0
         var old_entries = self._entries^
-        self._entries = self._new_list[DictEntry[K, V]](_reserved)
+        self._entries = self._new_list[Tuple[K, V]](_reserved)
         self._key_hashes = self._new_list[UInt64](_reserved)
         self._index = _DictIndex(self._reserved())
 
@@ -1312,7 +1262,7 @@ struct OwnedKwargsDict[V: CollectionElement](
         my_dict["b"] = 2
 
         for e in my_dict.items():
-            print(e[].key, e[].value)
+            print(e[][0], e[][1])
         ```
 
         Returns:
