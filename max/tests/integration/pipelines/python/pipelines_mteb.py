@@ -66,14 +66,14 @@ class EmbeddingModel:
     @cached_property
     def mteb_model_meta(self) -> mteb.ModelMeta:
         if self.pipeline_config.engine == PipelineEngine.MAX:
-            name = f"max_{self.pipeline_config.model_path}"
+            name = f"max_{self.pipeline_config.model_config.model_path}"
         elif self.pipeline_config.engine == PipelineEngine.HUGGINGFACE:
-            name = f"max_hf_{self.pipeline_config.model_path}"
+            name = f"max_hf_{self.pipeline_config.model_config.model_path}"
         else:
-            name = f"max_{self.pipeline_config.engine}_{self.pipeline_config.model_path}"
+            name = f"max_{self.pipeline_config.engine}_{self.pipeline_config.model_config.model_path}"
 
         if meta := mteb.models.MODEL_REGISTRY.get(
-            self.pipeline_config.model_path
+            self.pipeline_config.model_config.model_path
         ):
             return meta.model_copy(update={"name": name})
         else:
@@ -131,7 +131,7 @@ class EmbeddingModel:
                     id=str(n),
                     index=n,
                     prompt=sentence,
-                    model_name=self.pipeline_config.model_path,
+                    model_name=self.pipeline_config.model_config.model_path,
                 )
             )
         response = self.pipeline.encode(pipeline_request)
@@ -212,7 +212,7 @@ def main(
     model: EmbeddingModel | mteb.encoder_interface.Encoder
     logging.info("Loading model with %s library." % model_library)
     if model_library == "mteb":
-        model = mteb.get_model(pipeline_config.model_path)
+        model = mteb.get_model(pipeline_config.model_config.model_path)
     else:
         register_all_models()
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(
@@ -220,8 +220,8 @@ def main(
         )
         assert isinstance(pipeline, EmbeddingsGenerator)
         huggingface_config = AutoConfig.from_pretrained(
-            pipeline_config.model_path,
-            trust_remote_code=pipeline_config.trust_remote_code,
+            pipeline_config.model_config.model_path,
+            trust_remote_code=pipeline_config.model_config.trust_remote_code,
         )
         model = EmbeddingModel(
             pipeline_config, tokenizer, pipeline, huggingface_config

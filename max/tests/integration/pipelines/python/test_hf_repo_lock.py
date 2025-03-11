@@ -30,6 +30,6 @@ def test_revision_for_hf_repo() -> None:
 @mock.patch("huggingface_hub.repo_exists", return_value=True)
 def test_apply_to_config(repo_exists_mock: mock.Mock) -> None:
     config = pipelines.PipelineConfig(model_path=EXAMPLE_KEY)
-    assert config.huggingface_revision == "main"
+    assert config.model_config.huggingface_revision == "main"
     hf_repo_lock.apply_to_config(config)
-    assert config.huggingface_revision == EXAMPLE_VALUE
+    assert config.model_config.huggingface_revision == EXAMPLE_VALUE

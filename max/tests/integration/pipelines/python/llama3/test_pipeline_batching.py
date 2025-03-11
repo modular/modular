@@ -42,11 +42,11 @@ def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
         quantization_encoding=SupportedEncoding.float32,
     )
     return TextTokenizer(
-        pipeline_config.model_path,
-        revision=pipeline_config.huggingface_revision,
+        pipeline_config.model_config.model_path,
+        revision=pipeline_config.model_config.huggingface_revision,
         max_length=pipeline_config.max_length,
         max_new_tokens=pipeline_config.max_new_tokens,
-        trust_remote_code=pipeline_config.trust_remote_code,
+        trust_remote_code=pipeline_config.model_config.trust_remote_code,
     )
 
 

@@ -22,7 +22,7 @@ def test_text_tokenizer_with_constrained_decoding():
         enable_structured_output=True,
     )
 
-    tokenizer = TextTokenizer(pipeline_config.model_path)
+    tokenizer = TextTokenizer(pipeline_config.model_config.model_path)
 
     prompt = """
     Please provide a json response, with the person's name and age extracted from the excerpt.
@@ -36,7 +36,7 @@ def test_text_tokenizer_with_constrained_decoding():
     request = TokenGeneratorRequest(
         id="request_with_tools",
         index=0,
-        model_name=pipeline_config.model_path,
+        model_name=pipeline_config.model_config.model_path,
         messages=[
             TokenGeneratorRequestMessage(
                 role="user",

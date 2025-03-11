@@ -10,14 +10,17 @@ from typing import Generator, Optional, Tuple, Union
 from unittest.mock import MagicMock, PropertyMock, patch
 
 from max.driver import DeviceSpec, scan_available_devices
-from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.pipelines import (
+    KVCacheConfig,
+    MAXModelConfig,
     ProfilingConfig,
     SamplingConfig,
+    SupportedEncoding,
     TextContext,
     TextGenerationPipeline,
 )
+from max.pipelines.kv_cache import KVCacheStrategy
 
 from .pipeline_model import MockPipelineModel
 from .tokenizer import MockTextTokenizer
@@ -48,9 +51,15 @@ def retrieve_mock_text_generation_pipeline(
     mock_config.sampling_config = SamplingConfig(
         enable_structured_output=False,
     )
+    mock_config.model_config = MAXModelConfig(
+        model_path="HuggingFaceTB/SmolLM-135M-Instruct",
+        device_specs=device_specs,
+        quantization_encoding=SupportedEncoding.float32,
+    )
+    mock_config.kv_cache_config = KVCacheConfig(
+        cache_strategy=KVCacheStrategy.MODEL_DEFAULT,
+    )
 
-    mock_config.device_specs = device_specs
-    mock_config.model_path = "HuggingFaceTB/SmolLM-135M-Instruct"
     mock_config.eos_prob = eos_prob
     mock_config.max_length = max_length
     mock_config.vocab_size = vocab_size

@@ -31,8 +31,10 @@ def test_config_post_init__with_weight_path_but_no_model_path():
         ],
     )
 
-    assert config.model_path == "modularai/replit-code-1.5"
-    assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
+    assert config.model_config.model_path == "modularai/replit-code-1.5"
+    assert config.model_config.weight_path == [
+        Path("replit-code-v1_5-3b-f32.gguf")
+    ]
 
 
 def test_config_init__reformats_with_str_weights_path():
@@ -42,9 +44,9 @@ def test_config_init__reformats_with_str_weights_path():
         weight_path="file.path",
     )
 
-    assert isinstance(config.weight_path, list)
-    assert len(config.weight_path) == 1
-    assert isinstance(config.weight_path[0], Path)
+    assert isinstance(config.model_config.weight_path, list)
+    assert len(config.model_config.weight_path) == 1
+    assert isinstance(config.model_config.weight_path[0], Path)
 
 
 def test_config__raises_with_unsupported_GPTQ_format():
@@ -53,7 +55,7 @@ def test_config__raises_with_unsupported_GPTQ_format():
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
         quantization_encoding="gptq",
     )
-    config.finalize_encoding_config()
+    config.model_config.finalize_encoding_config()
 
     # We expect this to fail.
     with pytest.raises(ValueError):
@@ -61,7 +63,7 @@ def test_config__raises_with_unsupported_GPTQ_format():
             model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
             quantization_encoding="gptq",
         )
-        unsupported_config.finalize_encoding_config()
+        unsupported_config.model_config.finalize_encoding_config()
 
 
 def test_validate_model_path__correct_repo_id_provided():
@@ -69,7 +71,7 @@ def test_validate_model_path__correct_repo_id_provided():
         model_path="modularai/llama-3.1",
     )
 
-    assert config.model_path == "modularai/llama-3.1"
+    assert config.model_config.model_path == "modularai/llama-3.1"
 
 
 def test_validate_model_path__bad_repo_provided():
@@ -148,8 +150,10 @@ def test_config_post_init__other_repo_weights():
         ],
     )
 
-    assert config._weights_repo_id == "modularai/replit-code-1.5"
-    assert config.weight_path == [Path("replit-code-v1_5-3b-f32.gguf")]
+    assert config.model_config._weights_repo_id == "modularai/replit-code-1.5"
+    assert config.model_config.weight_path == [
+        Path("replit-code-v1_5-3b-f32.gguf")
+    ]
 
     # This example, should not set the _weights_repo_id.
     config = PipelineConfig(
@@ -162,10 +166,10 @@ def test_config_post_init__other_repo_weights():
         quantization_encoding=SupportedEncoding.float32,
     )
 
-    assert config._weights_repo_id is None
-    weights_repo = config.huggingface_weights_repo()
+    assert config.model_config._weights_repo_id is None
+    weights_repo = config.model_config.huggingface_weights_repo()
     assert weights_repo.repo_id == "modularai/llama-3.1"
-    assert config.weight_path == [
+    assert config.model_config.weight_path == [
         Path(
             "SDK/integration-test/pipelines/python/llama3/testdata/tinyllama_f32.gguf"
         )

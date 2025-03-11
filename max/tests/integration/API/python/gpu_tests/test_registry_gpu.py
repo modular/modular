@@ -197,7 +197,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         """Provided a PipelineConfig and InferenceSession, load the kv manager."""
         assert available_cache_memory is not None
         num_layers = self.get_num_layers(self.pipeline_config)
-        devices = load_devices(self.pipeline_config.device_specs)
+        devices = load_devices(self.pipeline_config.model_config.device_specs)
 
         return load_kv_manager(
             params=self.get_kv_params(

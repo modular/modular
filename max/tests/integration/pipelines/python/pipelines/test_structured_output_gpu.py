@@ -46,7 +46,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry):
 
     request_id = "request_0"
     request = TokenGeneratorRequest(
-        model_name=pipeline_config.model_path,
+        model_name=pipeline_config.model_config.model_path,
         id=request_id,
         index=0,
         messages=[

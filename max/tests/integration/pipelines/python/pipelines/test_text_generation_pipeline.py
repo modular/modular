@@ -71,9 +71,7 @@ def test_text_generation_pipeline():
 
             context_batch[id] = asyncio.run(tokenizer.new_context(request))
 
-        num_steps = 1
         length = [0 for _ in range(len(context_batch))]
-        request_ids = list(context_batch.keys())
         while True:
             # This will generate a list[dict[request_id, TextResponse]] for each step
             output = pipeline.next_token(context_batch, num_steps=1)
