@@ -5,27 +5,81 @@
 # ===----------------------------------------------------------------------=== #
 """ops.repeat_interleave tests."""
 
-import random
+import operator
+from functools import reduce
+from typing import Optional
 
 import pytest
-from conftest import tensor_types
-from hypothesis import given
+from conftest import axes, tensor_types
+from hypothesis import assume, given, reject
 from hypothesis import strategies as st
-from max.graph import Graph, TensorType, ops
+from max.graph import Graph, Shape, StaticDim, TensorType, ops
+
+shared_tensor_types = st.shared(tensor_types())
 
 
 @given(
-    type=st.shared(tensor_types(), key="type"),
-    # Stack is currently "slow" for larger lists because of MLIR interop.
-    # Stack currently fails on an empty list.
-    repeats=st.integers(min_value=1, max_value=20),
+    type=shared_tensor_types,
+    repeats=st.integers(min_value=1),
+    axis=axes(shared_tensor_types),
 )
-@pytest.mark.skip("GEX-1903")
-def test_repeat_interleave(type: TensorType, repeats: int):
-    axis = random.randint(0, type.rank - 1)
+def test_repeat_interleave(type: TensorType, repeats: int, axis: int):
+    dim = type.shape[axis]
+    # TODO(GEX-1918): no checked overflow here
+    assume(not isinstance(dim, StaticDim) or int(dim) * repeats < 2**63)
     with Graph("repeat_interleave", input_types=[type]) as graph:
+        try:  # dims must fit into an int64
+            _ = repeats * type.shape[axis]
+        except ValueError:
+            reject()  # test dim out of range
         out = ops.repeat_interleave(graph.inputs[0], repeats, axis)
         target_shape = list(type.shape)
         target_shape[axis] *= repeats
         assert out.shape == target_shape
+        assert out.dtype == type.dtype
         graph.output(out)
+
+
+@given(
+    type=shared_tensor_types,
+    repeats=st.integers(min_value=1),
+)
+def test_repeat_interleave__no_axis(type: TensorType, repeats: int):
+    # TODO(GEX-1918): no checked overflow here
+    static_product = reduce(operator.mul, type.shape.static_dims, repeats)
+    assume(static_product < 2**63)
+    with Graph("repeat_interleave", input_types=[type]) as graph:
+        out = ops.repeat_interleave(graph.inputs[0], repeats)
+        flat_size = reduce(operator.mul, type.shape, 1)
+        target_shape = Shape([flat_size * repeats])
+        assert out.shape == target_shape
+        assert out.dtype == type.dtype
+        graph.output(out)
+
+
+@given(
+    type=shared_tensor_types,
+    repeats=...,
+    axis=st.one_of(axes(shared_tensor_types), st.none()),
+)
+def test_repeat_interleave__nonpositive_repeats(
+    type: TensorType, repeats: int, axis: Optional[int]
+):
+    assume(repeats <= 0)
+    with Graph("repeat_interleave", input_types=[type]) as graph:
+        with pytest.raises(ValueError):
+            ops.repeat_interleave(graph.inputs[0], repeats, axis=axis)
+
+
+@given(
+    type=shared_tensor_types,
+    repeats=st.integers(min_value=1),
+    axis=...,
+)
+def test_repeat_interleave__axis_out_of_bounds(
+    type: TensorType, repeats: int, axis: int
+):
+    assume(not -type.rank <= axis < type.rank)
+    with Graph("repeat_interleave", input_types=[type]) as graph:
+        with pytest.raises(ValueError):
+            ops.repeat_interleave(graph.inputs[0], repeats, axis=axis)
