@@ -44,6 +44,7 @@ from .interfaces import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
+from .log_probabilities import compute_log_probabilities
 from .pipeline import (
     ModelInputs,
     ModelOutputs,
@@ -64,6 +65,7 @@ PipelinesFactory = _Callable[[], _Union[TokenGenerator, EmbeddingsGenerator]]
 
 
 __all__ = [
+    "LogProbabilities",
     "HuggingFaceFile",
     "PipelineConfig",
     "ProfilingConfig",
@@ -97,7 +99,6 @@ __all__ = [
     "ModelInputs",
     "ModelOutputs",
     "TextResponse",
-    "LogProbabilities",
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",
     "EmbeddingsResponse",

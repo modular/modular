@@ -18,14 +18,7 @@ from typing import Union
 from max.dtype import DType
 from max.graph import Graph, ops
 from max.graph.weights import Weights
-from max.pipelines import PipelineConfig
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    FetchPagedKVCacheCollection,
-    KVCacheParams,
-    KVCacheStrategy,
-)
-from max.pipelines.nn import (
+from max.nn import (
     MLP,
     AttentionWithRope,
     Embedding,
@@ -33,6 +26,13 @@ from max.pipelines.nn import (
     OptimizedRotaryEmbedding,
     RMSNorm,
     TransformerBlock,
+)
+from max.pipelines import PipelineConfig
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    KVCacheParams,
+    KVCacheStrategy,
 )
 from transformers import AutoConfig
 

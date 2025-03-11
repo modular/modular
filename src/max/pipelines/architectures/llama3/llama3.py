@@ -19,12 +19,7 @@ from typing import Callable
 
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
-)
-from max.pipelines.nn import (
+from max.nn import (
     MLPV2,
     AttentionWithRopeV2,
     EmbeddingV2,
@@ -37,6 +32,11 @@ from max.pipelines.nn import (
     RMSNormV2,
     Transformer,
     TransformerBlock,
+)
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    KVCacheStrategy,
 )
 
 from .model_config import Llama3Config

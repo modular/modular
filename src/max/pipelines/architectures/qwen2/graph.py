@@ -25,14 +25,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import Weights, WeightsFormat, weights_format
-from max.pipelines import PipelineConfig, RopeType
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    FetchPagedKVCacheCollection,
-    KVCacheParams,
-    KVCacheStrategy,
-)
-from max.pipelines.nn import (
+from max.nn import (
     MLP,
     AttentionWithRope,
     Embedding,
@@ -41,6 +34,13 @@ from max.pipelines.nn import (
     RMSNorm,
     Transformer,
     TransformerBlock,
+)
+from max.pipelines import PipelineConfig, RopeType
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    KVCacheParams,
+    KVCacheStrategy,
 )
 from transformers import AutoConfig
 

@@ -19,9 +19,9 @@ from max.dtype import DType
 from max.graph import Graph, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import Weights
+from max.nn import Embedding, LayerNorm, Linear, Sequential
+from max.nn.layer import Layer
 from max.pipelines import PipelineConfig
-from max.pipelines.nn import Embedding, LayerNorm, Linear, Sequential
-from max.pipelines.nn.layer import Layer
 from transformers import AutoConfig
 
 

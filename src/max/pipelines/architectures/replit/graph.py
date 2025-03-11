@@ -18,13 +18,7 @@ from max.dtype import DType
 from max.graph import Graph, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import GGUFWeights
-from max.pipelines import PipelineConfig
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    KVCacheManager,
-    KVCacheParams,
-)
-from max.pipelines.nn import (
+from max.nn import (
     AttentionImpl,
     AttentionWithoutMask,
     Embedding,
@@ -34,6 +28,12 @@ from max.pipelines.nn import (
     Sequential,
     Transformer,
     TransformerBlock,
+)
+from max.pipelines import PipelineConfig
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheManager,
+    KVCacheParams,
 )
 from transformers import AutoConfig
 

@@ -21,11 +21,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.graph.weights import Weights
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    KVCacheParams,
-)
-from max.pipelines.nn import (
+from max.nn import (
     MLP,
     AttentionWithRopeQKV,
     Embedding,
@@ -34,7 +30,11 @@ from max.pipelines.nn import (
     RMSNorm,
     TransformerBlock,
 )
-from max.pipelines.nn.layer import Layer
+from max.nn.layer import Layer
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+)
 
 from .cross_attention_decoder import (
     CrossAttentionDecoderLayer,

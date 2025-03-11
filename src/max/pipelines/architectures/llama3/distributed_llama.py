@@ -20,12 +20,7 @@ from typing import Callable
 
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
-)
-from max.pipelines.nn import (
+from max.nn import (
     AttentionWithRopeV2,
     DistributedAttentionWithRope,
     DistributedMLP,
@@ -39,6 +34,11 @@ from max.pipelines.nn import (
     Module,
     RMSNormV2,
     VocabParallelEmbedding,
+)
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    KVCacheStrategy,
 )
 
 from .naive_llama3 import StackedMLP

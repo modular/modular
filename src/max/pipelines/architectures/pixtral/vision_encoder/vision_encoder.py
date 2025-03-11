@@ -18,9 +18,9 @@ from typing import List
 
 from max.dtype import DType
 from max.graph import TensorValueLike, ops
-from max.pipelines.nn import Conv2D
-from max.pipelines.nn.layer import Layer
-from max.pipelines.nn.norm import RMSNorm
+from max.nn import Conv2D
+from max.nn.layer import Layer
+from max.nn.norm import RMSNorm
 
 from .rotary_embedding_2d import RotaryEmbedding2D, patch_position_ids
 from .transformer import Transformer

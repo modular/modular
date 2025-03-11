@@ -26,7 +26,6 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights
 from max.pipelines import (
     KVCacheConfig,
-    LogProbabilities,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -36,6 +35,7 @@ from max.pipelines import (
     upper_bounded_default,
 )
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
+from max.pipelines.interfaces import LogProbabilities
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -43,7 +43,9 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
+from max.pipelines.log_probabilities import (
+    compute_log_probabilities,
+)
 from transformers import AutoConfig
 
 from .graph import transformer

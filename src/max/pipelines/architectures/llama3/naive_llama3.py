@@ -22,8 +22,7 @@ import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.kv_cache import KVCacheParams
-from max.pipelines.nn import (
+from max.nn import (
     MLPV2,
     EmbeddingV2,
     GPTQLinearV2,
@@ -36,6 +35,7 @@ from max.pipelines.nn import (
     RMSNormV2,
     RotaryEmbedding,
 )
+from max.pipelines.kv_cache import KVCacheParams
 
 from .model_config import Llama3Config
 

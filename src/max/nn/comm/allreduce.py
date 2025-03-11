@@ -26,7 +26,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.pipelines.nn.layer import Module
+from max.nn.layer import Module
 
 
 class Allreduce(Module):

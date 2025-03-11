@@ -26,6 +26,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
 from max.graph.weights import Weights
+from max.nn import Linear
+from max.nn.layer import Layer
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -50,8 +52,6 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines.kv_cache._utils import build_max_lengths_tensor
-from max.pipelines.nn import Linear
-from max.pipelines.nn.layer import Layer
 from transformers import AutoConfig
 
 from .language_model import CausalLanguageModel, instantiate_language_model

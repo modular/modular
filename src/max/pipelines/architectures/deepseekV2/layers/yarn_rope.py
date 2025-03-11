@@ -19,7 +19,7 @@ from typing import Optional, Tuple
 
 from max.dtype import DType
 from max.graph import Dim, TensorValue, ops
-from max.pipelines.nn.layer import Module
+from max.nn.layer import Module
 
 
 @dataclass

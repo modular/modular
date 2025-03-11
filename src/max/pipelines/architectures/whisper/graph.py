@@ -16,8 +16,8 @@ import numpy as np
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
+from max.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
 from max.pipelines import PipelineConfig
-from max.pipelines.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
 from transformers import AutoConfig
 
 from .encoder import WhisperEncoder, WhisperEncoderLayer, WhisperSdpaAttention

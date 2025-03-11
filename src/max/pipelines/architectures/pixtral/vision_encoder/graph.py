@@ -15,8 +15,8 @@
 from max.dtype import DType
 from max.graph import Graph, ops
 from max.graph.weights import Weights
+from max.nn import Conv2D, Linear, RMSNorm
 from max.pipelines import PipelineConfig
-from max.pipelines.nn import Conv2D, Linear, RMSNorm
 from transformers import AutoConfig
 
 from .attention import Attention

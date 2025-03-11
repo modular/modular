@@ -27,7 +27,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.nn.comm.allreduce import Allreduce
+from max.nn.comm.allreduce import Allreduce
 
 from .layer import Layer, Module
 

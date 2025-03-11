@@ -17,14 +17,14 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.pipelines.nn import (
+from max.nn import (
     Conv1D,
     Embedding,
     LayerNorm,
     Linear,
     Sequential,
 )
-from max.pipelines.nn.layer import Layer
+from max.nn.layer import Layer
 
 
 @dataclass

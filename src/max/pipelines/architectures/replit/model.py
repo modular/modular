@@ -26,7 +26,6 @@ from max.engine import InferenceSession, Model
 from max.graph.weights import GGUFWeights, Weights
 from max.pipelines import (
     KVCacheConfig,
-    LogProbabilities,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -35,6 +34,7 @@ from max.pipelines import (
     TextContext,
     upper_bounded_default,
 )
+from max.pipelines.interfaces import LogProbabilities
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -42,7 +42,7 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
+from max.pipelines.log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 
 from .graph import _build_graph
