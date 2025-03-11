@@ -15,12 +15,17 @@ lit_tests(
         exclude = _DATA,
     ),
     data = glob(["inputs/**/*.mojo"]),
+    gpu_constraints = ["//:has_gpu"],
     mojo_deps = [
         "//Kernels/mojo/gpu",
         "//Kernels/mojo/_mlir",
         "//Kernels/mojo/runtime",
         "//Kernels/mojo/compile",
         "//open-source/mojo/stdlib/stdlib",
+    ],
+    tags = [
+        "A100",
+        "gpu",
     ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
