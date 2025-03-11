@@ -220,8 +220,6 @@ struct DictEntry[K: KeyElement, V: CollectionElement](
         V: The value type of the dict.
     """
 
-    var hash: UInt64
-    """`key.__hash__()`, stored so hashing isn't re-computed during dict lookup."""
     var key: K
     """The unique key for the entry."""
     var value: V
@@ -234,7 +232,6 @@ struct DictEntry[K: KeyElement, V: CollectionElement](
             key: The key of the entry.
             value: The value of the entry.
         """
-        self.hash = hash(key)
         self.key = key^
         self.value = value^
 
@@ -478,6 +475,8 @@ struct Dict[K: KeyElement, V: CollectionElement](
     """The number of elements currently stored in the dict."""
     var _n_entries: Int
     """The number of entries currently allocated."""
+    var _key_hashes: List[Optional[UInt64]]
+    """Store `key.__hash__()` for each entry so hashing isn't re-computed during dict lookup."""
 
     var _index: _DictIndex
 
@@ -494,7 +493,10 @@ struct Dict[K: KeyElement, V: CollectionElement](
         """Initialize an empty dictiontary."""
         self.size = 0
         self._n_entries = 0
-        self._entries = Self._new_entries(Self._initial_reservation)
+        self._entries = Self._new_list[DictEntry[K, V]](
+            Self._initial_reservation
+        )
+        self._key_hashes = Self._new_list[UInt64](Self._initial_reservation)
         self._index = _DictIndex(len(self._entries))
 
     @always_inline
@@ -521,7 +523,10 @@ struct Dict[K: KeyElement, V: CollectionElement](
         )
         self.size = 0
         self._n_entries = 0
-        self._entries = Self._new_entries(power_of_two_initial_capacity)
+        self._entries = Self._new_list[DictEntry[K, V]](
+            power_of_two_initial_capacity
+        )
+        self._key_hashes = Self._new_list[UInt64](power_of_two_initial_capacity)
         self._index = _DictIndex(len(self._entries))
 
     # TODO: add @property when Mojo supports it to make
@@ -580,6 +585,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         self._n_entries = existing._n_entries
         self._index = existing._index.copy(existing._reserved())
         self._entries = existing._entries
+        self._key_hashes = existing._key_hashes
 
     fn __moveinit__(out self, owned existing: Self):
         """Move data of an existing dict into a new one.
@@ -591,6 +597,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         self._n_entries = existing._n_entries
         self._index = existing._index^
         self._entries = existing._entries^
+        self._key_hashes = existing._key_hashes^
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -875,9 +882,12 @@ struct Dict[K: KeyElement, V: CollectionElement](
         if found:
             self._set_index(slot, Self.REMOVED)
             var entry = Pointer.address_of(self._entries[index])
+            var entry_hash = Pointer.address_of(self._key_hashes[index])
             debug_assert(entry[].__bool__(), "entry in index must be full")
+            debug_assert(entry_hash[].__bool__(), "hash must exist for entry")
             var entry_value = entry[].unsafe_take()
             entry[] = None
+            entry_hash[] = None
             self.size -= 1
             return entry_value^.reap_value()
         raise "KeyError"
@@ -962,7 +972,10 @@ struct Dict[K: KeyElement, V: CollectionElement](
         """Remove all elements from the dictionary."""
         self.size = 0
         self._n_entries = 0
-        self._entries = Self._new_entries(Self._initial_reservation)
+        self._entries = Self._new_list[DictEntry[K, V]](
+            Self._initial_reservation
+        )
+        self._key_hashes = Self._new_list[UInt64](Self._initial_reservation)
         self._index = _DictIndex(self._reserved())
 
     fn setdefault(
@@ -985,12 +998,14 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
     @staticmethod
     @always_inline
-    fn _new_entries(reserve_at_least: Int) -> List[Optional[DictEntry[K, V]]]:
-        var entries = List[Optional[DictEntry[K, V]]](capacity=reserve_at_least)
+    fn _new_list[
+        T: CollectionElement
+    ](reserve_at_least: Int) -> List[Optional[T]]:
+        var items = List[Optional[T]](capacity=reserve_at_least)
         # We have memory available, we'll use everything.
-        for i in range(entries.capacity):
-            entries.append(None)
-        return entries
+        for _ in range(items.capacity):
+            items.append(None)
+        return items
 
     fn _insert(mut self, owned key: K, owned value: V):
         self._insert(DictEntry[K, V](key^, value^))
@@ -1004,9 +1019,11 @@ struct Dict[K: KeyElement, V: CollectionElement](
         var found: Bool
         var slot: UInt64
         var index: Int
-        found, slot, index = self._find_index(entry.hash, entry.key)
+        var entry_hash: UInt64 = hash(entry.key)
+        found, slot, index = self._find_index(entry_hash, entry.key)
 
         self._entries[index] = entry^
+        self._key_hashes[index] = entry_hash
         if not found:
             self._set_index(slot, index)
             self.size += 1
@@ -1044,8 +1061,10 @@ struct Dict[K: KeyElement, V: CollectionElement](
                 pass
             else:
                 var entry = self._entries[index]
+                var entry_hash = self._key_hashes[index]
                 debug_assert(entry.__bool__(), "entry in index must be full")
-                if hash == entry.value().hash and key == entry.value().key:
+                debug_assert(entry_hash.__bool__(), "hash must exist for entry")
+                if hash == entry_hash.value() and key == entry.value().key:
                     return (True, slot, index)
             self._next_index_slot(slot, perturb)
 
@@ -1064,7 +1083,8 @@ struct Dict[K: KeyElement, V: CollectionElement](
         self.size = 0
         self._n_entries = 0
         var old_entries = self._entries^
-        self._entries = self._new_entries(_reserved)
+        self._entries = self._new_list[DictEntry[K, V]](_reserved)
+        self._key_hashes = self._new_list[UInt64](_reserved)
         self._index = _DictIndex(self._reserved())
 
         for i in range(len(old_entries)):
@@ -1080,8 +1100,10 @@ struct Dict[K: KeyElement, V: CollectionElement](
                 right += 1
                 debug_assert(right < self._reserved(), "Invalid dict state")
             var entry = self._entries[right]
+            var entry_hash = self._key_hashes[right]
             debug_assert(entry.__bool__(), "Logic error")
-            var slot = self._find_empty_index(entry.value().hash)
+            debug_assert(entry_hash.__bool__(), "Logic error")
+            var slot = self._find_empty_index(entry_hash.value())
             self._set_index(slot, left)
             if left != right:
                 self._entries[left] = entry.unsafe_take()
