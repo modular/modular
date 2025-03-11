@@ -20,6 +20,7 @@ from max.graph import Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.pipelines import (
     PIPELINE_REGISTRY,
+    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -201,8 +202,9 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
         return load_kv_manager(
             params=self.get_kv_params(
-                self.huggingface_config,
+                huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
+                kv_cache_config=self.pipeline_config.kv_cache_config,
                 cache_dtype=self.encoding.cache_dtype,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
@@ -232,7 +234,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
 
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
-                huggingface_config,
+                huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
