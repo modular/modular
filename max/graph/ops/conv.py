@@ -203,8 +203,8 @@ def conv3d(
 
     The padding values are expected to take the form (pad_dim1_before,
     pad_dim1_after, pad_dim2_before, pad_dim2_after...) and represent padding
-    0's before and after the indicated *spatial* dimensions in `input`. In 2-D
-    convolution, dim1 here repesents H and dim2 represents W. In Python like
+    0's before and after the indicated *spatial* dimensions in `input`. In 3-D
+    convolution, dim1 here represents D, dim2 represents H and dim3 represents W. In Python like
     syntax, padding a 2x3 spatial `input` with [0, 1, 2, 1] would yield:
 
     ```python
@@ -225,9 +225,9 @@ def conv3d(
     This op currently only supports strides and padding on the input.
 
     Args:
-        input: An NDHWC input tensor to perform the convolution upon.
+        x: An NDHWC input tensor to perform the convolution upon.
         filter: The convolution filter in RSCF layout:
-                (height, depth, width, in_channels / num_groups, out_channels).
+                (depth, height, width, in_channels / num_groups, out_channels).
         stride: The stride of the convolution operation.
         dilation: The spacing between the kernel points.
         padding: The amount of padding applied to the input.
@@ -248,7 +248,7 @@ def conv3d(
             )
         if bias.rank != 1:
             raise ValueError(
-                "bias for a 2-D convolution must be rank 1 with shape (out_channels,)"
+                "bias for a 3-D convolution must be rank 1 with shape (out_channels,)"
             )
     if x.dtype != filter.dtype:
         raise ValueError(
@@ -257,12 +257,12 @@ def conv3d(
         )
     if x.rank != 5:
         raise ValueError(
-            "input to a 3-D convolution must be rank 4 with shape (batch_size,"
+            "input to a 3-D convolution must be rank 5 with shape (batch_size,"
             " depth, height, width, in_channels)"
         )
     if filter.rank != 5:
         raise ValueError(
-            "filter for a 3-D convolution must be rank 4 with shape (depth,"
+            "filter for a 3-D convolution must be rank 5 with shape (depth,"
             " height, width, in_channels / num_groups, out_channels)"
         )
     if dilation != (1, 1, 1):
@@ -307,8 +307,8 @@ def conv3d(
 
     input_width, filter_width = x.shape[3], filter.shape[2]
     output_shape[3] = (
-        input_width - filter_width + 1 + padding[4] + padding[5] + stride[2]
-    ) // +stride[2]
+        input_width - filter_width + padding[4] + padding[5] + stride[2]
+    ) // stride[2]
 
     output_shape[4] = filter.shape[4]
 
