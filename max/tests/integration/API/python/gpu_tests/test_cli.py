@@ -169,7 +169,7 @@ VALID_COMMANDS = [
     TestCommand(
         args=[
             "--model-path",
-            "modularai/replit-code-1.5",
+            "modularai/llama-3.1",
             "--cache-strategy",
             "naive",
             "--devices",
