@@ -77,7 +77,9 @@ fn test_stmatrix(
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
-    st_matrix[4](c_shared.offset(thread_idx.x * 4), d_reg)
+    st_matrix[4](
+        c_shared.offset(thread_idx.x * 4), rebind[SIMD[DType.float32, 4]](d_reg)
+    )
 
     var grp = (lane_id() // 16)
     var local = (lane_id() % 16)
@@ -141,7 +143,10 @@ fn test_stmatrix_gen[
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
-    st_matrix[c_frag_size](c_shared.offset(thread_idx.x * 4), d_reg)
+    st_matrix[c_frag_size](
+        c_shared.offset(thread_idx.x * 4),
+        rebind[SIMD[DType.float32, c_frag_size]](d_reg),
+    )
     var grp = (lane_id() // 16)
     var local = (lane_id() % 16)
 
