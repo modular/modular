@@ -57,6 +57,10 @@ from kv_cache.types import (
     KVCacheStaticParams,
     KVCollectionT,
     PagedKVCacheCollection,
+    PagedKVCacheCollectionFA3Fallback,
+)
+from flash_attention3.flash_attention import (
+    daolabs_flash_attention3_paged_ragged_dispatch,
 )
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
@@ -133,6 +137,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     kv_matmul_ragged_continuous_batching,
     unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized,
+    generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged,
 )
 from nn.mha import flash_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -6111,6 +6116,42 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     )
 
 
+@compiler.register("mo.fused_qkv_matmul.ragged.paged_fa3_fallback")
+struct Struct_fused_qkv_matmul_ragged_paged_fa3_fallback:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
+    ](
+        output: OutputTensor[type=type, rank=2],
+        hidden_state: InputTensor[type=type, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight: InputTensor[type=type, rank=2],
+        kv_collection: PagedKVCacheCollectionFA3Fallback[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged[
+            target=target,
+        ](
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(weight),
+            kv_collection,
+            layer_idx,
+            managed_tensor_slice_to_ndbuffer(output),
+            ctx,
+        )
+
+
 @compiler.register("mo.fused_qkv_matmul.ragged.paged")
 struct Struct_fused_qkv_matmul_padded_ragged:
     @always_inline
@@ -6481,6 +6522,71 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         )
 
 
+@compiler.register("mo.fused_qk_rope.ragged.paged_fa3_fallback")
+struct Struct_fused_qk_rope_ragged_paged_fa3_fallback[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
+    ](
+        output: OutputTensor[type=type, rank=3],
+        q_proj: InputTensor[type=type, rank=3],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        kv_collection: PagedKVCacheCollectionFA3Fallback[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        freqs_cis: InputTensor[type=type, rank=2],
+        layer_idx: UInt32,
+        context: DeviceContextPtr = DeviceContextPtr(),
+    ) raises:
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            return String(";").join(
+                trace_arg("output", managed_tensor_slice_to_ndbuffer(output)),
+                trace_arg("q_proj", managed_tensor_slice_to_ndbuffer(q_proj)),
+                trace_arg(
+                    "freqs_cis", managed_tensor_slice_to_ndbuffer(freqs_cis)
+                ),
+                "layer_idx=" + String(layer_idx),
+                "num_heads=" + String(kv_collection.kv_params.num_heads),
+                "head_size=" + String(kv_collection.kv_params.head_size),
+                "interleaved=" + String(interleaved),
+            )
+
+        # Pass device context only on GPU.
+        var dev_ctx = Optional[DeviceContext]() if is_cpu[
+            target
+        ]() else context.get_device_context()
+
+        alias name = "mo.fused_qk_rope.ragged.paged_fa3_fallback.nhead_" + String(
+            kv_collection.kv_params.num_heads
+        ) + ".hdim_" + String(
+            kv_collection.kv_params.head_size
+        )
+        with Trace[TraceLevel.OP, target=target](
+            name,
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        ):
+            fused_qk_rope_ragged[
+                kv_collection.CacheType, interleaved=interleaved, target=target
+            ](
+                managed_tensor_slice_to_ndbuffer(q_proj),
+                managed_tensor_slice_to_ndbuffer(input_row_offsets),
+                kv_collection,
+                managed_tensor_slice_to_ndbuffer(freqs_cis),
+                layer_idx,
+                managed_tensor_slice_to_ndbuffer(output),
+                dev_ctx,
+            )
+
+
 # ===-----------------------------------------------------------------------===#
 # MHA
 #
@@ -6760,6 +6866,69 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
             scale,
             output,
             context,
+        )
+
+
+@compiler.register("mo.mha.ragged.paged_fa3_fallback.causal_mask.no_pos")
+struct Struct_mha_ragged_paged_fa3_fallback_causal_mask_no_pos:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
+    ](
+        output: OutputTensor[type=type, rank=3],
+        q: InputTensor[type=type, rank=3],
+        input_row_offsets: InputTensor[type = DType.int32, rank=1],
+        context_lengths: InputTensor[type = DType.int32, rank=1],
+        kv_collection: PagedKVCacheCollectionFA3Fallback[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            "gpu" in target,
+            "fa3_fallback only supports GPU execution, got: " + target,
+        ]()
+        constrained[
+            type == DType.bfloat16, "fa3_fallback only support BF16 execution"
+        ]()
+        var full_lookup_table = kv_collection.lookup_table
+        var full_lookup_table_shape = full_lookup_table.dynamic_shape
+        var sliced_lookup_table = NDBuffer[DType.int32, 2](
+            full_lookup_table._offset(
+                StaticTuple[Int, 3](Int(layer_idx), 0, 0)
+            ),
+            IndexList[2](
+                full_lookup_table_shape[1], full_lookup_table_shape[2]
+            ),
+        )
+        var q_nd = managed_tensor_slice_to_ndbuffer(q)
+        var input_row_offsets_nd = managed_tensor_slice_to_ndbuffer(
+            input_row_offsets
+        )
+        var context_lengths_nd = managed_tensor_slice_to_ndbuffer(
+            context_lengths
+        )
+        var output_nd = managed_tensor_slice_to_ndbuffer(output)
+        daolabs_flash_attention3_paged_ragged_dispatch[
+            type, kv_collection.kv_params, kv_collection.page_size
+        ](
+            q_nd,
+            kv_collection.blocks,
+            input_row_offsets_nd,
+            context_lengths_nd,
+            sliced_lookup_table,
+            output_nd,
+            Int(kv_collection.max_seq_length),
+            Int(kv_collection.max_cache_length),
+            context.get_device_context(),
         )
 
 
@@ -7329,6 +7498,35 @@ struct Struct_print_kv_cache_continuous_batching:
 # Expected kernel name format:
 # mo.kv_collection_ctor.<continuous_batching/paged>
 # ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_collection_ctor.paged_fa3_fallback")
+struct Struct_kv_collection_ctor_paged_fa3_fallback:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int,
+        target: StringLiteral,
+    ](
+        blocks: InputTensor[type=type, rank=5],
+        cache_lengths: InputTensor[type = DType.int32, rank=1],
+        lookup_table: InputTensor[type = DType.int32, rank=3],
+        max_lengths: InputTensor[type = DType.uint32, rank=2],
+    ) -> PagedKVCacheCollectionFA3Fallback[
+        type, KVCacheStaticParams(num_heads, head_dim), page_size
+    ]:
+        return PagedKVCacheCollectionFA3Fallback[
+            type, KVCacheStaticParams(num_heads, head_dim), page_size
+        ](
+            managed_tensor_slice_to_ndbuffer(blocks),
+            managed_tensor_slice_to_ndbuffer(cache_lengths),
+            managed_tensor_slice_to_ndbuffer(lookup_table),
+            max_seq_length=max_lengths[Index(0, 0)],
+            max_cache_length=max_lengths[Index(0, 1)],
+        )
 
 
 @compiler.register("mo.kv_collection_ctor.paged")
