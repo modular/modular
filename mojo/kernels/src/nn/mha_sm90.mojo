@@ -179,7 +179,7 @@ fn mha_sm90[
 
     @parameter
     if config.algorithm == FlashAttentionAlgorithm(3):
-        mha_single_batch_sm90_fa3[
+        _mha_single_batch_sm90_fa3[
             mask_rank,
             config=config,
             group=group,
@@ -201,7 +201,7 @@ fn mha_sm90[
         )
     else:
         constrained[config.algorithm == FlashAttentionAlgorithm(2)]()
-        mha_single_batch_sm90_fa2[
+        _mha_single_batch_sm90_fa2[
             mask_rank,
             config=config,
             group=group,
@@ -223,12 +223,8 @@ fn mha_sm90[
         )
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        config.num_threads[True]()
-    )
-)
-fn mha_single_batch_sm90_fa3[
+@always_inline
+fn _mha_single_batch_sm90_fa3[
     mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
@@ -1095,12 +1091,8 @@ fn mha_single_batch_sm90_fa3[
         )
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        config.num_threads[True]()
-    )
-)
-fn mha_single_batch_sm90_fa2[
+@always_inline
+fn _mha_single_batch_sm90_fa2[
     mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
