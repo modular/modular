@@ -716,12 +716,40 @@ struct LayoutTensor[
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
+        """Calculate the memory offset for a 2D tensor element.
+
+        Computes the linear memory offset based on the tensor's stride configuration.
+
+        Args:
+            m: The row index.
+            n: The column index.
+
+        Returns:
+            The calculated memory offset as an integer.
+        """
         return Self.stride[0]() * m + Self.stride[1]() * n
 
     @always_inline
     fn _elementwise_unary[
         func: fn (Self.element_type) capturing -> (Self.element_type),
     ](self) -> Self:
+        """Apply an elementwise unary operation to all elements in the tensor.
+
+        This is an internal method that applies the provided function to each element
+        in the tensor. The operation is performed in-place and optimized for the
+        tensor's memory layout.
+
+        Parameters:
+            func: A function that takes a single element and returns a transformed element.
+                  The function should be pure with no side effects for predictable results.
+
+        Returns:
+            Self: The modified tensor with the unary operation applied.
+
+        Note:
+            This method requires the tensor to have a statically known layout for
+            compile-time optimization.
+        """
         constrained[
             layout.all_dims_known(),
             (
@@ -761,6 +789,35 @@ struct LayoutTensor[
             alignment=other_alignment,
         ],
     ) -> Self:
+        """Apply an elementwise binary operation with broadcasting support.
+
+        This internal method applies a binary operation between elements of this tensor
+        and another tensor, with support for limited broadcasting patterns. The operation
+        is performed in-place on this tensor.
+
+        Parameters:
+            func: A binary function that takes two elements (one from each tensor) and
+                  returns a single element as the result of the operation.
+            other_layout: The layout of the other tensor.
+            other_mut: Whether the other tensor is mutable.
+            other_origin: The origin type of the other tensor.
+            other_masked: Whether the other tensor is masked.
+            other_alignment: The memory alignment of the other tensor.
+
+        Args:
+            other: The second tensor operand for the binary operation.
+
+        Returns:
+            Self: The modified tensor with the binary operation applied.
+
+        Note:
+            - Currently supports only rank-2 tensors or tensors of the same rank.
+            - For tensors of the same rank, shapes must match exactly.
+            - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+              match the corresponding dimension of the rank-2 tensor.
+            - The operation is optimized based on the memory layout of both tensors.
+        """
+
         @parameter
         if Self.rank == other.rank:
 
@@ -838,11 +895,20 @@ struct LayoutTensor[
     fn __add__(
         self, other: Scalar[dtype]
     ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
-        """Add the LayoutTensor with a scalar value. The scalar value will be
-        broadcasted to the entire tensor.
+        """Add a scalar value to each element of the tensor.
+
+        Performs an elementwise addition operation, adding the scalar value to each
+        element in the tensor. This operation creates a new tensor with the results.
 
         Args:
-            other: The scalar value.
+            other: The scalar value to add to each element.
+
+        Returns:
+            A new tensor containing the results of the addition operation.
+
+        Performance:
+            - This operation creates a copy of the tensor before performing the addition.
+            - For in-place addition, use the `__iadd__` method instead.
         """
 
         @parameter
@@ -853,11 +919,16 @@ struct LayoutTensor[
 
     @always_inline
     fn __iadd__(self, other: Scalar[dtype]):
-        """Adds scalar value to the LayoutTensor. The scalar value will be
-        broadcasted to the entire tensor.
+        """Add a scalar value to each element of the tensor in-place.
+
+        Performs an elementwise addition operation, adding the scalar value to each
+        element in the tensor. This operation modifies the tensor in-place.
 
         Args:
-            other: The scalar value.
+            other: The scalar value to add to each element.
+
+        Performance:
+            - This operation modifies the tensor directly without creating a copy.
         """
 
         @parameter
@@ -879,15 +950,28 @@ struct LayoutTensor[
             layout_bitwidth=layout_bitwidth,
         ],
     ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
-        """Do an addition with another LayoutTensor and return the added
-        tensor. Currently only support tensors of the same shape if the rank
-        is the same and also tensors of rank-2.
+        """Add another tensor to this tensor elementwise.
+
+        Performs an elementwise addition between this tensor and another tensor.
+        This operation creates a new tensor with the results.
+
+        Limited broadcasting is supported:
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+          match the corresponding dimension of the rank-2 tensor.
 
         Parameters:
             other_layout: The layout of the other tensor.
 
         Args:
-            other: The other tensor to be added to.
+            other: The tensor to add to this tensor.
+
+        Returns:
+            A new tensor containing the results of the addition operation.
+
+        Performance:
+            - This operation creates a copy of the tensor before performing the addition.
+            - For in-place addition, use the `__iadd__` method instead.
         """
 
         fn add_val(
@@ -912,15 +996,24 @@ struct LayoutTensor[
             layout_bitwidth=layout_bitwidth,
         ],
     ):
-        """Do an addition with another LayoutTensor in place.
-        Currently only support tensors of the same shape if the rank
-        is the same and also tensors of rank-2.
+        """Add another tensor to this tensor elementwise in-place.
+
+        Performs an elementwise addition between this tensor and another tensor.
+        This operation modifies the tensor in-place.
+
+        Limited broadcasting is supported:
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+          match the corresponding dimension of the rank-2 tensor.
 
         Parameters:
             other_layout: The layout of the other tensor.
 
         Args:
-            other: The other tensor to be added to.
+            other: The tensor to add to this tensor.
+
+        Performance:
+            - This operation modifies the tensor directly without creating a copy.
         """
 
         fn add_val(
@@ -934,11 +1027,20 @@ struct LayoutTensor[
     fn __mul__(
         self, other: Scalar[dtype]
     ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
-        """Multiply the LayoutTensor with a scalar value. The scalar value will
-        be broadcasted to the entire tensor.
+        """Multiply each element of the tensor by a scalar value.
+
+        Performs an elementwise multiplication operation, multiplying each element
+        in the tensor by the scalar value. This operation creates a new tensor with the results.
 
         Args:
-            other: The scalar value.
+            other: The scalar value to multiply with each element.
+
+        Returns:
+            A new tensor containing the results of the multiplication operation.
+
+        Performance:
+            - This operation creates a copy of the tensor before performing the multiplication.
+            - For in-place multiplication, use the `__imul__` method instead.
         """
 
         @parameter
@@ -960,20 +1062,31 @@ struct LayoutTensor[
             layout_bitwidth=layout_bitwidth,
         ],
     ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
-        """Perform a multiplication with another LayoutTensor and return the
-        resulting tensor.
+        """Multiply this tensor with another tensor elementwise.
 
-        Currently, only tensors of the same shape are supported if the ranks are
-        the same. Additionally, tensors of rank-2 are supported.
+        Performs an elementwise multiplication (Hadamard product) between this tensor
+        and another tensor. This operation creates a new tensor with the results.
+
+        Limited broadcasting is supported:
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+          match the corresponding dimension of the rank-2 tensor.
+
+        Note: This is NOT a matrix multiplication operation. For matrix multiplication,
+        use the appropriate matmul function instead.
 
         Parameters:
             other_layout: The layout of the other tensor.
 
         Args:
-            other: The other tensor to be multiplied with.
+            other: The tensor to multiply with this tensor.
 
         Returns:
-            The resulting tensor after multiplication.
+            A new tensor containing the results of the elementwise multiplication.
+
+        Performance:
+            - This operation creates a copy of the tensor before performing the multiplication.
+            - For in-place multiplication, use the `__imul__` method instead.
         """
 
         fn mul_val(
@@ -987,11 +1100,16 @@ struct LayoutTensor[
 
     @always_inline
     fn __imul__(self, other: Scalar[dtype]):
-        """Multiply the LayoutTensor with a scalar value inplace.
-        The scalar value will be broadcasted to the entire tensor.
+        """Multiply each element of the tensor by a scalar value in-place.
+
+        Performs an elementwise multiplication operation, multiplying each element
+        in the tensor by the scalar value. This operation modifies the tensor in-place.
 
         Args:
-            other: The scalar value.
+            other: The scalar value to multiply with each element.
+
+        Performance:
+            - This operation modifies the tensor directly without creating a copy.
         """
 
         @parameter
@@ -1013,15 +1131,27 @@ struct LayoutTensor[
             layout_bitwidth=layout_bitwidth,
         ],
     ):
-        """Do a multiplication with another LayoutTensor in place.
-        Currently only support tensors of the same shape if the rank
-        is the same and also tensors of rank-2.
+        """Multiply this tensor with another tensor elementwise in-place.
+
+        Performs an elementwise multiplication (Hadamard product) between this tensor
+        and another tensor. This operation modifies the tensor in-place.
+
+        Limited broadcasting is supported:
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+          match the corresponding dimension of the rank-2 tensor.
+
+        Note: This is NOT a matrix multiplication operation. For matrix multiplication,
+        use the appropriate matmul function instead.
 
         Parameters:
             other_layout: The layout of the other tensor.
 
         Args:
-            other: The other tensor to be added to.
+            other: The tensor to multiply with this tensor.
+
+        Performance:
+            - This operation modifies the tensor directly without creating a copy.
         """
 
         fn mul_val(
@@ -1035,11 +1165,20 @@ struct LayoutTensor[
     fn __sub__(
         self, other: Scalar[dtype]
     ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
-        """Subtract the LayoutTensor with a scalar value. The scalar value will be
-        broadcasted to the entire tensor.
+        """Subtract a scalar value from each element of the tensor.
+
+        Performs an elementwise subtraction operation, subtracting the scalar value from each
+        element in the tensor. This operation creates a new tensor with the results.
 
         Args:
-            other: The scalar value.
+            other: The scalar value to subtract from each element.
+
+        Returns:
+            A new tensor containing the results of the subtraction operation.
+
+        Performance:
+            - This operation creates a copy of the tensor before performing the subtraction.
+            - For in-place subtraction, use the `__isub__` method instead.
         """
 
         @parameter
@@ -1061,15 +1200,28 @@ struct LayoutTensor[
             layout_bitwidth=layout_bitwidth,
         ],
     ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
-        """Do an subtraction with another LayoutTensor and return the subtracted
-        tensor. Currently only support tensors of the same shape if the rank
-        is the same and also tensors of rank-2.
+        """Subtract another tensor from this tensor elementwise.
+
+        Performs an elementwise subtraction between this tensor and another tensor.
+        This operation creates a new tensor with the results.
+
+        Limited broadcasting is supported:
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+          match the corresponding dimension of the rank-2 tensor.
 
         Parameters:
             other_layout: The layout of the other tensor.
 
         Args:
-            other: The other tensor to be subtract from.
+            other: The tensor to subtract from this tensor.
+
+        Returns:
+            A new tensor containing the results of the subtraction operation.
+
+        Performance:
+            - This operation creates a copy of the tensor before performing the subtraction.
+            - For in-place subtraction, use the `__isub__` method instead.
         """
 
         fn sub_val(
@@ -1083,11 +1235,16 @@ struct LayoutTensor[
 
     @always_inline
     fn __isub__(self, other: Scalar[dtype]):
-        """Subtract scalar value from the LayoutTensor. The scalar value will
-        be broadcasted to the entire tensor.
+        """Subtract a scalar value from each element of the tensor in-place.
+
+        Performs an elementwise subtraction operation, subtracting the scalar value from each
+        element in the tensor. This operation modifies the tensor in-place.
 
         Args:
-            other: The scalar value.
+            other: The scalar value to subtract from each element.
+
+        Performance:
+            - This operation modifies the tensor directly without creating a copy.
         """
 
         @parameter
@@ -1109,14 +1266,24 @@ struct LayoutTensor[
             layout_bitwidth=layout_bitwidth,
         ],
     ):
-        """Subtracts other from the LayoutTensor. Currently only support tensors
-        of the same shape if the rank is the same and also tensors of rank-2.
+        """Subtract another tensor from this tensor elementwise in-place.
+
+        Performs an elementwise subtraction between this tensor and another tensor.
+        This operation modifies the tensor in-place.
+
+        Limited broadcasting is supported:
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+          match the corresponding dimension of the rank-2 tensor.
 
         Parameters:
             other_layout: The layout of the other tensor.
 
         Args:
-            other: The other tensor to be subtract from.
+            other: The tensor to subtract from this tensor.
+
+        Performance:
+            - This operation modifies the tensor directly without creating a copy.
         """
 
         fn sub_val(
@@ -1130,11 +1297,24 @@ struct LayoutTensor[
     fn __truediv__(
         self, other: Scalar[dtype]
     ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
-        """Truediv the LayoutTensor with a scalar value. The scalar value will be
-        broadcasted to the entire tensor.
+        """Divide each element of the tensor by a scalar value.
+
+        Performs an elementwise division operation, dividing each element
+        in the tensor by the scalar value. This operation creates a new tensor with the results.
 
         Args:
-            other: The scalar value.
+            other: The scalar value to divide each element by.
+
+        Returns:
+            A new tensor containing the results of the division operation.
+
+        Performance:
+            - This operation creates a copy of the tensor before performing the division.
+            - For in-place division, use the `__itruediv__` method instead.
+
+        Note:
+            - Division by zero will result in undefined behavior or errors depending on the dtype.
+            - For integer dtypes, this performs integer division.
         """
 
         @parameter
@@ -1156,15 +1336,32 @@ struct LayoutTensor[
             layout_bitwidth=layout_bitwidth,
         ],
     ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
-        """Do an truediv with another LayoutTensor and return the divided
-        tensor. Currently only support tensors of the same shape if the rank
-        is the same and also tensors of rank-2.
+        """Divide this tensor by another tensor elementwise.
+
+        Performs an elementwise division between this tensor and another tensor.
+        This operation creates a new tensor with the results.
+
+        Limited broadcasting is supported:
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+          match the corresponding dimension of the rank-2 tensor.
 
         Parameters:
             other_layout: The layout of the other tensor.
 
         Args:
-            other: The other tensor to be subtract from.
+            other: The tensor to divide this tensor by.
+
+        Returns:
+            A new tensor containing the results of the division operation.
+
+        Performance:
+            - This operation creates a copy of the tensor before performing the division.
+            - For in-place division, use the `__itruediv__` method instead.
+
+        Note:
+            - Division by zero will result in undefined behavior or errors depending on the dtype.
+            - For integer dtypes, this performs integer division.
         """
 
         fn div_val(
@@ -1177,11 +1374,20 @@ struct LayoutTensor[
         )
 
     fn __itruediv__(self, other: Scalar[dtype]):
-        """Truediv the LayoutTensor with a scalar value. The scalar value will be
-        broadcasted to the entire tensor.
+        """Divide each element of the tensor by a scalar value in-place.
+
+        Performs an elementwise division operation, dividing each element
+        in the tensor by the scalar value. This operation modifies the tensor in-place.
 
         Args:
-            other: The scalar value.
+            other: The scalar value to divide each element by.
+
+        Performance:
+            - This operation modifies the tensor directly without creating a copy.
+
+        Note:
+            - Division by zero will result in undefined behavior or errors depending on the dtype.
+            - For integer dtypes, this performs integer division.
         """
 
         @parameter
@@ -1203,15 +1409,28 @@ struct LayoutTensor[
             layout_bitwidth=layout_bitwidth,
         ],
     ):
-        """Do an truediv with another LayoutTensor and return the divided
-        tensor. Currently only support tensors of the same shape if the rank
-        is the same and also tensors of rank-2.
+        """Divide this tensor by another tensor elementwise in-place.
+
+        Performs an elementwise division between this tensor and another tensor.
+        This operation modifies the tensor in-place.
+
+        Limited broadcasting is supported:
+        - For tensors of the same rank, shapes must match exactly.
+        - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
+          match the corresponding dimension of the rank-2 tensor.
 
         Parameters:
             other_layout: The layout of the other tensor.
 
         Args:
-            other: The other tensor to be subtract from.
+            other: The tensor to divide this tensor by.
+
+        Performance:
+            - This operation modifies the tensor directly without creating a copy.
+
+        Note:
+            - Division by zero will result in undefined behavior or errors depending on the dtype.
+            - For integer dtypes, this performs integer division.
         """
 
         fn div_val(
@@ -1223,11 +1442,18 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn __getitem__(self, *dims: Int) -> Self.element_type:
-        """Get the element of the tensor with a specified index. Note that the
-        size of index has to match the rank of the tensor.
+        """Retrieves a single element from the tensor at the specified indices.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
 
         Args:
-            dims: The indexes that specify which element to retrieve.
+            dims: The indices specifying the element's position in each dimension.
+                 For example, in a 3D tensor, you would use (i, j, k).
+
+        Returns:
+            The element at the specified position with the tensor's data type.
         """
 
         var strides = self.runtime_layout.stride.value
@@ -1241,11 +1467,17 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn __setitem__(self, d0: Int, val: Self.element_type):
-        """Set the element of the tensor with a specified index and value.
+        """Sets a single element in a rank-1 tensor at the specified index.
+
+        This method provides array-like element assignment for rank-1 tensors.
 
         Args:
-            d0: The first dimensional index.
-            val: The value writing to the tensor.
+            d0: The index along the first dimension.
+            val: The value to write to the tensor at the specified position.
+
+        Note:
+            - No bounds checking is performed. Accessing out-of-bounds indices
+              will result in undefined behavior.
         """
 
         var strides = self.runtime_layout.stride.value
@@ -1257,12 +1489,21 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
-        """Set the element of the tensor with a specified index and value.
+        """Sets a single element in a rank-2 tensor at the specified indices.
+
+        This method provides array-like element assignment for rank-2 tensors.
 
         Args:
-            d0: The first dimensional index.
-            d1: The second dimensional index.
-            val: The value writing to the tensor.
+            d0: The index along the first dimension.
+            d1: The index along the second dimension.
+            val: The value to write to the tensor at the specified position.
+
+        Performance:
+            - Direct memory access with minimal overhead.
+            - Memory access pattern follows the tensor's stride configuration.
+
+        Note:
+            - No bounds checking is performed. Accessing out-of-bounds indices
         """
 
         var strides = self.runtime_layout.stride.value
@@ -1274,13 +1515,23 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
-        """Set the element of the tensor with a specified index and value.
+        """Sets a single element in a rank-3 tensor at the specified indices.
+
+        This method provides array-like element assignment for rank-3 tensors.
 
         Args:
-            d0: The first dimensional index.
-            d1: The second dimensional index.
-            d2: The third dimensional index.
-            val: The value writing to the tensor.
+            d0: The index along the first dimension.
+            d1: The index along the second dimension.
+            d2: The index along the third dimension.
+            val: The value to write to the tensor at the specified position.
+
+        Performance:
+            - Direct memory access with minimal overhead.
+            - Memory access pattern follows the tensor's stride configuration.
+
+        Note:
+            - No bounds checking is performed. Accessing out-of-bounds indices
+              will result in undefined behavior.
         """
 
         var strides = self.runtime_layout.stride.value
@@ -1294,14 +1545,24 @@ struct LayoutTensor[
     fn __setitem__(
         self, d0: Int, d1: Int, d2: Int, d3: Int, val: Self.element_type
     ):
-        """Set the element of the tensor with a specified index and value.
+        """Sets a single element in a rank-4 tensor at the specified indices.
+
+        This method provides array-like element assignment for rank-4 tensors.
 
         Args:
-            d0: The first dimensional index.
-            d1: The second dimensional index.
-            d2: The third dimensional index.
-            d3: The fourth dimensional index.
-            val: The value writing to the tensor.
+            d0: The index along the first dimension.
+            d1: The index along the second dimension.
+            d2: The index along the third dimension.
+            d3: The index along the fourth dimension.
+            val: The value to write to the tensor at the specified position.
+
+        Performance:
+            - Direct memory access with minimal overhead.
+            - Memory access pattern follows the tensor's stride configuration.
+
+        Note:
+            - No bounds checking is performed. Accessing out-of-bounds indices
+              will result in undefined behavior.
         """
 
         var strides = self.runtime_layout.stride.value
@@ -1315,25 +1576,60 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
-        """Load a value from a specified location.
+        """Load a SIMD vector from the tensor at the specified 2D coordinates.
+
+        Performs a vectorized load operation from the tensor's memory, retrieving
+        'width' consecutive elements starting at position (m, n). This method enables
+        efficient SIMD operations on tensor data.
 
         Parameters:
-            width: The simd width of the returned value.
+            width: The number of elements to load into the SIMD vector. Should match
+                  the target hardware's vector width for optimal performance.
 
         Args:
-            m: The m dimension of the value.
-            n: The n dimension of the value.
+            m: The row index (first dimension).
+            n: The column index (second dimension).
+
+        Returns:
+            A SIMD vector containing 'width' consecutive elements from the tensor.
+
+        Performance:
+            - Uses unaligned memory access which may be slower on some architectures.
+            - For aligned access, use aligned_load instead when data alignment is guaranteed.
+            - The load operation is optimized based on the tensor's memory layout.
+
+        Note:
+            - No bounds checking is performed. Accessing out-of-bounds indices will
+              result in undefined behavior.
+            - The elements are loaded according to the tensor's stride configuration.
         """
 
         return self.ptr.load[width=width](self._offset(m, n))
 
     @always_inline
     fn prefetch(self, m: Int, n: Int):
-        """Do software prefetching of a value from a specified location.
+        """Prefetch tensor data at the specified 2D coordinates into cache.
+
+        Issues a software prefetch hint to the processor to load the data at
+        position (m, n) into the cache hierarchy. This can improve performance
+        by reducing memory latency for subsequent accesses to the same location.
 
         Args:
-            m: The m dimension of the value.
-            n: The n dimension of the value.
+            m: The row index (first dimension).
+            n: The column index (second dimension).
+
+        Performance:
+            - Prefetching is a performance hint and does not guarantee data will be cached.
+            - Most effective when issued sufficiently ahead of the actual data access.
+            - Uses high locality prefetch to the data cache, optimized for data that
+              will be accessed multiple times.
+            - Can reduce memory access latency by 50-90% when used correctly.
+
+        Note:
+            - Excessive prefetching can pollute the cache and degrade performance.
+            - Most beneficial for predictable access patterns that would otherwise
+              cause cache misses.
+            - No operation is performed on the prefetched data.
         """
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
             self.ptr.offset(self._offset(m, n))
@@ -1341,14 +1637,33 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn aligned_load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
-        """Do a load with a specified alignment base on the dtype and simd width.
+        """Load a SIMD vector with alignment guarantees from the tensor.
+
+        Performs an aligned vectorized load operation from the tensor's memory,
+        retrieving 'width' consecutive elements starting at position (m, n).
+        The alignment is automatically calculated based on the SIMD width and dtype.
 
         Parameters:
-            width: The simd width if the returned value.
+            width: The number of elements to load into the SIMD vector. Should match
+                  the target hardware's vector width for optimal performance.
 
         Args:
-            m: The m dimension of the value.
-            n: The n dimension of the value.
+            m: The row index (first dimension).
+            n: The column index (second dimension).
+
+        Returns:
+            A SIMD vector containing 'width' consecutive elements from the tensor.
+
+        Performance:
+            - Uses aligned memory access which is faster than unaligned access on most architectures.
+            - The alignment is automatically calculated based on the SIMD width and dtype.
+            - Can be up to 2x faster than unaligned loads on architectures that require alignment.
+
+        Note:
+            - The caller must ensure that the memory at (m, n) is properly aligned.
+              Misaligned access with this method may cause hardware exceptions on some architectures.
+            - No bounds checking is performed. Accessing out-of-bounds indices will
+              result in undefined behavior.
         """
 
         alias alignment = alignof[SIMD[dtype, width]]()
@@ -1358,30 +1673,64 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
-        """Store a value to a specified location.
+        """Store a SIMD vector to the tensor at the specified 2D coordinates.
+
+        Performs a vectorized store operation to the tensor's memory, writing
+        'width' consecutive elements starting at position (m, n). This method enables
+        efficient SIMD operations on tensor data.
 
         Parameters:
-            width: The simd width of the stored value.
+            width: The number of elements in the SIMD vector to store. Should match
+                  the target hardware's vector width for optimal performance.
 
         Args:
-            m: The m dimensional index to the tensor.
-            n: The n dimensional index to the tensor.
-            val: The value to be stored.
+            m: The row index (first dimension) where the store operation begins.
+            n: The column index (second dimension) where the store operation begins.
+            val: The SIMD vector containing the values to store in the tensor.
+
+        Performance:
+            - Uses unaligned memory access which may be slower on some architectures.
+            - For aligned access, use aligned_store instead when data alignment is guaranteed.
+            - The store operation is optimized based on the tensor's memory layout.
+
+        Note:
+            - No bounds checking is performed. Accessing out-of-bounds indices will
+              result in undefined behavior.
+            - The elements are stored according to the tensor's stride configuration.
+            - This operation modifies the tensor's data in-place.
         """
 
         return self.ptr.store(self._offset(m, n), val)
 
     @always_inline("nodebug")
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
-        """Do a store with a specified alignment base on the dtype and simd width.
+        """Store a SIMD vector with alignment guarantees to the tensor.
+
+        Performs an aligned vectorized store operation to the tensor's memory,
+        writing 'width' consecutive elements starting at position (m, n).
+        The alignment is automatically calculated based on the SIMD width and dtype.
 
         Parameters:
-            width: The simd width if the stored value.
+            width: The number of elements in the SIMD vector to store. Should match
+                  the target hardware's vector width for optimal performance.
 
         Args:
-            m: The m dimensional index to the tensor.
-            n: The n dimensional index to the tensor.
-            val: The value to be stored.
+            m: The row index (first dimension) where the store operation begins.
+            n: The column index (second dimension) where the store operation begins.
+            val: The SIMD vector containing the values to store in the tensor.
+
+        Performance:
+            - Uses aligned memory access which is faster than unaligned access on most architectures.
+            - The alignment is automatically calculated based on the SIMD width and dtype.
+            - Can be up to 2x faster than unaligned stores on architectures that require alignment.
+            - Particularly important for streaming stores that bypass the cache.
+
+        Note:
+            - The caller must ensure that the memory at (m, n) is properly aligned.
+              Misaligned access with this method may cause hardware exceptions on some architectures.
+            - No bounds checking is performed. Accessing out-of-bounds indices will
+              result in undefined behavior.
+            - This operation modifies the tensor's data in-place.
         """
 
         alias alignment = alignof[SIMD[dtype, width]]()
@@ -1401,13 +1750,34 @@ struct LayoutTensor[
         masked=masked,
         alignment=alignment,
     ]:
-        """Allocates stack memory for a LayoutTensor. Expects layout to be
-        fully static.
+        """Allocates stack memory for a `LayoutTensor` with a fully static layout.
+
+        Creates a new `LayoutTensor` instance with memory allocated on the stack rather
+        than the heap. This provides deterministic memory management and potentially
+        better performance for tensors with known sizes at compile time.
 
         Parameters:
-            alignment: Alignment of the allocation. It must be multiple of
-              the tensor's alignment, which is the minimum required by
-              arch, instruction, etc.
+            alignment: Memory alignment value for the allocation in bytes. Must be a
+                      multiple of the tensor's minimum required alignment. Default is
+                      the tensor's natural alignment based on its data type and layout.
+
+        Returns:
+            A new `LayoutTensor` instance with memory allocated on the stack.
+
+        Performance:
+            - Stack allocation is typically faster than heap allocation.
+            - Proper alignment can significantly improve memory access performance,
+              especially for vectorized operations.
+            - No dynamic memory management overhead (no malloc/free calls).
+
+        Note:
+            - Only works with tensors that have fully static layouts known at compile time.
+            - Stack memory is limited, so this should only be used for reasonably sized tensors.
+            - The allocated memory is automatically freed when the function returns.
+
+        Constraints:
+            - The layout must be fully static (all dimensions known at compile time).
+            - The alignment must be a multiple of the tensor's minimum required alignment.
         """
 
         constrained[layout.all_dims_known(), "Requires fully static layout"]()
@@ -1491,10 +1861,30 @@ struct LayoutTensor[
     @always_inline
     @staticmethod
     fn shape[idx: Int]() -> Int:
-        """Returns the shape of the tensor given a index.
+        """Returns the size of the tensor along the specified dimension.
+
+        Provides static access to the tensor's shape information. This method
+        returns the size of a specific dimension without requiring an instance
+        of the tensor, as the shape is part of the tensor's static type information.
 
         Parameters:
-            idx: The index to the shape of the tensor.
+            idx: The dimension index to query (0-based).
+                 For example, in a 3D tensor with shape [10, 20, 30]:
+                 - shape[0]() returns 10 (first dimension).
+                 - shape[1]() returns 20 (second dimension).
+                 - shape[2]() returns 30 (third dimension).
+
+        Returns:
+            The size of the tensor along the specified dimension as an integer.
+
+        Performance:
+            - This is a compile-time operation with no runtime cost when used
+              with static dimensions.
+
+        Note:
+            - This is a static method that operates on the tensor's type information,
+              not on a specific tensor instance.
+            - For dynamic dimensions, use the instance method `dim()` instead.
         """
 
         # FIXME: having to specify the origin is kind of weird
@@ -1504,10 +1894,32 @@ struct LayoutTensor[
     @always_inline
     @staticmethod
     fn stride[idx: Int]() -> Int:
-        """Returns the stride of the tensor given a index.
+        """Returns the memory stride of the tensor along the specified dimension.
+
+        Provides static access to the tensor's stride information. The stride represents
+        the number of elements to skip in memory to move one position along a particular
+        dimension. This method returns the stride without requiring an instance of the
+        tensor, as the stride is part of the tensor's static type information.
 
         Parameters:
-            idx: The index to the stride of the tensor.
+            idx: The dimension index to query (0-based).
+                 For example, in a 2D tensor with shape [10, 20] and row-major layout:
+                 - `stride[0]()` might return 20 (moving one row requires skipping 20 elements).
+                 - `stride[1]()` might return 1 (moving one column requires skipping 1 element).
+
+        Returns:
+            The memory stride of the tensor along the specified dimension as an integer.
+
+        Performance:
+            - This is a compile-time operation with no runtime cost when used
+              with static dimensions.
+            - Understanding stride patterns is crucial for optimizing memory access
+              patterns in performance-critical code.
+
+        Note:
+            - Strides depend on the memory layout (row-major, column-major, or custom).
+            - For non-contiguous tensors (e.g., tensor slices), strides may not follow
+              a simple pattern.
         """
 
         # FIXME: having to specify the origin is kind of weird
@@ -1516,10 +1928,34 @@ struct LayoutTensor[
 
     @always_inline
     fn dim(self, idx: Int) -> Int:
-        """Returns the dimension of the tensor given a index.
+        """Returns the runtime dimension size of the tensor along the specified axis.
 
-        Arguments:
-            idx: The index to the dimension of the tensor.
+        Unlike the static `shape` method, this instance method provides access to
+        the tensor's actual dimension sizes at runtime, which is necessary for
+        tensors with dynamic shapes or when working with tensor slices.
+
+        Args:
+            idx: The dimension index to query (0-based).
+                 For example, in a 3D tensor with shape `[10, 20, 30]`:
+                 - `dim(0)` returns 10 (first dimension).
+                 - `dim(1)` returns 20 (second dimension).
+                 - `dim(2)` returns 30 (third dimension).
+
+        Returns:
+            The size of the tensor along the specified dimension as an integer.
+
+        Performance:
+            - This is a runtime operation that accesses the tensor's runtime layout information.
+            - For static dimensions known at compile time, prefer the static `shape` method
+              when possible for better performance.
+
+        Note:
+            - This method works with both static and dynamic dimensions.
+            - For tensors with masked or partial views, this returns the actual
+              size of the view, not the original tensor.
+
+        Constraints:
+            - Only works with tensors that have depth-1 layouts (no nested shapes).
         """
         constrained[
             depth(layout.shape) == 1,
@@ -1538,7 +1974,28 @@ struct LayoutTensor[
             element_layout = self.element_layout,
         ],
     ):
-        """Returns a LayoutTensor with a coalesced Layout."""
+        """Creates a tensor with a coalesced memory layout from this tensor.
+
+        Coalescing a tensor's layout means reorganizing its memory representation
+        to be as contiguous as possible, which can improve memory access patterns
+        and performance. This operation does not move or copy data; it only changes
+        how the same memory is interpreted.
+
+        Performance:
+            - Coalesced layouts typically provide better cache utilization and
+              memory access patterns.
+            - This operation is zero-cost at runtime as it only changes the
+              layout information, not the actual data.
+            - Particularly beneficial before operations that perform sequential
+              memory access or vectorized operations.
+
+        Note:
+            - The coalesced tensor shares the same memory as the original tensor,
+              so modifications to one will affect the other.
+            - The shape of the tensor remains the same, only the stride information
+              is optimized.
+            - For already optimally coalesced tensors, this operation has no effect.
+        """
         return __type_of(result)(self.ptr)
 
     @staticmethod
@@ -1588,28 +2045,51 @@ struct LayoutTensor[
             masked = masked or _tile_is_masked[layout, *tile_sizes](),
         ],
     ):
-        """Tiles the layout and returns a tensor tile with the specified
-        tile_sizes at specific tile coordinates.
+        """Extract a tile (sub-tensor) from this tensor with specified dimensions and position.
+
+        Tiling is a fundamental operation for high-performance tensor computations that
+        divides a tensor into smaller blocks for better cache locality and parallelism.
+        This method extracts a specific tile at the given coordinates without copying data.
 
         Parameters:
-            tile_sizes: The tile sizes of the returned LayoutTensor.
+            tile_sizes: The dimensions of each tile along each axis of the tensor.
+                       For example, in a 2D tensor, `tile[32, 32]` creates 32×32 tiles.
 
         Args:
-            tile_coords: The tile coordinate. This refer to the coordinate of
-                         the tile after the tiled layout. Consider the following
-                         example.
+            tile_coords: The coordinates of the specific tile to extract.
+                        For example, `tile[32, 32](1, 2)` extracts the tile at position (1, 2)
+                        in the grid of 32×32 tiles.
+        Returns:
+            A view into the original tensor representing the specified tile.
 
         Example:
+            For a 4×4 tensor with values:
+            ```
+            [1 2 3 4]
+            [2 3 4 5]
+            [5 4 3 2]
+            [1 1 1 1]
+            ```
 
-            Memory Layout of
-                            [1 2 3 4]
-                            [2 3 4 5]
-                            [5 4 3 2]
-                            [1 1 1 1]
+            `tile[2, 2](1, 0)` will extract the tile:
+            ```
+            [5 4]
+            [1 1]
+            ```
 
-            tile[2, 2](1, 0) will give you
-                            [5 4]
-                            [1 1]
+        Performance:
+            - Creates a view without copying data, making it very efficient.
+            - Optimized for both static and dynamic layouts with different code paths.
+            - Properly handles edge cases where tiles may be partially outside the tensor.
+            - Maintains stride information for efficient memory access within the tile.
+
+        Note:
+            - The resulting tile is a view into the original tensor, so modifications
+              to the tile will affect the original tensor.
+            - For tiles at the edges of the tensor, the actual dimensions may be smaller
+              than the requested tile_sizes if masking is enabled.
+            - The implementation automatically selects between static and dynamic tiling
+              based on the tensor's layout properties.
         """
 
         alias num_tiles = _get_len[*tile_sizes]()
@@ -1706,14 +2186,50 @@ struct LayoutTensor[
             masked = masked or _tile_is_masked[layout, *tile_sizes](),
         ],
     ):
-        """Returns the tiled iterator of the LayoutTensor.
+        """Create an iterator that traverses tiles along a specified axis.
+
+        This method creates an iterator that allows efficient traversal of tiles
+        within a tensor. The iterator starts at the specified tile coordinates
+        and can move along the specified axis, providing access to consecutive tiles.
 
         Parameters:
-            tile_sizes: Tile sizes of each tile the iterator will iterate through.
-            axis: Axis of the LayoutTensor the iterator will iterate through.
+            tile_sizes: The dimensions of each tile along each axis of the tensor.
+                       For example, in a 2D tensor, `tiled_iterator[32, 32]` creates
+                       an iterator over 32×32 tiles.
+            axis: The axis along which the iterator will traverse. Default is 0 (first dimension).
+                 For example, with axis=0, the iterator will move vertically through tiles.
 
         Args:
-            tile_coords: The tile coordinate that the iterator will point to.
+            tile_coords: The starting coordinates of the tile where iteration begins.
+
+        Returns:
+            A `LayoutTensorIter` that can be used to traverse tiles along the specified axis.
+
+        Performance:
+            - Provides efficient sequential access to tiles with good cache locality.
+            - Optimized for both static and dynamic layouts with different code paths.
+            - Maintains stride information for efficient memory access within each tile.
+            - Properly handles edge cases where tiles may be partially outside the tensor.
+
+        Note:
+            - The iterator provides views into the original tensor, so modifications
+              through the iterator will affect the original tensor.
+            - For tiles at the edges of the tensor, the actual dimensions may be smaller
+              than the requested tile_sizes if masking is enabled.
+            - The iterator is not circular by default, meaning it will not wrap around
+              when reaching the end of the tensor along the iteration axis.
+            - The implementation automatically selects between static and dynamic tiling
+              based on the tensor's layout properties.
+
+        Example Usage:
+            ```mojo
+            var iter = tensor.tiled_iterator[16, 16, axis=0](0, 0)
+            for i in range(num_tiles_along_axis):
+                var tile = iter.get()
+                // Process tile
+                iter.next()
+            ```
+            .
         """
 
         alias tiles_rank = _get_len[*tile_sizes]()
@@ -1896,6 +2412,45 @@ struct LayoutTensor[
             element_layout=element_layout,
         ],
     ):
+        """Retrieve a specific partition of the tensor after splitting along a specified axis.
+
+        This method divides the tensor into 'count' partitions along the specified axis
+        and returns the partition at index 'idx'. The partitioning is done with alignment
+        considerations to optimize memory access patterns.
+
+        Unlike the overloaded split method that returns all partitions, this method
+        returns only a single partition, making it more memory-efficient for cases
+        where only one partition is needed at a time.
+
+        Parameters:
+            axis: The axis along which to split the tensor. Defaults to 0 (first dimension).
+            alignment: Memory alignment value for the partition size. Defaults to 1.
+
+        Args:
+            count: The number of partitions to divide the tensor into.
+            idx: The index of the partition to return (0-based).
+
+        Returns:
+            A `LayoutTensor` representing the requested partition.
+
+        Note:
+            - The shape along the split axis becomes unknown at compile time.
+            - Only works with dimensions that have statically known sizes.
+            - The last partition may be smaller than others if the dimension size
+              is not evenly divisible by 'count'.
+            - Partition sizes are aligned up to the specified alignment value,
+              which can improve performance for vectorized operations.
+
+        Performance:
+            - Uses aligned partitioning to improve memory access patterns.
+            - Avoids creating all partitions in memory, reducing memory usage.
+            - Maintains the original tensor's stride information for efficient
+              element access within the partition.
+
+        Constraints:
+            - The dimension being split must have a statically known size.
+            - Cannot split dimensions with unknown or dynamic sizes.
+        """
         constrained[
             layout.shape[axis].is_value(), "Can't split non-scalar dimension."
         ]()
@@ -1995,15 +2550,58 @@ struct LayoutTensor[
             or _distribute_is_masked[layout, threads_layout, axis](),
         ],
     ):
-        """Distribute tiled workload to threads.
+        """Distribute tensor workload across multiple threads in a structured pattern.
 
-        If the `axis` is given, for example, using `axis = 0` for 4 threads:
-        TH_0 TH_2
-        TH_1 TH_3
-        This means the tensor is only distributed to threads in axis = 0, i.e.,
-        threads 0 and 1. Threads 2 and 3 gets the same tile as 0 and 1, respectively.
-        This is useful when threads load same vectors from a row in A matrix and
-        some threads share the same vector.
+        This method partitions a tensor across multiple threads for parallel processing,
+        assigning each thread a specific portion of the tensor. The distribution pattern
+        is determined by the threads_layout parameter, which defines the logical arrangement
+        of threads.
+
+        Parameters:
+            threads_layout: Defines the logical arrangement of threads (e.g., 2×2 grid of 4 threads).
+                           This layout determines how the tensor is partitioned.
+            axis: Optional. If specified, restricts distribution to only this axis.
+                 For example, with axis=0 in a 2D thread layout, threads that differ only
+                 in their second coordinate will receive the same data.
+            swizzle: Optional. A function that remaps the distribution pattern to improve
+                    memory access patterns or cache locality.
+            submode_axis: Optional. Specifies an axis for specialized distribution modes.
+
+        Args:
+            thread_id: The ID of the current thread (0-based).
+
+        Returns:
+            A view into the original tensor representing the portion assigned to this thread.
+
+        Example:
+            For a 4×4 tensor distributed across 4 threads in a 2×2 grid:
+            - Thread 0 might get the top-left quadrant
+            - Thread 1 might get the top-right quadrant
+            - Thread 2 might get the bottom-left quadrant
+            - Thread 3 might get the bottom-right quadrant
+
+            If axis=0 is specified with the same setup:
+            - Thread 0 and Thread 2 would get the same data (left half)
+            - Thread 1 and Thread 3 would get the same data (right half)
+
+        Performance:
+            - Creates a view without copying data, making it very efficient for parallel processing.
+            - The swizzle parameter can significantly improve cache locality and memory access patterns.
+            - Optimized for both static and dynamic layouts with different code paths.
+
+        Note:
+            - The resulting tensor is a view into the original tensor, so modifications
+              will affect the original tensor.
+            - For optimal performance, the `threads_layout` should match the hardware's
+              thread organization (e.g., warp/wavefront size and shape).
+            - When using swizzling, carefully consider the memory access patterns to
+              avoid cache thrashing or bank conflicts.
+            - This function is particularly useful for GPU programming where threads
+              are organized in structured grids.
+
+        Constraints:
+            - For dynamic layouts, the shape must be known at runtime and the threads_layout
+              must be fully static.
         """
 
         alias distributed_layout = _compute_distribute_layout[
@@ -2164,6 +2762,45 @@ struct LayoutTensor[
             masked=masked,
         ],
     ):
+        """Reshape a tensor into a vectorized form for efficient SIMD operations.
+
+        This method transforms the tensor's logical layout to enable efficient vectorized
+        processing, treating blocks of elements as vector units. The transformation is
+        particularly useful for SIMD (Single Instruction Multiple Data) operations and
+        hardware acceleration.
+
+        Parameters:
+            vector_shape: The dimensions of each vector unit along each axis of the tensor.
+                         For example, in a 2D tensor, `vectorize[4, 4]` treats 4×4 blocks
+                         as vector units.
+
+        Returns:
+            A view of the tensor with a vectorized layout, where each element in the
+            resulting tensor represents a vector of elements from the original tensor.
+
+        Example:
+            For a 16×16 tensor, `vectorize[4, 4]` will produce a 4×4 tensor where each
+            element represents a 4×4 block from the original tensor.
+
+        Performance:
+            - Creates a view without copying data, making it very efficient.
+            - Enables hardware-accelerated vector operations on blocks of data.
+            - Improves cache locality by grouping related elements together.
+            - Particularly beneficial for operations that can leverage SIMD instructions.
+
+        Note:
+            - The tensor dimensions must be divisible by the corresponding vector dimensions.
+            - For dimensions with unknown size, the corresponding vector dimension must be 1.
+            - The resulting tensor has the same data but a different logical organization.
+            - Modifications to the vectorized tensor affect the original tensor.
+            - This transformation is particularly useful for GPU and vector processor optimizations.
+
+        Constraints:
+            - Each tensor dimension must be divisible by the corresponding vector dimension.
+            - Vector dimensions must be smaller than or equal to the corresponding tensor dimensions.
+            - For dimensions with unknown size, the vector dimension must be 1.
+        """
+
         @parameter
         @always_inline
         fn _check_vector_shape[*vec_shape: Int]():
@@ -2307,6 +2944,56 @@ struct LayoutTensor[
             element_layout=element_layout,
         ],
     ):
+        """Extract a slice from a rank-2 tensor using slice objects.
+
+        This method creates a view into a subset of the tensor defined by the slice
+        specifications for each dimension. The slice is a continuous region of the
+        tensor with no gaps (step size must be 1).
+
+        Parameters:
+            d0_slice: Slice specification for the first dimension (rows).
+                     Defines the start and end indices for the slice along this dimension.
+            d1_slice: Slice specification for the second dimension (columns).
+                     Defines the start and end indices for the slice along this dimension.
+
+        Returns:
+            A view into the original tensor representing the specified slice.
+
+        Example:
+            For a 4×4 tensor with values:
+            ```
+            [1 2 3 4]
+            [5 6 7 8]
+            [9 10 11 12]
+            [13 14 15 16]
+            ```
+
+            ```mojo
+            slice[Slice(1, 3), Slice(0, 2)]
+            ```
+            will extract:
+            ```
+            [5 6]
+            [9 10]
+            ```
+
+        Performance:
+            - Creates a view without copying data, making it very efficient.
+            - Maintains the original tensor's stride information for efficient memory access.
+            - Zero-cost abstraction at runtime when used with compile-time constant slices.
+
+        Note:
+            - The slice is a view into the original tensor, so modifications to the
+              slice will affect the original tensor.
+            - Only supports rank-2 tensors. For higher-rank tensors, use the overloaded
+              version with slice indices.
+            - The step size must be 1 (no gaps allowed in the slice).
+            - Slice bounds are not checked at runtime; accessing out-of-bounds indices
+              will result in undefined behavior.
+
+        Constraints:
+            - Only works with rank-2 tensors.
+        """
         constrained[
             d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
@@ -2340,6 +3027,47 @@ struct LayoutTensor[
             element_layout=element_layout,
         ],
     ):
+        """Extract a 2D slice from a higher-rank tensor at specific indices.
+
+        This method creates a view into a 2D subset of a higher-rank tensor by:
+        1. Selecting two dimensions to slice using the slice_indices parameter
+        2. Applying slice specifications to those dimensions
+        3. Using fixed offsets for all other dimensions
+
+        Parameters:
+            d0_slice: Slice specification for the first selected dimension.
+            d1_slice: Slice specification for the second selected dimension.
+            slice_indices: Indices of the two dimensions to slice (must be ordered).
+            __offset_dims: Internal parameter representing number of fixed dimensions.
+
+        Args:
+            offsets: Fixed index values for all dimensions not being sliced.
+
+        Returns:
+            A 2D view into the original tensor representing the specified slice.
+
+        Example:
+            For a 3×4×5 tensor, `slice[Slice(1, 3), Slice(0, 2), IndexList[2](0, 2)](1)`
+            will extract a 2×2 slice from dimensions 0 and 2, with dimension 1 fixed at index 1.
+
+        Performance:
+            - Creates a view without copying data, making it very efficient.
+            - Maintains the original tensor's stride information for efficient memory access.
+            - Zero-cost abstraction at runtime when used with compile-time constant slices.
+
+        Note:
+            - The slice is a view into the original tensor, so modifications to the
+              slice will affect the original tensor.
+            - The slice indices must be ordered (e.g., [0, 2] is valid, [2, 0] is not).
+            - The step size must be 1 (no gaps allowed in the slice).
+            - Slice bounds are not checked at runtime; accessing out-of-bounds indices
+              will result in undefined behavior.
+
+        Constraints:
+            - Slice step size must be 1 (no gaps).
+            - Slice indices must be ordered (ascending).
+            - Tensor rank must be at least 2.
+        """
         constrained[
             d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
@@ -2389,6 +3117,45 @@ struct LayoutTensor[
             element_layout=element_layout,
         ],
     ):
+        """Extract a 1D slice from a higher-rank tensor at a specific index.
+
+        This method creates a view into a 1D subset of a higher-rank tensor by:
+        1. Selecting one dimension to slice using the slice_indices parameter
+        2. Applying a slice specification to that dimension
+        3. Using fixed offsets for all other dimensions
+
+        Parameters:
+            d0_slice: Slice specification for the selected dimension.
+            slice_indices: Index of the dimension to slice.
+            __offset_dims: Internal parameter representing number of fixed dimensions.
+
+        Args:
+            offsets: Fixed index values for all dimensions not being sliced.
+
+        Returns:
+            A 1D view into the original tensor representing the specified slice.
+
+        Example:
+            For a 3×4×5 tensor, `slice_1d[Slice(1, 3), IndexList[1](0)](1, 2)`
+            will extract a 1D slice from dimension 0, with dimensions 1 and 2 fixed at indices 1 and 2.
+
+        Performance:
+            - Creates a view without copying data, making it very efficient.
+            - Maintains the original tensor's stride information for efficient memory access.
+            - Zero-cost abstraction at runtime when used with compile-time constant slices.
+
+        Note:
+            - The slice is a view into the original tensor, so modifications to the
+              slice will affect the original tensor.
+            - The step size must be 1 (no gaps allowed in the slice).
+            - Slice bounds are not checked at runtime; accessing out-of-bounds indices
+              will result in undefined behavior.
+            - This function exists as a workaround for compiler limitations with overloading.
+
+        Constraints:
+            - Slice step size must be 1 (no gaps).
+            - Tensor rank must be at least 1.
+        """
         constrained[
             d0_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
@@ -2432,6 +3199,51 @@ struct LayoutTensor[
             element_layout=element_layout,
         ],
     ):
+        """Create a transposed view of a rank-2 tensor.
+
+        This method creates a view of the tensor with its dimensions swapped, effectively
+        converting rows to columns and columns to rows. The transposition is performed
+        without copying data, by adjusting the tensor's layout information.
+
+        Parameters:
+            M: The size of the first dimension (rows) of the original tensor.
+               Defaults to the static shape value of the first dimension.
+            N: The size of the second dimension (columns) of the original tensor.
+               Defaults to the static shape value of the second dimension.
+
+        Returns:
+            A view of the tensor with dimensions transposed (rows become columns and vice versa).
+
+        Example:
+            For a 2×3 tensor with values:
+            ```
+            [1 2 3]
+            [4 5 6]
+            ```
+
+            `transpose()` will produce a 3×2 tensor:
+            ```
+            [1 4]
+            [2 5]
+            [3 6]
+            ```
+
+        Performance:
+            - Creates a view without copying data, making it very efficient.
+            - The operation is zero-cost at runtime as it only changes the layout information.
+            - Memory access patterns may be less efficient in the transposed view due to
+              non-contiguous memory access, especially for row-major storage.
+
+        Note:
+            - The transposed tensor shares the same memory as the original tensor,
+              so modifications to one will affect the other.
+            - Only works with rank-2 tensors.
+            - For optimal performance when repeatedly accessing the transposed data,
+              consider creating a physical copy with the transposed layout.
+
+        Constraints:
+            - Only works with rank-2 tensors.
+        """
         return __type_of(result)(self.ptr)
 
     @always_inline
@@ -2448,6 +3260,41 @@ struct LayoutTensor[
             masked=masked,
         ],
     ):
+        """Create a view of the tensor with a different shape.
+
+        This method creates a view of the tensor with a new shape, without changing
+        the underlying data. The total number of elements must remain the same.
+
+        Parameters:
+            dst_layout: The target layout for the reshaped tensor. Must have the same
+                       total number of elements as the original tensor.
+
+        Returns:
+            A view of the tensor with the new shape specified by dst_layout.
+
+        Example:
+            For a 2×6 tensor, `reshape[Layout((3, 4))]()` will produce a 3×4 tensor
+            with the same elements in row-major order.
+
+        Performance:
+            - Creates a view without copying data, making it very efficient.
+            - The operation is zero-cost at runtime as it only changes the layout information.
+            - Memory access patterns may change, potentially affecting performance
+              depending on the original and target layouts.
+
+        Note:
+            - The reshaped tensor shares the same memory as the original tensor,
+              so modifications to one will affect the other.
+            - The total number of elements must remain the same after reshaping.
+            - The reshape operation assumes a row-major (C-style) memory layout.
+            - For tensors with complex strides or non-contiguous memory, reshaping
+              may not produce the expected results.
+            - Masked tensors cannot be reshaped.
+
+        Constraints:
+            - Cannot reshape masked tensors.
+            - The total number of elements must be the same in both layouts.
+        """
         constrained[not masked, "Masked tensor does not support reshape."]()
         return __type_of(result)(self.ptr)
 
@@ -2465,6 +3312,42 @@ struct LayoutTensor[
             element_layout=element_layout,
         ],
     ):
+        """Create a view of the tensor with a composed layout.
+
+        This method creates a view of the tensor with a new layout that is the composition
+        of the original layout with another layout. Layout composition allows for complex
+        transformations of the tensor's logical structure without copying data.
+
+        Parameters:
+            rhs_layout: The layout to compose with the tensor's current layout.
+            dst_layout: The resulting layout after composition. Defaults to the
+                       composition of the tensor's layout with rhs_layout.
+
+        Returns:
+            A view of the tensor with the composed layout.
+
+        Example:
+            For a 4×4 tensor with a standard row-major layout, composing with a layout
+            that represents a 2×2 tiling would result in a tensor that logically views
+            the data as 2×2 blocks.
+
+        Performance:
+            - Creates a view without copying data, making it very efficient.
+            - The operation is zero-cost at runtime as it only changes the layout information.
+            - Can be used to optimize memory access patterns for specific algorithms.
+
+        Note:
+            - The composed tensor shares the same memory as the original tensor,
+              so modifications to one will affect the other.
+            - Layout composition is a powerful tool for expressing complex data transformations
+              like tiling, transposition, and reshaping in a unified framework.
+            - Understanding the mathematical properties of layout composition is important
+              for correctly using this function.
+
+        Constraints:
+            - The layouts must be compatible for composition.
+            - The total number of elements must remain the same after composition.
+        """
         return __type_of(result)(self.ptr)
 
     @always_inline
@@ -2477,8 +3360,41 @@ struct LayoutTensor[
         self,
         addr: UnsafePointer[Scalar[dtype], address_space=address_space, *_],
     ) -> Scalar[_uint_dtype]:
-        """Returns the distance from the input address."""
+        """Calculate the element-wise distance between this tensor's pointer and another pointer.
 
+        This method computes the number of elements (not bytes) between the tensor's
+        pointer and the provided address. This is useful for determining offsets
+        within a larger memory allocation or for pointer arithmetic operations.
+
+        Parameters:
+            _uint_dtype: The unsigned integer type to use for the result.
+                        Defaults to uint32 for shared memory and uint64 for other address spaces.
+
+        Args:
+            addr: The target pointer to calculate the distance to.
+
+        Returns:
+            The number of elements between this tensor's pointer and the provided address.
+            The result is of type _uint_dtype.
+
+        Example:
+            If tensor.ptr points to element at index 100 in a buffer, and addr points
+            to element at index 50, then distance(addr) would return 50.
+
+        Performance:
+            - This is a lightweight operation that only involves pointer arithmetic.
+            - The operation is optimized based on the address space, using smaller
+              integer types for shared memory to improve efficiency.
+
+        Note:
+            - The distance is calculated in elements, not bytes.
+            - The result can be positive or negative depending on the relative positions
+              of the pointers.
+            - This function is particularly useful for GPU programming where understanding
+              memory offsets is critical for performance.
+            - Care should be taken when using this with pointers from different allocations,
+              as the result would be meaningless.
+        """
         return Scalar[_uint_dtype](Int(self.ptr) - Int(addr)) // sizeof[dtype]()
 
     @always_inline
@@ -2488,7 +3404,43 @@ struct LayoutTensor[
     ](
         self, src: LayoutTensor[dtype, _layout, address_space=address_space]
     ) -> Scalar[_uint_dtype]:
-        """Returns the distance from the input address."""
+        """Calculate the element-wise distance between this tensor and another tensor.
+
+        This method computes the number of elements (not bytes) between this tensor's
+        pointer and another tensor's pointer. This is useful for determining the relative
+        positions of tensors within a larger memory allocation.
+
+        Parameters:
+            _layout: The layout of the source tensor.
+            _uint_dtype: The unsigned integer type to use for the result.
+                        Automatically determined based on the layout and address space.
+
+        Args:
+            src: The source tensor to calculate the distance to.
+
+        Returns:
+            The number of elements between this tensor's pointer and the source tensor's pointer.
+            The result is of type _uint_dtype.
+
+        Example:
+            If tensor1 points to element at index 100 in a buffer, and tensor2 points
+            to element at index 50, then `tensor1.distance(tensor2)` would return 50.
+
+        Performance:
+            - This is a lightweight operation that only involves pointer arithmetic.
+            - The operation is optimized based on the address space and layout,
+              using appropriate integer types for efficiency.
+
+        Note:
+            - The distance is calculated in elements, not bytes.
+            - The result can be positive or negative depending on the relative positions
+              of the tensors.
+            - This function is particularly useful for GPU programming where understanding
+              memory offsets is critical for performance.
+            - Both tensors must be in the same address space for the result to be meaningful.
+            - This overload is more type-safe than the pointer-based version as it
+              ensures the tensors have compatible data types and address spaces.
+        """
 
         return Scalar[_uint_dtype](
             (Int(self.ptr) - Int(src.ptr)) // sizeof[dtype]()
@@ -2518,6 +3470,47 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn copy_from(self, other: LayoutTensor):
+        """Copy data from another tensor to this tensor.
+
+        This method performs an element-by-element copy from the source tensor to this tensor,
+        respecting the layouts of both tensors. The copy operation handles different
+        memory layouts correctly, ensuring that elements are copied to their proper
+        positions regardless of how the data is arranged in memory.
+
+        Args:
+            other: The source tensor to copy data from. Must have the same total number
+                  of elements as this tensor.
+
+        Example:
+            ```mojo
+            from layout import LayoutTensor, Layout
+
+            var src = LayoutTensor[DType.float32, Layout((2, 3))]()
+            var dst = LayoutTensor[DType.float32, Layout((3, 2))]()
+            dst.copy_from(src)  # Copies all elements from src to dst
+            ```
+
+        Performance:
+            - Performs element-by-element copying, which may be less efficient than
+              vectorized or bulk memory operations.
+            - The copy respects the memory layout of both tensors, which may involve
+              non-contiguous memory access patterns.
+            - For optimal performance with large tensors, consider using specialized
+              copy functions that can leverage hardware acceleration.
+
+        Note:
+            - Both tensors must have statically known shapes.
+            - The total number of elements must be the same in both tensors.
+            - The element sizes must match between the tensors.
+            - This function handles different memory layouts correctly, making it suitable
+              for copying between tensors with different shapes or strides.
+            - The copy is performed element by element, not as a bulk memory copy.
+
+        Constraints:
+            - Both tensors must have statically known shapes.
+            - The total number of elements must be the same in both tensors.
+            - The element sizes must match between the tensors.
+        """
         alias other_layout = other.layout
 
         alias dst_element_size = Int(self.element_size)
@@ -2570,6 +3563,55 @@ struct LayoutTensor[
         src_idx_bound: Scalar[__type_of(src).index_type] = 0,
         base_offset: Self.uint_type = 0,
     ):
+        """Asynchronously copy data from another tensor to this tensor using GPU hardware.
+
+        This method performs an asynchronous copy from the source tensor to this tensor
+        using GPU hardware acceleration. It's specifically designed for copying data from
+        global memory to shared memory in GPU kernels, leveraging hardware-specific
+        asynchronous copy mechanisms for improved performance.
+
+        Parameters:
+            is_masked: Whether to perform a masked copy, where elements outside the
+                      src_idx_bound are not copied or filled with zeros.
+            swizzle: Optional swizzling function to rearrange the destination indices,
+                    which can improve memory access patterns.
+            fill: Fill policy for elements that are not copied (only used with masked copies).
+            eviction_policy: Cache eviction policy for the source data.
+
+        Args:
+            src: The source tensor to copy data from.
+            src_idx_bound: For masked copies, the upper bound index for valid source elements.
+            base_offset: Base offset for swizzling calculations.
+
+        Example:
+            ```mojo
+            from layout import LayoutTensor, Layout, AddressSpace
+            var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
+                                          address_space=AddressSpace.GLOBAL]()
+            var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
+                                          address_space=AddressSpace.SHARED]()
+            shared_data.copy_from_async(global_data)
+            ```
+
+        Performance:
+            - Uses hardware-accelerated asynchronous copy mechanisms for optimal performance.
+            - Particularly efficient for copying data from global memory to shared memory
+              in GPU kernels.
+            - Supports vectorized copies for 4, 8, or 16-byte elements for better throughput.
+            - Can bypass L1 cache with appropriate eviction policies for specific access patterns.
+            - Swizzling can improve memory access patterns and reduce bank conflicts.
+
+        Note:
+            - For vectorized copies, both tensors must have contiguous element layouts.
+            - Asynchronous copies allow computation to overlap with memory transfers.
+            - A synchronization barrier is required before using the copied data.
+
+        Constraints:
+            - Destination must be in shared memory.
+            - Source and destination data types must match.
+            - Element size must be 4, 8, or 16 bytes.
+            - Destination tensor must have a static layout.
+        """
         constrained[
             self.address_space == _GPUAddressSpace.SHARED,
             "Async is only supported for destinations in shared memory",
@@ -2703,6 +3745,41 @@ struct LayoutTensor[
     fn fill(
         self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]
     ) -> __type_of(self):
+        """Fill the entire tensor with a single value.
+
+        This method sets all elements of the tensor to the specified value. It works
+        with both statically and dynamically shaped tensors, filling all elements
+        regardless of the tensor's layout.
+
+        Args:
+            val: The value to fill the tensor with. Must be of the same data type as the tensor.
+
+        Returns:
+            The tensor itself (self), allowing for method chaining.
+
+        Example:
+            ```mojo
+            from layout import LayoutTensor, Layout
+            var tensor = LayoutTensor[DType.float32, Layout((3, 4))]()
+            tensor.fill(0.0)  # Sets all elements to 0.0
+            ```
+
+        Performance:
+            - For statically known layouts, the fill operation is unrolled at compile time.
+            - For dynamic layouts, a runtime loop is used.
+            - No vectorization is applied, so performance may be suboptimal for large tensors.
+            - Consider using hardware-specific fill operations for better performance
+              with large tensors.
+
+        Note:
+            - The tensor must be mutable (mut=True).
+            - The fill operation respects the tensor's layout, filling all elements
+              regardless of how they are arranged in memory.
+            - This method can be used with tensors of any rank and shape.
+            - For tensors with element_layout, all elements within each logical element
+              are filled with the same value.
+        """
+
         @parameter
         if layout.all_dims_known():
             alias num_elements = layout.size() * Self.element_size
@@ -2721,8 +3798,40 @@ struct LayoutTensor[
         return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        """Format 2D tensor in 2D, otherwise print all values in column major
-        coordinate order."""
+        """Format and write the tensor's contents to a writer.
+
+        This method formats the tensor's contents and writes them to the provided writer.
+        For 2D tensors, it formats the output in a 2D grid. For tensors of other ranks,
+        it prints all values in column-major coordinate order.
+
+        Parameters:
+            W: The writer type that will receive the formatted output.
+
+        Args:
+            writer: The writer instance to write the formatted output to.
+
+        Example:
+            ```mojo
+            from layout import LayoutTensor, Layout
+            var tensor = LayoutTensor[DType.float32, Layout((2, 3))]()
+            tensor.fill(1.0)
+            print(tensor)  # Internally calls `write_to` with a StringWriter
+            ```
+
+            Output for a 2×3 tensor:
+            ```
+            [[1.0, 1.0, 1.0],
+             [1.0, 1.0, 1.0]]
+            ```
+
+        Note:
+            - For 2D tensors, the output is formatted as a 2D grid with rows and columns.
+            - For tensors of other ranks, values are printed in column-major coordinate order.
+            - Empty tensors (size 0) produce no output.
+            - This method is used by the `__str__` method to convert the tensor to a string.
+            - The formatting is designed for human readability rather than parsing.
+            - For large tensors, the output may be truncated to avoid excessive output.
+        """
 
         if self.runtime_layout.size() == 0:
             return
@@ -2778,12 +3887,43 @@ struct LayoutTensor[
     fn _get[
         *idxs: Int, size: Int = Self.element_size
     ](self) -> SIMD[dtype, size]:
-        """Get an element, guaranteeing that the ptr offset is computed at
-        compile time.
-        Indices are passed as parameters.
-        Optional `size` parameter must equal the `element_size` (the default)
-        or `element_size == 1`, and the loaded element is broadcast across
-        the returned vector.
+        """Get an element from the tensor at the specified indices.
+
+        This method retrieves an element from the tensor at the specified indices,
+        guaranteeing that the pointer offset is computed at compile time for optimal
+        performance. The indices are passed as variadic parameters.
+
+        Parameters:
+            idxs: The indices of the element to retrieve, one for each dimension of the tensor.
+            size: The size of the returned SIMD vector. Must equal the element_size (the default)
+                 or element_size must be 1, in which case the loaded element is broadcast
+                 across the returned vector.
+
+        Returns:
+            A SIMD vector containing the element(s) at the specified indices.
+
+        Example:
+            ```mojo
+            from layout import LayoutTensor, Layout
+            var tensor = LayoutTensor[DType.float32, Layout((3, 4))]()
+            var element = tensor._get[1, 2]()  # Gets the element at row 1, column 2
+            ```
+
+        Performance:
+            - The pointer offset is computed at compile time for optimal performance.
+            - This method is more efficient than runtime index calculation.
+
+        Note:
+            - The tensor must have a statically known layout.
+            - The indices must be within the bounds of the tensor dimensions.
+            - This is a low-level method primarily intended for internal use.
+            - For element_size > 1, the entire element is returned as a SIMD vector.
+            - For element_size == 1 and size > 1, the scalar element is broadcast
+              across the returned vector.
+
+        Constraints:
+            - The tensor must have a statically known layout.
+            - The size parameter must equal `element_size` or `element_size` must be 1.
         """
         constrained[Self.element_size == size or Self.element_size == 1]()
         alias offset = Self._offset(idxs)
@@ -2802,9 +3942,39 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn _set[*idxs: Int](self, val: Self.element_type):
-        """Set an element, guaranteeing that the ptr offset is computed at
-        compile time.
-        Indices are passed as parameters.
+        """Set an element in the tensor at the specified indices.
+
+        This method sets an element in the tensor at the specified indices,
+        guaranteeing that the pointer offset is computed at compile time for optimal
+        performance. The indices are passed as variadic parameters.
+
+        Parameters:
+            idxs: The indices of the element to set, one for each dimension of the tensor.
+
+        Args:
+            val: The value to set at the specified indices. Must be of the same type
+                as the tensor's element type.
+
+        Example:
+            ```mojo
+            from layout import LayoutTensor, Layout
+            var tensor = LayoutTensor[DType.float32, Layout((3, 4))]()
+            tensor._set[1, 2](5.0)  # Sets the element at row 1, column 2 to 5.0
+            ```
+
+        Performance:
+            - The pointer offset is computed at compile time for optimal performance.
+            - This method is more efficient than runtime index calculation.
+
+        Note:
+            - The tensor must have a statically known layout.
+            - The indices must be within the bounds of the tensor dimensions.
+            - This is a low-level method primarily intended for internal use.
+            - For element_size > 1, the entire element is set from the provided value.
+
+        Constraints:
+            - The tensor must have a statically known layout.
+            - The tensor must be mutable.
         """
         alias offset = Self._offset(idxs)
         # alias offset = Self._offset[*idxs]()
