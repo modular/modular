@@ -16,10 +16,10 @@
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.pipelines.nn import LinearV2
-from max.pipelines.nn.layer import LayerV2
+from max.pipelines.nn.layer import Module
 
 
-class MaxMoEGate(LayerV2):
+class MaxMoEGate(Module):
     """Mixture of Experts Gate Layer."""
 
     num_experts_per_tok: int

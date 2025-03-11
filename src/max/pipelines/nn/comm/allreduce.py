@@ -26,10 +26,10 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.pipelines.nn.layer import LayerV2
+from max.pipelines.nn.layer import Module
 
 
-class Allreduce(LayerV2):
+class Allreduce(Module):
     """Layer to perform allreduce operation with automatic implementation selection.
 
     Automatically chooses between peer-to-peer optimized allreduce and naive

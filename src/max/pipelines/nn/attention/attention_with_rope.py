@@ -37,7 +37,7 @@ from ..kernels import (
     fused_qkv_ragged_matmul_quantized,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
-from ..layer import LayerV2
+from ..layer import Module
 from ..linear import LinearV2
 from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
@@ -129,7 +129,7 @@ class AttentionWithRope(AttentionImpl):
         return self.wo(attn_out)
 
 
-class AttentionWithRopeV2(LayerV2):
+class AttentionWithRopeV2(Module):
     """Implementation of attention that uses the rope frequency.
 
     `AttentionWithRopeV2` will replace `AttentionWithRope` as we roll out
@@ -384,7 +384,7 @@ class GGUFQAttentionWithRope(AttentionWithRopeV2):
         """
         # Skip AttentionWithRopeV2.__init__ because the weights are created
         # differently.
-        LayerV2.__init__(self)
+        Module.__init__(self)
 
         if dtype != DType.uint8:
             raise ValueError(
@@ -542,7 +542,7 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
     ):
         # Skip AttentionWithRopeV2.__init__ because the weights are created
         # differently.
-        LayerV2.__init__(self)
+        Module.__init__(self)
         self.quantization_config = quantization_config
         self.rope = rope
         self.n_heads = num_attention_heads

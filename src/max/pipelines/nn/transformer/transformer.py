@@ -31,16 +31,16 @@ from ..attention.interfaces import (
     AttentionImplQKV,
 )
 from ..embedding import Embedding, EmbeddingV2
-from ..layer import Layer, LayerList, LayerV2
+from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV2
 
 
-class TransformerBlock(LayerV2):
+class TransformerBlock(Module):
     """Stack of Attention, FeedForward, and RMSNorm layers."""
 
     def __init__(
         self,
-        attention: AttentionImpl | AttentionImplQKV | LayerV2,
+        attention: AttentionImpl | AttentionImplQKV | Module,
         mlp: Layer,
         attention_norm: Layer,
         mlp_norm: Layer,
@@ -78,7 +78,7 @@ class TransformerBlock(LayerV2):
         return h + mlp
 
 
-class Transformer(LayerV2):
+class Transformer(Module):
     """Transformer model consisting for TransformerBlock layers."""
 
     def __init__(

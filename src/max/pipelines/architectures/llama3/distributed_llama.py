@@ -34,9 +34,9 @@ from max.pipelines.nn import (
     DistributedTransformerBlock,
     GPTQAttentionWithRope,
     GPTQLinearV2,
-    LayerV2,
     LinearV2,
     Llama3RotaryEmbedding,
+    Module,
     RMSNormV2,
     VocabParallelEmbedding,
 )
@@ -92,7 +92,7 @@ class DistributedLlama3(DistributedTransformer):
             linear_cls = LinearV2
 
         # Select MLP class.
-        mlp_cls: Callable[..., LayerV2]
+        mlp_cls: Callable[..., Module]
         if config.stacked_mlp:
             logger.warning(
                 "Model contains stacked MLP weights. This is currently not supported with multiple GPUs, and will run on %s.",

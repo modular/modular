@@ -34,10 +34,10 @@ from max.graph.weights import Weights
 from .clamp import clamp
 from .comm import Allreduce
 from .kernels import swish_glu
-from .layer import Layer, LayerV2
+from .layer import Layer, Module
 
 
-class LinearV2(LayerV2):
+class LinearV2(Module):
     """
     Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
 
@@ -408,7 +408,7 @@ class GPTQLinearV2(LinearV2):
             raise ValueError("has_bias=True is not supported in GPTQLinear.")
 
         # Skip LinearV2 initialization.
-        LayerV2.__init__(self)
+        Module.__init__(self)
         self.device = device
         self.qweight = Weight(
             name="qweight",
@@ -512,7 +512,7 @@ class MLP(Layer):
         return self.down_proj(ops.silu(self.gate_proj(x)) * self.up_proj(x))  # type: ignore
 
 
-class MLPV2(LayerV2):
+class MLPV2(Module):
     """
     Simple multi-layer perceptron composed of three linear layers.
     Uses SiLU activation function.
@@ -628,7 +628,7 @@ class DistributedMLP(MLPV2):
         self.up_proj.weight.set_sharding_strategy(row_sharding_strategy)
 
         # Create normal MLP layers for each device. These layers and weights are
-        # not recorded by the nn.LayerV2 and do not appear in the state dict.
+        # not recorded by the nn.Module and do not appear in the state dict.
         self.list_of_mlps = []
         for n, device in enumerate(self.devices):
             layer = MLPV2(*args, **kwargs)

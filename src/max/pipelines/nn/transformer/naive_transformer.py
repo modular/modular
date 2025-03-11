@@ -20,11 +20,11 @@ from max.graph import TensorValue, TensorValueLike, ops
 
 from ..attention import NaiveAttentionWithRope
 from ..embedding import Embedding, EmbeddingV2
-from ..layer import Layer, LayerList, LayerV2
+from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV2
 
 
-class NaiveTransformerBlock(LayerV2):
+class NaiveTransformerBlock(Module):
     """Max-Graph Only Stack of Attention, FeedForward, and RMSNorm layers."""
 
     def __init__(
@@ -72,7 +72,7 @@ class NaiveTransformerBlock(LayerV2):
         return h + mlp
 
 
-class NaiveTransformer(LayerV2):
+class NaiveTransformer(Module):
     """Max-Graph only model consisting of NaiveTransformerBlock layers."""
 
     def __init__(

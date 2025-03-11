@@ -26,7 +26,7 @@ from max.pipelines.kv_cache import (
 )
 
 from ..embedding import VocabParallelEmbedding
-from ..layer import LayerList, LayerV2
+from ..layer import LayerList, Module
 from ..linear import LinearV2
 from ..norm import DistributedRMSNorm, LayerNormV2, RMSNormV2
 
@@ -37,13 +37,13 @@ def distribute_value(v, devices: list[DeviceRef]):
     return [v.to(device) for device in devices]
 
 
-class DistributedTransformerBlock(LayerV2):
+class DistributedTransformerBlock(Module):
     """Stack of Attention, FeedForward, and RMSNorm layers."""
 
     def __init__(
         self,
-        attention: LayerV2,
-        mlp: LayerV2,
+        attention: Module,
+        mlp: Module,
         attention_norm: DistributedRMSNorm,
         mlp_norm: DistributedRMSNorm,
         devices: list[DeviceRef],
@@ -76,7 +76,7 @@ class DistributedTransformerBlock(LayerV2):
 
 
 @dataclass
-class DistributedTransformer(LayerV2):
+class DistributedTransformer(Module):
     """Transformer model consisting for TransformerBlock layers."""
 
     def __init__(

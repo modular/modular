@@ -19,11 +19,11 @@ from typing import Optional, Tuple
 
 from max.dtype import DType
 from max.graph import Dim, TensorValue, ops
-from max.pipelines.nn.layer import LayerV2
+from max.pipelines.nn.layer import Module
 
 
 @dataclass
-class YarnRotaryEmbedding(LayerV2):
+class YarnRotaryEmbedding(Module):
     """YaRN (Yet another RoPE eNhancement) Rotary Position Embedding layer.
 
     This layer implements YaRN rotary position embeddings which extend RoPE to longer sequences.

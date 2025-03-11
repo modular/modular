@@ -27,9 +27,9 @@ from max.pipelines.nn import (
     MLPV2,
     EmbeddingV2,
     GPTQLinearV2,
-    LayerV2,
     LinearV2,
     Llama3RotaryEmbedding,
+    Module,
     NaiveAttentionWithRope,
     NaiveTransformer,
     NaiveTransformerBlock,
@@ -40,7 +40,7 @@ from max.pipelines.nn import (
 from .model_config import Llama3Config
 
 
-class ConstantLayerNorm(LayerV2):
+class ConstantLayerNorm(Module):
     """Layer normalization block with constant gamma and beta values."""
 
     gamma: np.ndarray
@@ -82,7 +82,7 @@ class NaiveLlama3(NaiveTransformer):
             scaling_params=config.rope_scaling_params,
         )
 
-        create_norm: Callable[..., LayerV2]
+        create_norm: Callable[..., Module]
         if config.norm_method == "rms_norm":
             if config.rms_norm_eps is None:
                 raise ValueError(
@@ -225,7 +225,7 @@ class NaiveLLama3Attention(NaiveAttentionWithRope):
         )
 
 
-class StackedMLP(LayerV2):
+class StackedMLP(Module):
     def __init__(
         self,
         dtype: DType,

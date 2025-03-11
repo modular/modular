@@ -41,7 +41,7 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.nn import LayerV2, Signals
+from max.pipelines.nn import Module, Signals
 from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 
@@ -449,7 +449,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
         )
-        nn_model: LayerV2
+        nn_model: Module
         if len(self.devices) > 1:
             kv_cache_args = self.kv_manager.input_symbols()
             flattened_kv_types = [

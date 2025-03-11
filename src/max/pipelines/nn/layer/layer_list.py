@@ -15,10 +15,10 @@ from typing import Sequence
 
 from max.graph import TensorValue
 
-from .layer import Layer, LayerV2
+from .layer import Layer, Module
 
 
-class LayerList(LayerV2):
+class LayerList(Module):
     """Stores a list of layers.
 
     Can be used as a regular python list."""
@@ -27,15 +27,15 @@ class LayerList(LayerV2):
         super().__init__()
         self.layers = list(layers)
 
-        # Only assign `LayerV2` objects to Sequential.sublayers. We ensure that
+        # Only assign `Module` objects to Sequential.sublayers. We ensure that
         # the V2 functionality (getting sublayers) is correct by throwing
         # an error in the `sublayers` property if any layer is still V1.
         for n, layer in enumerate(layers):
-            if isinstance(layer, LayerV2):
+            if isinstance(layer, Module):
                 self._sublayers[str(n)] = layer
 
     @property
-    def sublayers(self) -> dict[str, LayerV2]:
+    def sublayers(self) -> dict[str, Module]:
         if len(self._sublayers) != len(self.layers):
             raise ValueError(
                 "Not all layers in this Sequential object have "

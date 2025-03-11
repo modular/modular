@@ -29,7 +29,7 @@ from max.graph import (
 from max.graph.quantization import QuantizationEncoding
 from max.pipelines.nn.comm.allreduce import Allreduce
 
-from .layer import Layer, LayerV2
+from .layer import Layer, Module
 
 
 @dataclass
@@ -46,7 +46,7 @@ class Embedding(Layer):
         return result
 
 
-class EmbeddingV2(LayerV2):
+class EmbeddingV2(Module):
     """
     A lookup table for embedding integer indices into dense vectors.
 
@@ -133,7 +133,7 @@ class EmbeddingV2(LayerV2):
         return result
 
 
-class VocabParallelEmbedding(LayerV2):
+class VocabParallelEmbedding(Module):
     """
     A lookup table for embedding integer indices into dense vectors.
 

@@ -31,9 +31,9 @@ from max.pipelines.nn import (
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     GPTQLinearV2,
-    LayerV2,
     LinearV2,
     Llama3RotaryEmbedding,
+    Module,
     RMSNormV2,
     Transformer,
     TransformerBlock,
@@ -56,7 +56,7 @@ class Llama3(Transformer):
         )
 
         # Select norm layer class.
-        create_norm: Callable[..., LayerV2]
+        create_norm: Callable[..., Module]
         if config.norm_method == "rms_norm":
             if config.rms_norm_eps is None:
                 raise ValueError(

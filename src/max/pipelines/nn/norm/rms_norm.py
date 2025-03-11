@@ -25,7 +25,7 @@ from max.graph import (
     ops,
 )
 
-from ..layer import Layer, LayerV2
+from ..layer import Layer, Module
 
 
 @dataclass
@@ -41,7 +41,7 @@ class RMSNorm(Layer):
         )[0].tensor
 
 
-class RMSNormV2(LayerV2):
+class RMSNormV2(Module):
     """Computes the Root Mean Square normalization on inputs.
 
     Args:
