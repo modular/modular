@@ -1870,9 +1870,9 @@ struct LayoutTensor[
         Parameters:
             idx: The dimension index to query (0-based).
                  For example, in a 3D tensor with shape [10, 20, 30]:
-                 - shape[0]() returns 10 (first dimension).
-                 - shape[1]() returns 20 (second dimension).
-                 - shape[2]() returns 30 (third dimension).
+                 - `shape[0]()` returns 10 (first dimension).
+                 - `shape[1]()` returns 20 (second dimension).
+                 - `shape[2]()` returns 30 (third dimension).
 
         Returns:
             The size of the tensor along the specified dimension as an integer.
