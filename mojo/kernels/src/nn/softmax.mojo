@@ -1769,17 +1769,33 @@ fn _online_softmax_iter_for_mma_output_sm90[
     warp_layout: Layout,
     use_exp2: Bool = False,
 ](
-    output_reg_tile: LayoutTensor[
-        type, reg_tile_layout, element_layout=fragment_layout, *_, **_
+    out correction: LayoutTensor[
+        type,
+        row_accum_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        element_layout=accum_frag_layout,
     ],
     score_reg_tile: LayoutTensor[
-        type, reg_tile_layout, element_layout=fragment_layout, *_, **_
+        type,
+        reg_tile_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        element_layout=fragment_layout,
     ],
     rowmax_tensor: LayoutTensor[
-        type, row_accum_layout, element_layout=accum_frag_layout, *_, **_
+        type,
+        row_accum_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        element_layout=accum_frag_layout,
     ],
     rowsum_tensor: LayoutTensor[
-        type, row_accum_layout, element_layout=accum_frag_layout, *_, **_
+        type,
+        row_accum_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        element_layout=accum_frag_layout,
     ],
 ):
     alias num_colwise_warps = block_layout_by_warp.shape[0].value()
@@ -1815,7 +1831,7 @@ fn _online_softmax_iter_for_mma_output_sm90[
     ]()
     score_frag_rowmax = __type_of(rowmax_tensor).stack_allocation()
     score_frag_rowsum = __type_of(rowmax_tensor).stack_allocation()
-    correction = __type_of(rowmax_tensor).stack_allocation()
+    correction = __type_of(correction).stack_allocation()
 
     # Initialize local max with the running max, and local sum with zero.
     @parameter
@@ -1896,17 +1912,6 @@ fn _online_softmax_iter_for_mma_output_sm90[
                 score_frag_rowsum._get[col_tile]()
             )
         )
-
-    # Correct previous result
-    @parameter
-    for col_tile in range(num_colwise_tiles):
-
-        @parameter
-        for row_tile in range(num_rowwise_tiles):
-            output_reg_tile._set[col_tile, row_tile](
-                output_reg_tile._get[col_tile, row_tile]()
-                * correction._get[col_tile, size=frag_size]()
-            )
 
     # Save current rowmax and rowsum
     @parameter

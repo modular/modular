@@ -468,6 +468,8 @@ fn mha_single_batch_sm90_fa3[
             ),
         ),
     )
+    alias num_colwise_tiles = vec_output_layout[0].size()
+    alias num_rowwise_tiles = vec_output_layout[1].size()
 
     @always_inline
     fn vectorize_output(
@@ -960,17 +962,28 @@ fn mha_single_batch_sm90_fa3[
             # Increment mask to next BM x BN block.
             mask_warp_col += BN
 
-            _online_softmax_iter_for_mma_output_sm90[
+            correction = _online_softmax_iter_for_mma_output_sm90[
                 # threads layout by warp
                 Layout.row_major(num_warps_m, num_warps_n),
                 mma_thread_layout,
                 use_exp2=True,
             ](
-                vectorize_output(output_reg_tile),
                 vectorize_output(p_reg_tile),
                 rowmax,
                 rowsum,
             )
+            vout = vectorize_output(output_reg_tile)
+
+            # Correct previous result
+            @parameter
+            for col_tile in range(num_colwise_tiles):
+                c = correction._get[col_tile, size = element_layout.size()]()
+
+                @parameter
+                for row_tile in range(num_rowwise_tiles):
+                    vout._set[col_tile, row_tile](
+                        vout._get[col_tile, row_tile]() * c
+                    )
 
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
             # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
@@ -1364,6 +1377,8 @@ fn mha_single_batch_sm90_fa2[
             ),
         ),
     )
+    alias num_colwise_tiles = vec_output_layout[0].size()
+    alias num_rowwise_tiles = vec_output_layout[1].size()
 
     @always_inline
     fn vectorize_output(
@@ -1658,17 +1673,28 @@ fn mha_single_batch_sm90_fa2[
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
 
-        _online_softmax_iter_for_mma_output_sm90[
+        correction = _online_softmax_iter_for_mma_output_sm90[
             # threads layout by warp
             Layout.row_major(num_warps_m, num_warps_n),
             mma_thread_layout,
             use_exp2=True,
         ](
-            vectorize_output(output_reg_tile),
             vectorize_output(p_reg_tile),
             rowmax,
             rowsum,
         )
+        vout = vectorize_output(output_reg_tile)
+
+        # Correct previous result
+        @parameter
+        for col_tile in range(num_colwise_tiles):
+            c = correction._get[col_tile, size = element_layout.size()]()
+
+            @parameter
+            for row_tile in range(num_rowwise_tiles):
+                vout._set[col_tile, row_tile](
+                    vout._get[col_tile, row_tile]() * c
+                )
 
         # load V tile into smem
         @parameter
