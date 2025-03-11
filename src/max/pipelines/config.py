@@ -845,12 +845,13 @@ class ProfilingConfig(MAXConfig):
         gpu_profiling_env = os.environ.get("MODULAR_ENABLE_PROFILING", "off")
 
         if self.gpu_profiling == GPUProfilingMode.OFF:
-            if gpu_profiling_env not in GPUProfilingMode:
+            try:
+                self.gpu_profiling = GPUProfilingMode(gpu_profiling_env)
+            except ValueError:
+                valid_values = [mode.value for mode in GPUProfilingMode]
                 raise ValueError(
-                    "gpu_profiling must be one of: "
-                    + ", ".join(GPUProfilingMode)
+                    "gpu_profiling must be one of: " + ", ".join(valid_values)
                 )
-            self.gpu_profiling = GPUProfilingMode(gpu_profiling_env)
 
     @staticmethod
     def help() -> dict[str, str]:
