@@ -852,7 +852,7 @@ alias Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool] (
 ) capturing [_] -> None
 
 
-@always_inline
+@always_inline("nodebug")
 fn tile_and_unswitch[
     workgroup_function: Static1DTileUnswitchUnitFunc,
     tile_size_list: VariadicList[Int],
