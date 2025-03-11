@@ -604,6 +604,186 @@ struct PagedKVCache[
         return ptr
 
 
+@value
+@register_passable("trivial")
+struct PagedKVCacheFA3Fallback[
+    type_: DType,
+    kv_params_: KVCacheStaticParams,
+    page_size: Int,
+](KVCacheT):
+    """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
+    It is used to access the KVCache blocks for PagedAttention.
+    """
+
+    alias type = type_
+    alias kv_params = kv_params_
+
+    alias KeyIdx = 0
+    alias ValueIdx = 1
+
+    """The entire region of memory for KVCache blocks with shape:
+    [2, total_num_blocks, page_size, num_heads, head_size].
+    """
+    var blocks: NDBuffer[Self.type, 5]
+    var cache_lengths: NDBuffer[DType.int32, 1]
+
+    """The lookup table with shape:
+    [num_layers, batch_size, max_num_blocks_in_batch].
+
+    This is to conform to the expected layout in the DaoLabs FA3 kernel.
+    We have a different lookup table for each layer.
+    """
+    var lookup_table: NDBuffer[DType.int32, 3]
+
+    # The length of the longest sequence in the current request.
+    # This length only considers tokens not in the KVCache.
+    var max_seq_length: UInt32
+
+    # The length of the longest context in the current request.
+    # This is effectively:
+    #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
+    var max_cache_length: UInt32
+    var layer_idx: Int
+    var kv_idx: Int
+
+    fn __init__(
+        out self,
+        blocks: NDBuffer[Self.type, 5],
+        cache_lengths: NDBuffer[DType.int32, 1],
+        lookup_table: NDBuffer[DType.int32, 3],
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
+        layer_idx: Int,
+        kv_idx: Int,
+    ):
+        debug_assert(
+            blocks.dim[3]() == page_size,
+            "blocks.dim[3]() must be equal to page_size",
+        )
+        self.blocks = blocks
+        self.cache_lengths = cache_lengths
+        self.lookup_table = lookup_table
+        self.max_seq_length = max_seq_length
+        self.max_cache_length = max_cache_length
+        self.layer_idx = layer_idx
+        self.kv_idx = kv_idx
+
+    @staticmethod
+    fn max_tile_size() -> Int:
+        """Returns the maximum tile size for the KVCache."""
+        return page_size
+
+    @staticmethod
+    fn id() -> String:
+        """Returns a string id describing the type, this is used when defining
+        mo.opaque symbols."""
+        return String("PagedKVCache+", Self.type)
+
+    fn cache_length(self, batch_idx: Int) -> Int:
+        """Returns the length of the cache for a given batch index."""
+        return Int(self.cache_lengths[batch_idx])
+
+    @always_inline
+    fn _get_idx(
+        self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
+    ) -> IndexList[5]:
+        debug_assert(
+            head_idx < Self.kv_params.num_heads,
+            "KVCache head_idx out of range (",
+            head_idx,
+            ")",
+        )
+        debug_assert(
+            head_dim_idx < Self.kv_params.head_size,
+            "KVCache head_dim_idx is out of range",
+        )
+
+        lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
+
+        debug_assert(
+            tok_in_block_idx < self.blocks.dim[2](),
+            "KVCache tok_idx out of range",
+        )
+
+        debug_assert(bs < len(self.cache_lengths), "batch_idx is oob")
+        debug_assert(
+            lut_block_index < self.lookup_table.dim[2](),
+            "block_idx is OOB. Attempted to access block index ",
+            lut_block_index,
+            " with length ",
+            self.lookup_table.dim[2](),
+        )
+        block_idx = Int(self.lookup_table[self.layer_idx, bs, lut_block_index])
+        return IndexList[5](
+            self.kv_idx,
+            block_idx,
+            tok_in_block_idx,
+            head_idx,
+            head_dim_idx,
+        )
+
+    fn load[
+        width: Int
+    ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
+        Self.type, width
+    ]:
+        """Loads an element from the given index."""
+        var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
+        return self.blocks.load[width=width](idx)
+
+    fn store(
+        self,
+        bs: Int,
+        head_idx: Int,
+        tok_idx: Int,
+        head_dim_idx: Int,
+        val: SIMD[Self.type, *_],
+    ):
+        """Stores an element at the given index."""
+        var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
+        self.blocks.store(idx, val)
+
+    fn empty_cache(self) -> Bool:
+        """Returns true if the cache_lengths for all requests is 0,
+        false otherwise."""
+        return self.max_cache_length == 0
+
+    fn max_prompt_length(self) -> UInt32:
+        """Returns the maximum sequence length across all batches of the current
+        request."""
+        return self.max_seq_length
+
+    fn max_context_length(self) -> UInt32:
+        """Returns the maximum cache length used across all batches of the
+        current request."""
+        return self.max_cache_length
+
+    @always_inline
+    fn block_paged_ptr[
+        tile_size: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[Self.type]]:
+        constrained[
+            tile_size <= page_size and page_size % tile_size == 0,
+            (
+                "Invalid tile size for PagedKVCache. tile_size must be less"
+                " than or equal to the page size and divisible by the page size"
+            ),
+        ]()
+
+        var full_block_idx = self._get_idx(
+            batch_idx, head_idx, start_tok_idx, head_dim_idx
+        )
+
+        var ptr = self.blocks._offset(full_block_idx)
+        return ptr
+
+
 trait KVCollectionT(CollectionElement):
     alias CacheType: KVCacheT
     alias type: DType
@@ -906,6 +1086,90 @@ struct PagedKVCacheCollection[
         blocks: NDBuffer[Self.type, 6],
         cache_lengths: NDBuffer[DType.uint32, 1],
         lookup_table: NDBuffer[DType.uint32, 2],
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
+    ):
+        self.blocks = blocks
+        self.cache_lengths = cache_lengths
+        self.lookup_table = lookup_table
+        self.max_seq_length = max_seq_length
+        self.max_cache_length = max_cache_length
+
+    fn __copyinit__(out self, other: Self):
+        self.blocks = other.blocks
+        self.cache_lengths = other.cache_lengths
+        self.lookup_table = other.lookup_table
+        self.max_seq_length = other.max_seq_length
+        self.max_cache_length = other.max_cache_length
+
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
+    fn __moveinit__(out self, owned other: Self):
+        self.blocks = other.blocks
+        self.cache_lengths = other.cache_lengths
+        self.lookup_table = other.lookup_table
+        self.max_seq_length = other.max_seq_length
+        self.max_cache_length = other.max_cache_length
+
+    @staticmethod
+    fn id() -> String:
+        return String("PagedKVCacheCollection+", Self.type)
+
+    fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
+        return self.CacheType(
+            self.blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_seq_length,
+            self.max_cache_length,
+            layer_idx,
+            Self.CacheType.KeyIdx,
+        )
+
+    fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
+        return self.CacheType(
+            self.blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_seq_length,
+            self.max_cache_length,
+            layer_idx,
+            Self.CacheType.ValueIdx,
+        )
+
+    fn cache_length(self, bs_idx: Int) -> Int:
+        return Int(self.cache_lengths[bs_idx])
+
+
+struct PagedKVCacheCollectionFA3Fallback[
+    type_: DType,
+    kv_params_: KVCacheStaticParams,
+    page_size: Int,
+](KVCollectionT):
+    alias type = type_
+    alias kv_params = kv_params_
+    alias CacheType = PagedKVCacheFA3Fallback[
+        Self.type, Self.kv_params, page_size
+    ]
+
+    var blocks: NDBuffer[Self.type, 5]
+    var cache_lengths: NDBuffer[DType.int32, 1]
+    var lookup_table: NDBuffer[DType.int32, 3]
+    var max_seq_length: UInt32
+    var max_cache_length: UInt32
+
+    fn __init__(
+        out self,
+        blocks: NDBuffer[Self.type, 5],
+        cache_lengths: NDBuffer[DType.int32, 1],
+        lookup_table: NDBuffer[DType.int32, 3],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
