@@ -726,15 +726,6 @@ class MAXModelConfig(MAXConfig):
                 sym=hf_quant_config["sym"],
             )
 
-    @property
-    def cache_dtype(self) -> DType:
-        if self.quantization_encoding is None:
-            raise ValueError(
-                "quantization_encoding must be provided to infer cache dtype."
-            )
-
-        return self.quantization_encoding.cache_dtype
-
     def weights_size(self) -> int:
         size = 0
         hf_repo = HuggingFaceRepo(
