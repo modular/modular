@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug -D fa_algorithm=3 %s
+# RUN: %mojo-no-debug %s
 
 from collections import OptionalReg
 from math import isqrt
