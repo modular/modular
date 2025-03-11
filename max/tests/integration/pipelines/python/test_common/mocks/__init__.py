@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 from max.driver import DeviceSpec, scan_available_devices
 from max.engine import GPUProfilingMode
+from max.graph.weights import load_weights
 from max.pipelines import (
     KVCacheConfig,
     MAXModelConfig,

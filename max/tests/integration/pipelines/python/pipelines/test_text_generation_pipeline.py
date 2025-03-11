@@ -6,6 +6,7 @@
 """WIP Test Suite for Unit Testing the TextGenerationPipeline."""
 
 import asyncio
+from unittest.mock import patch
 
 from max.pipelines import TokenGeneratorRequest
 from test_common.mocks import (
@@ -36,7 +37,9 @@ def test_mock_text_tokenizer():
     assert test_prompt == decoded
 
 
-def test_text_generation_pipeline():
+@patch("max.pipelines.pipeline.load_weights")
+def test_text_generation_pipeline(mock_load_weights):
+    mock_load_weights.return_value = None
     max_length = 512
     eos_token = 998
     with (
