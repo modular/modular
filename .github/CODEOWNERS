@@ -2,6 +2,8 @@
 # Every line is a file pattern that is followed by one or more code owners.
 # Order is important; the last matching pattern takes the most precedence.
 
+* @modular/max-code-reviewers
+
 # Standard Library Sources
 /mojo/stdlib/       @modular/stdlib
 
@@ -14,5 +16,3 @@
 
 # Examples
 /examples/mojo/     @jackos
-
-* @modular/max-code-reviewers
