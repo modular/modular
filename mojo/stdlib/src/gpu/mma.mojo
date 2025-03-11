@@ -441,9 +441,7 @@ fn mma(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 @always_inline
 fn ld_matrix[
     type: DType, //, simd_width: Int, *, transpose: Bool = False
-](
-    ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED]
-) -> SIMD[type, simd_width]:
+](ptr: UnsafePointer[Scalar[type], **_],) -> SIMD[type, simd_width]:
     """Loads a matrix from shared memory into registers in a format suitable for tensor core operations.
 
     This function performs a warp-synchronized load from shared memory to registers, formatting the data
