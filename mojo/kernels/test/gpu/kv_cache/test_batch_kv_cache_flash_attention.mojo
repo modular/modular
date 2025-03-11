@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
+# RUN: %mojo-no-debug -D fa_algorithm=3 %s
 
 from collections import OptionalReg
 from math import isqrt
@@ -12,6 +12,7 @@ from sys import has_nvidia_gpu_accelerator
 from algorithm import max as tensor_max
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
+from gpu.host.info import H100
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from layout.tensor_core import get_mma_shape
@@ -287,8 +288,9 @@ def execute_flash_attention[
             @parameter
             if (config.block_k() % (mma_shape[2] << blf)) != 0:
                 continue
-            alias width = 32 if type is DType.float32 else 64
-
+            alias width = 32 if type is DType.float32 else (
+                128 if ctx.device_info is H100 else 64
+            )
             # fmt: off
             var config_str = String(
                 "ampere_", type, "_",

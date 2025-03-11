@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1448
 # UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug %s
+# RUN: %mojo-no-debug -D fa_algorithm=3 %s
 
 from collections import OptionalReg
 from math import ceildiv, isclose, isqrt
