@@ -1059,10 +1059,6 @@ class PipelineConfig(MAXConfig):
         """
         return self._model_config.graph_quantization_encoding
 
-    def finalize_encoding_config(self):
-        """Depending on the encoding picked, we get some more parameters from the hf config"""
-        self._model_config.finalize_encoding_config()
-
     @staticmethod
     def help() -> dict[str, str]:
         pipeline_help = {
