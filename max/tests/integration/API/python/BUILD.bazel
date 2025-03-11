@@ -7,48 +7,27 @@ modular_py_test(
         "pytests/**/*.py",
     ]),
     data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "//ModularFramework/tools/mof",
+        # TODO(MAXPLAT-86): Find a shared place for these tools
         "//ONNX/tools/onnx:monnx",
-        "//PyTorch:ATenRT",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
-        "//SDK/integration-test:counter_ops",
-        "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
-        "//SDK/lib/API/python/tests/graph/testdata",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
-        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //SDK/integration-test:counter_ops)",
-        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",
-        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
     env_inherit = [
         "HF_TOKEN",
-    ],
-    mojo_deps = [
-        "//SDK/integration-test:test_user_op",
-        "//PyTorch/test/utils/custom_ops",
-        "//Kernels/mojo/buffer",
-        "//Kernels/mojo/algorithm",
-        "//Kernels/mojo/register",
-        "//Kernels/mojo/runtime",
-        "//open-source/mojo/stdlib/stdlib",
     ],
     tags = [
         "no-sandbox",
         "requires-network",
     ],
     deps = [
-        ":modular_graph_test",
-        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max",
         "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/nn",
+        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
         requirement("click"),
         requirement("gguf"),
         requirement("hypothesis"),
@@ -89,6 +68,7 @@ modular_py_test(
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
     imports = ["graph_tests"],
+    # TODO(MAXPLAT-103): Inherit transitive mojo deps
     mojo_deps = [
         "//SDK/integration-test:test_user_op",
         "//PyTorch/test/utils/custom_ops",
