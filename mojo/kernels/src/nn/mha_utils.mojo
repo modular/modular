@@ -39,7 +39,7 @@ struct FlashAttentionAlgorithm(Stringable, Writable):
     alias FLASH_ATTENTION_3 = Self(3)
 
     fn __init__(out self):
-        self._value = env_get_int["fa_algorithm", 2]()
+        self._value = 3
 
     @implicit
     fn __init__(out self, value: Int):
