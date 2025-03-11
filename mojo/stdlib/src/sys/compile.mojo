@@ -19,10 +19,16 @@ from .param_env import env_get_int, env_get_string
 # ===----------------------------------------------------------------------=== #
 
 
-alias is_compile_time = __mlir_op.`kgen.is_compile_time`
-"""Returns true if the current code is executed at compile time, false 
-otherwise.
-"""
+@always_inline("nodebug")
+fn is_compile_time() -> Bool:
+    """Returns true if the current code is executed at compile time, false
+    otherwise.
+
+    Returns:
+        A boolean value indicating whether the code is being compiled.
+    """
+    return __mlir_op.`kgen.is_compile_time`()
+
 
 # ===----------------------------------------------------------------------=== #
 # OptimizationLevel

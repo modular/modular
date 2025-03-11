@@ -25,7 +25,7 @@ f.close()
 """
 from sys._amdgpu import printf_append_string_n, printf_begin
 from sys.ffi import external_call
-from sys.info import is_amd_gpu, is_nvidia_gpu
+from sys import is_amd_gpu, is_nvidia_gpu, is_compile_time
 
 from builtin.io import _printf
 from memory import Span, UnsafePointer
@@ -58,6 +58,26 @@ struct FileDescriptor(Writer):
         self.value = f._get_raw_fd()
 
     @always_inline
+    fn __write_bytes_cpu(mut self, bytes: Span[Byte, _]):
+        """
+        Write a span of bytes to the file.
+
+        Args:
+            bytes: The byte span to write to this file.
+        """
+
+        written = external_call["write", Int32](
+            self.value, bytes.unsafe_ptr(), len(bytes)
+        )
+        debug_assert(
+            written == len(bytes),
+            "expected amount of bytes not written. expected: ",
+            len(bytes),
+            "but got: ",
+            written,
+        )
+
+    @always_inline
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         """
         Write a span of bytes to the file.
@@ -65,25 +85,19 @@ struct FileDescriptor(Writer):
         Args:
             bytes: The byte span to write to this file.
         """
-        var len_bytes = len(bytes)
 
-        @parameter
-        if is_nvidia_gpu():
-            _printf["%*s"](len_bytes, bytes.unsafe_ptr())
-        elif is_amd_gpu():
-            var msg = printf_begin()
-            _ = printf_append_string_n(msg, bytes, is_last=True)
+        if is_compile_time():
+            self.__write_bytes_cpu(bytes)
         else:
-            written = external_call["write", Int32](
-                self.value, bytes.unsafe_ptr(), len(bytes)
-            )
-            debug_assert(
-                written == len(bytes),
-                "expected amount of bytes not written. expected: ",
-                len(bytes),
-                "but got: ",
-                written,
-            )
+
+            @parameter
+            if is_nvidia_gpu():
+                _printf["%*s"](len(bytes), bytes.unsafe_ptr())
+            elif is_amd_gpu():
+                var msg = printf_begin()
+                _ = printf_append_string_n(msg, bytes, is_last=True)
+            else:
+                self.__write_bytes_cpu(bytes)
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.

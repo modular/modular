@@ -24,6 +24,7 @@ from sys import (
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
+    is_compile_time,
     stdout,
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
@@ -171,102 +172,122 @@ fn _flush(file: FileDescriptor = stdout):
 # ===----------------------------------------------------------------------=== #
 
 
+fn _printf_cpu[
+    fmt: StringLiteral, *types: AnyType
+](args: VariadicPack[_, AnyType, *types], file: FileDescriptor = stdout):
+    # The argument pack will contain references for each value in the pack,
+    # but we want to pass their values directly into the C printf call. Load
+    # all the members of the pack.
+
+    with _fdopen(file) as fd:
+        # FIXME: external_call should handle this
+        _ = __mlir_op.`pop.external_call`[
+            func = "KGEN_CompilerRT_fprintf".value,
+            variadicType = __mlir_attr[
+                `(`,
+                `!kgen.pointer<none>,`,
+                `!kgen.pointer<scalar<si8>>`,
+                `) -> !pop.scalar<si32>`,
+            ],
+            _type=Int32,
+        ](fd, fmt.unsafe_cstr_ptr(), args.get_loaded_kgen_pack())
+
+
 @no_inline
 fn _printf[
     fmt: StringLiteral, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
-    # The argument pack will contain references for each value in the pack,
-    # but we want to pass their values directly into the C printf call. Load
-    # all the members of the pack.
-    var loaded_pack = args.get_loaded_kgen_pack()
-
-    @parameter
-    if is_nvidia_gpu():
-        _ = external_call["vprintf", Int32](
-            fmt.unsafe_cstr_ptr(), Pointer.address_of(loaded_pack)
-        )
-    elif is_amd_gpu():
-        # This is adapted from Triton's third party method for lowering
-        # AMD printf calls:
-        # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
-        fn _to_uint64[T: AnyType, //](value: T) -> UInt64:
-            @parameter
-            if _type_is_eq[T, UInt64]():
-                return rebind[UInt64](value)
-            elif _type_is_eq[T, UInt32]():
-                return UInt64(rebind[UInt32](value))
-            elif _type_is_eq[T, UInt16]():
-                return UInt64(rebind[UInt16](value))
-            elif _type_is_eq[T, UInt8]():
-                return UInt64(rebind[UInt8](value))
-            elif _type_is_eq[T, Int64]():
-                return UInt64(rebind[Int64](value))
-            elif _type_is_eq[T, Int32]():
-                return UInt64(rebind[Int32](value))
-            elif _type_is_eq[T, Int16]():
-                return UInt64(rebind[Int16](value))
-            elif _type_is_eq[T, Int8]():
-                return UInt64(rebind[Int8](value))
-            elif _type_is_eq[T, Float16]():
-                return bitcast[DType.uint64](Float64(rebind[Float16](value)))
-            elif _type_is_eq[T, Float32]():
-                return bitcast[DType.uint64](Float64(rebind[Float32](value)))
-            elif _type_is_eq[T, Float64]():
-                return bitcast[DType.uint64](rebind[Float64](value))
-            elif _type_is_eq[T, Int]():
-                return UInt64(rebind[Int](value))
-            elif _type_is_eq[T, UInt]():
-                return UInt64(rebind[UInt](value))
-            elif _type_is_eq[UnsafePointer[UInt8], UInt]():
-                return UInt64(Int(rebind[UnsafePointer[UInt8]](value)))
-            elif _type_is_eq[UnsafePointer[Int8], UInt]():
-                return UInt64(Int(rebind[UnsafePointer[Int8]](value)))
-            elif _type_is_eq[OpaquePointer, UInt]():
-                return UInt64(Int(rebind[OpaquePointer](value)))
-            return 0
-
-        alias args_len = len(VariadicList(types))
-
-        var message = printf_begin()
-        message = printf_append_string_n(message, fmt.as_bytes(), args_len == 0)
-        alias k_args_per_group = 7
+    if is_compile_time():
+        _printf_cpu[fmt](args, file)
+    else:
 
         @parameter
-        for group in range(0, args_len, k_args_per_group):
-            alias bound = min(group + k_args_per_group, args_len)
-            alias num_args = bound - group
+        if is_nvidia_gpu():
+            # The argument pack will contain references for each value in the pack,
+            # but we want to pass their values directly into the C printf call. Load
+            # all the members of the pack.
+            var loaded_pack = args.get_loaded_kgen_pack()
 
-            var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
+            _ = external_call["vprintf", Int32](
+                fmt.unsafe_cstr_ptr(), Pointer.address_of(loaded_pack)
+            )
+        elif is_amd_gpu():
+            # This is adapted from Triton's third party method for lowering
+            # AMD printf calls:
+            # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
+            fn _to_uint64[T: AnyType, //](value: T) -> UInt64:
+                @parameter
+                if _type_is_eq[T, UInt64]():
+                    return rebind[UInt64](value)
+                elif _type_is_eq[T, UInt32]():
+                    return UInt64(rebind[UInt32](value))
+                elif _type_is_eq[T, UInt16]():
+                    return UInt64(rebind[UInt16](value))
+                elif _type_is_eq[T, UInt8]():
+                    return UInt64(rebind[UInt8](value))
+                elif _type_is_eq[T, Int64]():
+                    return UInt64(rebind[Int64](value))
+                elif _type_is_eq[T, Int32]():
+                    return UInt64(rebind[Int32](value))
+                elif _type_is_eq[T, Int16]():
+                    return UInt64(rebind[Int16](value))
+                elif _type_is_eq[T, Int8]():
+                    return UInt64(rebind[Int8](value))
+                elif _type_is_eq[T, Float16]():
+                    return bitcast[DType.uint64](
+                        Float64(rebind[Float16](value))
+                    )
+                elif _type_is_eq[T, Float32]():
+                    return bitcast[DType.uint64](
+                        Float64(rebind[Float32](value))
+                    )
+                elif _type_is_eq[T, Float64]():
+                    return bitcast[DType.uint64](rebind[Float64](value))
+                elif _type_is_eq[T, Int]():
+                    return UInt64(rebind[Int](value))
+                elif _type_is_eq[T, UInt]():
+                    return UInt64(rebind[UInt](value))
+                elif _type_is_eq[UnsafePointer[UInt8], UInt]():
+                    return UInt64(Int(rebind[UnsafePointer[UInt8]](value)))
+                elif _type_is_eq[UnsafePointer[Int8], UInt]():
+                    return UInt64(Int(rebind[UnsafePointer[Int8]](value)))
+                elif _type_is_eq[OpaquePointer, UInt]():
+                    return UInt64(Int(rebind[OpaquePointer](value)))
+                return 0
+
+            alias args_len = len(VariadicList(types))
+
+            var message = printf_begin()
+            message = printf_append_string_n(
+                message, fmt.as_bytes(), args_len == 0
+            )
+            alias k_args_per_group = 7
 
             @parameter
-            for i in range(num_args):
-                arguments[i] = _to_uint64(args[group + i])
-            message = printf_append_args(
-                message,
-                num_args,
-                arguments[0],
-                arguments[1],
-                arguments[2],
-                arguments[3],
-                arguments[4],
-                arguments[5],
-                arguments[6],
-                Int32(Int(bound == args_len)),
-            )
+            for group in range(0, args_len, k_args_per_group):
+                alias bound = min(group + k_args_per_group, args_len)
+                alias num_args = bound - group
 
-    else:
-        with _fdopen(file) as fd:
-            # FIXME: external_call should handle this
-            _ = __mlir_op.`pop.external_call`[
-                func = "KGEN_CompilerRT_fprintf".value,
-                variadicType = __mlir_attr[
-                    `(`,
-                    `!kgen.pointer<none>,`,
-                    `!kgen.pointer<scalar<si8>>`,
-                    `) -> !pop.scalar<si32>`,
-                ],
-                _type=Int32,
-            ](fd, fmt.unsafe_cstr_ptr(), loaded_pack)
+                var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
+
+                @parameter
+                for i in range(num_args):
+                    arguments[i] = _to_uint64(args[group + i])
+                message = printf_append_args(
+                    message,
+                    num_args,
+                    arguments[0],
+                    arguments[1],
+                    arguments[2],
+                    arguments[3],
+                    arguments[4],
+                    arguments[5],
+                    arguments[6],
+                    Int32(Int(bound == args_len)),
+                )
+
+        else:
+            _printf_cpu[fmt](args, file)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -343,18 +364,27 @@ fn print[
         file: The output stream.
     """
 
-    @parameter
-    if is_amd_gpu():
-        write_buffered[buffer_size=512](file, values, sep=sep, end=end)
-    elif is_nvidia_gpu():
-        write_buffered[use_heap=True](file, values, sep=sep, end=end)
-    else:
+    if is_compile_time():
         write_buffered(file, values, sep=sep, end=end)
+    else:
 
-    @parameter
-    if not is_gpu():
+        @parameter
+        if is_amd_gpu():
+            write_buffered[buffer_size=512](file, values, sep=sep, end=end)
+        elif is_nvidia_gpu():
+            write_buffered[use_heap=True](file, values, sep=sep, end=end)
+        else:
+            write_buffered(file, values, sep=sep, end=end)
+
+    if is_compile_time():
         if flush:
             _flush(file=file)
+    else:
+        # Isn't this weird
+        @parameter
+        if not is_gpu():
+            if flush:
+                _flush(file=file)
 
 
 # ===----------------------------------------------------------------------=== #
