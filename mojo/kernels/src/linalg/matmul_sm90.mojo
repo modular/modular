@@ -373,7 +373,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
         var read_pipeline_states = PipelineState[pipeline_stages]()
 
-        for i in range(num_k_iters):
+        for _ in range(num_k_iters):
             var read_idx = read_pipeline_states.index()
 
             # full[read_idx].wait(read_pipeline_states.phase())
