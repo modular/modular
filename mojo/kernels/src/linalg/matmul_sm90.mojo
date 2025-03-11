@@ -1285,7 +1285,10 @@ fn hopper_matmul_tma_wgmma[
 
 fn _is_valid_cluster_shape[
     cluster_shape: IndexList[3]
-](grid_shape: IndexList[2]) -> Bool:
+](grid_shape: IndexList[2], num_tiles_n: Int) -> Bool:
+    if num_tiles_n % cluster_shape[0] != 0:
+        return False
+
     @parameter
     for i in range(2):
         if (
@@ -1311,7 +1314,7 @@ fn _get_grid_shape[
 
     # A Naive heristic to select grid shape based on number of tile in N.
     if num_tiles_n % 8 == 0 or not _is_valid_cluster_shape[cluster_shape](
-        adjusted_grid_shape
+        adjusted_grid_shape, num_tiles_n
     ):
         return Index(8, 16)
 
@@ -1322,11 +1325,11 @@ fn _is_valid_grid_shape[
     grid_shape: IndexList[2], cluster_shape: IndexList[3]
 ](num_tiles_n: Int) -> Bool:
     constrained[
-        grid_shape[0] * grid_shape[1] > H100.sm_count,
+        grid_shape[0] * grid_shape[1] <= H100.sm_count,
         "Total grid size exceed number of SMs in H100.",
     ]()
 
-    if not _is_valid_cluster_shape[cluster_shape](grid_shape):
+    if not _is_valid_cluster_shape[cluster_shape](grid_shape, num_tiles_n):
         return False
 
     if grid_shape[0] <= num_tiles_n:
