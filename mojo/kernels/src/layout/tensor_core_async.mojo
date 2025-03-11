@@ -536,18 +536,10 @@ struct TensorCoreAsync[
                     alias a_k_mma = k_mma % a_num_k_mmas_per_tile
                     alias b_k_mma = k_mma % b_num_k_mmas_per_tile
 
-                    a_desc_m = (
-                        a_desc
-                        + m_mma * a_m_stride
-                        + a_k_mma * a_k_stride
-                        + a_offset_bytes
-                    )
-                    b_desc_n = (
-                        b_desc
-                        + n_mma * b_n_stride
-                        + b_k_mma * b_k_stride
-                        + b_offset_bytes
-                    )
+                    alias a_offset = m_mma * a_m_stride + a_k_mma * a_k_stride + a_offset_bytes
+                    alias b_offset = n_mma * b_n_stride + b_k_mma * b_k_stride + b_offset_bytes
+                    a_desc_m = a_desc + a_offset
+                    b_desc_n = b_desc + b_offset
 
                     c_frags[mma_id, 0] = wgmma_async[
                         mma_shape[0],
@@ -560,9 +552,7 @@ struct TensorCoreAsync[
 
     @staticmethod
     @always_inline
-    fn wgmma[
-        num_warp_groups: Int = 1
-    ](
+    fn wgmma(
         a_frag: LayoutTensor[
             a_type, _, address_space = AddressSpace.LOCAL, *_, **_
         ],
@@ -572,7 +562,6 @@ struct TensorCoreAsync[
         c_reg_tile: LayoutTensor[
             c_type, _, address_space = AddressSpace.LOCAL, *_, **_
         ],
-        wg_idx: Int = 0,
     ):
         # alias a_smem_layout = a_smem_tile.layout
         alias b_smem_layout = tile_to_descriptor[
@@ -639,7 +628,8 @@ struct TensorCoreAsync[
                 @parameter
                 for k_mma in range(num_k_mmas):
                     # a_desc_m = a_desc + m_mma * a_m_stride + k_mma * a_k_stride
-                    b_desc_n = b_desc + n_mma * b_n_stride + k_mma * b_k_stride
+                    alias offset = n_mma * b_n_stride + k_mma * b_k_stride
+                    b_desc_n = b_desc + offset
 
                     c_frags[mma_id, 0] = wgmma_async[
                         mma_shape[0],

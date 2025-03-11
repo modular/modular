@@ -173,7 +173,7 @@ struct TMABarrier(CollectionElement):
             Int32(Int(self.mbar)), cta_id, count
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn arrive(self) -> Int:
         return mbarrier_arrive(self.mbar)
 

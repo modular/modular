@@ -4001,6 +4001,7 @@ struct LayoutTensorIter[
             address_space=address_space,
             masked=masked,
             alignment=alignment,
+            layout_bitwidth=layout_bitwidth,
         ],
     ):
         """Return the layout tensor at current iterator."""
@@ -4023,6 +4024,7 @@ struct LayoutTensorIter[
         address_space=address_space,
         masked=masked,
         alignment=alignment,
+        layout_bitwidth=layout_bitwidth,
     ]:
         """Return the layout tensor at current iterator."""
         return self.get()
