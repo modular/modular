@@ -69,6 +69,12 @@ fn kernel_shuffle_idx(x: UnsafePointer[UInt32]):
     x[0] = shuffle_idx(mask, val, offset)
 
 
+fn kernel_cast[
+    type: DType, target: DType
+](x: UnsafePointer[Scalar[type]], y: UnsafePointer[Scalar[target]]):
+    y[0] = x[0].cast[target]()
+
+
 fn parametric[f: fn (UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
     f(ptr)
 
@@ -139,6 +145,23 @@ def test_shuffle_compile():
     print(
         _compile_code_asm[
             kernel_shuffle_idx, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
+
+
+# CHECK-LABEL: test_cast_fp32_bf16_compile
+def test_cast_fp32_bf16_compile():
+    print("== test_cast_fp32_bf16_compile")
+
+    # CHECK: tail call i64 asm "v_cmp_u_f32 $0, $1, $1"
+    # CHECK: tail call i32 asm "v_bfe_u32 $0, $1, 16, 1"
+    # CHECK: tail call i32 asm "v_add3_u32 $0, $1, $2, $3"
+    # CHECK: tail call i32 asm "v_cndmask_b32 $0, $1, $2, $3"
+    print(
+        _compile_code_asm[
+            kernel_cast[DType.float32, DType.bfloat16],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
         ]()
     )
 
@@ -291,6 +314,7 @@ def test_schedule_group_barrier_compile():
 
 def main():
     test_shuffle_compile()
+    test_cast_fp32_bf16_compile()
     test_exp_f32_compile()
     test_exp_f16_compile()
     test_laneid_compile()
