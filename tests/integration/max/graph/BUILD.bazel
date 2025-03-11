@@ -1,0 +1,67 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+modular_py_library(
+    name = "modular_graph_test",
+    srcs = ["modular_graph_test.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/graph",
+        requirement("hypothesis"),
+        requirement("torch"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "graph",
+    size = "large",
+    srcs = glob(["*.py"]),
+    data = [
+        # TODO(MAXPLAT-86): Find a shared place for these tools
+        "//ONNX/tools/onnx:monnx",
+        "//PyTorch:ATenRT",
+        "//PyTorch:TorchRuntimePlugins",
+        "//PyTorch/tools/torch:mtorch",
+        "//SDK/integration-test:compile_config_ops",
+        "//SDK/integration-test:counter_ops",
+        "//SDK/integration-test:test_user_op",
+        "//SDK/integration-test/API:inputs",
+        "//SDK/integration-test/API:pytest_inputs",
+        "//SDK/lib/API/python/tests/graph/testdata",
+    ],
+    env = {
+        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //SDK/integration-test:counter_ops)",
+        "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //SDK/integration-test:compile_config_ops)",
+        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
+        "MODULAR_PATH": ".",
+        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+    },
+    # TODO(MAXPLAT-103): Inherit transitive mojo deps
+    mojo_deps = [
+        "//SDK/integration-test:test_user_op",
+        "//PyTorch/test/utils/custom_ops",
+        "//Kernels/mojo/buffer",
+        "//Kernels/mojo/logger",
+        "//Kernels/mojo/algorithm",
+        "//Kernels/mojo/register",
+        "//Kernels/mojo/runtime",
+        "//SDK/lib/API/mojo/max/max",
+        "//SDK/lib/API/mojo/max/tensor",
+        "//open-source/mojo/stdlib/stdlib",
+    ],
+    tags = ["no-mypy"],  # TODO: fix and remove
+    deps = [
+        ":modular_graph_test",
+        "//SDK/lib/API/python/max",
+        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("sentencepiece"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+        requirement("pytest-xdist"),
+    ],
+)
