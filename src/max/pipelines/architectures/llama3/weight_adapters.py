@@ -43,7 +43,7 @@ def convert_safetensor_state_dict(
         for before, after in LLAMA_SAFETENSOR_MAPPING.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
-    if pipeline_config._quant_config:
+    if pipeline_config.model_config._quant_config:
         # hack: argsort the perm_idx array
         for key, weight_data in new_state_dict.items():
             if key.endswith("perm_idx"):

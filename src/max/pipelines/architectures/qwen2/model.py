@@ -465,7 +465,7 @@ class Qwen2Model(PipelineModel[TextContext]):
             if model_outputs.logits is None:
                 warnings.warn(
                     "Could not get logprobs with echo because the full logits"
-                    f" were not returned by {self.pipeline_config.model_path}"
+                    f" were not returned by {self.pipeline_config.model_config.model_path}"
                     " model. Please ensure that this model is started with "
                     "`--enable-echo`."
                 )

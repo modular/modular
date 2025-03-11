@@ -41,17 +41,17 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
     ) -> None:
         self._pipeline_config = pipeline_config
         # Initialize Session.
-        devices = load_devices(self._pipeline_config.device_specs)
+        devices = load_devices(self._pipeline_config.model_config.device_specs)
         session = InferenceSession(devices=devices)
 
         # Load model.
         huggingface_config = AutoConfig.from_pretrained(
-            self._pipeline_config.model_path,
-            trust_remote_code=self._pipeline_config.trust_remote_code,
-            revision=self._pipeline_config.huggingface_revision,
+            self._pipeline_config.model_config.model_path,
+            trust_remote_code=self._pipeline_config.model_config.trust_remote_code,
+            revision=self._pipeline_config.model_config.huggingface_revision,
         )
 
-        if not self._pipeline_config.quantization_encoding:
+        if not self._pipeline_config.model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
         weights = self._pipeline_config.load_weights()
@@ -59,7 +59,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             pipeline_config=self._pipeline_config,
             session=session,
             huggingface_config=huggingface_config,
-            encoding=self._pipeline_config.quantization_encoding,
+            encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=devices,
             kv_cache_config=self._pipeline_config.kv_cache_config,
             weights=weights,

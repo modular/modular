@@ -424,7 +424,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
         huggingface_config = self.huggingface_config
-        _weights_format = weights_format(self.pipeline_config.weight_path)
+        _weights_format = weights_format(
+            self.pipeline_config.model_config.weight_path
+        )
         adapter = self.pipeline_config._weight_adapters.get(
             _weights_format,
         )
@@ -540,7 +542,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         kv_inputs = self.kv_manager.input_symbols()[0]
 
-        _weights_format = weights_format(self.pipeline_config.weight_path)
+        _weights_format = weights_format(
+            self.pipeline_config.model_config.weight_path
+        )
         adapter = self.pipeline_config._weight_adapters.get(_weights_format)
         if adapter:
             state_dict = adapter(
@@ -583,7 +587,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
             mask_dtype = (
                 self.dtype
-                if self.pipeline_config.quantization_encoding
+                if self.pipeline_config.model_config.quantization_encoding
                 in [
                     SupportedEncoding.float32,
                     SupportedEncoding.bfloat16,
@@ -621,7 +625,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             if model_outputs.logits is None:
                 logger.warning(
                     "Could not get logprobs with echo because the full logits"
-                    f" were not returned by {self.pipeline_config.model_path}"
+                    f" were not returned by {self.pipeline_config.model_config.model_path}"
                     " model. Please ensure that this model is started with "
                     "`--enable-echo`."
                 )

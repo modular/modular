@@ -25,7 +25,7 @@ from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.pipelines import upper_bounded_default
 from max.pipelines.config import (
     KVCacheConfig,
-    MAXModelConfig,
+    MAXConfig,
     PipelineConfig,
     RopeType,
 )
@@ -34,8 +34,12 @@ from max.pipelines.nn import Llama3RopeScalingParams
 from transformers import AutoConfig
 
 
+# TODO(zheng): Move this under MAXModelConfig. The challenge here is that
+# MAXModelConfig has optional fields, and Llama3Config has required fields.
+# We can work around this by having a superclass of MAXModelConfig that has
+# the abstract methods, and then having Llama3Config extend that.
 @dataclass
-class Llama3Config(MAXModelConfig):
+class Llama3Config(MAXConfig):
     hidden_size: int
     num_attention_heads: int
     num_key_value_heads: int
@@ -62,6 +66,10 @@ class Llama3Config(MAXModelConfig):
     residual_multiplier: float
     devices: list[DeviceRef]
     clip_qkv: Optional[float]
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        return {}
 
     @staticmethod
     def calculate_attention_multiplier(
@@ -149,7 +157,9 @@ class Llama3Config(MAXModelConfig):
         kv_cache_config: KVCacheConfig,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
     ) -> Llama3Config:
-        _weights_format = weights_format(pipeline_config.weight_path)
+        _weights_format = weights_format(
+            pipeline_config.model_config.weight_path
+        )
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
             and pipeline_config.rope_type == RopeType.normal
@@ -163,7 +173,7 @@ class Llama3Config(MAXModelConfig):
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.device_specs
+            for spec in pipeline_config.model_config.device_specs
         ]
 
         # When tie_word_embeddings=True, the embedding weights are shared with
@@ -203,7 +213,7 @@ class Llama3Config(MAXModelConfig):
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
             quantization_encoding=pipeline_config.graph_quantization_encoding,
-            quantization_config=pipeline_config._quant_config,
+            quantization_config=pipeline_config.model_config._quant_config,
             all_logits=pipeline_config.enable_echo,
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config

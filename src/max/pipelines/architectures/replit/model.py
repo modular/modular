@@ -83,7 +83,7 @@ class ReplitModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
     ) -> None:
-        if pipeline_config.device_specs[0] == DeviceSpec.cpu():
+        if pipeline_config.model_config.device_specs[0] == DeviceSpec.cpu():
             msg = "Replit currently only supported on gpu."
             raise ValueError(msg)
 
@@ -311,7 +311,7 @@ class ReplitModel(PipelineModel[TextContext]):
             if model_outputs.logits is None:
                 warnings.warn(
                     "Could not get logprobs with echo because the full logits"
-                    f" were not returned by {self.pipeline_config.model_path}"
+                    f" were not returned by {self.pipeline_config.model_config.model_path}"
                     " model. Please ensure that this model is started with "
                     "`--enable-echo`."
                 )

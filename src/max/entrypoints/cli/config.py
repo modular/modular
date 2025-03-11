@@ -28,6 +28,7 @@ import click
 from max.driver import DeviceSpec
 from max.pipelines import (
     KVCacheConfig,
+    MAXModelConfig,
     PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
@@ -149,12 +150,10 @@ def config_to_flag(cls):
     field_types = get_type_hints(cls)
     for _field in fields(cls):
         # Skip private config fields.
-        # We also skip device_specs as it should not be used directly via the CLI entrypoint.
-        if (
-            _field.name.startswith("_")
-            or _field.name == "device_specs"
-            or _field.name == "in_dtype"
-            or _field.name == "out_dtype"
+        if _field.name.startswith("_") or _field.name in (
+            "device_specs",
+            "in_dtype",
+            "out_dtype",
         ):
             continue
 
@@ -175,6 +174,7 @@ def pipeline_config_options(func):
     # The order of these decorators must be preserved - ie. PipelineConfig
     # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)
+    @config_to_flag(MAXModelConfig)
     @config_to_flag(KVCacheConfig)
     @config_to_flag(ProfilingConfig)
     @config_to_flag(SamplingConfig)

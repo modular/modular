@@ -278,7 +278,7 @@ class PipelineModel(ABC, Generic[T]):
         # TODO move this logic to the PipelineModel instead of PipelineConfig class.
         # Better yet, make this more accurate by loading and measuring memory consumption
         # after we load the model
-        return pipeline_config.weights_size()
+        return pipeline_config.model_config.weights_size()
 
     @abstractmethod
     def execute(
@@ -406,7 +406,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
     ) -> None:
         self._pipeline_config = pipeline_config
         self._huggingface_config: Optional[AutoConfig] = None
-        self._devices = load_devices(pipeline_config.device_specs)
+        self._devices = load_devices(pipeline_config.model_config.device_specs)
 
         # Expand eos tokens if more are provided in pipeline_config
         if "eos_token_id" in self.huggingface_config:
@@ -434,7 +434,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self.vocab_size = None
         if pipeline_config.sampling_config.enable_structured_output:
             self.tokenizer = AutoTokenizer.from_pretrained(
-                pipeline_config.model_path
+                pipeline_config.model_config.model_path
             )
             self.vocab_size = len(self.tokenizer)
             tokenizer_info = xgr.TokenizerInfo.from_huggingface(
@@ -458,7 +458,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         )
 
         # Load model.
-        if not self._pipeline_config.quantization_encoding:
+        if not self._pipeline_config.model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
         weights = self._pipeline_config.load_weights()
@@ -466,7 +466,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             pipeline_config=self._pipeline_config,
             session=session,
             huggingface_config=self.huggingface_config,
-            encoding=self._pipeline_config.quantization_encoding,
+            encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=self._pipeline_config.kv_cache_config,
             weights=weights,
@@ -481,8 +481,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
     def huggingface_config(self) -> AutoConfig:
         if not self._huggingface_config:
             self._huggingface_config = AutoConfig.from_pretrained(
-                self._pipeline_config.model_path,
-                trust_remote_code=self._pipeline_config.trust_remote_code,
+                self._pipeline_config.model_config.model_path,
+                trust_remote_code=self._pipeline_config.model_config.trust_remote_code,
             )
 
         return self._huggingface_config
@@ -729,7 +729,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 except NotImplementedError:
                     logger.warning(
                         "Unable to compute log probabilities for"
-                        f" {self._pipeline_config.model_path}"
+                        f" {self._pipeline_config.model_config.model_path}"
                     )
                     batch_log_probabilities.append(None)
             # Check if we're on our last iteration. If so, skip preparing the next batch

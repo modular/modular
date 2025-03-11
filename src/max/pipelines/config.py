@@ -553,9 +553,317 @@ class MAXModelConfig(MAXConfig):
     This class is used to configure a model to use for a pipeline.
     """
 
+    # NOTE: model_path is made a str of "" by default, to avoid having
+    # it be Optional to check for None and then littering the codebase with
+    # asserts just to keep mypy happy.
+    model_path: str = ""
+    """repo_id of a Hugging Face model repository to use."""
+
+    huggingface_repo_id: str = ""
+    """DEPRECATED: repo_id of a Hugging Face model repository to use. Use `model_path` instead."""
+
+    weight_path: list[Path] = field(default_factory=list)
+    """Optional path or url of the model weights to use."""
+
+    # TODO(zheng): Move this under QuantizationConfig.
+    quantization_encoding: Optional[SupportedEncoding] = None
+    """Weight encoding type."""
+
+    # Tuck "huggingface_revision" and "trust_remote_code" under a separate
+    # HuggingFaceConfig class.
+    huggingface_revision: str = hf_hub_constants.DEFAULT_REVISION
+    """Branch or Git revision of Hugging Face model repository to use."""
+
+    trust_remote_code: bool = False
+    """Whether or not to allow for custom modelling files on Hugging Face."""
+
+    device_specs: list[DeviceSpec] = field(
+        default_factory=scan_available_devices
+    )
+    """Devices to run inference upon. This option is not documented in help() as it shouldn't be used directly via the CLI entrypoint."""
+
+    force_download: bool = False
+    """Whether to force download a given file if it's already present in the local cache."""
+
+    _weights_repo_id: Optional[str] = None
+    """Hugging Face repo id to load weights from only. This should only be set by internal code."""
+
+    # TODO(zheng): Refactor QuantizationConfig to be a MAXConfig subclass that
+    # also autopopulates default values.
+    _quant_config: Optional[QuantizationConfig] = None
+    """Optional config for specifying quantization parameters. This should only be set by internal code."""
+
+    # TODO(zheng): This can't just be a __post_init__ method, because we need to
+    # it also sets and updates other fields which may not be determined /
+    # initialized in the default factory.
+    # Realistically, this shouldn't become a problem in the long term once we
+    # instantiate these MAXConfigs with probably DAG depedency flows in our
+    # larger config refactor.
+    def validate(self):
+        """
+        Validate the config.
+
+        This method is called after the model config is initialized, to ensure that all
+        config fields have been initialized to a valid state. It will also set
+        and update other fields which may not be determined / initialized in the
+        default factory.
+        """
+        # Validate that the device_specs provided are available
+        if not devices_exist(self.device_specs):
+            available_devices = scan_available_devices()
+            msg = f"device specs provided ({self.device_specs}) do not exist."
+            msg += f"\navailable devices: {available_devices}"
+            raise ValueError(msg)
+
+        if self.huggingface_repo_id != "":
+            logger.warning(
+                "--huggingface-repo-id is deprecated, use `--model-path` instead. This setting will stop working in a future release."
+            )
+            self.model_path = self.huggingface_repo_id
+
+        # Validate that if weight_paths are passed as strings, they are converted to Path.
+        if isinstance(self.weight_path, tuple):
+            self.weight_path = list(self.weight_path)
+        elif not isinstance(self.weight_path, list):
+            self.weight_path = [self.weight_path]
+        weight_paths = []
+        # Validate that if weight_paths are passed as strings, they are converted to Path.
+        for path in self.weight_path:
+            if isinstance(path, str):
+                path = Path(path)
+            elif not isinstance(path, Path):
+                raise ValueError(
+                    "weight_path provided must either be string or Path:"
+                    f" '{path}'"
+                )
+            elif path.is_file():
+                # If we already exist on the OS. Dont parse the path, just continue.
+                weight_paths.append(path)
+                continue
+
+            # If the path, looks like it may start with a Hugging Face repo id,
+            # check if the repo_id is the same as the one provided.
+            # If it is the same, set the weight_path to just be the file_name post repo_id
+            # If it is different, set the _weights_repo_id to be that repo_id
+            # and set the path to be the file_name without the repo_id.
+            if path_pieces := str(path).split("/"):
+                if len(path_pieces) >= 3:
+                    repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
+                    file_name = "/".join(path_pieces[2:])
+                    if self.model_path != "" and repo_id == self.model_path:
+                        path = Path(file_name)
+                    elif huggingface_hub.file_exists(repo_id, file_name):
+                        self._weights_repo_id = repo_id
+                        path = Path(file_name)
+                elif self.model_path == "":
+                    raise ValueError(
+                        "Unable to derive model_path from weight_path, "
+                        "please provide a valid Hugging Face repository id."
+                    )
+
+            weight_paths.append(path)
+
+        self.weight_path = weight_paths
+
+        # If we cannot infer the weight path, we lean on the model_path
+        # to provide it.
+        if len(self.weight_path) == 0:
+            if self.model_path == "":
+                raise ValueError(
+                    "model_path must be provided and must be a valid Hugging Face repository"
+                )
+            elif (not os.path.exists(self.model_path)) and (
+                not _repo_exists_with_retry(self.model_path)
+            ):
+                raise ValueError(
+                    f"{self.model_path} is not a valid Hugging Face repository"
+                )
+        elif self.model_path == "" and self._weights_repo_id is not None:
+            # weight_path is used and we should derive the repo_id from it.
+            # At this point, we should have a resolved weight path - be it local or remote HF.
+            # weight_path should not be used directly anymore.
+            self.model_path = self._weights_repo_id
+
+    @property
+    def graph_quantization_encoding(self) -> Optional[QuantizationEncoding]:
+        """Converts the CLI encoding to a MAX graph quantization encoding.
+
+        Returns:
+            The graph quantization encoding corresponding to the CLI encoding.
+
+        Raises:
+            ValueError: If no CLI encoding was specified.
+        """
+        if self.quantization_encoding is None:
+            raise ValueError(
+                "can't convert `None` CLI encoding to graph quantization encoding"
+            )
+
+        return self.quantization_encoding.quantization_encoding
+
+    def finalize_encoding_config(self):
+        if self.quantization_encoding == SupportedEncoding.gptq:
+            hf_config = AutoConfig.from_pretrained(
+                self.model_path,
+                trust_remote_code=self.trust_remote_code,
+                revision=self.huggingface_revision,
+            )
+            hf_quant_config = hf_config.quantization_config
+
+            if hf_config.torch_dtype is not torch.float16:
+                raise ValueError(
+                    "bfloat16 scales are not supported for GPTQ-quantized models."
+                )
+
+            self._quant_config = QuantizationConfig(
+                quant_method=hf_quant_config["quant_method"],
+                bits=hf_quant_config["bits"],
+                group_size=hf_quant_config["group_size"],
+                desc_act=hf_quant_config["desc_act"],
+                sym=hf_quant_config["sym"],
+            )
+
+    @property
+    def cache_dtype(self) -> DType:
+        if self.quantization_encoding is None:
+            raise ValueError(
+                "quantization_encoding must be provided to infer cache dtype."
+            )
+
+        return self.quantization_encoding.cache_dtype
+
+    def weights_size(self) -> int:
+        size = 0
+        hf_repo = HuggingFaceRepo(
+            (
+                self._weights_repo_id
+                if self._weights_repo_id
+                else self.model_path
+            ),
+            trust_remote_code=self.trust_remote_code,
+        )
+        for file_path in self.weight_path:
+            if os.path.exists(file_path):
+                size += os.path.getsize(file_path)
+                continue
+
+            next_size = hf_repo.size_of(str(file_path))
+
+            if next_size is None:
+                raise ValueError(
+                    f"Failed to get size of weight file {file_path}"
+                )
+            size += next_size
+
+        return size
+
+    def download_weights(self) -> None:
+        # Try to load locally.
+        if all([os.path.exists(file_path) for file_path in self.weight_path]):
+            logger.info("All files exist locally, skipping download.")
+            return
+
+        start_time = datetime.datetime.now()
+        weights_repo_id = (
+            self._weights_repo_id if self._weights_repo_id else self.model_path
+        )
+        logger.info(f"Starting download of model: {weights_repo_id}")
+        # max_workers=8 setting copied from default for
+        # huggingface_hub.snapshot_download.
+        self.weight_path = list(
+            thread_map(
+                lambda filename: Path(
+                    huggingface_hub.hf_hub_download(
+                        weights_repo_id,
+                        str(filename),
+                        revision=self.huggingface_revision,
+                        force_download=self.force_download,
+                    )
+                ),
+                self.weight_path,
+                max_workers=8,
+                tqdm_class=hf_tqdm,
+            )
+        )
+
+        logger.info(
+            f"Finished download of model: {weights_repo_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
+        )
+
+    # TODO(zheng): Remove this backward compatibility method once PipelineModels
+    # no longer depend on PipelineConfig (and can call
+    # ModelConfig.load_weights() on its own).
+    def load_weights(self) -> Weights:
+        self.download_weights()
+
+        _weights_format = weights_format(
+            self.weight_path,
+        )
+
+        if _weights_format == WeightsFormat.gguf:
+            if len(self.weight_path) > 1:
+                raise ValueError("loading multiple gguf files is not supported")
+            return GGUFWeights(self.weight_path[0])
+
+        elif _weights_format == WeightsFormat.safetensors:
+            return SafetensorWeights(self.weight_path)
+
+        else:
+            raise ValueError(
+                f"loading weights format '{_weights_format}' not supported"
+            )
+
+    @property
+    def weights_format(self) -> WeightsFormat:
+        """Identify which format our weights are expected in."""
+
+        if not self.weight_path:
+            raise ValueError(
+                "no weight_path provided cannot infer weights format."
+            )
+
+        # Get all weight paths.
+        if all(
+            [weight_path.suffix == ".gguf" for weight_path in self.weight_path]
+        ):
+            return WeightsFormat.gguf
+        elif all(
+            [
+                weight_path.suffix == ".safetensors"
+                for weight_path in self.weight_path
+            ]
+        ):
+            return WeightsFormat.safetensors
+        elif all(
+            [weight_path.suffix == ".bin" for weight_path in self.weight_path]
+        ):
+            return WeightsFormat.pytorch
+        else:
+            raise ValueError(
+                f"weights type cannot be inferred from {self.weight_path}"
+            )
+
+    def huggingface_weights_repo(self) -> HuggingFaceRepo:
+        return HuggingFaceRepo(
+            (
+                self._weights_repo_id
+                if self._weights_repo_id
+                else self.model_path
+            ),
+            trust_remote_code=self.trust_remote_code,
+        )
+
     @staticmethod
     def help() -> dict[str, str]:
-        return {}
+        return {
+            "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
+            "huggingface_repo_id": "DEPRECATED: Use `model_path` instead.",
+            "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
+            "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
+            "huggingface_revision": "Branch or Git revision of Hugging Face model repository to use.",
+            "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
+            "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
+        }
 
 
 @dataclass
@@ -651,35 +959,8 @@ class PipelineConfig(MAXConfig):
     default.
     """
 
-    # When adding a new config parameter here, please remember to add a
-    # description to the `help()` method below
-
-    # NOTE: model_path is made a str of "" by default, to avoid having
-    # it be Optional to check for None and then littering the codebase with
-    # asserts just to keep mypy happy.
-    model_path: str = ""
-    """repo_id of a Hugging Face model repository to use."""
-
-    huggingface_repo_id: str = ""
-    """DEPRECATED: repo_id of a Hugging Face model repository to use. Use `model_path` instead."""
-
-    huggingface_revision: str = hf_hub_constants.DEFAULT_REVISION
-    """Branch or Git revision of Hugging Face model repository to use."""
-
     engine: Optional[PipelineEngine] = None
     """Engine backend to use for serving, 'max' for the max engine, or 'huggingface' as fallback option for improved model coverage."""
-
-    weight_path: list[Path] = field(default_factory=list)
-    """Optional path or url of the model weights to use."""
-
-    device_specs: list[DeviceSpec] = field(
-        default_factory=scan_available_devices
-    )
-    """Devices to run inference upon. This option is not documented in help() as it shouldn't be used directly via the CLI entrypoint."""
-
-    # TODO(zheng): Move this under QuantizationConfig.
-    quantization_encoding: Optional[SupportedEncoding] = None
-    """Weight encoding type."""
 
     serialized_model_path: Optional[str] = None
     """DEPRECATED: Serialization paths no longer supported."""
@@ -723,12 +1004,6 @@ class PipelineConfig(MAXConfig):
     """The target number of un-encoded tokens to include in each batch.
     If not set, this will be set to a best-guess optimal value based on model, hardware, and available memory."""
 
-    trust_remote_code: bool = False
-    """Whether or not to allow for custom modelling files on Hugging Face."""
-
-    force_download: bool = False
-    """Whether to force download a given file if it's already present in the local cache."""
-
     enable_echo: bool = False
     """Whether the model should be built with echo capabilities."""
 
@@ -738,27 +1013,10 @@ class PipelineConfig(MAXConfig):
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
 
-    _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
-    """The KVCache config."""
-
-    _sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
-    """The sampling config."""
-
-    _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
-    """The profiling config."""
-
     _weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(
         default_factory=dict
     )
     """Weight adapter for the provided `weight_path`."""
-
-    _weights_repo_id: Optional[str] = None
-    """Hugging Face repo id to load weights from only. This should only be set by internal code."""
-
-    # TODO(zheng): Refactor QuantizationConfig to be a MAXConfig subclass that
-    # also autopopulates default values.
-    _quant_config: Optional[QuantizationConfig] = None
-    """Optional config for specifying quantization parameters. This should only be set by internal code."""
 
     max_cache_batch_size: Optional[int] = None
     """DEPRECATED: The maximum cache batch size to use for the model. Use max_batch_size instead."""
@@ -770,6 +1028,19 @@ class PipelineConfig(MAXConfig):
     draft_model: Optional[str] = None
     """Draft model for use during Speculative Decoding."""
 
+    _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
+    """The model config."""
+
+    _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
+    """The KVCache config."""
+
+    _sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
+    """The sampling config."""
+
+    _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
+
+    """The profiling config."""
+
     def __init__(self, **kwargs: Any) -> None:
         # Initialize all fields with their defaults first
         for curr_field in fields(self.__class__):
@@ -779,7 +1050,7 @@ class PipelineConfig(MAXConfig):
                 setattr(self, curr_field.name, curr_field.default_factory())
 
         # Check if any kwargs are meant for other MAXConfig classes
-        unmatched_kwargs = {}
+        unmatched_kwargs: dict[str, Any] = {}
         # Then process kwargs which override defaults
         for key, value in list(kwargs.items()):
             if key in self.__dataclass_fields__:
@@ -796,6 +1067,9 @@ class PipelineConfig(MAXConfig):
                 "_sampling_config",
                 "_kv_cache_config",
                 "_profiling_config",
+                # TODO(zheng): Remove this once backward compatibility is no
+                # longer needed for MAXModelConfig.
+                "_model_config",
             ]:
                 config_class = get_type_hints(self.__class__)[config_name]
                 matched_kwargs = {}
@@ -820,22 +1094,11 @@ class PipelineConfig(MAXConfig):
         This method is called after the config is initialized, to ensure that all
         config fields have been initialized to a valid state.
         """
-        # Validate that the device_specs provided are available
-        if not devices_exist(self.device_specs):
-            available_devices = scan_available_devices()
-            msg = f"device specs provided ({self.device_specs}) do not exist."
-            msg += f"\navailable devices: {available_devices}"
-            raise ValueError(msg)
+        self._model_config.validate()
 
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
             raise ValueError("max_length must be non-negative.")
-
-        if self.huggingface_repo_id != "":
-            logger.warning(
-                "--huggingface-repo-id is deprecated, use `--model-path` instead. This setting will stop working in a future release."
-            )
-            self.model_path = self.huggingface_repo_id
 
         if self.max_cache_batch_size is not None:
             logger.warning(
@@ -843,74 +1106,11 @@ class PipelineConfig(MAXConfig):
             )
             self.max_batch_size = self.max_cache_batch_size
 
-        # Validate that if weight_paths are passed as strings, they are converted to Path.
-        if isinstance(self.weight_path, tuple):
-            self.weight_path = list(self.weight_path)
-        elif not isinstance(self.weight_path, list):
-            self.weight_path = [self.weight_path]
-        weight_paths = []
-        # Validate that if weight_paths are passed as strings, they are converted to Path.
-        for path in self.weight_path:
-            if isinstance(path, str):
-                path = Path(path)
-            elif not isinstance(path, Path):
-                raise ValueError(
-                    "weight_path provided must either be string or Path:"
-                    f" '{path}'"
-                )
-            elif path.is_file():
-                # If we already exist on the OS. Dont parse the path, just continue.
-                weight_paths.append(path)
-                continue
-
-            # If the path, looks like it may start with a Hugging Face repo id,
-            # check if the repo_id is the same as the one provided.
-            # If it is the same, set the weight_path to just be the file_name post repo_id
-            # If it is different, set the _weights_repo_id to be that repo_id
-            # and set the path to be the file_name without the repo_id.
-            if path_pieces := str(path).split("/"):
-                if len(path_pieces) >= 3:
-                    repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
-                    file_name = "/".join(path_pieces[2:])
-                    if self.model_path != "" and repo_id == self.model_path:
-                        path = Path(file_name)
-                    elif huggingface_hub.file_exists(repo_id, file_name):
-                        self._weights_repo_id = repo_id
-                        path = Path(file_name)
-                elif self.model_path == "":
-                    raise ValueError(
-                        "Unable to derive model_path from weight_path, "
-                        "please provide a valid Hugging Face repository id."
-                    )
-
-            weight_paths.append(path)
-
-        self.weight_path = weight_paths
-
-        # If we cannot infer the weight path, we lean on the model_path
-        # to provide it.
-        if len(self.weight_path) == 0:
-            if self.model_path == "":
-                raise ValueError(
-                    "model_path must be provided and must be a valid Hugging Face repository"
-                )
-            elif (not os.path.exists(self.model_path)) and (
-                not _repo_exists_with_retry(self.model_path)
-            ):
-                raise ValueError(
-                    f"{self.model_path} is not a valid Hugging Face repository"
-                )
-        elif self.model_path == "" and self._weights_repo_id is not None:
-            # weight_path is used and we should derive the repo_id from it.
-            # At this point, we should have a resolved weight path - be it local or remote HF.
-            # weight_path should not be used directly anymore.
-            self.model_path = self._weights_repo_id
-
         # Set sensible defaults. These are platform-specific.
         if self.max_num_steps < 0:
             if (
                 self.sampling_config.enable_structured_output
-                or self.device_specs[0] == DeviceSpec.cpu()
+                or self._model_config.device_specs[0] == DeviceSpec.cpu()
             ):
                 self.max_num_steps = 1
             else:
@@ -925,7 +1125,7 @@ class PipelineConfig(MAXConfig):
             )
 
         if self.sampling_config.enable_structured_output:
-            if self.device_specs[0] == DeviceSpec.cpu():
+            if self._model_config.device_specs[0] == DeviceSpec.cpu():
                 raise ValueError(
                     "enable_structured_output is not currently supported on CPU."
                 )
@@ -948,137 +1148,22 @@ class PipelineConfig(MAXConfig):
 
         Returns:
             The graph quantization encoding corresponding to the CLI encoding.
-
-        Raises:
-            ValueError: If no CLI encoding was specified.
         """
-        if self.quantization_encoding is None:
-            raise ValueError(
-                "can't convert `None` CLI encoding to graph quantization encoding"
-            )
-
-        return self.quantization_encoding.quantization_encoding
+        return self._model_config.graph_quantization_encoding
 
     def finalize_encoding_config(self):
         """Depending on the encoding picked, we get some more parameters from the hf config"""
-        if self.quantization_encoding == SupportedEncoding.gptq:
-            hf_config = AutoConfig.from_pretrained(
-                self.model_path,
-                trust_remote_code=self.trust_remote_code,
-                revision=self.huggingface_revision,
-            )
-            hf_quant_config = hf_config.quantization_config
-
-            if hf_config.torch_dtype is not torch.float16:
-                raise ValueError(
-                    "bfloat16 scales are not supported for GPTQ-quantized models."
-                )
-
-            self._quant_config = QuantizationConfig(
-                quant_method=hf_quant_config["quant_method"],
-                bits=hf_quant_config["bits"],
-                group_size=hf_quant_config["group_size"],
-                desc_act=hf_quant_config["desc_act"],
-                sym=hf_quant_config["sym"],
-            )
-
-    # TODO(zheng): Move this under KVCacheConfig.
-    @property
-    def cache_dtype(self) -> DType:
-        if self.quantization_encoding is None:
-            raise ValueError(
-                "quantization_encoding must be provided to infer cache dtype."
-            )
-
-        return self.quantization_encoding.cache_dtype
-
-    def weights_size(self) -> int:
-        size = 0
-        hf_repo = HuggingFaceRepo(
-            (
-                self._weights_repo_id
-                if self._weights_repo_id
-                else self.model_path
-            ),
-            trust_remote_code=self.trust_remote_code,
-        )
-        for file_path in self.weight_path:
-            if os.path.exists(file_path):
-                size += os.path.getsize(file_path)
-                continue
-
-            next_size = hf_repo.size_of(str(file_path))
-
-            if next_size is None:
-                raise ValueError(
-                    f"Failed to get size of weight file {file_path}"
-                )
-            size += next_size
-
-        return size
-
-    def download_weights(self) -> None:
-        # Try to load locally.
-        if all([os.path.exists(file_path) for file_path in self.weight_path]):
-            logger.info("All files exist locally, skipping download.")
-            return
-
-        start_time = datetime.datetime.now()
-        weights_repo_id = (
-            self._weights_repo_id if self._weights_repo_id else self.model_path
-        )
-        logger.info(f"Starting download of model: {weights_repo_id}")
-        # max_workers=8 setting copied from default for
-        # huggingface_hub.snapshot_download.
-        self.weight_path = list(
-            thread_map(
-                lambda filename: Path(
-                    huggingface_hub.hf_hub_download(
-                        weights_repo_id,
-                        str(filename),
-                        revision=self.huggingface_revision,
-                        force_download=self.force_download,
-                    )
-                ),
-                self.weight_path,
-                max_workers=8,
-                tqdm_class=hf_tqdm,
-            )
-        )
-
-        logger.info(
-            f"Finished download of model: {weights_repo_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
-        )
+        self._model_config.finalize_encoding_config()
 
     def load_weights(self) -> Weights:
-        self.download_weights()
-
-        _weights_format = weights_format(
-            self.weight_path,
-        )
-
-        if _weights_format == WeightsFormat.gguf:
-            if len(self.weight_path) > 1:
-                raise ValueError("loading multiple gguf files is not supported")
-            return GGUFWeights(self.weight_path[0])
-
-        elif _weights_format == WeightsFormat.safetensors:
-            return SafetensorWeights(self.weight_path)
-
-        else:
-            raise ValueError(
-                f"loading weights format '{_weights_format}' not supported"
-            )
+        """Load the weights for the model."""
+        return self._model_config.load_weights()
 
     @staticmethod
     def help() -> dict[str, str]:
         pipeline_help = {
-            "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
-            "huggingface_repo_id": "DEPRECATED: Use `model_path` instead.",
-            "huggingface_revision": "Branch or Git revision of Hugging Face model repository to use.",
             "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
-            "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
             "serialized_model_path": "DEPRECATED: Serialization paths no longer supported.",
             "save_to_serialized_model_path": "DEPRECATED: Serialization paths no longer supported.",
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
@@ -1091,8 +1176,6 @@ class PipelineConfig(MAXConfig):
             "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is set to 1.",
             "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",
-            "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
-            "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
             "draft_model": "Draft model for use in speculative decoding.",
         }
@@ -1110,15 +1193,9 @@ class PipelineConfig(MAXConfig):
             pipeline_help.update(config_help)
         return pipeline_help
 
-    def huggingface_weights_repo(self) -> HuggingFaceRepo:
-        return HuggingFaceRepo(
-            (
-                self._weights_repo_id
-                if self._weights_repo_id
-                else self.model_path
-            ),
-            trust_remote_code=self.trust_remote_code,
-        )
+    @property
+    def model_config(self) -> MAXModelConfig:
+        return self._model_config
 
     @property
     def sampling_config(self) -> SamplingConfig:

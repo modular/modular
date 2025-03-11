@@ -210,7 +210,9 @@ def transformer(
     dtype: DType,
 ) -> Transformer:
     with graph:
-        _weights_format = weights_format(pipeline_config.weight_path)
+        _weights_format = weights_format(
+            pipeline_config.model_config.weight_path
+        )
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
             and pipeline_config.rope_type == RopeType.normal
