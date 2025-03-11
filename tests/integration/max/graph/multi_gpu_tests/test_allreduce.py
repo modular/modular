@@ -23,7 +23,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.pipelines.nn import Allreduce, Module, Signals
+from max.nn import Allreduce, Module, Signals
 
 M = 512
 N = 1024

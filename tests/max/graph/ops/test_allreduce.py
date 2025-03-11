@@ -10,7 +10,7 @@ from conftest import tensor_types
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.pipelines.nn import Signals
+from max.nn import Signals
 
 shared_types = st.shared(tensor_types())
 
