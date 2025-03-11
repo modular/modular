@@ -983,31 +983,36 @@ fn _mha_single_batch_sm90_fa3[
 
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
             # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
-            p_reg_iter = p_reg_tile.reshape[
-                Layout.row_major(
-                    num_m_mmas * num_n_mmas * frag_ratio,
-                    a_frag_size,
-                )
-            ]().tiled_iterator[num_m_mmas * num_k_mmas, a_frag_size](0, 0)
             p_frag = LayoutTensor[
                 v_type,
-                Layout.row_major(num_m_mmas * num_k_mmas, a_frag_size),
+                Layout.row_major(
+                    num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
+                ),
                 MutableAnyOrigin,
                 address_space = AddressSpace.LOCAL,
             ].stack_allocation()
+            # Convert 1st matmul's output FP32->BF16, layout are the same.
+            p_frag.copy_from(
+                p_reg_tile.reshape[
+                    Layout.row_major(
+                        num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
+                    )
+                ](),
+            )
 
             TMABarrier(MbarPtrType(produced_mbar_v_ptr + read_idx)).wait(
                 read_phase
             )
             v_smem_subi = v_smem_iter.next_unsafe(read_idx * num_k_iters_1)
+
             wgmma_1.arrive()
 
             @parameter
             for k_iter in range(num_k_iters_1):
-                p_frag.copy_from(p_reg_iter.next_unsafe(k_iter)[])
-
                 wgmma_1.wgmma(
-                    p_frag,
+                    p_frag.tile[num_m_mmas * num_k_mmas, a_frag_size](
+                        k_iter, 0
+                    ),
                     v_smem_subi.next_unsafe(k_iter)[],
                     output_reg_tile,
                 )
