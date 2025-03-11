@@ -19,6 +19,7 @@ from typing import Any, Type, TypeVar
 
 from max.driver import load_devices
 from max.engine import InferenceSession
+from max.graph.weights import load_weights
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
@@ -54,7 +55,8 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         if not self._pipeline_config.model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
-        weights = self._pipeline_config.load_weights()
+        self._pipeline_config.model_config.download_weights()
+        weights = load_weights(self._pipeline_config.model_config.weight_path)
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,

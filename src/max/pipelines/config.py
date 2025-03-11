@@ -44,12 +44,8 @@ from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import (
-    GGUFWeights,
-    SafetensorWeights,
-    Weights,
     WeightsAdapter,
     WeightsFormat,
-    weights_format,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 from requests.exceptions import ConnectionError as RequestsConnectionError
@@ -790,59 +786,6 @@ class MAXModelConfig(MAXConfig):
             f"Finished download of model: {weights_repo_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
         )
 
-    # TODO(zheng): Remove this backward compatibility method once PipelineModels
-    # no longer depend on PipelineConfig (and can call
-    # ModelConfig.load_weights() on its own).
-    def load_weights(self) -> Weights:
-        self.download_weights()
-
-        _weights_format = weights_format(
-            self.weight_path,
-        )
-
-        if _weights_format == WeightsFormat.gguf:
-            if len(self.weight_path) > 1:
-                raise ValueError("loading multiple gguf files is not supported")
-            return GGUFWeights(self.weight_path[0])
-
-        elif _weights_format == WeightsFormat.safetensors:
-            return SafetensorWeights(self.weight_path)
-
-        else:
-            raise ValueError(
-                f"loading weights format '{_weights_format}' not supported"
-            )
-
-    @property
-    def weights_format(self) -> WeightsFormat:
-        """Identify which format our weights are expected in."""
-
-        if not self.weight_path:
-            raise ValueError(
-                "no weight_path provided cannot infer weights format."
-            )
-
-        # Get all weight paths.
-        if all(
-            [weight_path.suffix == ".gguf" for weight_path in self.weight_path]
-        ):
-            return WeightsFormat.gguf
-        elif all(
-            [
-                weight_path.suffix == ".safetensors"
-                for weight_path in self.weight_path
-            ]
-        ):
-            return WeightsFormat.safetensors
-        elif all(
-            [weight_path.suffix == ".bin" for weight_path in self.weight_path]
-        ):
-            return WeightsFormat.pytorch
-        else:
-            raise ValueError(
-                f"weights type cannot be inferred from {self.weight_path}"
-            )
-
     def huggingface_weights_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(
             (
@@ -1154,10 +1097,6 @@ class PipelineConfig(MAXConfig):
     def finalize_encoding_config(self):
         """Depending on the encoding picked, we get some more parameters from the hf config"""
         self._model_config.finalize_encoding_config()
-
-    def load_weights(self) -> Weights:
-        """Load the weights for the model."""
-        return self._model_config.load_weights()
 
     @staticmethod
     def help() -> dict[str, str]:
