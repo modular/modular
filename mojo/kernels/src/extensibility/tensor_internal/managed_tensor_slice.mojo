@@ -62,16 +62,13 @@ fn _gcd_pow2[a: Int, b: Int]() -> Int:
 @register_internal("simd_store_into_managed_tensor_slice")
 @no_inline
 fn simd_store_into_managed_tensor_slice[
-    read: Bool,
-    write: Bool, //,
     type: DType,
     rank: Int,
     simd_width: Int,
     static_spec: StaticTensorSpec[type, rank],
-    io_spec: IOSpec[read, write],
     element_alignment: Int = 1,
 ](
-    tensor: ManagedTensorSlice[static_spec=static_spec, io_spec=io_spec],
+    tensor: ManagedTensorSlice[static_spec=static_spec],
     indices: IndexList[rank],
     value: SIMD[type, simd_width],
 ):
@@ -135,15 +132,12 @@ fn simd_store_into_managed_tensor_slice[
 @register_internal("simd_load_from_managed_tensor_slice")
 @no_inline
 fn simd_load_from_managed_tensor_slice[
-    read: Bool,
-    write: Bool, //,
     type: DType,
     rank: Int,
     simd_width: Int,
     static_spec: StaticTensorSpec[type, rank],
-    io_spec: IOSpec[read, write],
 ](
-    tensor: ManagedTensorSlice[static_spec=static_spec, io_spec=io_spec],
+    tensor: ManagedTensorSlice[static_spec=static_spec],
     indices: IndexList[rank],
 ) -> SIMD[type, simd_width]:
     var flat_index = tensor._compute_offset(indices)
@@ -160,14 +154,14 @@ fn simd_load_from_managed_tensor_slice[
         if type is DType.bool:
             var v = tensor._ptr.bitcast[UInt8]().load[
                 width=simd_width,
-                invariant = tensor.io_spec.write,
+                invariant = not tensor.io_spec.mut,
             ](flat_index)
             return v.cast[type]()
         else:
             return tensor._ptr.load[
                 width=simd_width,
                 alignment=max_alignment,
-                invariant = tensor.io_spec.write,
+                invariant = not tensor.io_spec.mut,
             ](flat_index)
 
     # Stride > 1
@@ -268,9 +262,10 @@ fn rebuild_static_tensor_specs_with_output_lambda[
 @register_internal("mogg.dps_input_fusion_hook")
 @no_inline
 fn _input_fusion_hook_impl[
+    mut: Bool, //,
     type: DType,
     rank: Int,
-    io_spec: IOSpec,
+    io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[type, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
@@ -297,9 +292,10 @@ fn _input_fusion_hook_impl[
 @register_internal("mogg.dps_output_fusion_hook")
 @no_inline
 fn _output_fusion_hook_impl[
+    mut: Bool, //,
     type: DType,
     rank: Int,
-    io_spec: IOSpec,
+    io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[type, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
@@ -346,11 +342,11 @@ struct DynamicTensor[
 @value
 @register_passable("trivial")
 struct ManagedTensorSlice[
-    read: Bool,
-    write: Bool,
+    mut: Bool,
+    input: IO,
     type: DType,
     rank: Int, //,
-    io_spec: IOSpec[read, write],
+    io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[type, rank],
 ](CollectionElement):
@@ -829,15 +825,9 @@ struct ManagedTensorSlice[
     @always_inline
     fn to_layout_tensor(
         self,
-    ) -> LayoutTensor[
-        type,
-        static_spec.to_layout(),
-        Origin[self.write].cast_from[MutableAnyOrigin].result,
-    ]:
+    ) -> LayoutTensor[type, static_spec.to_layout(), MutableAnyOrigin]:
         alias layout = static_spec.to_layout()
-        return LayoutTensor[
-            type, layout, Origin[self.write].cast_from[MutableAnyOrigin].result
-        ](
+        return LayoutTensor[type, layout](
             self.unsafe_ptr(),
             RuntimeLayout[layout](self.shape(), self.strides()),
         )
@@ -872,12 +862,12 @@ alias OutputVariadicTensors = VariadicTensors[io_spec=Output]
 @value
 @register_passable("trivial")
 struct VariadicTensors[
-    read: Bool,
-    write: Bool, //,
+    mut: Bool,
+    input: IO, //,
     type: DType,
     rank: Int,
     size: Int,
-    io_spec: IOSpec[read, write],
+    io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[type, rank], size],
 ](Sized):

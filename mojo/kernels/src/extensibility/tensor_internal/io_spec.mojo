@@ -21,23 +21,23 @@ struct IO:
 
 @value
 @register_passable("trivial")
-struct IOSpec[read: Bool, write: Bool]:
+struct IOSpec[mut: Bool, input: IO]:
     """
     Parameter used to encode whether a particular tensor argument to a DPS kernel
     is an output, input, or mutable input.
 
     ```mojo
-    Input == IOSpec[read=True, write=False]()
-    Output == IOSpec[read=False, write=Write]()
-    MutableInput == IOSpec[read=True, write=True]()
+    Input == IOSpec[False, IO.Input]()
+    Output == IOSpec[True, IO.Output]()
+    MutableInput == IOSpec[True, IO.Input]()
     ```
     """
 
     ...
 
 
-alias IOUnknown = IOSpec[False, False]()
+alias IOUnknown = IOSpec[False, IO.Unknown]()
 
-alias Input = IOSpec[True, False]()
-alias Output = IOSpec[False, True]()
-alias MutableInput = IOSpec[True, True]()
+alias Input = IOSpec[False, IO.Input]()
+alias Output = IOSpec[True, IO.Output]()
+alias MutableInput = IOSpec[True, IO.Input]()
