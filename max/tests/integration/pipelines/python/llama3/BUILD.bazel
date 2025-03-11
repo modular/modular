@@ -65,7 +65,7 @@ modular_py_binary(
             "requires-network",
         ],
         deps = [
-            "//SDK/integration-test/API/python:modular_graph_test",
+            "//SDK/integration-test/API/python/graph:modular_graph_test",
             "//SDK/integration-test/pipelines/python/test_common",
             "//SDK/lib/API/python/max/engine",
             "//SDK/lib/API/python/max/entrypoints",

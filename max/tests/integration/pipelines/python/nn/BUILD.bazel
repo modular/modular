@@ -17,7 +17,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/API/python:modular_graph_test",
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
@@ -55,7 +55,7 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     deps = [
-        "//SDK/integration-test/API/python:modular_graph_test",
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
@@ -96,7 +96,7 @@ modular_py_test(
         "gpu",
     ],
     deps = [
-        "//SDK/integration-test/API/python:modular_graph_test",
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
@@ -133,7 +133,7 @@ modular_py_test(
         "no-mypy",  # TODO: Fix and remove
     ],
     deps = [
-        "//SDK/integration-test/API/python:modular_graph_test",
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
@@ -172,7 +172,7 @@ modular_py_test(
         "H100-DISABLE",
     ],
     deps = [
-        "//SDK/integration-test/API/python:modular_graph_test",
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
