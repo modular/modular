@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
-from max.pipelines import LogProbabilities
-from max.pipelines.nn.compute_log_probabilities import (
+from max.pipelines.interfaces import LogProbabilities
+from max.pipelines.log_probabilities import (
     compute_log_probabilities,
     log_softmax,
 )

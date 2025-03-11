@@ -14,6 +14,8 @@ from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn import Allreduce, Linear, Signals
+from max.nn.attention import Attention
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheManager,
@@ -21,8 +23,6 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
-from max.pipelines.nn import Allreduce, Linear, Signals
-from max.pipelines.nn.attention import Attention
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2

@@ -12,7 +12,7 @@ from max.driver import accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
-from max.pipelines.nn import RMSNorm
+from max.nn import RMSNorm
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 

@@ -14,18 +14,18 @@ from hypothesis import assume
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.graph import Dim, Graph, TensorType, TensorValue, TensorValueLike, ops
+from max.nn import (
+    Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+    RotaryEmbedding,
+)
+from max.nn.kernels import fused_qk_ragged_rope
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
 )
-from max.pipelines.nn import (
-    Llama3RopeScalingParams,
-    Llama3RotaryEmbedding,
-    RotaryEmbedding,
-)
-from max.pipelines.nn.kernels import fused_qk_ragged_rope
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 MAX_SEQ_LEN = 2**16

@@ -7,8 +7,8 @@
 import numpy as np
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
-from max.pipelines.nn import Linear
-from max.pipelines.nn.sequential import Sequential
+from max.nn import Linear
+from max.nn.sequential import Sequential
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 

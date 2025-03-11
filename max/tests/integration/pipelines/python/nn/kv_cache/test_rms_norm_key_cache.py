@@ -12,6 +12,7 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Dim, Graph, TensorType, TensorValue
+from max.nn.kernels import rms_norm_key_cache
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
@@ -19,7 +20,6 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     RaggedKVCacheInputs,
 )
-from max.pipelines.nn.kernels import rms_norm_key_cache
 
 FAKE_TOKEN = 999
 

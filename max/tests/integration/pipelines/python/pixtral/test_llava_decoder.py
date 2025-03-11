@@ -13,15 +13,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
-from max.pipelines.architectures.pixtral.llava.llava_decoder import (
-    Transformer as LLavaTransformer,
-)
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    KVCacheParams,
-    load_kv_manager,
-)
-from max.pipelines.nn import (
+from max.nn import (
     MLP,
     AttentionWithRope,
     Embedding,
@@ -29,6 +21,14 @@ from max.pipelines.nn import (
     OptimizedRotaryEmbedding,
     RMSNorm,
     TransformerBlock,
+)
+from max.pipelines.architectures.pixtral.llava.llava_decoder import (
+    Transformer as LLavaTransformer,
+)
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+    load_kv_manager,
 )
 from transformers import (
     LlavaForConditionalGeneration,

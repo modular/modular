@@ -10,7 +10,7 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
-from max.pipelines.nn import Conv1D, Conv3D
+from max.nn import Conv1D, Conv3D
 
 ACCURACY_RTOL = 1e-4
 ACCURACY_ATOL = 1e-6

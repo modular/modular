@@ -13,6 +13,16 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
+from max.nn import MLP as nnMLP
+from max.nn import (
+    AttentionWithRope,
+    Conv2D,
+    Embedding,
+    Linear,
+    OptimizedRotaryEmbedding,
+    RMSNorm,
+)
+from max.nn import TransformerBlock as nnTransformerBlock
 from max.pipelines.architectures.pixtral.llava.llava import (
     LlavaConditionalGeneration,
 )
@@ -40,16 +50,6 @@ from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
 )
-from max.pipelines.nn import MLP as nnMLP
-from max.pipelines.nn import (
-    AttentionWithRope,
-    Conv2D,
-    Embedding,
-    Linear,
-    OptimizedRotaryEmbedding,
-    RMSNorm,
-)
-from max.pipelines.nn import TransformerBlock as nnTransformerBlock
 from transformers import (
     AutoProcessor,
     LlavaConfig,

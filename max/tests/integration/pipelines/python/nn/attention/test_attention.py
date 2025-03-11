@@ -13,6 +13,9 @@ from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
+from max.nn import Linear
+from max.nn.attention import Attention
+from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
@@ -23,9 +26,6 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
 )
-from max.pipelines.nn import Linear
-from max.pipelines.nn.attention import Attention
-from max.pipelines.nn.kernels import MHAMaskVariant, flash_attention_ragged
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 ACCURACY_RTOL = 1e-2

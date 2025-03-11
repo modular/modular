@@ -13,12 +13,12 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
+from max.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
 from max.pipelines.architectures.whisper.encoder import (
     WhisperEncoder,
     WhisperEncoderLayer,
     WhisperSdpaAttention,
 )
-from max.pipelines.nn import Conv1D, Embedding, LayerNorm, Linear, Sequential
 from transformers import (
     AutoModelForSpeechSeq2Seq,
     AutoProcessor,

@@ -12,6 +12,8 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
+from max.nn import Conv2D, Linear
+from max.nn.norm import RMSNorm
 from max.pipelines.architectures.pixtral.vision_encoder.attention import (
     Attention,
 )
@@ -29,8 +31,6 @@ from max.pipelines.architectures.pixtral.vision_encoder.transformer import (
 from max.pipelines.architectures.pixtral.vision_encoder.vision_encoder import (
     VisionEncoder,
 )
-from max.pipelines.nn import Conv2D, Linear
-from max.pipelines.nn.norm import RMSNorm
 from torch import nn
 from transformers import PixtralVisionConfig, PixtralVisionModel
 from transformers.models.pixtral.modeling_pixtral import (

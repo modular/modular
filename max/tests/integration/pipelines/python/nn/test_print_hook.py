@@ -8,8 +8,8 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
-from max.pipelines.nn.hooks.print_hook import PrintHook
-from max.pipelines.nn.layer import Layer
+from max.nn.hooks.print_hook import PrintHook
+from max.nn.layer import Layer
 
 
 class OuterLayer(Layer):

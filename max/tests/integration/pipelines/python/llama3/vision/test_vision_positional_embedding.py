@@ -13,11 +13,11 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight
+from max.nn import Embedding
 from max.pipelines.architectures.llama_vision.positional_embedding import (
     PrecomputedAspectRatioEmbedding,
     PrecomputedPositionEmbedding,
 )
-from max.pipelines.nn import Embedding
 from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaVisionConfig
 from transformers.models.mllama.modeling_mllama import (

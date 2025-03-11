@@ -34,8 +34,8 @@ modular_py_test(
     deps = [
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines/architectures",
-        "//SDK/lib/API/python/max/pipelines/nn",
         "//SDK/lib/API/python/max/serve",
         "//Support/python:support",
         requirement("huggingface-hub"),

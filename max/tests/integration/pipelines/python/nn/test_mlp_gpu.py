@@ -14,7 +14,7 @@ from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.nn import MLP, Linear
+from max.nn import MLP, Linear
 from modular_graph_test import are_all_tensor_values
 
 

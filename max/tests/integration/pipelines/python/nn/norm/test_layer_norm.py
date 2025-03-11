@@ -16,7 +16,7 @@ from distance_metrics import is_euclidean_distance_close
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
-from max.pipelines.nn import LayerNorm
+from max.nn import LayerNorm
 from ndarray_from_tensor_type import ndarray_from_tensor_type
 
 

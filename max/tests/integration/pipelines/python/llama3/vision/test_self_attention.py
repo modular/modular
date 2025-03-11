@@ -15,15 +15,15 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
+from max.nn import (
+    AttentionWithRopeQKV,
+    Linear,
+    OptimizedRotaryEmbedding,
+)
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     load_kv_manager,
-)
-from max.pipelines.nn import (
-    AttentionWithRopeQKV,
-    Linear,
-    OptimizedRotaryEmbedding,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from torch import nn

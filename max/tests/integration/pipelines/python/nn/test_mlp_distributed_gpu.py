@@ -14,8 +14,8 @@ from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.nn import MLP, Linear, Signals
-from max.pipelines.nn.comm.allreduce import Allreduce
+from max.nn import MLP, Linear, Signals
+from max.nn.comm.allreduce import Allreduce
 
 
 def torch_linear(weight, **kwargs):

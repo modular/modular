@@ -17,8 +17,8 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn import Linear, NaiveAttentionWithRope, RotaryEmbedding
 from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.nn import Linear, NaiveAttentionWithRope, RotaryEmbedding
 from modular_graph_test import modular_graph_test
 from torch import nn
 from transformers import StaticCache

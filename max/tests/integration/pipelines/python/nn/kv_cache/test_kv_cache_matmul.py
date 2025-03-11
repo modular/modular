@@ -14,15 +14,15 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, ops
 from max.mlir import StringAttr
+from max.nn.kernels import (
+    fused_qkv_ragged_matmul,
+    matmul_kv_cache_ragged,
+)
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
-)
-from max.pipelines.nn.kernels import (
-    fused_qkv_ragged_matmul,
-    matmul_kv_cache_ragged,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
