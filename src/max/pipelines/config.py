@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import datetime
 import glob
 import json
 import logging
@@ -34,7 +33,6 @@ import huggingface_hub
 import torch
 from huggingface_hub import constants as hf_hub_constants
 from huggingface_hub import errors as hf_hub_errors
-from huggingface_hub.utils import tqdm as hf_tqdm
 from max.driver import (
     DeviceSpec,
     devices_exist,
@@ -49,7 +47,6 @@ from max.graph.weights import (
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 from requests.exceptions import ConnectionError as RequestsConnectionError
-from tqdm.contrib.concurrent import thread_map
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -752,39 +749,6 @@ class MAXModelConfig(MAXConfig):
             size += next_size
 
         return size
-
-    def download_weights(self) -> None:
-        # Try to load locally.
-        if all([os.path.exists(file_path) for file_path in self.weight_path]):
-            logger.info("All files exist locally, skipping download.")
-            return
-
-        start_time = datetime.datetime.now()
-        weights_repo_id = (
-            self._weights_repo_id if self._weights_repo_id else self.model_path
-        )
-        logger.info(f"Starting download of model: {weights_repo_id}")
-        # max_workers=8 setting copied from default for
-        # huggingface_hub.snapshot_download.
-        self.weight_path = list(
-            thread_map(
-                lambda filename: Path(
-                    huggingface_hub.hf_hub_download(
-                        weights_repo_id,
-                        str(filename),
-                        revision=self.huggingface_revision,
-                        force_download=self.force_download,
-                    )
-                ),
-                self.weight_path,
-                max_workers=8,
-                tqdm_class=hf_tqdm,
-            )
-        )
-
-        logger.info(
-            f"Finished download of model: {weights_repo_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
-        )
 
     def huggingface_weights_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(

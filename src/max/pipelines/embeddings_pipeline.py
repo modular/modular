@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Type, TypeVar
 
 from max.driver import load_devices
@@ -25,9 +26,11 @@ from transformers import AutoConfig
 
 from .config import PipelineConfig
 from .context import InputContext
+from .hf_utils import download_weight_files
 from .interfaces import EmbeddingsGenerator, EmbeddingsResponse
 from .pipeline import PipelineModel
 
+logger = logging.getLogger("max.pipelines")
 T = TypeVar("T", bound=InputContext)
 
 
@@ -55,8 +58,25 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         if not self._pipeline_config.model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
-        self._pipeline_config.model_config.download_weights()
-        weights = load_weights(self._pipeline_config.model_config.weight_path)
+        # Download weight files if not existent
+        weight_model_id = (
+            self._pipeline_config.model_config._weights_repo_id
+            if self._pipeline_config.model_config._weights_repo_id
+            else self._pipeline_config.model_config.model_path
+        )
+
+        # Download weight files.
+        weight_paths = download_weight_files(
+            huggingface_model_id=weight_model_id,
+            filenames=[
+                str(x) for x in self._pipeline_config.model_config.weight_path
+            ],
+            revision=self._pipeline_config.model_config.huggingface_revision,
+            force_download=self._pipeline_config.model_config.force_download,
+        )
+
+        # Load weights
+        weights = load_weights(weight_paths)
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,

@@ -15,8 +15,12 @@
 
 from __future__ import annotations
 
+import datetime
+import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from huggingface_hub import (
     file_exists,
@@ -24,7 +28,11 @@ from huggingface_hub import (
     hf_hub_download,
     hf_hub_url,
 )
+from huggingface_hub.utils import tqdm as hf_tqdm
+from tqdm.contrib.concurrent import thread_map
 from transformers import AutoConfig
+
+logger = logging.getLogger("max.pipelines")
 
 
 def get_architectures_from_huggingface_repo(
@@ -67,3 +75,67 @@ class HuggingFaceFile:
 
     def exists(self) -> bool:
         return file_exists(self.repo_id, self.filename, revision=self.revision)
+
+
+def download_weight_files(
+    huggingface_model_id: str,
+    filenames: list[str],
+    revision: Optional[str] = None,
+    force_download: bool = False,
+    max_workers: int = 8,
+) -> list[Path]:
+    """Provided a HuggingFace model id, and filenames, download weight files
+        and return the list of local paths.
+
+    Args:
+        huggingface_model_id:
+          The huggingface model identifier, ie. `modularai/llama-3.1`
+
+        filenames:
+          A list of file paths relative to the root of the HuggingFace repo.
+          If files provided are available locally, download is skipped, and
+          the local files are used.
+
+        revision:
+          The HuggingFace revision to use. If provided, we check our cache
+          directly without needing to go to HuggingFace directly, saving a
+          network call.
+
+        force_download:
+          A boolean, indicating whether we should force the files to be
+          redownloaded, even if they are already available in our local cache,
+          or a provided path.
+
+        max_workers:
+          The number of worker threads to concurrently download files.
+
+    """
+    if not force_download and all(
+        os.path.exists(Path(filename)) for filename in filenames
+    ):
+        logger.info("All files exist locally, skipping download.")
+        return [Path(filename) for filename in filenames]
+
+    start_time = datetime.datetime.now()
+    logger.info(f"Starting download of model: {huggingface_model_id}")
+    weight_paths = list(
+        thread_map(
+            lambda filename: Path(
+                hf_hub_download(
+                    huggingface_model_id,
+                    filename,
+                    revision=revision,
+                    force_download=force_download,
+                )
+            ),
+            filenames,
+            max_workers=max_workers,
+            tqdm_class=hf_tqdm,
+        )
+    )
+
+    logger.info(
+        f"Finished download of model: {huggingface_model_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
+    )
+
+    return weight_paths

@@ -28,7 +28,7 @@ from .config import (
 )
 from .context import InputContext, TextAndVisionContext, TextContext
 from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceFile
+from .hf_utils import HuggingFaceFile, download_weight_files
 from .interfaces import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
@@ -103,4 +103,5 @@ __all__ = [
     "EmbeddingsResponse",
     "SpeculativeDecodingTextGenerationPipeline",
     "upper_bounded_default",
+    "download_weight_files",
 ]
