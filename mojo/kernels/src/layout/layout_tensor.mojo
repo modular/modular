@@ -746,7 +746,8 @@ struct LayoutTensor[
         Returns:
             Self: The modified tensor with the unary operation applied.
 
-        Note:
+        Notes:
+
             This method requires the tensor to have a statically known layout for
             compile-time optimization.
         """
@@ -810,7 +811,8 @@ struct LayoutTensor[
         Returns:
             Self: The modified tensor with the binary operation applied.
 
-        Note:
+        Notes:
+
             - Currently supports only rank-2 tensors or tensors of the same rank.
             - For tensors of the same rank, shapes must match exactly.
             - For rank-1 to rank-2 broadcasting, the rank-1 tensor's dimension must
@@ -907,6 +909,7 @@ struct LayoutTensor[
             A new tensor containing the results of the addition operation.
 
         Performance:
+
             - This operation creates a copy of the tensor before performing the addition.
             - For in-place addition, use the `__iadd__` method instead.
         """
@@ -928,6 +931,7 @@ struct LayoutTensor[
             other: The scalar value to add to each element.
 
         Performance:
+
             - This operation modifies the tensor directly without creating a copy.
         """
 
@@ -970,6 +974,7 @@ struct LayoutTensor[
             A new tensor containing the results of the addition operation.
 
         Performance:
+
             - This operation creates a copy of the tensor before performing the addition.
             - For in-place addition, use the `__iadd__` method instead.
         """
@@ -1013,6 +1018,7 @@ struct LayoutTensor[
             other: The tensor to add to this tensor.
 
         Performance:
+
             - This operation modifies the tensor directly without creating a copy.
         """
 
@@ -1039,6 +1045,7 @@ struct LayoutTensor[
             A new tensor containing the results of the multiplication operation.
 
         Performance:
+
             - This operation creates a copy of the tensor before performing the multiplication.
             - For in-place multiplication, use the `__imul__` method instead.
         """
@@ -1085,6 +1092,7 @@ struct LayoutTensor[
             A new tensor containing the results of the elementwise multiplication.
 
         Performance:
+
             - This operation creates a copy of the tensor before performing the multiplication.
             - For in-place multiplication, use the `__imul__` method instead.
         """
@@ -1109,6 +1117,7 @@ struct LayoutTensor[
             other: The scalar value to multiply with each element.
 
         Performance:
+
             - This operation modifies the tensor directly without creating a copy.
         """
 
@@ -1151,6 +1160,7 @@ struct LayoutTensor[
             other: The tensor to multiply with this tensor.
 
         Performance:
+
             - This operation modifies the tensor directly without creating a copy.
         """
 
@@ -1177,6 +1187,7 @@ struct LayoutTensor[
             A new tensor containing the results of the subtraction operation.
 
         Performance:
+
             - This operation creates a copy of the tensor before performing the subtraction.
             - For in-place subtraction, use the `__isub__` method instead.
         """
@@ -1220,6 +1231,7 @@ struct LayoutTensor[
             A new tensor containing the results of the subtraction operation.
 
         Performance:
+
             - This operation creates a copy of the tensor before performing the subtraction.
             - For in-place subtraction, use the `__isub__` method instead.
         """
@@ -1244,6 +1256,7 @@ struct LayoutTensor[
             other: The scalar value to subtract from each element.
 
         Performance:
+
             - This operation modifies the tensor directly without creating a copy.
         """
 
@@ -1283,6 +1296,7 @@ struct LayoutTensor[
             other: The tensor to subtract from this tensor.
 
         Performance:
+
             - This operation modifies the tensor directly without creating a copy.
         """
 
@@ -1309,10 +1323,12 @@ struct LayoutTensor[
             A new tensor containing the results of the division operation.
 
         Performance:
+
             - This operation creates a copy of the tensor before performing the division.
             - For in-place division, use the `__itruediv__` method instead.
 
-        Note:
+        Notes:
+
             - Division by zero will result in undefined behavior or errors depending on the dtype.
             - For integer dtypes, this performs integer division.
         """
@@ -1356,10 +1372,12 @@ struct LayoutTensor[
             A new tensor containing the results of the division operation.
 
         Performance:
+
             - This operation creates a copy of the tensor before performing the division.
             - For in-place division, use the `__itruediv__` method instead.
 
-        Note:
+        Notes:
+
             - Division by zero will result in undefined behavior or errors depending on the dtype.
             - For integer dtypes, this performs integer division.
         """
@@ -1383,9 +1401,11 @@ struct LayoutTensor[
             other: The scalar value to divide each element by.
 
         Performance:
+
             - This operation modifies the tensor directly without creating a copy.
 
-        Note:
+        Notes:
+
             - Division by zero will result in undefined behavior or errors depending on the dtype.
             - For integer dtypes, this performs integer division.
         """
@@ -1426,9 +1446,11 @@ struct LayoutTensor[
             other: The tensor to divide this tensor by.
 
         Performance:
+
             - This operation modifies the tensor directly without creating a copy.
 
-        Note:
+        Notes:
+
             - Division by zero will result in undefined behavior or errors depending on the dtype.
             - For integer dtypes, this performs integer division.
         """
@@ -1475,7 +1497,8 @@ struct LayoutTensor[
             d0: The index along the first dimension.
             val: The value to write to the tensor at the specified position.
 
-        Note:
+        Notes:
+
             - No bounds checking is performed. Accessing out-of-bounds indices
               will result in undefined behavior.
         """
@@ -1499,10 +1522,12 @@ struct LayoutTensor[
             val: The value to write to the tensor at the specified position.
 
         Performance:
+
             - Direct memory access with minimal overhead.
             - Memory access pattern follows the tensor's stride configuration.
 
-        Note:
+        Notes:
+
             - No bounds checking is performed. Accessing out-of-bounds indices
         """
 
@@ -1526,10 +1551,12 @@ struct LayoutTensor[
             val: The value to write to the tensor at the specified position.
 
         Performance:
+
             - Direct memory access with minimal overhead.
             - Memory access pattern follows the tensor's stride configuration.
 
-        Note:
+        Notes:
+
             - No bounds checking is performed. Accessing out-of-bounds indices
               will result in undefined behavior.
         """
@@ -1557,10 +1584,12 @@ struct LayoutTensor[
             val: The value to write to the tensor at the specified position.
 
         Performance:
+
             - Direct memory access with minimal overhead.
             - Memory access pattern follows the tensor's stride configuration.
 
-        Note:
+        Notes:
+
             - No bounds checking is performed. Accessing out-of-bounds indices
               will result in undefined behavior.
         """
@@ -1594,11 +1623,13 @@ struct LayoutTensor[
             A SIMD vector containing 'width' consecutive elements from the tensor.
 
         Performance:
+
             - Uses unaligned memory access which may be slower on some architectures.
             - For aligned access, use aligned_load instead when data alignment is guaranteed.
             - The load operation is optimized based on the tensor's memory layout.
 
-        Note:
+        Notes:
+
             - No bounds checking is performed. Accessing out-of-bounds indices will
               result in undefined behavior.
             - The elements are loaded according to the tensor's stride configuration.
@@ -1619,13 +1650,15 @@ struct LayoutTensor[
             n: The column index (second dimension).
 
         Performance:
+
             - Prefetching is a performance hint and does not guarantee data will be cached.
             - Most effective when issued sufficiently ahead of the actual data access.
             - Uses high locality prefetch to the data cache, optimized for data that
               will be accessed multiple times.
             - Can reduce memory access latency by 50-90% when used correctly.
 
-        Note:
+        Notes:
+
             - Excessive prefetching can pollute the cache and degrade performance.
             - Most beneficial for predictable access patterns that would otherwise
               cause cache misses.
@@ -1655,11 +1688,13 @@ struct LayoutTensor[
             A SIMD vector containing 'width' consecutive elements from the tensor.
 
         Performance:
+
             - Uses aligned memory access which is faster than unaligned access on most architectures.
             - The alignment is automatically calculated based on the SIMD width and dtype.
             - Can be up to 2x faster than unaligned loads on architectures that require alignment.
 
-        Note:
+        Notes:
+
             - The caller must ensure that the memory at (m, n) is properly aligned.
               Misaligned access with this method may cause hardware exceptions on some architectures.
             - No bounds checking is performed. Accessing out-of-bounds indices will
@@ -1689,11 +1724,13 @@ struct LayoutTensor[
             val: The SIMD vector containing the values to store in the tensor.
 
         Performance:
+
             - Uses unaligned memory access which may be slower on some architectures.
             - For aligned access, use aligned_store instead when data alignment is guaranteed.
             - The store operation is optimized based on the tensor's memory layout.
 
-        Note:
+        Notes:
+
             - No bounds checking is performed. Accessing out-of-bounds indices will
               result in undefined behavior.
             - The elements are stored according to the tensor's stride configuration.
@@ -1720,12 +1757,14 @@ struct LayoutTensor[
             val: The SIMD vector containing the values to store in the tensor.
 
         Performance:
+
             - Uses aligned memory access which is faster than unaligned access on most architectures.
             - The alignment is automatically calculated based on the SIMD width and dtype.
             - Can be up to 2x faster than unaligned stores on architectures that require alignment.
             - Particularly important for streaming stores that bypass the cache.
 
-        Note:
+        Notes:
+
             - The caller must ensure that the memory at (m, n) is properly aligned.
               Misaligned access with this method may cause hardware exceptions on some architectures.
             - No bounds checking is performed. Accessing out-of-bounds indices will
@@ -1765,17 +1804,20 @@ struct LayoutTensor[
             A new `LayoutTensor` instance with memory allocated on the stack.
 
         Performance:
+
             - Stack allocation is typically faster than heap allocation.
             - Proper alignment can significantly improve memory access performance,
               especially for vectorized operations.
             - No dynamic memory management overhead (no malloc/free calls).
 
-        Note:
+        Notes:
+
             - Only works with tensors that have fully static layouts known at compile time.
             - Stack memory is limited, so this should only be used for reasonably sized tensors.
             - The allocated memory is automatically freed when the function returns.
 
         Constraints:
+
             - The layout must be fully static (all dimensions known at compile time).
             - The alignment must be a multiple of the tensor's minimum required alignment.
         """
@@ -1878,10 +1920,12 @@ struct LayoutTensor[
             The size of the tensor along the specified dimension as an integer.
 
         Performance:
+
             - This is a compile-time operation with no runtime cost when used
               with static dimensions.
 
-        Note:
+        Notes:
+
             - This is a static method that operates on the tensor's type information,
               not on a specific tensor instance.
             - For dynamic dimensions, use the instance method `dim()` instead.
@@ -1911,12 +1955,14 @@ struct LayoutTensor[
             The memory stride of the tensor along the specified dimension as an integer.
 
         Performance:
+
             - This is a compile-time operation with no runtime cost when used
               with static dimensions.
             - Understanding stride patterns is crucial for optimizing memory access
               patterns in performance-critical code.
 
-        Note:
+        Notes:
+
             - Strides depend on the memory layout (row-major, column-major, or custom).
             - For non-contiguous tensors (e.g., tensor slices), strides may not follow
               a simple pattern.
@@ -1945,16 +1991,19 @@ struct LayoutTensor[
             The size of the tensor along the specified dimension as an integer.
 
         Performance:
+
             - This is a runtime operation that accesses the tensor's runtime layout information.
             - For static dimensions known at compile time, prefer the static `shape` method
               when possible for better performance.
 
-        Note:
+        Notes:
+
             - This method works with both static and dynamic dimensions.
             - For tensors with masked or partial views, this returns the actual
               size of the view, not the original tensor.
 
         Constraints:
+
             - Only works with tensors that have depth-1 layouts (no nested shapes).
         """
         constrained[
@@ -1982,6 +2031,7 @@ struct LayoutTensor[
         how the same memory is interpreted.
 
         Performance:
+
             - Coalesced layouts typically provide better cache utilization and
               memory access patterns.
             - This operation is zero-cost at runtime as it only changes the
@@ -1989,7 +2039,8 @@ struct LayoutTensor[
             - Particularly beneficial before operations that perform sequential
               memory access or vectorized operations.
 
-        Note:
+        Notes:
+
             - The coalesced tensor shares the same memory as the original tensor,
               so modifications to one will affect the other.
             - The shape of the tensor remains the same, only the stride information
@@ -2078,12 +2129,14 @@ struct LayoutTensor[
             ```
 
         Performance:
+
             - Creates a view without copying data, making it very efficient.
             - Optimized for both static and dynamic layouts with different code paths.
             - Properly handles edge cases where tiles may be partially outside the tensor.
             - Maintains stride information for efficient memory access within the tile.
 
-        Note:
+        Notes:
+
             - The resulting tile is a view into the original tensor, so modifications
               to the tile will affect the original tensor.
             - For tiles at the edges of the tensor, the actual dimensions may be smaller
@@ -2206,12 +2259,14 @@ struct LayoutTensor[
             A `LayoutTensorIter` that can be used to traverse tiles along the specified axis.
 
         Performance:
+
             - Provides efficient sequential access to tiles with good cache locality.
             - Optimized for both static and dynamic layouts with different code paths.
             - Maintains stride information for efficient memory access within each tile.
             - Properly handles edge cases where tiles may be partially outside the tensor.
 
-        Note:
+        Notes:
+
             - The iterator provides views into the original tensor, so modifications
               through the iterator will affect the original tensor.
             - For tiles at the edges of the tensor, the actual dimensions may be smaller
@@ -2226,7 +2281,7 @@ struct LayoutTensor[
             var iter = tensor.tiled_iterator[16, 16, axis=0](0, 0)
             for i in range(num_tiles_along_axis):
                 var tile = iter.get()
-                // Process tile
+                # Process tile
                 iter.next()
             ```
             .
@@ -2433,7 +2488,8 @@ struct LayoutTensor[
         Returns:
             A `LayoutTensor` representing the requested partition.
 
-        Note:
+        Notes:
+
             - The shape along the split axis becomes unknown at compile time.
             - Only works with dimensions that have statically known sizes.
             - The last partition may be smaller than others if the dimension size
@@ -2442,12 +2498,14 @@ struct LayoutTensor[
               which can improve performance for vectorized operations.
 
         Performance:
+
             - Uses aligned partitioning to improve memory access patterns.
             - Avoids creating all partitions in memory, reducing memory usage.
             - Maintains the original tensor's stride information for efficient
               element access within the partition.
 
         Constraints:
+
             - The dimension being split must have a statically known size.
             - Cannot split dimensions with unknown or dynamic sizes.
         """
@@ -2585,11 +2643,13 @@ struct LayoutTensor[
             - Thread 1 and Thread 3 would get the same data (right half)
 
         Performance:
+
             - Creates a view without copying data, making it very efficient for parallel processing.
             - The swizzle parameter can significantly improve cache locality and memory access patterns.
             - Optimized for both static and dynamic layouts with different code paths.
 
-        Note:
+        Notes:
+
             - The resulting tensor is a view into the original tensor, so modifications
               will affect the original tensor.
             - For optimal performance, the `threads_layout` should match the hardware's
@@ -2600,6 +2660,7 @@ struct LayoutTensor[
               are organized in structured grids.
 
         Constraints:
+
             - For dynamic layouts, the shape must be known at runtime and the threads_layout
               must be fully static.
         """
@@ -2783,12 +2844,14 @@ struct LayoutTensor[
             element represents a 4×4 block from the original tensor.
 
         Performance:
+
             - Creates a view without copying data, making it very efficient.
             - Enables hardware-accelerated vector operations on blocks of data.
             - Improves cache locality by grouping related elements together.
             - Particularly beneficial for operations that can leverage SIMD instructions.
 
-        Note:
+        Notes:
+
             - The tensor dimensions must be divisible by the corresponding vector dimensions.
             - For dimensions with unknown size, the corresponding vector dimension must be 1.
             - The resulting tensor has the same data but a different logical organization.
@@ -2796,6 +2859,7 @@ struct LayoutTensor[
             - This transformation is particularly useful for GPU and vector processor optimizations.
 
         Constraints:
+
             - Each tensor dimension must be divisible by the corresponding vector dimension.
             - Vector dimensions must be smaller than or equal to the corresponding tensor dimensions.
             - For dimensions with unknown size, the vector dimension must be 1.
@@ -2978,11 +3042,13 @@ struct LayoutTensor[
             ```
 
         Performance:
+
             - Creates a view without copying data, making it very efficient.
             - Maintains the original tensor's stride information for efficient memory access.
             - Zero-cost abstraction at runtime when used with compile-time constant slices.
 
-        Note:
+        Notes:
+
             - The slice is a view into the original tensor, so modifications to the
               slice will affect the original tensor.
             - Only supports rank-2 tensors. For higher-rank tensors, use the overloaded
@@ -2992,6 +3058,7 @@ struct LayoutTensor[
               will result in undefined behavior.
 
         Constraints:
+
             - Only works with rank-2 tensors.
         """
         constrained[
@@ -3051,11 +3118,13 @@ struct LayoutTensor[
             will extract a 2×2 slice from dimensions 0 and 2, with dimension 1 fixed at index 1.
 
         Performance:
+
             - Creates a view without copying data, making it very efficient.
             - Maintains the original tensor's stride information for efficient memory access.
             - Zero-cost abstraction at runtime when used with compile-time constant slices.
 
-        Note:
+        Notes:
+
             - The slice is a view into the original tensor, so modifications to the
               slice will affect the original tensor.
             - The slice indices must be ordered (e.g., [0, 2] is valid, [2, 0] is not).
@@ -3064,6 +3133,7 @@ struct LayoutTensor[
               will result in undefined behavior.
 
         Constraints:
+
             - Slice step size must be 1 (no gaps).
             - Slice indices must be ordered (ascending).
             - Tensor rank must be at least 2.
@@ -3140,11 +3210,13 @@ struct LayoutTensor[
             will extract a 1D slice from dimension 0, with dimensions 1 and 2 fixed at indices 1 and 2.
 
         Performance:
+
             - Creates a view without copying data, making it very efficient.
             - Maintains the original tensor's stride information for efficient memory access.
             - Zero-cost abstraction at runtime when used with compile-time constant slices.
 
-        Note:
+        Notes:
+
             - The slice is a view into the original tensor, so modifications to the
               slice will affect the original tensor.
             - The step size must be 1 (no gaps allowed in the slice).
@@ -3153,6 +3225,7 @@ struct LayoutTensor[
             - This function exists as a workaround for compiler limitations with overloading.
 
         Constraints:
+
             - Slice step size must be 1 (no gaps).
             - Tensor rank must be at least 1.
         """
@@ -3229,12 +3302,14 @@ struct LayoutTensor[
             ```
 
         Performance:
+
             - Creates a view without copying data, making it very efficient.
             - The operation is zero-cost at runtime as it only changes the layout information.
             - Memory access patterns may be less efficient in the transposed view due to
               non-contiguous memory access, especially for row-major storage.
 
-        Note:
+        Notes:
+
             - The transposed tensor shares the same memory as the original tensor,
               so modifications to one will affect the other.
             - Only works with rank-2 tensors.
@@ -3277,12 +3352,14 @@ struct LayoutTensor[
             with the same elements in row-major order.
 
         Performance:
+
             - Creates a view without copying data, making it very efficient.
             - The operation is zero-cost at runtime as it only changes the layout information.
             - Memory access patterns may change, potentially affecting performance
               depending on the original and target layouts.
 
-        Note:
+        Notes:
+
             - The reshaped tensor shares the same memory as the original tensor,
               so modifications to one will affect the other.
             - The total number of elements must remain the same after reshaping.
@@ -3292,6 +3369,7 @@ struct LayoutTensor[
             - Masked tensors cannot be reshaped.
 
         Constraints:
+
             - Cannot reshape masked tensors.
             - The total number of elements must be the same in both layouts.
         """
@@ -3332,11 +3410,13 @@ struct LayoutTensor[
             the data as 2×2 blocks.
 
         Performance:
+
             - Creates a view without copying data, making it very efficient.
             - The operation is zero-cost at runtime as it only changes the layout information.
             - Can be used to optimize memory access patterns for specific algorithms.
 
-        Note:
+        Notes:
+
             - The composed tensor shares the same memory as the original tensor,
               so modifications to one will affect the other.
             - Layout composition is a powerful tool for expressing complex data transformations
@@ -3345,6 +3425,7 @@ struct LayoutTensor[
               for correctly using this function.
 
         Constraints:
+
             - The layouts must be compatible for composition.
             - The total number of elements must remain the same after composition.
         """
@@ -3382,11 +3463,13 @@ struct LayoutTensor[
             to element at index 50, then distance(addr) would return 50.
 
         Performance:
+
             - This is a lightweight operation that only involves pointer arithmetic.
             - The operation is optimized based on the address space, using smaller
               integer types for shared memory to improve efficiency.
 
-        Note:
+        Notes:
+
             - The distance is calculated in elements, not bytes.
             - The result can be positive or negative depending on the relative positions
               of the pointers.
@@ -3427,11 +3510,13 @@ struct LayoutTensor[
             to element at index 50, then `tensor1.distance(tensor2)` would return 50.
 
         Performance:
+
             - This is a lightweight operation that only involves pointer arithmetic.
             - The operation is optimized based on the address space and layout,
               using appropriate integer types for efficiency.
 
-        Note:
+        Notes:
+
             - The distance is calculated in elements, not bytes.
             - The result can be positive or negative depending on the relative positions
               of the tensors.
@@ -3491,6 +3576,7 @@ struct LayoutTensor[
             ```
 
         Performance:
+
             - Performs element-by-element copying, which may be less efficient than
               vectorized or bulk memory operations.
             - The copy respects the memory layout of both tensors, which may involve
@@ -3498,7 +3584,8 @@ struct LayoutTensor[
             - For optimal performance with large tensors, consider using specialized
               copy functions that can leverage hardware acceleration.
 
-        Note:
+        Notes:
+
             - Both tensors must have statically known shapes.
             - The total number of elements must be the same in both tensors.
             - The element sizes must match between the tensors.
@@ -3507,6 +3594,7 @@ struct LayoutTensor[
             - The copy is performed element by element, not as a bulk memory copy.
 
         Constraints:
+
             - Both tensors must have statically known shapes.
             - The total number of elements must be the same in both tensors.
             - The element sizes must match between the tensors.
@@ -3594,6 +3682,7 @@ struct LayoutTensor[
             ```
 
         Performance:
+
             - Uses hardware-accelerated asynchronous copy mechanisms for optimal performance.
             - Particularly efficient for copying data from global memory to shared memory
               in GPU kernels.
@@ -3601,12 +3690,14 @@ struct LayoutTensor[
             - Can bypass L1 cache with appropriate eviction policies for specific access patterns.
             - Swizzling can improve memory access patterns and reduce bank conflicts.
 
-        Note:
+        Notes:
+
             - For vectorized copies, both tensors must have contiguous element layouts.
             - Asynchronous copies allow computation to overlap with memory transfers.
             - A synchronization barrier is required before using the copied data.
 
         Constraints:
+
             - Destination must be in shared memory.
             - Source and destination data types must match.
             - Element size must be 4, 8, or 16 bytes.
@@ -3765,13 +3856,15 @@ struct LayoutTensor[
             ```
 
         Performance:
+
             - For statically known layouts, the fill operation is unrolled at compile time.
             - For dynamic layouts, a runtime loop is used.
             - No vectorization is applied, so performance may be suboptimal for large tensors.
             - Consider using hardware-specific fill operations for better performance
               with large tensors.
 
-        Note:
+        Notes:
+
             - The tensor must be mutable (mut=True).
             - The fill operation respects the tensor's layout, filling all elements
               regardless of how they are arranged in memory.
@@ -3824,7 +3917,8 @@ struct LayoutTensor[
              [1.0, 1.0, 1.0]]
             ```
 
-        Note:
+        Notes:
+
             - For 2D tensors, the output is formatted as a 2D grid with rows and columns.
             - For tensors of other ranks, values are printed in column-major coordinate order.
             - Empty tensors (size 0) produce no output.
@@ -3910,10 +4004,12 @@ struct LayoutTensor[
             ```
 
         Performance:
+
             - The pointer offset is computed at compile time for optimal performance.
             - This method is more efficient than runtime index calculation.
 
-        Note:
+        Notes:
+
             - The tensor must have a statically known layout.
             - The indices must be within the bounds of the tensor dimensions.
             - This is a low-level method primarily intended for internal use.
@@ -3922,6 +4018,7 @@ struct LayoutTensor[
               across the returned vector.
 
         Constraints:
+
             - The tensor must have a statically known layout.
             - The size parameter must equal `element_size` or `element_size` must be 1.
         """
@@ -3963,16 +4060,19 @@ struct LayoutTensor[
             ```
 
         Performance:
+
             - The pointer offset is computed at compile time for optimal performance.
             - This method is more efficient than runtime index calculation.
 
-        Note:
+        Notes:
+
             - The tensor must have a statically known layout.
             - The indices must be within the bounds of the tensor dimensions.
             - This is a low-level method primarily intended for internal use.
             - For element_size > 1, the entire element is set from the provided value.
 
         Constraints:
+
             - The tensor must have a statically known layout.
             - The tensor must be mutable.
         """
@@ -4012,12 +4112,104 @@ fn stack_allocation_like[
         masked = in_tensor.masked,
     ],
 ):
+    """Create a stack-allocated tensor with the same layout as an existing tensor.
+
+    This function creates a new tensor on the stack with the same layout, data type,
+    and masking properties as the input tensor, but potentially with a different
+    address space. This is useful for creating temporary tensors that match the
+    structure of existing tensors.
+
+    Parameters:
+        layout: The layout of the tensor to allocate.
+        dtype: The data type of the tensor elements.
+        address_space: The address space of the input tensor.
+        target_address_space: The address space for the new tensor.
+                             Defaults to GENERIC.
+
+    Args:
+        in_tensor: The input tensor to match the layout of.
+
+    Returns:
+        A new tensor allocated on the stack with the same layout as the input tensor.
+
+    Example:
+        ```mojo
+        from layout import LayoutTensor, Layout
+        from layout.layout_tensor import stack_allocation_like
+
+        var global_tensor = LayoutTensor[DType.float32, Layout((10, 10)),
+                                        address_space=AddressSpace.GLOBAL]()
+        var stack_tensor: LayoutTensor[DType.float32, Layout((10, 10)),
+                                      MutableAnyOrigin, address_space=AddressSpace.GENERIC]
+        stack_allocation_like(global_tensor, stack_tensor)
+        ```
+
+    Performance:
+
+        - Creates a tensor on the stack, which is typically faster to allocate and
+          access than heap-allocated memory.
+        - Stack allocations have automatic lifetime management, reducing memory
+          management overhead.
+        - Stack size is limited, so be cautious with large tensor allocations.
+
+    Notes:
+
+        - The new tensor will have the same layout, data type, and masking properties
+          as the input tensor.
+        - The address space can be changed, which is useful for moving data between
+          different memory regions (e.g., from global to shared memory).
+        - Stack allocations are automatically freed when they go out of scope.
+        - The function uses the stack_allocation method of the result tensor type.
+    """
     return __type_of(result).stack_allocation()
 
 
 @value
 @register_passable("trivial")
 struct ThreadScope:
+    """Represents the scope of thread operations in GPU programming.
+
+    This struct defines the scope at which thread operations are performed,
+    particularly for operations like tensor distribution and synchronization.
+    It provides two main scopes: BLOCK and WARP, which correspond to different
+    levels of thread grouping in GPU programming models.
+
+    Attributes:
+        BLOCK: Represents operations at the thread block level, where all threads
+               in a block participate in the operation.
+        WARP: Represents operations at the warp level, where only threads within
+              the same warp participate in the operation.
+
+    Example:
+        ```mojo
+        from layout.layout_tensor import copy_dram_to_sram, ThreadScope
+
+        # Distribute tensor at block level (all threads in block participate)
+        copy_dram_to_sram[layout, thread_scope=ThreadScope.BLOCK](dst, src)
+
+        # Distribute tensor at warp level (only threads in same warp participate)
+        copy_dram_to_sram[layout, thread_scope=ThreadScope.WARP](dst, src)
+        ```
+
+    Performance:
+
+        - WARP scope operations typically have lower synchronization overhead
+          than BLOCK scope operations.
+        - BLOCK scope operations allow coordination across all threads in a block,
+          which is necessary for certain algorithms.
+        - The choice of scope can significantly impact performance and correctness
+          of parallel algorithms.
+
+    Notes:
+
+        - The appropriate scope depends on the specific algorithm and hardware.
+        - WARP scope operations may be more efficient for operations that only
+          require coordination within a warp.
+        - BLOCK scope operations are necessary when threads from different warps
+          need to coordinate.
+        - The actual size of a warp or block is hardware-dependent.
+    """
+
     var _value: Int32
     alias BLOCK = Self(0)
     alias WARP = Self(1)
@@ -4045,6 +4237,33 @@ struct ThreadScope:
 
 @always_inline("nodebug")
 fn _copy_dram_to_sram_validate_args(dst: LayoutTensor, src: LayoutTensor):
+    """Validate arguments for DRAM to SRAM copy operations.
+
+    This internal function validates that the source and destination tensors
+    have compatible properties for a DRAM to SRAM copy operation. It checks
+    data types and address spaces to ensure the copy operation can be performed
+    correctly.
+
+    Args:
+        dst: The destination tensor, which must be in shared memory (SRAM).
+        src: The source tensor, which must be in global or generic memory (DRAM).
+
+    Notes:
+
+        - This is an internal helper function used by copy_dram_to_sram.
+        - The function enforces that the source and destination tensors have
+          the same data type.
+        - The source tensor must be in GENERIC or GLOBAL address space (DRAM).
+        - The destination tensor must be in SHARED address space (SRAM).
+        - These constraints ensure that the copy operation follows the expected
+          memory hierarchy flow from slower global memory to faster shared memory.
+
+    Constraints:
+
+        - Source and destination tensors must have the same data type.
+        - Source tensor must be in GENERIC or GLOBAL address space.
+        - Destination tensor must be in SHARED address space.
+    """
     constrained[
         dst.dtype == src.dtype, "src dtype and dst dtype must be the same."
     ]()
@@ -4061,8 +4280,6 @@ fn _copy_dram_to_sram_validate_args(dst: LayoutTensor, src: LayoutTensor):
     ]()
 
 
-# Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
-#
 @always_inline("nodebug")
 fn copy_dram_to_sram[
     src_thread_layout: Layout,
@@ -4071,6 +4288,68 @@ fn copy_dram_to_sram[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor):
+    """Synchronously copy data from DRAM (global memory) to SRAM (shared memory) in a GPU context.
+
+    This function performs a synchronous copy operation from global memory (DRAM) to shared
+    memory (SRAM) in a GPU context, distributing the workload across multiple threads for
+    parallel execution. It uses thread affinity mapping to ensure efficient work distribution
+    and supports vectorized memory operations for optimal performance.
+
+    Parameters:
+        src_thread_layout: Layout defining how threads are organized for the source tensor.
+                          This determines how the workload is distributed among threads.
+        dst_thread_layout: Layout defining how threads are organized for the destination tensor.
+                          Defaults to the same as src_thread_layout if not specified.
+        swizzle: Optional swizzling function to rearrange the destination indices,
+                which can improve memory access patterns and reduce bank conflicts.
+        num_threads: Total number of threads participating in the copy operation.
+                    Defaults to the size of src_thread_layout.
+        thread_scope: Scope at which thread operations are performed (BLOCK or WARP).
+                     Defaults to BLOCK, where all threads in a block participate.
+
+    Args:
+        dst: The destination tensor, which must be in shared memory (SRAM).
+        src: The source tensor, which must be in global or generic memory (DRAM).
+
+    Example:
+        ```mojo
+        from layout import LayoutTensor, Layout
+        var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
+                                      address_space=AddressSpace.GLOBAL]()
+        var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
+                                      address_space=AddressSpace.SHARED]()
+
+        # Copy data using a 2D thread layout with 8x8 threads
+        copy_dram_to_sram[Layout((8, 8))](shared_data, global_data)
+        ```
+
+    Performance:
+
+        - Distributes the copy workload across multiple threads for parallel execution.
+        - Supports vectorized loads and stores for better memory throughput.
+        - Can use swizzling to optimize memory access patterns and reduce bank conflicts.
+        - Thread affinity mapping ensures efficient work distribution.
+        - For masked tensors, performs bounds checking to handle edge cases correctly.
+
+    Notes:
+
+        - The source tensor must be in GENERIC or GLOBAL address space (DRAM).
+        - The destination tensor must be in SHARED address space (SRAM).
+        - Both tensors must have the same data type.
+        - This function is synchronous, meaning all threads must complete their
+          copy operations before proceeding.
+        - For optimal performance, the thread layouts should match the memory
+          access patterns of the tensors.
+        - This function is particularly useful in GPU kernels for loading data
+          from global memory to shared memory for faster access.
+
+    Constraints:
+
+        - Source and destination tensors must have the same data type.
+        - Source tensor must be in GENERIC or GLOBAL address space.
+        - Destination tensor must be in SHARED address space.
+        - For non-masked tensors, the fragment sizes must match.
+    """
     _copy_dram_to_sram_validate_args(dst, src)
     alias num_busy_threads = src_thread_layout.size()
 
@@ -4221,6 +4500,67 @@ fn cp_async_k_major[
         type, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
     ],
 ):
+    """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory Accelerator) with K-major layout.
+
+    This function performs an asynchronous copy operation from global memory (DRAM) to shared
+    memory (SRAM) using NVIDIA's Tensor Memory Accelerator (TMA) hardware. It optimizes for
+    K-major memory access patterns, which is particularly beneficial for certain tensor operations
+    like matrix multiplications where the inner dimension (K) is accessed contiguously.
+
+    The function automatically determines the optimal tile size and thread distribution based
+    on the tensor shapes and hardware capabilities, leveraging TMA's efficient memory transfer
+    mechanisms.
+
+    Parameters:
+        type: The data type of the tensor elements.
+
+    Args:
+        dst: The destination tensor, which must be in shared memory (SRAM).
+        src: The source tensor, which must be in global or generic memory (DRAM).
+
+    Example:
+        ```mojo
+        from layout import LayoutTensor, Layout
+        var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
+                                      address_space=AddressSpace.GLOBAL]()
+        var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
+                                      address_space=AddressSpace.SHARED]()
+
+        # Copy data with K-major layout optimization
+        cp_async_k_major[DType.float32](shared_data, global_data)
+
+        # Wait for the asynchronous copy to complete
+        cp_async_wait_all()
+        ```
+
+    Performance:
+
+        - Uses TMA hardware acceleration for optimal memory transfer performance.
+        - Optimizes for K-major access patterns, which can significantly improve
+          performance for certain tensor operations like matrix multiplications.
+        - Performs asynchronous transfers, allowing computation to overlap with memory operations.
+        - Automatically determines optimal tile sizes based on tensor dimensions.
+        - Uses hardware-accelerated swizzling to reduce shared memory bank conflicts.
+
+    Notes:
+
+        - This function requires NVIDIA GPUs with TMA support (compute capability 9.0+).
+        - The source tensor must be in GENERIC or GLOBAL address space (DRAM).
+        - The destination tensor must be in SHARED address space (SRAM).
+        - Both tensors must have the same data type.
+        - This function is asynchronous, so you must call cp_async_wait_all() or
+          cp_async_wait_group() to ensure the copy has completed before using the data.
+        - K-major layout is particularly beneficial for matrix multiplication operations
+          where the inner dimension (K) is accessed contiguously.
+
+    Constraints:
+
+        - Requires NVIDIA GPUs with TMA support (compute capability 9.0+).
+        - Source tensor must be in GENERIC or GLOBAL address space.
+        - Destination tensor must be in SHARED address space.
+        - Both tensors must have the same data type.
+        - Source and destination tensors must be 2D.
+    """
     alias dst_layout = dst.layout
 
     alias src_layout = src.layout
@@ -4273,6 +4613,68 @@ fn cp_async_mn_major[
         type, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
     ],
 ):
+    """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory Accelerator) with MN-major layout.
+
+    This function performs an asynchronous copy operation from global memory (DRAM) to shared
+    memory (SRAM) using NVIDIA's Tensor Memory Accelerator (TMA) hardware. It optimizes for
+    MN-major memory access patterns, which is particularly beneficial for tensor operations
+    where the outer dimensions (M, N) are accessed contiguously.
+
+    The function automatically determines the optimal tile size and thread distribution based
+    on the tensor shapes and hardware capabilities, leveraging TMA's efficient memory transfer
+    mechanisms.
+
+    Parameters:
+        type: The data type of the tensor elements.
+
+    Args:
+        dst: The destination tensor, which must be in shared memory (SRAM).
+        src: The source tensor, which must be in global or generic memory (DRAM).
+
+    Example:
+        ```mojo
+        from layout import LayoutTensor, Layout
+        var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
+                                      address_space=AddressSpace.GLOBAL]()
+        var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
+                                      address_space=AddressSpace.SHARED]()
+
+        # Copy data with MN-major layout optimization
+        cp_async_mn_major[DType.float32](shared_data, global_data)
+
+        # Wait for the asynchronous copy to complete
+        cp_async_wait_all()
+        ```
+
+    Performance:
+
+        - Uses TMA hardware acceleration for optimal memory transfer performance.
+        - Optimizes for MN-major access patterns, which can significantly improve
+          performance for certain tensor operations where outer dimensions are accessed
+          contiguously.
+        - Performs asynchronous transfers, allowing computation to overlap with memory operations.
+        - Automatically determines optimal tile sizes based on tensor dimensions.
+        - Uses hardware-accelerated swizzling to reduce shared memory bank conflicts.
+
+    Notes:
+
+        - This function requires NVIDIA GPUs with TMA support (compute capability 9.0+).
+        - The source tensor must be in `GENERIC` or `GLOBAL` address space (DRAM).
+        - The destination tensor must be in `SHARED` address space (SRAM).
+        - Both tensors must have the same data type.
+        - This function is asynchronous, so you must call `cp_async_wait_all()` or
+          `cp_async_wait_group()` to ensure the copy has completed before using the data.
+        - MN-major layout is particularly beneficial for operations where the outer
+          dimensions are accessed contiguously, such as certain convolution operations.
+
+    Constraints:
+
+        - Requires NVIDIA GPUs with TMA support (compute capability 9.0+).
+        - Source tensor must be in `GENERIC` or `GLOBAL` address space.
+        - Destination tensor must be in `SHARED` address space.
+        - Both tensors must have the same data type.
+        - Source and destination tensors must be 2D.
+    """
     alias dst_layout = dst.layout
 
     alias src_layout = src.layout
@@ -4327,6 +4729,42 @@ fn copy_dram_to_sram[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor):
+    """Synchronously copy data from DRAM to SRAM using a unified thread layout for AMD GPUs.
+
+    This is a convenience wrapper around the more general `copy_dram_to_sram` function that uses
+    the same layout for both source and destination tensors. It's specifically designed for
+    AMD GPUs where the buffer_load intrinsic requires the original base tensor.
+
+    Parameters:
+        thread_layout: Layout defining how threads are organized for both source and destination.
+                      This determines how the workload is distributed among threads.
+        swizzle: Optional swizzling function to rearrange the destination indices,
+                which can improve memory access patterns and reduce bank conflicts.
+        num_threads: Total number of threads participating in the copy operation.
+                    Defaults to the size of thread_layout.
+        thread_scope: Scope at which thread operations are performed (BLOCK or WARP).
+                     Defaults to BLOCK, where all threads in a block participate.
+
+    Args:
+        dst: The destination tensor, which must be in shared memory (SRAM).
+        src: The source tensor, which must be in global or generic memory (DRAM).
+        src_base: The original global memory tensor from which src is derived,
+                 used to construct the buffer descriptor for AMD GPUs.
+
+    Performance:
+
+        - Simplifies API usage when the same thread layout is appropriate for both
+          source and destination tensors.
+        - Optimized for AMD GPUs using buffer_load intrinsics for efficient memory transfers.
+        - Distributes the copy workload across multiple threads for parallel execution.
+
+    Notes:
+
+        - This function is only supported on AMD GPUs.
+        - The source tensor must be in GENERIC or GLOBAL address space (DRAM).
+        - The destination tensor must be in SHARED address space (SRAM).
+        - Both tensors must have the same data type.
+    """
     copy_dram_to_sram[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
@@ -4343,6 +4781,54 @@ fn copy_dram_to_sram[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor):
+    """Synchronously copy data from DRAM to SRAM using a unified thread layout.
+
+    This is a convenience wrapper around the more general copy_dram_to_sram function that uses
+    the same layout for both source and destination tensors. It simplifies the API for the
+    common case where the same thread distribution pattern works well for both tensors.
+
+    Parameters:
+        thread_layout: Layout defining how threads are organized for both source and destination.
+                      This determines how the workload is distributed among threads.
+        swizzle: Optional swizzling function to rearrange the destination indices,
+                which can improve memory access patterns and reduce bank conflicts.
+        num_threads: Total number of threads participating in the copy operation.
+                    Defaults to the size of thread_layout.
+        thread_scope: Scope at which thread operations are performed (BLOCK or WARP).
+                     Defaults to BLOCK, where all threads in a block participate.
+
+    Args:
+        dst: The destination tensor, which must be in shared memory (SRAM).
+        src: The source tensor, which must be in global or generic memory (DRAM).
+
+    Example:
+        ```mojo
+        from layout import LayoutTensor, Layout
+        var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
+                                      address_space=AddressSpace.GLOBAL]()
+        var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
+                                      address_space=AddressSpace.SHARED]()
+
+        # Copy data using a 2D thread layout with 8x8 threads
+        copy_dram_to_sram[Layout((8, 8))](shared_data, global_data)
+        ```
+
+    Performance:
+
+        - Simplifies API usage when the same thread layout is appropriate for both
+          source and destination tensors.
+        - Distributes the copy workload across multiple threads for parallel execution.
+        - Supports vectorized loads and stores for better memory throughput.
+        - Can use swizzling to optimize memory access patterns and reduce bank conflicts.
+
+    Notes:
+
+        - The source tensor must be in GENERIC or GLOBAL address space (DRAM).
+        - The destination tensor must be in SHARED address space (SRAM).
+        - Both tensors must have the same data type.
+        - This function is synchronous, meaning all threads must complete their
+          copy operations before proceeding.
+    """
     copy_dram_to_sram[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
@@ -4352,8 +4838,6 @@ fn copy_dram_to_sram[
     ](dst, src)
 
 
-# Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
-#
 @always_inline("nodebug")
 fn copy_dram_to_sram_async[
     src_thread_layout: Layout,
@@ -4363,6 +4847,76 @@ fn copy_dram_to_sram_async[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = src_thread_layout.size(),
 ](dst: LayoutTensor, src: LayoutTensor):
+    """Asynchronously copy data from DRAM (global memory) to SRAM (shared memory) in a GPU context.
+
+    This function performs an asynchronous copy operation from global memory (DRAM) to shared
+    memory (SRAM) in a GPU context, using NVIDIA's cp.async hardware mechanism. It distributes
+    the workload across multiple threads and allows computation to overlap with memory transfers
+    for improved performance.
+
+    Parameters:
+        src_thread_layout: Layout defining how threads are organized for the source tensor.
+                          This determines how the workload is distributed among threads.
+        dst_thread_layout: Layout defining how threads are organized for the destination tensor.
+        swizzle: Whether to apply swizzling to the destination indices to reduce bank conflicts.
+                Defaults to False.
+        fill: Fill policy for handling out-of-bounds accesses. Options include:
+             - `Fill.NONE`: No special handling (default).
+             - `Fill.ZERO`: Fill out-of-bounds elements with zeros.
+        eviction_policy: Cache eviction policy for the source data. Options include:
+                        - `CacheEviction.EVICT_NORMAL`: Normal eviction (default).
+                        - `CacheEviction.EVICT_FIRST`: Evict data after first use.
+                        - `CacheEviction.EVICT_LAST`: Keep data in cache until last use.
+        num_threads: Total number of threads participating in the copy operation.
+                    Defaults to the size of src_thread_layout.
+
+    Args:
+        dst: The destination tensor, which must be in shared memory (SRAM).
+        src: The source tensor, which must be in global or generic memory (DRAM).
+
+    Example:
+        ```mojo
+        from layout import LayoutTensor, Layout
+        var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
+                                      address_space=AddressSpace.GLOBAL]()
+        var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
+                                      address_space=AddressSpace.SHARED]()
+
+        # Asynchronously copy data using thread layouts
+        copy_dram_to_sram_async[Layout((8, 8)), Layout((8, 8))](shared_data, global_data)
+
+        # Perform other computations while the copy is in progress
+
+        # Wait for the asynchronous copy to complete
+        cp_async_wait_all()
+        ```
+
+    Performance:
+
+        - Performs asynchronous transfers, allowing computation to overlap with memory operations.
+        - Distributes the copy workload across multiple threads for parallel execution.
+        - Can use swizzling to optimize memory access patterns and reduce bank conflicts.
+        - Supports different cache eviction policies to optimize memory hierarchy usage.
+        - For masked tensors, performs bounds checking to handle edge cases correctly.
+
+    Notes:
+
+        - This function requires NVIDIA GPUs with cp.async support (compute capability 8.0+).
+        - The source tensor must be in GENERIC or GLOBAL address space (DRAM).
+        - The destination tensor must be in SHARED address space (SRAM).
+        - Both tensors must have the same data type.
+        - This function is asynchronous, so you must call `cp_async_wait_all()` or
+          `cp_async_wait_group()` to ensure the copy has completed before using the data.
+        - The maximum size of each element that can be copied is 16 bytes.
+
+    Constraints:
+
+        - Requires NVIDIA GPUs with cp.async support (compute capability 8.0+).
+        - Source tensor must be in `GENERIC` or `GLOBAL` address space.
+        - Destination tensor must be in `SHARED` address space.
+        - Both tensors must have the same data type.
+        - Element size must be 4, 8, or 16 bytes.
+    """
     constrained[
         src.address_space
         in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
@@ -4469,8 +5023,6 @@ fn copy_dram_to_sram_async[
         )
 
 
-# Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
-#
 @always_inline("nodebug")
 fn copy_dram_to_sram_async[
     thread_layout: Layout,
@@ -4480,6 +5032,29 @@ fn copy_dram_to_sram_async[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = thread_layout.size(),
 ](dst: LayoutTensor, src: LayoutTensor):
+    """
+    Asynchronous copy from DRAM to SRAM with thread affinity mapping.
+
+    This function performs an asynchronous memory transfer from DRAM (global memory)
+    to SRAM (shared memory) using the specified thread layout for distribution.
+
+    Parameters:
+        thread_layout: The layout used to distribute work across threads.
+        swizzle: Whether to apply memory access swizzling for better performance.
+        masked: Whether the copy operation should use masking.
+        fill: Fill policy for uninitialized memory regions.
+        eviction_policy: Cache eviction policy to use during the transfer.
+        num_threads: Number of threads to use for the operation, defaults to thread_layout size.
+
+    Args:
+        dst: Destination tensor in SRAM.
+        src: Source tensor in DRAM.
+
+    Notes:
+
+        This is a convenience wrapper around the more general copy_dram_to_sram_async
+        function, using the same thread layout for both source and destination.
+    """
     copy_dram_to_sram_async[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
@@ -4492,6 +5067,21 @@ fn copy_dram_to_sram_async[
 alias binary_op_type = fn[type: DType, width: Int] (
     lhs: SIMD[type, width], rhs: SIMD[type, width]
 ) -> SIMD[type, width]
+"""
+Type alias for binary operations on SIMD vectors.
+
+This type represents a function that takes two SIMD vectors of the same type and width
+and returns a SIMD vector of the same type and width.
+
+Args:
+    type: The data type of the SIMD vector elements.
+    width: The width of the SIMD vector.
+    lhs: Left-hand side SIMD vector operand.
+    rhs: Right-hand side SIMD vector operand.
+
+Returns:
+    A SIMD vector containing the result of the binary operation.
+"""
 
 
 @always_inline("nodebug")
@@ -4501,6 +5091,63 @@ fn copy_sram_to_dram[
     num_threads: Int = thread_layout.size(),
     binary_op: OptionalReg[binary_op_type] = None,
 ](dst: LayoutTensor, src: LayoutTensor):
+    """Synchronously copy data from SRAM (shared memory) to DRAM (global memory).
+
+    This function performs a synchronous memory transfer from SRAM (shared memory) to
+    DRAM (global memory) using the specified thread layout for workload distribution.
+    It supports optional swizzling for optimized memory access patterns and binary
+    operations for combining data during the transfer.
+
+    Parameters:
+        thread_layout: Layout defining how threads are organized for both source and destination.
+                      This determines how the workload is distributed among threads.
+        swizzle: Optional swizzling function to rearrange the source indices,
+                which can improve memory access patterns and reduce bank conflicts.
+        num_threads: Total number of threads participating in the copy operation.
+                    Defaults to the size of thread_layout.
+        binary_op: Optional binary operation to apply during the copy, combining source
+                  data with existing destination data.
+
+    Args:
+        dst: The destination tensor, which must be in global or generic memory (DRAM).
+        src: The source tensor, which must be in shared memory (SRAM).
+
+    Example:
+        ```mojo
+        from layout import LayoutTensor, Layout
+        var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
+                                      address_space=AddressSpace.SHARED]()
+        var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
+                                      address_space=AddressSpace.GLOBAL]()
+
+        # Copy data using a 2D thread layout with 8x8 threads
+        copy_sram_to_dram[Layout((8, 8))](global_data, shared_data)
+        ```
+
+    Performance:
+
+        - Distributes the copy workload across multiple threads for parallel execution.
+        - Supports vectorized loads and stores for better memory throughput.
+        - Can use swizzling to optimize memory access patterns.
+        - Supports binary operations to combine data during transfer (e.g., for reduction operations).
+
+    Notes:
+
+        - The source tensor must be in SHARED address space (SRAM).
+        - The destination tensor must be in GENERIC or GLOBAL address space (DRAM).
+        - Supports FP32 to half-precision downcast during copy if needed.
+        - Handles masked tensors with proper bounds checking.
+        - This function is synchronous, meaning all threads must complete their
+          copy operations before proceeding.
+
+    Constraints:
+
+        - Source tensor must be in SHARED address space with a static layout.
+        - Destination tensor must be in GENERIC or GLOBAL address space.
+        - For type conversion, only FP32 to half-precision is supported.
+        - For vectorized copy with type conversion, both tensors must have element layouts
+          matching the SIMD width of the destination type.
+    """
     constrained[
         dst.address_space
         in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
@@ -4650,13 +5297,51 @@ fn copy_sram_to_dram[
                     )
 
 
-# Copy from SRAM to local memory.
-#
 @always_inline("nodebug")
 fn copy_sram_to_local[
     src_warp_layout: Layout,
     axis: OptionalReg[Int] = None,
 ](dst: LayoutTensor, src: LayoutTensor):
+    """Synchronously copy data from SRAM (shared memory) to local memory.
+
+    This function performs a synchronous memory transfer from SRAM (shared memory) to
+    local memory (registers) using the specified thread layout for workload distribution.
+
+    Parameters:
+        src_warp_layout: Layout defining how threads are organized for the source tensor.
+                        This determines how the workload is distributed among threads.
+        axis: Optional parameter specifying which axis to distribute along.
+            When provided, distribution happens along the specified axis.
+            When None (default), distribution uses the standard layout pattern.
+
+    Args:
+        dst: The destination tensor, which must be in local memory (registers).
+        src: The source tensor, which must be in shared memory (SRAM).
+
+    Example:
+        ```mojo
+        from layout import LayoutTensor, Layout
+        var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
+                                    address_space=AddressSpace.SHARED]()
+        var local_data = LayoutTensor[DType.float32, Layout((4, 4)),
+                                    address_space=AddressSpace.LOCAL]()
+
+        # Copy data using a thread layout with 8 threads
+        copy_sram_to_local[Layout(8)](local_data, shared_data)
+        ```
+
+    Performance:
+
+        - Distributes the copy workload across multiple threads for parallel execution.
+        - Optimized for transferring data from shared memory to registers.
+        - Supports optional axis-specific distribution for specialized access patterns.
+
+    Constraints:
+
+        - The source tensor must be in SHARED address space (SRAM).
+        - The destination tensor must be in LOCAL address space (registers).
+        - Both tensors must have the same data type.
+    """
     constrained[
         dst.dtype == src.dtype, "dst dtype must be the same as src dtype."
     ]()
@@ -4696,8 +5381,6 @@ fn _copy_local_to_dram_validate_args(dst: LayoutTensor, src: LayoutTensor):
     ]()
 
 
-# Copy local memory to DRAM, thread affinity is needed only for dst fragments.
-#
 @always_inline("nodebug")
 fn copy_local_to_dram[
     dst_thread_layout: Layout,
@@ -4877,6 +5560,67 @@ fn copy_local_to_sram[
     row_major: Bool = False,
     # row_major is used when using prefetching from dram to sram via registers for AMD GPUs
 ](dst: LayoutTensor, src: LayoutTensor):
+    """Synchronously copy data from local memory (registers) to SRAM (shared memory).
+
+    This function performs a synchronous copy operation from register memory to shared
+    memory in a GPU context, distributing the workload across multiple threads for
+    parallel execution. It's particularly useful for transferring processed data from
+    registers to shared memory for inter-thread communication.
+
+    Parameters:
+        thread_layout: Layout defining how threads are organized for the operation.
+                      This determines how the workload is distributed among threads.
+        swizzle: Optional swizzling function to rearrange the destination indices,
+                which can improve memory access patterns and reduce bank conflicts.
+        thread_scope: Scope at which thread operations are performed (BLOCK or WARP).
+                     Defaults to BLOCK, where all threads in a block participate.
+        row_major: Whether to use row-major ordering for the copy operation.
+                  This is particularly relevant when prefetching from DRAM to SRAM
+                  via registers on AMD GPUs. Defaults to False.
+
+    Args:
+        dst: The destination tensor, which must be in shared memory (SRAM).
+        src: The source tensor, which must be in local memory (registers).
+
+    Example:
+        ```mojo
+        from layout import LayoutTensor, Layout
+        var register_data = LayoutTensor[DType.float32, Layout((16, 16)),
+                                        address_space=AddressSpace.LOCAL]()
+        var shared_data = LayoutTensor[DType.float32, Layout((16, 16)),
+                                      address_space=AddressSpace.SHARED]()
+
+        # Process data in registers
+        # ...
+
+        # Copy processed data to shared memory for inter-thread communication
+        copy_local_to_sram[Layout((8, 8))](shared_data, register_data)
+        ```
+
+    Performance:
+
+        - Distributes the copy workload across multiple threads for parallel execution.
+        - Can use swizzling to optimize memory access patterns and reduce bank conflicts.
+        - Optimized for transferring data from registers to shared memory.
+        - On AMD GPUs, the row_major parameter can be used to match the memory access
+          pattern used during prefetching from DRAM to registers.
+
+    Notes:
+
+        - The destination tensor must be in SHARED address space (SRAM).
+        - The source tensor must be in LOCAL address space (registers).
+        - This function is particularly useful in GPU kernels for sharing processed
+          data between threads in the same block.
+        - The row_major parameter is specifically designed for AMD GPUs when using
+          a prefetching pattern from DRAM to SRAM via registers.
+
+    Constraints:
+
+        - Destination tensor must be in SHARED address space.
+        - Source tensor must be in LOCAL address space.
+        - For optimal performance, the thread layout should match the memory
+          access patterns of the tensors.
+    """
     constrained[
         dst.address_space == _GPUAddressSpace.SHARED,
         "dst address space must be SHARED.",
@@ -4967,6 +5711,58 @@ fn copy_local_to_sram[
 
 @always_inline
 fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
+    """Synchronously copy data between local memory (register) tensors with type conversion.
+
+    This function performs a synchronous copy operation between register tensors in a GPU context,
+    with support for converting from float32 to half-precision formats (bfloat16/float16). It's
+    particularly optimized for specific tensor layouts commonly used in matrix multiplication
+    operations.
+
+    Args:
+        dst: The destination tensor, which must be in local memory (registers) and have a
+             half-precision floating-point data type (bfloat16 or float16).
+        src: The source tensor, which must be in local memory (registers) and have float32
+             data type.
+
+    Example:
+        ```
+        var src_reg = LayoutTensor[DType.float32, Layout((16, 8)),
+                                  address_space=AddressSpace.LOCAL]()
+        var dst_reg = LayoutTensor[DType.bfloat16, Layout((16, 8)),
+                                  address_space=AddressSpace.LOCAL]()
+
+        # Process data in float32 registers
+        # ...
+
+        # Convert and copy to bfloat16 registers
+        copy_local_to_local(dst_reg, src_reg)
+        ```
+
+    Performance:
+
+        - Optimized for specific 2D tensor layouts with contiguous inner dimensions.
+        - Special fast path for 2D tensors with specific layouts used in matrix multiplication.
+        - For MMA (Matrix Multiply-Accumulate) operations, efficiently handles the conversion
+          between output fragments and input fragments with different layouts.
+        - Falls back to element-wise copy for general cases.
+
+    Notes:
+
+        - Both source and destination tensors must be in LOCAL address space (registers).
+        - This function currently only supports copying from float32 to half-precision formats.
+        - For 2D tensors with stride[1] == 1, a specialized fast path is used that's optimized
+          for matrix multiplication patterns.
+        - This function is particularly useful in GPU kernels for converting between different
+          precision formats while keeping data in registers.
+
+    Constraints:
+
+        - Destination tensor must be in LOCAL address space.
+        - Source tensor must be in LOCAL address space.
+        - Destination tensor must have a half-precision floating-point data type.
+        - Source tensor must have float32 data type.
+        - Both tensors must have the same total size.
+    """
     constrained[
         dst.address_space == _GPUAddressSpace.LOCAL,
         "dst address space must be LOCAL.",
@@ -5053,9 +5849,28 @@ struct LayoutTensorIter[
     layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
     masked: Bool = False,
 ]:
-    """Iterate through a memory buffer and construct layout tensor.
+    """Iterator for traversing a memory buffer with a specific layout.
 
-    The returned layout tensor is NOT vectorized. User should explicitly vectorize.
+    LayoutTensorIter provides a way to iterate through memory according to a specific
+    layout pattern, constructing layout tensors at each position. This enables efficient
+    traversal of multi-dimensional data structures with custom memory layouts.
+
+    Parameters:
+        mut: Whether the iterator allows mutation of the underlying data.
+        type: The data type of the tensor elements.
+        layout: The memory layout pattern to follow during iteration.
+        origin: Origin tracking for memory safety.
+        address_space: The memory address space (GLOBAL, SHARED, etc.).
+        alignment: Memory alignment requirement for the data.
+        circular: Whether iteration wraps around at boundaries.
+        axis: Optional axis for dimension-specific operations.
+        layout_bitwidth: Bit width used for layout indices.
+        masked: Whether to apply bounds masking during iteration.
+
+    Notes:
+
+        The returned layout tensor is NOT vectorized. Users should explicitly vectorize
+        if needed for performance-critical operations.
     """
 
     alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
@@ -5076,7 +5891,11 @@ struct LayoutTensorIter[
 
     @always_inline
     fn __init__(out self):
-        """Empty iterator, used as default value."""
+        """Initialize an empty iterator.
+
+        Creates a default iterator with zero values, typically used as a placeholder
+        or default value.
+        """
 
         @parameter
         if axis:
@@ -5107,6 +5926,19 @@ struct LayoutTensorIter[
         stride: Self.uint_type = layout.size(),
         offset: Self.uint_type = 0,
     ):
+        """Initialize an iterator with a pointer and basic parameters.
+
+        Creates an iterator for a memory region with the specified bounds and stride.
+
+        Args:
+            ptr: Pointer to the beginning of the memory region.
+            bound: Upper bound of the memory region.
+            stride: Step size between consecutive elements (defaults to layout size).
+            offset: Initial offset from the base pointer.
+
+        Constraints:
+            The layout must have all dimensions known at compile time.
+        """
         constrained[
             layout.all_dims_known(),
             "Cannot construct LayoutTensorIter with unknown layout.",
@@ -5137,6 +5969,24 @@ struct LayoutTensorIter[
         dimension_bound: Self.uint_type = 0,
         idx: Self.uint_type = 0,
     ):
+        """Initialize an iterator with a runtime layout.
+
+        Creates an iterator with a runtime-determined layout, allowing for more
+        flexible memory traversal patterns.
+
+        Args:
+            ptr: Pointer to the beginning of the memory region.
+            bound: Upper bound of the memory region.
+            runtime_layout: Layout determined at runtime.
+            stride: Step size between consecutive elements.
+            offset: Initial offset from the base pointer.
+            dimension_bound: Bound for the specified dimension when using masked iteration.
+            idx: Initial index position.
+
+        Constraints:
+            The runtime layout must have the same bitwidth as specified for the iterator.
+            Circular iteration is not supported when an axis is defined.
+        """
         constrained[
             runtime_layout.bitwidth == layout_bitwidth,
             "Mismatch of bitwidth for RuntimeLayout and LayoutTensorIter.",
@@ -5174,7 +6024,11 @@ struct LayoutTensorIter[
             layout_bitwidth=layout_bitwidth,
         ],
     ):
-        """Return the layout tensor at current iterator."""
+        """Get the layout tensor at the current iterator position.
+
+        Returns a layout tensor representing the data at the current position
+        of the iterator.
+        """
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
         return __type_of(result)(
@@ -5196,11 +6050,26 @@ struct LayoutTensorIter[
         alignment=alignment,
         layout_bitwidth=layout_bitwidth,
     ]:
-        """Return the layout tensor at current iterator."""
+        """Get the layout tensor at the current iterator position.
+
+        Operator overload that returns a layout tensor representing the data
+        at the current position of the iterator.
+
+        Returns:
+            A layout tensor at the current iterator position.
+        """
         return self.get()
 
     @always_inline
     fn _clip_shape(self) -> RuntimeLayout[layout, bitwidth=layout_bitwidth]:
+        """Clip the shape based on dimension bounds.
+
+        Internal method that adjusts the shape of the layout tensor based on
+        dimension bounds when using masked iteration.
+
+        Returns:
+            A new runtime layout with adjusted shape.
+        """
         new_shape = self.runtime_layout.shape
         var cur_dim = new_shape.value[axis.value()]
         new_shape.value[axis.value()] = max(
@@ -5210,19 +6079,33 @@ struct LayoutTensorIter[
 
     @always_inline
     fn __iadd__[T: Intable](mut self, rhs: T):
-        """Increment the iterator.
+        """Increment the iterator by an integer value.
 
-        This function is unsafe. It omits bound checking for performance reasons.
-        Caller must make sure index doesn't go out-of-bound.
+        Advances the iterator by the specified number of positions.
+
+        Args:
+            rhs: The number of positions to advance.
+
+        Notes:
+
+            This function is unsafe. It omits bound checking for performance reasons.
+            Caller must ensure the index doesn't go out-of-bounds.
         """
         self += Self.uint_type(Int(rhs))
 
     @always_inline
     fn __iadd__(mut self, rhs: Self.uint_type):
-        """Increment the iterator.
+        """Increment the iterator by a uint value.
 
-        This function is unsafe. It omits bound checking for performance reasons.
-        Caller must make sure index doesn't go out-of-bound.
+        Advances the iterator by the specified number of positions.
+
+        Args:
+            rhs: The number of positions to advance.
+
+        Notes:
+
+            This function is unsafe. It omits bound checking for performance reasons.
+            Caller must ensure the index doesn't go out-of-bounds.
         """
         self.offset += rhs * self.stride
 
@@ -5240,7 +6123,10 @@ struct LayoutTensorIter[
 
     @always_inline
     fn _incr(mut self):
-        """Increment the iterator by 1. Equivalent to `iter += 1` but w/o the division.
+        """Increment the iterator by 1.
+
+        Advances the iterator by a single position. This is equivalent to `iter += 1`
+        but without the division operation, making it more efficient.
         """
         self.offset += self.stride
 
@@ -5253,8 +6139,16 @@ struct LayoutTensorIter[
 
     @always_inline
     fn next[T: Intable](self, rhs: T) -> Self:
-        """Return an iterator pointing to the next `rhs` layout tensor."""
+        """Return an iterator pointing to a position ahead by rhs steps.
 
+        Creates a new iterator that points rhs positions ahead of the current one.
+
+        Args:
+            rhs: The number of positions to advance.
+
+        Returns:
+            A new iterator pointing to the advanced position.
+        """
         var next_idx = Self.uint_type(0)
         var next_offset = self.offset + Int(rhs) * self.stride
 
@@ -5284,12 +6178,34 @@ struct LayoutTensorIter[
 
     @always_inline
     fn next(self, rhs: Self.uint_type = 1) -> Self:
+        """Return an iterator pointing to a position ahead by rhs steps.
+
+        Creates a new iterator that points rhs positions ahead of the current one.
+
+        Args:
+            rhs: The number of positions to advance (defaults to 1).
+
+        Returns:
+            A new iterator pointing to the advanced position.
+        """
         return self.next(Int(rhs))
 
     @always_inline
     fn next_unsafe(self, rhs: Self.uint_type = 1) -> Self:
-        """Return an iterator pointing to the next `rhs` layout tensor.
-        This is the unsafe version and user must ensure rhs < bound / stride.
+        """Return an iterator pointing to a position ahead by rhs steps (unsafe version).
+
+        Creates a new iterator that points rhs positions ahead of the current one.
+        This is an unsafe version that omits certain checks for performance.
+
+        Args:
+            rhs: The number of positions to advance (defaults to 1).
+
+        Returns:
+            A new iterator pointing to the advanced position.
+
+        Constraints:
+            Cannot be used with masked iterators.
+            User must ensure rhs < bound / stride.
         """
         constrained[
             not masked, "Cannot use unsafe increment for masked iterator."
