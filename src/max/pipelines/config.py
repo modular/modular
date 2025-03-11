@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Standardized config for Pipeline Inference."""
+"""Standardized configuration for Pipeline Inference."""
 
 from __future__ import annotations
 
@@ -519,17 +519,16 @@ class HuggingFaceRepo:
 class MAXConfig:
     """Abstract base class for all MAX configs.
 
-    There are some invariants that MAXConfig classes should follow:
+    There are some invariants that :obj:`MAXConfig` classes should follow:
     - All config classes should be dataclasses.
-    - All config classes should have a help() method that returns a dictionary of config
+    - All config classes should have a :obj:`help()` method that returns a dictionary of config
     options and their descriptions.
     - All config classes dataclass fields should have default values, and hence
-    can be trivially initialized via `cls()`.
-    - All config classes should be frozen (except KVCacheConfig for now), to
+    can be trivially initialized via :obj:`cls()`.
+    - All config classes should be frozen (except :obj:`KVCacheConfig` for now), to
     avoid accidental modification of config objects.
     - All config classes must have mutually exclusive dataclass fields among
     themselves.
-
     """
 
     @abstractmethod
@@ -550,10 +549,10 @@ class MAXModelConfig(MAXConfig):
     # it be Optional to check for None and then littering the codebase with
     # asserts just to keep mypy happy.
     model_path: str = ""
-    """repo_id of a Hugging Face model repository to use."""
+    """:obj:`repo_id` of a Hugging Face model repository to use."""
 
     huggingface_repo_id: str = ""
-    """DEPRECATED: repo_id of a Hugging Face model repository to use. Use `model_path` instead."""
+    """DEPRECATED: :obj:`repo_id` of a Hugging Face model repository to use. Use :obj:`model_path` instead."""
 
     weight_path: list[Path] = field(default_factory=list)
     """Optional path or url of the model weights to use."""
@@ -573,7 +572,7 @@ class MAXModelConfig(MAXConfig):
     device_specs: list[DeviceSpec] = field(
         default_factory=scan_available_devices
     )
-    """Devices to run inference upon. This option is not documented in help() as it shouldn't be used directly via the CLI entrypoint."""
+    """Devices to run inference upon. This option is not documented in :obj:`help()` as it shouldn't be used directly via the CLI entrypoint."""
 
     force_download: bool = False
     """Whether to force download a given file if it's already present in the local cache."""
@@ -593,8 +592,7 @@ class MAXModelConfig(MAXConfig):
     # instantiate these MAXConfigs with probably DAG depedency flows in our
     # larger config refactor.
     def validate(self):
-        """
-        Validate the config.
+        """Validates the config.
 
         This method is called after the model config is initialized, to ensure that all
         config fields have been initialized to a valid state. It will also set
@@ -679,7 +677,7 @@ class MAXModelConfig(MAXConfig):
 
     @property
     def graph_quantization_encoding(self) -> Optional[QuantizationEncoding]:
-        """Converts the CLI encoding to a MAX graph quantization encoding.
+        """Converts the CLI encoding to a MAX Graph quantization encoding.
 
         Returns:
             The graph quantization encoding corresponding to the CLI encoding.
@@ -800,10 +798,10 @@ class SamplingConfig(MAXConfig):
 @dataclass(frozen=False)
 class KVCacheConfig(MAXConfig):
     cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT
-    """The cache strategy to use. This defaults to `model_default`, which will set the cache
+    """The cache strategy to use. This defaults to :obj:`model_default`, which will set the cache
     strategy based on the default strategy for the architecture requested.
 
-    You can also force the engine to use a specific caching strategy: `naive` | `continuous` | `paged`.
+    You can also force the engine to use a specific caching strategy: :obj:`naive` | :obj:`continuous` | :obj:`paged`.
     """
 
     kv_cache_page_size: int = 128
@@ -815,8 +813,11 @@ class KVCacheConfig(MAXConfig):
     device_memory_utilization: float = 0.9
     """The fraction of available device memory that the process should consume.
 
-    This is used to inform the size of the KVCache workspace:
-        kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size
+    This is used to inform the size of the KVCache workspace. The calculation is:
+
+    .. math::
+
+        kv\_cache\_workspace = (total\_free\_memory \times device\_memory\_utilization) - model\_weights\_size
     """
 
     _available_cache_memory: Optional[int] = None

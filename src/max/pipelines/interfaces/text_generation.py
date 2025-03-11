@@ -193,16 +193,29 @@ class PipelineTokenizer(
 
     @property
     def expects_content_wrapping(self) -> bool:
-        """If true, this tokenizer expects messages to have a 'content' property.
-        Text messages are formatted as
-        { "type" : "text", "content" : "text content"}
-        instead of, the OpenAI spec.
-        { "type" : "text", "text": "text content" }.
-        NOTE: Multimodal messages omit the content property.
-        Both "image_urls" and "image" content parts are converted to simply
-        { "type" : "image" }
-        Their content is provided as byte arrays and by the top level property on
-        the request object, i.e. "TokenGeneratorRequest.images".
+        """If true, this tokenizer expects messages to have a `content` property.
+
+        Text messages are formatted as:
+
+        .. code-block:: json
+
+            { "type": "text", "content": "text content" }
+
+        instead of the OpenAI spec:
+
+        .. code-block:: json
+
+            { "type": "text", "text": "text content" }
+
+        NOTE: Multimodal messages omit the `content` property.
+        Both :obj:`image_urls` and :obj:`image` content parts are converted to:
+
+        .. code-block:: json
+
+            { "type": "image" }
+
+        Their content is provided as byte arrays through the top-level property
+        on the request object, i.e., :obj:`TokenGeneratorRequest.images`.
         """
         ...
 
@@ -232,9 +245,6 @@ class PipelineTokenizer(
 
         Raises:
             ValueError: If the prompt exceeds the configured maximum length.
-
-        Returns:
-            TokenizerEncoded: Encoded prompt tokens.
         """
         ...
 

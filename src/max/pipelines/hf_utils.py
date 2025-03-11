@@ -49,9 +49,9 @@ def get_architectures_from_huggingface_repo(
 
 @dataclass(frozen=True)
 class HuggingFaceFile:
-    """A simple object for tracking huggingface model metadata.
-    The repo_id will frequently be used to load a tokenizer,
-    whereas the filename is used to download model weights."""
+    """A simple object for tracking Hugging Face model metadata. The repo_id will
+    frequently be used to load a tokenizer, whereas the filename is used to
+    download model weights."""
 
     repo_id: str
     filename: str

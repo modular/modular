@@ -103,14 +103,14 @@ class SupportedArchitecture:
     ):
         """Initializes a model architecture supported by MAX pipelines.
 
-        New architectures should be registered into the `PipelineRegistry`.
+        New architectures should be registered into the :obj:`PipelineRegistry`.
 
         args:
             name: Architecture name.
-            example_repo_ids: HuggingFace repo_id which runs this architecture.
+            example_repo_ids: Hugging Face `repo_id` which runs this architecture.
             default_encoding: Default encoding for the model.
             supported_encodings: Alternate encodings supported.
-            pipeline_model: PipelineModel class that defines the model graph
+            pipeline_model: :obj:`PipelineModel` class that defines the model graph
                 and execution.
             task: Which pipeline task should the model run with.
             tokenizer: Tokenizer used to preprocess model inputs.
