@@ -557,10 +557,10 @@ fn ld_matrix[
 
 @always_inline
 fn st_matrix[
-    type: DType, //, simd_width: Int, *, transpose: Bool = False
+    dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
-    ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
-    d: SIMD[type, simd_width],
+    ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
+    d: SIMD[DType.float32, simd_width],
 ):
     """Performs warp-synchronized copy from registers to shared memory.
 
@@ -569,7 +569,7 @@ fn st_matrix[
     the NVIDIA stmatrix instruction to perform an efficient warp-synchronized store.
 
     Parameters:
-        type: Data type of elements to store.
+        dtype: Data type of elements to store.
         simd_width: Width of the SIMD vector.
         transpose: If True, transposes the matrix during store.
 
@@ -589,10 +589,9 @@ fn st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    # The register width is fixed at 4 Bytes (32 bits)
-    alias register_btypes = 4
-    alias register_width = register_btypes // sizeof[type]()
-    alias num_registers = simd_width // register_width
+    constrained[dtype in (DType.bfloat16, DType.float32), ""]()
+
+    alias num_matrices = simd_width
 
     alias base = "stmatrix.sync.aligned"
 
@@ -604,17 +603,17 @@ fn st_matrix[
         return sfx
 
     @parameter
-    if num_registers == 1:
+    if num_matrices == 1:
         alias ins = base + get_suffix() + ".x1.shared.b16 [$0], {$1};\n"
         inlined_assembly[ins, NoneType, constraints="r,r"](ptr, d[0])
 
-    elif num_registers == 2:
+    elif num_matrices == 2:
         alias ins = base + get_suffix() + ".x2.shared.b16 [$0], {$1, $2};\n"
         inlined_assembly[ins, NoneType, constraints="r,r,r"](ptr, d[0], d[1])
 
     else:
         constrained[
-            num_registers == 4,
+            num_matrices == 4,
             "no valid implementation of stmatrix instruction",
         ]()
 
