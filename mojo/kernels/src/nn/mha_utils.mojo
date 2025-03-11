@@ -7,7 +7,6 @@
 
 from collections import OptionalReg
 from gpu import WARP_SIZE, lane_id
-from gpu.host.info import H100
 from gpu.memory import AddressSpace
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
@@ -22,10 +21,54 @@ from sys import (
 from sys.info import _accelerator_arch
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
+from sys import env_get_int, sizeof
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
 # ===-----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct FlashAttentionAlgorithm(Stringable, Writable):
+    var _value: Int32
+
+    alias NAIVE = Self(0)
+    alias FLASH_ATTENTION_1 = Self(1)
+    alias FLASH_ATTENTION_2 = Self(2)
+    alias FLASH_ATTENTION_3 = Self(3)
+
+    fn __init__(out self):
+        self._value = env_get_int["fa_algorithm", 2]()
+
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = Int32(value)
+
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    @always_inline
+    fn __ne__(self, other: Self) -> Bool:
+        return self._value != other._value
+
+    @always_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @always_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        if self._value == 0:
+            writer.write("naive-attention")
+        elif self._value == 1:
+            writer.write("flash-attention-1")
+        elif self._value == 2:
+            writer.write("flash-attention-2")
+        elif self._value == 3:
+            writer.write("flash-attention-3")
+        else:
+            writer.write("invalid algorithm")
 
 
 @value
@@ -43,6 +86,7 @@ struct MHAConfig:
     var WN: UInt
     var num_pipeline_stages: UInt
     var k_group_size: UInt
+    var algorithm: FlashAttentionAlgorithm
 
     fn block_m(self) -> UInt:
         return self.num_queries_per_block
@@ -65,40 +109,76 @@ struct MHAConfig:
     fn num_warps_n(self) -> UInt:
         return self.block_n() // self.warp_n()
 
-    fn num_threads(self) -> UInt:
+    fn num_consumer_threads(self) -> UInt:
         return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
+
+    fn num_producer_threads[
+        producer_consumer_kernel: Bool = False
+    ](self) -> UInt:
+        return 128 if (producer_consumer_kernel and self.algorithm == 3) else 0
+
+    fn num_threads[producer_consumer_kernel: Bool = False](self) -> UInt:
+        return (
+            self.num_consumer_threads()
+            + self.num_producer_threads[producer_consumer_kernel]()
+        )
 
     fn q_smem_size(self) -> UInt:
         return self.block_m() * self.depth
 
-    fn kv_smem_size(self) -> UInt:
-        return self.block_n() * self.depth
+    fn kv_smem_size(self, sm_90: Bool = False) -> UInt:
+        kv_smem = self.block_n() * self.depth
+        return kv_smem * self.num_pipeline_stages if sm_90 else kv_smem
+
+    fn k_smem_size(self, sm_90: Bool = False) -> UInt:
+        k_smem = self.block_n() * self.depth
+        return k_smem * self.num_pipeline_stages if sm_90 else k_smem
+
+    fn v_smem_size(self, sm_90: Bool = False) -> UInt:
+        BN = self.block_n()
+        kv_smem = BN * BN
+        return kv_smem * self.num_pipeline_stages if sm_90 else kv_smem
 
     fn p_smem_size(self) -> UInt:
         return self.block_m() * self.block_n()
 
     fn warp_scratch_smem_size(self) -> UInt:
-        return 2 * self.num_warps_n() * self.block_m()
+        n_warps_n = self.num_warps_n()
+        return 2 * n_warps_n * self.block_m() if n_warps_n > 1 else 0
 
-    fn shared_mem_elements[shared_kv: Bool = False](self) -> UInt:
+    fn shared_mem_bytes[
+        shared_kv: Bool = False, sm_90: Bool = False
+    ](self) -> UInt:
+        if not has_nvidia_gpu_accelerator():
+            return 0
+
+        sm_90_fa3 = sm_90 and (self.algorithm == 3)
+
         @parameter
         if shared_kv:
             num_smem_elements = (
                 self.q_smem_size()
-                + self.kv_smem_size()
+                + self.kv_smem_size(sm_90_fa3)
                 + self.warp_scratch_smem_size()
             )
         else:
             num_smem_elements = (
                 self.q_smem_size()
-                + (2 * self.kv_smem_size())
+                + self.k_smem_size(sm_90_fa3)
+                + self.v_smem_size(sm_90_fa3)
                 + self.warp_scratch_smem_size()
+                + (self.block_m() * self.depth if sm_90_fa3 else 0)
             )
 
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        return num_smem_elements if has_nvidia_gpu_accelerator() else 0
+        num_smem_bytes = self.type.sizeof() * num_smem_elements
+        if sm_90_fa3:
+            num_smem_bytes += (
+                4 * sizeof[DType.int64]() * self.num_pipeline_stages
+            )
+        return num_smem_bytes
 
     fn __init__(
         mut self,
@@ -112,6 +192,7 @@ struct MHAConfig:
         WN: OptionalReg[UInt] = None,
         num_pipeline_stages: UInt = 2 if ":90" in _accelerator_arch() else 4,
         k_group_size: UInt = 1,
+        algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(),
     ):
         self.type = type
         self.num_heads = num_heads
@@ -121,19 +202,28 @@ struct MHAConfig:
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
-        # BM
-        self.num_queries_per_block = num_queries_per_block.or_else(
-            32 if type is DType.float32 else 64
-        )
         # BN
         self.num_keys_per_block = num_keys_per_block.or_else(depth)
-        var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
-        var bk_type_factor = 1 if type is DType.float32 else 2
-        self.BK = BK.or_else(
-            16 * bk_arch_factor * bk_type_factor
-        ) if has_nvidia_gpu_accelerator() else depth
+        alias is_sm90 = ":90" in _accelerator_arch()
+        if is_sm90 and type.is_half_float():
+            # BM
+            self.num_queries_per_block = num_queries_per_block.or_else(
+                128 if algorithm == 3 else 64
+            )
+            self.BK = BK.or_else(64)
+        else:
+            # BM
+            self.num_queries_per_block = num_queries_per_block.or_else(
+                32 if type is DType.float32 else 64
+            )
+            var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
+            var bk_type_factor = 1 if type is DType.float32 else 2
+            self.BK = BK.or_else(
+                16 * bk_arch_factor * bk_type_factor
+            ) if has_nvidia_gpu_accelerator() else depth
         self.WM = WM.or_else(32 if type is DType.float32 else 16)
         self.WN = WN.or_else(32 if type is DType.float32 else depth)
+        self.algorithm = algorithm
 
     fn __str__(self) -> String:
         return String.write(self)

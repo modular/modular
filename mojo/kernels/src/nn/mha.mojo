@@ -91,7 +91,6 @@ from .softmax import (
     softmax,
 )
 
-
 # ===-----------------------------------------------------------------------===#
 # Flash attention
 # ===-----------------------------------------------------------------------===#
@@ -429,9 +428,11 @@ fn flash_attention_dispatch[
                     + String(BK),
                 ]()
                 alias BN = config.block_n()
-                alias smem_use = config.shared_mem_elements[False]() * sizeof[
-                    config.type
-                ]()
+                # we add smem use for TMABarrier synchronization
+                alias smem_use = config.shared_mem_bytes[False, sm_90=True]()
+                # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
+                alias num_threads = config.num_threads[True]()
+                constrained[num_threads % 128 == 0]()
 
                 alias kernel_sm90 = mha_sm90[
                     mask.rank,
@@ -449,6 +450,7 @@ fn flash_attention_dispatch[
                     is_shared_kv=is_shared_kv,
                     _is_cache_length_accurate=_is_cache_length_accurate,
                 ]
+
                 ctx.enqueue_function[kernel_sm90](
                     q.data,
                     k,
@@ -467,16 +469,14 @@ fn flash_attention_dispatch[
                         Int(config.num_heads),
                         Int(batch_size),
                     ),
-                    block_dim=(Int(config.num_threads()), 1, 1),
+                    block_dim=(Int(num_threads), 1, 1),
                     shared_mem_bytes=Int(smem_use),
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         smem_use
                     ),
                 )
             else:
-                alias smem_use = config.shared_mem_elements[
-                    is_shared_kv
-                ]() * sizeof[config.type]()
+                alias smem_use = config.shared_mem_bytes[is_shared_kv]()
 
                 alias kernel = mha[
                     mask.rank,
@@ -1147,7 +1147,7 @@ fn mha_single_batch[
     )
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
-    alias k_smem_size = config.kv_smem_size()
+    alias k_smem_size = config.k_smem_size()
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
     var k_smem_iter = LayoutTensorIter[
         k_type,
@@ -1156,7 +1156,7 @@ fn mha_single_batch[
         circular=True,
     ](k_smem, k_smem_size)
 
-    alias v_smem_size = config.kv_smem_size()
+    alias v_smem_size = config.v_smem_size()
     var v_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
     var v_smem_iter = LayoutTensorIter[
         v_type,
@@ -3244,22 +3244,23 @@ fn mha_decoding_single_batch[
         q_smem_size,
     )
 
-    alias kv_smem_size = BN * depth
+    alias k_smem_size = BN * depth
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
     var k_smem_iter = LayoutTensorIter[
         k_type,
         Layout.row_major(BN, BK),
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](k_smem, kv_smem_size)
+    ](k_smem, k_smem_size)
 
-    var v_smem = (k_smem + kv_smem_size).bitcast[Scalar[v_type]]()
+    alias v_smem_size = BN * BN
+    var v_smem = (k_smem + k_smem_size).bitcast[Scalar[v_type]]()
     var v_smem_iter = LayoutTensorIter[
         v_type,
         Layout.row_major(BK, BN),
         address_space = AddressSpace.SHARED,
         circular=True,
-    ](v_smem, kv_smem_size)
+    ](v_smem, v_smem_size)
 
     var kv_head_idx = block_idx.y
 
@@ -3306,7 +3307,7 @@ fn mha_decoding_single_batch[
 
     # Shared memory for P = Q * K^t
     # This overlaps key tile but are used at the same time i.e. no race condition.
-    var p_smem = (v_smem + kv_smem_size).bitcast[Scalar[v_type]]()
+    var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
     alias p_smem_size = BM * BN
     var p_smem_iter = LayoutTensorIter[
         v_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
@@ -3588,7 +3589,7 @@ fn mha_decoding_single_batch[
                 Layout.row_major(WN, BN),
                 address_space = AddressSpace.SHARED,
                 circular=True,
-            ](v_smem + BN * WN * warp_x, kv_smem_size)
+            ](v_smem + BN * WN * warp_x, v_smem_size)
             multistage_mma[
                 BM,
                 BN,
