@@ -23,7 +23,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.pipelines.nn import Allreduce, LayerV2, Signals
+from max.pipelines.nn import Allreduce, Module, Signals
 
 M = 512
 N = 1024
@@ -107,7 +107,7 @@ def test_allreduce_execution() -> None:
     assert np.allclose(out_np, output[3].to(host).to_numpy())
 
 
-class AllreduceAddBase(LayerV2):
+class AllreduceAddBase(Module):
     """Base class for allreduce variants with elementwise add."""
 
     num_devices: int
