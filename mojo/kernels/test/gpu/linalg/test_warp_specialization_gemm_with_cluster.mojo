@@ -52,6 +52,7 @@ from internal_utils import (
 import linalg.vendor_blas
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
+from collections import OptionalReg
 from math import ceildiv
 from sys import sizeof, simdwidthof
 from sys._assembly import inlined_assembly
@@ -79,6 +80,7 @@ def test_warp_specialize_gemm_with_multicasting[
     num_consumer: Int = 1,
     transpose_b: Bool = True,
     partitioned_multicast: Bool = False,
+    grid_shape: OptionalReg[IndexList[2]] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     use_stmtx: Bool = True,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
@@ -203,6 +205,7 @@ def test_warp_specialize_gemm_with_multicasting[
         config=matmul_config,
         use_stmtx=use_stmtx,
         schedule=schedule,
+        grid_shape=grid_shape,
     ](
         c_device.tensor,
         a_device.tensor,
@@ -260,6 +263,7 @@ def main():
             Index(2, 1, 1),
             num_consumer=2,
             partitioned_multicast=False,
+            grid_shape = Index(10, 13),
             schedule = MatmulSchedule.TILE2D,
         ](ctx, static[8192](), static[2560](), static[8192]())
 
@@ -282,6 +286,7 @@ def main():
             Index(2, 1, 1),
             num_consumer=2,
             partitioned_multicast=False,
+            grid_shape = Index(4, 33),
             schedule = MatmulSchedule.TILE2D,
         ](ctx, static[8192](), static[8192](), static[2048]())
 
@@ -304,6 +309,7 @@ def main():
             Index(2, 1, 1),
             num_consumer=2,
             partitioned_multicast=False,
+            grid_shape = Index(8, 16),
             schedule = MatmulSchedule.TILE2D,
         ](ctx, static[8192](), static[14336](), static[8192]())
 
@@ -326,6 +332,7 @@ def main():
             Index(2, 1, 1),
             num_consumer=2,
             partitioned_multicast=False,
+            grid_shape = Index(4, 33),
             schedule = MatmulSchedule.TILE2D,
         ](ctx, static[8192](), static[8192](), static[7168]())
 
