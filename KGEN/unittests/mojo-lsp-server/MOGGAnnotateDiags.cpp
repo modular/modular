@@ -27,9 +27,9 @@ struct Missing:
           doc,
           [](const std::vector<lsp::Diagnostic> &diags) {
             ASSERT_EQ((int)diags.size(), 2);
-            EXPECT_EQ(diags[0].message, "Error for argument 'a': 'read' "
+            EXPECT_EQ(diags[0].message, "Error for argument 'a': 'mut' "
                                         "inferred parameter must be set");
-            EXPECT_EQ(diags[1].message, "Error for argument 'a': 'write' "
+            EXPECT_EQ(diags[1].message, "Error for argument 'a': 'input' "
                                         "inferred parameter must be set");
           })
       .execute();

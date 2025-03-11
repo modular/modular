@@ -261,16 +261,16 @@ std::pair<TypedAttr, TypedAttr> getParams(KGEN::MOGGPreElab::IOSpec ioSpec,
   switch (ioSpec) {
 
   case KGEN::MOGGPreElab::IOSpec::InputTensor:
-    return {builder.getBoolAttr(true),   // read
-            builder.getBoolAttr(false)}; // write
+    return {builder.getBoolAttr(KGEN::MOGGPreElab::kIOSpecImmutable),
+            builder.getIndexAttr(KGEN::MOGGPreElab::kIOSpecIOInput)};
 
   case KGEN::MOGGPreElab::IOSpec::OutputTensor:
-    return {builder.getBoolAttr(false), // read
-            builder.getBoolAttr(true)}; // write
+    return {builder.getBoolAttr(KGEN::MOGGPreElab::kIOSpecMutable),
+            builder.getIndexAttr(KGEN::MOGGPreElab::kIOSpecIOOutput)};
 
   case KGEN::MOGGPreElab::IOSpec::MutableInputTensor:
-    return {builder.getBoolAttr(true),  // read
-            builder.getBoolAttr(true)}; // write
+    return {builder.getBoolAttr(KGEN::MOGGPreElab::kIOSpecMutable),
+            builder.getIndexAttr(KGEN::MOGGPreElab::kIOSpecIOInput)};
   }
 }
 

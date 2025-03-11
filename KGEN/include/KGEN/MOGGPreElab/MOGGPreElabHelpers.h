@@ -53,7 +53,7 @@ void stripDecorators(LIT::StructDeclOp structDecl);
 /// Convert IOSpec enum to and from strings
 StringRef toString(IOSpec spec);
 std::optional<IOSpec> toIOSpec(StringRef str);
-/// Get the param values corresponding to read/write of IOSpec
+/// Get the param values corresponding to mut/input of IOSpec
 std::pair<TypedAttr, TypedAttr> getParams(KGEN::MOGGPreElab::IOSpec ioSpec,
                                           Builder &builder);
 
