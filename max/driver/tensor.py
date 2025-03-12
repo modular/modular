@@ -66,7 +66,7 @@ class Tensor(DLPackArray):
         dtype: DType,
         device: Optional[Device] = None,
     ) -> None:
-        self._impl = _Tensor(shape, dtype._to(), device or CPU())
+        self._impl = _Tensor(shape, dtype, device or CPU())
 
     @classmethod
     def _from_impl(cls: Type[_T], impl: _Tensor) -> _T:
@@ -103,7 +103,7 @@ class Tensor(DLPackArray):
     @property
     def dtype(self) -> DType:
         """DType of constituent elements in tensor."""
-        return DType._from(self._impl.dtype)
+        return self._impl.dtype
 
     @property
     def shape(self) -> tuple:
@@ -233,7 +233,7 @@ class Tensor(DLPackArray):
                 )
             shape = (*self.shape[:-1], last_axis_size // dtype.size_in_bytes)
 
-        return self._from_impl(self._impl.view(shape, dtype._to()))
+        return self._from_impl(self._impl.view(shape, dtype))
 
     @classmethod
     def from_numpy(cls, arr: np.ndarray) -> Tensor:
