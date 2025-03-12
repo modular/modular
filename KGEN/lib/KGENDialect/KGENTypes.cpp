@@ -1475,24 +1475,40 @@ ErrorOr<TypedAttr> VariantType::readFrom(int64_t addr,
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseClosureTypes(AsmParser &p, SymbolRefAttr &symbol,
-                                     StringAttr &name, bool &isEscaping) {
+                                     StringAttr &name,
+                                     ClosureMemoryKind &closureMemoryKind) {
   if (p.parseAttribute(symbol) || p.parseComma() || p.parseAttribute(name))
     return failure();
 
-  if (failed(p.parseOptionalKeyword("escaping")))
-    isEscaping = false;
+  if (succeeded(p.parseOptionalKeyword("escaping")))
+    closureMemoryKind = ClosureMemoryKind::ESCAPING;
+  else if (succeeded(p.parseOptionalKeyword("nonescaping")))
+    closureMemoryKind = ClosureMemoryKind::NONESCAPING;
+  else if (succeeded(p.parseOptionalKeyword("registerpassable")))
+    closureMemoryKind = ClosureMemoryKind::REGISTER_PASSABLE;
   else
-    isEscaping = true;
+    return p.emitError(p.getCurrentLocation(),
+                       "expected escaping, nonescaping, or registerpassable");
   return success();
 }
 
 static void printClosureTypes(AsmPrinter &p, SymbolRefAttr symbol,
-                              StringAttr name, bool isEscaping) {
+                              StringAttr name,
+                              ClosureMemoryKind closureMemoryKind) {
   p << symbol;
   p << ", ";
   p << name;
-  if (isEscaping)
+  switch (closureMemoryKind) {
+  case ClosureMemoryKind::ESCAPING:
     p << " escaping";
+    break;
+  case ClosureMemoryKind::NONESCAPING:
+    p << " nonescaping";
+    break;
+  case ClosureMemoryKind::REGISTER_PASSABLE:
+    p << " registerpassable";
+    break;
+  }
 }
 
 //===----------------------------------------------------------------------===//

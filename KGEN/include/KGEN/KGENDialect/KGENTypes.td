@@ -727,16 +727,23 @@ def KGEN_ClosureType : KGENType<"Closure", "closure"> {
      Example:
      ```mlir
      kgen.generator @parent(%x: index) {
-        kgen.generator @closure() {
+        %0 = kgen.closure.init(%x)(){
            kgen.call @foo(%x)
-        }
-        %0 = kgen.closure.init <:() -> () @closure> : !kgen.closure<@parent, "closure", is_escaping=false>
+        } : (index), !kgen.closure<@parent, "closure", escaping>
+        %1 = kgen.closure.init(%x)(){
+           kgen.call @foo(%x)
+        } : (index), !kgen.closure<@parent, "closure", nonescaping>
+        %2 = kgen.closure.init(%x)(){
+           kgen.call @foo(%x)
+        } : (index), !kgen.closure<@parent, "closure", registerpassable>
      }
      }
      ```
   }];
-  let parameters = (ins "SymbolRefAttr":$parentSymbol, "StringAttr":$name, "bool": $isEscaping);
-  let assemblyFormat = "`<` custom<ClosureTypes>($parentSymbol, $name, $isEscaping) `>`";
+  let parameters = (ins "SymbolRefAttr":$parentSymbol,
+                        "StringAttr":$name,
+                        "ClosureMemoryKind": $closureMemoryKind);
+  let assemblyFormat = "`<` custom<ClosureTypes>($parentSymbol, $name, $closureMemoryKind) `>`";
 }
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD
