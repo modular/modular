@@ -142,8 +142,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
-    alias simd_size = simdwidthof[c_type]()
-
     constrained[
         not partitioned_multicast
         or a_swizzle.bytes() // sizeof[a_type]() == BK,
@@ -448,137 +446,38 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
             lane = lane_id()
 
-            @parameter
-            if use_stmtx:
-                alias WG_BM = c_smem_tile.layout.shape[0].value()
-                alias WG_BN = c_smem_tile.layout.shape[1].value()
+            c_frag_vec2 = c_reg_tile.vectorize[1, 2]()
 
-                constrained[
-                    accum_type == DType.float32
-                    and c_type == DType.bfloat16
-                    and c_frag_size % 8 == 0
-                    and wgmma_shape[1] % 16 == 0
-                    and BM % wgmma_shape[0] == 0
-                    and BN % WG_BN == 0
-                    and WG_BN % 16 == 0
-                    and BN == wgmma_shape[1]
-                    and BM == WG_BM,
-                    "",
-                ]()
+            @parameter
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for sub_wg_bn_id in range(BN // WG_BN):
+                for n_mma in range(num_n_mmas):
+                    alias mma_id = n_mma * num_m_mmas + m_mma
+
+                    warp_tile = c_gmem_split.tile[
+                        wgmma_shape[0] // 4, wgmma_shape[1]
+                    ](m_mma * 4 + warp_id, n_mma)
+
+                    gmem_frag = warp_tile.vectorize[1, 2]().distribute[
+                        Layout.row_major(8, 4)
+                    ](lane)
+                    thread_offset = gmem_frag.distance(c.ptr)
+
+                    alias num_vecs = __type_of(gmem_frag).layout.size()
 
                     @parameter
-                    for m_mma in range(num_m_mmas):
-                        alias mma_id = m_mma
+                    for i in range(num_vecs):
+                        alias dst_idx = __type_of(gmem_frag).layout(i)
 
-                        @parameter
-                        for i in range(WG_BN // 16):
-                            var c_frag = c_reg_tile.tile[1, 8](
-                                mma_id, i + sub_wg_bn_id * (WG_BN // 16)
-                            )
+                        m = Int((thread_offset + dst_idx) // N)
+                        n = Int((thread_offset + dst_idx) % N)
 
-                            var d_reg = c_frag.load[8](0, 0).cast[
-                                DType.bfloat16
-                            ]()
-
-                            var offset = c_smem_tile.ptr.offset(
-                                m_mma * wgmma_shape[0] * WG_BN
-                                + local_warp_group_idx
-                                * (BM // num_consumer)
-                                * WG_BN
-                                + (warp_id * 16 + lane % 16) * WG_BN
-                                + i * 16
-                                + 8 * (lane // 16)
-                            )
-                            var d_reg_f32_packed = bitcast[DType.float32, 4](
-                                d_reg
-                            )
-
-                            st_matrix[simd_width=4](offset, d_reg_f32_packed)
-
-                    named_barrier[num_consumer_threads, 10]()
-
-                    var c_gmem_wg_tile = c_gmem_tile.tile[BM, WG_BN](
-                        0, sub_wg_bn_id
-                    )
-
-                    alias thread_layout = Layout.row_major(
-                        num_consumer_threads // (WG_BN // simd_size),
-                        WG_BN // simd_size,
-                    )
-
-                    var c_gmem_frag = c_gmem_wg_tile.vectorize[
-                        1, simd_size
-                    ]().distribute[thread_layout](thread_idx.x - 128)
-                    var c_smem_frag = c_smem_tile.vectorize[
-                        1, simd_size
-                    ]().distribute[thread_layout](thread_idx.x - 128)
-
-                    var thread_offset = c_gmem_frag.distance(c.ptr)
-                    var c_smem_frag_offset = c_smem_frag.distance(
-                        c_smem_tile.ptr
-                    )
-
-                    alias num_stores_per_thread = __type_of(
-                        c_gmem_frag
-                    ).layout.size()
-
-                    @parameter
-                    for i in range(num_stores_per_thread):
-                        alias src_idx = __type_of(c_smem_frag).layout(i)
-                        alias dst_idx = __type_of(c_gmem_frag).layout(i)
-
-                        var m = Int((thread_offset + dst_idx) // N)
-                        var n = Int((thread_offset + dst_idx) % N)
-                        alias alignment = alignof[SIMD[c_type, simd_size]]()
-
+                        alias alignment = alignof[SIMD[c_type, 2]]()
                         if m < M and n < N:
                             epilogue[alignment=alignment](
-                                (m, n),
-                                c_smem_tile.ptr.load[
-                                    width=simd_size, alignment=alignment
-                                ](c_smem_frag_offset + src_idx).cast[c_type](),
+                                (m, n), c_frag_vec2[mma_id, i].cast[c_type]()
                             )
-
-                    named_barrier[num_consumer_threads, 10]()
-
-            else:
-                c_frag_vec2 = c_reg_tile.vectorize[1, 2]()
-
-                @parameter
-                for m_mma in range(num_m_mmas):
-
-                    @parameter
-                    for n_mma in range(num_n_mmas):
-                        alias mma_id = n_mma * num_m_mmas + m_mma
-
-                        warp_tile = c_gmem_split.tile[
-                            wgmma_shape[0] // 4, wgmma_shape[1]
-                        ](m_mma * 4 + warp_id, n_mma)
-
-                        gmem_frag = warp_tile.vectorize[1, 2]().distribute[
-                            Layout.row_major(8, 4)
-                        ](lane)
-                        thread_offset = gmem_frag.distance(c.ptr)
-
-                        alias num_vecs = __type_of(gmem_frag).layout.size()
-
-                        @parameter
-                        for i in range(num_vecs):
-                            alias dst_idx = __type_of(gmem_frag).layout(i)
-
-                            m = Int((thread_offset + dst_idx) // N)
-                            n = Int((thread_offset + dst_idx) % N)
-
-                            alias alignment = alignof[SIMD[c_type, 2]]()
-                            if m < M and n < N:
-                                epilogue[alignment=alignment](
-                                    (m, n),
-                                    c_frag_vec2[mma_id, i].cast[c_type](),
-                                )
-
         else:
             alias WG_BM = c_smem_tile.layout.shape[0].value()
             alias WG_BN = c_smem_tile.layout.shape[1].value()
@@ -639,6 +538,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                         0, sub_wg_bn_id
                     )
 
+                    alias simd_size = simdwidthof[c_type]()
                     alias thread_layout = Layout.row_major(
                         num_consumer_threads // (WG_BN // simd_size),
                         WG_BN // simd_size,
@@ -733,8 +633,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
-
-    alias simd_size = simdwidthof[c_type]()
 
     constrained[
         not partitioned_multicast
@@ -1045,140 +943,39 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
                 lane = lane_id()
 
-                @parameter
-                if use_stmtx:
-                    alias WG_BM = c_smem_tile.layout.shape[0].value()
-                    alias WG_BN = c_smem_tile.layout.shape[1].value()
+                c_frag_vec2 = c_reg_tile.vectorize[1, 2]()
 
-                    constrained[
-                        accum_type == DType.float32
-                        and c_type == DType.bfloat16
-                        and c_frag_size % 8 == 0
-                        and wgmma_shape[1] % 16 == 0
-                        and BM % wgmma_shape[0] == 0
-                        and BN % WG_BN == 0
-                        and WG_BN % 16 == 0
-                        and BN == wgmma_shape[1]
-                        and BM == WG_BM,
-                        "",
-                    ]()
+                @parameter
+                for m_mma in range(num_m_mmas):
 
                     @parameter
-                    for sub_wg_bn_id in range(BN // WG_BN):
+                    for n_mma in range(num_n_mmas):
+                        alias mma_id = n_mma * num_m_mmas + m_mma
+
+                        warp_tile = c_gmem_split.tile[
+                            wgmma_shape[0] // 4, wgmma_shape[1]
+                        ](m_mma * 4 + warp_id, n_mma)
+
+                        gmem_frag = warp_tile.vectorize[1, 2]().distribute[
+                            Layout.row_major(8, 4)
+                        ](lane)
+                        thread_offset = gmem_frag.distance(c.ptr)
+
+                        alias num_vecs = __type_of(gmem_frag).layout.size()
 
                         @parameter
-                        for m_mma in range(num_m_mmas):
-                            alias mma_id = m_mma
+                        for i in range(num_vecs):
+                            alias dst_idx = __type_of(gmem_frag).layout(i)
 
-                            @parameter
-                            for i in range(WG_BN // 16):
-                                var c_frag = c_reg_tile.tile[1, 8](
-                                    mma_id, i + sub_wg_bn_id * (WG_BN // 16)
-                                )
+                            m = Int((thread_offset + dst_idx) // N)
+                            n = Int((thread_offset + dst_idx) % N)
 
-                                var d_reg = c_frag.load[8](0, 0).cast[
-                                    DType.bfloat16
-                                ]()
-
-                                var offset = c_smem_tile.ptr.offset(
-                                    m_mma * wgmma_shape[0] * WG_BN
-                                    + local_warp_group_idx
-                                    * (BM // num_consumer)
-                                    * WG_BN
-                                    + (warp_id * 16 + lane % 16) * WG_BN
-                                    + i * 16
-                                    + 8 * (lane // 16)
-                                )
-                                var d_reg_f32_packed = bitcast[
-                                    DType.float32, 4
-                                ](d_reg)
-
-                                st_matrix[simd_width=4](
-                                    offset, d_reg_f32_packed
-                                )
-
-                        named_barrier[num_consumer_threads, 10]()
-
-                        var c_gmem_wg_tile = c_gmem_tile.tile[BM, WG_BN](
-                            0, sub_wg_bn_id
-                        )
-
-                        alias thread_layout = Layout.row_major(
-                            num_consumer_threads // (WG_BN // simd_size),
-                            WG_BN // simd_size,
-                        )
-
-                        var c_gmem_frag = c_gmem_wg_tile.vectorize[
-                            1, simd_size
-                        ]().distribute[thread_layout](thread_idx.x - 128)
-                        var c_smem_frag = c_smem_tile.vectorize[
-                            1, simd_size
-                        ]().distribute[thread_layout](thread_idx.x - 128)
-
-                        var thread_offset = c_gmem_frag.distance(c.ptr)
-                        var c_smem_frag_offset = c_smem_frag.distance(
-                            c_smem_tile.ptr
-                        )
-
-                        alias num_stores_per_thread = __type_of(
-                            c_gmem_frag
-                        ).layout.size()
-
-                        @parameter
-                        for i in range(num_stores_per_thread):
-                            alias src_idx = __type_of(c_smem_frag).layout(i)
-                            alias dst_idx = __type_of(c_gmem_frag).layout(i)
-
-                            var m = Int((thread_offset + dst_idx) // N)
-                            var n = Int((thread_offset + dst_idx) % N)
-                            alias alignment = alignof[SIMD[c_type, simd_size]]()
-
+                            alias alignment = alignof[SIMD[c_type, 2]]()
                             if m < M and n < N:
                                 epilogue[alignment=alignment](
                                     (m, n),
-                                    c_smem_tile.ptr.load[
-                                        width=simd_size, alignment=alignment
-                                    ](c_smem_frag_offset + src_idx).cast[
-                                        c_type
-                                    ](),
+                                    c_frag_vec2[mma_id, i].cast[c_type](),
                                 )
-
-                        named_barrier[num_consumer_threads, 10]()
-
-                else:
-                    c_frag_vec2 = c_reg_tile.vectorize[1, 2]()
-
-                    @parameter
-                    for m_mma in range(num_m_mmas):
-
-                        @parameter
-                        for n_mma in range(num_n_mmas):
-                            alias mma_id = n_mma * num_m_mmas + m_mma
-
-                            warp_tile = c_gmem_split.tile[
-                                wgmma_shape[0] // 4, wgmma_shape[1]
-                            ](m_mma * 4 + warp_id, n_mma)
-
-                            gmem_frag = warp_tile.vectorize[1, 2]().distribute[
-                                Layout.row_major(8, 4)
-                            ](lane)
-                            thread_offset = gmem_frag.distance(c.ptr)
-
-                            alias num_vecs = __type_of(gmem_frag).layout.size()
-
-                            @parameter
-                            for i in range(num_vecs):
-                                alias dst_idx = __type_of(gmem_frag).layout(i)
-
-                                m = Int((thread_offset + dst_idx) // N)
-                                n = Int((thread_offset + dst_idx) % N)
-
-                                alias alignment = alignof[SIMD[c_type, 2]]()
-                                if m < M and n < N:
-                                    epilogue[alignment=alignment](
-                                        (m, n),
-                                        c_frag_vec2[mma_id, i].cast[c_type](),
-                                    )
             else:
                 alias WG_BM = c_smem_tile.layout.shape[0].value()
                 alias WG_BN = c_smem_tile.layout.shape[1].value()
@@ -1213,6 +1010,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                                     mma_id, i + sub_wg_bn_id * (WG_BN // 16)
                                 )
 
+                                # according to (https://github.com/modularml/modular/pull/54225) this will automatically generate optimized cvt insts.
                                 var d_reg = c_frag.load[8](0, 0).cast[
                                     DType.bfloat16
                                 ]()
@@ -1240,6 +1038,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                             0, sub_wg_bn_id
                         )
 
+                        alias simd_size = simdwidthof[c_type]()
                         alias thread_layout = Layout.row_major(
                             num_consumer_threads // (WG_BN // simd_size),
                             WG_BN // simd_size,
