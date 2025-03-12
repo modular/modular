@@ -17,6 +17,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Error.h"
+#include <KGEN/Support/CompilerProfiling.h>
 #include <optional>
 
 #define DEBUG_TYPE "mojo-lsp-server"
@@ -39,6 +40,8 @@ public:
               void (ThisT::*handler)(const Param &, LSPResponder<Result>)) {
     struct Handler {
       void invoke(const Param &param, Callback<Result> reply) {
+        KGEN::CompilerTimeTraceScope traceScope("handleRequest",
+                                                [&]() { return method.str(); });
         (thisPtr->*handler)(param, LSPResponder<Result>(lspTelemetryCtx, method,
                                                         std::move(reply)));
       }

@@ -36,6 +36,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <KGEN/Support/CompilerProfiling.h>
 #include <optional>
 
 namespace lsp = mlir::lsp;
@@ -674,6 +675,9 @@ MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
 }
 
 void MojoDocument::parseDocument() {
+  KGEN::CompilerTimeTraceScope traceScope(
+      "parseDocument", [&]() { return getURIs().front().uri().str(); });
+
   // If we've already been invalidated, bail out early.
   if (isInvalidated)
     return markDocumentParsed();
@@ -807,6 +811,10 @@ AsyncValueRef<Chain> MojoDocument::newTaskChain() {
 }
 
 void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
+  KGEN::CompilerTimeTraceScope("checkModuleSemantics", [&]() {
+    return decl->getNameIfOperation().value_or("").str();
+  });
+
   // Don't check the semantics of the module if there were parser errors.
   if (hasParserErrors || !decl || !decl.getIfOperation())
     return;
@@ -1292,6 +1300,10 @@ void MojoDocument::processDocStrings(
 void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
                                      MojoASTDeclRef decl,
                                      MojoASTDeclRef curReplDecl) {
+  KGEN::CompilerTimeTraceScope("processDocStrings", [&]() {
+    return decl->getNameIfOperation().value_or("").str();
+  });
+
   unsigned bufferId = sourceMgr.FindBufferContainingLoc(decl.getLoc());
   StringRef declBufferRef = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
   auto processFn = [declBufferRef](MojoASTDeclRef decl) {
@@ -1814,6 +1826,8 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
 }
 
 void MojoTextDocument::parseDocumentImpl() {
+  KGEN::CompilerTimeTraceScope traceScope("parseTextDocument");
+
   // Parse the file and make sure not to kill off things that weren't parsed,
   // these may get referenced later.
   parsedDecl = getParserContext().parseFile(getSourceMgr().getMainFileID(),
@@ -1948,6 +1962,7 @@ MojoNotebookDocument::MojoNotebookDocument(
 }
 
 void MojoNotebookDocument::parseDocumentImpl() {
+  KGEN::CompilerTimeTraceScope traceScope("parseNotebookDocument");
   SmallVector<std::pair<StringRef, Type>> persistentVariables;
   LSPMojoREPLListener listener(getSourceMgr(), persistentVariables);
 
