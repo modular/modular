@@ -5,17 +5,26 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Sequence
 
 import click
 import numpy as np
 import pandas as pd
+import plotly
 import plotly.graph_objects as go
+from kprofile import read_kbench_pickle
 
 MARKER_COLORS = [
-    "#c1121f",  # red
+    "#4285f4",  # blue
+    "#ea4335",  # red
+    "#fbbc04",  # yellow
+    "#34a853",  # green
+    "#ff6d01",  # orange
+    # alternative repeat colors
     "#0077b6",  # blue
+    "#c1121f",  # red
     "#a7c957",  # green
     "#ffc300",  # yellow
     "coral",
@@ -25,15 +34,58 @@ MARKER_COLORS = [
 ]
 
 
+def _get_max_bars_per_chart(x_labels, width_px, font_size_pt):
+    def px_to_pt(px):
+        return int(px * 0.75)
+
+    x_labels_len = [
+        ([len(t) for t in entry.split("<br>")]) for entry in x_labels
+    ]
+    max_width = max(max(x_labels_len))
+    avg_bar_width = int(font_size_pt * max_width)
+    max_bars_per_chart = (
+        px_to_pt(width_px) + avg_bar_width - 1
+    ) // avg_bar_width
+    return max_bars_per_chart
+
+
+@dataclass
+class PlotConfig:
+    """
+    extension: File extension for output images
+    prefix: Prefix for output filenames
+    scale: Scaling factor for output image quality
+    font_size_pt: Font-size in points
+    width_px: Plot width in pixels
+    height_px: Plot height in pixels
+    prec: FP rounding precision of values
+    bgcolor: Background color
+    ytext: Print value on top of the bar
+    font_family: Font family
+    barmode: Bar mode ["group", "stacked"]
+    """
+
+    extension: str = "png"  # ['png', 'jpg', 'jpeg', 'webp', 'svg', 'pdf', 'eps', 'json', 'html']
+    prefix: str = "img"
+    scale: float = 1.0
+    font_size_pt: int = 16
+    width_px: int = 1920
+    height_px: int = 1080
+    prec: int = 2
+    bgcolor: str = "#ffffff"
+    y_text: bool = True  # Print value on top of the bar
+    barmode: str = "group"  # ["group", "stacked"]
+    font_family: str = "Courier New"
+    title_font_family: str = "Times New Roman"
+
+
 def draw_plot(
     x: Sequence[str],
     y_list: np.ndarray,
     y_names: Sequence[str],
     x_title: str,
     y_title: str,
-    extension: str,
-    prefix: str = "img",
-    scale: float = 1.0,
+    cfg: PlotConfig,
 ) -> None:
     """Draw bar plots for benchmark results.
 
@@ -43,59 +95,83 @@ def draw_plot(
         y_names: Names for each Y series
         x_title: X-axis title
         y_title: Y-axis title
-        extension: File extension for output images
-        prefix: Prefix for output filenames
-        scale: Scaling factor for output image quality
+        cfg: Plot configuration data
     """
-    layout = go.Layout(autosize=False, width=1920, height=1080)
+
+    extension = cfg.extension
+    prefix = cfg.prefix
+    scale = cfg.scale
+    font_size_pt = cfg.font_size_pt
+    width_px = cfg.width_px
+    height_px = cfg.height_px
+    prec = cfg.prec
+    bgcolor = cfg.bgcolor
+
+    layout = go.Layout(autosize=False, width=width_px, height=height_px)
 
     def plot_draw(xs: Sequence[str], ys_list: np.ndarray, name: str) -> None:
         fig = go.Figure(layout=layout)
         fig.update_layout(
-            font_family="Courier New",
-            title_font_family="Times New Roman",
-            title_font_color="red",
-            legend_title_font_color="green",
-            font_size=16,
+            font_family=cfg.font_family,
+            title_font_family=cfg.title_font_family,
+            font_size=font_size_pt,
         )
 
+        fig.update_layout(
+            legend=dict(
+                yanchor="top",
+                y=1.2,
+                xanchor="left",
+                orientation="h",
+            )
+        )
         for i, ys in enumerate(ys_list):
             fig.add_trace(
                 go.Bar(
                     x=xs,
                     y=ys,
                     name=y_names[i],
-                    text=np.round(ys, 6),
+                    text=np.round(ys, prec) if cfg.y_text else None,
                     textposition="outside",
+                    textangle=0,
                     marker_color=MARKER_COLORS[i % len(MARKER_COLORS)],
                     showlegend=True,
                 )
             )
 
         fig.update_layout(
-            barmode="group",
+            barmode=cfg.barmode,
             xaxis_tickangle=0,
-            bargap=0.30,
-            bargroupgap=0.2,
+            # bargap=0.1,
+            bargroupgap=0.075,
             xaxis_title=x_title,
             yaxis_title=y_title,
             xaxis=dict(showgrid=False),
             yaxis=dict(showgrid=False),
-            plot_bgcolor="#fffcf2",
-            paper_bgcolor="#fffcf2",
+            plot_bgcolor=bgcolor,
+            paper_bgcolor=bgcolor,
         )
         fig.update_xaxes(showline=True, linewidth=2, linecolor="black")
         fig.update_yaxes(showline=True, linewidth=2, linecolor="black")
 
-        fig.write_image(name, scale=scale)
+        # fig.show(config=config)
+        if to_html:
+            plotly.offline.plot(fig, filename=f"{name}.html")
+            # config = dict({"scrollZoom": True})
+            # fig.write_html(file=name, config=config)
+        else:
+            fig.write_image(name, scale=scale)
         print(f"- added [{name}]")
 
-    def wrap(s: str, d: int = 10) -> str:
-        return "<br>".join(s[i : i + d] for i in range(0, len(s), d))
-
-    x = [wrap(x[i]) for i in range(len(x))]
-
-    delta = 10
+    to_html = extension == "html"
+    if to_html:
+        delta = len(x)
+    else:
+        delta = _get_max_bars_per_chart(
+            x_labels=x,
+            width_px=width_px,
+            font_size_pt=font_size_pt,
+        )
     for i in range(0, len(x), delta):
         plot_draw(
             x[i : i + delta],
@@ -104,71 +180,197 @@ def draw_plot(
         )
 
 
+def get_labels_by_pivots(x_labels, pivots):
+    df = label_to_df(x_labels)
+    assert len(df) == len(x_labels)
+    pivot_labels = []
+    for i in range(len(df)):
+        result = []
+        for pivot in pivots:
+            result += [f"{pivot}={df.loc[i, pivot]}"]
+        pivot_labels.append("<br>".join(result))
+    return pivot_labels
+
+
+def wrap_labels(x_labels):
+    return [entry.replace("$", "") for entry in x_labels]
+
+
+def label_to_df(x_labels):
+    ds = []
+    for label in x_labels:
+        vals = label.replace("$", "").split("/")
+        # ignore the name in vals[0]
+        vals = [val.split("=") for val in vals[1:]]
+        d = {}
+        for k, v in vals:
+            d[k] = v
+        ds.append(d)
+    df = pd.DataFrame(ds)
+    return df
+
+
+def extract_pivots(x_labels):
+    df = label_to_df(x_labels)
+    pivot_columns = []
+    for c in df.columns:
+        if len(set(df[c])) > 1:
+            pivot_columns.append(c)
+
+    # set(df.columns)-set(pivot_columns)
+    non_pivot_columns = [c for c in df.columns if c not in pivot_columns]
+    return pivot_columns, non_pivot_columns
+
+
+def append_wrap_fixed_width(lst: List, sep: str, num_lines: int = 2):
+    s = []
+    result = []
+    current_len = 0
+    width = sum([len(x) for x in lst]) // num_lines
+    for x in lst:
+        if current_len > width:
+            result += [sep.join(s)]
+            s = []
+            current_len = 0
+        s += [x]
+        current_len += len(x)
+    result += [sep.join(s)]
+    return "<br>".join(result)
+
+
 def parse_and_plot(
     path_list: List[Path],
-    name_list: List[str],
-    target_col_idx: int = 1,
+    label_list: List[str],
+    key_col: str,
+    target_col: str = "1",
     compare: bool = False,
-    extension: str = "png",
+    pivots: List[str] = [],
+    cfg: PlotConfig = PlotConfig(),
     force: bool = False,
-    prefix: str = "img",
-    scale: float = 1.0,
 ) -> None:
     """Parse CSV files and generate plots.
 
     Args:
         path_list: List of paths to CSV files
-        name_list: List of names for each CSV
-        target_col_idx: Index of column to plot
+        label_list: List of names for each CSV
+        target_col: Index of column to plot
         compare: Whether to compare against baseline
-        extension: File extension for output images
+        cfg: PlotConfig
         force: Skip input validation if True
-        prefix: Prefix for output filenames
-        scale: Scaling factor for output image quality
     """
-    tables = [pd.read_csv(path) for path in path_list]
+
+    tables = []
+    for path in path_list:
+        if path.suffix == ".csv":
+            table = pd.read_csv(path)
+        else:
+            # add support for build_df
+            table = read_kbench_pickle(path)["merged_df"]
+            if "mesh_idx" in table.columns:
+                table = table.drop(columns=["mesh_idx"])
+        tables.append(table)
+
+    assert key_col in ["name", "spec"]
+
+    base_table = tables[0]
+    base_table_columns = base_table.columns
+
+    #######################################################
+    # Check target_col
+    #######################################################
+    # if target_col is an index then ensure it is smaller than number of base table columns.
+    if str(target_col).isnumeric():
+        target_col_idx = int(target_col)
+        msg = f"target_col ({target_col_idx}) cannot exceed the number of columns ({len(base_table_columns)})"
+        assert target_col_idx < len(base_table_columns), msg
+    else:
+        # if target_col is str then ensure it is among base table column titles.
+        msg = f"target-col={target_col} is not in column names: {list(base_table_columns)}"
+        assert target_col in base_table_columns, msg
+        target_col_idx = base_table_columns.get_loc(target_col)
+
+    # ensure the target_col is a measure
+    col_dtype = base_table[base_table_columns[target_col_idx]].dtype
+    msg = f"target-col dtype ({col_dtype}) is not np.floating or np.integer"
+    assert np.issubdtype(col_dtype, np.floating) or np.issubdtype(
+        col_dtype, np.integer
+    ), msg
+    target_col_name = base_table_columns[target_col_idx]
+    print(f"- Plot column:[{target_col_idx}]['{target_col_name}']")
+
+    #######################################################
+    # Sanity check to ensure the tables are comparable
+    #######################################################
+    key_col_idx = base_table_columns.get_loc(key_col)
+    print(f"- Key column: [{key_col_idx}]['{key_col}']")
 
     if not force:
-        for t in tables[1:]:
-            np.testing.assert_equal(list(tables[0].columns), list(t.columns))
-            np.testing.assert_equal(tables[0].shape, t.shape)
-            np.testing.assert_equal(
-                list(tables[0].iloc[:, 0]),
-                list(t.iloc[:, 0]),
-            )
-    print("ENTRIES HAVE MATCHING REFERENCE COLUMNS")
+        base_key_col_values = base_table.iloc[:, key_col_idx]
+        # ensure the each row of key-col has a unique value
+        assert len(list(base_key_col_values)) == len(set(base_key_col_values))
 
-    target_col_name = tables[0].columns[target_col_idx]
+        for t in tables[1:]:
+            np.testing.assert_equal(list(base_table_columns), list(t.columns))
+            np.testing.assert_equal(base_table.shape, t.shape)
+            np.testing.assert_equal(
+                list(base_table.iloc[:, key_col_idx]),
+                list(t.iloc[:, key_col_idx]),
+            )
+    # TODO: add better log message
+    print(f"- Entries have matching reference columns on key=['{key_col}']")
+
+    #######################################################
+    # Fetch values for y-axis
+    #######################################################
     y_list, y_names = [], []
 
     if compare:
-        ratio_df = pd.DataFrame({tables[0].columns[0]: tables[0].iloc[:, 0]})
+        ratio_df = pd.DataFrame({base_table_columns[0]: base_table.iloc[:, 0]})
         for i, t in enumerate(tables[1:]):
             ratio = (
-                t.iloc[:, target_col_idx] / tables[0].iloc[:, target_col_idx]
+                t.iloc[:, target_col_idx] / base_table.iloc[:, target_col_idx]
             )
-            name = f"{target_col_name} [{name_list[i + 1]}/{name_list[0]}]"
+            name = f"{target_col_name} [{label_list[i + 1]}/{label_list[0]}]"
             ratio_df[name] = ratio
             y_list.append(ratio)
             y_names.append(name)
     else:
         for i, t in enumerate(tables):
-            name = f"{target_col_name} [{name_list[i]}]"
+            name = f"{target_col_name} [{label_list[i]}]"
             y_list.append(t.iloc[:, target_col_idx])
             y_names.append(name)
 
-    x_labels = np.array(tables[0].iloc[:, 0])
-    y_list = np.array(y_list)
+    #######################################################
+    # ??
+    #######################################################
+    x_labels = np.array(base_table.iloc[:, key_col_idx])
+    x_title_append = ""
+    if key_col == "spec":
+        # search for pivots in the data (exclude columns that contain the same value in all rows.)
+        ext_pivots, non_pivots = extract_pivots(x_labels)
+        ext_pivots.extend(pivots)
+
+        df = label_to_df(x_labels)
+        s = []
+        for npv in non_pivots:
+            if npv in pivots:
+                continue
+            s += [f"{npv}={df.iloc[0][npv]}"]
+
+        x_title_append = append_wrap_fixed_width(s, " / ")
+        x_labels = get_labels_by_pivots(x_labels, pivots=ext_pivots)
+
+    x_labels = wrap_labels(x_labels)
+    # TODO: check for sanity of x_labels
 
     draw_plot(
-        x_labels,
-        y_list,
-        y_names,
-        x_title="name",
+        x=x_labels,
+        y_list=np.array(y_list),
+        y_names=y_names,
+        x_title=f"<b>{key_col}</b>"
+        + (f"<br>({x_title_append})" if x_title_append else ""),
         y_title=target_col_name,
-        extension=extension,
-        prefix=prefix,
-        scale=scale,
+        cfg=cfg,
     )
 
 
@@ -189,28 +391,47 @@ def parse_and_plot(
     help="Prefix for output file",
 )
 @click.option(
-    "--plot-col", "-p", default=1, type=click.INT, help="Plot column index"
+    "--plot-col", default=1, type=click.STRING, help="Plot column index/name"
+)
+@click.option(
+    "--key",
+    "-k",
+    default="name",
+    type=click.STRING,
+    help="Name of ref-key column (should be identical for corresponding entries across files)",
 )
 @click.option(
     "--compare",
     "-c",
     is_flag=True,
     default=False,
-    help="Compare CSVs using first as baseline",
+    help="Compare CSVs using first one as baseline",
 )
 @click.option(
     "--extension",
     "-x",
     default="png",
     type=click.STRING,
-    help="Output file extension",
+    help="Output file extension ['png', 'jpg', 'jpeg', 'webp', 'svg', 'pdf', 'eps', 'json', 'html'] (default=png)",
 )
 @click.option(
     "--scale",
     "-s",
-    default=1.0,
+    default=2.0,
     type=click.FLOAT,
-    help="Output image scaling factor",
+    help="Output image scaling factor (default=2.0)",
+)
+@click.option(
+    "--prec",
+    default=2,
+    type=click.INT,
+    help="Floating point rounding precision for bar values (default=2)",
+)
+@click.option(
+    "--ytext",
+    default=True,
+    type=click.BOOL,
+    help="Print bar values (default=True)",
 )
 @click.option(
     "--force", "-f", is_flag=True, default=False, help="Skip input validation"
@@ -218,45 +439,66 @@ def parse_and_plot(
 @click.option(
     "--verbose", "-v", is_flag=True, default=False, help="Enable verbose output"
 )
-@click.argument("csv_files", nargs=-1, type=click.UNPROCESSED)
+@click.option(
+    "--pivot",
+    "-p",
+    "pivot",
+    multiple=True,
+    help="List of corresponding pivots for plot",
+)
+@click.argument("input_files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    csv_files: click.UNPROCESSED,
+    input_files: click.UNPROCESSED,
     label_list: List[str],
     output_prefix: Optional[str],
-    plot_col: int,
+    plot_col: str,
+    key: str,
     compare: bool,
     extension: str,
     scale: float,
+    prec: int,
+    ytext: bool,
     force: bool,
     verbose: bool,
+    pivot,
 ) -> None:
     """CLI entry point for plotting benchmark results."""
-    csv_path_list = [Path(file).resolve() for file in csv_files]
-    num_csv = len(csv_path_list)
+    input_path_list = [Path(file).resolve() for file in input_files]
+    num_input = len(input_path_list)
 
-    if len(label_list) < num_csv:
-        label_list = list(label_list)
-        label_list.extend(
-            csv_path_list[i].name for i in range(len(label_list), num_csv)
+    for path in input_path_list:
+        assert path.suffix in [".csv", ".pkl"], (
+            "Path should have .csv/.pkl suffix."
         )
+        assert Path(path).exists(), f"Path {path} doesn't exist!"
 
-    assert plot_col in {1, 2}, "Plot column must be 1 or 2"
+    # ignore rest of labels
+    if len(label_list) < num_input:
+        label_list = list(label_list)
+        label_list.extend([p.name for p in input_path_list[len(label_list) :]])
 
-    prefix = output_prefix or "img"
+    # add documentation for spec: name/separated param-value pairs
+    assert key in ["spec", "name"]
+    prefix = output_prefix if output_prefix else "img"
+
+    cfg = PlotConfig(
+        extension=extension, prefix=prefix, scale=scale, prec=prec, y_text=ytext
+    )
+
     parse_and_plot(
-        csv_path_list,
-        label_list,
-        target_col_idx=plot_col,
+        input_path_list,
+        label_list=label_list,
+        key_col=key,
+        target_col=plot_col,
         compare=compare,
-        extension=extension,
+        pivots=pivot,
+        cfg=cfg,
         force=force,
-        prefix=prefix,
-        scale=scale,
     )
 
 
 def main() -> None:
-    cli()  # type: ignore
+    cli()
 
 
 if __name__ == "__main__":
