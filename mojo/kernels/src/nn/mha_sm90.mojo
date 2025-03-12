@@ -1721,14 +1721,22 @@ fn _mha_single_batch_sm90_fa2[
                 a_frag_size,
             )
         ]().tiled_iterator[num_m_mmas * num_k_mmas, a_frag_size](0, 0)
-        async_copy_wait_all()
-        barrier()
         p_frag = LayoutTensor[
             v_type,
-            Layout.row_major(num_m_mmas * num_k_mmas, a_frag_size),
+            Layout.row_major(num_m_mmas * num_n_mmas * frag_ratio, a_frag_size),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
+        # Convert 1st matmul's output FP32->BF16, layout are the same.
+        p_frag.copy_from(
+            p_reg_tile.reshape[
+                Layout.row_major(
+                    num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
+                )
+            ](),
+        )
+        async_copy_wait_all()
+        barrier()
 
         wgmma_1.arrive()
 
@@ -1737,7 +1745,7 @@ fn _mha_single_batch_sm90_fa2[
             p_frag.copy_from(p_reg_iter.next_unsafe(k_iter)[])
 
             wgmma_1.wgmma(
-                p_frag,
+                p_frag.tile[num_m_mmas * num_k_mmas, a_frag_size](k_iter, 0),
                 v_smem_iter.next_unsafe(k_iter)[],
                 output_reg_tile,
             )
