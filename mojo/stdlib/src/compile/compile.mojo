@@ -100,9 +100,17 @@ struct Info[func_type: AnyTrivialRegType, func: func_type]:
     """
 
     var asm: StringLiteral
+    """Generated assembly/IR code from the compilation process."""
+
     var function_name: StringLiteral
+    """Mangled name of the compiled function, used for symbol resolution."""
+
     var module_name: StringLiteral
+    """Name of the module containing the compiled function."""
+
     var num_captures: Int
+    """Number of variables captured by the function closure."""
+
     alias populate = rebind[fn (UnsafePointer[NoneType]) capturing -> None](
         __mlir_attr[
             `#kgen.param.expr<compile_offload_closure,`,
@@ -111,12 +119,20 @@ struct Info[func_type: AnyTrivialRegType, func: func_type]:
             _PopulateInfo,
         ].populate
     )
+    """Function pointer to populate captured variables in the function closure."""
+
     var error_msg: StringLiteral
+    """Error message if compilation failed, empty if successful."""
+
     var is_error: Bool
+    """Flag indicating whether compilation encountered errors (True) or succeeded (False)."""
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
         """Writes the assembly/IR to a writer.
+
+        Parameters:
+            W: Type that implements the Writer interface for writing data.
 
         Args:
             writer: Writer object to write the assembly to.
@@ -135,8 +151,14 @@ struct Info[func_type: AnyTrivialRegType, func: func_type]:
     fn write_text[path_like: PathLike](self, path: path_like) raises:
         """Writes the assembly/IR to a file.
 
+        Parameters:
+            path_like: Type that implements the `PathLike` interface for file path representation.
+
         Args:
             path: Path to write the file to.
+
+        Raises:
+            If file writing operations fail.
         """
         Path(path.__fspath__()).write_text(String(self))
 
