@@ -620,8 +620,17 @@ class MAXModelConfig(MAXConfig):
         # Another reason why we override this flag here is because at PipelineConfig
         # instantiation below, we'll call AutoConfig.from_pretrained, which will
         # trigger the error above if not set to True.
-        if "replit" in self.model_path:
+        if "replit" in self.model_path.lower():
             self.trust_remote_code = True
+
+        if (
+            "llama" not in self.model_path.lower()
+            and len(self.device_specs) > 1
+            and self.device_specs[0].device_type == "gpu"
+        ):
+            raise ValueError(
+                "Multiple GPU inference is currently not supported for non-Llama models."
+            )
 
         # Validate that if weight_paths are passed as strings, they are converted to Path.
         if isinstance(self.weight_path, tuple):
