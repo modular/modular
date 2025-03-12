@@ -112,6 +112,9 @@ public:
   /// Return the section used for this mojo build.
   StringRef getMojoConfigSection();
 
+  /// Return the path to ptxas.
+  StringRef getPTXASPath();
+
 private:
   MojoConfig(Config config) : configSource(std::move(config)) {}
   MojoConfig(Settings *settings) : configSource(settings) {}
