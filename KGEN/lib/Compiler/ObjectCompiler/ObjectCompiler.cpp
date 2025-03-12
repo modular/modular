@@ -1543,6 +1543,10 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
     LLVM_DEBUG(
         llvm::dbgs()
         << "Falling back to using the driver to compile PTX to CUBIN.\n");
+    KGEN_DEBUG(0, {
+      llvm::dbgs()
+          << "Falling back to using the driver to compile PTX to CUBIN.\n";
+    });
     return ctx->compileFunction(ptx, options.getDebugLevelString(),
                                 options.optimizationLevel);
   }
