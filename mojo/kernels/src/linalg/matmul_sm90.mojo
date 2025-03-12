@@ -119,7 +119,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     pipeline_stages: Int = 7,
     partitioned_multicast: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    use_stmtx: Bool = True,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -480,26 +479,24 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                                 (m, n), c_frag_vec2[mma_id, i].cast[c_type]()
                             )
         else:
+            alias WG_BM = c_smem_tile.layout.shape[0].value()
+            alias WG_BN = c_smem_tile.layout.shape[1].value()
+
+            # fmt: off
+            alias use_stmatrix = accum_type == DType.float32 \
+                    and c_type == DType.bfloat16 \
+                    and c_frag_size % 8 == 0 \
+                    and wgmma_shape[1] % 16 == 0 \
+                    and BM % wgmma_shape[0] == 0 \
+                    and BN % WG_BN == 0 \
+                    and WG_BN % 16 == 0 \
+                    and num_consumer <= 2 \
+                    and BN == wgmma_shape[1] \
+                    and BM == WG_BM
+            # fmt: on
 
             @parameter
-            if use_stmtx:
-                alias WG_BM = c_smem_tile.layout.shape[0].value()
-                alias WG_BN = c_smem_tile.layout.shape[1].value()
-
-                constrained[
-                    accum_type == DType.float32
-                    and c_type == DType.bfloat16
-                    and c_frag_size % 8 == 0
-                    and wgmma_shape[1] % 16 == 0
-                    and BM % wgmma_shape[0] == 0
-                    and BN % WG_BN == 0
-                    and WG_BN % 16 == 0
-                    and num_consumer <= 2
-                    and BN == wgmma_shape[1]
-                    and BM == WG_BM,
-                    "",
-                ]()
-
+            if use_stmatrix:
                 var lane_idx = lane_id()
 
                 @parameter
@@ -613,7 +610,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     pipeline_stages: Int = 7,
     partitioned_multicast: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    use_stmtx: Bool = True,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -981,25 +977,24 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                                     c_frag_vec2[mma_id, i].cast[c_type](),
                                 )
             else:
+                alias WG_BM = c_smem_tile.layout.shape[0].value()
+                alias WG_BN = c_smem_tile.layout.shape[1].value()
+
+                # fmt: off
+                alias use_stmatrix = accum_type == DType.float32 \
+                        and c_type == DType.bfloat16 \
+                        and c_frag_size % 8 == 0 \
+                        and wgmma_shape[1] % 16 == 0 \
+                        and BM % wgmma_shape[0] == 0 \
+                        and BN % WG_BN == 0 \
+                        and WG_BN % 16 == 0 \
+                        and num_consumer <= 2 \
+                        and BN == wgmma_shape[1] \
+                        and BM == WG_BM
+                # fmt: on
 
                 @parameter
-                if use_stmtx:
-                    alias WG_BM = c_smem_tile.layout.shape[0].value()
-                    alias WG_BN = c_smem_tile.layout.shape[1].value()
-
-                    constrained[
-                        accum_type == DType.float32
-                        and c_type == DType.bfloat16
-                        and c_frag_size % 8 == 0
-                        and wgmma_shape[1] % 16 == 0
-                        and BM % wgmma_shape[0] == 0
-                        and BN % WG_BN == 0
-                        and WG_BN % 16 == 0
-                        and BN == wgmma_shape[1]
-                        and BM == WG_BM,
-                        "",
-                    ]()
-
+                if use_stmatrix:
                     var lane_idx = lane_id()
 
                     @parameter
@@ -1464,7 +1459,6 @@ fn warp_specialize_gemm_with_multicasting[
             pipeline_stages = config.num_pipeline_stages,
             partitioned_multicast = config.partitioned_multicast,
             elementwise_lambda_fn=elementwise_lambda_fn,
-            use_stmtx=use_stmtx,
         ]
 
         ctx.enqueue_function[kernel](
@@ -1502,7 +1496,6 @@ fn warp_specialize_gemm_with_multicasting[
             pipeline_stages = config.num_pipeline_stages,
             partitioned_multicast = config.partitioned_multicast,
             elementwise_lambda_fn=elementwise_lambda_fn,
-            use_stmtx=use_stmtx,
         ]
 
         ctx.enqueue_function[kernel](
