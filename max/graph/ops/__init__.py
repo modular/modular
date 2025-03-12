@@ -30,6 +30,7 @@ from .cast import cast
 from .chunk import chunk
 from .complex import as_interleaved_complex
 from .concat import concat
+from .conditional import cond
 from .constant import constant
 from .conv import conv2d, conv3d
 from .cumsum import cumsum

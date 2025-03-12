@@ -130,7 +130,7 @@ def inplace_custom(
         operands_=[*values, current_chain],
         symbol=StringAttr.get(name, graph._context),
     )
-    graph._update_chain(out_chain._mlir_value)
+    graph._update_chain(out_chain)
 
     if parameters is not None:
         for name, param in parameters.items():
