@@ -4,6 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+"""Tensor filling utilities for `LayoutTensor` objects.
+
+This module provides functions for efficiently filling tensors with various patterns
+of values, including sequences and random distributions.
+
+The module includes:
+- Sequential value generation (`arange`)
+- Random value generation (`random`)
+"""
+
 from random import random_float64
 from sys import is_nvidia_gpu
 
@@ -22,12 +32,19 @@ fn _filler_impl[
     both compile-time and runtime layouts.
 
     Parameters:
-        dtype: The data type of the tensor.
+        dtype: The data type of the tensor elements.
         layout: The layout of the tensor.
         filler: A function that takes an index and returns a scalar value.
 
     Args:
         tensor: The tensor to fill.
+
+    Performance:
+
+        - For compile-time known layouts, the function uses parameter-time
+          loop unrolling for optimal performance.
+        - For runtime layouts, the function uses dynamic iteration.
+        - Type casting is performed to ensure type compatibility.
     """
 
     @parameter
@@ -56,11 +73,11 @@ fn arange[
     """Fills a tensor with a sequence of values.
 
     This function generates a sequence of values within the specified range
-    [start, end) with a given step, similar to numpy.arange, and fills
+    [start, end) with a given step, similar to `numpy.arange`, and fills
     the tensor with this sequence.
 
     Parameters:
-        dtype: The data type of the tensor.
+        dtype: The data type of the tensor elements.
         layout: The layout of the tensor.
 
     Args:
@@ -68,6 +85,17 @@ fn arange[
         start: The starting value of the sequence.
         step: The step size between consecutive values.
         end: The ending value of the sequence (exclusive).
+
+    Example:
+
+        ```mojo
+        from layout import Layout, LayoutTensor
+        from layout.fillers import arange
+
+        var storage = InlineArray[Scalar[DType.float32], 16]()
+        var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
+        arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
+        ```
     """
 
     @parameter
@@ -100,13 +128,28 @@ fn random[
     specified range [min, max) and fills the tensor with these values.
 
     Parameters:
-        dtype: The data type of the tensor.
+        dtype: The data type of the tensor elements.
         layout: The layout of the tensor.
 
     Args:
         tensor: The tensor to fill.
         min: The minimum value (inclusive).
         max: The maximum value (exclusive).
+
+    Constraint:
+        Not available on NVIDIA GPUs due to platform limitations.
+
+    Example:
+
+        ```mojo
+        from layout import Layout, LayoutTensor
+        from layout.fillers import random
+
+        var storage = InlineArray[Scalar[DType.float32], 16]()
+        var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
+        random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
+        ```
+        .
     """
     constrained[not is_nvidia_gpu(), "Cannot run random on the gpu"]()
 
