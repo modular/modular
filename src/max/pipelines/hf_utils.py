@@ -70,7 +70,7 @@ class HuggingFaceFile:
 
     def size(self) -> int | None:
         url = hf_hub_url(self.repo_id, self.filename, revision=self.revision)
-        metadata = get_hf_file_metadata(url, timeout=60)
+        metadata = get_hf_file_metadata(url)
         return metadata.size
 
     def exists(self) -> bool:
