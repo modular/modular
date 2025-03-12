@@ -50,10 +50,14 @@ fn block_rank_in_cluster() -> UInt32:
 fn elect_one_sync() -> Bool:
     """Elects a single thread within a warp to perform an operation.
 
-    Returns: True for the elected thread, False for all other threads in the warp.
+    Returns:
+        True for the elected thread, False for all other threads in the warp.
 
-    This primitive is useful for having a single thread perform an operation while
-    maintaining warp synchronization. Only supported on NVIDIA SM90+ GPUs.
+    Note:
+        - Only supported on NVIDIA SM90+ GPUs.
+        - Maps directly to the `elect.sync` instruction in CUDA PTX.
+        - Useful for having a single thread perform an operation while
+          maintaining warp synchronization.
     """
     constrained[
         _is_sm_9x(),

@@ -652,14 +652,39 @@ struct WGMMADescriptor[dtype: DType]:
     | BaseAddr |  0  |LeadingDim |  0  |  Stride   |  0  |Offst|    0    |Swzle|
     +----------+----+------------+----+------------+----+-----+----------+-----+
 
+    Parameters:
+        dtype: The data type of the shared memory operand. This affects memory alignment
+               and access patterns for the descriptor.
+
     See: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#asynchronous-warpgroup-level-matrix-shared-memory-layout-matrix-descriptor
     """
 
     var desc: Int64
+    """The 64-bit descriptor value that encodes shared memory layout information.
+    
+    This field stores the complete descriptor with all bit fields packed into a single 64-bit integer:
+    - Bits 0-13: Base address in shared memory (14 bits)
+    - Bits 16-29: Leading dimension stride in bytes (14 bits)
+    - Bits 32-45: Stride dimension offset in bytes (14 bits)
+    - Bits 49-51: Base offset (3 bits)
+    - Bits 62-63: Swizzle mode for memory access pattern (2 bits)
+    
+    The descriptor is used by NVIDIA Hopper architecture's warp group matrix multiply instructions
+    to efficiently access shared memory with the appropriate layout and access patterns.
+    """
 
     @implicit
     fn __init__(out self, val: Int64):
-        """Initialize descriptor with raw 64-bit value."""
+        """Initialize descriptor with raw 64-bit value.
+
+        This constructor allows creating a descriptor directly from a 64-bit integer
+        that already contains the properly formatted bit fields for the descriptor.
+
+        The implicit attribute enables automatic conversion from `Int64` to `WGMMADescriptor`.
+
+        Args:
+            val: A 64-bit integer containing the complete descriptor bit layout.
+        """
         self.desc = val
 
     @always_inline

@@ -41,14 +41,14 @@ struct ProfileBlock[enabled: Bool = False]:
         enabled: Whether profiling is enabled for this block.
     """
 
-    # Name of the profiling block used for identification in timing output
     var name: StringLiteral
+    """Name of the profiling block used for identification in timing output."""
 
-    # Source code location information for the profiling block
     var loc: _SourceLocation
+    """Source code location information for the profiling block, including file, line, and column."""
 
-    # Start time of the profiling block in nanoseconds
     var start_time: UInt
+    """Start time of the profiling block in nanoseconds, captured using perf_counter_ns()."""
 
     @always_inline
     @implicit

@@ -974,6 +974,9 @@ fn fence_proxy_tensormap_generic_sys_acquire[
     between tensor map operations and system memory. It guarantees that all previous
     memory operations are completed before subsequent tensor map accesses.
 
+    Parameters:
+        type: The data type of the tensor map object being synchronized.
+
     Args:
         ptr: Pointer to the tensor map object in system memory that needs to be synchronized.
         size: The size in bytes of the tensor map object being synchronized.
@@ -1039,7 +1042,9 @@ fn fence_mbarrier_init():
 
 @always_inline
 fn cp_async_bulk_tensor_shared_cluster_global[
-    dst_type: AnyType, mbr_type: AnyType, rank: Int
+    dst_type: AnyType,  # Type of the destination memory
+    mbr_type: AnyType,  # Type of the memory barrier
+    rank: Int,  # Dimensionality of the tensor (1, 2, or 3)
 ](
     dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
     tma_descriptor: UnsafePointer[NoneType],
@@ -1051,6 +1056,11 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     This function performs an asynchronous copy of tensor data using NVIDIA's Tensor Memory Access (TMA)
     mechanism. It supports both rank-1 and rank-2 tensors and uses cluster-level synchronization for
     efficient data movement.
+
+    Parameters:
+        dst_type: The data type of the destination memory.
+        mbr_type: The data type of the memory barrier.
+        rank: The dimensionality of the tensor (1, 2, or 3).
 
     Args:
         dst_mem: Pointer to the destination in shared memory where the tensor data will be copied.
@@ -1120,6 +1130,11 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     This function performs an optimized multicast copy operation where a single global memory read
     can be distributed to multiple CTAs' shared memories simultaneously, reducing memory bandwidth
     usage. It supports both rank-1 and rank-2 tensors and uses cluster-level synchronization.
+
+    Parameters:
+        dst_type: The data type of the destination tensor elements.
+        mbr_type: The data type of the memory barrier.
+        rank: The dimensionality of the tensor (must be 1 or 2).
 
     Args:
         dst_mem: Pointer to the destination in shared memory where the tensor data will be copied.

@@ -44,19 +44,28 @@ fn ldg[
     *,
     alignment: Int = alignof[SIMD[type, width]](),
 ](x: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
-    """Load a register variable from global state space via non-coherent cache.
+    """Load data from global memory through the non-coherent cache.
 
-    Loads a register variable from global state space through a non-coherent
-    cache. The data type must be numeric.
+    This function provides a hardware-accelerated global memory load operation
+    that uses the GPU's non-coherent cache (equivalent to CUDA's `__ldg` instruction).
+    It optimizes for read-only data access patterns.
 
     Parameters:
-        type: The type of the data to be loaded.
-        width: The width of the SIMD vector to load.
-        alignment: The alignment of the data in bytes. Defaults to the
-            alignment of the type.
+        type: The data type to load (must be numeric).
+        width: The SIMD vector width for vectorized loads.
+        alignment: Memory alignment in bytes. Defaults to natural alignment
+                  of the SIMD vector type.
+
+    Args:
+        x: Pointer to global memory location to load from.
 
     Returns:
-        The loaded register variable.
+        SIMD vector containing the loaded data.
+
+    Note:
+        - Uses invariant loads which indicate the memory won't change during kernel execution.
+        - Particularly beneficial for read-only texture-like access patterns.
+        - May improve performance on memory-bound kernels.
     """
     constrained[type.is_numeric(), "the type must be numeric"]()
     return x.load[width=width, alignment=alignment, invariant=True]()
@@ -510,6 +519,9 @@ struct Scope:
     fn write_to[W: Writer](self, mut w: W):
         """Writes the string representation of the scope to a writer.
 
+        Parameters:
+            W: The type of writer to use for output. Must implement the Writer interface.
+
         Args:
             w: The writer to write to.
         """
@@ -640,6 +652,14 @@ fn store_release[
 ](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
     """Performs an atomic store with release memory ordering semantics.
 
+    This function provides a memory barrier that ensures all previous memory operations
+    from the calling thread are visible to other threads before this store is performed.
+
+    Parameters:
+        type: The data type to store.
+        scope: Memory scope for the operation (default: Scope.SYSTEM).
+        memory: Whether to include memory side effects in constraints (default: True).
+
     Args:
         ptr: Pointer to the memory location to store to.
         value: Value to store.
@@ -648,6 +668,7 @@ fn store_release[
         - Only supported on NVIDIA GPUs.
         - Maps directly to PTX st.release instruction.
         - Ensures all previous memory operations complete before this store.
+        - Critical for implementing synchronization primitives.
     """
     constrained[
         is_nvidia_gpu(), "store_release is not currently supported on AMD GPUs"
@@ -673,16 +694,25 @@ fn load_acquire[
 ](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
     """Performs an atomic load operation with acquire memory ordering semantics.
 
+    This function provides a memory barrier that ensures no subsequent memory operations
+    from the calling thread are executed until after this load completes.
+
+    Parameters:
+        type: The data type to load.
+        scope: Memory scope for the operation (default: Scope.SYSTEM).
+        memory: Whether to include memory side effects in constraints (default: True).
+
     Args:
         ptr: Pointer to the memory location to load from.
 
     Returns:
-        The loaded value
+        The loaded value.
 
     Note:
         - Only supported on NVIDIA GPUs.
         - Maps directly to PTX ld.acquire instruction.
         - Ensures subsequent memory operations don't execute until after load.
+        - Critical for implementing synchronization primitives.
     """
     constrained[
         is_nvidia_gpu(), "load_acquire is not currently supported on AMD GPUs"
@@ -708,15 +738,23 @@ fn store_volatile[
 ](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
     """Performs a volatile store operation that cannot be optimized away.
 
+    This function guarantees that the store operation will be performed exactly as
+    specified, without being reordered or optimized away by the compiler.
+
+    Parameters:
+        type: The data type to store.
+        memory: Whether to include memory side effects in constraints (default: True).
+
     Args:
         ptr: Pointer to the memory location to store to.
         value: Value to store.
 
     Note:
-        - Only supported on NVIDIA GPUs
-        - Maps directly to PTX st.volatile instruction
-        - Prevents compiler optimization of the store operation
-        - Useful for memory-mapped I/O or synchronization primitives
+        - Only supported on NVIDIA GPUs.
+        - Maps directly to PTX st.volatile instruction.
+        - Prevents compiler optimization of the store operation.
+        - Useful for memory-mapped I/O or synchronization primitives.
+        - May have performance implications compared to regular stores.
     """
     constrained[
         is_nvidia_gpu(), "store_volatile is not currently supported on AMD GPUs"
@@ -737,6 +775,13 @@ fn load_volatile[
 ](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
     """Performs a volatile load operation that cannot be optimized away.
 
+    This function guarantees that the load operation will be performed exactly as
+    specified, without being reordered or optimized away by the compiler.
+
+    Parameters:
+        type: The data type to load.
+        memory: Whether to include memory side effects in constraints (default: True).
+
     Args:
         ptr: Pointer to the memory location to load from.
 
@@ -744,10 +789,11 @@ fn load_volatile[
         The loaded value.
 
     Note:
-        - Only supported on NVIDIA GPUs
-        - Maps directly to PTX ld.volatile instruction
-        - Prevents compiler optimization of the load operation
+        - Only supported on NVIDIA GPUs.
+        - Maps directly to PTX ld.volatile instruction.
+        - Prevents compiler optimization of the load operation.
         - Useful for memory-mapped I/O or synchronization primitives.
+        - May have performance implications compared to regular loads.
     """
     constrained[
         is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
@@ -774,18 +820,45 @@ fn make_buffer_resource[
     gds_ptr: UnsafePointer[Scalar[type], **_],
     num_records: Int = Int(UInt32.MAX),
 ) -> _buffer_resource:
-    """Creates a 128-bit buffer constant for buffer IO.
+    """Creates a 128-bit buffer resource descriptor for AMD GPU buffer operations.
 
-    Creates a 128-bit buffer constant struct for buffer IO
+    This function constructs a 128-bit buffer resource descriptor used by AMD GPUs
+    for buffer load/store operations. The descriptor contains information about
+    the memory location, size, and access properties needed by the hardware to
+    perform memory operations.
 
     Parameters:
-        type: The type of the data to be loaded.
+        type: The data type of elements in the buffer.
 
-    Arg:
-        gds_ptr: Global memory base address.
-        num_records: Reads with gds_offset > num_records return 0. Defaults
-        to the maximum number of elements UInt32.MAX.
+    Args:
+        gds_ptr: Global memory base address pointer to the start of the buffer.
+        num_records: Maximum number of records that can be accessed through this
+            resource descriptor. Reads with offsets beyond this value return 0.
+            Defaults to UInt32.MAX for maximum possible range.
 
+    Returns:
+        A 128-bit buffer resource descriptor as a SIMD[DType.uint32, 4].
+
+    Notes:
+
+        - Only supported on AMD GPUs.
+        - The descriptor follows AMD's hardware-specific format:
+          - Bits 0-63: Base address
+          - Bits 64-95: Number of records (size)
+          - Bits 96-127: Flags controlling access properties
+        - Used with buffer_load and buffer_store operations.
+        - Performance-critical for optimized memory access patterns on AMD GPUs.
+
+    Example:
+
+        ```mojo
+        from gpu.intrinsics import make_buffer_resource
+
+        var ptr = UnsafePointer[Scalar[DType.float32]].alloc(1024)
+        var resource = make_buffer_resource[DType.float32](ptr, 1024)
+        # Use resource with buffer_load/buffer_store operations
+        ```
+        .
     """
 
     constrained[
@@ -954,17 +1027,28 @@ fn buffer_load_store_lds[
 fn buffer_load[
     type: DType, width: Int
 ](src_resource: _buffer_resource, gds_offset: Int32) -> SIMD[type, width]:
-    """Loads a register variable from global memory.
+    """Loads data from global memory into a SIMD register.
 
-    Copies from global memory to register.
+    This function provides a hardware-accelerated global memory load operation
+    that maps directly to the AMDGPU buffer_load instruction. It efficiently
+    transfers data from global memory to registers.
 
     Parameters:
-        type: The type of the data to be loaded.
-        width: The width of the SIMD vector to load.
+        type: The data type to load.
+        width: The SIMD vector width for vectorized loads.
 
     Args:
-        src_resource: Buffer resource descriptor from make_buffer_resource.
-        gds_offset: Global memory offset.
+        src_resource: Buffer resource descriptor created by make_buffer_resource().
+        gds_offset: Offset in elements (not bytes) from the base address in the resource.
+
+    Returns:
+        SIMD vector containing the loaded data.
+
+    Note:
+        - Only supported on AMD GPUs.
+        - Uses non-glc loads by default (can hit L1 cache and persist across wavefronts).
+        - Supports widths that map to 1, 2, 4, 8, or 16 byte loads.
+        - Maps directly to llvm.amdgcn.raw.buffer.load intrinsics.
     """
 
     constrained[

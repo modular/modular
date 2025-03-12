@@ -506,6 +506,32 @@ fn load_matrix_b_amd[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.float16, 4]:
+    """Loads a tile of matrix B from memory to registers for AMD FP16 tensor core operations.
+
+    This function loads 4 consecutive FP16 values per thread from matrix B in a pattern
+    optimized for AMD GPU tensor core operations. Each thread loads values based on its
+    position within the warp.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        b_ptr: Pointer to matrix B data in memory (FP16 format).
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix B (stride between rows).
+
+    Returns:
+        SIMD vector containing 4 FP16 values loaded from matrix B.
+
+    Performance:
+
+        - Optimized for AMD GPU memory access patterns.
+        - Uses thread ID to determine which elements to load.
+        - Loads 4 consecutive elements per thread for efficient vectorization.
+    """
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4
@@ -529,6 +555,32 @@ fn load_matrix_b_amd[
     tile_col: Int,
     ldm: Int,
 ) -> SIMD[DType.bfloat16, 4]:
+    """Loads a tile of matrix B from memory to registers for AMD BF16 tensor core operations.
+
+    This function loads 4 consecutive BF16 values per thread from matrix B in a pattern
+    optimized for AMD GPU tensor core operations. Each thread loads values based on its
+    position within the warp.
+
+    Parameters:
+        m: Number of rows in the output matrix tile.
+        n: Number of columns in the output matrix tile.
+        k: Inner dimension for matrix multiplication.
+
+    Args:
+        b_ptr: Pointer to matrix B data in memory (BF16 format).
+        tile_row: Starting row index of the tile.
+        tile_col: Starting column index of the tile.
+        ldm: Leading dimension of matrix B (stride between rows).
+
+    Returns:
+        SIMD vector containing 4 BF16 values loaded from matrix B.
+
+    Performance:
+
+        - Optimized for AMD GPU memory access patterns.
+        - Uses thread ID to determine which elements to load.
+        - Loads 4 consecutive elements per thread for efficient vectorization.
+    """
     var lane = lane_id()
     var thread_x = lane & 15
     var thread_y = lane >> 4

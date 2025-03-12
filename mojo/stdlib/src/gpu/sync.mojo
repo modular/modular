@@ -36,6 +36,26 @@ alias _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
 
 @always_inline("nodebug")
 fn named_barrier[num_threads: Int32, id: Int32 = 0]():
+    """Performs a named synchronization barrier at the block level.
+
+    This function creates a synchronization point using a specific barrier ID, allowing
+    for multiple independent barriers within a thread block. All threads in the block
+    must execute this function with the same barrier ID and thread count before any
+    thread can proceed past the barrier.
+
+    Parameters:
+        num_threads: The number of threads that must reach the barrier before any can proceed.
+        id: The barrier identifier (0-16). Default is 0.
+
+    Notes:
+
+        - Only supported on NVIDIA GPUs.
+        - Maps directly to the `nvvm.barrier` instruction.
+        - Useful for fine-grained synchronization when different subsets of threads
+          need to synchronize independently.
+        - The barrier ID must not exceed 16.
+        - All threads participating in the barrier must specify the same num_threads value.
+    """
     constrained[id <= 16, "barrier id should not exceed 16"]()
     constrained[
         is_nvidia_gpu(), "named barrier is only supported by NVIDIA GPUs"
@@ -126,15 +146,46 @@ struct AMDScheduleBarrierMask:
 
     @implicit
     fn __init__(out self, value: Int):
+        """Initializes an `AMDScheduleBarrierMask` from an integer value.
+
+        This implicit constructor allows creating a barrier mask directly from an integer,
+        which is useful for combining multiple mask flags using bitwise operations.
+
+        Args:
+            value: The integer value to use for the barrier mask.
+        """
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
+        """Compares two `AMDScheduleBarrierMask` instances for equality.
+
+        Args:
+            other: The other `AMDScheduleBarrierMask` to compare with.
+
+        Returns:
+            True if the masks have the same value, False otherwise.
+        """
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
+        """Compares two `AMDScheduleBarrierMask` instances for inequality.
+
+        Args:
+            other: The other `AMDScheduleBarrierMask` to compare with.
+
+        Returns:
+            True if the masks have different values, False otherwise.
+        """
         return not (self == other)
 
     fn __str__(self) -> String:
+        """Returns a string representation of the `AMDScheduleBarrierMask`.
+
+        Converts the mask to a human-readable string based on its value.
+
+        Returns:
+            A string representation of the mask, or aborts if the value is invalid.
+        """
         if self == Self.NONE:
             return "NONE"
         elif self == Self.ALL_ALU:
@@ -163,6 +214,11 @@ struct AMDScheduleBarrierMask:
             return abort[String]("invalid AMDScheduleBarrierMask value")
 
     fn __int__(self) -> Int:
+        """Converts the `AMDScheduleBarrierMask` to an integer.
+
+        Returns:
+            The integer value of the mask, which can be used with low-level APIs.
+        """
         return Int(self._value)
 
 
@@ -306,6 +362,10 @@ fn async_copy_arrive[
     from the executing thread are tracked by the memory barrier at the specified location.
     Only supported on NVIDIA GPUs.
 
+    Parameters:
+        type: The data type stored at the barrier location.
+        address_space: The memory address space where the barrier is located.
+
     Args:
         address: Pointer to the memory barrier object location.
     """
@@ -333,6 +393,9 @@ fn mbarrier_init[
     Sets up a memory barrier in shared memory that will be used to synchronize
     the specified number of threads. Only supported on NVIDIA GPUs.
 
+    Parameters:
+        type: The data type stored at the barrier location.
+
     Args:
         shared_mem: Pointer to shared memory location for the barrier.
         num_threads: Number of threads that will synchronize on this barrier.
@@ -359,6 +422,9 @@ fn mbarrier_arrive[
 
     Records that the calling thread has reached the barrier synchronization point.
     Only supported on NVIDIA GPUs.
+
+    Parameters:
+        type: The data type stored at the barrier location.
 
     Args:
         shared_mem: Pointer to the shared memory barrier.
@@ -393,6 +459,9 @@ fn mbarrier_test_wait[
     Non-blocking check to see if all participating threads have reached the barrier.
     Only supported on NVIDIA GPUs.
 
+    Parameters:
+        type: The data type stored at the barrier location.
+
     Args:
         shared_mem: Pointer to the shared memory barrier.
         state: Expected state of the memory barrier.
@@ -411,12 +480,12 @@ fn mbarrier_test_wait[
             False,
             "The mbarrier_test_wait function is not supported on AMD GPUs.",
         ]()
-        return abort[Int]("function not available")
+        return abort[Bool]("function not available")
 
 
 @always_inline("nodebug")
 fn mbarrier_arrive_expect_tx_shared[
-    type: AnyType
+    type: AnyType  # The type of the memory barrier
 ](
     addr: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_],
     tx_count: Int32,
@@ -425,6 +494,9 @@ fn mbarrier_arrive_expect_tx_shared[
 
     Updates the current phase of the memory barrier to track completion of
     additional asynchronous transactions. Only supported on NVIDIA GPUs.
+
+    Parameters:
+        type: The type of the memory barrier.
 
     Args:
         addr: Pointer to the shared memory barrier.
@@ -448,7 +520,7 @@ fn mbarrier_arrive_expect_tx_shared[
 
 @always_inline("nodebug")
 fn mbarrier_try_wait_parity_shared[
-    type: AnyType
+    type: AnyType  # The type of the memory barrier
 ](
     addr: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_],
     phase: Int32,
@@ -458,6 +530,9 @@ fn mbarrier_try_wait_parity_shared[
 
     Waits for the shared memory barrier to complete the specified phase,
     or until the timeout period expires. Only supported on NVIDIA GPUs.
+
+    Parameters:
+        type: The type of the memory barrier.
 
     Args:
         addr: Pointer to the shared memory barrier.
