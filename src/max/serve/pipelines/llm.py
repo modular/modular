@@ -454,9 +454,10 @@ def batch_config_from_pipeline_config(
             batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
         )
-    elif (
-        pipeline_config.kv_cache_config.cache_strategy == KVCacheStrategy.PAGED
-    ):
+    elif pipeline_config.kv_cache_config.cache_strategy in [
+        KVCacheStrategy.PAGED,
+        KVCacheStrategy.PAGED_FA3_FALLBACK,
+    ]:
         batch_config = TokenGeneratorPipelineConfig.paged(
             tg_batch_size=pipeline_config.max_batch_size,
             ce_batch_size=min(
