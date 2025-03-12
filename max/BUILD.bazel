@@ -33,6 +33,7 @@ stubfiles = ["stubfiles/_core.pyi"] + ["stubfiles/" + dir + "/__init__.pyi" for 
 modular_genrule(
     name = "_core.stubfiles",
     srcs = [
+        ":patterns.nb",
         # To ensure our linting + formatting aligns with the rest of our project
         "//:pyproject.toml",
     ],
@@ -40,7 +41,7 @@ modular_genrule(
     cmd = """
     set -e
     export folder=$(dirname $(location stubfiles/_core.pyi))
-    $(execpath {stubgen}) -r -m max._core -O $folder --quiet
+    $(execpath {stubgen}) -r -m max._core -O $folder -p $(location :patterns.nb) --include-private --quiet
 
     # Fix missing `typing` imports, since these are manually replaced
     # These will get merged with other `typing` imports during formatting.

@@ -8,7 +8,11 @@
 
 import enum
 
+import numpy
+
 class DType(enum.Enum):
+    """The tensor data type."""
+
     bool = 1
 
     int8 = 135
@@ -45,45 +49,53 @@ class DType(enum.Enum):
 
     float8_e5m2fnuz = 69
 
-    unknown = 0
+    _unknown = 0
 
     @property
-    def size_in_bytes(self) -> int: ...
+    def size_in_bytes(self) -> int:
+        """Returns the size of the dtype in bytes."""
 
-bfloat16: DType = DType.bfloat16
+    def is_integral(self) -> __builtins__.bool:
+        """Returns true if the dtype is an integer."""
 
-bool: DType = DType.bool
+    def is_float(self) -> __builtins__.bool:
+        """Returns true if the dtype is floating point."""
 
-float16: DType = DType.float16
+    def is_float8(self) -> __builtins__.bool:
+        """Returns true if the dtype is any variant of float8."""
 
-float32: DType = DType.float32
+    def is_half(self) -> __builtins__.bool:
+        """Returns true if the dtype is half-precision floating point."""
 
-float64: DType = DType.float64
+    def to_numpy(self) -> numpy.dtype:
+        """
+        Converts this ``DType`` to the corresponding NumPy dtype.
 
-float8_e4m3: DType = DType.float8_e4m3
+        Returns:
+            DType: The corresponding NumPy dtype object.
 
-float8_e4m3fn: DType = DType.float8_e4m3fn
+        Raises:
+            ValueError: If the dtype is not supported.
+        """
 
-float8_e4m3fnuz: DType = DType.float8_e4m3fnuz
+    @classmethod
+    def from_numpy(cls, dtype: numpy.dtype) -> DType:
+        """
+        Converts a NumPy dtype to the corresponding DType.
 
-float8_e5m2: DType = DType.float8_e5m2
+        Args:
+            dtype (np.dtype): The NumPy dtype to convert.
 
-float8_e5m2fnuz: DType = DType.float8_e5m2fnuz
+        Returns:
+            DType: The corresponding DType enum value.
 
-int16: DType = DType.int16
+        Raises:
+            ValueError: If the input dtype is not supported.
+        """
 
-int32: DType = DType.int32
+    @property
+    def align(self) -> int:
+        """Returns the alignment of the dtype."""
 
-int64: DType = DType.int64
-
-int8: DType = DType.int8
-
-uint16: DType = DType.uint16
-
-uint32: DType = DType.uint32
-
-uint64: DType = DType.uint64
-
-uint8: DType = DType.uint8
-
-unknown: DType = DType.unknown
+    @property
+    def _mlir(self) -> str: ...

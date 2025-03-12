@@ -91,14 +91,14 @@ def _map_execute_kwarg(
             return _TensorData(
                 value.data_ptr(),
                 list(value.shape),
-                DType[str(value.dtype).removeprefix("torch.")]._to(),
+                DType[str(value.dtype).removeprefix("torch.")],
             )
         if isinstance(value, np.ndarray):
             keep_referenced[value.ctypes.data] = value
             return _TensorData(
                 value.ctypes.data,
                 list(value.shape),
-                DType[str(value.dtype)]._to(),
+                DType[str(value.dtype)],
             )
         # Just pass the value through if it's not a tensor/array.
         return value
@@ -457,7 +457,7 @@ class TensorSpec:
             dtype: The tensor data type.
             name: The tensor name.
         """
-        self._impl = _TensorSpec(shape, dtype._to(), name)
+        self._impl = _TensorSpec(shape, dtype, name)
 
     @classmethod
     def _init(cls, _core_tensor_spec):
@@ -489,7 +489,7 @@ class TensorSpec:
     @property
     def dtype(self) -> DType:
         """A tensor data type."""
-        return DType._from(self._impl.dtype)
+        return self._impl.dtype
 
     @property
     def name(self) -> str:
@@ -516,7 +516,7 @@ class TorchInputSpec:
             dtype: The input data type.
             device: The device on which this tensor should be loaded.
         """
-        self._impl = _TorchInputSpec(shape, dtype._to(), device)
+        self._impl = _TorchInputSpec(shape, dtype, device)
 
     @classmethod
     def _init(cls, _core_torch_load_spec):
@@ -549,7 +549,7 @@ class TorchInputSpec:
     @property
     def dtype(self) -> DType:
         """A torch input tensor data type."""
-        return DType._from(self._impl.dtype)
+        return self._impl.dtype
 
     @property
     def device(self) -> str:
