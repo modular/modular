@@ -340,6 +340,7 @@ struct LayoutTensor[
         alignment: Alignment of the data pointer.
 
     Example:
+
     ```mojo
     from layout import Layout, LayoutTensor
 
@@ -2115,6 +2116,7 @@ struct LayoutTensor[
 
         Example:
             For a 4×4 tensor with values:
+
             ```
             [1 2 3 4]
             [2 3 4 5]
@@ -2123,6 +2125,7 @@ struct LayoutTensor[
             ```
 
             `tile[2, 2](1, 0)` will extract the tile:
+
             ```
             [5 4]
             [1 1]
@@ -2276,7 +2279,8 @@ struct LayoutTensor[
             - The implementation automatically selects between static and dynamic tiling
               based on the tensor's layout properties.
 
-        Example Usage:
+        Example:
+
             ```mojo
             var iter = tensor.tiled_iterator[16, 16, axis=0](0, 0)
             for i in range(num_tiles_along_axis):
@@ -2633,12 +2637,14 @@ struct LayoutTensor[
 
         Example:
             For a 4×4 tensor distributed across 4 threads in a 2×2 grid:
+
             - Thread 0 might get the top-left quadrant
             - Thread 1 might get the top-right quadrant
             - Thread 2 might get the bottom-left quadrant
             - Thread 3 might get the bottom-right quadrant
 
             If axis=0 is specified with the same setup:
+
             - Thread 0 and Thread 2 would get the same data (left half)
             - Thread 1 and Thread 3 would get the same data (right half)
 
@@ -3025,6 +3031,7 @@ struct LayoutTensor[
 
         Example:
             For a 4×4 tensor with values:
+
             ```
             [1 2 3 4]
             [5 6 7 8]
@@ -3035,7 +3042,9 @@ struct LayoutTensor[
             ```mojo
             slice[Slice(1, 3), Slice(0, 2)]
             ```
+
             will extract:
+
             ```
             [5 6]
             [9 10]
@@ -3289,12 +3298,14 @@ struct LayoutTensor[
 
         Example:
             For a 2×3 tensor with values:
+
             ```
             [1 2 3]
             [4 5 6]
             ```
 
             `transpose()` will produce a 3×2 tensor:
+
             ```
             [1 4]
             [2 5]
@@ -3567,6 +3578,7 @@ struct LayoutTensor[
                   of elements as this tensor.
 
         Example:
+
             ```mojo
             from layout import LayoutTensor, Layout
 
@@ -3672,6 +3684,7 @@ struct LayoutTensor[
             base_offset: Base offset for swizzling calculations.
 
         Example:
+
             ```mojo
             from layout import LayoutTensor, Layout, AddressSpace
             var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
@@ -3849,6 +3862,7 @@ struct LayoutTensor[
             The tensor itself (self), allowing for method chaining.
 
         Example:
+
             ```mojo
             from layout import LayoutTensor, Layout
             var tensor = LayoutTensor[DType.float32, Layout((3, 4))]()
@@ -3904,6 +3918,7 @@ struct LayoutTensor[
             writer: The writer instance to write the formatted output to.
 
         Example:
+
             ```mojo
             from layout import LayoutTensor, Layout
             var tensor = LayoutTensor[DType.float32, Layout((2, 3))]()
@@ -3912,6 +3927,7 @@ struct LayoutTensor[
             ```
 
             Output for a 2×3 tensor:
+
             ```
             [[1.0, 1.0, 1.0],
              [1.0, 1.0, 1.0]]
@@ -3997,6 +4013,7 @@ struct LayoutTensor[
             A SIMD vector containing the element(s) at the specified indices.
 
         Example:
+
             ```mojo
             from layout import LayoutTensor, Layout
             var tensor = LayoutTensor[DType.float32, Layout((3, 4))]()
@@ -4053,6 +4070,7 @@ struct LayoutTensor[
                 as the tensor's element type.
 
         Example:
+
             ```mojo
             from layout import LayoutTensor, Layout
             var tensor = LayoutTensor[DType.float32, Layout((3, 4))]()
@@ -4133,6 +4151,7 @@ fn stack_allocation_like[
         A new tensor allocated on the stack with the same layout as the input tensor.
 
     Example:
+
         ```mojo
         from layout import LayoutTensor, Layout
         from layout.layout_tensor import stack_allocation_like
@@ -4181,6 +4200,7 @@ struct ThreadScope:
               the same warp participate in the operation.
 
     Example:
+
         ```mojo
         from layout.layout_tensor import copy_dram_to_sram, ThreadScope
 
@@ -4312,6 +4332,7 @@ fn copy_dram_to_sram[
         src: The source tensor, which must be in global or generic memory (DRAM).
 
     Example:
+
         ```mojo
         from layout import LayoutTensor, Layout
         var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
@@ -4519,6 +4540,7 @@ fn cp_async_k_major[
         src: The source tensor, which must be in global or generic memory (DRAM).
 
     Example:
+
         ```mojo
         from layout import LayoutTensor, Layout
         var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
@@ -4632,6 +4654,7 @@ fn cp_async_mn_major[
         src: The source tensor, which must be in global or generic memory (DRAM).
 
     Example:
+
         ```mojo
         from layout import LayoutTensor, Layout
         var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
@@ -4802,6 +4825,7 @@ fn copy_dram_to_sram[
         src: The source tensor, which must be in global or generic memory (DRAM).
 
     Example:
+
         ```mojo
         from layout import LayoutTensor, Layout
         var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
@@ -4875,6 +4899,7 @@ fn copy_dram_to_sram_async[
         src: The source tensor, which must be in global or generic memory (DRAM).
 
     Example:
+
         ```mojo
         from layout import LayoutTensor, Layout
         var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
@@ -5113,6 +5138,7 @@ fn copy_sram_to_dram[
         src: The source tensor, which must be in shared memory (SRAM).
 
     Example:
+
         ```mojo
         from layout import LayoutTensor, Layout
         var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
@@ -5319,6 +5345,7 @@ fn copy_sram_to_local[
         src: The source tensor, which must be in shared memory (SRAM).
 
     Example:
+
         ```mojo
         from layout import LayoutTensor, Layout
         var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
@@ -5583,6 +5610,7 @@ fn copy_local_to_sram[
         src: The source tensor, which must be in local memory (registers).
 
     Example:
+
         ```mojo
         from layout import LayoutTensor, Layout
         var register_data = LayoutTensor[DType.float32, Layout((16, 16)),
@@ -5725,6 +5753,7 @@ fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
              data type.
 
     Example:
+
         ```
         var src_reg = LayoutTensor[DType.float32, Layout((16, 8)),
                                   address_space=AddressSpace.LOCAL]()
