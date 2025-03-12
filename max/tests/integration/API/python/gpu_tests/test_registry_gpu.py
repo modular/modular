@@ -465,7 +465,7 @@ def test_registry__update_cache_strategy():
     # such this should change to a support strategy automatically.
     pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(config)
     assert (
-        pipeline_config.kv_cache_config.cache_strategy
+        pipeline_config.model_config.kv_cache_config.cache_strategy
         == KVCacheStrategy.CONTINUOUS
     )
 

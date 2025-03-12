@@ -179,9 +179,9 @@ TEST_COMMANDS = [
         expected={
             "model_config": {
                 "trust_remote_code": False,
-            },
-            "kv_cache_config": {
-                "cache_strategy": KVCacheStrategy.NAIVE,
+                "kv_cache_config": {
+                    "cache_strategy": KVCacheStrategy.NAIVE,
+                },
             },
         },
         valid=True,
@@ -254,9 +254,9 @@ TEST_COMMANDS = [
                     Path("model2.safetensors"),
                     Path("model3.safetensors"),
                 ],
-            },
-            "kv_cache_config": {
-                "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
+                "kv_cache_config": {
+                    "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
+                },
             },
         },
         valid=True,
@@ -284,9 +284,9 @@ TEST_COMMANDS = [
                     Path("model3.safetensors"),
                 ],
                 "device_specs": [DeviceSpec.accelerator(id=0)],
-            },
-            "kv_cache_config": {
-                "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
+                "kv_cache_config": {
+                    "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
+                },
             },
         },
         valid=True,
@@ -315,19 +315,20 @@ def testing(
             assert hasattr(pipeline_config, attr_name)
             test_value = getattr(pipeline_config, attr_name)
 
-            if isinstance(test_value, str) and test_value in (
-                "model_config",
-                "kv_cache_config",
-                "profiling_config",
-            ):
-                test_value = getattr(test_value, attr_name)
-
             if isinstance(expected_value, dict):
                 # Recursively check nested dictionaries
-                for k, v in expected_value.items():
-                    assert hasattr(test_value, k)
-                    nested_test_value = getattr(test_value, k)
-                    assert nested_test_value == v
+                for key, value in expected_value.items():
+                    assert hasattr(test_value, key)
+                    nested_test_value = getattr(test_value, key)
+
+                    if key == "kv_cache_config":
+                        # Handle nested kv_cache_config
+                        for kv_key, kv_value in value.items():
+                            assert hasattr(nested_test_value, kv_key)
+                            kv_test_value = getattr(nested_test_value, kv_key)
+                            assert kv_test_value == kv_value
+                    else:
+                        assert nested_test_value == value
             else:
                 assert test_value == expected_value
 
@@ -340,19 +341,22 @@ def testing(
                 assert hasattr(pipeline_config, attr_name)
                 test_value = getattr(pipeline_config, attr_name)
 
-                if isinstance(test_value, str) and test_value in (
-                    "model_config",
-                    "kv_cache_config",
-                    "profiling_config",
-                ):
-                    test_value = getattr(test_value, attr_name)
-
                 if isinstance(expected_value, dict):
                     # Recursively check nested dictionaries
-                    for k, v in expected_value.items():
-                        assert hasattr(test_value, k)
-                        nested_test_value = getattr(test_value, k)
-                        assert nested_test_value == v
+                    for key, value in expected_value.items():
+                        assert hasattr(test_value, key)
+                        nested_test_value = getattr(test_value, key)
+
+                        if key == "kv_cache_config":
+                            # Handle nested kv_cache_config
+                            for kv_key, kv_value in value.items():
+                                assert hasattr(nested_test_value, kv_key)
+                                kv_test_value = getattr(
+                                    nested_test_value, kv_key
+                                )
+                                assert kv_test_value == kv_value
+                        else:
+                            assert nested_test_value == value
                 else:
                     assert test_value == expected_value
 

@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 from max.driver import DeviceSpec, scan_available_devices
 from max.engine import GPUProfilingMode
-from max.graph.weights import load_weights
 from max.pipelines import (
     KVCacheConfig,
     MAXModelConfig,
@@ -56,9 +55,9 @@ def retrieve_mock_text_generation_pipeline(
         model_path="HuggingFaceTB/SmolLM-135M-Instruct",
         device_specs=device_specs,
         quantization_encoding=SupportedEncoding.float32,
-    )
-    mock_config.kv_cache_config = KVCacheConfig(
-        cache_strategy=KVCacheStrategy.MODEL_DEFAULT,
+        _kv_cache_config=KVCacheConfig(
+            cache_strategy=KVCacheStrategy.MODEL_DEFAULT,
+        ),
     )
 
     mock_config.eos_prob = eos_prob
