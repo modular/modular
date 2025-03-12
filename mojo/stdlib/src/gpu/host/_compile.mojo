@@ -10,12 +10,14 @@ import tempfile
 from collections import Optional
 from pathlib import Path
 from sys.info import _get_arch
+from sys.ffi import external_call
 
 from compile import Info, compile_info, get_linkage_name
 
 from .info import A100, DEFAULT_GPU_ARCH
 from .info import Info as HardwareInfo
 from .info import _get_info_from_target
+from collections.string import StaticString
 
 # ===-----------------------------------------------------------------------===#
 # Targets
@@ -119,9 +121,24 @@ fn _ptxas_compile[
 ](
     asm: String, *, options: String = "", output_file: Optional[Path] = None
 ) raises -> String:
-    alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
+    # Try to find the ptxas binary in the modular config file. This should
+    # always be present in the modular build.
+    var ptxas_path_str_ptr = external_call[
+        "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
+    ](StaticString(".ptxas_path"))
+
+    # In the offchance that the ptxas path is not present, then throw an error.
+    if not ptxas_path_str_ptr:
+        raise String(
+            "the `ptxas` binary does not exist in the Modular config file."
+        )
+
+    # Convert the ptxas path to a Path object and check if it exists.
+    var ptxas_path = Path(String._from_bytes(ptxas_path_str_ptr))
     if not ptxas_path.exists():
         raise String("the `ptxas` binary does not exist in '", ptxas_path, "'")
+
+    # Compile the PTX code to an ELF file. Here we care about the diagnostics.
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         var ptx_file = Path(tmpdir) / "output.ptx"
         var elf_file = Path(tmpdir) / "output.elf"
@@ -131,7 +148,7 @@ fn _ptxas_compile[
                 ptxas_path,
                 " --gpu-name ",
                 _get_arch[target](),
-                " -O3 ",
+                " -O4 ",
                 ptx_file,
                 " ",
                 options,
