@@ -17,12 +17,13 @@ import logging
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import cast
+from typing import Optional, cast
 
 import numpy as np
 from max.driver import Device, Tensor
+from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph.weights import SafetensorWeights
+from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -99,6 +100,8 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -107,6 +110,8 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             encoding,
             devices,
             kv_cache_config,
+            weights,
+            adapter,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
@@ -229,14 +234,14 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
     @classmethod
     def get_kv_params(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> KVCacheParams:
         return KVCacheParams(
             page_size=kv_cache_config.kv_cache_page_size,
-            dtype=pipeline_config.cache_dtype,
+            dtype=cache_dtype,
             n_kv_heads=huggingface_config.text_config.num_key_value_heads,
             head_dim=huggingface_config.text_config.head_dim,
             cache_strategy=kv_cache_config.cache_strategy,
@@ -269,10 +274,10 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
     ) -> KVCacheManager:
         return load_kv_manager(
             params=self.get_kv_params(
-                self.pipeline_config,
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -295,14 +300,15 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         devices: list[Device],
         huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
-                pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -315,7 +321,10 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             devices=devices,
         )
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
+    def load_model(
+        self,
+        session: InferenceSession,
+    ) -> tuple[Model, Model]:
         if self.pipeline_config.enable_echo:
             msg = "Pixtral model does not currently implement enable echo."
             raise ValueError(msg)
@@ -329,89 +338,64 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
-        weights = self.pipeline_config.load_weights()
-
-        if not isinstance(weights, SafetensorWeights):
+        if not isinstance(self.weights, SafetensorWeights):
             msg = (
                 "only safetensors weights are currently supported in Pixtral"
                 " models."
             )
             raise ValueError(msg)
 
-        self._weights = weights
+        def build_and_compile_model(build, label):
+            logger.info(f"Building and compiling {label} model...")
+            graph = build()
+            before = time.perf_counter()
+            model = session.load(
+                graph,
+                weights_registry=self.weights.allocated_weights,
+            )
+            after = time.perf_counter()
+            logger.info(
+                f"Building and compiling {label} model took {after - before:.6f} seconds"
+            )
+            return model
 
-        if serialized_path := self.pipeline_config.serialized_model_path:
-            # Hydrate all weights to be referenced by the serialized path.
-            weights_registry = {}
-            for name, weight in self._weights.items():
-                weights_registry[name] = weight.raw_tensor()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            build = lambda: _build_vision_graph(
+                pipeline_config=self.pipeline_config,
+                weights=self.weights,
+                huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
+            )
+            vision_model_future = executor.submit(
+                build_and_compile_model, build, "vision"
+            )
 
-            def serialized_load(serialized_path):
-                logger.info("Loading serialized model from %s", serialized_path)
-                model = session.load(
-                    f"{serialized_path}", weights_registry=weights_registry
-                )
-                return model
+            assert isinstance(self.weights, SafetensorWeights), (
+                "weights provided must be SafetensorWeights"
+            )
 
-            vision_model = serialized_load(f"{serialized_path}.vision")
-            text_model = serialized_load(f"{serialized_path}.text")
-
-        else:
-
-            def build_and_compile_model(build, label, export_path=None):
-                logger.info(f"Building and compiling {label} model...")
-                graph = build()
-                before = time.perf_counter()
-                model = session.load(
-                    graph,
-                    weights_registry=self._weights.allocated_weights,
-                )
-                after = time.perf_counter()
-                logger.info(
-                    f"Building and compiling {label} model took {after - before:.6f} seconds"
-                )
-                if export_path:
-                    mef_path = f"{export_path}.{label}"
-                    logger.info(
-                        f"Exporting serialized {label} model to {mef_path}"
-                    )
-                    model._export_mef(mef_path)
-                return model
-
-            export_path = self.pipeline_config.save_to_serialized_model_path
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                build = lambda: _build_vision_graph(
-                    pipeline_config=self.pipeline_config,
-                    weights=self._weights,
+            build = lambda: _build_text_graph(
+                pipeline_config=self.pipeline_config,
+                weights=self.weights,
+                max_seq_len=self.calculate_max_seq_len(
+                    self.pipeline_config,
                     huggingface_config=self.huggingface_config,
-                    dtype=self.dtype,
-                )
-                vision_model_future = executor.submit(
-                    build_and_compile_model, build, "vision", export_path
-                )
-
-                build = lambda: _build_text_graph(
-                    pipeline_config=self.pipeline_config,
-                    weights=self._weights,
-                    max_seq_len=self.calculate_max_seq_len(
-                        self.pipeline_config,
-                        huggingface_config=self.huggingface_config,
-                    ),
-                    kv_params=self.get_kv_params(
-                        self.pipeline_config,
-                        huggingface_config=self.huggingface_config,
-                        n_devices=len(self.devices),
-                        kv_cache_config=self.kv_cache_config,
-                    ),
-                    kv_manager=self.kv_manager,
+                ),
+                kv_params=self.get_kv_params(
                     huggingface_config=self.huggingface_config,
-                    dtype=self.dtype,
-                )
-                text_model_future = executor.submit(
-                    build_and_compile_model, build, "text", export_path
-                )
+                    n_devices=len(self.devices),
+                    kv_cache_config=self.kv_cache_config,
+                    cache_dtype=self.encoding.cache_dtype,
+                ),
+                kv_manager=self.kv_manager,
+                huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
+            )
+            text_model_future = executor.submit(
+                build_and_compile_model, build, "text"
+            )
 
-                vision_model = vision_model_future.result()
-                text_model = text_model_future.result()
+            vision_model = vision_model_future.result()
+            text_model = text_model_future.result()
 
         return vision_model, text_model

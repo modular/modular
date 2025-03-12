@@ -50,8 +50,8 @@ class Layer:
     """
 
     def __init_subclass__(cls):
-        if cls.__name__ == "LayerV2":
-            # LayerV2 subclasses Layer, but we don't want to apply
+        if cls.__name__ == "Module":
+            # Module subclasses Layer, but we don't want to apply
             # _call_with_hooks to it.
             return
         # Check `__dict__` instead of `hasattr` because `hasattr` passes on
@@ -69,7 +69,7 @@ class Layer:
         """
 
 
-class LayerV2(Layer, ABC):
+class Module(Layer, ABC):
     """(new) Base class for model layers with weight management.
 
     This will be merged with the above class once all layers have been moved to
@@ -81,20 +81,20 @@ class LayerV2(Layer, ABC):
         # `super().__init__()`. So, to avoid resetting the values, first
         # check to see if the layer has been initialized before.
         if not hasattr(self, "_sublayers"):
-            self._sublayers: dict[str, LayerV2] = {}
+            self._sublayers: dict[str, Module] = {}
             self._layer_weights: dict[str, Weight] = {}
             self._weight_values: dict[str, DLPackCompatible] = {}
             self._shared_weights: dict[str, Weight] = {}
 
     def __setattr__(self, name, value):
         try:
-            if isinstance(value, LayerV2):
+            if isinstance(value, Module):
                 self._sublayers[name] = value
             elif isinstance(value, Weight):
                 self._layer_weights[value.name] = value
         except AttributeError:
             # The layer didn't call `super().__init__()` first thing.
-            LayerV2.__init__(self)
+            Module.__init__(self)
             self.__setattr__(name, value)
             return
         super().__setattr__(name, value)
@@ -118,7 +118,7 @@ class LayerV2(Layer, ABC):
         self._shared_weights[name] = weight
 
     @property
-    def sublayers(self) -> dict[str, LayerV2]:
+    def sublayers(self) -> dict[str, Module]:
         return self._sublayers
 
     def load_state_dict(
@@ -310,11 +310,11 @@ def _validate_weight_value(weight: Weight, value: Any, name: str) -> None:
 
 
 def recursive_named_layers(
-    parent: LayerV2, prefix: str = ""
-) -> Iterable[tuple[str, LayerV2]]:
+    parent: Module, prefix: str = ""
+) -> Iterable[tuple[str, Module]]:
     """Recursively walks through the layers and generates names."""
     seen = IdentitySet()
-    queue: deque[tuple[str, LayerV2]] = deque()
+    queue: deque[tuple[str, Module]] = deque()
     queue.append((prefix, parent))
 
     while queue:

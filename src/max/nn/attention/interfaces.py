@@ -28,7 +28,7 @@ from max.pipelines.kv_cache import (
     PagedKVCacheCollection,
 )
 
-from ..layer import Layer, LayerV2
+from ..layer import Layer, Module
 from ..linear import Linear
 
 
@@ -118,7 +118,7 @@ class AttentionImpl(Layer, ABC):
     ) -> TensorValue: ...
 
 
-class DistributedAttentionImpl(LayerV2, ABC):
+class DistributedAttentionImpl(Module, ABC):
     """
     A generalized Distributed attention interface.
     """

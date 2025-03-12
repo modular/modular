@@ -20,12 +20,12 @@ from max.dtype import DType
 from max.graph import BufferValue, TensorValue, TensorValueLike, ops
 from max.pipelines.kv_cache import KVCacheParams
 
-from ..layer import LayerV2
+from ..layer import Module
 from ..linear import Linear, LinearV2
 from ..rotary_embedding import RotaryEmbedding
 
 
-class NaiveAttentionWithRope(LayerV2):
+class NaiveAttentionWithRope(Module):
     def __init__(
         self,
         n_heads: int,

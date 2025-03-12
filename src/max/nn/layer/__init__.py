@@ -13,7 +13,7 @@
 
 from .layer import (
     Layer,
-    LayerV2,
+    Module,
     add_layer_hook,
     clear_hooks,
     recursive_named_layers,
@@ -22,7 +22,7 @@ from .layer_list import LayerList
 
 __all__ = [
     "Layer",
-    "LayerV2",
+    "Module",
     "add_layer_hook",
     "clear_hooks",
     "recursive_named_layers",

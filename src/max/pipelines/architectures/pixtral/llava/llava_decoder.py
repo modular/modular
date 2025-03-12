@@ -16,19 +16,19 @@ from typing import Union
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    FetchPagedKVCacheCollection,
-    KVCacheParams,
-)
-from max.pipelines.nn import (
+from max.nn import (
     Embedding,
     LayerNorm,
     Linear,
     RMSNorm,
     TransformerBlock,
 )
-from max.pipelines.nn.layer import Layer
+from max.nn.layer import Layer
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    KVCacheParams,
+)
 
 
 @dataclass

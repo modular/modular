@@ -1767,13 +1767,17 @@ struct SIMD[type: DType, size: Int](
             return rebind[SIMD[target, size]](self != 0)
 
         @parameter
-        if type is DType.bfloat16 and not _has_native_bf16_support():
+        if type is DType.bfloat16 and (
+            is_amd_gpu() or not _has_native_bf16_support()
+        ):
             return _bfloat16_to_f32(
                 rebind[SIMD[DType.bfloat16, size]](self)
             ).cast[target]()
 
         @parameter
-        if target is DType.bfloat16 and not _has_native_bf16_support():
+        if target is DType.bfloat16 and (
+            is_amd_gpu() or not _has_native_bf16_support()
+        ):
             return rebind[SIMD[target, size]](
                 _f32_to_bfloat16(self.cast[DType.float32]())
             )

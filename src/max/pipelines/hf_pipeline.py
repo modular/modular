@@ -58,14 +58,14 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         self._pipeline_config = pipeline_config
         self._torch_device = torch.device(torch_device_type)
         self._huggingface_config = AutoConfig.from_pretrained(
-            pipeline_config.model_path,
-            trust_remote_code=pipeline_config.trust_remote_code,
-            revision=pipeline_config.huggingface_revision,
+            pipeline_config.model_config.model_path,
+            trust_remote_code=pipeline_config.model_config.trust_remote_code,
+            revision=pipeline_config.model_config.huggingface_revision,
         )
 
         self._model = AutoModelForCausalLM.from_pretrained(
-            pipeline_config.model_path,
-            trust_remote_code=pipeline_config.trust_remote_code,
+            pipeline_config.model_config.model_path,
+            trust_remote_code=pipeline_config.model_config.trust_remote_code,
         ).to(self._torch_device)
         self._dtype = self._model.dtype
 
@@ -75,7 +75,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
             )
 
         self._tokenizer = AutoTokenizer.from_pretrained(
-            pipeline_config.model_path
+            pipeline_config.model_config.model_path
         )
 
         eos_token_id = self._tokenizer.eos_token_id
@@ -336,11 +336,11 @@ class HFEmbeddingsPipeline(EmbeddingsGenerator[TextContext]):
         self._pipeline_config = pipeline_config
         self._torch_device = torch.device(torch_device_type)
         self._model = AutoModel.from_pretrained(
-            pipeline_config.model_path,
-            trust_remote_code=pipeline_config.trust_remote_code,
+            pipeline_config.model_config.model_path,
+            trust_remote_code=pipeline_config.model_config.trust_remote_code,
         ).to(self._torch_device)
         self._tokenizer = AutoTokenizer.from_pretrained(
-            pipeline_config.model_path
+            pipeline_config.model_config.model_path
         )
 
     def prepare_initial_token_inputs(

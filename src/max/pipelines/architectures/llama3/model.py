@@ -15,17 +15,17 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, List, Literal, Sequence, cast
+from typing import Any, Callable, List, Literal, Optional, Sequence, cast
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.graph.weights import Weights
+from max.graph.weights import Weights, WeightsAdapter
+from max.nn import Module, Signals
 from max.pipelines import (
     KVCacheConfig,
-    LogProbabilities,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -34,6 +34,7 @@ from max.pipelines import (
     TextContext,
 )
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
+from max.pipelines.interfaces import LogProbabilities
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -41,8 +42,7 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.nn import LayerV2, Signals
-from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
+from max.pipelines.log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 
 from .distributed_llama import DistributedLlama3
@@ -123,6 +123,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         """
         Args:
@@ -136,6 +138,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
             encoding,
             devices,
             kv_cache_config,
+            weights,
+            adapter,
         )
         self.model = self.load_model(session)
 
@@ -160,13 +164,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
     @classmethod
     def get_kv_params(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> KVCacheParams:
         return Llama3Config.get_kv_params(
-            pipeline_config, huggingface_config, n_devices
+            huggingface_config,
+            n_devices,
+            kv_cache_config,
+            cache_dtype,
         )
 
     @classmethod
@@ -312,10 +319,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
     ) -> KVCacheManager:
         return load_kv_manager(
             params=self.get_kv_params(
-                self.pipeline_config,
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -338,14 +345,15 @@ class LlamaModelBase(PipelineModel[TextContext]):
         devices: List[Device],
         huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
-                pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -372,46 +380,25 @@ class LlamaModelBase(PipelineModel[TextContext]):
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
         ).to(self.devices[0])
 
-        # Read in weights.
-        self._weights = self.pipeline_config.load_weights()
+        logger.info("Building and compiling model...")
+        before = time.perf_counter()
+        graph = self._build_graph(self.weights, self.adapter)
+        model = session.load(graph, weights_registry=self.state_dict)
+        after = time.perf_counter()
+        logger.info(
+            f"Building and compiling model took {after - before:.6f} seconds"
+        )
 
-        if serialized_path := self.pipeline_config.serialized_model_path:
-            # Hydrate all weights to be referenced by the serialized path.
-            weights_registry = {}
-            for name, weight in self._weights.items():
-                weights_registry[name] = weight.raw_tensor()
-
-            logger.info("Loading serialized model from %s", serialized_path)
-
-            return session.load(
-                serialized_path, weights_registry=weights_registry
-            )
-
-        else:
-            logger.info("Building and compiling model...")
-            before = time.perf_counter()
-            graph = self._build_graph(self._weights)
-            model = session.load(graph, weights_registry=self.state_dict)
-            after = time.perf_counter()
-            logger.info(
-                f"Building and compiling model took {after - before:.6f} seconds"
-            )
-            if (
-                export_path
-                := self.pipeline_config.save_to_serialized_model_path
-            ):
-                logger.info("Exporting serialized model to %s", export_path)
-                model._export_mef(export_path)
-            return model
+        return model
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[TensorValue]
     ) -> List[tuple[TensorValue, ...]]:
         kv_params = self.get_kv_params(
-            self.pipeline_config,
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
             kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
         )
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()[0]
@@ -427,7 +414,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
         ]
         return kv_caches_per_dev
 
-    def _build_opaque_graph(self, weights: Weights) -> Graph:
+    def _build_opaque_graph(
+        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
+    ) -> Graph:
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -439,9 +428,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
         huggingface_config = self.huggingface_config
-        adapter = self.pipeline_config._weight_adapters.get(
-            self.pipeline_config.weights_format
-        )
         if adapter:
             state_dict = adapter(
                 dict(weights.items()),
@@ -458,8 +444,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
             n_devices=len(self.devices),
             logits_postprocessor=self.logits_postprocessor,
             norm_method=self.norm_method,
+            cache_dtype=self.encoding.cache_dtype,
+            kv_cache_config=self.kv_cache_config,
         )
-        nn_model: LayerV2
+        nn_model: Module
         if len(self.devices) > 1:
             kv_cache_args = self.kv_manager.input_symbols()
             flattened_kv_types = [
@@ -472,7 +460,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
 
             nn_model = DistributedLlama3(model_config)
-            nn_model.load_state_dict(state_dict)
+
+            # Load weights. We allow the weight types to be overriden due to
+            # multiple quantization encodings in GGUF checkpoints.
+            nn_model.load_state_dict(
+                state_dict, override_quantization_encoding=True
+            )
             self.state_dict = nn_model.state_dict()
             with Graph(
                 getattr(self.huggingface_config, "model_type", "llama3"),
@@ -507,7 +500,12 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 return graph
         else:
             nn_model = Llama3(model_config)
-            nn_model.load_state_dict(state_dict)
+
+            # Load weights. We allow the weight types to be overriden due to
+            # multiple quantization encodings in GGUF checkpoints.
+            nn_model.load_state_dict(
+                state_dict, override_quantization_encoding=True
+            )
             self.state_dict = nn_model.state_dict()
             with Graph(
                 "llama3",
@@ -526,9 +524,11 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 graph.output(*outputs)
                 return graph
 
-    def _build_graph(self, weights: Weights) -> Graph:
+    def _build_graph(
+        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
+    ) -> Graph:
         if self.kv_cache_config.cache_strategy.uses_opaque():
-            return self._build_opaque_graph(weights)
+            return self._build_opaque_graph(weights, adapter)
 
         tokens_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
         attn_mask_type = TensorType(
@@ -541,10 +541,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
 
         kv_inputs = self.kv_manager.input_symbols()[0]
-
-        adapter = self.pipeline_config._weight_adapters.get(
-            self.pipeline_config.weights_format
-        )
         if adapter:
             state_dict = adapter(
                 dict(weights.items()),
@@ -561,11 +557,13 @@ class LlamaModelBase(PipelineModel[TextContext]):
             n_devices=len(self.devices),
             logits_postprocessor=self.logits_postprocessor,
             norm_method=self.norm_method,
+            cache_dtype=self.encoding.cache_dtype,
+            kv_cache_config=self.kv_cache_config,
         )
         nn_model = NaiveLlama3(model_config)
 
         # Load weights. We allow the weight types to be overriden due to
-        # multiple quantization enodings in GGUF checkpoints.
+        # multiple quantization encodings in GGUF checkpoints.
         nn_model.load_state_dict(
             state_dict, override_quantization_encoding=True
         )
@@ -584,7 +582,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
             mask_dtype = (
                 self.dtype
-                if self.pipeline_config.quantization_encoding
+                if self.pipeline_config.model_config.quantization_encoding
                 in [
                     SupportedEncoding.float32,
                     SupportedEncoding.bfloat16,
@@ -622,7 +620,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             if model_outputs.logits is None:
                 logger.warning(
                     "Could not get logprobs with echo because the full logits"
-                    f" were not returned by {self.pipeline_config.model_path}"
+                    f" were not returned by {self.pipeline_config.model_config.model_path}"
                     " model. Please ensure that this model is started with "
                     "`--enable-echo`."
                 )
@@ -711,6 +709,8 @@ class Llama3Model(LlamaModelBase):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -719,4 +719,6 @@ class Llama3Model(LlamaModelBase):
             encoding,
             devices,
             kv_cache_config,
+            weights,
+            adapter,
         )

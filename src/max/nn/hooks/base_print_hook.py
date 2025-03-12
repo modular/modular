@@ -20,7 +20,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
-from max.pipelines.nn._identity import IdentityMap
+from max.nn._identity import IdentityMap
 
 
 @dataclass

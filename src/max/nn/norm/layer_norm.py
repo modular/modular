@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import TensorValue, Weight, ops
 
-from ..layer import Layer, LayerV2
+from ..layer import Layer, Module
 
 
 @dataclass
@@ -49,7 +49,7 @@ class LayerNorm(Layer):
         )
 
 
-class LayerNormV2(LayerV2):
+class LayerNormV2(Module):
     """Layer normalization block."""
 
     def __init__(self, dims: int, eps: float = 1e-5, use_bias=True):

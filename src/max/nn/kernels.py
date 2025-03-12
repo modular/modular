@@ -16,16 +16,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional, cast
 
 import numpy as np
 from max.dtype import DType
 from max.graph import Dim, TensorType, TensorValue, TensorValueLike, ops
-from max.graph.quantization import QuantizationConfig
+from max.graph.ops.quantized import repack_gguf_quantized_weights
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheCollection,
+    PagedKVCacheCollectionFA3Fallback,
 )
 
 
@@ -74,6 +77,7 @@ def fused_qkv_ragged_matmul(
     if kv_params.cache_strategy not in {
         KVCacheStrategy.CONTINUOUS,
         KVCacheStrategy.PAGED,
+        KVCacheStrategy.PAGED_FA3_FALLBACK,
     }:
         msg = f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
         raise ValueError(msg)
@@ -82,7 +86,10 @@ def fused_qkv_ragged_matmul(
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
     }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy in {
+        KVCacheStrategy.PAGED,
+        KVCacheStrategy.PAGED_FA3_FALLBACK,
+    }:
         assert kv_params.page_size is not None
         parameters["page_size"] = int(kv_params.page_size)
 
@@ -116,6 +123,97 @@ def fused_qkv_ragged_matmul(
     return ops.inplace_custom(
         op_name,
         values=[input, input_row_offsets, wqkv, kv_collection, layer_idx],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def unfused_qkv_ragged_matmul_gguf_quantized(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    n_heads: int,
+    q_weight: TensorValue,
+    k_weight: TensorValue,
+    v_weight: TensorValue,
+    quantization_encoding_q: QuantizationEncoding,
+    quantization_encoding_k: QuantizationEncoding,
+    quantization_encoding_v: QuantizationEncoding,
+    kv_collection: ContinuousBatchingKVCacheCollection | PagedKVCacheCollection,
+    layer_idx: TensorValue,
+) -> TensorValue:
+    """Computes fused query, key, and value projections with ragged input and
+    quantized weight matrices. A `quantization_config` must be provided.
+
+    `input` and `input_row_offsets` are used together to implement the ragged
+    tensor.
+    `input_row_offsets` indicates where each batch starts and ends in `input`
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+
+    input_rank_expected = 2
+    if input.rank != input_rank_expected:
+        msg = f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        raise ValueError(msg)
+
+    if input.dtype != DType.float32:
+        msg = f"expected input to have dtype float32, was {input.dtype}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = (
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy not in {
+        KVCacheStrategy.CONTINUOUS,
+    }:
+        msg = f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    if (
+        not quantization_encoding_q.is_gguf
+        or not quantization_encoding_k.is_gguf
+        or not quantization_encoding_v.is_gguf
+    ):
+        raise ValueError(
+            f"expected quantization_encoding_q, quantization_encoding_k, and quantization_encoding_v to be gguf, was {quantization_encoding_q}, {quantization_encoding_k}, and {quantization_encoding_v}"
+        )
+
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "quantization_encoding_q": quantization_encoding_q.name,
+        "quantization_encoding_k": quantization_encoding_k.name,
+        "quantization_encoding_v": quantization_encoding_v.name,
+    }
+
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    return ops.inplace_custom(
+        name=f"mo.unfused_qkv_matmul.ragged.{cache_strategy_str}.gguf_quantized",
+        values=[
+            input,
+            input_row_offsets,
+            repack_gguf_quantized_weights(q_weight, quantization_encoding_q),
+            repack_gguf_quantized_weights(k_weight, quantization_encoding_k),
+            repack_gguf_quantized_weights(v_weight, quantization_encoding_v),
+            kv_collection,
+            layer_idx,
+        ],
         out_types=[
             TensorType(
                 dtype=input.dtype,
@@ -393,6 +491,7 @@ def fused_qk_ragged_rope(
     if kv_params.cache_strategy not in {
         KVCacheStrategy.CONTINUOUS,
         KVCacheStrategy.PAGED,
+        KVCacheStrategy.PAGED_FA3_FALLBACK,
     }:
         msg = f"unsupported cache strategy for fused_qk_ragged_rope: {kv_params.cache_strategy}"
         raise ValueError(msg)
@@ -402,7 +501,10 @@ def fused_qk_ragged_rope(
         "head_dim": kv_params.head_dim,
         "interleaved": interleaved,
     }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
+    if kv_params.cache_strategy in {
+        KVCacheStrategy.PAGED,
+        KVCacheStrategy.PAGED_FA3_FALLBACK,
+    }:
         assert kv_params.page_size is not None
         parameters["page_size"] = kv_params.page_size
 
@@ -641,14 +743,78 @@ _MHA_MASK_CONFIG_DICT = {
 }
 
 
+def flash_attention_ragged_paged_fa3_fallback(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedKVCacheCollectionFA3Fallback,
+    context_lengths: TensorValue,
+    layer_idx: TensorValue,
+) -> TensorValue:
+    """Computes flash attention provided the `!mo.opaque` KV Cache. using the FA3 fallback kernel."""
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        msg = (
+            f"expected input of rank {input_rank_expected} but got {input.rank}"
+        )
+        raise ValueError(msg)
+
+    if input.dtype != kv_params.dtype:
+        msg = (
+            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected uint32 layer_idx but got {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        raise ValueError(msg)
+
+    # TODO(austin): remove this cast.
+    input_row_offsets_cast = input_row_offsets.cast(DType.int32)
+    assert kv_params.page_size is not None, (
+        "Expected page size to be set for PAGED_FA3_FALLBACK"
+    )
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+    context_lengths_cast = context_lengths.cast(DType.int32)
+
+    op_name = "mo.mha.ragged.paged_fa3_fallback.causal_mask.no_pos"
+    return ops.inplace_custom(
+        op_name,
+        values=[
+            input,
+            input_row_offsets_cast,
+            context_lengths_cast,
+            kv_collection,
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype, shape=input.shape, device=input.device
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def flash_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
-    kv_collection: ContinuousBatchingKVCacheCollection | PagedKVCacheCollection,
+    kv_collection: ContinuousBatchingKVCacheCollection
+    | PagedKVCacheCollection
+    | PagedKVCacheCollectionFA3Fallback,
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    context_lengths: Optional[TensorValue] = None,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
 
@@ -662,6 +828,18 @@ def flash_attention_ragged(
     assumed to be equal to the Q sequence length.
     For KV sequence length != Q sequence length, use `cross_attention_ragged`.
     """
+    if kv_params.cache_strategy == KVCacheStrategy.PAGED_FA3_FALLBACK:
+        assert context_lengths is not None, (
+            "context_lengths must be provided for PAGED_FA3_FALLBACK"
+        )
+        return flash_attention_ragged_paged_fa3_fallback(
+            kv_params,
+            input,
+            input_row_offsets,
+            cast(PagedKVCacheCollectionFA3Fallback, kv_collection),
+            context_lengths,
+            layer_idx,
+        )
     input_rank_expected = 3
     if input.rank != input_rank_expected:
         msg = (

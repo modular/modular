@@ -22,6 +22,7 @@ from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
+    FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -31,16 +32,16 @@ from ..attention.interfaces import (
     AttentionImplQKV,
 )
 from ..embedding import Embedding, EmbeddingV2
-from ..layer import Layer, LayerList, LayerV2
+from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV2
 
 
-class TransformerBlock(LayerV2):
+class TransformerBlock(Module):
     """Stack of Attention, FeedForward, and RMSNorm layers."""
 
     def __init__(
         self,
-        attention: AttentionImpl | AttentionImplQKV | LayerV2,
+        attention: AttentionImpl | AttentionImplQKV | Module,
         mlp: Layer,
         attention_norm: Layer,
         mlp_norm: Layer,
@@ -78,7 +79,7 @@ class TransformerBlock(LayerV2):
         return h + mlp
 
 
-class Transformer(LayerV2):
+class Transformer(Module):
     """Transformer model consisting for TransformerBlock layers."""
 
     def __init__(
@@ -93,6 +94,7 @@ class Transformer(LayerV2):
         kv_collection_constructor: (
             FetchContinuousBatchingKVCacheCollection
             | FetchPagedKVCacheCollection
+            | FetchPagedKVCacheCollectionFA3Fallback
         ),
         all_logits: bool = False,
         embedding_multiplier: float = 1.0,
@@ -131,7 +133,21 @@ class Transformer(LayerV2):
         if self.embedding_multiplier != 1.0:
             h = h * ops.constant(self.embedding_multiplier, h.dtype)
 
+        ragged = "input_row_offsets" in kwargs
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
+        cache_lengths = kv_cache_inputs[1]
+
+        if ragged:
+            input_row_offsets = kwargs["input_row_offsets"]
+            prompt_lengths = ops.rebind(
+                input_row_offsets[1:] - input_row_offsets[:-1],
+                cache_lengths.shape,
+            )
+        else:
+            prompt_lengths = kwargs["valid_lengths"]
+
+        context_lengths = prompt_lengths + cache_lengths
+        kwargs["context_lengths"] = context_lengths
 
         for _, layer in enumerate(self.layers):
             h = layer(h, kv_collection, **kwargs)
