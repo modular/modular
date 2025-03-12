@@ -728,6 +728,7 @@ struct LayoutTensor[
         Returns:
             The calculated memory offset as an integer.
         """
+        constrained[layout.all_dims_known(), "Layout must be fully static"]()
         return Self.stride[0]() * m + Self.stride[1]() * n
 
     @always_inline
