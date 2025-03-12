@@ -12,7 +12,7 @@ import numpy as np
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph.weights import Weights
+from max.graph.weights import Weights, WeightsAdapter
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -52,6 +52,7 @@ class MockPipelineModel(PipelineModel):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         devices: list[Device] = [],
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
@@ -60,6 +61,7 @@ class MockPipelineModel(PipelineModel):
         self.encoding = encoding
         self.kv_cache_config = kv_cache_config
         self.weights = weights
+        self.adapter = adapter
 
         if not devices:
             self.devices = [CPU()]

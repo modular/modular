@@ -85,6 +85,7 @@ def retrieve_mock_text_generation_pipeline(
                     pipeline_config=mock_config,
                     pipeline_model=MockPipelineModel,
                     eos_token_id=eos_token,
+                    weight_adapters={},
                 )
             )
 

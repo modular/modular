@@ -16,7 +16,6 @@ from max.pipelines import (
     TextTokenizer,
 )
 from max.pipelines.architectures import register_all_models
-from max.pipelines.architectures.llama3.model import Llama3Model
 from max.pipelines.interfaces import TokenGeneratorRequest
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
@@ -54,11 +53,12 @@ def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
 def pipeline(
     pipeline_config: PipelineConfig, pipeline_tokenizer: TextTokenizer
 ) -> TextGenerationPipeline:
-    return TextGenerationPipeline(
-        pipeline_config=pipeline_config,
-        pipeline_model=Llama3Model,
-        eos_token_id=pipeline_tokenizer.eos,
-    )
+    if not PIPELINE_REGISTRY.architectures:
+        register_all_models()
+
+    _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
+    assert isinstance(pipeline, TextGenerationPipeline)
+    return pipeline
 
 
 @pytest.mark.skip("Disabling tempoarily to update llama3 in a separate commit")
