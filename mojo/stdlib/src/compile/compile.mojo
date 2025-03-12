@@ -19,6 +19,7 @@ Key features:
 - Control compilation options and targets
 
 Example:
+
     ```mojo
     from compile import compile_info
 
@@ -294,6 +295,7 @@ fn compile_info[
         - failed: Boolean indicating if compilation failed
 
     Example:
+
         ```mojo
         from compile import compile_info
         fn my_func():

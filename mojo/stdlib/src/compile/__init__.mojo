@@ -15,6 +15,7 @@ examining their low-level implementation details. It is particularly useful for:
 - Controlling compilation options and targets
 
 Example:
+
     ```mojo
     from compile import compile_info
 
