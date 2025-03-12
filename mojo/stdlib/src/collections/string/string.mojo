@@ -1318,9 +1318,6 @@ struct String(
         Returns:
             A string slice pointing to the data owned by this string.
         """
-        # FIXME(MSTDL-160):
-        #   Enforce UTF-8 encoding in String so this is actually
-        #   guaranteed to be valid.
         return StringSlice(unsafe_from_utf8=self.as_bytes())
 
     @always_inline

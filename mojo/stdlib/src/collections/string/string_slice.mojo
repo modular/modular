@@ -480,13 +480,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         @parameter
         if debug_assert_validate:
-            if is_compile_time():
-                if not _is_valid_utf8(unsafe_from_utf8):
-                    abort("value is not valid utf8")
-            else:
-                debug_assert(
-                    _is_valid_utf8(unsafe_from_utf8), "value is not valid utf8"
-                )
+            debug_assert(
+                _is_valid_utf8(unsafe_from_utf8), "value is not valid utf8"
+            )
         self._slice = unsafe_from_utf8
 
     fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[Byte]):
