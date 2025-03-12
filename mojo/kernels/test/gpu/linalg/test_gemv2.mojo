@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# UNSUPPORTED: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 # COM: use
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
