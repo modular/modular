@@ -102,26 +102,29 @@ struct Signal[max_num_blocks: Int]:
         unsigned integer overflow has well-defined behavior.
     """
 
-    """
-     A 2D array of counters with shape (max_num_blocks, MAX_GPUS).
-            Each counter tracks progress of a block on the current GPU.
-    """
     var self_counter: StaticTuple[
         StaticTuple[Scalar[_flag_t], MAX_GPUS], Self.max_num_blocks
     ]
+    """
+    A 2D array of counters with shape (max_num_blocks, MAX_GPUS).
+    Each counter tracks the progress of a specific thread block on the current GPU.
+    Thread blocks increment their corresponding counter to signal completion of a phase,
+    allowing other GPUs to detect when synchronization points are reached.
+    The counters use atomic operations to ensure proper synchronization across devices.
+    """
 
-    """
-    A 3D array of counters with shape (2, max_num_blocks, MAX_GPUS).
-    Contains two sets of counters to handle two synchronization points safely.
-    The dual counter design prevents race conditions where a peer block arrives
-    at the second sync point before the current block passes the first sync point.
-    """
     var peer_counter: StaticTuple[
         StaticTuple[
             StaticTuple[Scalar[_flag_t], MAX_GPUS], Self.max_num_blocks
         ],
         2,
     ]
+    """
+    A 3D array of counters with shape (2, max_num_blocks, MAX_GPUS).
+    Contains two sets of counters to handle two synchronization points safely.
+    The dual counter design prevents race conditions where a peer block arrives
+    at the second sync point before the current block passes the first sync point.
+    """
 
 
 fn _naive_reduce_kernel[
@@ -137,7 +140,7 @@ fn _naive_reduce_kernel[
     Parameters:
         type: DType - The data type of the values being reduced.
 
-    Arguments:
+    Args:
         dst_buf: Destination buffer to accumulate results.
         src_buf: Source buffer containing values to add.
         num_elements: Number of elements to process.
@@ -156,7 +159,7 @@ fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
     """
     If peer-to-peer access is supported, enables it between all GPU pairs.
 
-    Arguments:
+    Args:
         ctxs: List of device contexts representing different GPUs.
 
     Returns:
@@ -197,7 +200,7 @@ fn _all_reduce_naive[
         ngpus: Number of GPUs participating in allreduce.
         max_num_blocks: Maximum number of thread blocks to launch.
 
-    Arguments:
+    Args:
         ctxs: List of device contexts for participating GPUs.
         list_of_in_bufs: Input buffers from each GPU.
         list_of_out_bufs: Output buffers for each GPU.
@@ -290,7 +293,7 @@ fn _multi_gpu_barrier[
             If True, uses release/acquire semantics.
             If False, uses volatile memory operations for faster communication.
 
-    Arguments:
+    Args:
         rank_sigs: Signal pointers for all GPUs.
         self_sg: Signal pointer for current GPU.
         my_rank: Current GPU rank.
@@ -399,7 +402,7 @@ fn _allreduce_2stage_kernel[
         BLOCK_SIZE: Number of threads per block.
         outputs_lambda: An elementwise output lambda function.
 
-    Arguments:
+    Args:
         result: Output buffer for reduced values.
         src_ptrs: Input buffers from all GPUs.
         rank_sigs: Signal pointers for synchronization.
@@ -550,7 +553,7 @@ fn _allreduce_1stage_kernel[
         BLOCK_SIZE: Number of threads per block.
         outputs_lambda: An elementwise output lambda function.
 
-    Arguments:
+    Args:
         result: Output buffer for reduced values
         src_ptrs: Input buffers from all GPUs
         rank_sigs: Signal pointers for synchronization
@@ -633,7 +636,7 @@ fn _all_reduce_p2p[
         max_num_blocks: Maximum number of thread blocks to launch.
         outputs_lambda: An optional output elementwise lambda.
 
-    Arguments:
+    Args:
         ctxs: List of device contexts for participating GPUs
         list_of_in_bufs: Input buffers from each GPU
         list_of_out_bufs: Output buffers for each GPU
