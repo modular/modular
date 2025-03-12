@@ -142,6 +142,10 @@ class Tensor(DLPackArray):
             tensor_copy[idx] = self[idx].item()
         return tensor_copy
 
+    def _aligned(self, alignment: int | None = None) -> int:
+        """Returns the memory address of the first item in the tensor."""
+        return self._impl._aligned(alignment or self.dtype.align)
+
     def __repr__(self) -> str:
         return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.device.api}[{self.device.id}])"
 
