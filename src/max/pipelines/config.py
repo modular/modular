@@ -820,7 +820,7 @@ class KVCacheConfig(MAXConfig):
 
     .. math::
 
-        kv\_cache\_workspace = (total\_free\_memory \times device\_memory\_utilization) - model\_weights\_size
+        kv\\_cache\\_workspace = (total\\_free\\_memory \\times device\\_memory\\_utilization) - model\\_weights\\_size
     """
 
     _available_cache_memory: Optional[int] = None
