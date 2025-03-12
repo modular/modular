@@ -315,6 +315,14 @@ struct SharedState::Impl {
   DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>> capturesInScope;
 
   /// Function type conversion thunks in each module.
+  // The key is an ArrayAttr containing two elements:
+  // - The "actual" signature; the type of the underlying function that the
+  //   thunk is calling.
+  // - The thunk signature, not including the `callee` input parameter (for some
+  //   reason).
+  //   This is NOT the expected/destination type we're converting to, it's the
+  //   actual thunk's signature (this is so generateConversionThunk can know the
+  //   "clarifying parameters", see TAPCPTTT).
   DenseMap<Attribute, FnOp> conversionThunks;
 
   /// This caches non-trivial implicit convertibility checks from one type to

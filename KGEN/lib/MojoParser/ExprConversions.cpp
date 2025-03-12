@@ -99,11 +99,19 @@ static bool canConvertFunctionTypes(FnTypeGeneratorType actual,
     case ArgConvention::MutRef:
     case ArgConvention::Ref:
     case ArgConvention::Mut:
-      // These conventions do not vary based on the register-passibility of the
-      // type. They must always match
-      if (actualConv != expectedConv)
+      if (actualConv == ArgConvention::ReadMem) {
+        // If the actual function accepts a read reference, and we have an
+        // owned/mutref/ref/mut, we can make a thunk to convert those nicely.
+        lhs = lhs.getReferenceElementType();
+      } else if (actualConv == ArgConvention::ReadReg) {
+        // If the actual function accepts a register-passable read, and we have
+        // an owned/mutref/ref/mut, we can make a thunk to convert that nicely.
+      } else if (actualConv == expectedConv) {
+        // These conventions all take in references.
+        lhs = lhs.getReferenceElementType();
+      } else {
         return false;
-      lhs = lhs.getReferenceElementType();
+      }
       rhs = rhs.getReferenceElementType();
       break;
 
@@ -180,22 +188,23 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
     diScopeGuard = shared.diBuilder->pushScopeGuard(/*scope=*/nullptr);
 
   auto keyValues = cast<ArrayAttr>(key);
-  auto actual =
+  auto actualSignature =
       cast<FnTypeGeneratorType>(cast<TypeAttr>(keyValues[0]).getValue());
-  auto expected =
+  auto thunkSignature =
       cast<FnTypeGeneratorType>(cast<TypeAttr>(keyValues[1]).getValue());
 
   MLIRContext *ctx = shared.getContext();
   Location mlirLoc = shared.translateLocation(moduleDecl.getLoc());
 
   // Declare a function with expected function type. Add the parameters from the
-  // expected signature. This contains the types of the captured parameters and
-  // the actual function parameters.
+  // expected signature. This contains the types of the clarifying parameters
+  // (see TAPCPTTT) and the actual function's input parameters.
   SmallVector<ParamDeclAttr> paramDecls;
   SmallVector<TypedAttr> paramValues;
   ParameterEvaluator evaluator;
   ImplicitLocOpBuilder b(mlirLoc, ctx);
-  for (auto [idx, type] : llvm::enumerate(expected.getInputParamTypes())) {
+  for (auto [idx, type] :
+       llvm::enumerate(thunkSignature.getInputParamTypes())) {
     // The parameter names are derived from the decl name.
     paramDecls.push_back(
         ParamDeclAttr::get(moduleDecl.mangleUserDefinedParamName(
@@ -206,28 +215,28 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   }
   // Rebind the argument and result types into the scope of the body.
   FunctionType types =
-      expected.getSpecializedGenerator(paramValues).getBody().getValues();
+      thunkSignature.getSpecializedGenerator(paramValues).getBody().getValues();
 
   // Add an additional parameter, representing the actual callee. Rebind the
   // actual function type into the scope of the body.
   auto calleeDecl = ParamDeclAttr::get(
       moduleDecl.mangleUserDefinedParamName(b.getStringAttr("callee")),
-      evaluator.getReboundType(actual));
+      evaluator.getReboundType(actualSignature));
   paramDecls.push_back(calleeDecl);
 
   // Generate a mangled name.
-  std::string name = generateThunkName(expected, actual);
+  std::string name = generateThunkName(thunkSignature, actualSignature);
 
   // Declare the function at the bottom of the decl.
   b = ImplicitLocOpBuilder(mlirLoc, moduleDecl.getDeclEndBuilder());
   StructEmitter structEmitter(shared);
   auto [thunk, thunkDecl] = structEmitter.synthesizeFunction(
       moduleDecl, name, paramDecls,
-      PogListAttr::get(ctx, expected.getInputParamTypes().size() + 1),
-      types.getInputs(), expected.getArgConventions(),
-      PogListAttr::get(ctx, expected.getNumArguments()),
+      PogListAttr::get(ctx, thunkSignature.getInputParamTypes().size() + 1),
+      types.getInputs(), thunkSignature.getArgConventions(),
+      PogListAttr::get(ctx, thunkSignature.getNumArguments()),
       types.getResults().front(), SpecialFunctionKind::kNormal,
-      moduleDecl.getLoc(), b, expected.getFnEffects());
+      moduleDecl.getLoc(), b, thunkSignature.getFnEffects());
 
   // Annotate the function as a thunk by adding the conversion types.
   NamedAttrList attrs = thunk->getAttrDictionary();
@@ -250,7 +259,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   SyntheticNode node(thunkDecl->getLoc());
 
   for (auto [arg, conv] :
-       llvm::zip(thunk.getArguments(), expected.getArgConventions())) {
+       llvm::zip(thunk.getArguments(), thunkSignature.getArgConventions())) {
     AnyValue value;
     switch (conv) {
     case ArgConvention::OwnedReg:
@@ -281,20 +290,33 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   // slot, if there is one, otherwise provide the expected rvalue type.
   ValueDest dest(EC_Trait);
   bool hasRegisterResult = false;
-  if (expected.isAsync()) {
+  if (thunkSignature.isAsync()) {
     // An async call returns a coroutine we have to await.
-  } else if (expected.hasMemoryOnlyResult()) {
+  } else if (thunkSignature.hasMemoryOnlyResult()) {
     dest = ValueDest(MLValue(thunk.getArguments().back()), EC_Trait);
   } else {
     hasRegisterResult = true;
   }
 
   // Bind the function parameters declared on the thunk to the callee. This does
-  // NOT include the capture parameters -- the callee has already been rebound
-  // to them when it was declared on the parameter list.
+  // NOT include the clarifying parameters -- the callee has already been
+  // rebound to them when it was declared on the parameter list.
+  //
+  // In this example (from TAAMCE):
+  //
+  //     fn ship_func_thunk[
+  //         Z: int,
+  //         Y: Bool,
+  //         callee: fn[Y: Bool](read Ship[Z])->None
+  //     ](mut s: Ship[Z, Y]):
+  //         callee[Y](s) # implicit cast to imm
+  //
+  // notice how we're calling `callee[Y](s)` and the clarifying parameter Z
+  // doesn't appear on that call line.
   TypedAttr calleeParam = BindParamsAttr::get(
       ParamDeclRefAttr::get(calleeDecl),
-      ArrayRef(paramValues).take_back(actual.getInputParamTypes().size()));
+      ArrayRef(paramValues)
+          .take_back(actualSignature.getInputParamTypes().size()));
   assert(cast<FnTypeGeneratorType>(calleeParam.getType())
              .getInputParamTypes()
              .size() == 0);
@@ -308,7 +330,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   }
 
   // If the callee is async, we got a coroutine. Now await it into the result.
-  if (expected.isAsync()) {
+  if (thunkSignature.isAsync()) {
     ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
     if (!emitter.emitNamedMethodCall("__await__",
                                      CallOperands({{callResult, node}}), dest,
@@ -349,72 +371,100 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
   FnTypeGeneratorType reducedActual = getReducedFunctionType(actual);
   FnTypeGeneratorType reducedExpected = getReducedFunctionType(expected);
 
-  // Given a function of type
+  // We need to specially handle when `actual` mentions any parameters in its
+  // scope, like how `= read_ship[Z]` mentions the `Z` parameter here:
   //
-  //  fn[*ParamTypes](*ArgTypes) -> ResultType
+  //     struct Ship[X: int, Y: Bool]:
+  //         pass
   //
-  // That captures parameters from its scope, we are going to produce a function
-  // that looks like
+  //     fn read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+  //         pass
   //
-  //  fn thunk[*CapturedParamTypes, *params: *ParamTypes,
-  //           callee: fn[*ParamTypes](*ArgTypes) -> ResultType](
-  //        *args: *ArgTypes):
-  //      return callee[*params](*args)
+  //     fn foo():
+  //         alias Z: int = 42
+  //         alias my_func_alias: fn[Y: Bool](mut Ship[Z, Y]) -> None =
+  //             read_ship[Z]
   //
-  // To achieve this, we are going to deparameterize `reducedActual` such that
-  // its `N` parameter captures are replaced with `*(1,0), ... *(1,N-1)`.
+  // `read_ship[Z]`s type is `fn(read Ship[Y: Bool][Z])`. However, when our
+  // thunk accepts that type as an input parameter, the thunk is malformed
+  // because it has no idea what `ZC` is (see TAPRCT for more).
   //
-  // For example, given
+  // So, we prepend a "clarifying" parameter to the thunk's input parameters,
+  // like the `Z` here:
   //
-  //   fn[p: Foo[a]](a: Bar[p]) -> Foo[b]
+  //     fn ship_func_thunk[
+  //         Z: int,
+  //         Y: Bool,
+  //         callee: fn[Y: Bool](read Ship[Z])->None
+  //     ](mut s: Ship[Z, Y]):
+  //         callee[Y](s) # implicit cast to imm
   //
-  // where `a` and `b` are captures, we obtain
-  //
-  //   fn[Foo[$1|0]](a: Bar[$0]) -> Foo[$1|1]
-  //
-  // We then transform `reducedExpected` to be
-  //
-  //   fn[Int, Int, Foo[$0], fn[Foo[$1|0]](a: Bar[$0]) -> Foo[$1|1]]
-  //     (Bar[$2]) -> Foo[$1]
+  // See TAPCPTTT for more.
 
-  // First produce the parameter-isolated `reducedActual`.
-  // NOTE: The walk here to determine the parameter captures only works if the
+  SmallVector<Type> thunkParamTypes;
+  // `mentionedParamRefs` contains all of `actual`'s mentions of parameters from
+  // the containing scope, like the `Z` in the above `read_ship[Z]`.
+  // This *only* refers to parameters declared in/by `foo`.
+  llvm::SmallSetVector<ParamDeclRefAttr, 4> mentionedParamRefs;
+  // NOTE: The walk here to determine the parameter mentions only works if the
   // walk visits types in the same order as lexical parsing. This is because the
-  // captured parameters can depend on each other, so they have to be
-  // reparameterized in a order that keeps the dependencies valid.
-  llvm::SmallSetVector<ParamDeclRefAttr, 4> paramRefs;
-  actual.walk([&](ParamDeclRefAttr ref) { paramRefs.insert(ref); });
-  ParameterEvaluator replacer;
-  SmallVector<Type> paramTypes;
-  for (auto [i, ref] : llvm::enumerate(paramRefs)) {
-    paramTypes.push_back(replacer.getReboundType(ref.getType()));
-    replacer.setParameterValue(ref.getName(),
-                               ParamIndexRefAttr::get(i, paramTypes.back()));
+  // mentioned parameters can depend on each other, so the list has to have them
+  // in an order that keeps the dependencies valid.
+  // I *think* we don't need to walk `expected` too... I could be wrong though.
+  actual.walk([&](ParamDeclRefAttr ref) { mentionedParamRefs.insert(ref); });
+  // This replacer will help us figure out the thunk's param types, so the thunk
+  // signature has a correct:
+  //     mut s: Ship[ship_func_thunk's Z]
+  // instead of an incorrect:
+  //     mut s: Ship[foo's Z]
+  // It also helps us generate some more general signatures for the thunk keys.
+  ParameterEvaluator paramRefsReplacer;
+  for (auto [i, ref] : llvm::enumerate(mentionedParamRefs)) {
+    // Add these mentioned param refs as "clarifying" parameters to the thunk,
+    // see TAPCPTTT.
+    thunkParamTypes.push_back(paramRefsReplacer.getReboundType(ref.getType()));
+    paramRefsReplacer.setParameterValue(
+        ref.getName(), ParamIndexRefAttr::get(i, thunkParamTypes.back()));
   }
-  auto reparamActual =
-      cast<FnTypeGeneratorType>(replacer.getReboundType(reducedActual));
-
-  // Now reparameterize `reducedExpected`. Captured parameters are replaced with
-  // `*(0,i) where i < N` and actual parameters are replaced with `*(0,N+j)`.
-  for (auto [i, type] : llvm::enumerate(actual.getInputParamTypes())) {
-    paramTypes.push_back(replacer.getReboundType(type));
-    replacer.addInputParam(
-        ParamIndexRefAttr::get(i + paramRefs.size(), paramTypes.back()));
+  auto reparamActualForThunkKey = cast<FnTypeGeneratorType>(
+      paramRefsReplacer.getReboundType(reducedActual));
+  // Above, clarifying parameters were at the beginning (and were replaced with
+  // `*(0,i) where i < N`).
+  //
+  // Now, we need to add `expected`'s input params, like the `[Y: Bool]` in:
+  //
+  //     alias my_func_alias: fn[Y: Bool](mut Ship[Z, Y]) -> None = ...
+  //
+  // Note that `expected` contains param refs to parameters declared in/by foo.
+  // `expected` does NOT contain paramrefs referring to the callee's function
+  // definition's parameters.
+  for (auto [i, type] : llvm::enumerate(expected.getInputParamTypes())) {
+    // Note that `type` might contain UnboundAttr at this point, that's fine.
+    thunkParamTypes.push_back(paramRefsReplacer.getReboundType(type));
+    paramRefsReplacer.addInputParam(ParamIndexRefAttr::get(
+        i + mentionedParamRefs.size(), thunkParamTypes.back()));
   }
-  auto reparamMetadata = FnMetadataAttr::get(
+  // The thunk metadata and function type will mostly look like `expected`,
+  // except for the thunk param types (which also includes clarifying
+  // parameters, see TAPCPTTT).
+  auto thunkMetadata = FnMetadataAttr::get(
       reducedExpected.getArgListAttrs(),
       reducedExpected.getNumImplicitOriginDecls(),
       reducedExpected.getCaptureOrigins(),
       reducedExpected.getIsNestedOriginExclusivityCheckingDisabled());
-  auto reparamExpected = FuncTypeGeneratorType::get(
-      paramTypes,
-      cast<FunctionType>(replacer.getReboundType(reducedExpected.getValues())),
-      reducedExpected.getArgConventions(), reducedExpected.getFnEffects(),
-      reparamMetadata, PogListAttr::get(ctx, paramTypes.size()));
+  auto thunkFuncType = cast<FunctionType>(
+      paramRefsReplacer.getReboundType(reducedExpected.getValues()));
+  auto thunkSignature = FuncTypeGeneratorType::get(
+      /*inputParamTypes=*/thunkParamTypes,
+      /*values=*/thunkFuncType,
+      /*argConvs=*/reducedExpected.getArgConventions(),
+      /*effects=*/reducedExpected.getFnEffects(),
+      /*fnMetadata=*/thunkMetadata,
+      /*genMetadata=*/PogListAttr::get(ctx, thunkParamTypes.size()));
 
   // We can attempt to generate the thunk now.
-  Attribute key = ArrayAttr::get(
-      ctx, {TypeAttr::get(reparamActual), TypeAttr::get(reparamExpected)});
+  Attribute key = ArrayAttr::get(ctx, {TypeAttr::get(reparamActualForThunkKey),
+                                       TypeAttr::get(thunkSignature)});
   FnOp thunk =
       emitter.shared.getOrCreateFunctionThunk(key, generateConversionThunk);
   if (!thunk) {
@@ -422,17 +472,32 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
     return {};
   }
 
-  // Cast the callee to the reduced actual type.
+  // Now that we have the thunk defined somewhere, we're going to reference it.
+  // In the above `foo` example, in this `alias` line:
+  //
+  //     alias my_func_alias: fn(mut Ship[ZC]) -> None =
+  //         ship_func_thunk[ZC, read_ship[ZC]]
+  //
+  // ...we'll now produce the `ship_func_thunk[ZC, read_ship[ZC]]`.
+
+  // First, cast the callee to the reduced actual type.
   TypedAttr calleeParam =
       ParamOperatorAttr::get(POC::Rebind, callee.get(), reducedActual);
 
-  // Bind the thunk to the captured parameters, leaving the actual parameters
-  // unbound. This binds the callee type into the current scope.
+  // Assemble the parameters (`ZC, read_ship[ZC]`) that we'll bind to the thunk.
   ParameterEvaluator evaluator;
-  for (ParamDeclRefAttr ref : paramRefs)
+  for (ParamDeclRefAttr ref : mentionedParamRefs) {
+    // Bind the clarifying parameter (see TAPCPTTT).
     evaluator.addInputParam(ref);
-  for (Type type : expected.getInputParamTypes())
+  }
+  for (Type type : expected.getInputParamTypes()) {
+    // If there are "remaining input parameters", like in:
+    //
+    //     alias my_func_alias: fn[Y: Bool]() -> None = ...
+    //
+    // then we leave them unbound (see TARIPNBITM).
     evaluator.addInputParam(UnboundAttr::get(evaluator.getReboundType(type)));
+  }
   evaluator.addInputParam(calleeParam);
 
   SymbolConstantAttr symbol = thunk.getBoundSymbolRef(
