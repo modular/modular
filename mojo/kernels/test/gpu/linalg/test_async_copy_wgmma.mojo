@@ -7,8 +7,10 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 from sys import sizeof, simdwidthof
+from sys import alignof
 
 from gpu import WARP_SIZE, barrier
+from layout.element import Element, MemoryElement
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
@@ -32,6 +34,7 @@ from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
     tile_layout_mn_major,
+    wgmma_c_layout,
 )
 from layout.tma_async import (
     TMABarrier,
@@ -39,6 +42,8 @@ from layout.tma_async import (
     create_tma_tile,
     _tma_desc_tile_layout,
 )
+from layout.runtime_layout import RuntimeLayout, RuntimeTuple, UNKNOWN_VALUE
+from layout.int_tuple import IntTuple
 from linalg import vendor_blas
 from math import ceildiv
 from testing import assert_almost_equal
@@ -152,30 +157,32 @@ fn cpasync_wgmma_kernel[
         b_gmem_iter._incr()
 
     c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    warp_id = thread_idx.x // WARP_SIZE
+    alias c_layouts = wgmma_c_layout[
+        wgmma_shape[0], wgmma_shape[1], c_gmem_tile.layout
+    ]()
+    alias tv_tile_to_idx_const = c_layouts[2]
+    alias tv_to_idx = tv_tile_to_idx_const[0]
+    alias tile_to_idx = tv_tile_to_idx_const[1]
+    alias t_to_idx_const = tv_to_idx[0]
+    alias v_to_idx = tv_to_idx[1]
+    t_to_idx = RuntimeLayout[t_to_idx_const]()
+    t_idx = t_to_idx(thread_idx.x)
+
+    c_reg_tile_vec2 = c_reg_tile.vectorize[1, 2]()
+    alias T = c_reg_tile_vec2.element_type
+    c_gmem_ptr = c_gmem_tile.ptr.offset(t_idx)
 
     @parameter
-    for m_mma in range(num_m_mmas):
+    for mma_id in range(tile_to_idx.size()):
+        alias mma_idx = tile_to_idx(mma_id)
 
         @parameter
-        for n_mma in range(num_n_mmas):
-            alias mma_id = n_mma * num_m_mmas + m_mma
-
-            # (m_mma, n_mma) is coordinates for a warp group's tile.
-            # A warp group is 4x1 warps.
-            warp_tile = c_gmem_tile.tile[wgmma_shape[0] // 4, wgmma_shape[1]](
-                m_mma * 4 + warp_id, n_mma
-            )
-
-            # Tile at (mma_id, 0) is a long vector containing all fragments
-            # for this warp.
-            c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
-
-            # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
-            # elementwise. This pattern repeates to fill the warp tile.
-            copy_local_to_dram[Layout.row_major(8, 4)](
-                warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
-            )
+        for local_idx_v2 in range(c_reg_tile_vec2.layout[1].size()):
+            alias local_idx = local_idx_v2 * 2
+            alias v_idx = v_to_idx(local_idx)
+            alias c_idx = v_idx + mma_idx
+            casted_vec = c_reg_tile_vec2[mma_id, local_idx_v2].cast[c_type]()
+            c_gmem_ptr.offset(c_idx).store[alignment = alignof[T]()](casted_vec)
 
 
 def test_cpasync_wgmma[
