@@ -143,6 +143,7 @@ class Graph:
     _weights: dict[str, _GraphWeight]
     # A global sequence of chains that is updated by side-effecting ops.
     _current_chain: _ChainValue
+    _current_block: mlir.Block
 
     def __init__(
         self,
@@ -185,6 +186,7 @@ class Graph:
                 self._mlir_op = _graph.graph(
                     self._module, loc, name, function_type
                 )
+                self._current_block = self._mlir_op.regions[0].blocks[0]
         param_decl = _graph.dim_param_decl_array_attr(
             self._context,
             [
@@ -237,6 +239,15 @@ class Graph:
             CURRENT_GRAPH.reset(token)
 
     @contextlib.contextmanager
+    def _enter_block(self, block: mlir.Block):
+        current_block = self._current_block
+        self._current_block = block
+        try:
+            yield
+        finally:
+            self._current_block = current_block
+
+    @contextlib.contextmanager
     def _capturing_mlir_diagnostics(self):
         diagnostics = []
 
@@ -269,7 +280,7 @@ class Graph:
 
     @property
     def _body(self) -> mlir.Block:
-        return self._mlir_op.regions[0].blocks[0]
+        return self._current_block
 
     def _add_op(self, op, *args, **kwargs) -> list[Value]:
         """Wrapper for clients that only require the op results."""
