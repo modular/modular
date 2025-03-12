@@ -3017,7 +3017,7 @@ struct Mean:
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3026,7 +3026,7 @@ struct Mean:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output._fused_store[width=width](
+            output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -3069,7 +3069,7 @@ struct ReduceAdd:
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3078,7 +3078,7 @@ struct ReduceAdd:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output._fused_store[width=width](
+            output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -3124,7 +3124,7 @@ struct ReduceMul:
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3133,7 +3133,7 @@ struct ReduceMul:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output._fused_store[width=width](
+            output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -3179,7 +3179,7 @@ struct ReduceMax:
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3188,7 +3188,7 @@ struct ReduceMax:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output._fused_store[width=width](
+            output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -3234,7 +3234,7 @@ struct ReduceMin:
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3243,7 +3243,7 @@ struct ReduceMin:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output._fused_store[width=width](
+            output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -3750,7 +3750,7 @@ struct Gather:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3768,7 +3768,7 @@ struct Gather:
         fn output_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank], val: SIMD[output.type, width]):
-            output._fused_store[width=width](
+            output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -3859,7 +3859,7 @@ struct LayerNorm:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3868,7 +3868,7 @@ struct LayerNorm:
         fn gamma_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[type, width]:
-            return gamma._fused_load[width=width](rebind[IndexList[1]](coords))
+            return gamma._lambda_load[width=width](rebind[IndexList[1]](coords))
 
         var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -3915,7 +3915,7 @@ struct RMSNorm:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -4113,7 +4113,7 @@ struct Matmul:
         fn output_fn[
             _type: DType, _width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_type, _width]):
-            c._fused_store[width=_width, element_alignment=alignment](
+            c._lambda_store[width=_width, element_alignment=alignment](
                 coords,
                 rebind[SIMD[c.type, _width]](val),
             )
@@ -4158,7 +4158,7 @@ struct BatchMatmul:
         fn output_fn[
             _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
-            c._fused_store[width=_width, element_alignment=alignment](
+            c._lambda_store[width=_width, element_alignment=alignment](
                 rebind[IndexList[c.rank]](coords),
                 rebind[SIMD[c.type, _width]](val),
             )
@@ -4244,7 +4244,7 @@ struct LinalgBandPart:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -4506,7 +4506,7 @@ struct Softmax:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -4544,7 +4544,7 @@ struct LogSoftmax:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
-            return input._fused_load[width=width](
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -4660,7 +4660,7 @@ struct Concat:
             constrained[
                 input_index < inputs.size, "tensor index out of bounds"
             ]()
-            return inputs[input_index]._fused_load[width=width](
+            return inputs[input_index]._lambda_load[width=width](
                 rebind[IndexList[rank]](indices)
             )
 
@@ -4669,7 +4669,7 @@ struct Concat:
         fn epilogue_wrapper[
             _type: DType, _rank: Int, width: Int, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_type, width]):
-            output._fused_store[width=width, element_alignment=alignment](
+            output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](indices),
                 rebind[SIMD[output.type, width]](value),
             )
@@ -4957,7 +4957,7 @@ struct Conv:
         fn output_fn[
             _type: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
-            output._fused_store[width=_width](
+            output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, _width]](val),
             )
@@ -5169,7 +5169,7 @@ struct ConvTranspose:
         fn output_fn[
             _type: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
-            output._fused_store[width=_width](
+            output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, _width]](val),
             )
@@ -5323,14 +5323,18 @@ struct NoMaskFlashAttentionCPU:
         fn k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.type, width]:
-            return k._fused_load[width=width](rebind[IndexList[k.rank]](coords))
+            return k._lambda_load[width=width](
+                rebind[IndexList[k.rank]](coords)
+            )
 
         @parameter
         @always_inline
         fn v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.type, width]:
-            return v._fused_load[width=width](rebind[IndexList[v.rank]](coords))
+            return v._lambda_load[width=width](
+                rebind[IndexList[v.rank]](coords)
+            )
 
         @parameter
         @always_inline
@@ -5371,21 +5375,25 @@ struct WithMaskFlashAttentionSplitKVCPU:
         fn k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.type, width]:
-            return k._fused_load[width=width](rebind[IndexList[k.rank]](coords))
+            return k._lambda_load[width=width](
+                rebind[IndexList[k.rank]](coords)
+            )
 
         @parameter
         @always_inline
         fn v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.type, width]:
-            return v._fused_load[width=width](rebind[IndexList[v.rank]](coords))
+            return v._lambda_load[width=width](
+                rebind[IndexList[v.rank]](coords)
+            )
 
         @parameter
         @always_inline
         fn k_cache_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k_cache.type, width]:
-            return k_cache._fused_load[width=width](
+            return k_cache._lambda_load[width=width](
                 rebind[IndexList[k_cache.rank]](coords)
             )
 
@@ -5394,7 +5402,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         fn v_cache_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v_cache.type, width]:
-            return v_cache._fused_load[width=width](
+            return v_cache._lambda_load[width=width](
                 rebind[IndexList[v_cache.rank]](coords)
             )
 
@@ -5403,7 +5411,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         fn mask_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[mask.type, width]:
-            return mask._fused_load[width=width](
+            return mask._lambda_load[width=width](
                 rebind[IndexList[mask.rank]](coords)
             )
 
@@ -5449,21 +5457,25 @@ struct WithMaskFlashAttentionCPU:
         fn k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.type, width]:
-            return k._fused_load[width=width](rebind[IndexList[k.rank]](coords))
+            return k._lambda_load[width=width](
+                rebind[IndexList[k.rank]](coords)
+            )
 
         @parameter
         @always_inline
         fn v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.type, width]:
-            return v._fused_load[width=width](rebind[IndexList[v.rank]](coords))
+            return v._lambda_load[width=width](
+                rebind[IndexList[v.rank]](coords)
+            )
 
         @parameter
         @always_inline
         fn mask_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[mask.type, width]:
-            return mask._fused_load[width=width](
+            return mask._lambda_load[width=width](
                 rebind[IndexList[mask.rank]](coords)
             )
 
@@ -7944,7 +7956,7 @@ struct DistributedAllReduceSum1Devices:
             constrained[
                 input_index < Self.num_devices, "tensor index out of bounds"
             ]()
-            return outputs[input_index]._fused_store[
+            return outputs[input_index]._lambda_store[
                 width=_width, element_alignment=_alignment
             ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
 
@@ -8021,7 +8033,7 @@ struct DistributedAllReduceSum2Devices:
             constrained[
                 input_index < Self.num_devices, "tensor index out of bounds"
             ]()
-            return outputs[input_index]._fused_store[
+            return outputs[input_index]._lambda_store[
                 width=_width, element_alignment=_alignment
             ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
 
@@ -8114,7 +8126,7 @@ struct DistributedAllReduceSum4Devices:
             constrained[
                 input_index < Self.num_devices, "tensor index out of bounds"
             ]()
-            return outputs[input_index]._fused_store[
+            return outputs[input_index]._lambda_store[
                 width=_width, element_alignment=_alignment
             ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
 
@@ -8243,7 +8255,7 @@ struct DistributedAllReduceSum8Devices:
             constrained[
                 input_index < Self.num_devices, "tensor index out of bounds"
             ]()
-            return outputs[input_index]._fused_store[
+            return outputs[input_index]._lambda_store[
                 width=_width, element_alignment=_alignment
             ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
 
