@@ -1,0 +1,32 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_daolabs_fa3_llama3_70B_4xH100
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_daolabs_fa3.mojo
+
+params:
+
+# llama3.3 70B shapes at TP=4
+# token gen
+- $seq_len: 1
+  $cache_len: [8192, 16384]
+  $batch_size: 1
+  num_q_heads: 16
+  num_kv_heads: 2
+  head_dim: 128
+  metadata:
+    MODEL: llama3.3
+
+
+# context encoding
+- $seq_len: [8192, 16384]
+  $cache_len: 0
+  $batch_size: 1
+  num_q_heads: 16
+  num_kv_heads: 2
+  head_dim: 128
+  metadata:
+    MODEL: llama3.3

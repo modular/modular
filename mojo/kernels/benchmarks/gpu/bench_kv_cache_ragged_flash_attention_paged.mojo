@@ -23,6 +23,13 @@ from nn.mha_score_mod import IdentityScoreMod
 from utils.index import IndexList
 
 
+def flops(
+    batch: Int, nheads: Int, seqlen_q: Int, seqlen_k: Int, headdim: Int
+) -> Int:
+    var avg_seqlen = (max(0, seqlen_k - seqlen_q) + seqlen_k) / 2
+    return Int(batch * nheads * 2 * seqlen_q * avg_seqlen * (headdim + headdim))
+
+
 fn _get_run_name[
     type: DType,
     num_q_heads: Int,
@@ -109,7 +116,6 @@ def execute_kv_cache_ragged_flash_attention[
     var total_seq_len: UInt32 = 0
     var valid_lengths = List[Int]()
 
-    var flop_count = 0
     for i in range(batch_size):
         var curr_seq_length: UInt32
         if use_random_seq_lengths:
@@ -132,14 +138,6 @@ def execute_kv_cache_ragged_flash_attention[
         input_row_offsets_host.tensor[i] = total_seq_len
         cache_lengths_host.tensor[i] = curr_cache_length
         total_seq_len += curr_seq_length
-
-        flop_count += Int(
-            4
-            * num_q_heads
-            * (curr_cache_length + curr_seq_length)
-            * curr_seq_length
-            * head_dim
-        )
 
     input_row_offsets_host.tensor[batch_size] = total_seq_len
     var input_row_offsets_device = input_row_offsets_host.copy_to_device(ctx)
@@ -240,6 +238,13 @@ def execute_kv_cache_ragged_flash_attention[
 
         b.iter_custom[kernel_launch](ctx)
 
+    flop_count = flops(
+        batch_size,
+        num_q_heads,
+        seq_len,
+        cache_len + seq_len,
+        head_dim,
+    )
     m.bench_function[bench_func](
         BenchId(
             _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
