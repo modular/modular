@@ -13,7 +13,7 @@ from gpu.id import thread_idx
 from gpu.memory import _GPUAddressSpace as AddressSpace
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor, load_to_simd
-from layout.fillers import arange
+from layout._fillers import arange
 from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_core import TensorCore
 

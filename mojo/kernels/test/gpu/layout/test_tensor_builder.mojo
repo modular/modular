@@ -7,7 +7,7 @@
 
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from layout.fillers import *
+from layout._fillers import *
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_builder import static
 

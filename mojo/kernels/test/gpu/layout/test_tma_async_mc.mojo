@@ -22,7 +22,7 @@ from gpu.sync import (
 )
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
-from layout.fillers import arange
+from layout._fillers import arange
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
 from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
 from memory.pointer import _GPUAddressSpace

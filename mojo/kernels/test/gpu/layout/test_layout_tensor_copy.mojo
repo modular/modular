@@ -21,7 +21,7 @@ from gpu.memory import (
 )
 from layout import *
 from layout._utils import ManagedLayoutTensor
-from layout.fillers import arange
+from layout._fillers import arange
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,

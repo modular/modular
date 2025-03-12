@@ -15,7 +15,7 @@ from gpu.id import block_idx, thread_idx
 from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
-from layout.fillers import arange
+from layout._fillers import arange
 from layout.int_tuple import product
 from layout.layout_tensor import copy_local_to_dram
 from utils.numerics import get_accum_type

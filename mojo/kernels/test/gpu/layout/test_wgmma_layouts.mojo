@@ -22,7 +22,7 @@ from gpu.mma import (
 )
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
-from layout.fillers import arange
+from layout._fillers import arange
 from layout.layout import print_layout
 from layout.tensor_core_async import (
     _lhs_descriptor,
