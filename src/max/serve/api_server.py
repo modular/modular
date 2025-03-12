@@ -74,7 +74,7 @@ async def lifespan(
     except Exception as e:
         logger.warning("Failed to send telemetry log: %s", e)
 
-    logger.info(f"Launching server on http://{settings.host}:{settings.port}")
+    logger.info("Starting server...")
     try:
         # start telemetry worker and configure Metrics to use it
         async with start_telemetry_consumer(settings) as metric_client:
