@@ -1324,7 +1324,7 @@ modular_shared_library(
 )
 
 copy_files(
-    name = "copy-ptxas",
+    name = "ptxas",
     # Don't handle mac because there is no binary to use
     # But do populate a default file to simplify other refs
     srcs = select({
