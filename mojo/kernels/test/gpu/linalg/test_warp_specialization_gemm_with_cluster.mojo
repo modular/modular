@@ -82,7 +82,6 @@ def test_warp_specialize_gemm_with_multicasting[
     partitioned_multicast: Bool = False,
     grid_shape: OptionalReg[IndexList[2]] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
-    use_stmtx: Bool = True,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
     var M = m.value
     var N = n.value
@@ -203,7 +202,6 @@ def test_warp_specialize_gemm_with_multicasting[
     warp_specialize_gemm_with_multicasting[
         transpose_b=transpose_b,
         config=matmul_config,
-        use_stmtx=use_stmtx,
         schedule=schedule,
         grid_shape=grid_shape,
     ](
