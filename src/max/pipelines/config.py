@@ -42,7 +42,6 @@ from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import (
-    WeightsAdapter,
     WeightsFormat,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
@@ -924,11 +923,6 @@ class PipelineConfig(MAXConfig):
 
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
-
-    _weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(
-        default_factory=dict
-    )
-    """Weight adapter for the provided `weight_path`."""
 
     max_cache_batch_size: Optional[int] = None
     """DEPRECATED: The maximum cache batch size to use for the model. Use max_batch_size instead."""

@@ -16,14 +16,14 @@ from __future__ import annotations
 import logging
 import time
 import warnings
-from typing import List, Sequence, Union, cast
+from typing import List, Optional, Sequence, Union, cast
 
 import numpy as np
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.graph.weights import Weights
+from max.graph.weights import Weights, WeightsAdapter
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -90,6 +90,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -99,6 +100,7 @@ class Qwen2Model(PipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
+            adapter,
         )
         self.model = self.load_model(session)
 

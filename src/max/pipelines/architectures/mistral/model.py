@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Sequence, cast
+from typing import Optional, Sequence, cast
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph.weights import SafetensorWeights, Weights
+from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -78,6 +78,7 @@ class MistralModel(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -87,6 +88,7 @@ class MistralModel(PipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
+            adapter,
         )
         self.model = self.load_model(session)
 

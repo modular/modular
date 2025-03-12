@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Optional
 
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
-from max.graph.weights import Weights
+from max.graph.weights import Weights, WeightsAdapter
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -62,6 +63,7 @@ class Whisper(PipelineModel):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -71,6 +73,7 @@ class Whisper(PipelineModel):
             devices,
             kv_cache_config,
             weights,
+            adapter,
         )
         self.model = self.load_model(session)
 

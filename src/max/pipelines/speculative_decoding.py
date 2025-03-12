@@ -15,6 +15,8 @@
 
 from typing import Type, TypeVar
 
+from max.graph.weights import WeightsAdapter, WeightsFormat
+
 from .config import PipelineConfig
 from .context import InputContext
 from .interfaces import TextGenerationResponse, TokenGenerator
@@ -31,6 +33,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         pipeline_config: PipelineConfig,
         pipeline_model: Type[PipelineModel],
         eos_token_id: int,
+        weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
         raise NotImplementedError(
             "init not yet implemented for SpeculativeDecodingTextGenerationPipeline"

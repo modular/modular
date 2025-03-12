@@ -17,13 +17,13 @@ import logging
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import cast
+from typing import Optional, cast
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph.weights import SafetensorWeights, Weights
+from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -101,6 +101,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -110,6 +111,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             devices,
             kv_cache_config,
             weights,
+            adapter,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the

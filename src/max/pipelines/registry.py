@@ -389,9 +389,6 @@ class PipelineRegistry:
 
         model_config.finalize_encoding_config()
 
-        # Pass weight adapters to the PipelineConfig.
-        pipeline_config._weight_adapters = arch.weight_adapters
-
         # We should now have a valid quantization_encoding, and possibly a weight_path.
         # If no weight_path is provided, we should grab the default.
         if not model_config.weight_path:
@@ -1198,6 +1195,7 @@ class PipelineRegistry:
                 pipeline_config=pipeline_config,
                 pipeline_model=arch.pipeline_model,
                 eos_token_id=tokenizer.eos,
+                weight_adapters=arch.weight_adapters,
             )
         else:
             pipeline_config = self._set_hf_pipeline_defaults(pipeline_config)

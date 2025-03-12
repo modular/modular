@@ -15,14 +15,14 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, List, Literal, Sequence, cast
+from typing import Any, Callable, List, Literal, Optional, Sequence, cast
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.graph.weights import Weights, weights_format
+from max.graph.weights import Weights, WeightsAdapter
 from max.nn import Module, Signals
 from max.pipelines import (
     KVCacheConfig,
@@ -124,6 +124,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         """
         Args:
@@ -138,6 +139,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
+            adapter,
         )
         self.model = self.load_model(session)
 
@@ -380,7 +382,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         logger.info("Building and compiling model...")
         before = time.perf_counter()
-        graph = self._build_graph(self.weights)
+        graph = self._build_graph(self.weights, self.adapter)
         model = session.load(graph, weights_registry=self.state_dict)
         after = time.perf_counter()
         logger.info(
@@ -412,7 +414,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
         ]
         return kv_caches_per_dev
 
-    def _build_opaque_graph(self, weights: Weights) -> Graph:
+    def _build_opaque_graph(
+        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
+    ) -> Graph:
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -424,12 +428,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
         huggingface_config = self.huggingface_config
-        _weights_format = weights_format(
-            self.pipeline_config.model_config.weight_path
-        )
-        adapter = self.pipeline_config._weight_adapters.get(
-            _weights_format,
-        )
         if adapter:
             state_dict = adapter(
                 dict(weights.items()),
@@ -526,9 +524,11 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 graph.output(*outputs)
                 return graph
 
-    def _build_graph(self, weights: Weights) -> Graph:
+    def _build_graph(
+        self, weights: Weights, adapter: Optional[WeightsAdapter] = None
+    ) -> Graph:
         if self.kv_cache_config.cache_strategy.uses_opaque():
-            return self._build_opaque_graph(weights)
+            return self._build_opaque_graph(weights, adapter)
 
         tokens_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
         attn_mask_type = TensorType(
@@ -541,11 +541,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
             )
 
         kv_inputs = self.kv_manager.input_symbols()[0]
-
-        _weights_format = weights_format(
-            self.pipeline_config.model_config.weight_path
-        )
-        adapter = self.pipeline_config._weight_adapters.get(_weights_format)
         if adapter:
             state_dict = adapter(
                 dict(weights.items()),
@@ -715,6 +710,7 @@ class Llama3Model(LlamaModelBase):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -724,4 +720,5 @@ class Llama3Model(LlamaModelBase):
             devices,
             kv_cache_config,
             weights,
+            adapter,
         )

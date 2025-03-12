@@ -32,7 +32,13 @@ import torch
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph.weights import Weights, load_weights
+from max.graph.weights import (
+    Weights,
+    WeightsAdapter,
+    WeightsFormat,
+    load_weights,
+    weights_format,
+)
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -156,6 +162,7 @@ class PipelineModel(ABC, Generic[T]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
@@ -163,6 +170,7 @@ class PipelineModel(ABC, Generic[T]):
         self.devices = devices
         self.kv_cache_config = kv_cache_config
         self.weights = weights
+        self.adapter = adapter
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
@@ -404,10 +412,12 @@ class TextGenerationPipeline(TokenGenerator[T]):
         pipeline_model: Type[PipelineModel],
         # TODO: This should be removed.
         eos_token_id: int,
+        weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
         self._pipeline_config = pipeline_config
         self._huggingface_config: Optional[AutoConfig] = None
         self._devices = load_devices(pipeline_config.model_config.device_specs)
+        self._weight_adapters = weight_adapters
 
         # Expand eos tokens if more are provided in pipeline_config
         if "eos_token_id" in self.huggingface_config:
@@ -481,6 +491,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         # Load weights
         weights = load_weights(weight_paths)
+        _weight_format = weights_format(weight_paths)
+
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -489,6 +501,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             devices=self._devices,
             kv_cache_config=self._pipeline_config.kv_cache_config,
             weights=weights,
+            adapter=self._weight_adapters.get(_weight_format, None),
         )
 
         # Load sampler.
