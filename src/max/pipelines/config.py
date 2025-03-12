@@ -315,7 +315,7 @@ class HuggingFaceRepo:
     def size_of(self, filename: str) -> Union[int, None]:
         if self.repo_type == RepoType.online:
             url = huggingface_hub.hf_hub_url(self.repo_id, filename)
-            metadata = huggingface_hub.get_hf_file_metadata(url)
+            metadata = huggingface_hub.get_hf_file_metadata(url, timeout=60)
             return metadata.size
         raise NotImplementedError("not implemented for non-online repos.")
 
