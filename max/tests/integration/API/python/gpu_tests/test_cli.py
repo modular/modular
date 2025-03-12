@@ -13,6 +13,7 @@ import click
 import pytest
 from click.testing import CliRunner
 from max.driver import DeviceSpec
+from max.engine import GPUProfilingMode
 from max.entrypoints.cli import (
     get_default,
     get_field_type,
@@ -165,7 +166,7 @@ class TestCommand:
     valid: bool
 
 
-VALID_COMMANDS = [
+TEST_COMMANDS = [
     TestCommand(
         args=[
             "--model-path",
@@ -184,6 +185,54 @@ VALID_COMMANDS = [
             },
         },
         valid=True,
+    ),
+    TestCommand(
+        args=[
+            "--model-path",
+            "modularai/llama-3.1",
+            "--devices",
+            "gpu",
+            "--gpu-profiling",
+            "on",
+        ],
+        expected={
+            "profiling_config": {
+                "gpu_profiling": GPUProfilingMode.ON,
+            },
+        },
+        valid=True,
+    ),
+    TestCommand(
+        args=[
+            "--model-path",
+            "modularai/llama-3.1",
+            "--devices",
+            "gpu",
+            "--gpu-profiling",
+            "detailed",
+        ],
+        expected={
+            "profiling_config": {
+                "gpu_profiling": GPUProfilingMode.DETAILED,
+            },
+        },
+        valid=True,
+    ),
+    TestCommand(
+        args=[
+            "--model-path",
+            "modularai/llama-3.1",
+            "--devices",
+            "gpu",
+            "--gpu-profiling",
+            "invalid",
+        ],
+        expected={
+            "profiling_config": {
+                "gpu_profiling": GPUProfilingMode.DETAILED,
+            },
+        },
+        valid=False,
     ),
     TestCommand(
         args=[
@@ -256,7 +305,7 @@ def testing(
     **config_kwargs,
 ):
     # Retrieve test command.
-    test_command = VALID_COMMANDS[idx]
+    test_command = TEST_COMMANDS[idx]
 
     if test_command.valid:
         # Initialize Pipeline Config.
@@ -269,6 +318,7 @@ def testing(
             if isinstance(test_value, str) and test_value in (
                 "model_config",
                 "kv_cache_config",
+                "profiling_config",
             ):
                 test_value = getattr(test_value, attr_name)
 
@@ -293,6 +343,7 @@ def testing(
                 if isinstance(test_value, str) and test_value in (
                     "model_config",
                     "kv_cache_config",
+                    "profiling_config",
                 ):
                     test_value = getattr(test_value, attr_name)
 
@@ -308,9 +359,12 @@ def testing(
 
 def test_cli__terminal_commands():
     runner = CliRunner()
-    for idx, command in enumerate(VALID_COMMANDS):
+    for idx, command in enumerate(TEST_COMMANDS):
         command.args.extend(["--idx", str(idx)])
         print(f"full_args: {command.args}")
         result = runner.invoke(testing, command.args)
 
-        assert result.exit_code == 0
+        if command.valid:
+            assert result.exit_code == 0
+        else:
+            assert result.exit_code != 0
