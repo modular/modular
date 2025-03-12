@@ -631,3 +631,13 @@ def test_item_multiple_elements() -> None:
         match="calling `item` on a tensor with 2 items but expected only 1",
     ):
         tensor.item()
+
+
+def test_aligned() -> None:
+    tensor = Tensor((5,), DType.int32)
+    assert tensor._aligned()
+    assert tensor._aligned(DType.int32.align)
+
+    tensor_uint8 = tensor.view(DType.uint8)
+    assert tensor_uint8[1]._aligned()
+    assert not tensor_uint8[1]._aligned(DType.int32.align)
