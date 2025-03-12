@@ -19,11 +19,13 @@ def main():
 
 """
 
-from buffer.dimlist import DimList
 from collections import InlineArray, Optional
 
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from max._tensor_utils import _indexing
+from max._tensor_utils import (
+    DynamicTensor,
+    ManagedTensorSlice,
+    _indexing,
+)
 from max.tensor import Tensor as OldTensor
 from max.tensor import TensorShape, TensorSpec
 from memory import UnsafePointer
@@ -49,17 +51,6 @@ struct Tensor[type: DType, rank: Int](CollectionElement):
     # this is needed because DeviceMemory may have a custom free
     # function set on the cpp side.
     var _device_memory_impl_ptr: UnsafePointer[NoneType]
-
-    alias layout_tensor = LayoutTensor[
-        type,
-        Layout(
-            IntTuple(DimList.create_unknown[rank]()),
-            IntTuple(DimList.create_unknown[rank]()),
-        ),
-        MutableAnyOrigin,
-    ]
-    """The corresponding layout tensor type which acts as a structured view
-    into the underlying data."""
 
     fn __init__(out self) raises:
         """Default constructor for Tensor. Accessing the elements of default
@@ -180,24 +171,61 @@ struct Tensor[type: DType, rank: Int](CollectionElement):
         var offset = _indexing._dot_prod(indices, self._strides)
         return self._ptr[offset]
 
+    fn _canonicalize_slices(
+        self, slices: VariadicListMem[Slice, _]
+    ) -> InlineArray[Slice, rank]:
+        var slice_array = InlineArray[Slice, rank](uninitialized=True)
+        for i in range(len(slices)):
+            slice_array.unsafe_ptr().offset(i).init_pointee_copy(slices[i])
+            slice_array[i].start = (slice_array[i].start or 0).value()
+            slice_array[i].end = (slice_array[i].end or self._spec[i]).value()
+        # pads any unspecified Slices with default values
+        for i in range(len(slices), rank):
+            slice_array[i].start = 0
+            slice_array[i].end = self._spec[i]
+            slice_array[i].step = 1
+
+        return slice_array
+
     @always_inline
-    fn to_layout_tensor(
+    fn unsafe_slice(
         self,
-        out result: Self.layout_tensor,
-    ) raises:
+        *slices: Slice,
+    ) raises -> DynamicTensor[type, rank].Type:
         """Returns a view of the tensor conforming to given slices. If given
         a single slice `:` the view would point to the entire tensor. The caller
         is responsible to make sure tensor outlives the returned slice.
 
         Args:
+          slices: Dimension slices to slice against.
+
+        Returns:
+          View of the tensor according to given slices.
+        """
+        if len(slices) > rank:
+            raise "len(slices) exceeds rank"
+        return DynamicTensor[type, rank].Type(
+            self.unsafe_ptr(),
+            self._canonicalize_slices(slices),
+            self._spec,
+        )
+
+    @always_inline
+    fn to_layout_tensor(
+        self,
+        *slices: Slice,
+    ) raises -> __type_of(self.unsafe_slice().to_layout_tensor()):
+        """Returns a view of the tensor conforming to given slices. If given
+        a single slice `:` the view would point to the entire tensor. The caller
+        is responsible to make sure tensor outlives the returned slice.
+
+        Args:
+            slices: Dimension slices to slice against.
 
         Returns:
             View of the tensor according to given slices.
         """
-        return __type_of(result)(
-            self.unsafe_ptr(),
-            RuntimeLayout[result.layout](self._spec.shape, self._strides),
-        )
+        return self.unsafe_slice().to_layout_tensor()
 
     fn _steal_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         var tmp = self._ptr
