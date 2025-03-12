@@ -83,7 +83,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             huggingface_config=huggingface_config,
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=devices,
-            kv_cache_config=self._pipeline_config.kv_cache_config,
+            kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
             weights=weights,
         )
 

@@ -82,7 +82,7 @@ def serve_pipeline(
             failure_percentage,
         )
 
-        pipeline_config.kv_cache_config.cache_strategy = (
+        pipeline_config.model_config.kv_cache_config.cache_strategy = (
             KVCacheStrategy.CONTINUOUS
         )
 

@@ -537,6 +537,46 @@ class MAXConfig:
         ...
 
 
+# frozen is False (for now) because of _available_cache_memory being set by
+# internal code.
+@dataclass(frozen=False)
+class KVCacheConfig(MAXConfig):
+    cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT
+    """The cache strategy to use. This defaults to :obj:`model_default`, which will set the cache
+    strategy based on the default strategy for the architecture requested.
+
+    You can also force the engine to use a specific caching strategy: :obj:`naive` | :obj:`continuous` | :obj:`paged`.
+    """
+
+    kv_cache_page_size: int = 128
+    """The number of tokens in a single page in the paged KVCache."""
+
+    enable_prefix_caching: bool = False
+    """Whether to enable prefix caching for the paged attention KVCache."""
+
+    device_memory_utilization: float = 0.9
+    """The fraction of available device memory that the process should consume.
+
+    This is used to inform the size of the KVCache workspace. The calculation is:
+
+    .. math::
+
+        kv\\_cache\\_workspace = (total\\_free\\_memory \\times device\\_memory\\_utilization) - model\\_weights\\_size
+    """
+
+    _available_cache_memory: Optional[int] = None
+    """The amount of available cache memory in bytes. This should only be set by internal code."""
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        return {
+            "cache_strategy": "Force a specific cache strategy: 'naive' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
+            "kv_cache_page_size": "The number of tokens in a single page in the paged KVCache. Default is set to 512.",
+            "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. This defaults to false.",
+            "device_memory_utilization": "The fraction of available device memory that the process should consume. This is used to inform the size of the KVCache workspace: kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size. Default is set to 0.9.",
+        }
+
+
 @dataclass
 class MAXModelConfig(MAXConfig):
     """Abstract base class for all MAX model configs.
@@ -583,6 +623,9 @@ class MAXModelConfig(MAXConfig):
     # also autopopulates default values.
     _quant_config: Optional[QuantizationConfig] = None
     """Optional config for specifying quantization parameters. This should only be set by internal code."""
+
+    _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
+    """The KVCache config."""
 
     # TODO(zheng): This can't just be a __post_init__ method, because we need to
     # it also sets and updates other fields which may not be determined /
@@ -696,6 +739,10 @@ class MAXModelConfig(MAXConfig):
             self.model_path = self._weights_repo_id
 
     @property
+    def kv_cache_config(self) -> KVCacheConfig:
+        return self._kv_cache_config
+
+    @property
     def graph_quantization_encoding(self) -> Optional[QuantizationEncoding]:
         """Converts the CLI encoding to a MAX Graph quantization encoding.
 
@@ -771,7 +818,7 @@ class MAXModelConfig(MAXConfig):
 
     @staticmethod
     def help() -> dict[str, str]:
-        return {
+        max_model_help = {
             "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
             "huggingface_repo_id": "DEPRECATED: Use `model_path` instead.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
@@ -780,6 +827,15 @@ class MAXModelConfig(MAXConfig):
             "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
             "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
         }
+
+        config_help = KVCacheConfig.help()
+        for key in config_help:
+            if key in max_model_help:
+                raise ValueError(
+                    f"Duplicate help key '{key}' found in {KVCacheConfig.__name__}"
+                )
+        max_model_help.update(config_help)
+        return max_model_help
 
 
 @dataclass
@@ -801,46 +857,6 @@ class SamplingConfig(MAXConfig):
         return {
             "top_k": "Limit sampling to the top K most probable tokens during generation. This can help control randomness and improve output quality. This defaults to 1, which defaults to greedy sampling.",
             "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
-        }
-
-
-# frozen is False (for now) because of _available_cache_memory being set by
-# internal code.
-@dataclass(frozen=False)
-class KVCacheConfig(MAXConfig):
-    cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT
-    """The cache strategy to use. This defaults to :obj:`model_default`, which will set the cache
-    strategy based on the default strategy for the architecture requested.
-
-    You can also force the engine to use a specific caching strategy: :obj:`naive` | :obj:`continuous` | :obj:`paged`.
-    """
-
-    kv_cache_page_size: int = 128
-    """The number of tokens in a single page in the paged KVCache."""
-
-    enable_prefix_caching: bool = False
-    """Whether to enable prefix caching for the paged attention KVCache."""
-
-    device_memory_utilization: float = 0.9
-    """The fraction of available device memory that the process should consume.
-
-    This is used to inform the size of the KVCache workspace. The calculation is:
-
-    .. math::
-
-        kv\\_cache\\_workspace = (total\\_free\\_memory \\times device\\_memory\\_utilization) - model\\_weights\\_size
-    """
-
-    _available_cache_memory: Optional[int] = None
-    """The amount of available cache memory in bytes. This should only be set by internal code."""
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "cache_strategy": "Force a specific cache strategy: 'naive' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
-            "kv_cache_page_size": "The number of tokens in a single page in the paged KVCache. Default is set to 512.",
-            "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. This defaults to false.",
-            "device_memory_utilization": "The fraction of available device memory that the process should consume. This is used to inform the size of the KVCache workspace: kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size. Default is set to 0.9.",
         }
 
 
@@ -946,9 +962,6 @@ class PipelineConfig(MAXConfig):
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
-    _kv_cache_config: KVCacheConfig = field(default_factory=KVCacheConfig)
-    """The KVCache config."""
-
     _sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
     """The sampling config."""
 
@@ -980,7 +993,6 @@ class PipelineConfig(MAXConfig):
             # instead of hardcoding the config names.
             for config_name in [
                 "_sampling_config",
-                "_kv_cache_config",
                 "_profiling_config",
                 # TODO(zheng): Remove this once backward compatibility is no
                 # longer needed for MAXModelConfig.
@@ -988,13 +1000,35 @@ class PipelineConfig(MAXConfig):
             ]:
                 config_class = get_type_hints(self.__class__)[config_name]
                 matched_kwargs = {}
+                kv_cache_kwargs = {}
+
                 for key, value in unmatched_kwargs.items():
                     if key in config_class.__dataclass_fields__:
                         matched_kwargs[key] = value
+                    # Check if this is a KVCache config param
+                    elif (
+                        config_name == "_model_config"
+                        and key in KVCacheConfig.__dataclass_fields__
+                    ):
+                        kv_cache_kwargs[key] = value
+
                 if matched_kwargs:
-                    setattr(self, config_name, config_class(**matched_kwargs))
+                    if config_name == "_model_config" and kv_cache_kwargs:
+                        # Create new model config with updated KVCache config
+                        model_config = config_class(**matched_kwargs)
+                        model_config._kv_cache_config = KVCacheConfig(
+                            **kv_cache_kwargs
+                        )
+                        setattr(self, config_name, model_config)
+                    else:
+                        setattr(
+                            self, config_name, config_class(**matched_kwargs)
+                        )
+
                     # Remove matched kwargs
                     for key in matched_kwargs:
+                        del unmatched_kwargs[key]
+                    for key in kv_cache_kwargs:
                         del unmatched_kwargs[key]
 
         if unmatched_kwargs:
@@ -1090,7 +1124,7 @@ class PipelineConfig(MAXConfig):
         # Add help text for all MAX config classes
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
-        for config_class in [SamplingConfig, KVCacheConfig, ProfilingConfig]:
+        for config_class in [SamplingConfig, ProfilingConfig]:
             config_help = config_class.help()  # type: ignore
             for key in config_help:
                 if key in pipeline_help:
@@ -1107,10 +1141,6 @@ class PipelineConfig(MAXConfig):
     @property
     def sampling_config(self) -> SamplingConfig:
         return self._sampling_config
-
-    @property
-    def kv_cache_config(self) -> KVCacheConfig:
-        return self._kv_cache_config
 
     @property
     def profiling_config(self) -> ProfilingConfig:

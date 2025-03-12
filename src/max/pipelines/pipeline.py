@@ -499,7 +499,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             huggingface_config=self.huggingface_config,
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=self._devices,
-            kv_cache_config=self._pipeline_config.kv_cache_config,
+            kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
             weights=weights,
             adapter=self._weight_adapters.get(_weight_format, None),
         )
