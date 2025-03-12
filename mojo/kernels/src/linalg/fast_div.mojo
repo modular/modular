@@ -27,6 +27,7 @@ fn _ceillog2(x: Scalar) -> Int32:
     return bitwidthof[x.type]()
 
 
+@register_passable("trivial")
 struct FastDiv[type: DType]:
     """Implements fast division for a given type.
 

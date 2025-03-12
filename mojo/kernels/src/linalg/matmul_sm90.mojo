@@ -717,6 +717,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
     alias simd_size = simdwidthof[c_type]()
 
+    var scheduler = TileScheduler[block_tile_shape, grid_shape](problem_shape)
+
     constrained[
         not partitioned_multicast
         or a_swizzle.bytes() // sizeof[a_type]() == BK,
@@ -756,7 +758,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         transpose_b=transpose_b,
     ]()
 
-    var scheduler = TileScheduler[block_tile_shape, grid_shape](problem_shape)
+    var work_info = scheduler.get_current_work_info()
 
     var smem = external_memory[
         UInt8, address_space = AddressSpace.SHARED, alignment=8
@@ -848,9 +850,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
             var write_pipeline_states = PipelineState[pipeline_stages]()
 
-            while scheduler.work_info():
-                var m_coord = UInt(Int(scheduler.work_info().m))
-                var n_coord = UInt(Int(scheduler.work_info().n))
+            while work_info.is_valid():
+                var m_coord = UInt(Int(work_info.m))
+                var n_coord = UInt(Int(work_info.n))
                 for i in range(num_k_iters):
                     var write_idx = write_pipeline_states.index()
 
@@ -937,7 +939,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                         )
 
                     write_pipeline_states.step()
-                scheduler.advance()
+                work_info = scheduler.fetch_next_work()
 
     else:
 
@@ -972,11 +974,11 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
         var read_pipeline_states = PipelineState[pipeline_stages]()
 
-        while scheduler.work_info():
+        while work_info.is_valid():
             _ = c_reg_tile.fill(0.0)
 
-            var block_y = UInt(Int(ceildiv(scheduler.work_info().m, BM)))
-            var block_x = UInt(Int(ceildiv(scheduler.work_info().n, BN)))
+            var block_y = UInt(Int(ceildiv(work_info.m, BM)))
+            var block_x = UInt(Int(ceildiv(work_info.n, BN)))
             for i in range(num_k_iters):
                 var read_idx = read_pipeline_states.index()
 
@@ -1237,7 +1239,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                                 c_frag.vectorize[1, 2](),
                             )
 
-            scheduler.advance()
+            work_info = scheduler.fetch_next_work()
 
     # TO ensure SEMEM destruction doesn't happen
     @parameter

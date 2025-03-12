@@ -8,6 +8,7 @@ from math import ceildiv
 from gpu.id import grid_dim, block_idx
 from utils.index import Index, IndexList
 from .utils_gpu import block_swizzle
+from linalg.fast_div import FastDiv
 
 
 @value
@@ -20,11 +21,11 @@ struct WorkInfo(Stringable, Writable):
     var k_start: UInt32
     var num_k_tiles: UInt32
     # Whether work tile is completely OOB.
-    var is_valid: Bool
+    var is_valid_tile: Bool
 
     @always_inline
-    fn __bool__(self) -> Bool:
-        return self.is_valid
+    fn is_valid(self) -> Bool:
+        return self.is_valid_tile
 
     @no_inline
     fn __str__(self) -> String:
@@ -42,7 +43,7 @@ struct WorkInfo(Stringable, Writable):
             ", ",
             self.num_k_tiles,
             ", ",
-            self.is_valid,
+            self.is_valid_tile,
             ")",
         )
 
@@ -90,6 +91,7 @@ struct TileScheduler[
     var prob_shape: IndexList[3]  # M x N x K
     var num_waves_m: UInt32
     var num_waves_n: UInt32
+    var log_num_waves_n: FastDiv[DType.uint32]
 
     @always_inline
     fn __init__(mut self, prob_shape: IndexList[3]):
@@ -100,18 +102,19 @@ struct TileScheduler[
                 "Only support block cluster in along raster dimention.",
             ]()
 
+        self.prob_shape = prob_shape
+        self.num_waves_m = ceildiv(self.prob_shape[0], Self.wave_shape[0])
+        self.num_waves_n = ceildiv(self.prob_shape[1], Self.wave_shape[1])
+        self.log_num_waves_n = FastDiv[DType.uint32](Int(self.num_waves_n))
+
         @parameter
         if raster_dim == 0:  # rasterize along M
             self.idx = block_idx.x * grid_dim.y + block_idx.y
         else:
             self.idx = block_idx.x + grid_dim.x * block_idx.y
 
-        self.prob_shape = prob_shape
-        self.num_waves_m = ceildiv(self.prob_shape[0], Self.wave_shape[0])
-        self.num_waves_n = ceildiv(self.prob_shape[1], Self.wave_shape[1])
-
     @always_inline
-    fn work_info(self) -> WorkInfo:
+    fn get_current_work_info(self) -> WorkInfo:
         m, n = self._index_to_mn()
         is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
 
@@ -121,6 +124,11 @@ struct TileScheduler[
     @always_inline
     fn advance(mut self):
         self.idx += Self.num_grids
+
+    @always_inline
+    fn fetch_next_work(mut self) -> WorkInfo:
+        self.advance()
+        return self.get_current_work_info()
 
     @always_inline
     fn _index_to_mn(self) -> Tuple[UInt, UInt]:
@@ -153,23 +161,26 @@ struct TileScheduler[
     @always_inline
     fn _index_to_mn_tile2d(self) -> Tuple[UInt, UInt]:
         # We consider a sweep on busy SMs a wave, not all SMs
-        num_waves_executed, idx_in_wave = divmod(
-            UInt(Int(self.idx)), UInt(Int(Self.num_grids))
-        )
-        num_waves_executed_m, num_waves_executed_n = divmod(
-            num_waves_executed, UInt(Int(self.num_waves_n))
-        )
+        alias log_num_grids = FastDiv[DType.uint32](Int(Self.num_grids))
+        alias log_grid_shape = FastDiv[DType.uint32](Int(grid_shape[0]))
+
+        num_waves_executed = Int(self.idx) / log_num_grids
+        idx_in_wave = Int(self.idx) % log_num_grids
+
+        num_waves_executed_m = Int(num_waves_executed) / self.log_num_waves_n
+        num_waves_executed_n = Int(num_waves_executed) % self.log_num_waves_n
 
         # The wave maps to a BM x grid_shape[1] by BN x grid_shape[0]
         # submatrix in C.
         wave_m = num_waves_executed_m * Self.wave_shape[0]
         wave_n = num_waves_executed_n * Self.wave_shape[1]
 
-        m_in_wave, n_in_wave = divmod(idx_in_wave, UInt(grid_shape[0]))
+        m_in_wave = Int(idx_in_wave) / log_grid_shape
+        n_in_wave = Int(idx_in_wave) % log_grid_shape
 
         return (
-            wave_m + m_in_wave * tile_shape[0],
-            wave_n + n_in_wave * tile_shape[1],
+            UInt(Int(wave_m + m_in_wave * tile_shape[0])),
+            UInt(Int(wave_n + n_in_wave * tile_shape[1])),
         )
 
     @always_inline
