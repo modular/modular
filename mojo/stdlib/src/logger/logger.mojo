@@ -16,6 +16,7 @@ The main components are:
 - Logger: A struct that handles logging messages with different severity levels
 
 Example:
+
     ```mojo
     from logger import Logger
 
