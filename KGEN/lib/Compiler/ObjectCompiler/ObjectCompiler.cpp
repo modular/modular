@@ -14,9 +14,10 @@
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "KGEN/include/KGEN/ToolCommon/CompilationOptions.h"
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"
 #include "LLVMPassesPipeline.h"
@@ -25,8 +26,6 @@
 #include "Support/FileSystemExtras.h"
 #include "Support/Telemetry/Telemetry.h"
 
-#include "mlir/Bytecode/BytecodeWriter.h"
-#include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Target/LLVM/ROCDL/Utils.h"
@@ -66,6 +65,7 @@ using namespace KGEN;
 using namespace Cache;
 
 #define DEBUG_TYPE "object-compiler"
+#define KGEN_DEBUG_TYPE "object-compiler"
 
 //===----------------------------------------------------------------------===//
 // ObjectCompiler
@@ -1474,7 +1474,10 @@ compilePTXToCUBINViaPTXAS(AsyncRT::DeviceContextRef &ctx,
     return arch;
   };
 
-  auto getOptimizationLevel = [](int optLevel) -> std::string {
+  auto getOptimizationLevel = [](StringRef debugLevel,
+                                 int optLevel) -> std::string {
+    if (debugLevel == "full")
+      return "0";
     if (optLevel == 3)
       return "4";
     return std::to_string(optLevel);
@@ -1482,9 +1485,10 @@ compilePTXToCUBINViaPTXAS(AsyncRT::DeviceContextRef &ctx,
 
   // Create ptxas args.
   SmallVector<StringRef, 12> ptxasArgs(
-      {"ptxas", StringRef("-arch"), getArch(*computeCapability),
-       StringRef(ptxFile->first), StringRef("-o"), StringRef(cubinFile->first),
-       "--opt-level", getOptimizationLevel(options.optimizationLevel)});
+      {"ptxas", "-arch", getArch(*computeCapability), ptxFile->first, "-o",
+       cubinFile->first, "--opt-level",
+       getOptimizationLevel(options.getDebugLevelString(),
+                            options.optimizationLevel)});
 
   // Generate debug information for device code.
   if (options.getDebugLevelString() == "full")
@@ -1517,10 +1521,13 @@ compilePTXToCUBINViaPTXAS(AsyncRT::DeviceContextRef &ctx,
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> binaryBuffer =
       llvm::MemoryBuffer::getFile(cubinFile->first);
   if (!binaryBuffer)
-    return Error("Couldn't open the file: `" + cubinFile->first +
+    return Error("could not open the file: `" + cubinFile->first +
                  "`, error message: " + binaryBuffer.getError().message());
 
-  LLVM_DEBUG(llvm::outs() << "Successfully compiled PTX to CUBIN via ptxas.\n");
+  LLVM_DEBUG(llvm::dbgs() << "Successfully compiled PTX to CUBIN via ptxas.\n");
+  KGEN_DEBUG(0, {
+    llvm::dbgs() << "Successfully compiled PTX to CUBIN via ptxas.\n";
+  });
   return M::Buffer::get((*binaryBuffer)->getBuffer());
 }
 
@@ -1528,28 +1535,32 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
                                             llvm::Module &inputModule,
                                             StringRef ptx,
                                             CompilationOptions options) {
-  // If the environment variable MODULAR_USE_PTXAS is set, we use ptxas if
-  // available on the system. This allows for temporary experimentation. If this
-  // pathway is always benificial, then we will bundle ptxas into the modular
-  // distribution and make it the default.
-  if (llvm::sys::Process::GetEnv("MODULAR_USE_PTXAS")) {
-    std::optional<std::string> ptxasCompiler =
-        llvm::sys::Process::FindInEnvPath("PATH", "ptxas");
-    // Compile to CUBIN via ptxas if you can. We always fallback to using the
-    // driver if we failed.
-    if (ptxasCompiler) {
-      ErrorOr<BufferRef> buf = compilePTXToCUBINViaPTXAS(
-          ctx, inputModule, *ptxasCompiler, ptx, options);
-      if (!buf.isError())
-        return buf.takeValue();
-    }
+  // If the environment variable MODULAR_USE_DRIVER_CUBIN_COMPILER is set, we
+  // use the driver cubin compiler. This allows for temporary experimentation.
+  // If this pathway is always benificial, then we will stop checking the env
+  // var.
+  if (llvm::sys::Process::GetEnv("MODULAR_USE_DRIVER_CUBIN_COMPILER")) {
+    LLVM_DEBUG(
+        llvm::dbgs()
+        << "Falling back to using the driver to compile PTX to CUBIN.\n");
+    return ctx->compileFunction(ptx, options.getDebugLevelString(),
+                                options.optimizationLevel);
   }
 
-  LLVM_DEBUG(llvm::outs()
-             << "Falling back to using the driver to compile PTX to CUBIN.\n");
-  return ctx->compileFunction(ptx, options.getDebugLevelString(),
-                              options.optimizationLevel);
+  ErrorOr<MojoConfig> cfg = MojoConfig::open();
+  if (cfg.isError())
+    return cfg.takeError();
+
+  // Add any paths specified in the config.
+  StringRef ptxasPath = cfg->getPTXASPath();
+  if (ptxasPath.empty())
+    return Error("Unable to find the ptxas compiler in the config.");
+
+  // Compile to CUBIN via ptxas if you can. We always fallback to using the
+  // driver if we failed.
+  return compilePTXToCUBINViaPTXAS(ctx, inputModule, ptxasPath, ptx, options);
 }
+
 static AnyAsyncValueRef
 lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
                         RCRef<Cache::TransformCache> transformCache,

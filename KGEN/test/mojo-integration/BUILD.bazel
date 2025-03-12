@@ -38,6 +38,7 @@ lit_tests(
         "//KGEN/tools/llvm-module-split",
         "//KGEN/tools/mojo",
         "@llvm-project//llvm:llvm-objdump",
+        "@ptxas-x86_64//:ptxas",
     ],
 )
 
