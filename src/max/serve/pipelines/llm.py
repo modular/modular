@@ -431,7 +431,7 @@ def batch_config_from_pipeline_config(
     target_ce_batch_tokens = get_target_ce_batch_tokens(pipeline_config)
     assert pipeline_config.max_ce_batch_size is not None
     if (
-        pipeline_config.kv_cache_config.cache_strategy
+        pipeline_config.model_config.kv_cache_config.cache_strategy
         == KVCacheStrategy.CONTINUOUS
     ):
         batch_config = TokenGeneratorPipelineConfig.continuous_heterogenous(
@@ -447,14 +447,15 @@ def batch_config_from_pipeline_config(
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
         )
     elif (
-        pipeline_config.kv_cache_config.cache_strategy == KVCacheStrategy.NAIVE
+        pipeline_config.model_config.kv_cache_config.cache_strategy
+        == KVCacheStrategy.NAIVE
     ):
         batch_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
             batch_size=pipeline_config.max_batch_size,
             batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
         )
-    elif pipeline_config.kv_cache_config.cache_strategy in [
+    elif pipeline_config.model_config.kv_cache_config.cache_strategy in [
         KVCacheStrategy.PAGED,
         KVCacheStrategy.PAGED_FA3_FALLBACK,
     ]:
@@ -472,14 +473,12 @@ def batch_config_from_pipeline_config(
         )
     else:
         raise ValueError(
-            f"{pipeline_config.kv_cache_config.cache_strategy} caching strategy is not"
+            f"{pipeline_config.model_config.kv_cache_config.cache_strategy} caching strategy is not"
             " supported by Serving."
         )
 
     log_str = "Server configured with:\n"
-    log_str += (
-        f"\tCache Strategy: {pipeline_config.kv_cache_config.cache_strategy}\n"
-    )
+    log_str += f"\tCache Strategy: {pipeline_config.model_config.kv_cache_config.cache_strategy}\n"
     log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
     log_str += f"\tChunked Prefill: {'Enabled' if pipeline_config.enable_chunked_prefill else 'Disabled'}\n"
     if pipeline_config.enable_chunked_prefill:
