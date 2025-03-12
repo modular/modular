@@ -689,6 +689,19 @@ struct ManagedTensorSlice[
                 self, ridx
             )
 
+    @always_inline("nodebug")
+    fn _lambda_load[
+        width: Int,
+        # Necessary to make it simpler on the call site.
+        _rank: Int,
+    ](self, index: IndexList[_rank]) -> SIMD[type, width]:
+        constrained[_rank == rank]()
+        var ridx = rebind[IndexList[rank]](index)
+        alias in_lambda = static_spec.in_lambda
+        constrained[Bool(in_lambda)]()
+        alias in_fn = in_lambda.value()
+        return in_fn[width](ridx)
+
     @always_inline
     fn _compute_offset(self, index: IndexList[rank]) -> Int:
         @parameter
@@ -785,6 +798,20 @@ struct ManagedTensorSlice[
                 simd_width=width,
                 element_alignment=element_alignment,
             ](self, ridx, val)
+
+    @always_inline("nodebug")
+    fn _lambda_store[
+        width: Int,
+        # Necessary to make it simpler on the call site.
+        _rank: Int,
+        element_alignment: Int = 1,
+    ](self, index: IndexList[_rank], val: SIMD[type, width]):
+        constrained[_rank == rank]()
+        var ridx = rebind[IndexList[rank]](index)
+        alias out_lambda = static_spec.out_lambda
+        constrained[Bool(out_lambda)]()
+        alias out_fn = out_lambda.value()
+        out_fn[width, element_alignment](ridx, val)
 
     @always_inline
     fn with_layout[
