@@ -17,6 +17,7 @@ from sys import stderr
 
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
+from layout import Layout, LayoutTensor
 from max.driver import (
     Accelerator,
     Device,
@@ -32,11 +33,12 @@ from testing import assert_equal
 
 
 fn vec_add[
-    type: DType, rank: Int
+    type: DType,
+    rank: Int,
 ](
-    in0: DynamicTensor[type, rank].Type,
-    in1: DynamicTensor[type, rank].Type,
-    out: DynamicTensor[type, rank].Type,
+    in0: Tensor[type, rank].layout_tensor,
+    in1: Tensor[type, rank].layout_tensor,
+    out: Tensor[type, rank].layout_tensor,
 ):
     var row = thread_idx.x
     var col = thread_idx.y
@@ -63,9 +65,9 @@ def test_vec_add():
     kernel = Accelerator.compile[vec_add[type, 2]](gpu_dev)
     kernel(
         gpu_dev,
-        in0.unsafe_slice(),
-        in1.unsafe_slice(),
-        out.unsafe_slice(),
+        in0.to_layout_tensor(),
+        in1.to_layout_tensor(),
+        out.to_layout_tensor(),
         block_dim=Dim(shape[0], shape[1]),
         grid_dim=Dim(1, 1),
     )
