@@ -353,7 +353,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine():
         # This forces it to fail if we dont have it.
         engine=PipelineEngine.MAX,
         max_batch_size=1,
-        max_length=512,
+        max_length=1,
         trust_remote_code=True,
     )
 
@@ -368,7 +368,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
     config = PipelineConfig(
         model_path="GSAI-ML/LLaDA-8B-Instruct",
         max_batch_size=1,
-        max_length=512,
+        max_length=1,
         trust_remote_code=True,
     )
 
@@ -381,9 +381,9 @@ def test_registry__test_retrieve_factory_with_known_architecture():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
         max_batch_size=1,
-        max_length=512,
+        max_length=1,
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
@@ -397,7 +397,7 @@ def test_registry__test_retrieve_factory_with_unsupported_model_path():
         model_path="modularai/replit-code-1.5",
         trust_remote_code=True,
         max_batch_size=1,
-        max_length=512,
+        max_length=1,
     )
 
     config = PIPELINE_REGISTRY.validate_pipeline_config(
@@ -413,9 +413,9 @@ def test_registry__test_load_factory_with_known_architecture_and_hf_repo_id():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
         max_batch_size=1,
-        max_length=512,
+        max_length=1,
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
@@ -431,7 +431,7 @@ def test_registry__test_incompatible_quantization_encoding():
         quantization_encoding=SupportedEncoding.q4_k,
         weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
         max_batch_size=1,
-        max_length=512,
+        max_length=1,
     )
 
     with pytest.raises(ValueError):
@@ -444,7 +444,7 @@ def test_registry__test_incompatible_quantization_encoding():
         weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
         device_specs=[DeviceSpec.accelerator()],
         max_batch_size=1,
-        max_length=512,
+        max_length=1,
     )
 
     PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -455,10 +455,10 @@ def test_registry__update_cache_strategy():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
         cache_strategy=KVCacheStrategy.NAIVE,
         max_batch_size=1,
-        max_length=512,
+        max_length=1,
     )
 
     # Naive is not shown as supported in architecture, as
@@ -589,7 +589,7 @@ def test_registry__update_weight_paths():
             device_specs=[DeviceSpec.accelerator()],
             trust_remote_code=True,
             max_batch_size=1,
-            max_length=512,
+            max_length=1,
         )
 
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -600,7 +600,7 @@ def test_registry__update_weight_paths():
         config = PipelineConfig(
             model_path="neubla/tiny-random-LlamaForCausalLM",
             max_batch_size=1,
-            max_length=512,
+            max_length=1,
         )
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
         assert config.quantization_encoding == SupportedEncoding.float32
@@ -616,7 +616,7 @@ def test_registry__update_weight_paths():
                 Path("modularai/replit-code-1.5/replit-code-v1_5-3b-f32.gguf")
             ],
             max_batch_size=1,
-            max_length=512,
+            max_length=1,
         )
 
         config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -846,7 +846,7 @@ def test_registry__validates_supported_device():
 
     # Valid device/encoding combinations.
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.float32,
         max_length=1,
@@ -854,7 +854,7 @@ def test_registry__validates_supported_device():
     PIPELINE_REGISTRY.validate_pipeline_config(config)
 
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
         device_specs=[DeviceSpec.accelerator()],
         quantization_encoding=SupportedEncoding.bfloat16,
         max_length=1,
@@ -863,7 +863,7 @@ def test_registry__validates_supported_device():
 
     # Invalid device/encoding combinations.
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.bfloat16,
         max_length=1,
@@ -872,7 +872,7 @@ def test_registry__validates_supported_device():
         PIPELINE_REGISTRY.validate_pipeline_config(config)
 
     config = PipelineConfig(
-        model_path="modularai/llama-3.1",
+        model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
         device_specs=[DeviceSpec.accelerator()],
         quantization_encoding=SupportedEncoding.q6_k,
         max_length=1,
