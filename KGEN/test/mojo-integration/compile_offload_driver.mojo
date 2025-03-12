@@ -6,7 +6,7 @@
 
 # REQUIRES: NVIDIA-GPU
 # UNSUPPORTED: asan, ubsan
-# RUN: MODULAR_USE_DRIVER_CUBIN_COMPILER=1 kgen -emit -kgen-debug-only=object-compiler %s -o %t --mlir-disable-threading
+# RUN: MODULAR_USE_DRIVER_CUBIN_COMPILER=1 kgen -emit -kgen-debug-only=object-compiler %s -o %t 2>&1 | FileCheck %s
 
 from gpu.host import DeviceContext
 from memory import UnsafePointer
@@ -56,3 +56,6 @@ fn hello():
 def main():
     t1 = _compile_info[hello, emission_kind=3]()
     print(t1.kernel)
+
+
+# CHECK: Falling back to using the driver to compile PTX to CUBIN

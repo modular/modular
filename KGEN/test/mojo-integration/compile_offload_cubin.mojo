@@ -6,8 +6,9 @@
 
 # REQUIRES: NVIDIA-GPU
 # UNSUPPORTED: asan, ubsan
+# RUN: kgen -emit -kgen-debug-only=object-compiler %s -o %t 2>&1 | FileCheck %s --check-prefix=CHECK-PTXAS
 # RUN: %mojo -O0 %s -o %t.cubin
-# RUN: file /usr/local/cuda/bin/nvdisasm && (/usr/local/cuda/bin/nvdisasm %t.cubin | FileCheck %s)
+# RUN: file /usr/local/cuda/bin/nvdisasm && (/usr/local/cuda/bin/nvdisasm %t.cubin | FileCheck %s --check-prefix=CHECK-CUBIN)
 
 from gpu.host import DeviceContext
 from memory import UnsafePointer
@@ -50,13 +51,13 @@ fn _compile_info[
     return Info(kernel=info.kernel, num_captures=info.num_captures)
 
 
-fn hello():
+fn hello_world():
     pass
 
 
 def main():
     with DeviceContext() as ctx:
-        t1 = _compile_info[hello, emission_kind=3]()
+        t1 = _compile_info[hello_world, emission_kind=3]()
         idx = 0
         args = argv()
         for arg in argv():
@@ -69,7 +70,8 @@ def main():
             f.write(t1.kernel)
 
 
-# CHECK: nv.info
-# CHECK: nv.callgraph
-# CHECK: nv.constant
-# CHECK: .text
+# CHECK-CUBIN: nv.info
+# CHECK-CUBIN: nv.callgraph
+# CHECK-CUBIN: nv.constant
+# CHECK-CUBIN: .text
+# CHECK-PTXAS: Successfully compiled PTX to CUBIN via ptxas
