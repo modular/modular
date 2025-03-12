@@ -10,5 +10,6 @@ modular_py_test(
         requirement("httpx"),
         requirement("msgspec"),
         requirement("pydantic"),
+        requirement("pytest-asyncio"),
     ],
 )
