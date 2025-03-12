@@ -3,6 +3,27 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+Tensor Memory Accelerator (TMA) Asynchronous Operations Module
+
+Provides high-performance abstractions for NVIDIA's Tensor Memory Accelerator (TMA),
+enabling efficient asynchronous data movement between global and shared memory in GPU kernels.
+It is designed for use with NVIDIA Hopper architecture and newer GPUs that support TMA instructions.
+
+Key Components:
+--------------
+- `TMATensorTile`: Core struct that encapsulates a TMA descriptor for efficient data transfers
+  between global and shared memory with various access patterns and optimizations.
+
+- `TMABarrier`: Synchronization primitive for coordinating asynchronous TMA operations,
+  ensuring data transfers complete before dependent operations begin.
+
+- `PipelineState`: Helper struct for managing multi-stage pipeline execution with circular
+  buffer semantics, enabling efficient double or triple buffering techniques.
+
+- `create_tma_tile`: Factory functions for creating optimized `TMATensorTile` instances with
+  various configurations for different tensor shapes and memory access patterns.
+"""
 
 from sys import sizeof
 from sys._assembly import inlined_assembly
@@ -109,15 +130,34 @@ fn _tma_desc_tile_layout[
         )
 
 
-# A memory barrier with blocking wait.
-#
 @value
 @register_passable("trivial")
 struct TMABarrier(CollectionElement):
+    """A memory barrier for synchronizing Tensor Memory Accelerator (TMA) operations.
+
+    TMABarrier provides a mechanism for coordinating asynchronous memory operations
+    between threads in a CUDA context. It implements a memory barrier that can be used
+    to ensure all TMA operations have completed before proceeding.
+
+    This struct wraps NVIDIA's memory barrier primitives, providing a higher-level
+    interface for common synchronization patterns in GPU tensor operations.
+    """
+
     var mbar: UnsafePointer[Int64, address_space = AddressSpace.SHARED]
+    """Pointer to shared memory location used for the barrier state.
+
+    This field stores a pointer to an 8-byte aligned shared memory location that
+    maintains the state of the TMA barrier. The memory must be in shared address
+    space to be accessible by all threads in a block.
+    """
 
     @always_inline
     fn __init__(out self):
+        """Initialize a `TMABarrier` with a new stack-allocated barrier.
+
+        Allocates an 8-byte aligned memory location in shared memory for
+        the barrier state, following NVIDIA's PTX documentation requirements.
+        """
         # We follow 8B suggested by the ptx doc.
         # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=fence%2520proxy%2520async%2520shared%25203A%25203Acta#size-and-alignment-of-mbarrier-object
         self.mbar = stack_allocation[
@@ -136,18 +176,54 @@ struct TMABarrier(CollectionElement):
             alignment=8,
         ],
     ):
+        """Initialize a `TMABarrier` with an existing shared memory location.
+
+        Args:
+            addr: Pointer to an 8-byte aligned shared memory location to use
+                 for the barrier state.
+        """
         self.mbar = addr
 
     @always_inline
     fn init(self, num_threads: Int32 = 1):
+        """Initialize the barrier state with the expected number of threads.
+
+        Sets up the barrier to expect arrivals from the specified number of threads
+        before it can be satisfied.
+
+        Args:
+            num_threads: Number of threads that must arrive at the barrier
+                         before it is satisfied. Defaults to 1.
+        """
         mbarrier_init(self.mbar, num_threads)
 
     @always_inline
     fn expect_bytes(self, bytes: Int32):
+        """Configure the barrier to expect a specific number of bytes to be transferred.
+
+        Used with TMA operations to indicate the expected size of data transfer.
+        The barrier will be satisfied when the specified number of bytes has been
+        transferred.
+
+        Args:
+            bytes: Number of bytes expected to be transferred.
+        """
         mbarrier_arrive_expect_tx_shared(self.mbar, bytes)
 
     @always_inline
     fn wait(self, phase: UInt32 = 0):
+        """Wait until the barrier is satisfied.
+
+        Blocks the calling thread until the barrier is satisfied, either by
+        the expected number of threads arriving or the expected data transfer
+        completing.
+
+        Args:
+            phase: The phase value to check against. Defaults to 0.
+
+        Note:
+            Minimizes thread divergence during synchronization.
+        """
         # Based on cutlass
         # https://github.com/NVIDIA/cutlass/blob/b78588d1630aa6643bf021613717bafb705df4ef/include/cute/arch/copy_sm90_desc.hpp#L92-L110
         alias asm = """{
@@ -164,6 +240,15 @@ struct TMABarrier(CollectionElement):
 
     @always_inline
     fn arrive_cluster(self, cta_id: UInt32, count: UInt32 = 1):
+        """Signal arrival at the barrier from a specific CTA (Cooperative Thread Array) in a cluster.
+
+        This method is used in multi-CTA scenarios to coordinate barrier arrivals
+        across different CTAs within a cluster.
+
+        Args:
+            cta_id: The ID of the CTA (Cooperative Thread Array) that is arriving.
+            count: The number of arrivals to signal. Defaults to 1.
+        """
         alias asm = """{
             .reg .b32 remAddr32;
             mapa.shared::cluster.u32  remAddr32, $0, $1;
@@ -175,6 +260,14 @@ struct TMABarrier(CollectionElement):
 
     @always_inline("nodebug")
     fn arrive(self) -> Int:
+        """Signal arrival at the barrier and return the arrival count.
+
+        This method increments the arrival count at the barrier and returns
+        the updated count.
+
+        Returns:
+            The updated arrival count after this thread's arrival.
+        """
         return mbarrier_arrive(self.mbar)
 
 
@@ -188,6 +281,22 @@ fn create_mbarrier_array[
         alignment=8,
     ]
 ) -> StaticTuple[TMABarrier, num]:
+    """Create an array of `TMABarrier` objects from a shared memory region.
+
+    This function initializes multiple `TMABarrier` objects using consecutive
+    memory locations starting from the provided address. Each barrier is
+    placed at an 8-byte offset from the previous one.
+
+    Parameters:
+        num: The number of `TMABarrier` objects to create.
+
+    Args:
+        addr: Pointer to the start of the shared memory region to use.
+              Must be 8-byte aligned.
+
+    Returns:
+        A `StaticTuple` containing 'num' TMABarrier objects.
+    """
     mbars = StaticTuple[TMABarrier, num]()
 
     @parameter
@@ -199,101 +308,100 @@ fn create_mbarrier_array[
 
 @value
 @register_passable("trivial")
-struct TMATensorTileArray[
-    num_of_tensormaps: Int,
-    dtype: DType,
-    cta_tile_layout: Layout,
-    desc_layout: Layout,
-]:
-    var tensormaps: StaticTuple[
-        UnsafePointer[TMATensorTile[dtype, cta_tile_layout, desc_layout],],
-        num_of_tensormaps,
-    ]
-
-    @always_inline
-    fn __init__(
-        out self,
-        ctx: DeviceContext,
-        tensormaps_device: DeviceBuffer[DType.uint8],
-        template_tma_tensormap: Optional[
-            TMATensorTile[dtype, cta_tile_layout, desc_layout]
-        ],
-    ) raises:
-        self.tensormaps = StaticTuple[
-            UnsafePointer[TMATensorTile[dtype, cta_tile_layout, desc_layout]],
-            num_of_tensormaps,
-        ]()
-
-        # initialize with a template tensor map if provided
-        if template_tma_tensormap:
-            var tensormaps_host_ptr = stack_allocation[
-                num_of_tensormaps * 128, UInt8
-            ]()
-
-            @parameter
-            for i in range(num_of_tensormaps):
-                for j in range(128):
-                    tensormaps_host_ptr[
-                        i * 128 + j
-                    ] = template_tma_tensormap.value().descriptor.data[j]
-
-            ctx.enqueue_copy(tensormaps_device, tensormaps_host_ptr)
-
-        tensormaps_device_ptr = tensormaps_device.unsafe_ptr()
-
-        @parameter
-        for i in range(num_of_tensormaps):
-            self.tensormaps[i] = UnsafePointer[Scalar[DType.uint8]](
-                tensormaps_device_ptr + i * 128
-            ).bitcast[TMATensorTile[dtype, cta_tile_layout, desc_layout]]()
-
-    @always_inline
-    fn __getitem__(
-        self,
-        index: Int,
-        out result: UnsafePointer[
-            TMATensorTile[dtype, cta_tile_layout, desc_layout]
-        ],
-    ):
-        return self.tensormaps[index]
-
-
-# PipelineState keeps track of the current state of a barrier using circular indexing
-#
-@value
-@register_passable("trivial")
 struct PipelineState[num_stages: Int]:
-    # The current index of the pipeline.
+    """Manages state for a multi-stage pipeline with circular buffer semantics.
+
+    PipelineState provides a mechanism for tracking the current stage in a
+    multi-stage pipeline, particularly useful for double or triple buffering
+    in GPU tensor operations. It maintains an index that cycles through the
+    available stages, a phase bit that toggles when the index wraps around,
+    and a monotonically increasing count.
+
+    This struct is commonly used with TMA operations to coordinate the use of
+    multiple buffers in a pipeline fashion, allowing for overlapping computation
+    and data transfer.
+
+    Parameters:
+        num_stages: The number of stages in the pipeline (e.g., 2 for double buffering,
+                   3 for triple buffering).
+    """
+
     var _index: Int
-    # The current phase of the pipeline, it switch between 1 and 0
+    """The current stage index in the pipeline.
+
+    This field tracks which buffer in the circular pipeline is currently active.
+    Values range from 0 to num_stages-1 and wrap around when incremented past
+    the last stage.
+    """
+
     var _phase: UInt32
-    # The current count of the increments.
+    """The current phase bit of the pipeline.
+
+    This field alternates between 0 and 1 each time the index completes a full cycle.
+    It's used to detect when a full pipeline cycle has completed, particularly
+    useful for synchronization in producer-consumer scenarios.
+    """
+
     var _count: UInt32
+    """A monotonically increasing counter tracking pipeline iterations.
+
+    This counter increments with each pipeline advancement, providing a
+    total count of how many times the pipeline has been advanced since
+    initialization. Useful for tracking progress and debugging.
+    """
 
     @always_inline
     fn __init__(out self):
+        """Initialize a PipelineState with default values.
+
+        Creates a new PipelineState with index 0, phase 0, and count 0.
+        """
         self._index = 0
         self._phase = 0
         self._count = 0
 
     @always_inline
     fn __init__(out self, index: Int, phase: Int, count: Int):
+        """Initialize a PipelineState with specific values.
+
+        Creates a new PipelineState with the specified index, phase, and count.
+
+        Args:
+            index: The initial stage index.
+            phase: The initial phase value (0 or 1).
+            count: The initial count value.
+        """
         self._index = index
         self._phase = phase
         self._count = count
 
     @always_inline
     fn index(self) -> Int:
+        """Get the current stage index.
+
+        Returns:
+            The current index value, which ranges from 0 to num_stages-1.
+        """
         return self._index
 
     @always_inline
     fn phase(self) -> UInt32:
+        """Get the current phase bit.
+
+        Returns:
+            The current phase value (0 or 1), which toggles when the index wraps around.
+        """
         return self._phase
 
     @always_inline
     fn step(mut self):
-        """This function increase the index and count. Index will circle back to
-        0 when it equals to the num_stage.
+        """Advance the pipeline state to the next stage.
+
+        Increments the index and count. When the index reaches num_stages,
+        it wraps around to 0 and toggles the phase bit.
+
+        This function is used to move to the next buffer in a multi-buffer
+        pipeline, implementing circular buffer semantics.
         """
 
         @parameter
@@ -314,26 +422,75 @@ struct TMATensorTile[
     layout: Layout,
     desc_layout: Layout = layout,
 ]:
+    """
+    A hardware-accelerated tensor memory access (TMA) tile for efficient asynchronous data movement.
+
+    The TMATensorTile struct provides a high-performance interface for asynchronous data transfers
+    between global memory and shared memory in GPU tensor operations. It encapsulates a TMA descriptor
+    that defines the memory access pattern and provides methods for various asynchronous operations.
+
+    Parameters:
+        dtype: DType
+            The data type of the tensor elements.
+        layout: Layout
+            The layout of the tile in shared memory, typically specified as row_major.
+        desc_layout: Layout = layout
+            The layout of the descriptor, which can be different from the shared memory layout
+            to accommodate hardware requirements like WGMMA.
+
+    Performance:
+
+        - Hardware-accelerated memory transfers using TMA instructions
+        - Supports prefetching of descriptors for latency hiding
+        - Enforces 128-byte alignment requirements for optimal memory access
+    """
+
     var descriptor: TMADescriptor
+    """The TMA descriptor that defines the memory access pattern.
+
+    This field stores the hardware descriptor that encodes information about:
+    - The source tensor's memory layout and dimensions
+    - The tile shape and access pattern
+    - Swizzling configuration for optimal memory access
+
+    The descriptor is used by the GPU's Tensor Memory Accelerator hardware to
+    efficiently transfer data between global and shared memory.
+    """
 
     @always_inline
     @implicit
     fn __init__(out self, descriptor: TMADescriptor):
+        """
+        Initializes a new TMATensorTile with the provided TMA descriptor.
+
+        Args:
+            descriptor: The TMA descriptor that defines the memory access pattern.
+        """
         self.descriptor = descriptor
 
     @always_inline
     fn __copyinit__(mut self, other: Self):
+        """
+        Copy initializes this `TMATensorTile` from another instance.
+
+        Args:
+            other: The other `TMATensorTile` instance to copy from.
+        """
         self.descriptor = other.descriptor
 
     @always_inline
     fn prefetch_descriptor(self):
+        """
+        Prefetches the TMA descriptor into cache to reduce latency.
+
+        This method helps hide memory access latency by prefetching the descriptor
+        before it's needed for actual data transfers.
+        """
         var desc_ptr = UnsafePointer.address_of(self.descriptor).bitcast[
             NoneType
         ]()
         prefetch_tma_descriptor(desc_ptr)
 
-    # Schedules an asynchronous copy into the destination tile at the given coordinates.
-    #
     @always_inline
     fn async_copy(
         self,
@@ -343,6 +500,25 @@ struct TMATensorTile[
         mem_barrier: TMABarrier,
         coords: Tuple[UInt, UInt],
     ):
+        """
+        Schedules an asynchronous copy from global memory to shared memory at specified coordinates.
+
+        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
+        to the specified destination in shared memory. The transfer is tracked by the provided memory
+        barrier.
+
+        Args:
+            dst: The destination tensor in shared memory where data will be copied.
+                 Must be 128-byte aligned.
+            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
+            coords: The 2D coordinates in the source tensor from which to copy data.
+
+        Constraints:
+
+            - The destination tensor must be 128-byte aligned in shared memory.
+            - The descriptor layout may be smaller than the shared memory tile shape
+              to accommodate hardware requirements.
+        """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
             __type_of(dst).alignment % 128 == 0,
@@ -388,6 +564,25 @@ struct TMATensorTile[
         mem_barrier: TMABarrier,
         coords: Tuple[UInt, UInt, UInt],
     ):
+        """
+        Schedules an asynchronous copy from global memory to shared memory at specified 3D coordinates.
+
+        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
+        to the specified destination in shared memory for 3D tensors. The transfer is tracked by the
+        provided memory barrier.
+
+        Args:
+            dst: The destination tensor in shared memory where data will be copied.
+                 Must be 128-byte aligned.
+            mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
+            coords: The 3D coordinates in the source tensor from which to copy data.
+
+        Constraints:
+
+            - The destination tensor must be 128-byte aligned in shared memory.
+            - The descriptor layout may be smaller than the shared memory tile shape
+              to accommodate hardware requirements.
+        """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
             __type_of(dst).alignment % 128 == 0,
@@ -435,8 +630,6 @@ struct TMATensorTile[
                         ),
                     )
 
-    # Schedules an asynchronous copy into the destination tile at the given coordinates.
-    #
     @always_inline
     fn async_multicast_load(
         self,
@@ -447,6 +640,27 @@ struct TMATensorTile[
         coords: Tuple[UInt, UInt],
         multicast_mask: UInt16,
     ):
+        """
+        Schedules an asynchronous multicast load from global memory to multiple shared memory locations.
+
+        This method initiates a hardware-accelerated asynchronous transfer of data from global memory
+        to multiple destination locations in shared memory across different CTAs (Cooperative Thread Arrays)
+        as specified by the multicast mask.
+
+        Args:
+            dst: LayoutTensor
+                The destination tensor in shared memory where data will be copied.
+                Must be 128-byte aligned.
+            mem_barrier: TMABarrier
+                The memory barrier used to track and synchronize the asynchronous transfer.
+            coords: Tuple[UInt, UInt]
+                The 2D coordinates in the source tensor from which to copy data.
+            multicast_mask: UInt16
+                A bit mask specifying which CTAs should receive the data.
+
+        Constraints:
+            The destination tensor must be 128-byte aligned in shared memory.
+        """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
             __type_of(dst).alignment % 128 == 0,
@@ -476,7 +690,6 @@ struct TMATensorTile[
                     multicast_mask,
                 )
 
-    # Schedules an asynchronous store into the global memory
     @always_inline
     fn async_store(
         self,
@@ -485,6 +698,22 @@ struct TMATensorTile[
         ],
         coords: Tuple[UInt, UInt],
     ):
+        """
+        Schedules an asynchronous store from shared memory to global memory.
+
+        This method initiates a hardware-accelerated asynchronous transfer of data from shared memory
+        to global memory at the specified coordinates.
+
+        Args:
+            src: LayoutTensor
+                The source tensor in shared memory from which data will be copied.
+                Must be 128-byte aligned.
+            coords: Tuple[UInt, UInt]
+                The 2D coordinates in the destination tensor where data will be stored.
+
+        Constraints:
+            The source tensor must be 128-byte aligned in shared memory.
+        """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
             __type_of(src).alignment % 128 == 0,
@@ -496,7 +725,6 @@ struct TMATensorTile[
             Index(coords[0], coords[1]),
         )
 
-    # Schedules an asynchronous store into the global memory
     @always_inline
     fn async_reduce[
         reduction_kind: ReduceOp
@@ -507,6 +735,25 @@ struct TMATensorTile[
         ],
         coords: Tuple[UInt, UInt],
     ):
+        """
+        Schedules an asynchronous reduction operation from shared memory to global memory.
+
+        This method initiates a hardware-accelerated asynchronous reduction operation that combines
+        data from shared memory with data in global memory using the specified reduction operation.
+        The reduction is performed element-wise at the specified coordinates in the global tensor.
+
+        Parameters:
+            reduction_kind: The type of reduction operation to perform (e.g., ADD, MIN, MAX).
+                           This determines how values are combined during the reduction.
+
+        Args:
+            src: The source tensor in shared memory containing the data to be reduced.
+                 Must be 128-byte aligned.
+            coords: The 2D coordinates in the destination tensor where the reduction will be applied.
+
+        Constraints:
+            The source tensor must be 128-byte aligned in shared memory.
+        """
         # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
         constrained[
             __type_of(src).alignment % 128 == 0,
@@ -525,8 +772,23 @@ struct TMATensorTile[
             TMADescriptor, address_space = _GPUAddressSpace.SHARED
         ],
     ):
+        """
+        Initializes a TMA descriptor in shared memory from this tensor tile's descriptor.
+
+        This method copies the TMA descriptor from global memory to shared memory, allowing
+        for faster access during kernel execution. The descriptor is copied in 16-byte chunks
+        using asynchronous copy operations for efficiency.
+
+        Args:
+            smem_tma_descriptor_ptr: Pointer to the location in shared memory where the
+                                    descriptor will be stored. Must be properly aligned.
+
+        Note:
+
+            - Only one thread should call this method to avoid race conditions
+            - The descriptor is copied in 8 chunks of 16 bytes each (total 128 bytes)
+        """
         # NOTE: Only one thread should call this
-        #
         var src_desc = UnsafePointer.address_of(self.descriptor).bitcast[
             UInt8
         ]().address_space_cast[_GPUAddressSpace.GLOBAL]()
@@ -541,6 +803,26 @@ struct TMATensorTile[
         dtype: DType,
         src_layout: Layout,
     ](self, new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin]):
+        """
+        Replaces the global memory address in the TMA descriptor stored in global memory.
+
+        This method allows dynamically changing the source tensor for TMA operations without
+        recreating the entire descriptor, which is useful for reusing descriptors with different
+        data sources. The operation modifies the descriptor in global memory directly.
+
+
+        Parameters:
+            dtype: The data type of the new source tensor.
+            src_layout: The layout of the new source tensor.
+
+        Args:
+            new_src: The new source tensor whose address will replace the current one in the descriptor.
+                    Must have compatible layout with the original tensor.
+
+        Note:
+            A memory fence may be required after this operation to ensure visibility
+            of the changes to other threads.
+        """
         var desc_ptr = UnsafePointer.address_of(self.descriptor).bitcast[
             NoneType
         ]()
@@ -554,8 +836,23 @@ struct TMATensorTile[
 
     @always_inline
     fn tensormap_fence_acquire(self):
+        """
+        Establishes a memory fence for TMA operations with acquire semantics.
+
+        This method ensures proper ordering of memory operations by creating a barrier
+        that prevents subsequent TMA operations from executing before prior operations
+        have completed. It is particularly important when reading from a descriptor
+        that might have been modified by other threads or processes.
+
+        The acquire semantics ensure that all memory operations after this fence
+        will observe any modifications made to the descriptor before the fence.
+
+        Notes:
+
+            - The entire warp must call this function as the instruction is warp-aligned.
+            - Typically used in pairs with `tensormap_fence_release` for proper synchronization.
+        """
         # NOTE: Entire warp must call this function as the instruction is aligned
-        #
         llvm_intrinsic[
             "llvm.nvvm.fence.proxy.tensormap_generic.acquire.gpu", NoneType
         ](
@@ -565,6 +862,22 @@ struct TMATensorTile[
 
     @always_inline
     fn tensormap_fence_release(self):
+        """
+        Establishes a memory fence for TMA operations with release semantics.
+
+        This method ensures proper ordering of memory operations by creating a barrier
+        that ensures all prior memory operations are visible before subsequent operations
+        can proceed. It is particularly important when modifying a TMA descriptor in
+        global memory that might be read by other threads or processes.
+
+        The release semantics ensure that all memory operations before this fence
+        will be visible to any thread that observes operations after the fence.
+
+        Notes:
+
+            - Typically used after modifying a tensormap descriptor in global memory.
+            - Often paired with `tensormap_fence_acquire` for proper synchronization.
+        """
         # This fence is needed when modifying tensormap directly in GMEM
         llvm_intrinsic[
             "llvm.nvvm.fence.proxy.tensormap_generic.release.gpu", NoneType
@@ -581,6 +894,31 @@ struct TMATensorTile[
         ],
         new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
     ):
+        """
+        Replaces the global memory address in the TMA descriptor stored in shared memory.
+
+        This method allows dynamically changing the source tensor for TMA operations without
+        recreating the entire descriptor, which is useful for reusing descriptors with different
+        data sources. The operation modifies a descriptor that has been previously copied to
+        shared memory.
+
+
+        Parameters:
+            dtype: The data type of the new source tensor.
+            src_layout: The layout of the new source tensor.
+
+        Args:
+            smem_tma_descriptor_ptr: Pointer to the TMA descriptor in shared memory that will be modified.
+            new_src: The new source tensor whose address will replace the current one in the descriptor.
+                    Must have compatible layout with the original tensor.
+
+        Notes:
+
+            - Only one thread should call this method to avoid race conditions.
+            - A memory fence may be required after this operation to ensure visibility
+              of the changes to other threads.
+            - Typically used with descriptors previously initialized with `smem_tensormap_init`.
+        """
         # NOTE: Only one thread should call this
         inlined_assembly[
             (
@@ -602,6 +940,27 @@ struct TMATensorTile[
             TMADescriptor, address_space = _GPUAddressSpace.SHARED
         ],
     ):
+        """
+        Establishes a memory fence for TMA operations with release semantics for shared memory descriptors.
+
+        This method ensures proper ordering of memory operations by creating a barrier
+        that ensures all prior memory operations are visible before subsequent operations
+        can proceed. It is specifically designed for synchronizing between global memory and
+        shared memory TMA descriptors.
+
+        The release semantics ensure that all memory operations before this fence
+        will be visible to any thread that observes operations after the fence.
+
+        Args:
+            smem_tma_descriptor_ptr: Pointer to the TMA descriptor in shared memory that
+                                    is being synchronized with the global memory descriptor.
+
+        Notes:
+
+            - The entire warp must call this function as the instruction is warp-aligned
+            - Typically used after modifying a tensormap descriptor in shared memory
+            - More specialized than the general `tensormap_fence_release` for cross-memory space synchronization
+        """
         # This fence is needed when modifying tensormap directly in SMEM
         # NOTE: Entire warp must call this function as the instruction is aligned
         var gmem_tma_descriptor_ptr = UnsafePointer.address_of(
@@ -619,8 +978,6 @@ struct TMATensorTile[
         ](gmem_tma_descriptor_ptr, smem_tma_descriptor_ptr.bitcast[NoneType]())
 
 
-# Creates a TMATensorTile with specified tile sizes.
-#
 @always_inline
 def create_tma_tile[
     *tile_sizes: Int,
@@ -629,6 +986,39 @@ def create_tma_tile[
     tensor.dtype,
     Layout.row_major(_to_int_tuple[*tile_sizes]()),
 ]:
+    """
+    Creates a `TMATensorTile` with specified tile dimensions and swizzle mode.
+
+    This function creates a hardware-accelerated Tensor Memory Access (TMA) descriptor
+    for efficient asynchronous data transfers between global memory and shared memory.
+    It configures the tile dimensions and memory access patterns based on the provided
+    parameters.
+
+    Parameters:
+        tile_sizes: The dimensions of the tile to be transferred. For 2D tensors, this should be
+            [height, width]. The dimensions determine the shape of data transferred in each
+            TMA operation.
+        swizzle_mode:
+            The swizzling mode to use for memory access optimization. Swizzling can improve
+            memory access patterns for specific hardware configurations.
+
+    Args:
+        ctx:
+            The CUDA device context used to create the TMA descriptor.
+        tensor:
+            The source tensor from which data will be transferred. This defines the
+            global memory layout and data type.
+
+    Returns:
+        A `TMATensorTile` configured with the specified tile dimensions and swizzle mode,
+        ready for use in asynchronous data transfer operations.
+
+    Constraints:
+
+        - The last dimension's size in bytes must not exceed the swizzle mode's byte limit
+          (32B for SWIZZLE_32B, 64B for SWIZZLE_64B, 128B for SWIZZLE_128B).
+        - Only supports 2D tensors in this overload.
+    """
     # the last dimension of smem shape has to be smaller or equals to the
     # swizzle bytes.
     alias swizzle_bytes = tile_sizes[tensor.rank - 1] * sizeof[tensor.dtype]()
@@ -685,6 +1075,51 @@ def create_tma_tile[
 ](ctx: DeviceContext, tensor: LayoutTensor[type, *_, **_]) -> TMATensorTile[
     type, __tile_layout, __desc_layout
 ]:
+    """
+    Creates a `TMATensorTile` with advanced configuration options for 2D or 3D tensors.
+
+    This overload provides more control over the TMA descriptor creation, allowing
+    specification of data type, rank, and layout orientation. It supports both 2D and 3D
+    tensors and provides fine-grained control over the memory access patterns.
+
+    Parameters:
+        type: DType
+            The data type of the tensor elements.
+        rank: Int
+            The dimensionality of the tensor (must be 2 or 3).
+        tile_shape: IndexList[rank]
+            The shape of the tile to be transferred.
+        is_k_major: Bool = True
+            Whether the tensor layout is K-major (True) or MN-major (False).
+            K-major is typically used for weight matrices, while MN-major is used for
+            activation matrices in matrix multiplication operations.
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE
+            The swizzling mode to use for memory access optimization.
+        __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1])
+            Internal parameter for the tile layout in shared memory.
+        __desc_layout: Layout = _tma_desc_tile_layout[...]
+            Internal parameter for the descriptor layout, which may differ from the
+            tile layout to accommodate hardware requirements.
+
+    Args:
+        ctx: DeviceContext
+            The CUDA device context used to create the TMA descriptor.
+        tensor: LayoutTensor[type, *_, **_]
+            The source tensor from which data will be transferred. This defines the
+            global memory layout and must match the specified data type.
+
+    Returns:
+        A `TMATensorTile` configured with the specified parameters, ready for use in
+        asynchronous data transfer operations.
+
+    Constraints:
+
+        - Only supports 2D and 3D tensors (rank must be 2 or 3).
+        - For non-SWIZZLE_NONE modes, the K dimension size in bytes must be a multiple
+          of the swizzle mode's byte size.
+        - For MN-major layout, only SWIZZLE_128B is supported.
+        - For 3D tensors, only K-major layout is supported.
+    """
     # Current impl limitations
     constrained[rank == 2 or rank == 3, "Only support 2D/3D TMA"]()
 
