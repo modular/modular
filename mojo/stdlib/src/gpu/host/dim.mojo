@@ -18,6 +18,11 @@ struct Dim(Stringable, Writable):
     """
 
     var _value: IndexList[3]
+    """Internal storage for the three dimension components (x, y, z).
+    
+    This field stores the values for all three dimensions using an IndexList
+    with a fixed size of 3. The dimensions are accessed in order: x, y, z.
+    """
 
     @implicit
     fn __init__(out self, value: IndexList[3]):
@@ -34,6 +39,9 @@ struct Dim(Stringable, Writable):
 
         y and z dimensions are set to 1.
 
+        Parameters:
+            I: The type of the indexable value.
+
         Args:
             x: The value for the x dimension.
         """
@@ -43,6 +51,10 @@ struct Dim(Stringable, Writable):
         """Initializes Dim with indexable values for x and y.
 
         z dimension is set to 1.
+
+        Parameters:
+            I0: The type of the first indexable value.
+            I1: The type of the second indexable value.
 
         Args:
             x: The value for the x dimension.
@@ -54,6 +66,11 @@ struct Dim(Stringable, Writable):
         I0: Indexer, I1: Indexer, I2: Indexer
     ](out self, x: I0, y: I1, z: I2):
         """Initializes Dim with indexable values for x, y, and z.
+
+        Parameters:
+            I0: The type of the first indexable value.
+            I1: The type of the second indexable value.
+            I2: The type of the third indexable value.
 
         Args:
             x: The value for the x dimension.
@@ -68,6 +85,9 @@ struct Dim(Stringable, Writable):
 
         y and z dimensions are set to 1.
 
+        Parameters:
+            I: The type of the indexable value in the tuple.
+
         Args:
             dims: A tuple with one element for x dimension.
         """
@@ -77,7 +97,11 @@ struct Dim(Stringable, Writable):
     fn __init__[I0: Indexer, I1: Indexer](out self, dims: (I0, I1)):
         """Initializes Dim with a tuple of two indexable values.
 
-        z dimension is set to 1.
+        The z dimension is set to 1.
+
+        Parameters:
+            I0: The type of the first indexable value in the tuple.
+            I1: The type of the second indexable value in the tuple.
 
         Args:
             dims: A tuple with two elements: x and y dimensions.
@@ -89,6 +113,11 @@ struct Dim(Stringable, Writable):
         I0: Indexer, I1: Indexer, I2: Indexer
     ](out self, dims: (I0, I1, I2)):
         """Initializes Dim with a tuple of three indexable values.
+
+        Parameters:
+            I0: The type of the first indexable value in the tuple.
+            I1: The type of the second indexable value in the tuple.
+            I2: The type of the third indexable value in the tuple.
 
         Args:
             dims: Tuple with three elements: x, y, and z dimensions.
@@ -127,6 +156,9 @@ struct Dim(Stringable, Writable):
 
     fn write_to[W: Writer](self, mut writer: W):
         """Writes a formatted string representation of the Dim.
+
+        Parameters:
+            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: The Writer to write to.

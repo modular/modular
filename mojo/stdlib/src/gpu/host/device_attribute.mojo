@@ -3,12 +3,32 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""This module defines GPU device attributes that can be queried from CUDA-compatible devices.
+
+The module provides the `DeviceAttribute` struct which encapsulates the various device 
+properties and capabilities that can be queried through the CUDA driver API. Each attribute 
+is represented as a constant with a corresponding integer value that maps to the CUDA 
+driver's attribute enumeration.
+
+These attributes allow applications to query specific hardware capabilities and limitations
+of GPU devices, such as maximum thread counts, memory sizes, compute capabilities, and
+supported features.
+"""
 
 
 @value
 @register_passable("trivial")
 struct DeviceAttribute:
+    """
+    Represents CUDA device attributes that can be queried from a GPU device.
+
+    This struct encapsulates the various device properties and capabilities that can be
+    queried through the CUDA driver API. Each attribute is represented as a constant
+    with a corresponding integer value that maps to the CUDA driver's attribute enum.
+    """
+
     var _value: Int32
+    """The integer value representing the specific device attribute."""
 
     alias MAX_THREADS_PER_BLOCK = Self(1)
     """Maximum number of threads per block
@@ -580,4 +600,13 @@ struct DeviceAttribute:
 
     @implicit
     fn __init__(out self, value: Int32):
+        """
+        Initialize a DeviceAttribute with the given integer value.
+
+        Args:
+            value: The integer value representing a specific device attribute.
+
+        This constructor allows implicit conversion from Int32 to DeviceAttribute,
+        making it easier to use integer constants with this type.
+        """
         self._value = value

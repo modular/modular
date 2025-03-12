@@ -3,12 +3,35 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+GPU Kernel Function Attributes Module
+
+This module provides structures for defining and managing GPU kernel function attributes.
+It implements functionality similar to CUDA's CUfunction_attribute enum, allowing
+for querying and setting various attributes that control kernel execution behavior
+and resource allocation.
+
+The module includes:
+- `Attribute`: A value type representing different GPU kernel function attribute types
+- `FuncAttribute`: A structure that pairs an attribute type with its value
+
+These structures enable fine-grained control over GPU kernel execution parameters
+such as shared memory allocation, cache behavior, and cluster configuration.
+"""
 
 
 @value
 @register_passable("trivial")
 struct Attribute:
+    """Represents GPU kernel function attributes.
+
+    This struct defines constants for various function attributes that can be queried
+    or set for GPU kernels. These attributes provide information about resource
+    requirements and execution constraints of kernel functions.
+    """
+
     var code: Int32
+    """The numeric code representing the attribute type."""
 
     alias MAX_THREADS_PER_BLOCK = Self(0)
     """The maximum number of threads per block, beyond which a launch of the
@@ -93,21 +116,64 @@ struct Attribute:
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
+        """Checks if two Attribute instances are equal.
+
+        Args:
+            other: The Attribute to compare with.
+
+        Returns:
+            True if both attributes have the same code, False otherwise.
+        """
         return self.code == other.code
 
     @always_inline("nodebug")
     fn __ne__(self, other: Self) -> Bool:
+        """Checks if two Attribute instances are not equal.
+
+        Args:
+            other: The Attribute to compare with.
+
+        Returns:
+            True if the attributes have different codes, False otherwise.
+        """
         return not (self == other)
 
     @always_inline("nodebug")
     fn __is__(self, other: Self) -> Bool:
+        """Identity comparison operator for Attribute instances.
+
+        Args:
+            other: The Attribute to compare with.
+
+        Returns:
+            True if both attributes are identical (have the same code), False otherwise.
+        """
         return self == other
 
     @always_inline("nodebug")
     fn __isnot__(self, other: Self) -> Bool:
+        """Negative identity comparison operator for Attribute instances.
+
+        Args:
+            other: The Attribute to compare with.
+
+        Returns:
+            True if the attributes are not identical, False otherwise.
+        """
         return not (self is other)
 
     fn write_to[W: Writer](self, mut writer: W):
+        """Writes a string representation of the `Attribute` to the provided writer.
+
+            This method converts the `Attribute` enum value to its corresponding string name
+            and writes it to the provided writer object.
+
+        Parameters:
+            W: The type of writer to use for output. Must implement the Writer trait.
+
+        Args:
+            writer: A Writer object that will receive the string representation.
+        """
         if self is Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES:
             return writer.write("MAX_DYNAMIC_SHARED_SIZE_BYTES")
         if self is Attribute.PREFERRED_SHARED_MEMORY_CARVEOUT:
@@ -135,16 +201,26 @@ struct Attribute:
 @value
 @register_passable("trivial")
 struct FuncAttribute(CollectionElement, EqualityComparable):
-    """Implement Cuda's CUfunction_attribute enum.
-    https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__TYPES.html#group__CUDA__TYPES_1g9d955dde0904a9b43ca4d875ac1551bc.
+    """Implements CUDA's CUfunction_attribute enum for GPU kernel function attributes.
 
-    Only add 'max_dynamic_shared_size_bytes`.
+    This struct represents function attributes that can be set or queried for GPU kernels,
+    following NVIDIA's CUDA driver API conventions. Each attribute consists of a type
+    (represented by the Attribute enum) and an associated value.
+
+    The struct provides factory methods for creating common attribute configurations,
+    such as cache mode settings and shared memory allocations.
+
+    Reference: https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__TYPES.html#group__CUDA__TYPES_1g9d955dde0904a9b43ca4d875ac1551bc
     """
 
     var attribute: Attribute
+    """The type of function attribute."""
+
     var value: Int32
+    """The value associated with this attribute."""
 
     alias NULL = FuncAttribute(Attribute(-1), -1)
+    """A null/invalid function attribute constant."""
 
     fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
@@ -156,25 +232,59 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
+        """Checks if two `FuncAttribute` instances are equal.
+
+        Args:
+            other: The FuncAttribute to compare with.
+
+        Returns:
+            True if both the attribute type and value are equal, False otherwise.
+        """
         return self.attribute == other.attribute and self.value == other.value
 
     @always_inline("nodebug")
     fn __ne__(self, other: Self) -> Bool:
+        """Checks if two `FuncAttribute` instances are not equal.
+
+        Args:
+            other: The `FuncAttribute` to compare with.
+
+        Returns:
+            True if either the attribute type or value differs, False otherwise.
+        """
         return not (self == other)
 
     @always_inline
     @staticmethod
     fn CACHE_MODE_CA(val: Bool) -> FuncAttribute:
-        """Indicates whether the function has been compiled with user specified
-        option CacheMode.L1_CACHE_DISABLED set."""
+        """Creates a CACHE_MODE_CA function attribute.
+
+        Indicates whether the function has been compiled with user specified
+        option `CacheMode.L1_CACHE_DISABLED` set.
+
+        Args:
+            val: Boolean value indicating if L1 cache is disabled.
+
+        Returns:
+            A `FuncAttribute` instance with CACHE_MODE_CA attribute type.
+        """
         return FuncAttribute(Attribute.CACHE_MODE_CA, Int(val))
 
     @always_inline
     @staticmethod
     fn MAX_DYNAMIC_SHARED_SIZE_BYTES(val: UInt32) -> FuncAttribute:
-        """The maximum size in bytes of dynamically-allocated shared memory that
+        """Creates a MAX_DYNAMIC_SHARED_SIZE_BYTES function attribute.
+
+        The maximum size in bytes of dynamically-allocated shared memory that
         can be used by this function. If the user-specified dynamic shared memory
-        size is larger than this value, the launch will fail."""
+        size is larger than this value, the launch will fail.
+
+        Args:
+            val: Maximum dynamic shared memory size in bytes.
+
+        Returns:
+            A `FuncAttribute` instance with `MAX_DYNAMIC_SHARED_SIZE_BYTES` attribute type.
+        """
         return FuncAttribute(
             Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES, val.cast[DType.int32]()
         )
@@ -182,7 +292,16 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
     @always_inline
     @staticmethod
     fn PREFERRED_SHARED_MEMORY_CARVEOUT(val: Int32) -> FuncAttribute:
-        """On devices where the L1 cache and shared memory use the same hardware
+        """Creates a PREFERRED_SHARED_MEMORY_CARVEOUT function attribute.
+
+        On devices where the L1 cache and shared memory use the same hardware
         resources, this sets the shared memory carveout preference, in percent
-        of the total shared memory."""
+        of the total shared memory.
+
+        Args:
+            val: Shared memory carveout preference as a percentage (0-100).
+
+        Returns:
+            A FuncAttribute instance with `PREFERRED_SHARED_MEMORY_CARVEOUT` attribute type.
+        """
         return FuncAttribute(Attribute.PREFERRED_SHARED_MEMORY_CARVEOUT, val)

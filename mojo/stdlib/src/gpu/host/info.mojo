@@ -30,25 +30,33 @@ alias _KB = 1024
 @value
 @register_passable
 struct Vendor:
-    """
-    Represents GPU vendors.
+    """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
     methods for comparison and string representation.
+
+    The Vendor struct defines constants for common GPU vendors (NVIDIA, AMD)
+    and includes a NO_GPU option for systems without GPU support. It provides
+    comparison operators and string conversion methods for vendor identification.
     """
 
     var _value: Int8
+    """The underlying integer value representing the vendor."""
 
     alias NO_GPU = Self(0)
+    """Represents no GPU or CPU-only execution."""
+
     alias AMD_GPU = Self(1)
+    """Represents AMD GPU vendor."""
+
     alias NVIDIA_GPU = Self(2)
+    """Represents NVIDIA GPU vendor."""
 
     fn __eq__(self, other: Self) -> Bool:
-        """
-        Checks if two Vendor instances are equal.
+        """Checks if two `Vendor` instances are equal.
 
         Args:
-            other: The Vendor to compare with.
+            other: The `Vendor` to compare with.
 
         Returns:
             True if vendors are equal, False otherwise.
@@ -56,11 +64,10 @@ struct Vendor:
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
-        """
-        Checks if two Vendor instances are not equal.
+        """Checks if two `Vendor` instances are not equal.
 
         Args:
-            other: The Vendor to compare with.
+            other: The `Vendor` to compare with.
 
         Returns:
             True if vendors are not equal, False otherwise.
@@ -68,11 +75,10 @@ struct Vendor:
         return not (self == other)
 
     fn __is__(self, other: Self) -> Bool:
-        """
-        Identity comparison for vendors.
+        """Identity comparison for vendors.
 
         Args:
-            other: The Vendor to compare with.
+            other: The `Vendor` to compare with.
 
         Returns:
             True if vendors are identical, False otherwise.
@@ -80,8 +86,7 @@ struct Vendor:
         return self == other
 
     fn __isnot__(self, other: Self) -> Bool:
-        """
-        Negative identity comparison for vendors.
+        """Negative identity comparison for vendors.
 
         Args:
             other: The Vendor to compare with.
@@ -93,8 +98,10 @@ struct Vendor:
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
-        """
-        Writes vendor information to a writer.
+        """Writes vendor information to a writer.
+
+        Parameters:
+            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: The writer to output vendor information to.
@@ -109,8 +116,7 @@ struct Vendor:
 
     @no_inline
     fn __str__(self) -> String:
-        """
-        Returns a string representation of the vendor.
+        """Returns a string representation of the vendor.
 
         Returns:
             String representation of the vendor.
@@ -526,11 +532,22 @@ struct Flops:
     """
 
     var fp8: Float64
+    """FP8 operations per second in TFLOPS."""
+
     var fp16: Float64
+    """FP16 operations per second in TFLOPS."""
+
     var tf32: Float64
+    """TF32 operations per second in TFLOPS."""
+
     var fp64: Float64
+    """FP64 operations per second in TFLOPS."""
+
     var i8: Float64
+    """INT8 operations per second in TOPS."""
+
     var i4: Float64
+    """INT4 operations per second in TOPS."""
 
     fn __init__(
         mut self,
@@ -562,11 +579,18 @@ struct Flops:
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
-        """
-        Writes FLOPS information to a writer.
+        """Writes FLOPS information to a writer.
+
+        This method formats and outputs all non-zero FLOPS metrics to the provided writer.
+        FP8 and FP16 values are written together, while TF32 and FP64 are only written
+        if they have non-zero values. INT8 and INT4 metrics are always written.
+
+        Parameters:
+            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
-            writer: The writer to output FLOPS information to.
+            writer: The writer object that implements the Writer trait, used to output
+                   the formatted FLOPS information.
         """
         if self.fp8:
             writer.write("flops_fp8: ", self.fp8, "\n")
@@ -580,11 +604,14 @@ struct Flops:
 
     @no_inline
     fn __str__(self) -> String:
-        """
-        Returns a string representation of the FLOPS metrics.
+        """Returns a string representation of the FLOPS metrics.
+
+        This method converts all the FLOPS metrics into a human-readable string format
+        by utilizing the write_to method with a String writer.
 
         Returns:
-            String representation of FLOPS values.
+            A formatted string containing all relevant FLOPS values, with each metric
+            on its own line and properly labeled with its precision type.
         """
         return String.write(self)
 
@@ -606,30 +633,79 @@ struct Info:
     """
 
     var name: StringLiteral
+    """The model name of the GPU."""
+
     var vendor: Vendor
+    """The vendor/manufacturer of the GPU (e.g., NVIDIA, AMD)."""
+
     var api: StringLiteral
+    """The graphics/compute API supported by the GPU (e.g., CUDA, ROCm)."""
+
     var arch_name: StringLiteral
+    """The architecture name of the GPU (e.g., sm_80, gfx942)."""
+
     var compile_options: StringLiteral
+    """Compiler options specific to this GPU architecture."""
+
     var compute: Float32
+    """Compute capability version number for NVIDIA GPUs."""
+
     var version: StringLiteral
+    """Version string of the GPU architecture."""
+
     var sm_count: Int
+    """Number of streaming multiprocessors (SMs) on the GPU."""
+
     var warp_size: Int
+    """Number of threads in a warp/wavefront."""
+
     var threads_per_sm: Int
+    """Maximum number of threads per streaming multiprocessor."""
+
     var threads_per_warp: Int
+    """Number of threads that execute together in a warp/wavefront."""
+
     var warps_per_multiprocessor: Int
+    """Maximum number of warps that can be active on a multiprocessor."""
+
     var threads_per_multiprocessor: Int
+    """Maximum number of threads that can be active on a multiprocessor."""
+
     var thread_blocks_per_multiprocessor: Int
+    """Maximum number of thread blocks that can be active on a multiprocessor."""
+
     var shared_memory_per_multiprocessor: Int
+    """Size of shared memory available per multiprocessor in bytes."""
+
     var register_file_size: Int
+    """Total size of the register file per multiprocessor in bytes."""
+
     var register_allocation_unit_size: Int
+    """Minimum allocation size for registers in bytes."""
+
     var allocation_granularity: StringLiteral
+    """Description of how resources are allocated on the GPU."""
+
     var max_registers_per_thread: Int
+    """Maximum number of registers that can be allocated to a single thread."""
+
     var max_registers_per_block: Int
+    """Maximum number of registers that can be allocated to a thread block."""
+
     var max_blocks_per_multiprocessor: Int
+    """Maximum number of blocks that can be scheduled on a multiprocessor."""
+
     var shared_memory_allocation_unit_size: Int
+    """Minimum allocation size for shared memory in bytes."""
+
     var warp_allocation_granularity: Int
+    """Granularity at which warps are allocated resources."""
+
     var max_thread_block_size: Int
+    """Maximum number of threads allowed in a thread block."""
+
     var flops: Flops
+    """Floating-point operations per second capabilities for different precisions."""
 
     fn target[index_bit_width: Int = 64](self) -> __mlir_type.`!kgen.target`:
         """
@@ -1008,6 +1084,9 @@ struct Info:
 
         Outputs all GPU specifications and capabilities to the provided writer
         in a human-readable format.
+
+        Parameters:
+            W: The type of writer to use for output. Must implement the Writer trait.
 
         Args:
             writer: A Writer instance to output the GPU information.

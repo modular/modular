@@ -3,14 +3,51 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""This module provides functionality for mapping constant memory between host and device.
+
+The module includes the `ConstantMemoryMapping` struct which represents a mapping of
+constant memory that can be used for efficient data transfer between host and GPU device.
+"""
 
 
 @value
 @register_passable("trivial")
 struct ConstantMemoryMapping:
+    """Represents a mapping of constant memory between host and device.
+
+    This struct encapsulates the information needed to manage constant memory
+    that can be accessed by GPU kernels. Constant memory provides a fast, read-only
+    cache accessible by all threads on the GPU device.
+
+    Attributes:
+        name: A string identifier for the constant memory mapping.
+        ptr: Pointer to the memory location.
+        byte_count: Size of the memory mapping in bytes.
+    """
+
     var name: StringLiteral
+    """A string identifier for the constant memory mapping.
+    
+    This name is used to uniquely identify the constant memory region in the GPU
+    programming model, allowing the runtime to properly associate the memory with
+    kernel references to constant memory symbols.
+    """
+
     var ptr: UnsafePointer[NoneType]
+    """Pointer to the host memory location that will be mapped to device constant memory.
+    
+    This raw pointer represents the starting address of the memory region that will be
+    accessible as constant memory on the GPU. The memory should remain valid for the
+    lifetime of any kernels that access it.
+    """
+
     var byte_count: Int
+    """Size of the memory mapping in bytes.
+    
+    Specifies the total size of the constant memory region. This value is used by the
+    runtime to determine how much data to transfer between host and device. The size
+    must be sufficient to hold all data needed by GPU kernels.
+    """
 
     fn __init__(
         mut self,
@@ -18,6 +55,13 @@ struct ConstantMemoryMapping:
         ptr: UnsafePointer[NoneType],
         byte_count: Int,
     ):
+        """Initializes a new constant memory mapping.
+
+        Args:
+            name: A string identifier for the constant memory mapping.
+            ptr: Pointer to the memory location to be mapped.
+            byte_count: Size of the memory mapping in bytes.
+        """
         self.name = name
         self.ptr = ptr
         self.byte_count = byte_count
