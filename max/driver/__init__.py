@@ -30,6 +30,7 @@ __all__ = [
     "DLPackArray",
     "MemMapTensor",
     "Tensor",
+    "accelerator_api",
     "load_devices",
     "scan_available_devices",
     "devices_exist",
