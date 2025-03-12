@@ -19,10 +19,11 @@ fn test_kernel():
     ](problem_shape)
 
     num_output_tiles = scheduler.num_output_tiles()
+    work_info = scheduler.get_current_work_info()
 
     for i in range(num_output_tiles):
-        print(block_idx.x, scheduler.work_info())
-        scheduler.advance()
+        print(block_idx.x, work_info)
+        work_info = scheduler.fetch_next_work()
 
 
 # CHECK-DAG: 0 (0, 0, 0, 5, True)
