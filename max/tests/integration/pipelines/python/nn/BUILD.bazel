@@ -172,8 +172,6 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
-        # FIXME: KERN-1469
-        "H100-DISABLE",
     ],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
@@ -188,6 +186,7 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("sentencepiece"),
         requirement("gguf"),
+        requirement("nvitop"),
         requirement("pytest-asyncio"),
     ],
 )
