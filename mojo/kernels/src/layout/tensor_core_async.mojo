@@ -26,6 +26,10 @@ from layout.layout import (
     upcast,
     MakeLayoutList,
     logical_divide,
+    logical_product,
+    right_inverse,
+    composition,
+    make_layout,
 )
 from memory.unsafe_pointer import UnsafePointer
 
@@ -256,6 +260,60 @@ fn tile_layout_mn_major[
             IntTuple(_CM_ROW_LEN, _CM_NUM_ROWS * mn_dim),
         ),
     )
+
+
+fn wgmma_c_thread_layout[C: Layout]() -> Layout:
+    """Returns the first mode of `wgmma_c_layout`."""
+    return Layout(
+        IntTuple(4, 8, 4),
+        IntTuple(C(IntTuple(0, 2)), C(IntTuple(1, 0)), C(IntTuple(16, 0))),
+    )
+
+
+fn wgmma_output_layout[mma_n: Int, C: Layout]() -> Layout:
+    """Returns the second mode of `wgmma_c_layout`."""
+    return Layout(
+        IntTuple(2, 2, mma_n // 8),
+        IntTuple(C(IntTuple(0, 1)), C(IntTuple(8, 0)), C(IntTuple(0, 8))),
+    )
+
+
+fn wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
+    """Generates three layouts based on the WGMMA instruction dimensions and the C matrix layout.
+
+    The function takes `mma_m` and `mma_n` (the dimensions of a single WGMMA instruction) and `C: Layout` (the layout of the C matrix within a thread block) to generate three layouts:
+
+    1. `idx -> i`
+    2. `idx -> j`
+    3. `(TV_to_idx, (num_m_mma, num_n_mma)) -> idx
+
+    Here, `idx` represents the linearized coordinate of C, while `idx -> {i, j}` are the projection functions that map the linearized coordinate into the Cartesian components `i` and `j`. This function is particularly useful for mapping register values into the coordinate system of C, such as in attention masking and the matmul epilogue.
+    """
+    alias err = "C = " + String(C) + ", mma_m = " + String(
+        mma_m
+    ) + ", mma_n = " + String(mma_n)
+    constrained[mma_m == 64, err]()
+    constrained[mma_n % 8 == 0, err]()
+    alias M = C.shape[0].value()
+    alias N = C.shape[1].value()
+    constrained[M % mma_m == 0, err]()
+    constrained[N % mma_n == 0, err]()
+    alias num_m_mma = M // mma_m
+    alias num_n_mma = N // mma_n
+    # idx -> col(i, j)
+    alias inv_c = right_inverse(C)
+    # idx -> col(i, j) -> i
+    alias proj_i = composition(Layout(IntTuple(M, N), IntTuple(1, 0)), inv_c)
+    # idx -> col(i, j) -> j
+    alias proj_j = composition(Layout(IntTuple(M, N), IntTuple(0, 1)), inv_c)
+    # ((lane_j, lane_i, warp_id), (vec_12, value_i, value_j)) -> idx
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-D.png
+    alias T_to_idx = wgmma_c_thread_layout[C]()
+    alias V_to_idx = wgmma_output_layout[mma_n, C]()
+    alias TV_to_idx = make_layout(T_to_idx, V_to_idx)
+    alias tiler = Layout.col_major(num_m_mma, num_n_mma)
+    alias TV_tile_to_idx = logical_product(TV_to_idx, tiler)
+    return List(proj_i, proj_j, TV_tile_to_idx)
 
 
 fn _wgmma_descriptor[
