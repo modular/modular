@@ -17,7 +17,7 @@ from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import assert_with_measure
 from internal_utils._measure import cosine
-from memory import UnsafePointer
+from memory import UnsafePointer, memset_zero
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,
@@ -121,17 +121,7 @@ fn test[
         rand[qkv_type](k_ptr, k_size)
         rand[qkv_type](v_ptr, v_size)
 
-    @parameter
-    if mask_rank == 3:
-        for i in range(seq_len):
-            for j in range(num_keys):
-                mask_ptr[i * num_keys + j] = 0
-    else:
-        for h in range(num_heads):
-            var mask_head_ptr = mask_ptr + h * seq_len * num_keys
-            for i in range(seq_len):
-                for j in range(num_keys):
-                    mask_head_ptr[i * num_keys + j] = 0
+    memset_zero(mask_ptr, mask_size)
     # Contruct buffers.
     var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
@@ -312,23 +302,19 @@ fn test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    assert_with_measure[cosine](flash_output, output, threshold=Float64(1e-4))
-
     # This is useful for debugging.
-    if False:
-        var rtol = 2e-2
-        for bs in range(batch_size):
-            for h in range(num_heads):
-                for s in range(seq_len):
-                    for d in range(depth):
-                        var actual = flash_output[Index(bs, s, Int(h), Int(d))]
-                        var expect = output[Index(bs, s, Int(h), Int(d))]
-                        if not isclose(actual, expect, atol=1e-5, rtol=rtol):
-                            var rerr = abs((actual - expect) / expect)
-                            print(h, s, d, actual, expect, rerr)
-                        assert_almost_equal(
-                            actual, expect, atol=1e-5, rtol=rtol
-                        )
+
+    var rtol = 2e-2
+    for bs in range(batch_size):
+        for h in range(num_heads):
+            for s in range(seq_len):
+                for d in range(depth):
+                    var actual = flash_output[Index(bs, s, Int(h), Int(d))]
+                    var expect = output[Index(bs, s, Int(h), Int(d))]
+                    if not isclose(actual, expect, atol=1e-5, rtol=rtol):
+                        var rerr = abs((actual - expect) / expect)
+                        print(h, s, d, actual, expect, rerr)
+                    assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -380,7 +366,7 @@ fn test_context_encoding[batch_size: Int](ctx: DeviceContext) raises:
         depth=128,
         num_heads=1,
         against_gpu_naive=True,
-    ](128, 128, ctx, use_index_input=True)
+    ](128, 128, ctx, use_index_input=False)
     test[
         4,
         DType.bfloat16,
