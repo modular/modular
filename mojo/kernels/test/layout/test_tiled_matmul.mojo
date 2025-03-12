@@ -10,7 +10,7 @@ from sys import simdwidthof
 from algorithm import parallelize, sync_parallelize, vectorize
 from layout import *
 from layout._utils import ManagedLayoutTensor
-from layout.fillers import arange
+from layout._fillers import arange
 
 
 @value

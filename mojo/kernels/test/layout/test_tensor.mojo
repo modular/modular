@@ -14,6 +14,7 @@ from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import product
 from layout.layout import Layout
 from layout.layout_tensor import *
+from layout._fillers import arange
 from testing import assert_equal
 
 

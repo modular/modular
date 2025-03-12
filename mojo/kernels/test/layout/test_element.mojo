@@ -11,7 +11,7 @@ from sys import alignof
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._utils import ManagedLayoutTensor
 from layout.element import Element
-from layout.fillers import arange
+from layout._fillers import arange
 from layout.int_tuple import UNKNOWN_VALUE
 from memory import UnsafePointer
 

@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 
 from layout import IntTuple, Layout, LayoutTensor
-from layout.fillers import arange
+from layout._fillers import arange
 
 
 fn outer_product[

@@ -10,7 +10,7 @@ import math
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from layout import IntTuple, Layout, LayoutTensor
-from layout.fillers import arange
+from layout._fillers import arange
 from layout.layout import LayoutList
 from layout.nd_buffer_stub import (
     ElementLayout,

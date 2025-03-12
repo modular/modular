@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout import Layout, LayoutTensor, stack_allocation_like
-from layout.fillers import arange
+from layout._fillers import arange
 from layout.math import exp, max, sum
 
 

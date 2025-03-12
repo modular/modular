@@ -33,7 +33,6 @@ from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import max_finite
 
-from .fillers import arange
 from .int_tuple import depth, fill_like, flatten, idx2crd, product
 from .layout import *
 from .runtime_layout import RuntimeLayout

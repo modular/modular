@@ -90,7 +90,7 @@ fn arange[
 
         ```mojo
         from layout import Layout, LayoutTensor
-        from layout.fillers import arange
+        from layout._fillers import arange
 
         var storage = InlineArray[Scalar[DType.float32], 16]()
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)
@@ -143,7 +143,7 @@ fn random[
 
         ```mojo
         from layout import Layout, LayoutTensor
-        from layout.fillers import random
+        from layout._fillers import random
 
         var storage = InlineArray[Scalar[DType.float32], 16]()
         var tensor = LayoutTensor[DType.float32, Layout(4, 4)](storage)

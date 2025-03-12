@@ -8,7 +8,7 @@
 from math import sqrt
 
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from layout.fillers import arange, random
+from layout._fillers import arange, random
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensorIter
 from memory import UnsafePointer
