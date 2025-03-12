@@ -1448,7 +1448,7 @@ fn _is_valid_cluster_shape[
     @parameter
     for i in range(2):
         if (
-            grid_shape[i] < cluster_shape[i]
+            grid_shape[i] <= cluster_shape[i]
             or grid_shape[i] % cluster_shape[i] != 0
         ):
             return False
@@ -1531,7 +1531,7 @@ fn warp_specialize_gemm_with_multicasting[
     if grid_shape:
         constrained[
             _is_valid_grid_shape[grid_shape.value(), config.cluster_shape](
-                N_static
+                ceildiv(N_static, BN)
             ),
             String(
                 "grid shape:",

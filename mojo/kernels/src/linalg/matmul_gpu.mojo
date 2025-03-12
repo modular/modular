@@ -364,19 +364,57 @@ fn _matmul_gpu[
                 return
 
             @parameter
-            if is_defined["AUTOTUNING_MODE"]():
-                multistage_gemm[
-                    transpose_b=transpose_b,
-                    config = kernels.tuning_config,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ](
-                    rebind[NDBuffer[c_type, 2, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b_shape]](b),
-                    kernels.tuning_config,
-                    ctx,
-                )
-                return
+            if env_get_bool["AUTOTUNING_MODE", False]():
+                if env_get_bool["H100_SPECIFIC", False]():
+                    # CLUSTER_DIM_X = 2^m for m in range[0-3]
+                    alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
+
+                    # GRID_DIM_X = 2^n for n in range[0-7]
+                    alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+                    alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
+
+                    alias H100_TUNING_CONFIG = MatmulConfig[
+                        a_type,
+                        b_type,
+                        c_type,
+                        transpose_b,
+                        mma_shape = Index(64, 256, 16),
+                    ](
+                        block_tile_shape=Index(128, 256, 64),
+                        cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
+                        num_pipeline_stages=4,
+                        num_consumer=2,
+                        partitioned_multicast=False,
+                    )
+                    warp_specialize_gemm_with_multicasting[
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        config=H100_TUNING_CONFIG,
+                        grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
+                        schedule = MatmulSchedule.TILE2D,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b),
+                        m,
+                        n,
+                        k,
+                        ctx,
+                    )
+                    return
+                else:
+                    multistage_gemm[
+                        transpose_b=transpose_b,
+                        config = kernels.tuning_config,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b),
+                        kernels.tuning_config,
+                        ctx,
+                    )
+                    return
 
             # Allow caller to overwrite dispatch heuristic with their own config.
             @parameter
@@ -430,6 +468,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N2560_K8192_config,
+                            grid_shape = Index(10, H100.sm_count // 10),
                             schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
@@ -492,6 +531,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N8192_K2048_config,
+                            grid_shape = Index(4, H100.sm_count // 4),
                             schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
@@ -554,6 +594,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N14336_K8192_config,
+                            grid_shape = Index(8, H100.sm_count // 8),
                             schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
@@ -616,6 +657,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N8192_K7168_config,
+                            grid_shape = Index(4, H100.sm_count // 4),
                             schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
