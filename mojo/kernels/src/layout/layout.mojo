@@ -32,6 +32,7 @@ Common use cases:
 - Enabling zero-copy tensor views and reshaping operations
 
 Example:
+
 ```mojo
     from layout import Layout, IntTuple
     from layout.layout import blocked_product
@@ -171,6 +172,7 @@ fn make_layout(*layouts: Layout) -> Layout:
         A new Layout with concatenated shapes and strides from the input layouts.
 
     Example:
+
         ```mojo
         from layout import Layout, IntTuple
         from layout.layout import make_layout
@@ -227,6 +229,7 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
         traversal order.
 
     Example:
+
         ```mojo
         from layout import IntTuple, Layout
         from layout.layout import make_ordered_layout
@@ -413,7 +416,8 @@ struct Layout(
             A column-major Layout with the specified dimensions
 
         Example:
-            ```
+
+            ```mojo
             from layout import Layout
 
             # Create a 3x4 column-major layout
@@ -439,7 +443,8 @@ struct Layout(
             A column-major Layout with the specified shape
 
         Example:
-            ```
+
+            ```mojo
             from layout import Layout
             from layout.int_tuple import IntTuple
 
@@ -465,7 +470,8 @@ struct Layout(
             A row-major Layout with the specified dimensions
 
         Example:
-            ```
+
+            ```mojo
             from layout import Layout
 
             # Create a 3x4 row-major layout
@@ -515,7 +521,8 @@ struct Layout(
             A row-major Layout with the specified shape and computed strides.
 
         Example:
-            ```
+
+            ```mojo
             from layout import Layout
             from layout.int_tuple import IntTuple
 
@@ -546,7 +553,8 @@ struct Layout(
             original strides preserved.
 
         Example:
-            ```
+
+            ```mojo
             from layout import Layout
             from layout.int_tuple import IntTuple
 
@@ -872,7 +880,8 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
         A simplified layout with reduced rank where possible.
 
     Example:
-        ```
+
+        ```mojo
         from layout import Layout, IntTuple
         from layout.layout import coalesce
 
@@ -960,6 +969,7 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
         A new layout representing the composition of the two layouts.
 
     Example:
+
         ```mojo
         from layout.layout import Layout, IntTuple
         from layout.layout import composition
@@ -1025,6 +1035,7 @@ fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
         A new layout representing the composition of the base layout with the tiler.
 
     Example:
+
         ```mojo
         from layout import Layout, LayoutList, IntTuple
         from layout.layout import composition
@@ -1065,6 +1076,7 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
         A new layout representing the complement of the input layout.
 
     Example:
+
         ```mojo
         from layout import Layout, IntTuple
         from layout.layout import complement
@@ -1134,6 +1146,7 @@ fn apply_tiler[
         A new layout resulting from applying the transformation function to each pair.
 
     Example:
+
         ```mojo
         from layout import Layout, LayoutList, IntTuple
         from layout.layout import apply_tiler, logical_divide
@@ -1256,6 +1269,7 @@ fn blocked_product(layout_a: Layout, layout_b: Layout) -> Layout:
         A new layout representing the blocked structure
 
     Example:
+
         ```mojo
         from layout import Layout
         from layout.layout import blocked_product
@@ -1295,6 +1309,7 @@ fn tile_to_shape(
         A new layout representing the tiled structure that matches the target shape.
 
     Example:
+
         ```mojo
         from layout import Layout, IntTuple
         from layout.layout import tile_to_shape
@@ -1347,6 +1362,7 @@ fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
         A new layout representing the logical product with the tiler layouts.
 
     Example:
+
         ```mojo
         from layout import Layout, LayoutList, IntTuple
         from layout.layout import logical_product
@@ -1381,6 +1397,7 @@ fn hier_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
         from both the original layout and the tiler layouts.
 
     Example:
+
         ```mojo
         from layout import Layout, LayoutList, IntTuple
         from layout.layout import hier_unzip
@@ -1429,6 +1446,7 @@ fn hier_unzip(
         according to the pattern defined by layout_b.
 
     Example:
+
         ```mojo
         from layout import Layout, IntTuple
         from layout.layout import hier_unzip
@@ -1461,6 +1479,7 @@ fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
         to layout_b.
 
     Example:
+
         ```mojo
         from layout import Layout, IntTuple
         from layout.layout import zipped_divide
@@ -1493,6 +1512,7 @@ fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
         to the patterns in tiler.
 
     Example:
+
         ```mojo
         from layout import Layout, LayoutList, IntTuple
         from layout.layout import zipped_divide

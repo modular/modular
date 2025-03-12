@@ -5754,7 +5754,10 @@ fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
 
     Example:
 
-        ```
+        ```mojo
+        from layout import LayoutTensor, Layout
+        from layout.layout_tensor import copy_local_to_local
+
         var src_reg = LayoutTensor[DType.float32, Layout((16, 8)),
                                   address_space=AddressSpace.LOCAL]()
         var dst_reg = LayoutTensor[DType.bfloat16, Layout((16, 8)),
