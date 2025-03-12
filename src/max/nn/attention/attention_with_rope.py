@@ -319,7 +319,7 @@ class AttentionWithRopeV2(Module):
             layer_idx,
             interleaved=self.rope.interleaved,
         )
-
+        context_lengths = kwargs.get("context_lengths")
         # Calculate Flash Attention.
         attn_out = flash_attention_ragged(
             self.kv_params,
@@ -327,6 +327,7 @@ class AttentionWithRopeV2(Module):
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
+            context_lengths=context_lengths,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )

@@ -36,6 +36,7 @@ from max.nn import (
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
+    FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheStrategy,
 )
 
@@ -156,11 +157,17 @@ class Llama3(Transformer):
         kv_collection_cls: (
             type[FetchContinuousBatchingKVCacheCollection]
             | type[FetchPagedKVCacheCollection]
+            | type[FetchPagedKVCacheCollectionFA3Fallback]
         )
         if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
             kv_collection_cls = FetchContinuousBatchingKVCacheCollection
         elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
+        elif (
+            config.kv_params.cache_strategy
+            == KVCacheStrategy.PAGED_FA3_FALLBACK
+        ):
+            kv_collection_cls = FetchPagedKVCacheCollectionFA3Fallback
         else:
             raise ValueError(
                 "Unsupported caching strategy "
@@ -175,7 +182,9 @@ class Llama3(Transformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=kv_collection_cls(config.kv_params),
+            kv_collection_constructor=kv_collection_cls(
+                config.kv_params, num_layers=config.num_hidden_layers
+            ),
             all_logits=config.all_logits,
             embedding_multiplier=config.embedding_multiplier,
             logits_postprocessor=config.logits_postprocessor,

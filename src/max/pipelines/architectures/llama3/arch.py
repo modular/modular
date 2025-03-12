@@ -55,6 +55,7 @@ llama_arch = SupportedArchitecture(
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
             KVCacheStrategy.NAIVE,
+            KVCacheStrategy.PAGED_FA3_FALLBACK,
         ],
     },
     pipeline_model=Llama3Model,

@@ -22,6 +22,7 @@ from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
+    FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -93,6 +94,7 @@ class Transformer(Module):
         kv_collection_constructor: (
             FetchContinuousBatchingKVCacheCollection
             | FetchPagedKVCacheCollection
+            | FetchPagedKVCacheCollectionFA3Fallback
         ),
         all_logits: bool = False,
         embedding_multiplier: float = 1.0,
@@ -131,7 +133,21 @@ class Transformer(Module):
         if self.embedding_multiplier != 1.0:
             h = h * ops.constant(self.embedding_multiplier, h.dtype)
 
+        ragged = "input_row_offsets" in kwargs
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
+        cache_lengths = kv_cache_inputs[1]
+
+        if ragged:
+            input_row_offsets = kwargs["input_row_offsets"]
+            prompt_lengths = ops.rebind(
+                input_row_offsets[1:] - input_row_offsets[:-1],
+                cache_lengths.shape,
+            )
+        else:
+            prompt_lengths = kwargs["valid_lengths"]
+
+        context_lengths = prompt_lengths + cache_lengths
+        kwargs["context_lengths"] = context_lengths
 
         for _, layer in enumerate(self.layers):
             h = layer(h, kv_collection, **kwargs)

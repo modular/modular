@@ -21,6 +21,7 @@ from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
+    FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheParams,
     PagedKVCacheCollection,
 )
@@ -91,6 +92,7 @@ class DistributedTransformer(Module):
         kv_collection_constructor: (
             FetchContinuousBatchingKVCacheCollection
             | FetchPagedKVCacheCollection
+            | FetchPagedKVCacheCollectionFA3Fallback
         ),
         devices: list[DeviceRef],
         all_logits: bool = False,
