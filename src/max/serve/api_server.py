@@ -32,6 +32,8 @@ from max.serve.pipelines.llm import (
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
+from max.serve.recordreplay.jsonl import JSONLFileRecorder
+from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
 from max.serve.telemetry.common import (
@@ -132,6 +134,15 @@ def fastapi_app(
             serving_settings=serving_settings,
         ),
     )
+    if settings.transaction_recording_file is not None:
+        transaction_recording_file = settings.transaction_recording_file
+        app.add_middleware(
+            RecorderMiddleware,
+            recorder_factory=(
+                lambda: JSONLFileRecorder(transaction_recording_file)
+            ),
+            include_responses=settings.transaction_recording_include_responses,
+        )
 
     app.mount("/metrics", make_metrics_app())
     app.add_api_route("/version", version)

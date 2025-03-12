@@ -10,7 +10,8 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 
 import socket
 from enum import Enum, IntEnum
-from typing import Union
+from pathlib import Path
+from typing import Optional, Union
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -170,6 +171,30 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return MetricLevel[value]
         return value
+
+    transaction_recording_file: Optional[Path] = Field(
+        default=None,
+        description="File to record all HTTP transactions to",
+        alias="MAX_SERVE_TRANSACTION_RECORDING_FILE",
+    )
+
+    @field_validator("transaction_recording_file", mode="after")
+    def validate_transaction_recording_file(
+        cls, path: Optional[Path]
+    ) -> Optional[Path]:
+        if path is None:
+            return None
+        if not path.name.endswith(".rec.jsonl"):
+            raise ValueError(
+                "Transaction recording files must have a '.rec.jsonl' file extension."
+            )
+        return path
+
+    transaction_recording_include_responses: bool = Field(
+        default=False,
+        description="When recording HTTP transactions, whether to include responses",
+        alias="MAX_SERVE_TRANSACTION_RECORDING_INCLUDE_RESPONSES",
+    )
 
 
 def api_prefix(settings: Settings, api_type: APIType):
