@@ -15,6 +15,7 @@ context manager interface. It includes:
 - Formatted timing output
 
 Example:
+
 ```mojo
 from gpu import profiler
     with profiler.ProfileBlock("my_kernel"):

@@ -124,18 +124,19 @@ fn shuffle_idx[
     Returns:
         A SIMD vector where all lanes contain the value from the source lane specified by offset.
 
-        Example:
-    ```mojo
-        from gpu.warp import shuffle_idx
+    Example:
 
-        val = SIMD[DType.float32, 16](1.0)
+        ```mojo
+            from gpu.warp import shuffle_idx
 
-        # Broadcast value from lane 0 to all lanes
-        result = shuffle_idx(val, 0)
+            val = SIMD[DType.float32, 16](1.0)
 
-        # Get value from lane 5
-        result = shuffle_idx(val, 5)
-    ```
+            # Broadcast value from lane 0 to all lanes
+            result = shuffle_idx(val, 0)
+
+            # Get value from lane 5
+            result = shuffle_idx(val, 5)
+        ```
         .
     """
     return shuffle_idx(_FULL_MASK, val, offset)
@@ -187,14 +188,16 @@ fn shuffle_idx[
         A SIMD vector where participating lanes (set in mask) contain the value from the
         source lane specified by offset. Non-participating lanes retain their original values.
 
-        Example:
-    ```mojo
-    from gpu.warp import shuffle_idx
-        # Only broadcast to first 16 lanes
-        var mask = 0xFFFF  # 16 ones
-        var val = SIMD[DType.float32, 32](1.0)
-        var result = shuffle_idx(mask, val, 5)
-    ```
+    Example:
+
+        ```mojo
+            from gpu.warp import shuffle_idx
+
+            # Only broadcast to first 16 lanes
+            var mask = 0xFFFF  # 16 ones
+            var val = SIMD[DType.float32, 32](1.0)
+            var result = shuffle_idx(mask, val, 5)
+        ```
         .
     """
 
@@ -499,15 +502,16 @@ fn shuffle_xor[
         are enabled by the mask, otherwise the original value is preserved.
 
     Example:
-    ```mojo
-        from gpu.warp import shuffle_xor
 
-        # Exchange values between even-numbered threads 4 lanes apart
-        mask = 0xAAAAAAAA  # Even threads only
-        var val = SIMD[DType.float32, 16](42.0)  # Example value
-        result = shuffle_xor(mask, val, 4.0)
-    ```
-    .
+        ```mojo
+            from gpu.warp import shuffle_xor
+
+            # Exchange values between even-numbered threads 4 lanes apart
+            mask = 0xAAAAAAAA  # Even threads only
+            var val = SIMD[DType.float32, 16](42.0)  # Example value
+            result = shuffle_xor(mask, val, 4.0)
+        ```
+        .
     """
 
     @parameter
@@ -562,16 +566,18 @@ fn lane_group_reduce[
         Non-participating lanes (lane_id >= nthreads) retain their original values.
 
     Example:
-    ```mojo
-    from gpu.warp import lane_group_reduce, shuffle_down
-        # Compute sum across 16 threads using shuffle down
-        @parameter
-        fn add[type: DType, width: Int](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
-            return x + y
-        var val = SIMD[DType.float32, 16](42.0)
-        var result = lane_group_reduce[shuffle_down, add, nthreads=16](val)
-    ```
-    .
+
+        ```mojo
+            from gpu.warp import lane_group_reduce, shuffle_down
+
+            # Compute sum across 16 threads using shuffle down
+            @parameter
+            fn add[type: DType, width: Int](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+                return x + y
+            var val = SIMD[DType.float32, 16](42.0)
+            var result = lane_group_reduce[shuffle_down, add, nthreads=16](val)
+        ```
+        .
     """
     var res = val
 
@@ -616,6 +622,7 @@ fn reduce[
         A SIMD value containing the reduction result broadcast to all lanes in the warp.
 
     Example:
+
     ```mojo
         from gpu.warp import reduce, shuffle_down
 

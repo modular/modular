@@ -1789,6 +1789,7 @@ fn multimem_st[
         - Vector stores (.v2/.v4) require matching total size constraints.
 
     Example:
+
         ```mojo
         from gpu.memory import *
 

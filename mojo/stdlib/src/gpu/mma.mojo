@@ -468,7 +468,10 @@ fn ld_matrix[
             - x4: Four 32-bit registers per thread.
 
     Example:
+
         ```mojo
+        from gpu.mma import ld_matrix
+
         # Load 8x8 matrix of float16 values
         var data = ld_matrix[DType.float16, 8](ptr)
 

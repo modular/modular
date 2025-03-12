@@ -11,7 +11,10 @@ by providing atomic operations and memory barriers. It uses NVIDIA-specific intr
 to implement efficient thread synchronization.
 
 Example:
+
     ```mojo
+    from gpu import Semaphore
+
     var lock = UnsafePointer[Int32](...)
     var sem = Semaphore(lock, thread_id)
 

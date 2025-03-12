@@ -20,6 +20,7 @@ It supports:
 - Vectorized operations for efficiency
 
 Example:
+
 ```mojo
 from gpu.random import Random
     rng = Random(seed=42)
