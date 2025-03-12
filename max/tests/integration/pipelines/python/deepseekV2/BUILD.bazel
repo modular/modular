@@ -35,6 +35,7 @@ modular_py_test(
         "//ModularFramework/tools/mof",
         "//SDK/integration-test/pipelines/python/deepseekV2/testdata",
         "@llvm-project//compiler-rt:orc_rt",
+        "@ptxas-x86_64//:ptxas",
     ],
     env = {
         "PIPELINES_TESTDATA": (

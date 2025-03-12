@@ -48,6 +48,7 @@ modular_py_binary(
             "//SDK/integration-test/pipelines/python/llama3/testdata",
             "//Support/tools/system-info",
             "@llvm-project//compiler-rt:orc_rt",
+            "@ptxas-x86_64//:ptxas",
             "@test_llama_golden",
         ],
         env = {
@@ -108,6 +109,7 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
+        "@ptxas-x86_64//:ptxas",
         "@test_llama_golden",
         "@torch_llama_golden",
     ],

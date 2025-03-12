@@ -56,6 +56,7 @@ lit_tests(
         "//GenericML/tools/mt",
         "//KGEN/tools/mojo",
         "//SDK/tools/modular-api-executor",
+        "@ptxas-x86_64//:ptxas",
     ],
     deps = [
         requirement("numpy"),
@@ -79,5 +80,8 @@ lit_tests(
         "//open-source/mojo/stdlib/stdlib",
     ],
     tags = ["gpu"],
-    tools = ["//KGEN/tools/mojo"],
+    tools = [
+        "//KGEN/tools/mojo",
+        "@ptxas-x86_64//:ptxas",
+    ],
 )
