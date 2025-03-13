@@ -378,6 +378,55 @@ class Graph:
 
         return results, staged_op
 
+    def _build_block(
+        self,
+        block: mlir.Block,
+        block_fn: Callable[[], Iterable[TensorValue] | TensorValue | None],
+        block_terminator_op: mlir.Operation | mlir.OpView,
+        block_name: str,
+        expected_output_types: list[Type] | None,
+        add_chain: bool = True,
+    ):
+        """Builds and verifies a block within the graph.
+
+        Args:
+            block: The MLIR block to build into
+            block_fn: Callable that generates the block's operations and returns results
+            block_terminator_op: Operation to terminate the block (e.g. mo.YieldOp)
+            block_name: Name of the block for error reporting
+            expected_output_types: List of expected output types for the block
+            add_chain: Whether to append the current chain to block results
+
+        Raises:
+            ValueError: If the number of results doesn't match expected outputs
+            ValueError: If any result type doesn't match the expected type
+
+        Note:
+            Manages the chain state automatically, restoring the parent chain after
+            block construction. The chain is used to track operation ordering.
+        """
+        parent_chain = self._current_chain
+
+        with self._enter_block(block), self._location():
+            expected_output_types = expected_output_types or []
+
+            results = block_fn() or []
+            results = (
+                list(results) if isinstance(results, Iterable) else [results]
+            )
+            result_types = [result.type for result in results]
+            if result_types != expected_output_types:
+                raise TypeError(
+                    f"Results don't match expected types: \n{result_types=}, \n{expected_output_types=}"
+                )
+
+            _ = self._add_op(
+                block_terminator_op,
+                results + ([self._current_chain] if add_chain else []),
+            )
+
+        self._update_chain(parent_chain)
+
     def output(self, *outputs: Value) -> None:
         """Sets the output nodes of the :obj:`Graph`."""
         # mo.output doesn't support infer_type

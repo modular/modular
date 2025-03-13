@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Callable, Iterable
 
-from max import mlir
 from max.mlir.dialects import mo
 
 from ..graph import Graph
@@ -22,7 +21,7 @@ def cond(
     out_types: Iterable[Type] | None,
     then_fn: Callable,
     else_fn: Callable,
-) -> TensorValue:
+) -> list[TensorValue]:
     """Conditionally execute one of two branches based on a boolean predicate.
 
     Both branches must return the same number and types of values as specified
@@ -96,39 +95,21 @@ def cond(
     out_chain = results[results_len - 1]
     results = results[: results_len - 1]
 
-    current_graph = Graph.current
-    parent_chain = current_graph._current_chain
+    Graph.current._build_block(
+        if_op.thenRegion.blocks[0],
+        then_fn,
+        mo.YieldOp,
+        "then_block",
+        out_types,
+    )
 
-    def _handle_block(block: mlir.Block, block_fn: Callable, block_name: str):
-        current_graph._update_chain(parent_chain)
-        with current_graph._enter_block(block), current_graph._location():
-            block_results = block_fn()
-            if block_results is None:
-                block_results = []
-            elif not isinstance(block_results, Iterable):
-                block_results = [block_results]
-
-            if len(block_results) != len(results):
-                raise ValueError(
-                    f"{block_name} returned {len(block_results)} results, but "
-                    f"expected {len(results)}"
-                )
-            for idx, (block_result, result) in enumerate(
-                zip(block_results, results)
-            ):
-                if block_result.type != result.type:
-                    raise ValueError(
-                        f"{block_name} returned result of type {block_result.type} at index {idx}, but "
-                        f"expected {result.type}"
-                    )
-
-            _ = current_graph._add_op(
-                mo.YieldOp,
-                block_results + [current_graph._current_chain],
-            )
-
-    _handle_block(if_op.thenRegion.blocks[0], then_fn, "then_block")
-    _handle_block(if_op.elseRegion.blocks[0], else_fn, "else_block")
+    Graph.current._build_block(
+        if_op.elseRegion.blocks[0],
+        else_fn,
+        mo.YieldOp,
+        "else_block",
+        out_types,
+    )
 
     Graph.current._update_chain(out_chain)
     return results

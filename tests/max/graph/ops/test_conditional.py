@@ -61,5 +61,5 @@ def test_conditional_type_check() -> None:
             ops.cond(
                 cond, [TensorType(DType.float32, shape=[])], then_fn, else_fn
             )
-        except ValueError as e:
-            assert "returned result of type" in str(e)
+        except TypeError as e:
+            assert "Results don't match expected types" in str(e)
