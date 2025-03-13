@@ -1495,8 +1495,6 @@ compilePTXToCUBINViaPTXAS(AsyncRT::DeviceContextRef &ctx,
     ptxasArgs.push_back("-g");
   else if (options.getDebugLevelString() == "line-tables")
     ptxasArgs.push_back("--generate-line-info");
-  else
-    ptxasArgs.push_back("--suppress-debug-info");
 
   // Helper function for printing tool error logs.
   std::string message;
