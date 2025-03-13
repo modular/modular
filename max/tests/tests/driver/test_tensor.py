@@ -641,3 +641,43 @@ def test_aligned() -> None:
     tensor_uint8 = tensor.view(DType.uint8)
     assert tensor_uint8[1]._aligned()
     assert not tensor_uint8[1]._aligned(DType.int32.align)
+
+
+def test_unaligned_tensor_copy():
+    """Tests that copying a tensor aligns it to the dtype alignment."""
+    expected = np.array([1005, 2510, 1325], np.int32)
+
+    # Construct a uint8 tensor so that when converted to int32, it becomes the
+    # expected tensor - with a twist that there's an extra byte to force an
+    # unaligned view.
+    unaligned_array = np.array(
+        [15] + expected.view(np.uint8).tolist(),
+        np.uint8,
+    )
+    tensor8 = Tensor.from_numpy(unaligned_array)
+
+    # TODO(GENAI-110): These should not raise AssertionErrors. There is a bug
+    # causing unaligned arrays to not be viewed/copied correctly.
+
+    # Bug with copy.
+    tensor8_copy = tensor8[1:].copy()
+    with pytest.raises(AssertionError):
+        # Output: tensor8_copy[0] is expected to be 237, but is 15.
+        assert tensor8_copy[0].item() == tensor8[1].item()
+
+    # Bug with view.
+    tensor32 = tensor8[1:].view(DType.int32)
+    assert not tensor8[1:]._aligned(DType.int32.align)
+
+    # This should actually return False, because `tensor32` should be using the
+    # same data as `tensor8[1:]`.
+    assert tensor32._aligned()
+
+    with pytest.raises(AssertionError):
+        # Tensor[0]'s value should be 1005, but is 642560.
+        assert tensor32[0].item() == 1005
+
+    tensor32_copy = tensor32.copy()
+    assert tensor32_copy._aligned()
+    with pytest.raises(AssertionError):
+        np.testing.assert_array_equal(tensor32.copy().to_numpy(), expected)
