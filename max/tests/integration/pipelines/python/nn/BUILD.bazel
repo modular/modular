@@ -164,6 +164,7 @@ modular_py_test(
         "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
+        "@flash_attn",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
