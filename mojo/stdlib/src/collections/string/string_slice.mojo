@@ -21,6 +21,7 @@ from collections.string import StringSlice
 ```
 """
 
+from builtin._location import __call_location, _SourceLocation
 from collections import List, Optional
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string._utf8_validation import (
@@ -461,18 +462,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # SAFETY:
         #   StringLiteral is guaranteed to use UTF-8 encoding.
         # NOTE: validating StringLiterals would cause recursive loops
-        self = StaticString.__init__[debug_assert_validate=False](
-            unsafe_from_utf8=lit.as_bytes()
-        )
+        self._slice = lit.as_bytes()
 
     @always_inline
     fn __init__[
-        debug_assert_validate: Bool = True
+        debug_assert_validate: Bool = True,
+        location: Optional[_SourceLocation] = None,
     ](out self, *, owned unsafe_from_utf8: Span[Byte, origin]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Parameters:
             debug_assert_validate: Whether to validate the utf8 buffer.
+            location: The location of the error (default `__call_location`).
 
         Args:
             unsafe_from_utf8: A `Span[Byte]` encoded in UTF-8.
@@ -485,13 +486,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if debug_assert_validate:
             # NOTE: using the comptime version is because the fast runtime one
             # causes recursive loops when used here
-            if not _is_valid_utf8_comptime(unsafe_from_utf8):
-                debug_assert(False, "buffer is not valid UTF-8")
-                # if is_compile_time():
-                #     # abort("buffer is not valid UTF-8")
-                #     abort()
-                # else:
-                #     debug_assert(False, "buffer is not valid UTF-8")
+            debug_assert(
+                _is_valid_utf8_comptime(unsafe_from_utf8),
+                "buffer is not valid UTF-8",
+                location=location.or_else(__call_location()),
+            )
 
         self._slice = unsafe_from_utf8
 

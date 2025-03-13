@@ -64,7 +64,7 @@ fn debug_assert[
     assert_mode: StringLiteral = "none",
     cpu_only: Bool = False,
     *Ts: Writable,
-](*messages: *Ts):
+](*messages: *Ts, location: Optional[_SourceLocation] = None):
     """Asserts that the condition is true.
 
     Parameters:
@@ -75,6 +75,7 @@ fn debug_assert[
 
     Args:
         messages: Arguments to convert to a `String` message.
+        location: The location of the error (default `__call_location`).
 
 
     You can pass in multiple args that are `Writable` to generate a formatted
@@ -140,7 +141,7 @@ fn debug_assert[
     if _assert_enabled[assert_mode, cpu_only]():
         if cond():
             return
-        _debug_assert_msg(messages, __call_location())
+        _debug_assert_msg(messages, location.or_else(__call_location()))
 
 
 @always_inline
@@ -148,7 +149,7 @@ fn debug_assert[
     assert_mode: StringLiteral = "none",
     cpu_only: Bool = False,
     *Ts: Writable,
-](cond: Bool, *messages: *Ts):
+](cond: Bool, *messages: *Ts, location: Optional[_SourceLocation] = None):
     """Asserts that the condition is true.
 
     Parameters:
@@ -159,6 +160,7 @@ fn debug_assert[
     Args:
         cond: The bool value to assert.
         messages: Arguments to convert to a `String` message.
+        location: The location of the error (default `__call_location`).
 
     You can pass in multiple args that are `Writable` to generate a formatted
     message, by default this will be a no-op:
@@ -223,7 +225,7 @@ fn debug_assert[
     if _assert_enabled[assert_mode, cpu_only]():
         if cond:
             return
-        _debug_assert_msg(messages, __call_location())
+        _debug_assert_msg(messages, location.or_else(__call_location()))
 
 
 @no_inline

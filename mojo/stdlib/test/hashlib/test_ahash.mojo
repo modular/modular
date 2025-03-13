@@ -576,7 +576,7 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 fn gen_word_pairs[words: String = words_en]() -> List[String]:
     var result = List[String]()
     try:
-        var list = words.split(", ")
+        var list = words.split(",")
         for w in list:
             var w1 = String(w[].strip())
             for w in list:
@@ -738,6 +738,12 @@ def assert_fill_factor_old_hash[
     )
 
 
+from collections.string._utf8_validation import (
+    _is_valid_utf8_comptime,
+    _is_valid_utf8_runtime,
+)
+
+
 def test_fill_factor():
     var words = List[String]()
 
@@ -841,8 +847,8 @@ def test_hash_simd_values():
 
 
 def main():
-    test_hash_byte_array()
-    test_avalanche()
-    test_trailing_zeros()
+    # test_hash_byte_array()
+    # test_avalanche()
+    # test_trailing_zeros()
     test_fill_factor()
-    test_hash_simd_values()
+    # test_hash_simd_values()

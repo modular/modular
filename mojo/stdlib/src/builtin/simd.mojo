@@ -2238,7 +2238,7 @@ struct SIMD[type: DType, size: Int](
         ]()
 
         @parameter
-        fn _slice() -> SIMD[type, output_width]:
+        fn slice_body() -> SIMD[type, output_width]:
             var tmp = SIMD[type, output_width]()
 
             @parameter
@@ -2250,10 +2250,10 @@ struct SIMD[type: DType, size: Int](
         if output_width == 1:
             return self[offset]
         elif offset % simdwidthof[type]():
-            return _slice()
+            return slice_body()
 
         if is_compile_time():
-            return _slice()
+            return slice_body()
 
         return llvm_intrinsic[
             "llvm.vector.extract",
