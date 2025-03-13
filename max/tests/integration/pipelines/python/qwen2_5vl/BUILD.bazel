@@ -1,0 +1,33 @@
+# Qwen2.5 VL tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+modular_py_test(
+    name = "qwen2_5vl",
+    size = "large",
+    srcs = glob(["**/test_*.py"]),
+    data = [
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "//ModularFramework/tools/mof",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("transformers"),
+        requirement("qwen-vl-utils"),
+        requirement("accelerate"),
+    ],
+)
