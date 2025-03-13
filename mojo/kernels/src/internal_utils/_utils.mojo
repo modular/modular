@@ -530,3 +530,46 @@ fn array_equal[
     )
     for i in range(x_array.dynamic_shape.flattened_length()):
         assert_equal(x_array.data[i], y_array.data[i])
+
+
+@value
+@register_passable("trivial")
+struct Mode:
+    var _value: Int
+    var handle: StringLiteral
+    alias NONE = Self(0x0, "none")
+    alias RUN = Self(0x1, "run")
+    alias BENCHMARK = Self(0x2, "benchmark")
+    alias VERIFY = Self(0x4, "verify")
+    alias SEP = "+"
+
+    fn __init__(out self, handle: String = "run+benchmark+verify") raises:
+        var handle_lower = handle.lower().split(Self.SEP)
+        self = Self.NONE
+        for h in handle_lower:
+            if h[] == Self.RUN.handle:
+                self.append(Self.RUN)
+            elif h[] == Self.BENCHMARK.handle:
+                self.append(Self.BENCHMARK)
+            elif h[] == Self.VERIFY.handle:
+                self.append(Self.VERIFY)
+
+    fn append(mut self, other: Self):
+        self._value |= other._value
+
+    fn __str__(self) -> String:
+        s = List[String]()
+        if self == Self.RUN:
+            s.append(Self.RUN.handle)
+        if self == Self.BENCHMARK:
+            s.append(Self.BENCHMARK.handle)
+        if self == Self.VERIFY:
+            s.append(Self.VERIFY.handle)
+        if self == Self.NONE:
+            s.append(Self.NONE.handle)
+        return Self.SEP.join(s)
+
+    fn __eq__(self, mode: Self) -> Bool:
+        if mode._value == self._value == Self.NONE._value:
+            return True
+        return True if self._value & mode._value else False

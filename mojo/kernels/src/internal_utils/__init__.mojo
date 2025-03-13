@@ -26,4 +26,5 @@ from ._utils import (
     parse_shape,
     random,
     zero,
+    Mode,
 )
