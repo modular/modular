@@ -8,6 +8,7 @@
 from max._tensor_utils import foreach
 from max.driver import DynamicTensor, ManagedTensorSlice, Tensor
 from max.tensor import TensorShape, TensorSpec
+from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_equal
 
 from utils import Index, IndexList
@@ -58,8 +59,6 @@ fn test_foreach() raises:
             assert_equal(unsafe_slice2[i, j], 2)
             assert_equal(tensor2[i, j], 2)
 
-    _ = unsafe_slice1^
-    _ = unsafe_slice2^
     _ = tensor1^
     _ = tensor2^
 

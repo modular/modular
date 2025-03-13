@@ -9,6 +9,7 @@ from tensor import (
     DynamicTensor,
     ManagedTensorSlice,
     InputTensor,
+    MutableInputTensor,
     OutputTensor,
     IOSpec,
     Input,

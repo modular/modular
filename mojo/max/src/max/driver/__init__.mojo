@@ -36,6 +36,7 @@ from max._tensor_utils import (
     ManagedTensorSlice,
     StaticTensorSpec,
     InputTensor,
+    MutableInputTensor,
     OutputTensor,
     IOSpec,
     Input,
