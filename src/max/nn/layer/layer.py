@@ -274,7 +274,10 @@ def _array_from_weight_loader(
         )
 
     if weight.quantization_encoding != data.quantization_encoding:
-        if override_quantization_encoding:
+        if (
+            override_quantization_encoding
+            and data.quantization_encoding is not None
+        ):
             weight.quantization_encoding = data.quantization_encoding
         # We don't raise an error if `override_quantization_encoding` is `False`
         # because in some cases the data is not aware of its own quantization

@@ -472,7 +472,7 @@ class GPTQLinearV2(LinearV2):
         else:
             res = ops.qmatmul(
                 self.qweight.quantization_encoding,
-                None,
+                self.quantization_config,
                 x,
                 weight,
             )
