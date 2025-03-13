@@ -1,0 +1,19 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(["**/*.py"]),
+    data = [
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    imports = ["pytests"],
+    deps = [
+        "//SDK/lib/API/python/max/dtype",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/nn",
+        requirement("numpy"),
+    ],
+)
