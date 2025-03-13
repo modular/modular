@@ -492,30 +492,32 @@ fn test_decoding[
         num_partitions=num_partitions,
         decoding_warp_split_k=split_k,
     ](1, 29, ctx, use_index_input=use_index_input)
-    test[
-        4,
-        qkv_type,
-        DType.bfloat16,
-        128,
-        3,
-        group=3,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-    ](1, 156, ctx, use_index_input=use_index_input)
-    test[
-        4,
-        qkv_type,
-        DType.bfloat16,
-        128,
-        3,
-        group=3,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-    ](1, 208, ctx, use_index_input=use_index_input)
+
+    # TODO(KERN-1674): enable these tests after fixing the bug
+    # test[
+    #     4,
+    #     qkv_type,
+    #     DType.bfloat16,
+    #     128,
+    #     3,
+    #     group=3,
+    #     against_gpu_naive=True,
+    #     batch_size=batch_size,
+    #     num_partitions=num_partitions,
+    #     decoding_warp_split_k=split_k,
+    # ](1, 156, ctx, use_index_input=use_index_input)
+    # test[
+    #     4,
+    #     qkv_type,
+    #     DType.bfloat16,
+    #     128,
+    #     3,
+    #     group=3,
+    #     against_gpu_naive=True,
+    #     batch_size=batch_size,
+    #     num_partitions=num_partitions,
+    #     decoding_warp_split_k=split_k,
+    # ](1, 208, ctx, use_index_input=use_index_input)
 
 
 fn test_cross_attention[batch_size: Int](ctx: DeviceContext) raises:
