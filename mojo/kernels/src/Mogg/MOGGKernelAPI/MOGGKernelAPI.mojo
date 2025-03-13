@@ -7579,7 +7579,7 @@ struct Struct_kv_collection_cow_strided_memcpy_paged:
         _synchronous: Bool,
         type: DType,
     ](
-        blocks: InputTensor[type=type, rank=6],
+        blocks: MutableInputTensor[type=type, rank=6],
         block_dst_idx_tensor: InputTensor[type = DType.uint32, rank=1],
         block_src_idx_tensor: InputTensor[type = DType.uint32, rank=1],
         num_tokens_tensor: InputTensor[type = DType.uint32, rank=1],

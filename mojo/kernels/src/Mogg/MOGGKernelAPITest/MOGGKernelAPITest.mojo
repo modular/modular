@@ -215,7 +215,11 @@ fn _matmul[
             type: DType, width: Int, *, alignment: Int = 1
         ] (IndexList[2], SIMD[type, width]) capturing -> None
     ] = None,
-](c: ManagedTensorSlice, a: ManagedTensorSlice, b: ManagedTensorSlice) raises:
+](
+    c: ManagedTensorSlice[mut=True],
+    a: ManagedTensorSlice,
+    b: ManagedTensorSlice,
+) raises:
     var m = a.dim_size(0)
     var n = a.dim_size(1)
     var k = b.dim_size(1)
