@@ -606,111 +606,109 @@ def test_is_codepoint_boundary():
     assert_false(empty.is_codepoint_boundary(1))
 
 
-alias GOOD_SEQUENCES = List[String](
-    "a",
-    "\xc3\xb1",
-    "\xe2\x82\xa1",
-    "\xf0\x90\x8c\xbc",
-    "안녕하세요, 세상",
-    "\xc2\x80",
-    "\xf0\x90\x80\x80",
-    "\xee\x80\x80",
-    "very very very long string 🔥🔥🔥",
+alias GOOD_SEQUENCES = List[Span[Byte, StaticConstantOrigin]](
+    "a".as_bytes(),
+    "\xc3\xb1".as_bytes(),
+    "\xe2\x82\xa1".as_bytes(),
+    "\xf0\x90\x8c\xbc".as_bytes(),
+    "안녕하세요, 세상".as_bytes(),
+    "\xc2\x80".as_bytes(),
+    "\xf0\x90\x80\x80".as_bytes(),
+    "\xee\x80\x80".as_bytes(),
+    "very very very long string 🔥🔥🔥".as_bytes(),
 )
 
 
 # TODO: later on, don't use String because
 # it will likely refuse non-utf8 data.
-alias BAD_SEQUENCES = List[String](
-    "\xc3\x28",  # continuation bytes does not start with 10xx
-    "\xa0\xa1",  # first byte is continuation byte
-    "\xe2\x28\xa1",  # second byte should be continuation byte
-    "\xe2\x82\x28",  # third byte should be continuation byte
-    "\xf0\x28\x8c\xbc",  # second byte should be continuation byte
-    "\xf0\x90\x28\xbc",  # third byte should be continuation byte
-    "\xf0\x28\x8c\x28",  # fourth byte should be continuation byte
-    "\xc0\x9f",  # overlong, could be just one byte
-    "\xf5\xff\xff\xff",  # missing continuation bytes
-    "\xed\xa0\x81",  # UTF-16 surrogate pair
-    "\xf8\x90\x80\x80\x80",  # 5 bytes is too long
-    "123456789012345\xed",  # Continuation bytes are missing
-    "123456789012345\xf1",  # Continuation bytes are missing
-    "123456789012345\xc2",  # Continuation bytes are missing
-    "\xC2\x7F",  # second byte is not continuation byte
-    "\xce",  # Continuation byte missing
-    "\xce\xba\xe1",  # two continuation bytes missing
-    "\xce\xba\xe1\xbd",  # One continuation byte missing
-    "\xce\xba\xe1\xbd\xb9\xcf",  # fifth byte should be continuation byte
-    "\xce\xba\xe1\xbd\xb9\xcf\x83\xce",  # missing continuation byte
-    "\xce\xba\xe1\xbd\xb9\xcf\x83\xce\xbc\xce",  # missing continuation byte
-    "\xdf",  # missing continuation byte
-    "\xef\xbf",  # missing continuation byte
+alias BAD_SEQUENCES = List[Span[Byte, StaticConstantOrigin]](
+    "\xc3\x28".as_bytes(),  # continuation bytes does not start with 10xx
+    "\xa0\xa1".as_bytes(),  # first byte is continuation byte
+    "\xe2\x28\xa1".as_bytes(),  # second byte should be continuation byte
+    "\xe2\x82\x28".as_bytes(),  # third byte should be continuation byte
+    "\xf0\x28\x8c\xbc".as_bytes(),  # second byte should be continuation byte
+    "\xf0\x90\x28\xbc".as_bytes(),  # third byte should be continuation byte
+    "\xf0\x28\x8c\x28".as_bytes(),  # fourth byte should be continuation byte
+    "\xc0\x9f".as_bytes(),  # overlong, could be just one byte
+    "\xf5\xff\xff\xff".as_bytes(),  # missing continuation bytes
+    "\xed\xa0\x81".as_bytes(),  # UTF-16 surrogate pair
+    "\xf8\x90\x80\x80\x80".as_bytes(),  # 5 bytes is too long
+    "123456789012345\xed".as_bytes(),  # Continuation bytes are missing
+    "123456789012345\xf1".as_bytes(),  # Continuation bytes are missing
+    "123456789012345\xc2".as_bytes(),  # Continuation bytes are missing
+    "\xC2\x7F".as_bytes(),  # second byte is not continuation byte
+    "\xce".as_bytes(),  # Continuation byte missing
+    "\xce\xba\xe1".as_bytes(),  # two continuation bytes missing
+    "\xce\xba\xe1\xbd".as_bytes(),  # One continuation byte missing
+    "\xce\xba\xe1\xbd\xb9\xcf".as_bytes(),  # fifth byte should be continuation byte
+    "\xce\xba\xe1\xbd\xb9\xcf\x83\xce".as_bytes(),  # missing continuation byte
+    "\xce\xba\xe1\xbd\xb9\xcf\x83\xce\xbc\xce".as_bytes(),  # missing continuation byte
+    "\xdf".as_bytes(),  # missing continuation byte
+    "\xef\xbf".as_bytes(),  # missing continuation byte
 )
-
-
-fn validate_utf8(slice: StringSlice) -> Bool:
-    return _is_valid_utf8(slice.as_bytes())
 
 
 def test_good_utf8_sequences():
     for sequence in GOOD_SEQUENCES:
-        assert_true(validate_utf8(sequence[]))
+        assert_true(_is_valid_utf8(sequence[]))
 
 
 def test_bad_utf8_sequences():
     for sequence in BAD_SEQUENCES:
-        assert_false(validate_utf8(sequence[]))
+        assert_false(_is_valid_utf8(sequence[]))
 
 
 def test_stringslice_from_utf8():
     for sequence in GOOD_SEQUENCES:
-        var bytes = sequence[].as_bytes()
-        _ = StringSlice.from_utf8(bytes)
+        _ = StringSlice.from_utf8(sequence[])
 
     for sequence in BAD_SEQUENCES:
         with assert_raises(contains="buffer is not valid UTF-8"):
-            var bytes = sequence[].as_bytes()
-            _ = StringSlice.from_utf8(bytes)
+            _ = StringSlice.from_utf8(sequence[])
 
 
 def test_combination_good_utf8_sequences():
     # any combination of good sequences should be good
     for i in range(0, len(GOOD_SEQUENCES)):
         for j in range(i, len(GOOD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] + GOOD_SEQUENCES[j]
-            assert_true(validate_utf8(sequence))
+            var sequence = List(GOOD_SEQUENCES[i]) + List(GOOD_SEQUENCES[j])
+            assert_true(_is_valid_utf8(sequence))
 
 
 def test_combination_bad_utf8_sequences():
     # any combination of bad sequences should be bad
     for i in range(0, len(BAD_SEQUENCES)):
         for j in range(i, len(BAD_SEQUENCES)):
-            var sequence = BAD_SEQUENCES[i] + BAD_SEQUENCES[j]
-            assert_false(validate_utf8(sequence))
+            var sequence = List(BAD_SEQUENCES[i]) + List(BAD_SEQUENCES[j])
+            assert_false(_is_valid_utf8(sequence))
 
 
 def test_combination_good_bad_utf8_sequences():
     # any combination of good and bad sequences should be bad
     for i in range(0, len(GOOD_SEQUENCES)):
         for j in range(0, len(BAD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] + BAD_SEQUENCES[j]
-            assert_false(validate_utf8(sequence))
+            var sequence = List(GOOD_SEQUENCES[i]) + List(BAD_SEQUENCES[j])
+            assert_false(_is_valid_utf8(sequence))
 
 
 def test_combination_10_good_utf8_sequences():
     # any 10 combination of good sequences should be good
     for i in range(0, len(GOOD_SEQUENCES)):
         for j in range(i, len(GOOD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] * 10 + GOOD_SEQUENCES[j] * 10
-            assert_true(validate_utf8(sequence))
+            var sequence = List(GOOD_SEQUENCES[i]) * 10 + List(
+                GOOD_SEQUENCES[j]
+            ) * 10
+            assert_true(_is_valid_utf8(sequence))
 
 
 def test_combination_10_good_10_bad_utf8_sequences():
     # any 10 combination of good and bad sequences should be bad
     for i in range(0, len(GOOD_SEQUENCES)):
         for j in range(0, len(BAD_SEQUENCES)):
-            var sequence = GOOD_SEQUENCES[i] * 10 + BAD_SEQUENCES[j] * 10
-            assert_false(validate_utf8(sequence))
+            var sequence = List(GOOD_SEQUENCES[i]) * 10 + List(
+                BAD_SEQUENCES[j]
+            ) * 10
+            assert_false(_is_valid_utf8(sequence))
 
 
 def test_count_utf8_continuation_bytes():
@@ -723,8 +721,7 @@ def test_count_utf8_continuation_bytes():
     def _test(amnt: Int, items: List[UInt8]):
         var p = items.unsafe_ptr()
         var span = Span[Byte, StaticConstantOrigin](ptr=p, length=len(items))
-        var str_slice = StringSlice(unsafe_from_utf8=span)
-        assert_equal(amnt, _count_utf8_continuation_bytes(str_slice))
+        assert_equal(amnt, _count_utf8_continuation_bytes(span))
 
     _test(5, List[UInt8](c, c, c, c, c))
     _test(2, List[UInt8](b2, c, b2, c, b1))

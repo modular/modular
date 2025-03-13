@@ -23,7 +23,10 @@ from collections.string import StringSlice
 
 from collections import List, Optional
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from collections.string._utf8_validation import _is_valid_utf8
+from collections.string._utf8_validation import (
+    _is_valid_utf8,
+    _is_valid_utf8_comptime,
+)
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -457,7 +460,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # slice to live for.
         # SAFETY:
         #   StringLiteral is guaranteed to use UTF-8 encoding.
-        # NOTE: validating StringLiterals would increase compile times
+        # NOTE: validating StringLiterals would cause recursive loops
         self = StaticString.__init__[debug_assert_validate=False](
             unsafe_from_utf8=lit.as_bytes()
         )
@@ -480,9 +483,16 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         @parameter
         if debug_assert_validate:
-            debug_assert(
-                _is_valid_utf8(unsafe_from_utf8), "value is not valid utf8"
-            )
+            # NOTE: using the comptime version is because the fast runtime one
+            # causes recursive loops when used here
+            if not _is_valid_utf8_comptime(unsafe_from_utf8):
+                debug_assert(False, "buffer is not valid UTF-8")
+                # if is_compile_time():
+                #     # abort("buffer is not valid UTF-8")
+                #     abort()
+                # else:
+                #     debug_assert(False, "buffer is not valid UTF-8")
+
         self._slice = unsafe_from_utf8
 
     fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[Byte]):
@@ -1392,7 +1402,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # overall length in bytes.
         # For a visual explanation of how this UTF-8 codepoint counting works:
         #   https://connorgray.com/ephemera/project-log#2025-01-13
-        var continuation_count = _count_utf8_continuation_bytes(self)
+        var continuation_count = _count_utf8_continuation_bytes(self.as_bytes())
         return self.byte_length() - continuation_count
 
     fn is_codepoint_boundary(self, index: UInt) -> Bool:
@@ -2256,10 +2266,10 @@ fn _is_utf8_continuation_byte[
     return vec.cast[DType.int8]() < -(0b1000_0000 >> 1)
 
 
-fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
+fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
     alias sizes = (256, 128, 64, 32, 16, 8)
-    var ptr = str_slice.unsafe_ptr()
-    var num_bytes = str_slice.byte_length()
+    var ptr = span.unsafe_ptr()
+    var num_bytes = len(span)
     var amnt: Int = 0
     var processed = 0
 

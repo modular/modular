@@ -175,12 +175,12 @@ fn _validate_utf8_simd_slice[
         specified width of SIMD vector. If -1 then it is invalid.
     """
     var idx = length - iter_len
-    while iter_len >= width or remainder:
+    while iter_len > 0 and (iter_len >= width or remainder):
         var d: SIMD[DType.uint8, width]  # use a vector of the specified width
 
         @parameter
         if not remainder:
-            d = ptr.offset(idx).load[width=width](1)
+            d = ptr.offset(idx).load[width=width]()
         else:
             d = SIMD[DType.uint8, width](0)
             for i in range(iter_len):
@@ -205,20 +205,20 @@ fn _validate_utf8_simd_slice[
                 break
             continue
 
-        var byte_types = _utf8_byte_type(d)
+        var byte_types = _utf8_byte_type(d).slice[4]()
         var first_byte_type = byte_types[0]
 
         # byte_type has to match against the amount of continuation bytes
         alias Vec = SIMD[DType.uint8, 4]
-        alias n4_byte_types = Vec(4, 1, 1, 1)
-        alias n3_byte_types = Vec(3, 1, 1, 0)
-        alias n3_mask = Vec(0b111, 0b111, 0b111, 0)
-        alias n2_byte_types = Vec(2, 1, 0, 0)
-        alias n2_mask = Vec(0b111, 0b111, 0, 0)
-        var byte_types_4 = byte_types.slice[4]()
-        var valid_n4 = (byte_types_4 == n4_byte_types).reduce_and()
-        var valid_n3 = ((byte_types_4 & n3_mask) == n3_byte_types).reduce_and()
-        var valid_n2 = ((byte_types_4 & n2_mask) == n2_byte_types).reduce_and()
+        # FIXME(#4144): these should be compile time constants
+        var n4_byte_types = Vec(4, 1, 1, 1)
+        var n3_byte_types = Vec(3, 1, 1, 0)
+        var n3_mask = Vec(0b111, 0b111, 0b111, 0)
+        var n2_byte_types = Vec(2, 1, 0, 0)
+        var n2_mask = Vec(0b111, 0b111, 0, 0)
+        var valid_n4 = (byte_types == n4_byte_types).reduce_and()
+        var valid_n3 = ((byte_types & n3_mask) == n3_byte_types).reduce_and()
+        var valid_n2 = ((byte_types & n2_mask) == n2_byte_types).reduce_and()
         if not (valid_n4 or valid_n3 or valid_n2):
             return -1
 

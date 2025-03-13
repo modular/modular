@@ -2254,12 +2254,12 @@ struct SIMD[type: DType, size: Int](
 
         if is_compile_time():
             return _slice()
-        else:
-            return llvm_intrinsic[
-                "llvm.vector.extract",
-                SIMD[type, output_width],
-                has_side_effect=False,
-            ](self, Int64(offset))
+
+        return llvm_intrinsic[
+            "llvm.vector.extract",
+            SIMD[type, output_width],
+            has_side_effect=False,
+        ](self, Int64(offset))
 
     @always_inline("nodebug")
     fn insert[*, offset: Int = 0](self, value: SIMD[type, _]) -> Self:
@@ -2643,12 +2643,12 @@ struct SIMD[type: DType, size: Int](
 
         if is_compile_time():
             return self.reduce[and_reduce_body, size_out]()
-        else:
-            return llvm_intrinsic[
-                "llvm.vector.reduce.and",
-                SIMD[type, size_out],
-                has_side_effect=False,
-            ](self)
+
+        return llvm_intrinsic[
+            "llvm.vector.reduce.and",
+            SIMD[type, size_out],
+            has_side_effect=False,
+        ](self)
 
     @always_inline
     fn reduce_or[size_out: Int = 1](self) -> SIMD[type, size_out]:
