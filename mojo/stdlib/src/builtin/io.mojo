@@ -345,8 +345,8 @@ fn print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StringLiteral = " ",
-    end: StringLiteral = "\n",
+    sep: StaticString = " ",
+    end: StaticString = "\n",
     flush: Bool = False,
     owned file: FileDescriptor = stdout,
 ):
@@ -369,8 +369,8 @@ fn print[
 @no_inline
 fn print(
     values: VariadicPack[element_trait=Writable, *_],
-    sep: StringLiteral = " ",
-    end: StringLiteral = "\n",
+    sep: StaticString = " ",
+    end: StaticString = "\n",
     flush: Bool = False,
     owned file: FileDescriptor = stdout,
 ):
