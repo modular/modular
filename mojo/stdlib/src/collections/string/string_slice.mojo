@@ -489,7 +489,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             if not _is_valid_utf8_comptime(unsafe_from_utf8):
                 alias msg = "buffer is not valid UTF-8"
                 if is_compile_time():
-                    constrained[False, msg]()
+                    abort()
                 debug_assert(
                     False, msg, location=location.or_else(__call_location())
                 )
