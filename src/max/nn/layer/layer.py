@@ -126,6 +126,7 @@ class Module(Layer, ABC):
         state_dict: Mapping[str, DLPackCompatible | WeightData],
         *,
         override_quantization_encoding: bool = False,
+        weight_alignment: int | None = None,
     ) -> None:
         """Sets the values of all weights in this model.
 
@@ -134,6 +135,9 @@ class Module(Layer, ABC):
                 max.driver.Tensor.
             override_quantization_encoding: Whether to override the weight
                 quantization based on the loaded value.
+            weight_alignment: If specified, overrides the alignment for each
+                weight in the `Module`. If left as `None`, each value in
+                state_dict must be aligned by the default dtype alignment.
 
         Raises:
             Error if any weight in the model is not present in the state dict.
@@ -156,6 +160,13 @@ class Module(Layer, ABC):
                         ).data
                     else:
                         _validate_weight_value(weight, data, full_weight_name)
+                    if weight_alignment:
+                        weight.align = weight_alignment
+                    _check_alignment(
+                        data,
+                        weight.align or weight.dtype.align,
+                        full_weight_name,
+                    )
                     self._weight_values[full_weight_name] = data
                     weight.name = full_weight_name
                 else:
@@ -196,6 +207,7 @@ class Module(Layer, ABC):
                     weight.shape.static_dims, weight.dtype
                 )
             state_dict[full_weight_name] = data
+            weight.name = full_weight_name
         return state_dict
 
     def raw_state_dict(self) -> dict[str, Weight]:
@@ -285,6 +297,17 @@ def _get_value_shape_dtype(value: DLPackCompatible) -> tuple[ShapeLike, DType]:
         dtype = value_tensor.dtype
 
     return shape, dtype
+
+
+def _check_alignment(value: DLPackCompatible, align: int, name: str) -> None:
+    tensor = Tensor.from_dlpack(value)
+    if not tensor._aligned(align):
+        raise ValueError(
+            f"Found unaligned weight '{name}' (expected alignment={align})."
+            "If you are using a Safetensor checkpoint, it is recommended that "
+            "you copy the weight to correct the alignment, or pass "
+            "`weight_alignment=1` to `Module.load_state_dict()`."
+        )
 
 
 def _validate_weight_value(weight: Weight, value: Any, name: str) -> None:
