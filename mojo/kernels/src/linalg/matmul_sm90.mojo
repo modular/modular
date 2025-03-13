@@ -416,7 +416,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 local_warp_group_idx,
             )
             wgmma_op.commit_group()
-            wgmma_op.wait_for_all()
+            wgmma_op.wait_group()
 
             @parameter
             if cluster_size[cluster_shape]() > 1:
@@ -997,7 +997,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                     local_warp_group_idx,
                 )
                 wgmma_op.commit_group()
-                wgmma_op.wait_for_all()
+                wgmma_op.wait_group()
 
                 @parameter
                 if cluster_size[cluster_shape]() > 1:
@@ -1348,7 +1348,7 @@ fn hopper_matmul_tma_wgmma_kernel[
         wgmma_op.arrive()
         wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
-        wgmma_op.wait_for_all()
+        wgmma_op.wait_group()
 
         barrier()
 
