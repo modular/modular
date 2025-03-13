@@ -21,11 +21,11 @@ fn test_print_stderr():
     # CHECK-STDERR: stderr
     print("stderr", file=sys.stderr)
     # CHECK-STDERR: a/b/c
-    print("a", "b", "c", sep="/".as_string_slice(), file=sys.stderr)
+    print("a", "b", "c", sep="/", file=sys.stderr)
     # CHECK-STDERR: world
     print("world", flush=True, file=sys.stderr)
     # CHECK-STDERR: helloworld
-    print("hello", end="world".as_string_slice(), file=sys.stderr)
+    print("hello", end="world", file=sys.stderr)
     # CHECK-STDERR: hello world
     print(String("hello world"), file=sys.stderr)
 

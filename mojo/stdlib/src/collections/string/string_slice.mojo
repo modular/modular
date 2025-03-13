@@ -487,8 +487,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             # NOTE: using the comptime version is because the fast runtime one
             # causes recursive loops when used here
             if not _is_valid_utf8_comptime(unsafe_from_utf8):
-                # alias msg = "buffer is not valid UTF-8"
                 abort()
+                # alias msg = "buffer is not valid UTF-8"
                 # if is_compile_time():
                 #     abort()
                 #     # abort(msg)

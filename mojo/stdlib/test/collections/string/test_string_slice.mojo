@@ -651,20 +651,26 @@ alias BAD_SEQUENCES = List[Span[Byte, StaticConstantOrigin]](
 )
 
 
-fn validate_utf8(span: Span[Byte]) -> Bool:
+fn validate_utf8[span: Span[Byte]]() -> Bool:
     alias comptime = _is_valid_utf8_comptime(span)
+    var runtime = _is_valid_utf8_runtime(span)
+    return comptime and runtime
+
+
+fn validate_utf8(span: Span[Byte]) -> Bool:
+    var comptime = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     return comptime and runtime
 
 
 def test_good_utf8_sequences():
     for sequence in GOOD_SEQUENCES:
-        assert_true(validate_utf8(sequence[]))
+        assert_true(validate_utf8[sequence[]]())
 
 
 def test_bad_utf8_sequences():
     for sequence in BAD_SEQUENCES:
-        assert_false(validate_utf8(sequence[]))
+        assert_false(validate_utf8[sequence[]]())
 
 
 def test_stringslice_from_utf8():
