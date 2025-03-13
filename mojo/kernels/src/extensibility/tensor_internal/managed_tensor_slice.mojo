@@ -883,6 +883,7 @@ fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 alias InputVariadicTensors = VariadicTensors[io_spec=Input]
+alias MutableInputVariadicTensors = VariadicTensors[io_spec=MutableInput]
 alias OutputVariadicTensors = VariadicTensors[io_spec=Output]
 
 

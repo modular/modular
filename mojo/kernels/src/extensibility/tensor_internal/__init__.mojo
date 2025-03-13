@@ -14,6 +14,7 @@ from .managed_tensor_slice import (
     OutputTensor,
     VariadicTensors,
     InputVariadicTensors,
+    MutableInputVariadicTensors,
     OutputVariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
