@@ -1450,7 +1450,7 @@ fn _is_valid_cluster_shape[
     @parameter
     for i in range(2):
         if (
-            grid_shape[i] <= cluster_shape[i]
+            grid_shape[i] < cluster_shape[i]
             or grid_shape[i] % cluster_shape[i] != 0
         ):
             return False

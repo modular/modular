@@ -459,7 +459,7 @@ fn _matmul_gpu[
                             mma_shape = Index(64, 256, 16),
                         ](
                             block_tile_shape=Index(128, 256, 64),
-                            cluster_shape=Index(2, 1, 1),
+                            cluster_shape=Index(1, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
@@ -657,7 +657,7 @@ fn _matmul_gpu[
                             transpose_b=transpose_b,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                             config=M8192_N8192_K7168_config,
-                            grid_shape = Index(4, H100.sm_count // 4),
+                            grid_shape = Index(8, H100.sm_count // 8),
                             schedule = MatmulSchedule.TILE2D,
                         ](
                             rebind[NDBuffer[c_type, 2, c_shape]](c),
