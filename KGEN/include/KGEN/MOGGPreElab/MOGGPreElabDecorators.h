@@ -49,10 +49,6 @@ constexpr StringLiteral MOGG_INTRINSIC_REGISTER = "mogg.intrinsic_register";
 /// MOGG Intrinsic for the elementwise kernel decorator.
 constexpr StringLiteral MOGG_INTRINSIC_ELEMENTWISE = "mogg.elementwise";
 
-/// MOGG Intrinsic decorator to indicates which I/Os can be fused.
-constexpr StringLiteral MOGG_INTRINSIC_ENABLE_FUSION_FOR =
-    "mogg.enable_fusion_for";
-
 /// MOGG Intrinsic for the view kernel decorator.
 constexpr StringLiteral MOGG_INTRINSIC_VIEW_KERNEL = "mogg.view_kernel";
 
@@ -236,18 +232,25 @@ static constexpr llvm::StringLiteral kParameterStaticSpecs = "static_specs";
 static constexpr bool kIOSpecImmutable = false;
 static constexpr bool kIOSpecMutable = true;
 
-static constexpr size_t kIOSpecIOOutput = 0;
-static constexpr size_t kIOSpecIOInput = 1;
-static constexpr size_t kIOSpecIOUnknown = 2;
+static constexpr int64_t kIOSpecIOOutput = 0;
+static constexpr int64_t kIOSpecIOInput = 1;
+static constexpr int64_t kIOSpecIOFusedInput = 2;
+static constexpr int64_t kIOSpecIOFusedOutput = 3;
+
+static constexpr int64_t kIOSpecIOUnknown = -1;
 
 static constexpr llvm::StringLiteral kInputTensor = "InputTensor";
 static constexpr llvm::StringLiteral kOutputTensor = "OutputTensor";
 static constexpr llvm::StringLiteral kMutableInputTensor = "MutableInputTensor";
+static constexpr llvm::StringLiteral kFusedInputTensor = "FusedInputTensor";
+static constexpr llvm::StringLiteral kFusedOutputTensor = "FusedOutputTensor";
 
 enum class IOSpec {
   InputTensor,        // Input tensor, read-only
   OutputTensor,       // Output tensor, write-only
   MutableInputTensor, // Input tensor that can be modified
+  FusedInputTensor,
+  FusedOutputTensor,
 };
 
 } // namespace M::KGEN::MOGGPreElab

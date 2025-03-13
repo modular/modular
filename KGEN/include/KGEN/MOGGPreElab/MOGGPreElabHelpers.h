@@ -57,6 +57,9 @@ std::optional<IOSpec> toIOSpec(StringRef str);
 std::pair<TypedAttr, TypedAttr> getParams(KGEN::MOGGPreElab::IOSpec ioSpec,
                                           Builder &builder);
 
+bool isOutputIOSpec(IOSpec spec);
+bool isFusableIOSpec(IOSpec spec);
+
 } // namespace M::KGEN::MOGGPreElab
 
 #endif // KGEN_LIB_MOGGPREELAB_HELPERS_H

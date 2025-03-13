@@ -236,7 +236,6 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "elementwise",
       "view_kernel",
       "mutable",
-      "enable_fusion_for",
   };
 
   std::function<bool(TypedAttr)> validateOperand = [&](TypedAttr attr) {
