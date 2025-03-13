@@ -6,6 +6,8 @@
 
 
 from register import *
+from compiler_internal import register
+from tensor_internal import MutableInputVariadicTensors, OutputTensor
 
 from utils.index import IndexList
 
@@ -30,3 +32,13 @@ fn _test_make_indices[num_indices: Int]() -> IndexList[num_indices]:
     for i in range(num_indices):
         out[i] = i
     return out
+
+
+@register("reduce_buffers")
+struct ReduceBuffers:
+    @staticmethod
+    fn execute(
+        output: OutputTensor[type = DType.float32, rank=1, *_],
+        inputs: MutableInputVariadicTensors[type = DType.float32, rank=1, *_],
+    ) -> None:
+        print("Success!")
