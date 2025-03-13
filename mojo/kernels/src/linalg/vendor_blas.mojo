@@ -123,7 +123,7 @@ struct Backend:
         if self is Self.CUBLASLT:
             return writer.write("CUBLASLT")
         if self is Self.ROCBLAS:
-            writer.write("ROCBLAS")
+            return writer.write("ROCBLAS")
         writer.write("HIPBLASLT")
 
 
