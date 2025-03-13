@@ -488,11 +488,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             # causes recursive loops when used here
             if not _is_valid_utf8_comptime(unsafe_from_utf8):
                 alias msg = "buffer is not valid UTF-8"
-                if is_compile_time():
-                    abort()
-                debug_assert(
-                    False, msg, location=location.or_else(__call_location())
-                )
+                abort(msg)
+                # if is_compile_time():
+                #     abort(msg)
+                # debug_assert(
+                #     False, msg, location=location.or_else(__call_location())
+                # )
 
         self._slice = unsafe_from_utf8
 

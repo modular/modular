@@ -12,7 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections.string._utf8_validation import _is_valid_utf8
+from collections.string._utf8_validation import (
+    _is_valid_utf8_runtime,
+    _is_valid_utf8_comptime,
+)
 from collections.string.string_slice import (
     StringSlice,
     _count_utf8_continuation_bytes,
@@ -447,8 +450,8 @@ fn test_utf8_validation() raises:
      ظهرت نسخ جديدة ومختلفة من نص لوريم إيبسوم، أحياناً عن طريق
      الصدفة، وأحياناً عن عمد كإدخال بعض العبارات الفكاهية إليها.
     """
-    assert_true(_is_valid_utf8(text.as_bytes()))
-    assert_true(_is_valid_utf8(text.as_bytes()))
+    assert_true(validate_utf8(text.as_bytes()))
+    assert_true(validate_utf8(text.as_bytes()))
 
     var positive = List[List[UInt8]](
         List[UInt8](0x0),
@@ -468,8 +471,8 @@ fn test_utf8_validation() raises:
         List[UInt8](0xF4, 0x8F, 0x88, 0xAA),
     )
     for item in positive:
-        assert_true(_is_valid_utf8(Span(item[])))
-        assert_true(_is_valid_utf8(Span(item[])))
+        assert_true(validate_utf8(Span(item[])))
+        assert_true(validate_utf8(Span(item[])))
     var negative = List[List[UInt8]](
         List[UInt8](0x80),
         List[UInt8](0xBF),
@@ -498,8 +501,8 @@ fn test_utf8_validation() raises:
         List[UInt8](0x00, 0x00, 0xF0, 0x80, 0x80, 0x80),
     )
     for item in negative:
-        assert_false(_is_valid_utf8(Span(item[])))
-        assert_false(_is_valid_utf8(Span(item[])))
+        assert_false(validate_utf8(Span(item[])))
+        assert_false(validate_utf8(Span(item[])))
 
 
 def test_find():
@@ -648,14 +651,20 @@ alias BAD_SEQUENCES = List[Span[Byte, StaticConstantOrigin]](
 )
 
 
+fn validate_utf8(span: Span[Bytes]) -> Bool:
+    alias comptime = _is_valid_utf8_comptime(span)
+    var runtime = _is_valid_utf8_runtime(span)
+    return comptime and runtime
+
+
 def test_good_utf8_sequences():
     for sequence in GOOD_SEQUENCES:
-        assert_true(_is_valid_utf8(sequence[]))
+        assert_true(validate_utf8(sequence[]))
 
 
 def test_bad_utf8_sequences():
     for sequence in BAD_SEQUENCES:
-        assert_false(_is_valid_utf8(sequence[]))
+        assert_false(validate_utf8(sequence[]))
 
 
 def test_stringslice_from_utf8():
@@ -672,7 +681,7 @@ def test_combination_good_utf8_sequences():
     for i in range(0, len(GOOD_SEQUENCES)):
         for j in range(i, len(GOOD_SEQUENCES)):
             var sequence = List(GOOD_SEQUENCES[i]) + List(GOOD_SEQUENCES[j])
-            assert_true(_is_valid_utf8(sequence))
+            assert_true(validate_utf8(sequence))
 
 
 def test_combination_bad_utf8_sequences():
@@ -680,7 +689,7 @@ def test_combination_bad_utf8_sequences():
     for i in range(0, len(BAD_SEQUENCES)):
         for j in range(i, len(BAD_SEQUENCES)):
             var sequence = List(BAD_SEQUENCES[i]) + List(BAD_SEQUENCES[j])
-            assert_false(_is_valid_utf8(sequence))
+            assert_false(validate_utf8(sequence))
 
 
 def test_combination_good_bad_utf8_sequences():
@@ -688,7 +697,7 @@ def test_combination_good_bad_utf8_sequences():
     for i in range(0, len(GOOD_SEQUENCES)):
         for j in range(0, len(BAD_SEQUENCES)):
             var sequence = List(GOOD_SEQUENCES[i]) + List(BAD_SEQUENCES[j])
-            assert_false(_is_valid_utf8(sequence))
+            assert_false(validate_utf8(sequence))
 
 
 def test_combination_10_good_utf8_sequences():
@@ -698,7 +707,7 @@ def test_combination_10_good_utf8_sequences():
             var sequence = List(GOOD_SEQUENCES[i]) * 10 + List(
                 GOOD_SEQUENCES[j]
             ) * 10
-            assert_true(_is_valid_utf8(sequence))
+            assert_true(validate_utf8(sequence))
 
 
 def test_combination_10_good_10_bad_utf8_sequences():
@@ -708,7 +717,8 @@ def test_combination_10_good_10_bad_utf8_sequences():
             var sequence = List(GOOD_SEQUENCES[i]) * 10 + List(
                 BAD_SEQUENCES[j]
             ) * 10
-            assert_false(_is_valid_utf8(sequence))
+            assert_false(_is_valid_utf8_comptime(sequence))
+            assert_false(_is_valid_utf8_runtime(sequence))
 
 
 def test_count_utf8_continuation_bytes():
