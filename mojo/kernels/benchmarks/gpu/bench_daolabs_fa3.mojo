@@ -257,7 +257,7 @@ def test_flash_attention[
         ),
         ThroughputMeasure(BenchMetric.flops, flop_count),
     )
-    print("hey there!")
+
     _ = ref_output_device^
     _ = q_device^
     _ = their_kv_block_paged_device^
