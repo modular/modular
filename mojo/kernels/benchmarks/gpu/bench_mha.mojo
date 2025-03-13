@@ -46,6 +46,7 @@ fn run_mha[
     num_keys: Int,
     batch_size: Int,
     num_partitions: Int,
+    bench_and_verify: Bool,
     mode: String,
     ctx: DeviceContext,
 ) raises:
@@ -150,79 +151,86 @@ fn run_mha[
             num_partitions if num_partitions > 0 else OptionalReg[Int](None),
         )
 
-    @parameter
-    @always_inline
-    fn bench_func(mut b: Bencher):
+    if bench_and_verify:
+
         @parameter
         @always_inline
-        fn _kernel_launch(ctx: DeviceContext) raises:
-            kernel_launch(ctx)
+        fn bench_func(mut b: Bencher):
+            @parameter
+            @always_inline
+            fn _kernel_launch(ctx: DeviceContext) raises:
+                kernel_launch(ctx)
 
-        b.iter_custom[_kernel_launch](ctx)
+            b.iter_custom[_kernel_launch](ctx)
 
-    fn compute_flops() -> Int:
-        return 4 * batch_size * num_heads * seq_len * num_keys * depth
+        fn compute_flops() -> Int:
+            return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
-    m.bench_function[bench_func](
-        BenchId(
-            "mha",
-            # fmt: off
-        input_id=String(
-            "qkv_type=", qkv_type,
-            "/num_heads=", num_heads,
-            "/seq_len=", seq_len,
-            "/num_keys=", num_keys,
-            "/batch_size=", batch_size,
-            "/mode=", mode,
-        ),
-            # fmt: on
-        ),
-        ThroughputMeasure(BenchMetric.flops, compute_flops()),
-    )
+        m.bench_function[bench_func](
+            BenchId(
+                "mha",
+                # fmt: off
+            input_id=String(
+                "qkv_type=", qkv_type,
+                "/num_heads=", num_heads,
+                "/seq_len=", seq_len,
+                "/num_keys=", num_keys,
+                "/batch_size=", batch_size,
+                "/mode=", mode,
+            ),
+                # fmt: on
+            ),
+            ThroughputMeasure(BenchMetric.flops, compute_flops()),
+        )
+    else:
+        kernel_launch(ctx)
 
     ctx.synchronize()
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-    var output_ref_device = NDBuffer[
-        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
-    ](
-        output_ref_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
-    )
-    ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
+    if bench_and_verify:
+        var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+        var output_ref_device = NDBuffer[
+            qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+        ](
+            output_ref_device_ptr.unsafe_ptr(),
+            Index(batch_size, seq_len, num_heads, depth),
+        )
+        ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-    mha_gpu_naive(
-        q_device,
-        k_device,
-        v_device,
-        mask4d,
-        output_ref_device,
-        scale,
-        batch_size,
-        seq_len,
-        num_keys,
-        num_heads,
-        depth,
-        group,
-        ctx,
-    )
+        mha_gpu_naive(
+            q_device,
+            k_device,
+            v_device,
+            mask4d,
+            output_ref_device,
+            scale,
+            batch_size,
+            seq_len,
+            num_keys,
+            num_heads,
+            depth,
+            group,
+            ctx,
+        )
 
-    ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
-    _ = output_ref_device_ptr
+        ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+        _ = output_ref_device_ptr
 
-    var rtol = 0.02
+        var rtol = 0.02
 
-    for h in range(num_heads):
-        for s in range(seq_len):
-            for d in range(depth):
-                var expect = output_ptr.load(d + depth * (h + s * num_heads))
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                )
-                if not isclose(expect, actual, atol=1e-5, rtol=rtol):
-                    print(h, s, d, actual, expect)
-                assert_almost_equal(expect, actual, atol=1e-5, rtol=rtol)
+        for h in range(num_heads):
+            for s in range(seq_len):
+                for d in range(depth):
+                    var expect = output_ptr.load(
+                        d + depth * (h + s * num_heads)
+                    )
+                    var actual = flash_output_ptr.load(
+                        d + depth * (h + s * num_heads)
+                    )
+                    if not isclose(expect, actual, atol=1e-5, rtol=rtol):
+                        print(h, s, d, actual, expect)
+                    assert_almost_equal(expect, actual, atol=1e-5, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -272,6 +280,7 @@ fn main() raises:
     var batch_size = Int(arg_parse("batch_size", 1))
     var num_partitions = Int(arg_parse("num_partitions", 1))
     var mode = String(arg_parse("mode", "none"))
+    var bench_and_verify = arg_parse("benchmark_and_verify", True)
 
     alias cfg = MHA_cfg(
         qkv_type=qkv_type,
@@ -289,5 +298,14 @@ fn main() raises:
             cfg.depth,
             cfg.num_heads,
             cfg.group,
-        ](m, seq_len, num_keys, batch_size, num_partitions, mode, ctx)
+        ](
+            m,
+            seq_len,
+            num_keys,
+            batch_size,
+            num_partitions,
+            bench_and_verify,
+            mode,
+            ctx,
+        )
     m.dump_report()
