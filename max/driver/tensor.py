@@ -143,7 +143,7 @@ class Tensor(DLPackArray):
         return tensor_copy
 
     def _aligned(self, alignment: int | None = None) -> int:
-        """Returns the memory address of the first item in the tensor."""
+        """Returns whether the tensor is aligned to the desired alignment."""
         return self._impl._aligned(alignment or self.dtype.align)
 
     def __repr__(self) -> str:
