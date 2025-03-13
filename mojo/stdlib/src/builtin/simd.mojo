@@ -67,6 +67,7 @@ from sys import (
     prefetch,
     simdwidthof,
     sizeof,
+    is_compile_time,
 )
 from sys._assembly import inlined_assembly
 from sys.info import _current_arch, _is_sm_9x
@@ -759,6 +760,7 @@ struct SIMD[type: DType, size: Int](
 
             @parameter
             if type.is_floating_point():
+                # TODO(#4142): add a compile time branch
                 div = llvm_intrinsic["llvm.trunc", Self, has_side_effect=False](
                     div
                 )
@@ -1573,6 +1575,7 @@ struct SIMD[type: DType, size: Int](
                         scalar_constraints="=h,h",
                         vector_constraints="=r,r",
                     ](self)
+                # TODO(#4142): add a compile time branch
                 return llvm_intrinsic["llvm.fabs", Self, has_side_effect=False](
                     self
                 )
@@ -1596,7 +1599,7 @@ struct SIMD[type: DType, size: Int](
         @parameter
         if type.is_integral() or type is DType.bool:
             return self
-
+        # TODO(#4142): add a compile time branch
         return llvm_intrinsic["llvm.roundeven", Self, has_side_effect=False](
             self
         )
@@ -1892,6 +1895,7 @@ struct SIMD[type: DType, size: Int](
         return array^
 
     fn _floor_ceil_trunc_impl[intrinsic: StringLiteral](self) -> Self:
+        # TODO(#4142): add a compile time branch
         constrained[
             intrinsic == "llvm.floor"
             or intrinsic == "llvm.ceil"
@@ -1941,6 +1945,7 @@ struct SIMD[type: DType, size: Int](
         Returns:
             The elementwise banker's rounding of this SIMD vector.
         """
+        # TODO(#4142): add a compile time branch
         return llvm_intrinsic["llvm.roundeven", Self, has_side_effect=False](
             self
         )
@@ -2124,6 +2129,7 @@ struct SIMD[type: DType, size: Int](
         """
         return self._shuffle_list[size, mask.as_tuple()](other)
 
+    # TODO(#4142): add a compile time branch ?
     # Not an overload of shuffle because there is ambiguity
     # with fn shuffle[*mask: Int](self, other: Self) -> Self:
     # TODO: move to the utils directory - see https://github.com/modular/max/issues/3477
@@ -2236,18 +2242,24 @@ struct SIMD[type: DType, size: Int](
             "output width must be a positive integer less than simd size",
         ]()
 
+        @always_inline
         @parameter
-        if output_width == 1:
-            return self[offset]
-
-        @parameter
-        if offset % simdwidthof[type]():
+        fn slice_body() -> SIMD[type, output_width]:
             var tmp = SIMD[type, output_width]()
 
             @parameter
             for i in range(output_width):
                 tmp[i] = self[i + offset]
             return tmp
+
+        @parameter
+        if output_width == 1:
+            return self[offset]
+        elif offset % simdwidthof[type]():
+            return slice_body()
+
+        if is_compile_time():
+            return slice_body()
 
         return llvm_intrinsic[
             "llvm.vector.extract",
@@ -2296,7 +2308,7 @@ struct SIMD[type: DType, size: Int](
             for i in range(input_width):
                 tmp[i + offset] = value[i]
             return tmp
-
+        # TODO(#4142): add a compile time branch
         return llvm_intrinsic[
             "llvm.vector.insert", Self, has_side_effect=False
         ](self, value, Int64(offset))
@@ -2339,7 +2351,7 @@ struct SIMD[type: DType, size: Int](
         @parameter
         if size == 1:
             return SIMD[type, 2 * size](self[0], other[0])
-
+        # TODO(#4142): add a compile time branch
         return llvm_intrinsic[
             "llvm.vector.interleave2",
             SIMD[type, 2 * size],
@@ -2391,7 +2403,7 @@ struct SIMD[type: DType, size: Int](
                 rebind[Self._SIMDHalfType](self[0]),
                 rebind[Self._SIMDHalfType](self[1]),
             )
-
+        # TODO(#4142): add a compile time branch
         var res = llvm_intrinsic[
             "llvm.vector.deinterleave2",
             _RegisterPackType[Self._SIMDHalfType, Self._SIMDHalfType],
@@ -2451,22 +2463,20 @@ struct SIMD[type: DType, size: Int](
             The maximum element of the vector.
         """
 
+        @always_inline
+        @parameter
+        fn max_reduce_body[
+            type: DType, width: Int
+        ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+            return max(v1, v2)
+
         @parameter
         if size == 1:
             return self[0]
+        elif is_x86() or size_out > 1:
+            return self.reduce[max_reduce_body, size_out]()
 
-        @parameter
-        if is_x86() or size_out > 1:
-
-            @always_inline
-            @parameter
-            fn max_reduce_body[
-                type: DType, width: Int
-            ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return max(v1, v2)
-
+        if is_compile_time():
             return self.reduce[max_reduce_body, size_out]()
 
         @parameter
@@ -2478,9 +2488,7 @@ struct SIMD[type: DType, size: Int](
                     has_side_effect=False,
                 ](self)
             )
-
-        @parameter
-        if type.is_unsigned():
+        elif type.is_unsigned():
             return rebind[SIMD[type, size_out]](
                 llvm_intrinsic[
                     "llvm.vector.reduce.umax",
@@ -2513,18 +2521,18 @@ struct SIMD[type: DType, size: Int](
         if size == 1:
             return self[0]
 
+        @always_inline
+        @parameter
+        fn min_reduce_body[
+            type: DType, width: Int
+        ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+            return min(v1, v2)
+
         @parameter
         if is_x86() or size_out > 1:
+            return self.reduce[min_reduce_body, size_out]()
 
-            @always_inline
-            @parameter
-            fn min_reduce_body[
-                type: DType, width: Int
-            ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return min(v1, v2)
-
+        if is_compile_time():
             return self.reduce[min_reduce_body, size_out]()
 
         @parameter
@@ -2536,9 +2544,7 @@ struct SIMD[type: DType, size: Int](
                     has_side_effect=False,
                 ](self)
             )
-
-        @parameter
-        if type.is_unsigned():
+        elif type.is_unsigned():
             return rebind[SIMD[type, size_out]](
                 llvm_intrinsic[
                     "llvm.vector.reduce.umin",
@@ -2622,23 +2628,21 @@ struct SIMD[type: DType, size: Int](
             "The element type of the vector must be integer or boolean.",
         ]()
 
+        @always_inline
+        @parameter
+        fn and_reduce_body[
+            type: DType, width: Int
+        ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+            return v1 & v2
+
         @parameter
         if size_out > 1:
-
-            @always_inline
-            @parameter
-            fn and_reduce_body[
-                type: DType, width: Int
-            ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return v1 & v2
-
             return self.reduce[and_reduce_body, size_out]()
-
-        @parameter
-        if size == 1:
+        elif size == 1:
             return rebind[SIMD[type, size_out]](self)
+
+        if is_compile_time():
+            return self.reduce[and_reduce_body, size_out]()
 
         return llvm_intrinsic[
             "llvm.vector.reduce.and",
@@ -2668,23 +2672,21 @@ struct SIMD[type: DType, size: Int](
             "The element type of the vector must be integer or boolean.",
         ]()
 
+        @always_inline
+        @parameter
+        fn or_reduce_body[
+            type: DType, width: Int
+        ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+            return v1 | v2
+
         @parameter
         if size_out > 1:
-
-            @always_inline
-            @parameter
-            fn or_reduce_body[
-                type: DType, width: Int
-            ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return v1 | v2
-
             return self.reduce[or_reduce_body, size_out]()
-
-        @parameter
-        if size == 1:
+        elif size == 1:
             return rebind[SIMD[type, size_out]](self)
+
+        if is_compile_time():
+            return self.reduce[or_reduce_body, size_out]()
 
         return llvm_intrinsic[
             "llvm.vector.reduce.or", SIMD[type, size_out], has_side_effect=False
@@ -2777,6 +2779,7 @@ struct SIMD[type: DType, size: Int](
         if size == 1:
             constrained[shift == 0, "for scalars the shift must be 0"]()
             return self
+        # TODO(#4142): add a compile time branch
         return llvm_intrinsic[
             "llvm.vector.splice", Self, has_side_effect=False
         ](self, self, Int32(shift))
@@ -2845,7 +2848,7 @@ struct SIMD[type: DType, size: Int](
             return 0
 
         alias zero_simd = Self()
-
+        # TODO(#4142): add a compile time branch
         return llvm_intrinsic[
             "llvm.vector.splice", Self, has_side_effect=False
         ](self, zero_simd, Int32(shift))
@@ -2885,7 +2888,7 @@ struct SIMD[type: DType, size: Int](
             return 0
 
         alias zero_simd = Self()
-
+        # TODO(#4142): add a compile time branch
         return llvm_intrinsic[
             "llvm.vector.splice", Self, has_side_effect=False
         ](zero_simd, self, Int32(-shift))
