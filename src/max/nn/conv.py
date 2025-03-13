@@ -137,13 +137,12 @@ class Conv3D(Layer):
     def __call__(self, x: TensorValueLike) -> TensorValue:
         """
         Args:
-            x: a tensor of shape [batch_size, length, in_channels]
+            x: a tensor of shape (batch_size, depth, height, width, in_channels)
 
         Returns:
-            a tensor of shape [batch_size, new_length, out_channels]
-            new_length = ((length + 2 * padding - (kernel_size - 1) - 1) / stride) + 1
+             a tensor of shape (batch_size, new_depth, new_height, new_width, out_channels)
         """
-        # These need to be casted as the underlying ops.conv2d call
+        # These need to be casted as the underlying ops.conv3d call
         # expects them to only be tuple types.
         if isinstance(self.stride, int):
             self.stride = (self.stride, self.stride, self.stride)
