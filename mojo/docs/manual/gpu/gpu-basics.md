@@ -4,6 +4,10 @@ sidebar_position: 1
 description: The basics of GPU programming with Mojo.
 ---
 
+If you have any questions or feedback for this content, please post it in the
+[Modular forum thread
+here](https://forum.modular.com/t/gpu-programming-manual/755).
+
 This documentation aims to build your GPU programming knowledge from the ground
 up, starting with the lowest levels of the stack before progressing to
 higher-level functionality. It’s designed for a diverse audience, from
