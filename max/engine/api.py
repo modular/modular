@@ -603,11 +603,11 @@ def _is_torchscript_function(obj: Any) -> bool:
 
 
 def _is_torch_mlir_module(obj: Any) -> bool:
-    """Checks if an object is a `modular.torch_mlir.Module`."""
+    """Checks if an object is a `max.torch_mlir.Module`."""
     # Only check last submodule since the higher level modules in the hierarchy
     # may differ depending on where the mlir module is built
     return type(obj).__name__ == "Module" and type(obj).__module__.startswith(
-        "modular.torch_mlir"
+        "max.torch_mlir"
     )
 
 
@@ -857,7 +857,7 @@ class InferenceSession:
                 )
             elif _is_torch_mlir_module(model):
                 options_dict["_mlir_module_capsule_name"] = (
-                    "modular.torch_mlir.ir.Module._CAPIPtr"
+                    "max.torch_mlir.ir.Module._CAPIPtr"
                 )
                 _model = self._impl.compile_from_object(
                     model, _FrameworkFormat.torch_mlir, options_dict
