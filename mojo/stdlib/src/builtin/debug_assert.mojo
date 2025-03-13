@@ -75,7 +75,7 @@ fn debug_assert[
 
     Args:
         messages: Arguments to convert to a `String` message.
-        location: The location of the error (default `__call_location`).
+        location: The location of the call (default `__call_location`).
 
 
     You can pass in multiple args that are `Writable` to generate a formatted
@@ -160,7 +160,7 @@ fn debug_assert[
     Args:
         cond: The bool value to assert.
         messages: Arguments to convert to a `String` message.
-        location: The location of the error (default `__call_location`).
+        location: The location of the call (default `__call_location`).
 
     You can pass in multiple args that are `Writable` to generate a formatted
     message, by default this will be a no-op:

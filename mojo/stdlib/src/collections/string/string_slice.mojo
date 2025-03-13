@@ -473,7 +473,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Parameters:
             debug_assert_validate: Whether to validate the utf8 buffer.
-            location: The location of the error (default `__call_location`).
+            location: The location of the call (default `__call_location`).
 
         Args:
             unsafe_from_utf8: A `Span[Byte]` encoded in UTF-8.
