@@ -664,14 +664,14 @@ struct WGMMADescriptor[dtype: DType]:
 
     var desc: Int64
     """The 64-bit descriptor value that encodes shared memory layout information.
-    
+
     This field stores the complete descriptor with all bit fields packed into a single 64-bit integer:
     - Bits 0-13: Base address in shared memory (14 bits)
     - Bits 16-29: Leading dimension stride in bytes (14 bits)
     - Bits 32-45: Stride dimension offset in bytes (14 bits)
     - Bits 49-51: Base offset (3 bits)
     - Bits 62-63: Swizzle mode for memory access pattern (2 bits)
-    
+
     The descriptor is used by NVIDIA Hopper architecture's warp group matrix multiply instructions
     to efficiently access shared memory with the appropriate layout and access patterns.
     """
@@ -810,15 +810,18 @@ fn wgmma_commit_group_sync():
 
 
 @always_inline
-fn wgmma_wait_group_sync():
+fn wgmma_wait_group_sync[group: Int]():
     """Waits for all pending warp group matrix multiply operations to complete.
 
     This synchronizes the warp group and ensures all WGMMA operations have finished executing.
     Must be called after commit and before accessing results.
+
+    Parameters:
+        group: The number of pending wgmma-groups to wait until.
     """
-    __mlir_op.`nvvm.wgmma.wait.group.sync.aligned`[
-        _properties = __mlir_attr.`{group = 0 : i64}`, _type=None
-    ]()
+    inlined_assembly[
+        "wgmma.wait_group.sync.aligned $0;", NoneType, constraints="n"
+    ](group)
 
 
 @always_inline
