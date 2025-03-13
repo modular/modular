@@ -23,11 +23,13 @@ f.close()
 ```
 
 """
+from sys import os_is_macos, os_is_linux
 from sys._amdgpu import printf_append_string_n, printf_begin
-from sys.ffi import external_call
-from sys import is_amd_gpu, is_nvidia_gpu, is_compile_time
+from sys import is_amd_gpu, is_nvidia_gpu, is_compile_time, is_gpu
+from sys.ffi import c_ssize_t, external_call
 
 from builtin.io import _printf
+from os import abort
 from memory import Span, UnsafePointer
 
 
@@ -98,6 +100,39 @@ struct FileDescriptor(Writer):
                 _ = printf_append_string_n(msg, bytes, is_last=True)
             else:
                 self.__write_bytes_cpu(bytes)
+
+    @always_inline
+    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+        """Read a number of bytes from the file into a buffer.
+
+        Args:
+            buffer: A `Span[Byte]` to read bytes into. Read up to `len(buffer)` number of bytes.
+
+        Returns:
+            Actual number of bytes read.
+
+        Notes:
+            [Reference](https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html).
+        """
+
+        constrained[
+            not is_gpu(), "`read_bytes()` is not yet implemented for GPUs."
+        ]()
+
+        @parameter
+        if os_is_macos() or os_is_linux():
+            var read = external_call["read", c_ssize_t](
+                self.value, buffer.unsafe_ptr(), len(buffer)
+            )
+            if read < 0:
+                raise Error("Failed to read bytes.")
+            return read
+        else:
+            constrained[
+                False,
+                "`read_bytes()` is not yet implemented for unknown platform.",
+            ]()
+            return abort[UInt]()
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
