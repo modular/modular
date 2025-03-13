@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: AMD-GPU
 # REQUIRES: H100-GPU
-# RUN: %mojo-no-debug %s -t
+# RUN: %mojo-no-debug-no-assert %s
 
 from memory import memcpy
 from flash_attention3.flash_attention import (
