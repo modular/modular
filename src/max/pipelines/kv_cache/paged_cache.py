@@ -155,11 +155,14 @@ class FetchPagedKVCacheCollectionFA3Fallback:
             step_constant,
             out_dim=Dim(self.num_layers),
         )
+        if blocks.device is not None:
+            layers_arange = layers_arange.to(blocks.device)
         layers_arange = ops.reshape(layers_arange, shape=[-1, 1, 1])
         lookup_table = ops.reshape(
             lookup_table,
             shape=[1, lookup_table.shape[0], lookup_table.shape[1]],
         )
+
         lookup_table = ops.tile(lookup_table, repeats=[self.num_layers, 1, 1])
         lookup_table = lookup_table * self.num_layers + layers_arange
         cache_lengths_cast = cache_lengths.cast(DType.int32)

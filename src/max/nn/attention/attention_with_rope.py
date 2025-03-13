@@ -778,12 +778,22 @@ class DistributedAttentionWithRope(
         assert isinstance(input_row_offsets, TensorValue)
         assert self.devices
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+        has_context_lengths = "context_lengths" in kwargs
+        if has_context_lengths:
+            context_lengths = distribute_value(
+                kwargs["context_lengths"], self.devices
+            )
+        else:
+            context_lengths = None
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](
                     x[i],
                     kv_collections[i],
                     input_row_offsets=input_row_offsets_[i],
+                    context_lengths=context_lengths[i]
+                    if context_lengths
+                    else None,
                 )
                 for i in range(len(self.devices))
             ],
