@@ -45,7 +45,32 @@ from gpu._cublas.cublaslt import (
 )
 from gpu._cublas.dtype import DataType
 from gpu._cublas.result import Result
+from gpu._rocblas.hipblaslt import (
+    _check_hipblas_error,
+    _convert_to_hip_datatype,
+    hipblasComputeType_t,
+    hipblasLtCreate,
+    hipblasLtDestroy,
+    hipblasLtHandle_t,
+    hipblasLtMatmul,
+    hipblasLtMatmulAlgoGetHeuristic,
+    hipblasLtMatmulDesc_t,
+    hipblasLtMatmulDescAttributes_t,
+    hipblasLtMatmulDescCreate,
+    hipblasLtMatmulDescDestroy,
+    hipblasLtMatmulDescSetAttribute,
+    hipblasLtMatmulHeuristicResult_t,
+    hipblasLtMatmulPreference_t,
+    hipblasLtMatmulPreferenceCreate,
+    hipblasLtMatmulPreferenceDestroy,
+    hipblasLtMatrixLayout_t,
+    hipblasLtMatrixLayoutCreate,
+    hipblasLtMatrixLayoutDestroy,
+    hipblasOperation_t,
+    hipDataType_t,
+)
 from gpu.host import DeviceContext
+from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 from layout import Layout
 from memory import UnsafePointer
@@ -66,6 +91,7 @@ struct Backend:
     alias CUBLAS = Self(1)
     alias CUBLASLT = Self(2)
     alias ROCBLAS = Self(3)
+    alias HIPBLASLT = Self(4)
 
     @implicit
     fn __init__(out self, value: Int):
@@ -96,7 +122,9 @@ struct Backend:
             return writer.write("CUBLAS")
         if self is Self.CUBLASLT:
             return writer.write("CUBLASLT")
-        writer.write("ROCBLAS")
+        if self is Self.ROCBLAS:
+            writer.write("ROCBLAS")
+        writer.write("HIPBLASLT")
 
 
 fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
@@ -121,6 +149,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
     alias _cublas_type = UnsafePointer[cublasContext]
     alias _cublaslt_type = UnsafePointer[Context]
     alias _rocblas_type = _rocblas.Handle
+    alias _hipblaslt_type = hipblasLtHandle_t
     alias type = Variant[
         Self._cublas_type, Self._cublaslt_type, Self._rocblas_type
     ]
@@ -142,6 +171,12 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
                 _rocblas.rocblas.rocblas_create_handle(
                     UnsafePointer.address_of(handle)
                 )
+            )
+            self._handle = handle
+        elif Self.resolved_backend is Backend.HIPBLASLT:
+            var handle = Self._hipblaslt_type()
+            _check_hipblas_error(
+                hipblasLtCreate(UnsafePointer.address_of(handle))
             )
             self._handle = handle
         else:
@@ -172,6 +207,10 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
             )
             self._handle = Self._rocblas_type()
             return
+        elif Self.resolved_backend is Backend.HIPBLASLT:
+            _check_hipblas_error(hipblasLtDestroy(self._get_hipblaslt()))
+            self._handle = Self._hipblaslt_type()
+            return
 
         raise Error("the backend is not currently supported")
 
@@ -183,6 +222,8 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
             return self._get_cublaslt() == Self._cublaslt_type()
         elif Self.resolved_backend is Backend.ROCBLAS:
             return self._get_rocblas() == Self._rocblas_type()
+        elif Self.resolved_backend is Backend.HIPBLASLT:
+            return self._get_hipblaslt() == Self._hipblaslt_type()
 
         return False
 
@@ -204,6 +245,13 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
             Self.resolved_backend is Backend.ROCBLAS, "backend must be ROCBLAS"
         ]()
         return self._handle[Self._rocblas_type]
+
+    fn _get_hipblaslt(self) -> Self._hipblaslt_type:
+        constrained[
+            Self.resolved_backend is Backend.HIPBLASLT,
+            "backend must be HIPBLASLT",
+        ]()
+        return self._handle[Self._hipblaslt_type]
 
     fn __is__(self, other: Backend) -> Bool:
         return Self.resolved_backend is other
@@ -257,6 +305,17 @@ fn matmul[
         _cublasLt_matmul(
             ctx,
             handle._get_cublaslt(),
+            c,
+            a,
+            b,
+            c_row_major=c_row_major,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+        )
+    elif handle.resolved_backend is Backend.HIPBLASLT:
+        _hipblasLt_matmul(
+            ctx,
+            handle._get_hipblaslt(),
             c,
             a,
             b,
@@ -538,7 +597,7 @@ fn _cublasLt_matmul(
     if transpose_a or transpose_b:
         raise Error(
             "the cuBLASLT backend currently only is implemented for"
-            " transpose_a=False and transpose_a=False"
+            " transpose_a=False and transpose_b=False"
         )
 
     # CublasLt is by default column-major but we like to have the output in row-major
@@ -735,3 +794,147 @@ fn _cublasLt_matmul(
     check_cublas_error(cublasLtMatrixLayoutDestroy(_cdesc))
     check_cublas_error(cublasLtMatrixLayoutDestroy(_ddesc))
     check_cublas_error(cublasLtMatmulPreferenceDestroy(preference))
+
+
+# ===----------------------------------------------------------------------===#
+# HIPBLASLT
+# ===----------------------------------------------------------------------===#
+
+
+fn _hipblasLt_matmul(
+    ctx: DeviceContext,
+    handle: hipblasLtHandle_t,
+    d: NDBuffer[_, 2, _],
+    a: NDBuffer[_, 2, _],
+    b: NDBuffer[_, 2, _],
+    *,
+    c_row_major: Bool = True,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+) raises:
+    constrained[
+        (
+            a.type in [DType.float32, DType.float16, DType.bfloat16]
+            and b.type in [DType.float32, DType.float16, DType.bfloat16]
+        ),
+        (
+            "Only FP32, FP16, BF16 input data types are supported. Please"
+            " extend it if you need more data types."
+        ),
+    ]()
+
+    @always_inline
+    @parameter
+    fn create_matrix_layout(
+        buf: NDBuffer[_, 2, _]
+    ) raises -> hipblasLtMatrixLayout_t:
+        var _desc = hipblasLtMatrixLayout_t()
+        _check_hipblas_error(
+            hipblasLtMatrixLayoutCreate(
+                UnsafePointer.address_of(_desc),
+                _convert_to_hip_datatype[buf.type](),
+                buf.dim[1](),
+                buf.dim[0](),
+                buf.dim[1](),
+            )
+        )
+        return _desc
+
+    var _adata = UnsafePointer(a.data.bitcast[NoneType]())
+    var _bdata = UnsafePointer(b.data.bitcast[NoneType]())
+    var _ddata = UnsafePointer(d.data.bitcast[NoneType]())
+
+    var _adesc = create_matrix_layout(a)
+    var _bdesc = create_matrix_layout(b)
+    var _ddesc = create_matrix_layout(d)
+
+    var transa = hipblasOperation_t.OP_T if transpose_a else hipblasOperation_t.OP_N
+    var transb = hipblasOperation_t.OP_T if transpose_b else hipblasOperation_t.OP_N
+
+    # hipblasLt is by default column-major but we like to have the output in row-major
+    # to compare with our results. Use `c_row_major` to determine the output layout.
+    if c_row_major:
+        swap(_adata, _bdata)
+        swap(_adesc, _bdesc)
+        swap(transa, transb)
+
+    var operationDesc = hipblasLtMatmulDesc_t()
+    _check_hipblas_error(
+        hipblasLtMatmulDescCreate(
+            UnsafePointer.address_of(operationDesc),
+            hipblasComputeType_t.COMPUTE_32F,
+            hipDataType_t.R_32F,
+        )
+    )
+
+    _check_hipblas_error(
+        hipblasLtMatmulDescSetAttribute(
+            operationDesc,
+            hipblasLtMatmulDescAttributes_t.TRANSA,
+            UnsafePointer.address_of(transa).bitcast[NoneType](),
+            sizeof[hipblasOperation_t](),
+        )
+    )
+    _check_hipblas_error(
+        hipblasLtMatmulDescSetAttribute(
+            operationDesc,
+            hipblasLtMatmulDescAttributes_t.TRANSB,
+            UnsafePointer.address_of(transb).bitcast[NoneType](),
+            sizeof[hipblasOperation_t](),
+        )
+    )
+
+    var preference = hipblasLtMatmulPreference_t()
+    _check_hipblas_error(
+        hipblasLtMatmulPreferenceCreate(UnsafePointer.address_of(preference))
+    )
+
+    var heuristicResult = hipblasLtMatmulHeuristicResult_t()
+    var returnedResults = 0
+    _check_hipblas_error(
+        hipblasLtMatmulAlgoGetHeuristic(
+            handle,
+            operationDesc,
+            _adesc,
+            _bdesc,
+            _ddesc,
+            _ddesc,
+            preference,
+            1,
+            UnsafePointer.address_of(heuristicResult),
+            UnsafePointer.address_of(returnedResults),
+        )
+    )
+
+    if returnedResults == 0:
+        raise Error("No algorithm was found!")
+
+    var alpha = Float32(1.0)
+    var beta = Float32(0.0)
+
+    _check_hipblas_error(
+        hipblasLtMatmul(
+            handle,  # light_handle
+            operationDesc,  # compute_desc
+            UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
+            _adata,  # _a
+            _adesc,  # _adesc
+            _bdata,  # _b
+            _bdesc,  # _bdesc
+            UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
+            _ddata,  # _c
+            _ddesc,  # _cdesc
+            _ddata,  # _d
+            _ddesc,  # _ddesc
+            UnsafePointer.address_of(heuristicResult.algo),  # algo
+            UnsafePointer[NoneType](),  # workspace
+            0,  # workspace_size_in_bytes
+            HIP(ctx.stream())[],  # stream
+        )
+    )
+
+    _check_hipblas_error(hipblasLtMatmulPreferenceDestroy(preference))
+    _check_hipblas_error(hipblasLtMatmulDescDestroy(operationDesc))
+    _check_hipblas_error(hipblasLtMatrixLayoutDestroy(_adesc))
+    _check_hipblas_error(hipblasLtMatrixLayoutDestroy(_bdesc))
+    _check_hipblas_error(hipblasLtMatrixLayoutDestroy(_ddesc))
