@@ -664,13 +664,15 @@ fn validate_utf8(span: Span[Byte]) -> Bool:
 
 
 def test_good_utf8_sequences():
-    for sequence in GOOD_SEQUENCES:
-        assert_true(validate_utf8[sequence[]]())
+    @parameter
+    for i in range(len(GOOD_SEQUENCES)):
+        assert_true(validate_utf8[GOOD_SEQUENCES[i]]())
 
 
 def test_bad_utf8_sequences():
-    for sequence in BAD_SEQUENCES:
-        assert_false(validate_utf8[sequence[]]())
+    @parameter
+    for i in range(len(BAD_SEQUENCES)):
+        assert_false(validate_utf8[BAD_SEQUENCES[i]]())
 
 
 def test_stringslice_from_utf8():
