@@ -12,12 +12,12 @@ This documentation aims to build your GPU programming knowledge from the ground
 up, starting with the lowest levels of the stack before progressing to
 higher-level functionality. It’s designed for a diverse audience, from
 experienced GPU developers to programmers new to GPU coding. Mojo allows you to
-program NVIDIA and AMD GPUs, with direct access to low-level GPU primitives,
-while sharing types and functions that can also run on CPUs where applicable.
-If you're experienced with [NVIDIA Compute Unified Device
-Architecture](https://developer.nvidia.com/cuda-toolkit) (CUDA) or [AMD Radeon
-Open Compute](https://www.amd.com/en/products/software/rocm.html) (ROCm), what
-you'll learn here will enable you to expand your reach to more hardware.
+program NVIDIA GPUs, with direct access to low-level GPU primitives, while
+sharing types and functions that can also run on CPUs where applicable.  If
+you're experienced with [NVIDIA Compute Unified Device
+Architecture](https://developer.nvidia.com/cuda-toolkit) (CUDA), what you'll
+learn here will enable you to expand your reach as we release support for more
+hardware.
 
 ## Introduction to massively parallel programming
 
@@ -633,7 +633,7 @@ into more depth on warps later, so don't worry if it doesn't make sense yet.
 
 :::
 
-A _warp_ is a group of threads (32 on NVIDIA, 64 on AMD) within a block. Threads
+A _warp_ is a group of threads (32 on NVIDIA GPUs) within a block. Threads
 within the same warp can synchronize their execution, and at a particular step
 perform SIMD instructions using values from the other threads in lockstep. We
 have only 4 threads within each block, well under the 32 limit, if this wasn't
