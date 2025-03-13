@@ -290,6 +290,23 @@ struct PrintTensorSpecOp:
         return x.shape()
 
 
+@compiler.register("print_tensor")
+struct PrintTensor:
+    @staticmethod
+    fn execute[
+        target: StringLiteral,
+        _synchronous: Bool,
+    ](out: OutputTensor, input: InputTensor) raises:
+        print(input)
+
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[out.rank]) -> SIMD[out.type, width]:
+            return rebind[SIMD[out.type, width]](input.load[width](idx))
+
+        foreach[func](out)
+
+
 @compiler.register("print_tensor_spec_view")
 @compiler.view_kernel
 struct PrintTensorSpecViewOp:
