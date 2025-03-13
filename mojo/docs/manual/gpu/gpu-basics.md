@@ -1,5 +1,5 @@
 ---
-title: GPU Basics
+title: GPU basics
 sidebar_position: 1
 description: The basics of GPU programming with Mojo.
 ---
