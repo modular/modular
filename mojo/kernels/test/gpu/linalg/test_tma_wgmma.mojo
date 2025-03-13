@@ -199,7 +199,7 @@ fn tma_wgmma_kernel[
             var a_reg_tile = _load_a_reg_tile[wgmma_shape](a_smem_tile)
             wgmma_op.wgmma(a_reg_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
-        wgmma_op.wait_for_all()
+        wgmma_op.wait_group()
 
         barrier()
 

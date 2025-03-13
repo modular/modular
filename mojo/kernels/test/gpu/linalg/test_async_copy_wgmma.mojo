@@ -149,7 +149,7 @@ fn cpasync_wgmma_kernel[
         wgmma_op.arrive()
         wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
-        wgmma_op.wait_for_all()
+        wgmma_op.wait_group()
 
         barrier()
 
