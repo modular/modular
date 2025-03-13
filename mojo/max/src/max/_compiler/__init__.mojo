@@ -8,6 +8,5 @@
 from compiler import (
     StaticTensorSpec,
     elementwise,
-    enable_fusion_for,
     register,
 )
