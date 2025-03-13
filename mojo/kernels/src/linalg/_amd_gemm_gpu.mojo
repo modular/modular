@@ -70,16 +70,13 @@ fn gemm_kernel[
         b_type, b_layout, MutableAnyOrigin, address_space = AddressSpace.GLOBAL
     ],
 ):
+    # Validate input constraints
     constrained[transpose_b, "Transpose b must be true"]()
-    constrained[
-        a_type == b_type,
-        "a and b must have same type",
-    ]()
-
+    constrained[a_type == b_type, "a and b must have same type"]()
     constrained[b_layout.all_dims_known(), "b_layout must be known"]()
 
+    # Type and shape aliases
     alias accum_type = get_accum_type[a_type]()
-
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
     alias BK = config.block_tile_shape[2]
@@ -88,38 +85,50 @@ fn gemm_kernel[
     alias MMA_M = config.mma_shape[0]
     alias MMA_N = config.mma_shape[1]
     alias MMA_K = config.mma_shape[2]
+    alias simd_width = simdwidthof[a_type]()
+    alias k_group_size = 16 // simd_width
+    alias elements_per_thread = simd_width // k_group_size
 
+    # Warps and MMA configuration
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
     alias num_warps = num_warps_m * num_warps_n
-
-    # TODO: Remove this once KERN-1609 is fixed
-    constrained[
-        (BM // num_warps) % 16 == 0,
-        "BM per warp (" + String(BM // num_warps) + ") must be divisible by 16",
-    ]()
-    constrained[
-        (BN // num_warps) % 16 == 0,
-        "BN per warp (" + String(BN // num_warps) + ") must be divisible by 16",
-    ]()
-
-    alias simd_width = simdwidthof[a_type]()
-    alias k_group_size = 16 // simd_width
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
     alias num_k_mmas2 = BK // (MMA_K * k_group_size)
 
+    # Per-warp tile dimensions
+    alias warp_tile_m = BM // num_warps
+    alias warp_tile_n = BN // num_warps
+    alias warp_tile_m_mmas = warp_tile_m // MMA_M
+    alias warp_tile_n_mmas = warp_tile_n // MMA_N
+
+    # Validate tiling constraints
+    constrained[
+        warp_tile_m % 16 == 0,
+        "BM per warp (" + String(warp_tile_m) + ") must be divisible by 16",
+    ]()
+    constrained[
+        warp_tile_n % 16 == 0,
+        "BN per warp (" + String(warp_tile_n) + ") must be divisible by 16",
+    ]()
+
+    # Matrix dimensions
     var M = a.dim(0)
     alias N = b.shape[0]() if transpose_b else b.shape[1]()
     alias K = b.shape[1]() if transpose_b else b.shape[0]()
 
-    var c_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, 4
-    ]().local().alloc().fill(0)
-
+    # Thread and warp indices
     var flat_thread_idx = thread_idx.x
-    var warp_id = flat_thread_idx // 64
+    var warp_id = flat_thread_idx // WARP_SIZE
 
+    # Common configurations
+    alias smem_alignment = alignof[SIMD[a_type, simd_width]]()
+    alias swizzle = Swizzle(2, 0, 2)
+    alias thread_layout = Layout.row_major(16, 4)
+
+    # Helper function for smem layout
+    @always_inline
     @parameter
     fn get_smem_layout(tile_size: Int, block_size: Int) -> Layout:
         return Layout(
@@ -133,7 +142,12 @@ fn gemm_kernel[
             ),
         )
 
-    alias smem_alignment = alignof[SIMD[a_type, simd_width]]()
+    # Accumulation registers for result
+    var c_reg_tile = tb[accum_type]().row_major[
+        num_m_mmas * num_n_mmas, 4
+    ]().local().alloc().fill(0)
+
+    # Configure A (input) memory setup
     alias a_smem_layout = get_smem_layout(MMA_M, BM)
     var a_smem_tensor = LayoutTensor[
         a_type,
@@ -142,10 +156,19 @@ fn gemm_kernel[
         address_space = AddressSpace.SHARED,
         alignment=smem_alignment,
     ].stack_allocation()
-    var a_smem_warp_tile = a_smem_tensor.tile[BM // num_warps, BK](warp_id, 0)
+    var a_smem_warp_tile = a_smem_tensor.tile[warp_tile_m, BK](warp_id, 0)
+    var a_tile = a.tile[BM, K](block_idx.y, 0)
+    var a_gmem_iter = a_tile.tiled_iterator[warp_tile_m, BK, axis=1](warp_id, 0)
+    var a_load_tile = tb[a_type]().row_major[
+        warp_tile_m_mmas * num_k_mmas2, simd_width
+    ]().local().alloc()
+    var a_reg_tile = tb[a_type]().row_major[
+        num_m_mmas * num_k_mmas2, simd_width
+    ]().local().alloc()
+    var a_mma_tile = a_smem_tensor.tile[WM, BK](warp_id // num_warps_n, 0)
 
+    # Configure B (weights) memory setup - similar structure to A
     alias b_smem_layout = get_smem_layout(MMA_N, BN)
-
     var b_smem_tensor = LayoutTensor[
         b_type,
         b_smem_layout,
@@ -153,8 +176,20 @@ fn gemm_kernel[
         address_space = AddressSpace.SHARED,
         alignment=smem_alignment,
     ].stack_allocation()
-    var b_smem_warp_tile = b_smem_tensor.tile[BN // num_warps, BK](warp_id, 0)
+    var b_smem_warp_tile = b_smem_tensor.tile[warp_tile_n, BK](warp_id, 0)
+    var b_tile = b.tile[BN, K](block_idx.x, 0)
+    var b_gmem_iter = b_tile.tiled_iterator[warp_tile_n, BK, axis=1](warp_id, 0)
+    var b_load_tile = tb[b_type]().row_major[
+        warp_tile_n_mmas * num_k_mmas2, simd_width
+    ]().local().alloc()
+    var b_reg_tile = tb[b_type]().row_major[
+        num_n_mmas * num_k_mmas2, simd_width
+    ]().local().alloc()
+    var b_mma_tile = b_smem_tensor.tile[BN // num_warps_n, BK](
+        warp_id % num_warps_n, 0
+    )
 
+    # Initialize TensorCore operator
     var mma_op = TensorCore[
         accum_type,
         a_type,
@@ -162,45 +197,60 @@ fn gemm_kernel[
         transpose_b=True,
     ]()
 
-    var a_tile = a.tile[BM, K](block_idx.y, 0)
-    var b_tile = b.tile[BN, K](block_idx.x, 0)
-
-    var a_gmem_iter = a_tile.tiled_iterator[BM // num_warps, BK, axis=1](
-        warp_id, 0
-    )
-    var b_gmem_iter = b_tile.tiled_iterator[BN // num_warps, BK, axis=1](
-        warp_id, 0
-    )
-
-    alias swizzle = Swizzle(2, 0, 2)
-    alias thread_layout = Layout.row_major(16, 4)
-
-    var a_load_tile = tb[a_type]().row_major[
-        (BM // num_warps) // MMA_M * num_k_mmas2, simd_width
-    ]().local().alloc()
-
-    var b_load_tile = tb[b_type]().row_major[
-        (BN // num_warps) // MMA_N * num_k_mmas2, simd_width
-    ]().local().alloc()
-
-    var a_reg_tile = tb[a_type]().row_major[
-        num_m_mmas * num_k_mmas2, simd_width
-    ]().local().alloc()
-
-    var b_reg_tile = tb[b_type]().row_major[
-        num_n_mmas * num_k_mmas2, simd_width
-    ]().local().alloc()
-
-    var a_mma_tile = a_smem_tensor.tile[BM // num_warps_m, BK](
-        warp_id // num_warps_n, 0
-    )
-    var b_mma_tile = b_smem_tensor.tile[BN // num_warps_n, BK](
-        warp_id % num_warps_n, 0
-    )
-
+    # Warp-level function to copy from DRAM to local registers
     @always_inline
     @parameter
-    fn _copy_sram_to_local():
+    fn copy_dram_to_local_warp(
+        reg_tile: LayoutTensor,
+        gmem_warp_tile: LayoutTensor,
+        gmem: LayoutTensor,
+    ):
+        copy_dram_to_local[
+            src_thread_layout=thread_layout,
+            thread_scope = ThreadScope.WARP,
+        ](
+            reg_tile.vectorize[1, simd_width](),
+            gmem_warp_tile.vectorize[1, simd_width](),
+            gmem,
+        )
+
+    # Warp-level function to copy from local registers to shared memory
+    @always_inline
+    @parameter
+    fn copy_local_to_sram_warp(
+        smem_warp_tile: LayoutTensor,
+        reg_tile: LayoutTensor,
+    ):
+        copy_local_to_sram[
+            thread_layout=thread_layout,
+            swizzle=swizzle,
+            thread_scope = ThreadScope.WARP,
+            row_major=True,
+        ](
+            smem_warp_tile.vectorize[1, simd_width](),
+            reg_tile.vectorize[1, simd_width](),
+        )
+
+    # Function to load from DRAM to local memory for both matrices
+    @always_inline
+    @parameter
+    fn load_from_dram_to_local():
+        copy_dram_to_local_warp(a_load_tile, a_gmem_iter[], a)
+        copy_dram_to_local_warp(b_load_tile, b_gmem_iter[], b)
+        a_gmem_iter._incr()
+        b_gmem_iter._incr()
+
+    # Function to copy from local to shared memory for both matrices
+    @always_inline
+    @parameter
+    fn copy_local_to_shared():
+        copy_local_to_sram_warp(a_smem_warp_tile, a_load_tile)
+        copy_local_to_sram_warp(b_smem_warp_tile, b_load_tile)
+
+    # Function to load from shared memory to registers for computation
+    @always_inline
+    @parameter
+    fn load_from_shared_to_registers():
         @parameter
         for k_mma in range(num_k_mmas2):
             mma_op.load_a[swizzle=True](
@@ -219,15 +269,15 @@ fn gemm_kernel[
                 k_mma,
             )
 
+    # Function to perform matrix multiplication and accumulation
     @always_inline
     @parameter
-    fn _mma():
+    fn mma():
         @parameter
         for k_mma in range(num_k_mmas2):
 
             @parameter
             for k in range(k_group_size):
-                alias elements_per_thread = simd_width // k_group_size
                 var a_reg_k = a_reg_tile.tile[num_m_mmas, elements_per_thread](
                     k_mma, k
                 ).vectorize[1, elements_per_thread]()
@@ -236,74 +286,10 @@ fn gemm_kernel[
                 ).vectorize[1, elements_per_thread]()
                 mma_op.mma(a_reg_k, b_reg_k, c_reg_tile.vectorize[1, 4]())
 
+    # Function to handle AMD-specific scheduling
     @always_inline
     @parameter
-    fn _copy_dram_to_local():
-        @always_inline
-        @parameter
-        fn _copy_dram_to_local_impl(
-            reg_tile: LayoutTensor,
-            gmem_warp_tile: LayoutTensor,
-            gmem: LayoutTensor,
-        ):
-            copy_dram_to_local[
-                src_thread_layout=thread_layout,
-                thread_scope = ThreadScope.WARP,
-            ](
-                reg_tile.vectorize[1, simd_width](),
-                gmem_warp_tile.vectorize[1, simd_width](),
-                gmem,
-            )
-
-        _copy_dram_to_local_impl(a_load_tile, a_gmem_iter[], a)
-        _copy_dram_to_local_impl(b_load_tile, b_gmem_iter[], b)
-        a_gmem_iter._incr()
-        b_gmem_iter._incr()
-
-    @always_inline
-    @parameter
-    fn _copy_local_to_sram():
-        @always_inline
-        @parameter
-        fn _copy_local_to_sram_impl(
-            smem_warp_tile: LayoutTensor,
-            reg_tile: LayoutTensor,
-        ):
-            copy_local_to_sram[
-                thread_layout=thread_layout,
-                swizzle=swizzle,
-                thread_scope = ThreadScope.WARP,
-                row_major=True,
-            ](
-                smem_warp_tile.vectorize[1, simd_width](),
-                reg_tile.vectorize[1, simd_width](),
-            )
-
-        _copy_local_to_sram_impl(a_smem_warp_tile, a_load_tile)
-        _copy_local_to_sram_impl(b_smem_warp_tile, b_load_tile)
-
-    _copy_dram_to_local()
-    _copy_local_to_sram()
-
-    barrier()
-
-    _copy_sram_to_local()
-    _copy_dram_to_local()
-
-    schedule_barrier()
-    for _ in range(0, K - 2 * BK, BK):
-        barrier()
-
-        _copy_local_to_sram()
-        _copy_dram_to_local()
-        _mma()
-
-        barrier()
-
-        _copy_sram_to_local()
-
-        # these schedules will change soon in the future
-        # will add more info once they are stabilized
+    fn amd_scheduling_hints():
         @parameter
         for _ in range(
             ((BN // 4) * BK + (BM // 4) * BK) // (WARP_SIZE * simd_width)
@@ -318,32 +304,60 @@ fn gemm_kernel[
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
             schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, 0)
 
+    # Execute main computation pipeline
+    load_from_dram_to_local()
+    copy_local_to_shared()
+    barrier()
+
+    load_from_shared_to_registers()
+    load_from_dram_to_local()
+
+    schedule_barrier()
+
+    # Main computation loop over K dimension
+    for _ in range(0, K - 2 * BK, BK):
+        barrier()
+
+        copy_local_to_shared()
+        load_from_dram_to_local()
+        mma()
+
+        barrier()
+
+        load_from_shared_to_registers()
+        amd_scheduling_hints()
+
     schedule_barrier()
     barrier()
 
-    _copy_local_to_sram()
-    _mma()
+    # Process final tiles
+    copy_local_to_shared()
+    mma()
     barrier()
 
-    _copy_sram_to_local()
-    _mma()
+    load_from_shared_to_registers()
+    mma()
 
-    # write to output tensor
+    # Write results to output tensor
     var c_block_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
     var c_warp_tile = c_block_tile.tile[WM, WN](
         warp_id // num_warps_n, warp_id % num_warps_n
     )
 
+    # Apply epilogue function if provided, otherwise perform direct copy
+    alias output_thread_layout = Layout.row_major(4, 16)
+
     @parameter
     if elementwise_lambda_fn:
+        # Apply custom elementwise function to the output
         constrained[
             elementwise_lambda_fn is not None,
             "elementwise_lambda_fn is not valid",
         ]()
         alias epilogue = elementwise_lambda_fn.value()
-        alias thread_layout = Layout.row_major(4, 16)
+
         var c_gmem_frag = c_warp_tile.vectorize[4, 1]().distribute[
-            thread_layout
+            output_thread_layout
         ](lane_id())
         var c_reg_frag = c_reg_tile.vectorize[1, 4]()
         var thread_offset = c_gmem_frag.distance(c.ptr)
@@ -359,8 +373,10 @@ fn gemm_kernel[
                 dst_idx = dst_static_idx
             else:
                 dst_idx = c_gmem_frag.runtime_layout(i)
+
             var m = Int((thread_offset + dst_idx) // N)
             var n = Int((thread_offset + dst_idx) % N)
+
             if m < M and n < N:
                 var vec = c_reg_frag.ptr.offset(src_idx).load[
                     width=4,
@@ -374,6 +390,7 @@ fn gemm_kernel[
                             (m + j, n), vec[j].cast[c_type]()
                         )
     else:
+        # Direct copy to global memory
         copy_local_to_dram[
-            Layout.row_major(4, 16), thread_scope = ThreadScope.WARP
+            output_thread_layout, thread_scope = ThreadScope.WARP
         ](c_warp_tile.vectorize[4, 1](), c_reg_tile.vectorize[1, 4](), c)
