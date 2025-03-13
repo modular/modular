@@ -714,5 +714,5 @@ struct TensorCoreAsync[
 
     @staticmethod
     @always_inline
-    fn wait_for_all():
-        wgmma_wait_group_sync()
+    fn wait_group[group: Int = 0]():
+        wgmma_wait_group_sync[group]()
