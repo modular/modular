@@ -467,21 +467,6 @@ fn _mha_single_batch_sm90_fa3[
     alias num_colwise_tiles = vec_output_layout[0].size()
     alias num_rowwise_tiles = vec_output_layout[1].size()
 
-    @always_inline
-    fn vectorize_output(
-        out result: LayoutTensor[
-            accum_type,
-            vec_output_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-            element_layout=element_layout,
-        ],
-        x: LayoutTensor[
-            accum_type, reg_tile_layout, address_space = AddressSpace.LOCAL
-        ],
-    ):
-        result = __type_of(result)(x.ptr)
-
     # Rowwise max and sum for online softmax
     alias accum_simd_width = simdwidthof[accum_type]()
     alias row_alignment = alignof[SIMD[accum_type, accum_simd_width]]()
@@ -531,17 +516,25 @@ fn _mha_single_batch_sm90_fa3[
 
     alias USE_TMA = False
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
-    alias num_producer_regs = 56 if num_consumer == 1 else (
-        (24 if USE_TMA else 40) if num_consumer == 2 else 32
-    )
-    alias num_consumer_regs = 256 if num_consumer == 1 else (
-        (240 if USE_TMA else 232) if num_consumer == 2 else 160
-    )
+    # alias num_producer_regs = 56 if num_consumer == 1 else (
+    #     (24 if USE_TMA else 40) if num_consumer == 2 else 32
+    # )
+    # alias num_consumer_regs = 256 if num_consumer == 1 else (
+    #     (240 if USE_TMA else 232) if num_consumer == 2 else 160
+    # )
+    alias num_producer_regs = 56
+    alias num_consumer_regs = 224
+
     alias num_k_iters_0 = Int(depth // BK)
     alias num_k_iters_1 = Int(BN // BK)
     var q_tile_num_rows: UInt32 = min(BM, UInt32(seq_len) - q_tile_idx * BM)
     var q_offset: UInt32 = depth * (head_idx + num_heads * q_tile_idx * BM)
     barrier()
+    # For intra-warp overlap, we initiate wgmmas as
+    # Q @ K_0, Q @ K_1, P_0 @ V_0, Q @ K_2, P_1 @ V_1, ...
+    # ..., Q @ K_{N-1}, P_{N-2} @ V_{N-2}, P_{N-1} @ V_{N-1}
+    #
+    # Due to this, we can overlap wgmmas and softmax calculations.
     if warp_group_idx == 0:
         # producer
         warpgroup_reg_dealloc[num_producer_regs]()
@@ -581,63 +574,160 @@ fn _mha_single_batch_sm90_fa3[
         )
         q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
+        # these copies get commited with the first `K`
         @parameter
         for q_id in range(num_k_iters_0):
             cp_async_k_major(q_smem_iter.next_unsafe(q_id)[], q_gmem_iter[])
 
             q_gmem_iter._incr()
 
+        alias kv_gmem_layout = Layout(
+            IntTuple(Int(BN), Int(depth)),
+            IntTuple(Int(kv_num_heads * depth), 1),
+        )
+        var write_idx: UInt32 = write_pipeline_states.index()
+        var write_phase: UInt32 = write_pipeline_states.phase()
+        var current_offset = 0
+        while (
+            mask.status(
+                Index[element_bitwidth=32, unsigned=True](
+                    Int(q_tile_idx * BM + start_pos),
+                    Int(current_offset),
+                ),
+                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+            )
+            == TileMaskStatus.FULL_MASK
+        ):
+            current_offset += BN
+            if current_offset >= num_keys:
+                return
+
+        kv_tile_num_rows = min(Int(BN), num_keys - current_offset)
+        # kv cache gmem has to clip num rows as runtime layout
+        var kv_runtime_layout: RuntimeLayout[kv_gmem_layout] = RuntimeLayout(
+            RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
+                kv_tile_num_rows, depth
+            ),
+            RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
+                kv_num_heads * depth, 1
+            ),
+        )
+        # copy K_0 to smem
+        k_smem_subi = k_smem_iter.next_unsafe(Int(write_idx * num_k_iters_0))
+        TMABarrier(MbarPtrType(consumed_mbar_k_ptr + write_idx)).wait(
+            write_phase
+        )
+
+        @parameter
+        @always_inline
+        fn init_k_smem[not_last_iter: Bool]():
+            k_gmem_block = LayoutTensor[
+                k_type,
+                kv_gmem_layout,
+                masked = not not_last_iter,
+            ](
+                k.block_paged_ptr[BN](batch_idx, 0, Int(head_idx // group), 0),
+                kv_runtime_layout,
+            )
+            k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
+            TMABarrier(MbarPtrType(consumed_mbar_k_ptr + write_idx)).wait(
+                write_phase
+            )
+
+            # load K tile into smem
+            @parameter
+            for k_id in range(num_k_iters_0):
+                cp_async_k_major(k_smem_subi.next_unsafe(k_id)[], k_gmem_iter[])
+
+                k_gmem_iter._incr()
+
+        unswitch[init_k_smem](num_keys >= BN)
+
+        # synchronize here since we can overlap q tile and first k tile copy
+        async_copy_arrive(produced_mbar_k_ptr + write_idx)
+        _ = TMABarrier(MbarPtrType(produced_mbar_k_ptr + write_idx)).arrive()
+
+        #
         # not needed with async_copy
         # if warp_group_tid == 0 and lane_predicate:
         @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
         @always_inline
         @parameter
         fn produce_kv[
-            tile_size: Int, not_last_iter: Bool
-        ](kv_tile_start_row: Int, end: Int):
-            write_idx = write_pipeline_states.index()
-            write_phase = write_pipeline_states.phase()
-            if (
-                mask.status(
-                    Index[element_bitwidth=32, unsigned=True](
-                        Int(q_tile_idx * BM + start_pos),
-                        Int(kv_tile_start_row),
-                    ),
-                    Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+            not_last_iter: Bool
+        ](kv_tile_start_row: Int, kv_tile_start_row_next: Int):
+            var write_idx_next: UInt32
+            var write_phase_next: UInt32
+            var kv_runtime_layout_next: RuntimeLayout[kv_gmem_layout]
+
+            @parameter
+            if not_last_iter:
+                # use kv_tile_start_row_next
+                write_pipeline_states.step()
+                write_idx_next = write_pipeline_states.index()
+                write_phase_next = write_pipeline_states.phase()
+                k_smem_subi = k_smem_iter.next_unsafe(
+                    Int(write_idx_next * num_k_iters_0)
                 )
-                == TileMaskStatus.FULL_MASK
-            ):
-                # wait to make sure we stay synchronized
-                return
+                kv_tile_num_rows_next = min(
+                    Int(BN), num_keys - kv_tile_start_row_next
+                )
+                # kv cache gmem has to clip num rows as runtime layout
+                kv_runtime_layout_next = RuntimeLayout(
+                    RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
+                        kv_tile_num_rows_next, depth
+                    ),
+                    RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
+                        kv_num_heads * depth, 1
+                    ),
+                )
 
-            k_smem_subi = k_smem_iter.next_unsafe(write_idx * num_k_iters_0)
-            alias kv_gmem_layout = Layout(
-                IntTuple(Int(BN), Int(depth)),
-                IntTuple(Int(kv_num_heads * depth), 1),
-            )
-            kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
+                TMABarrier(
+                    MbarPtrType(consumed_mbar_k_ptr + write_idx_next)
+                ).wait(write_phase_next)
 
-            # kv cache gmem has to clip num rows as runtime layout
-            kv_runtime_layout = RuntimeLayout(
-                RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
-                    kv_tile_num_rows, depth
-                ),
-                RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
-                    kv_num_heads * depth, 1
-                ),
-            )
+                @parameter
+                @always_inline
+                fn copy_k_to_smem[masked: Bool]():
+                    k_gmem_block = LayoutTensor[
+                        k_type,
+                        kv_gmem_layout,
+                        masked=masked,
+                    ](
+                        k.block_paged_ptr[BN](
+                            batch_idx,
+                            kv_tile_start_row_next,
+                            Int(head_idx // group),
+                            0,
+                        ),
+                        kv_runtime_layout_next,
+                    )
+                    k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](
+                        0, 0
+                    )
 
-            k_gmem_block = LayoutTensor[
-                k_type,
-                kv_gmem_layout,
-                masked = not not_last_iter,
-            ](
-                k.block_paged_ptr[BN](
-                    batch_idx, kv_tile_start_row, Int(head_idx // group), 0
-                ),
-                kv_runtime_layout,
-            )
-            k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
+                    # load K tile into smem
+                    @parameter
+                    for k_id in range(num_k_iters_0):
+                        cp_async_k_major(
+                            k_smem_subi.next_unsafe(k_id)[], k_gmem_iter[]
+                        )
+
+                        k_gmem_iter._incr()
+
+                unswitch[copy_k_to_smem](kv_tile_num_rows_next < BN)
+
+                # synchronize here since we can overlap q tile and first k tile copy
+                async_copy_arrive(produced_mbar_k_ptr + write_idx_next)
+                _ = TMABarrier(
+                    MbarPtrType(produced_mbar_k_ptr + write_idx_next)
+                ).arrive()
+            else:
+                # unused, but avoid undef warnings
+                # no need to load K
+                write_idx_next = write_idx
+                write_phase_next = write_phase
+                kv_runtime_layout_next = kv_runtime_layout
 
             v_gmem_block = LayoutTensor[
                 v_type,
@@ -651,28 +741,12 @@ fn _mha_single_batch_sm90_fa3[
             )
             v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
-            TMABarrier(MbarPtrType(consumed_mbar_k_ptr + write_idx)).wait(
-                write_phase
+            v_smem_subi = v_smem_iter.next_unsafe(
+                Int(write_idx * num_k_iters_1)
             )
-
-            # load K tile into smem
-            @parameter
-            for k_id in range(num_k_iters_0):
-                cp_async_k_major(k_smem_subi.next_unsafe(k_id)[], k_gmem_iter[])
-
-                k_gmem_iter._incr()
-
-            # synchronize here since we can overlap q tile and first k tile copy
-            async_copy_arrive(produced_mbar_k_ptr + write_idx)
-            _ = TMABarrier(
-                MbarPtrType(produced_mbar_k_ptr + write_idx)
-            ).arrive()
-
             TMABarrier(MbarPtrType(consumed_mbar_v_ptr + write_idx)).wait(
                 write_phase
             )
-
-            v_smem_subi = v_smem_iter.next_unsafe(write_idx * num_k_iters_1)
 
             # load V tile into smem
             @parameter
@@ -682,7 +756,7 @@ fn _mha_single_batch_sm90_fa3[
                 @parameter
                 if not not_last_iter:
                     num_rows_bound = min(
-                        Int(BK), end - (kv_tile_start_row + v_id * BK)
+                        Int(BK), num_keys - (kv_tile_start_row + v_id * BK)
                     )
                     v_tensor = _mask_tensor_row(v_gmem_iter[], num_rows_bound)
                 else:
@@ -696,41 +770,85 @@ fn _mha_single_batch_sm90_fa3[
             _ = TMABarrier(
                 MbarPtrType(produced_mbar_v_ptr + write_idx)
             ).arrive()
-            write_pipeline_states.step()
 
-        tile_and_unswitch[produce_kv, VariadicList[Int](BN)](0, num_keys)
+            @parameter
+            if not_last_iter:
+                write_idx = write_idx_next
+                write_phase = write_phase_next
+                kv_runtime_layout = kv_runtime_layout_next
+
+        # Process work with the tile size until there's not enough remaining work
+        #  to fit in a tile.
+        next_offset = current_offset
+        while True:
+            next_offset += BN
+            if next_offset >= num_keys:
+                break
+            if (
+                mask.status(
+                    Index[element_bitwidth=32, unsigned=True](
+                        Int(q_tile_idx * BM + start_pos),
+                        Int(next_offset),
+                    ),
+                    Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                )
+                == TileMaskStatus.FULL_MASK
+            ):
+                continue
+            produce_kv[True](current_offset, next_offset)
+            current_offset = next_offset
+
+        # Use the last tile size to process the residue.
+        produce_kv[False](current_offset, 0)
 
     else:
         warpgroup_reg_alloc[num_consumer_regs]()
 
-        # order the `k`s first
+        # arrive in order that that they're to be fetched.
+        _ = TMABarrier(MbarPtrType(consumed_mbar_k_ptr)).arrive()
+
         @parameter
-        for i in range(pipeline_stages):
-            _ = consumed_mbar_k[i].arrive()
-            _ = consumed_mbar_v[i].arrive()
+        for i in range(1, pipeline_stages):
+            _ = TMABarrier(MbarPtrType(consumed_mbar_k_ptr + i)).arrive()
+            _ = TMABarrier(MbarPtrType(consumed_mbar_v_ptr + (i - 1))).arrive()
+        _ = TMABarrier(
+            MbarPtrType(consumed_mbar_v_ptr + (pipeline_stages - 1))
+        ).arrive()
 
         var local_warp_group_idx: UInt32 = warp_group_idx - 1
 
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
         # stride = (2, 4*num_n_mmas) x (1, 4)
-        p_reg_tile = LayoutTensor[
+        alias reg_tensor = LayoutTensor[
             accum_type,
             reg_tile_layout,
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
+        ]
+        p_reg_tile = reg_tensor.stack_allocation()
+
+        output_reg_tile = reg_tensor.stack_allocation().fill(0)
+
+        p_frag = LayoutTensor[
+            v_type,
+            Layout.row_major(num_m_mmas * num_n_mmas * frag_ratio, a_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
         ].stack_allocation()
 
-        output_reg_tile = (
-            LayoutTensor[
+        @always_inline
+        fn vectorize_output(
+            out result: LayoutTensor[
                 accum_type,
-                reg_tile_layout,
+                vec_output_layout,
                 MutableAnyOrigin,
                 address_space = AddressSpace.LOCAL,
-            ]
-            .stack_allocation()
-            .fill(0)
-        )
+                element_layout=element_layout,
+            ],
+            x: reg_tensor,
+        ):
+            result = __type_of(result)(x.ptr)
 
         rowmax = LayoutTensor[
             accum_type,
@@ -759,43 +877,33 @@ fn _mha_single_batch_sm90_fa3[
         # consumer
         # Iterate over KV, equivalent to the following with if hoisted out.
         #   ```
-        #   for i in range(kv_tile_start_row, seq_len, tile_size):
-        #     if i + tile_size >= seq_len:
-        #       consume_kv[tile_size, False]
+        #   for i in range(kv_tile_start_row, seq_len, BN):
+        #     if i + BN >= seq_len:
+        #       consume_kv[False]
         #     else:
-        #       consume_kv[tile_size, True]
+        #       consume_kv[True]
         #   ```
         # Only the last iteration is doing boundary check.
         @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
         @always_inline
         @parameter
         fn consume_kv[
-            tile_size: Int, not_last_iter: Bool
-        ](kv_tile_start_row: Int, end: Int):
-            # for kv_tile_start_row in range(0, num_keys, BN):
-            # var not_last_iter = kv_tile_start_row < num_keys - BN
+            first_iter: Bool
+        ](masked_iter: Bool, mask_status: TileMaskStatus,):
+            var read_idx_prev: UInt32 = read_pipeline_states.index()
+            var read_phase_prev: UInt32 = read_pipeline_states.phase()
 
-            read_idx = read_pipeline_states.index()
-            read_phase = read_pipeline_states.phase()
-            if (
-                mask.status(
-                    Index[element_bitwidth=32, unsigned=True](
-                        Int(q_tile_idx * BM + start_pos),
-                        Int(kv_tile_start_row),
-                    ),
-                    Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
-                )
-                == TileMaskStatus.FULL_MASK
-            ):
-                # wait to make sure we stay synchronized
-                return
+            @parameter
+            if not first_iter:
+                read_pipeline_states.step()
+            var read_idx: UInt32 = read_pipeline_states.index()
+            var read_phase: UInt32 = read_pipeline_states.phase()
 
-            _ = p_reg_tile.fill(0)
             TMABarrier(MbarPtrType(produced_mbar_k_ptr + read_idx)).wait(
                 read_phase
             )
-
-            k_smem_subi = k_smem_iter.next_unsafe(read_idx * num_k_iters_0)
+            k_smem_subi = k_smem_iter.next_unsafe(Int(read_idx * num_k_iters_0))
+            _ = p_reg_tile.fill(0)
             wgmma_0.arrive()
 
             @parameter
@@ -807,14 +915,34 @@ fn _mha_single_batch_sm90_fa3[
                     Int(local_warp_group_idx),
                 )
             wgmma_0.commit_group()
-            wgmma_0.wait_group()
 
-            # if warp_group_tid == 0:
             @parameter
-            if not_last_iter:
-                _ = TMABarrier(
-                    MbarPtrType(consumed_mbar_k_ptr + read_idx)
-                ).arrive()
+            if first_iter:
+                wgmma_0.wait_group()
+            else:
+                v_smem_subi = v_smem_iter.next_unsafe(
+                    Int(read_idx_prev * num_k_iters_1)
+                )
+                TMABarrier(
+                    MbarPtrType(produced_mbar_v_ptr + read_idx_prev)
+                ).wait(read_phase_prev)
+                wgmma_1.arrive()
+
+                @parameter
+                for k_iter in range(num_k_iters_1):
+                    wgmma_1.wgmma(
+                        p_frag.tile[num_m_mmas * num_k_mmas, a_frag_size](
+                            k_iter, 0
+                        ),
+                        v_smem_subi.next_unsafe(k_iter)[],
+                        output_reg_tile,
+                    )
+                wgmma_1.commit_group()
+                wgmma_0.wait_group[1]()
+
+            _ = TMABarrier(MbarPtrType(consumed_mbar_k_ptr + read_idx)).arrive()
+
+            # we can read/modify P
 
             # Vectorize by 2.
             p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
@@ -897,41 +1025,59 @@ fn _mha_single_batch_sm90_fa3[
                                         * log2e
                                     )
 
-                                @parameter
-                                if not not_last_iter:
-                                    p_reg_vec2[
-                                        mma_id, i + j * 2
-                                    ] = _kernel_mask(
-                                        IndexList[
-                                            2,
-                                            element_bitwidth=32,
-                                            unsigned=True,
-                                        ](Int(score_row), Int(score_col)),
-                                        IndexList[
-                                            2,
-                                            element_bitwidth=32,
-                                            unsigned=True,
-                                        ](
-                                            seq_len,
-                                            num_keys,
-                                        ),
-                                        p_reg_vec2[mma_id, i + j * 2],
-                                    )
+            unswitch[_apply_mask](mask_status == TileMaskStatus.PARTIAL_MASK)
 
-            unswitch[_apply_mask](
-                mask.status(
-                    Index[element_bitwidth=32, unsigned=True](
-                        Int(q_tile_idx * BM + start_pos),
-                        kv_tile_start_row,
-                    ),
-                    Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
-                )
-                == TileMaskStatus.PARTIAL_MASK
-            )
+            if masked_iter:
+
+                @parameter
+                for m_mma in range(Int(num_m_mmas)):
+
+                    @parameter
+                    for n_mma in range(Int(num_n_mmas)):
+                        alias mma_id = n_mma * num_m_mmas + m_mma
+                        # Coordinates in mask for current mma tile.
+                        mask_frag_row = mask_warp_row + m_mma * MMA_M
+                        mask_frag_col = mask_warp_col + n_mma * MMA_N
+                        # Offset to current thread's fragment
+                        mask_frag_row += lane // 4
+                        mask_frag_col += (lane * p_frag_simdwidth % MMA_N) % 8
+
+                        @parameter
+                        for i in range(2):
+                            # The row in score matrix of shape seq_len x num_keys.
+                            # Mask col is score col since we don't partition in col.
+                            score_row = (
+                                mask_block_row + mask_frag_row + i * MMA_M // 2
+                            )
+
+                            @parameter
+                            for j in range(MMA_N // 8):
+                                score_col = mask_frag_col + j * 8
+
+                                p_reg_vec2[mma_id, i + j * 2] = _kernel_mask(
+                                    IndexList[
+                                        2,
+                                        element_bitwidth=32,
+                                        unsigned=True,
+                                    ](
+                                        Int(score_row),
+                                        Int(score_col),
+                                    ),
+                                    IndexList[
+                                        2,
+                                        element_bitwidth=32,
+                                        unsigned=True,
+                                    ](
+                                        seq_len,
+                                        num_keys,
+                                    ),
+                                    p_reg_vec2[mma_id, i + j * 2],
+                                )
 
             # Increment mask to next BM x BN block.
             mask_warp_col += BN
 
+            # TODO: avoid calculating correction when `first_iter`
             correction = _online_softmax_iter_for_mma_output_sm90[
                 # threads layout by warp
                 Layout.row_major(num_warps_m, num_warps_n),
@@ -942,29 +1088,32 @@ fn _mha_single_batch_sm90_fa3[
                 rowmax,
                 rowsum,
             )
-            vout = vectorize_output(output_reg_tile)
 
-            # Correct previous result
             @parameter
-            for col_tile in range(num_colwise_tiles):
-                c = correction._get[col_tile, size = element_layout.size()]()
+            if not first_iter:
+                wgmma_1.wait_group()  # allowed to read/write out and p_frag
+                _ = TMABarrier(
+                    MbarPtrType(consumed_mbar_v_ptr + read_idx_prev)
+                ).arrive()
+                # we are now able to read/modify `output_reg_tile` and modify `p_frag`
+                vout = vectorize_output(output_reg_tile)
 
+                # Correct output
+                # We could avoid this on the first iter
+                # if we specialize and unswitch on `first_iter`
+                # otherwise, the branch requires synchronization
                 @parameter
-                for row_tile in range(num_rowwise_tiles):
-                    vout._set[col_tile, row_tile](
-                        vout._get[col_tile, row_tile]() * c
-                    )
+                for col_tile in range(num_colwise_tiles):
+                    c = correction._get[
+                        col_tile, size = element_layout.size()
+                    ]()
 
-            # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
-            # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
-            p_frag = LayoutTensor[
-                v_type,
-                Layout.row_major(
-                    num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
-                ),
-                MutableAnyOrigin,
-                address_space = AddressSpace.LOCAL,
-            ].stack_allocation()
+                    @parameter
+                    for row_tile in range(num_rowwise_tiles):
+                        vout._set[col_tile, row_tile](
+                            vout._get[col_tile, row_tile]() * c
+                        )
+
             # Convert 1st matmul's output FP32->BF16, layout are the same.
             p_frag.copy_from(
                 p_reg_tile.reshape[
@@ -974,33 +1123,56 @@ fn _mha_single_batch_sm90_fa3[
                 ](),
             )
 
-            TMABarrier(MbarPtrType(produced_mbar_v_ptr + read_idx)).wait(
-                read_phase
+        var current_offset = 0
+        var mask_status: TileMaskStatus
+        while True:
+            mask_status = mask.status(
+                Index[element_bitwidth=32, unsigned=True](
+                    Int(q_tile_idx * BM + start_pos),
+                    Int(current_offset),
+                ),
+                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
             )
-            v_smem_subi = v_smem_iter.next_unsafe(read_idx * num_k_iters_1)
+            current_offset += BN
+            if mask_status != TileMaskStatus.FULL_MASK:
+                break
+            if current_offset >= num_keys:
+                return
+        consume_kv[True](current_offset > num_keys, mask_status)
+        while current_offset <= num_keys:
+            # NOTE: next_offset < num_keys:
+            # does the `= mask_status` generate code?
+            # Can the compiler prove that all uses are
+            # dominated by other assignments?
+            if current_offset >= num_keys:
+                break
+            mask_status = mask.status(
+                Index[element_bitwidth=32, unsigned=True](
+                    Int(q_tile_idx * BM + start_pos),
+                    Int(current_offset),
+                ),
+                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+            )
+            current_offset += BN
+            if mask_status != TileMaskStatus.FULL_MASK:
+                consume_kv[False](current_offset > num_keys, mask_status)
 
-            wgmma_1.arrive()
+        var read_idx: UInt32 = read_pipeline_states.index()
+        var read_phase: UInt32 = read_pipeline_states.phase()
 
-            @parameter
-            for k_iter in range(num_k_iters_1):
-                wgmma_1.wgmma(
-                    p_frag.tile[num_m_mmas * num_k_mmas, a_frag_size](
-                        k_iter, 0
-                    ),
-                    v_smem_subi.next_unsafe(k_iter)[],
-                    output_reg_tile,
-                )
-            wgmma_1.commit_group()
-            wgmma_1.wait_group()
+        v_smem_subi = v_smem_iter.next_unsafe(Int(read_idx * num_k_iters_1))
+        TMABarrier(MbarPtrType(produced_mbar_v_ptr + read_idx)).wait(read_phase)
+        wgmma_1.arrive()
 
-            @parameter
-            if not_last_iter:
-                _ = TMABarrier(
-                    MbarPtrType(consumed_mbar_v_ptr + read_idx)
-                ).arrive()
-            read_pipeline_states.step()
-
-        tile_and_unswitch[consume_kv, VariadicList[Int](BN)](0, num_keys)
+        @parameter
+        for k_iter in range(num_k_iters_1):
+            wgmma_1.wgmma(
+                p_frag.tile[num_m_mmas * num_k_mmas, a_frag_size](k_iter, 0),
+                v_smem_subi.next_unsafe(k_iter)[],
+                output_reg_tile,
+            )
+        wgmma_1.commit_group()
+        wgmma_1.wait_group()
 
         # Apply softmax denumerator.
         vout = vectorize_output(output_reg_tile)
@@ -1644,6 +1816,7 @@ fn _mha_single_batch_sm90_fa2[
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
 
+        # reads s_reg_tile, writes to p_reg_tile
         correction = _online_softmax_iter_for_mma_output_sm90[
             # threads layout by warp
             Layout.row_major(num_warps_m, num_warps_n),
@@ -1689,12 +1862,6 @@ fn _mha_single_batch_sm90_fa2[
 
         # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
         # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
-        p_reg_iter = p_reg_tile.reshape[
-            Layout.row_major(
-                num_m_mmas * num_n_mmas * frag_ratio,
-                a_frag_size,
-            )
-        ]().tiled_iterator[num_m_mmas * num_k_mmas, a_frag_size](0, 0)
         p_frag = LayoutTensor[
             v_type,
             Layout.row_major(num_m_mmas * num_n_mmas * frag_ratio, a_frag_size),
@@ -1716,8 +1883,6 @@ fn _mha_single_batch_sm90_fa2[
 
         @parameter
         for k_iter in range(num_k_iters_1):
-            p_frag.copy_from(p_reg_iter.next_unsafe(k_iter)[])
-
             wgmma_1.wgmma(
                 p_frag.tile[num_m_mmas * num_k_mmas, a_frag_size](k_iter, 0),
                 v_smem_iter.next_unsafe(k_iter)[],
