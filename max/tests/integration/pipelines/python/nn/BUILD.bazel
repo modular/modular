@@ -50,10 +50,10 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
+        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
-        "@ptxas-x86_64//:ptxas",
     ],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
@@ -88,10 +88,10 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
+        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
-        "@ptxas-x86_64//:ptxas",
     ],
     gpu_constraints = ["//:has_gpu"],
     tags = [
@@ -121,10 +121,10 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
+        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
-        "@ptxas-x86_64//:ptxas",
     ],
     exec_properties = {
         # 2 here means *at least* 2 GPUs, in practice CI will have 4
@@ -161,10 +161,10 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
+        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
-        "@ptxas-x86_64//:ptxas",
     ],
     env = {
         "BAZEL": "true",

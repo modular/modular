@@ -13,9 +13,9 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
+        "//KGEN:ptxas",
         "//ModularFramework/tools/mof",
         "@llvm-project//compiler-rt:orc_rt",
-        "@ptxas-x86_64//:ptxas",
     ],
     tags = [
         "no-sandbox",

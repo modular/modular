@@ -12,8 +12,8 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
+        "//KGEN:ptxas",
         "@llvm-project//compiler-rt:orc_rt",
-        "@ptxas-x86_64//:ptxas",
     ],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
@@ -35,8 +35,8 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
+        "//KGEN:ptxas",
         "@llvm-project//compiler-rt:orc_rt",
-        "@ptxas-x86_64//:ptxas",
     ],
     exec_properties = {
         # Ensure the test has at least 24GB of GPU memory available.
