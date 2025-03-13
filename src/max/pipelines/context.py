@@ -26,7 +26,21 @@ CHUNK_SIZE = 128
 
 @runtime_checkable
 class InputContext(Protocol):
-    """A base class for model contexts, represent model inputs for TokenGenerators."""
+    """A base class for model contexts, represent model inputs for TokenGenerators.
+
+    Token array layout:
+    .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
+    . +--------------------+---------------+-----------------+----------------+
+    . |     completed      |  next_tokens  |                 |  preallocated  |
+    . +--------------------+---------------+-----------------+----------------+
+    .            start_idx ^    active_idx ^         end_idx ^
+
+    -    completed: The tokens that have already been processed and encoded.
+    -  next_tokens: The tokens that will be processed in the next iteration.
+                    This may be a subset of the full prompt due to chunked prefill.
+    - preallocated: The token slots that have been preallocated. The token array
+                    resizes to multiples of CHUNK_SIZE to accommodate the new tokens.
+    """
 
     @property
     def cache_seq_id(self) -> int: ...
