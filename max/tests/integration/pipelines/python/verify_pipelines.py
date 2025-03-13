@@ -525,6 +525,40 @@ PIPELINES = {
             kl_div_threshold=1e-4,
         ),
     ),
+    "llama-gptq": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=lambda device_type,
+        devices,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq_golden.json",
+            pipeline="llama-gptq",
+            encoding="gptq",
+            absolute_tolerance=0.2,
+            relative_tolerance=2,
+            cos_dist_threshold=0.2,
+            kl_div_threshold=25,
+        ),
+    ),
+    "llama-gptq-no-perm-idx": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=lambda device_type,
+        devices,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama-gptq-no-perm-idx",
+            pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
+            encoding="gptq",
+            absolute_tolerance=0.2,
+            relative_tolerance=2,
+            cos_dist_threshold=0.7,
+            kl_div_threshold=25,
+        ),
+    ),
 }
 
 

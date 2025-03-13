@@ -54,6 +54,7 @@ def run_model(
     prompts: Iterable[str] = PROMPTS,
     images: Optional[Iterable[str]] = None,
     num_steps: int = NUM_STEPS,
+    print_outputs: bool = False,
 ) -> list[dict[str, Any]]:
     """Runs the model for N steps on each prompt provide."""
     return asyncio.run(
@@ -63,6 +64,7 @@ def run_model(
             prompts=prompts,
             images=images,
             num_steps=num_steps,
+            print_outputs=print_outputs,
         )
     )
 
@@ -73,6 +75,7 @@ async def run_model_async(
     prompts: Iterable[str] = PROMPTS,
     images: Optional[Iterable[str]] = None,
     num_steps: int = NUM_STEPS,
+    print_outputs: bool = False,
 ) -> list[dict[str, Any]]:
     """Runs the model for N steps on each prompt provide."""
 
@@ -105,7 +108,16 @@ async def run_model_async(
             if is_eos:
                 break
         results.append({"prompt": prompt, "values": values[curr_req_id]})
-
+        if print_outputs:
+            print(
+                "Prompt:", f"{prompt[:100]}..." if len(prompt) > 100 else prompt
+            )
+            print(
+                "Output:",
+                await tokenizer.decode(
+                    context, [v["next_token"] for v in values[curr_req_id]]
+                ),
+            )
         model.kv_manager.release(context.cache_seq_id)
 
     return results

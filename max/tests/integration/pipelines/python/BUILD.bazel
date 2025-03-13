@@ -32,6 +32,7 @@ modular_py_binary(
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3:verify",
         "@llvm-project//compiler-rt:orc_rt",
+        "@torch_llama-gptq_golden",
         "@torch_llama3-vision_golden",
         "@torch_llama_golden",
         "@torch_mistral_golden",
@@ -49,6 +50,7 @@ modular_py_binary(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
+    ignore_collisions = True,
     visibility = ["//visibility:public"],
     deps = [
         requirement("click"),
@@ -149,6 +151,7 @@ modular_py_binary(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
+    ignore_collisions = True,
     imports = ["."],
     main = "generate_llm_logits.py",
     visibility = ["//visibility:public"],
@@ -163,7 +166,18 @@ modular_py_binary(
         requirement("requests"),
         requirement("transformers"),
         requirement("torch"),
-    ],
+    ] + select({
+        "//:has_gpu": [
+            requirement("gptqmodel"),
+            requirement("datasets"),  # Required by gptqmodel
+            requirement("device-smi"),  # Required by gptqmodel
+            requirement("logbar"),  # Required by gptqmodel
+            requirement("threadpoolctl"),  # Required by gptqmodel
+            requirement("tokenicer"),  # Required by gptqmodel
+            requirement("optimum"),
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_test(
@@ -181,6 +195,7 @@ modular_py_test(
         "resources:gpu-memory": "24",
     },
     gpu_constraints = ["//:has_gpu"],
+    ignore_collisions = True,
     tags = [
         "gpu",
         "no-sandbox",

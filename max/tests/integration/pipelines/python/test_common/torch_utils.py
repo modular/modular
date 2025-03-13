@@ -38,6 +38,7 @@ def run_text_generation(
     prompts: Iterable[str],
     images: Optional[Iterable[str]] = None,
     num_steps=10,
+    print_outputs=False,
 ):
     saved_logits = []
 
@@ -80,14 +81,27 @@ def run_text_generation(
                 prompt, return_tensors="pt"
             ).to(device)
             mask = torch.ones_like(encoded_prompt)
-            model.generate(
+            outputs = model.generate(
                 input_ids=encoded_prompt,
                 attention_mask=mask,
                 max_new_tokens=num_steps,
                 do_sample=False,
                 logits_processor=LogitsProcessorList([store_logits]),
                 num_return_sequences=1,
+                # Suppress "Setting `pad_token_id` to `eos_token_id`" warnings.
+                pad_token_id=getattr(data_processor, "eos_token_id", None),
             )
+            if print_outputs:
+                print(
+                    "Prompt:",
+                    f"{prompt[:100]}..." if len(prompt) > 100 else prompt,
+                )
+                print(
+                    "Output:",
+                    data_processor.batch_decode(
+                        outputs, skip_special_tokens=True
+                    )[0][len(prompt) :],
+                )
             results.append({"prompt": prompt, "values": saved_logits[:]})
             saved_logits.clear()
 

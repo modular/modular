@@ -798,6 +798,8 @@ class GenericOracle(PipelineOracle):
             torch_dtype = torch.float32
         elif encoding == "bfloat16":
             torch_dtype = torch.bfloat16
+        elif encoding == "gptq":
+            torch_dtype = torch.float16
         else:
             raise ValueError(
                 f"Could not convert encoding {encoding} to a torch dtype."
@@ -840,6 +842,16 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         prompts=[p[:502] for p in evaluate.PROMPTS],
         auto_model_cls=transformers.AutoModel,
         task=interfaces.PipelineTask.EMBEDDINGS_GENERATION,
+    ),
+    # GPTQ llama with perm_idx
+    "llama-gptq": GenericOracle(
+        model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
+        auto_model_cls=transformers.AutoModelForCausalLM,
+    ),
+    # GPTQ llama without perm_idx
+    "llama-gptq-no-perm-idx": GenericOracle(
+        model_path="kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit",
+        auto_model_cls=transformers.AutoModelForCausalLM,
     ),
 }
 
@@ -936,6 +948,7 @@ def main(
                 images=pipeline_oracle.images
                 if isinstance(pipeline_oracle, MultiModalPipelineOracle)
                 else None,
+                print_outputs=True,
             )
         elif (
             pipeline_oracle.task
@@ -975,6 +988,7 @@ def main(
                 images=pipeline_oracle.images
                 if isinstance(pipeline_oracle, MultiModalPipelineOracle)
                 else None,
+                print_outputs=True,
             )
         elif (
             pipeline_oracle.task
