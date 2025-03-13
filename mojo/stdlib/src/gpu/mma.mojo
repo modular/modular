@@ -810,7 +810,7 @@ fn wgmma_commit_group_sync():
 
 
 @always_inline
-fn wgmma_wait_group_sync[group: Int]():
+fn wgmma_wait_group_sync[group: Int = 0]():
     """Waits for all pending warp group matrix multiply operations to complete.
 
     This synchronizes the warp group and ensures all WGMMA operations have finished executing.
