@@ -243,6 +243,10 @@ StringRef toString(IOSpec spec) {
     return kOutputTensor;
   case IOSpec::MutableInputTensor:
     return kMutableInputTensor;
+  case IOSpec::FusedInputTensor:
+    return kFusedInputTensor;
+  case IOSpec::FusedOutputTensor:
+    return kFusedOutputTensor;
   }
 }
 
@@ -253,13 +257,16 @@ std::optional<IOSpec> toIOSpec(StringRef str) {
     return IOSpec::OutputTensor;
   if (str == kMutableInputTensor)
     return IOSpec::MutableInputTensor;
+  if (str == kFusedInputTensor)
+    return IOSpec::FusedInputTensor;
+  if (str == kFusedOutputTensor)
+    return IOSpec::FusedOutputTensor;
   return std::nullopt;
 }
 
 std::pair<TypedAttr, TypedAttr> getParams(KGEN::MOGGPreElab::IOSpec ioSpec,
                                           Builder &builder) {
   switch (ioSpec) {
-
   case KGEN::MOGGPreElab::IOSpec::InputTensor:
     return {builder.getBoolAttr(KGEN::MOGGPreElab::kIOSpecImmutable),
             builder.getIndexAttr(KGEN::MOGGPreElab::kIOSpecIOInput)};
@@ -271,7 +278,23 @@ std::pair<TypedAttr, TypedAttr> getParams(KGEN::MOGGPreElab::IOSpec ioSpec,
   case KGEN::MOGGPreElab::IOSpec::MutableInputTensor:
     return {builder.getBoolAttr(KGEN::MOGGPreElab::kIOSpecMutable),
             builder.getIndexAttr(KGEN::MOGGPreElab::kIOSpecIOInput)};
+
+  case KGEN::MOGGPreElab::IOSpec::FusedInputTensor:
+    return {builder.getBoolAttr(KGEN::MOGGPreElab::kIOSpecImmutable),
+            builder.getIndexAttr(KGEN::MOGGPreElab::kIOSpecIOFusedInput)};
+
+  case KGEN::MOGGPreElab::IOSpec::FusedOutputTensor:
+    return {builder.getBoolAttr(KGEN::MOGGPreElab::kIOSpecMutable),
+            builder.getIndexAttr(KGEN::MOGGPreElab::kIOSpecIOFusedOutput)};
   }
+}
+
+bool isOutputIOSpec(IOSpec spec) {
+  return spec == IOSpec::OutputTensor || spec == IOSpec::FusedOutputTensor;
+}
+
+bool isFusableIOSpec(IOSpec spec) {
+  return spec == IOSpec::FusedInputTensor || spec == IOSpec::FusedOutputTensor;
 }
 
 } // namespace M::KGEN::MOGGPreElab

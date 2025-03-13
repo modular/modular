@@ -606,6 +606,10 @@ static std::optional<IOSpec> maybeGetIOSpec(TypedAttr mutAttr,
     return IOSpec::InputTensor;
   else if (mut == kIOSpecMutable && input == kIOSpecIOInput)
     return IOSpec::MutableInputTensor;
+  else if (mut == kIOSpecImmutable && input == kIOSpecIOFusedInput)
+    return IOSpec::FusedInputTensor;
+  else if (mut == kIOSpecMutable && input == kIOSpecIOFusedOutput)
+    return IOSpec::FusedOutputTensor;
 
   emitError(loc, "Error for argument '" + argName + "': Invalid " +
                      kIOSpec.back() +
@@ -661,10 +665,12 @@ processIOSpecs(LIT::FnOp func, bool isShapeFunc = false) {
                      "list arguments at the moment.");
     }
 
-    if (*ioSpec != IOSpec::OutputTensor)
+    bool isOutput = isOutputIOSpec(*ioSpec);
+
+    if (!isOutput)
       foundNonOutputOperand = true;
 
-    if (*ioSpec == IOSpec::OutputTensor && foundNonOutputOperand) {
+    if (isOutput && foundNonOutputOperand) {
       emitError(loc,
                 "Output tensor argument '" +
                     func.getFuncTypeGenerator().getArgName(argIdx).strref() +
@@ -808,7 +814,8 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   ioSpecs = std::move(*result);
 
   auto numOutputs = llvm::count_if(
-      ioSpecs, [](auto &&elem) { return elem.second == IOSpec::OutputTensor; });
+      ioSpecs, [](auto &&elem) { return isOutputIOSpec(elem.second); });
+
   func->setDiscardableAttr(kMOGGNumDPSOutputs,
                            builder.getIndexAttr(numOutputs));
 
@@ -822,61 +829,22 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   if (!mutableIdxs.empty())
     func->setAttr(kMOGGBufferArgs, builder.getArrayAttr(mutableIdxs));
 
-  // Iterate over the decorators to find enable_fusion_for/mutable
-  for (auto decorator : func.getDecorators()) {
-    std::optional<SmallVector<TypedAttr>> enableFusionOperand =
-        getDecoratorLambdaArgument(moduleOp, decorator,
-                                   MOGG_INTRINSIC_ENABLE_FUSION_FOR,
-                                   SmallVector<size_t>{1});
+  // Collect indices of arguments that are marked as fusable via their IOSpec
+  // and add them to the kMOGGFusableArgs attribute
+  SmallVector<Attribute> fusableIdxs;
 
-    if (!enableFusionOperand.has_value())
-      continue;
-
-    ArrayAttr argSrcNamesAttr =
-        dyn_cast_or_null<ArrayAttr>(func->getAttr(MOGG_ARG_SRC_NAMES));
-    if (!argSrcNamesAttr)
-      continue;
-
-    SmallVector<Attribute> argIdxsAttrs;
-
-    auto nameArgs = [&]() {
-      if (enableFusionOperand)
-        return cast<KGEN::VariadicAttr>(enableFusionOperand.value()[0]);
-
-      llvm_unreachable("Unsupported decorator!");
-    }();
-
-    for (TypedAttr operandAttr : nameArgs.getValues()) {
-      auto [_, nameAttr] =
-          cast<LIT::LITStructAttr>(operandAttr).getValues().front();
-      StringRef argName = cast<StringAttr>(nameAttr).getValue();
-
-      auto argIt =
-          llvm::find_if(argSrcNamesAttr.getValue(), [&](Attribute attr) {
-            return cast<StringAttr>(attr).getValue() == argName;
-          });
-
-      if (argIt == argSrcNamesAttr.getValue().end()) {
-        StringRef decoratorName = "enable_fusion_for";
-
-        emitError(func->getLoc(),
-                  llvm::formatv("{0} decorator: '{1}' does not name any of the "
-                                "arguments of {2}::{3}",
-                                decoratorName, argName,
-                                structDeclOp.getDeclName(),
-                                func.getDeclName()));
-        return false;
-      }
-
-      auto idx = std::distance(argSrcNamesAttr.getValue().begin(), argIt);
-
-      argIdxsAttrs.push_back(builder.getIndexAttr(idx));
-    }
-
-    if (!argIdxsAttrs.empty() && enableFusionOperand) {
-      func->setAttr(kMOGGFusableArgs, builder.getArrayAttr(argIdxsAttrs));
+  // Add indices for arguments with fusable IOSpec
+  for (auto [idx, spec] : ioSpecs) {
+    if (isFusableIOSpec(spec)) {
+      fusableIdxs.push_back(builder.getIndexAttr(idx));
     }
   }
+
+  // If we have any fusable arguments, set the attribute
+  if (!fusableIdxs.empty()) {
+    func->setAttr(kMOGGFusableArgs, builder.getArrayAttr(fusableIdxs));
+  }
+
   return true;
 }
 

@@ -27,7 +27,6 @@ inputs = [
     "FoldingRangeTest",
     "HoverTest",
     "InitFileTest",
-    "KernelAPIDecoratorsTest",
     "MOGGAnnotateDiags",
     "NotebookTest",
     "ReferencesTest",
