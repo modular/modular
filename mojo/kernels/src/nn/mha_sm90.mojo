@@ -833,7 +833,7 @@ fn _mha_single_batch_sm90_fa3[
                     Int(local_warp_group_idx),
                 )
             wgmma_0.commit_group()
-            wgmma_0.wait_for_all()
+            wgmma_0.wait_group()
 
             # if warp_group_tid == 0:
             @parameter
@@ -1017,7 +1017,7 @@ fn _mha_single_batch_sm90_fa3[
                     output_reg_tile,
                 )
             wgmma_1.commit_group()
-            wgmma_1.wait_for_all()
+            wgmma_1.wait_group()
 
             @parameter
             if not_last_iter:
@@ -1562,7 +1562,7 @@ fn _mha_single_batch_sm90_fa2[
                 Int(warp_group_idx),
             )
         wgmma_0.commit_group()
-        wgmma_0.wait_for_all()
+        wgmma_0.wait_group()
 
         # Vectorize by 2.
         p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
@@ -1750,7 +1750,7 @@ fn _mha_single_batch_sm90_fa2[
                 output_reg_tile,
             )
         wgmma_1.commit_group()
-        wgmma_1.wait_for_all()
+        wgmma_1.wait_group()
 
     tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, num_keys)
 
