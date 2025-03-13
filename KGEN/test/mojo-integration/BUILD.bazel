@@ -32,13 +32,13 @@ lit_tests(
         "//conditions:default": [],
     }),
     tools = [
+        "//KGEN:ptxas",
         "//KGEN/tools/kgen",
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
         "//KGEN/tools/llvm-module-split",
         "//KGEN/tools/mojo",
         "@llvm-project//llvm:llvm-objdump",
-        "@ptxas-x86_64//:ptxas",
     ],
 )
 
