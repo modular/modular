@@ -13,7 +13,7 @@
 """Implements basic object methods for working with strings."""
 
 
-from builtin._location import __call_location, _SourceLocation
+from builtin._location import __call_location
 from collections import KeyElement, List, Optional
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter

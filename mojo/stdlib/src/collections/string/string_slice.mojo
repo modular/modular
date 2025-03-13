@@ -486,11 +486,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         if debug_assert_validate:
             # NOTE: using the comptime version is because the fast runtime one
             # causes recursive loops when used here
-            debug_assert(
-                _is_valid_utf8_comptime(unsafe_from_utf8),
-                "buffer is not valid UTF-8",
-                location=location.or_else(__call_location()),
-            )
+            if not _is_valid_utf8_comptime(unsafe_from_utf8):
+                alias msg = "buffer is not valid UTF-8"
+                if is_compile_time():
+                    abort(msg)
+                debug_assert(
+                    False, msg, location=location.or_else(__call_location())
+                )
 
         self._slice = unsafe_from_utf8
 

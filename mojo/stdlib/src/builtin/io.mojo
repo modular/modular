@@ -363,6 +363,7 @@ fn print[
         flush: If set to true, then the stream is forcibly flushed.
         file: The output stream.
     """
+
     if is_compile_time():
         write_buffered(file, values, sep=sep, end=end)
     else:
