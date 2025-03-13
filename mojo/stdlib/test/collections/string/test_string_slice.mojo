@@ -651,7 +651,7 @@ alias BAD_SEQUENCES = List[Span[Byte, StaticConstantOrigin]](
 )
 
 
-fn validate_utf8(span: Span[Bytes]) -> Bool:
+fn validate_utf8(span: Span[Byte]) -> Bool:
     alias comptime = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     return comptime and runtime
