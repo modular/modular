@@ -22,7 +22,7 @@ from utils.index import IndexList
 
 
 fn _vector_addition_cpu(
-    out: ManagedTensorSlice,
+    out: ManagedTensorSlice[mut=True],
     lhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     rhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     ctx: DeviceContextPtr,
@@ -38,7 +38,7 @@ fn _vector_addition_cpu(
 
 
 fn _vector_addition_gpu(
-    out: ManagedTensorSlice,
+    out: ManagedTensorSlice[mut=True],
     lhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     rhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     ctx: DeviceContextPtr,
