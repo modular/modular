@@ -190,9 +190,13 @@ from tensor_internal import (
     InputTensor,
     MutableInputTensor,
     OutputTensor,
+    FusedInputTensor,
+    FusedOutputTensor,
     VariadicTensors,
     InputVariadicTensors,
     OutputVariadicTensors,
+    FusedInputVariadicTensors,
+    FusedOutputVariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
@@ -700,7 +704,6 @@ fn export():
 
 @compiler.register("mo.range")
 struct Range:
-    @compiler.enable_fusion_for("output")
     @staticmethod
     fn execute[
         type: DType,
@@ -708,7 +711,7 @@ struct Range:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        output: OutputTensor[type=type, rank=1],
+        output: FusedOutputTensor[type=type, rank=1],
         start: Scalar[type],
         stop: Scalar[type],
         step: Scalar[type],
@@ -3002,13 +3005,12 @@ struct ArgNonZero:
 
 @compiler.register("mo.mean")
 struct Mean:
-    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         _synchronous: Bool, target: StringLiteral
     ](
-        output: OutputTensor,
-        input: InputTensor[type = output.type, rank = output.rank],
+        output: FusedOutputTensor,
+        input: FusedInputTensor[type = output.type, rank = output.rank],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3054,13 +3056,12 @@ struct Mean:
 
 @compiler.register("mo.reduce.add")
 struct ReduceAdd:
-    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         _synchronous: Bool, target: StringLiteral, _trace_name: StringLiteral
     ](
-        output: OutputTensor,
-        input: InputTensor[type = output.type, rank = output.rank],
+        output: FusedOutputTensor,
+        input: FusedInputTensor[type = output.type, rank = output.rank],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3107,15 +3108,14 @@ struct ReduceAdd:
 
 @compiler.register("mo.reduce.mul")
 struct ReduceMul:
-    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         _synchronous: Bool,
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        output: OutputTensor,
-        input: InputTensor[type = output.type, rank = output.rank],
+        output: FusedOutputTensor,
+        input: FusedInputTensor[type = output.type, rank = output.rank],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3162,15 +3162,14 @@ struct ReduceMul:
 
 @compiler.register("mo.reduce.max")
 struct ReduceMax:
-    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         _synchronous: Bool,
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        output: OutputTensor,
-        input: InputTensor[type = output.type, rank = output.rank],
+        output: FusedOutputTensor,
+        input: FusedInputTensor[type = output.type, rank = output.rank],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3217,15 +3216,14 @@ struct ReduceMax:
 
 @compiler.register("mo.reduce.min")
 struct ReduceMin:
-    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         _synchronous: Bool,
         target: StringLiteral,
         _trace_name: StringLiteral,
     ](
-        output: OutputTensor,
-        input: InputTensor[type = output.type, rank = output.rank],
+        output: FusedOutputTensor,
+        input: FusedInputTensor[type = output.type, rank = output.rank],
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
@@ -3732,15 +3730,14 @@ struct GatherND:
 
 @compiler.register("mo.gather")
 struct Gather:
-    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        output: OutputTensor,
-        input: InputTensor[type = output.type, *_],
+        output: FusedOutputTensor,
+        input: FusedInputTensor[type = output.type, *_],
         indices: InputTensor,
         axis: Scalar,
         ctx: DeviceContextPtr,
@@ -3840,7 +3837,6 @@ struct GatherSum:
 
 @compiler.register("mo.layer_norm")
 struct LayerNorm:
-    @compiler.enable_fusion_for("input", "gamma")
     @staticmethod
     fn execute[
         type: DType,
@@ -3848,8 +3844,8 @@ struct LayerNorm:
         target: StringLiteral,
     ](
         output: OutputTensor[type=type, rank=rank],
-        input: InputTensor[type=type, rank=rank],
-        gamma: InputTensor[type=type, rank=1],
+        input: FusedInputTensor[type=type, rank=rank],
+        gamma: FusedInputTensor[type=type, rank=1],
         beta: InputTensor[type=type, rank=1],
         epsilon: Scalar[type=type],
         ctx: DeviceContextPtr,
@@ -3897,7 +3893,6 @@ struct LayerNorm:
 
 @compiler.register("rms_norm")
 struct RMSNorm:
-    @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
         type: DType,
@@ -3905,7 +3900,7 @@ struct RMSNorm:
         target: StringLiteral,
     ](
         output: OutputTensor[type=type, rank=rank],
-        input: InputTensor[type=type, rank=rank],
+        input: FusedInputTensor[type=type, rank=rank],
         gamma: InputTensor[type=type, rank=1],
         epsilon: Scalar[type=type],
         ctx: DeviceContextPtr,
@@ -4080,7 +4075,6 @@ struct NonMaximumSupression:
 
 @compiler.register("mo.matmul")
 struct Matmul:
-    @compiler.enable_fusion_for("c")
     @staticmethod
     fn execute[
         transpose_b: Bool,
@@ -4089,7 +4083,7 @@ struct Matmul:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        c: OutputTensor[rank=2],
+        c: FusedOutputTensor[rank=2],
         a: InputTensor[rank=2],
         b: InputTensor[rank=2],
         ctx: DeviceContextPtr,
@@ -4133,7 +4127,6 @@ struct Matmul:
 
 @compiler.register("mo.batch_matmul")
 struct BatchMatmul:
-    @compiler.enable_fusion_for("c")
     @staticmethod
     fn execute[
         lambdas_have_fusion: Bool,
@@ -4142,7 +4135,7 @@ struct BatchMatmul:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        c: OutputTensor[rank=rank],
+        c: FusedOutputTensor[rank=rank],
         a: InputTensor[rank=rank],
         b: InputTensor[rank=rank],
         ctx: DeviceContextPtr,
@@ -4223,7 +4216,6 @@ struct LinalgSolve:
 
 @compiler.register("mo.linalg.band_part")
 struct LinalgBandPart:
-    @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
         target: StringLiteral,
@@ -4233,7 +4225,7 @@ struct LinalgBandPart:
         rank: Int,
     ](
         output: OutputTensor[type=type, rank=rank],
-        input: InputTensor[type=type, rank=rank],
+        input: FusedInputTensor[type=type, rank=rank],
         num_lower: InputTensor[type=int_type, rank=1],
         num_upper: InputTensor[type=int_type, rank=1],
         exclude: InputTensor[rank=1],
@@ -4488,13 +4480,12 @@ struct StaticRandomNormal:
 
 @compiler.register("mo.softmax")
 struct Softmax:
-    @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
         target: StringLiteral
     ](
         output: OutputTensor,
-        input: InputTensor[type = output.type, rank = output.rank],
+        input: FusedInputTensor[type = output.type, rank = output.rank],
         ctx: DeviceContextPtr,
     ) raises:
         # shape should be the same between the two inputs
@@ -4527,13 +4518,12 @@ struct Softmax:
 
 @compiler.register("mo.logsoftmax")
 struct LogSoftmax:
-    @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
         target: StringLiteral
     ](
         output: OutputTensor,
-        input: InputTensor[type = output.type, rank = output.rank],
+        input: FusedInputTensor[type = output.type, rank = output.rank],
     ) raises:
         # shape should be the same between the two inputs
         var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
@@ -4629,7 +4619,6 @@ fn concat_shape_impl[
 
 @compiler.register("mo.concat")
 struct Concat:
-    @compiler.enable_fusion_for("inputs", "output")
     @staticmethod
     fn execute[
         type: DType,
@@ -4637,9 +4626,9 @@ struct Concat:
         target: StringLiteral,
         _synchronous: Bool,
     ](
-        output: OutputTensor[type=type, rank=rank],
+        output: FusedOutputTensor[type=type, rank=rank],
         axis: Scalar,
-        inputs: InputVariadicTensors[type, rank, *_],
+        inputs: FusedInputVariadicTensors[type, rank, *_],
         ctx: DeviceContextPtr,
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -4933,7 +4922,6 @@ struct SplitOutputShapeHelper:
 
 @compiler.register("mo.conv")
 struct Conv:
-    @compiler.enable_fusion_for("output")
     @staticmethod
     fn execute[
         filter_packed: Bool,
@@ -4943,7 +4931,7 @@ struct Conv:
         static_padding: DimList,
         target: StringLiteral,
     ](
-        output: OutputTensor,
+        output: FusedOutputTensor,
         input: InputTensor[rank = output.rank],
         filter: InputTensor,
         strides: InputTensor,
@@ -5100,13 +5088,12 @@ struct Conv:
 
 @compiler.register("mo.conv_transpose")
 struct ConvTranspose:
-    @compiler.enable_fusion_for("output")
     @staticmethod
     fn execute[
         filter_packed: Bool,
         lambdas_have_fusion: Bool,
     ](
-        output: OutputTensor,
+        output: FusedOutputTensor,
         input: InputTensor[rank = output.rank],
         filter: InputTensor,
         strides: InputTensor[rank=1],
@@ -5306,7 +5293,6 @@ struct MaskedFlashAttentionGPU:
 
 @compiler.register("no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
-    @compiler.enable_fusion_for("k", "v")
     @staticmethod
     fn execute[
         type: DType,
@@ -5314,8 +5300,8 @@ struct NoMaskFlashAttentionCPU:
     ](
         output: OutputTensor[type=type, rank=rank],
         q: InputTensor[type=type, rank=rank],
-        k: InputTensor[type=type, rank=rank],
-        v: InputTensor[type=type, rank=rank],
+        k: FusedInputTensor[type=type, rank=rank],
+        v: FusedInputTensor[type=type, rank=rank],
         scale: Scalar[type = DType.float32],
     ) raises:
         @parameter
@@ -5355,7 +5341,6 @@ struct NoMaskFlashAttentionCPU:
 
 @compiler.register("with_mask_flash_attention_split_kv_cpu")
 struct WithMaskFlashAttentionSplitKVCPU:
-    @compiler.enable_fusion_for("k", "v", "k_cache", "v_cache", "mask")
     @staticmethod
     fn execute[
         type: DType,
@@ -5363,11 +5348,11 @@ struct WithMaskFlashAttentionSplitKVCPU:
     ](
         output: OutputTensor[type=type, rank=rank],
         q: InputTensor[type=type, rank=rank],
-        k: InputTensor[type=type, rank=rank],
-        v: InputTensor[type=type, rank=rank],
-        k_cache: InputTensor[type=type, rank = rank + 1],
-        v_cache: InputTensor[type=type, rank = rank + 1],
-        mask: InputTensor[type=type],
+        k: FusedInputTensor[type=type, rank=rank],
+        v: FusedInputTensor[type=type, rank=rank],
+        k_cache: FusedInputTensor[type=type, rank = rank + 1],
+        v_cache: FusedInputTensor[type=type, rank = rank + 1],
+        mask: FusedInputTensor[type=type],
         scale: Scalar[type = DType.float32],
     ) raises:
         @parameter
@@ -5439,7 +5424,6 @@ struct WithMaskFlashAttentionSplitKVCPU:
 
 @compiler.register("with_mask_flash_attention_cpu")
 struct WithMaskFlashAttentionCPU:
-    @compiler.enable_fusion_for("k", "v", "mask")
     @staticmethod
     fn execute[
         type: DType,
@@ -5447,9 +5431,9 @@ struct WithMaskFlashAttentionCPU:
     ](
         output: OutputTensor[type=type, rank=rank],
         q: InputTensor[type=type, rank=rank],
-        k: InputTensor[type=type, rank=rank],
-        v: InputTensor[type=type, rank=rank],
-        mask: InputTensor[type=type],
+        k: FusedInputTensor[type=type, rank=rank],
+        v: FusedInputTensor[type=type, rank=rank],
+        mask: FusedInputTensor[type=type],
         scale: Scalar[type = DType.float32],
     ) raises:
         @parameter
@@ -7900,14 +7884,13 @@ struct DistributedAllReduceSum1Devices:
     alias num_devices = 1
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @compiler.enable_fusion_for("outputs")
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: OutputVariadicTensors[type, rank, *_],
+        outputs: FusedOutputVariadicTensors[type, rank, *_],
         signal_buffer0: InputTensor[type = DType.uint8, rank=1],
         inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
         _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
@@ -7970,14 +7953,13 @@ struct DistributedAllReduceSum2Devices:
     alias num_devices = 2
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @compiler.enable_fusion_for("outputs")
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: OutputVariadicTensors[type, rank, *_],
+        outputs: FusedOutputVariadicTensors[type, rank, *_],
         signal_buffer0: InputTensor[type = DType.uint8, rank=1],
         signal_buffer1: InputTensor[type = DType.uint8, rank=1],
         inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
@@ -8047,14 +8029,13 @@ struct DistributedAllReduceSum4Devices:
     alias num_devices = 4
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @compiler.enable_fusion_for("outputs")
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: OutputVariadicTensors[type, rank, *_],
+        outputs: FusedOutputVariadicTensors[type, rank, *_],
         signal_buffer0: InputTensor[type = DType.uint8, rank=1],
         signal_buffer1: InputTensor[type = DType.uint8, rank=1],
         signal_buffer2: InputTensor[type = DType.uint8, rank=1],
@@ -8140,7 +8121,6 @@ struct DistributedAllReduceSum8Devices:
     alias num_devices = 8
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
 
-    @compiler.enable_fusion_for("outputs")
     @staticmethod
     @always_inline
     fn execute[
@@ -8148,7 +8128,7 @@ struct DistributedAllReduceSum8Devices:
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: OutputVariadicTensors[type, rank, *_],
+        outputs: FusedOutputVariadicTensors[type, rank, *_],
         signal_buffer0: InputTensor[type = DType.uint8, rank=1],
         signal_buffer1: InputTensor[type = DType.uint8, rank=1],
         signal_buffer2: InputTensor[type = DType.uint8, rank=1],

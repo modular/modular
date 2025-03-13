@@ -17,8 +17,11 @@ from tensor_internal import (
     VariadicTensors,
     InputVariadicTensors,
     OutputVariadicTensors,
+    FusedInputVariadicTensors,
     InputTensor,
     OutputTensor,
+    FusedInputTensor,
+    FusedOutputTensor,
     MutableInputTensor,
     foreach,
     _input_fusion_hook_impl,
@@ -335,12 +338,11 @@ struct PrintTensorSpecViewOp:
 
 @compiler.register("print_tensor_spec_fused")
 struct PrintTensorSpecFusedOp:
-    @compiler.enable_fusion_for("out", "x")
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](out: OutputTensor, x: InputTensor) raises:
+    ](out: FusedOutputTensor, x: FusedInputTensor) raises:
         print("x.shape =", x._static_shape)
         print("x.strides =", x._static_strides)
         print("x.alignment =", x.alignment)
@@ -379,12 +381,11 @@ struct AddElementwise:
 
 @compiler.register("imposter_add_lhs")
 struct AddFuseLHS:
-    @compiler.enable_fusion_for("x")
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor) raises:
+    ](z: OutputTensor, x: FusedInputTensor, y: InputTensor) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -402,12 +403,11 @@ struct AddFuseLHS:
 
 @compiler.register("imposter_add_fuse_inputs")
 struct AddFuseInputs:
-    @compiler.enable_fusion_for("x", "y")
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor) raises:
+    ](z: OutputTensor, x: FusedInputTensor, y: FusedInputTensor) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -426,14 +426,13 @@ struct AddFuseInputs:
 # c = a @ b, should support CPU and GPU
 @compiler.register("matmul_fuse_out")
 struct MatmulFuseOut:
-    @compiler.enable_fusion_for("c")
     @staticmethod
     fn execute[
         target: StringLiteral,
         lambdas_have_fusion: Bool,
         _synchronous: Bool,
     ](
-        c: OutputTensor,
+        c: FusedOutputTensor,
         a: InputTensor,
         b: InputTensor,
         ctx: DeviceContextPtr,
@@ -552,7 +551,6 @@ struct BasicInplaceRaises:
 
 @compiler.register("variadic_add")
 struct VariadicAdd:
-    @compiler.enable_fusion_for("inputs")
     @staticmethod
     fn execute[
         type: DType,
@@ -561,7 +559,7 @@ struct VariadicAdd:
         _synchronous: Bool,
     ](
         output: OutputTensor[type=type, rank=rank],
-        inputs: InputVariadicTensors[type, rank, *_],
+        inputs: FusedInputVariadicTensors[type, rank, *_],
     ) raises:
         @parameter
         @always_inline
@@ -626,12 +624,11 @@ struct Transpose2DOp:
 
 @compiler.register("print_shape_fused")
 struct ElementwisePrintShape:
-    @compiler.enable_fusion_for("z", "x")
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: OutputTensor, x: InputTensor) raises:
+    ](z: FusedOutputTensor, x: FusedInputTensor) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
