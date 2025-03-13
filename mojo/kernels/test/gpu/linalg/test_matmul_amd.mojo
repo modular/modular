@@ -62,6 +62,8 @@ fn test[
     in_type: DType,
     out_type: DType,
     transpose_b: Bool,
+    *,
+    backend: vendor_blas.Backend = vendor_blas.Backend.AUTOMATIC,
 ](
     mut bench: Bench,
     ctx: DeviceContext,
@@ -142,7 +144,7 @@ fn test[
 
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
 
-    var handle = vendor_blas.Handle()
+    var handle = vendor_blas.Handle[backend]()
 
     vendor_blas.matmul(
         ctx,
@@ -230,6 +232,18 @@ def main():
             in_type = DType.bfloat16,
             out_type = DType.float32,
             transpose_b=True,
+        ](bench, ctx, dynamic(256), static[256](), static[128]())
+        test[
+            in_type = DType.bfloat16,
+            out_type = DType.float32,
+            transpose_b=False,
+            backend = vendor_blas.Backend.HIPBLASLT,
+        ](bench, ctx, dynamic(256), static[256](), static[128]())
+        test[
+            in_type = DType.bfloat16,
+            out_type = DType.float32,
+            transpose_b=True,
+            backend = vendor_blas.Backend.HIPBLASLT,
         ](bench, ctx, dynamic(256), static[256](), static[128]())
         test[
             in_type = DType.bfloat16,
