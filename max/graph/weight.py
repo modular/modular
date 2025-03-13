@@ -119,10 +119,13 @@ class Weight(TensorValue):
         raise ValueError("Cannot re-define Weight._mlir_value.")
 
     def __repr__(self):
+        device_str = f", {self._device}" if self._device else ""
         if self.quantization_encoding:
-            return f"Weight({self.name}, {self.dtype}, {self.shape}, {self.device}, {self.quantization_encoding})"
+            return f"Weight({self.name}, {self.dtype}, {self.shape}{device_str}, {self.quantization_encoding})"
         else:
-            return f"Weight({self.name}, {self.dtype}, {self.shape}, {self.device})"
+            return (
+                f"Weight({self.name}, {self.dtype}, {self.shape}{device_str})"
+            )
 
     def set_sharding_strategy(
         self, sharding_strategy: ShardingStrategy
