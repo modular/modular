@@ -407,29 +407,21 @@ fn exp2[
             ](x)
 
     @parameter
-    if is_amd_gpu():
+    if is_amd_gpu() and type in (DType.float16, DType.float32):
+        alias asm = "llvm.amdgcn.exp2." + (
+            "f16" if type is DType.float16 else "f32"
+        )
+        var res = SIMD[type, simd_width]()
 
         @parameter
-        if type in (DType.float16, DType.float32):
-            var res = SIMD[type, simd_width]()
+        for i in range(simd_width):
+            res[i] = llvm_intrinsic[
+                asm,
+                Scalar[type],
+                has_side_effect=False,
+            ](x[i])
 
-            @parameter
-            for i in range(simd_width):
-
-                @parameter
-                if type is DType.float16:
-                    res[i] = llvm_intrinsic[
-                        "llvm.amdgcn.exp2.f16",
-                        Scalar[type],
-                        has_side_effect=False,
-                    ](x[i])
-                else:
-                    res[i] = llvm_intrinsic[
-                        "llvm.amdgcn.exp2.f32",
-                        Scalar[type],
-                        has_side_effect=False,
-                    ](x[i])
-            return res
+        return res
 
     @parameter
     if type not in (DType.float32, DType.float64):

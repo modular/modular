@@ -19,23 +19,25 @@ from typing import Callable
 
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
-)
-from max.pipelines.nn import (
+from max.nn import (
     MLPV2,
     AttentionWithRopeV2,
     EmbeddingV2,
+    GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     GPTQLinearV2,
-    LayerV2,
     LinearV2,
     Llama3RotaryEmbedding,
+    Module,
     RMSNormV2,
     Transformer,
     TransformerBlock,
+)
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    FetchPagedKVCacheCollectionFA3Fallback,
+    KVCacheStrategy,
 )
 
 from .model_config import Llama3Config
@@ -55,7 +57,7 @@ class Llama3(Transformer):
         )
 
         # Select norm layer class.
-        create_norm: Callable[..., LayerV2]
+        create_norm: Callable[..., Module]
         if config.norm_method == "rms_norm":
             if config.rms_norm_eps is None:
                 raise ValueError(
@@ -79,10 +81,17 @@ class Llama3(Transformer):
             linear_cls = LinearV2
         mlp_cls = StackedMLP if config.stacked_mlp else MLPV2
         attention_cls: Callable[..., AttentionWithRopeV2]
-        if config.quantization_config:
+        if config.quantization_encoding == QuantizationEncoding.GPTQ:
+            assert config.quantization_config is not None
             attention_cls = functools.partial(
                 GPTQAttentionWithRope,
                 quantization_config=config.quantization_config,
+                scale=config.attention_multiplier,
+            )
+        elif config.quantization_encoding is not None:
+            attention_cls = functools.partial(
+                GGUFQAttentionWithRope,
+                quantization_encoding=config.quantization_encoding,
                 scale=config.attention_multiplier,
             )
         else:
@@ -148,11 +157,17 @@ class Llama3(Transformer):
         kv_collection_cls: (
             type[FetchContinuousBatchingKVCacheCollection]
             | type[FetchPagedKVCacheCollection]
+            | type[FetchPagedKVCacheCollectionFA3Fallback]
         )
         if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
             kv_collection_cls = FetchContinuousBatchingKVCacheCollection
         elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
+        elif (
+            config.kv_params.cache_strategy
+            == KVCacheStrategy.PAGED_FA3_FALLBACK
+        ):
+            kv_collection_cls = FetchPagedKVCacheCollectionFA3Fallback
         else:
             raise ValueError(
                 "Unsupported caching strategy "
@@ -167,7 +182,9 @@ class Llama3(Transformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=kv_collection_cls(config.kv_params),
+            kv_collection_constructor=kv_collection_cls(
+                config.kv_params, num_layers=config.num_hidden_layers
+            ),
             all_logits=config.all_logits,
             embedding_multiplier=config.embedding_multiplier,
             logits_postprocessor=config.logits_postprocessor,

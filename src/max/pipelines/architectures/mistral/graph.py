@@ -17,13 +17,7 @@ import math
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
-from max.pipelines import PipelineConfig
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    KVCacheManager,
-    KVCacheParams,
-)
-from max.pipelines.nn import (
+from max.nn import (
     MLP,
     AttentionWithRope,
     Embedding,
@@ -32,6 +26,12 @@ from max.pipelines.nn import (
     RMSNorm,
     Transformer,
     TransformerBlock,
+)
+from max.pipelines import PipelineConfig
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheManager,
+    KVCacheParams,
 )
 from transformers import AutoConfig
 

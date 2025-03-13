@@ -11,6 +11,15 @@ To check your current version, run `mojo --version`. To update the version of
 Mojo for your project with the `magic` package manager, follow the instructions
 in [Update a package](/magic#update-a-package) to update the `max` package.
 
+## v25.2 nightly
+
+This version is still a work in progress.
+
+See how to [install the nightly
+release](/max/packages#nightly-release).
+
+<!-- INSERT HERE : This line is required for post-process-docs.py -->
+
 ## v25.1 (2025-02-13)
 
 ### ✨ Highlights

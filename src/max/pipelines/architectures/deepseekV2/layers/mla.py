@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph import TensorValue
+from max.nn.layer import Module
 from max.pipelines.architectures.deepseekV2.layers.yarn_rope import (
     YarnRotaryEmbedding,
 )
-from max.pipelines.nn.layer import LayerV2
 
 
-class DeepseekAttention(LayerV2):
+class DeepseekAttention(Module):
     def __init__(self, layer_idx: int):
         super().__init__()
 
