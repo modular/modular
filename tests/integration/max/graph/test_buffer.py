@@ -166,3 +166,27 @@ def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
     actual = np.array([[3, 1], [1, 1]], dtype=np.float32) * -1
 
     np.testing.assert_equal(rawbuffer, actual)
+
+
+def test_variadic_buffer_handling(
+    custom_ops_path: Path, session: InferenceSession
+) -> None:
+    """Test custom op with variadic buffer inputs."""
+
+    # Build, compile, and execute.
+    output = session.load(
+        Graph(
+            "variadic_buffer_test",
+            forward=lambda x, y: ops.inplace_custom(
+                "reduce_buffers",
+                values=[x, y],
+                out_types=[TensorType(DType.float32, [1])],
+            ),
+            input_types=[
+                BufferType(DType.float32, [2]),
+                BufferType(DType.float32, [2]),
+            ],
+        ),
+        custom_extensions=[custom_ops_path],
+    ).execute(np.arange(2, dtype=np.float32), np.arange(2, dtype=np.float32))[0]
+    assert isinstance(output, Tensor)
