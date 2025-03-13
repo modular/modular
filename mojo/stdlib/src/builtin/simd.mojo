@@ -2463,6 +2463,10 @@ struct SIMD[type: DType, size: Int](
             The maximum element of the vector.
         """
 
+        @parameter
+        if size == 1:
+            return self[0]
+
         @always_inline
         @parameter
         fn max_reduce_body[
@@ -2470,17 +2474,13 @@ struct SIMD[type: DType, size: Int](
         ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
             return max(v1, v2)
 
-        @parameter
-        if size == 1:
-            return self[0]
-        elif is_x86() or size_out > 1:
-            return self.reduce[max_reduce_body, size_out]()
-
         if is_compile_time():
             return self.reduce[max_reduce_body, size_out]()
 
         @parameter
-        if type.is_floating_point():
+        if is_x86() or size_out > 1:
+            return self.reduce[max_reduce_body, size_out]()
+        elif type.is_floating_point():
             return rebind[SIMD[type, size_out]](
                 llvm_intrinsic[
                     "llvm.vector.reduce.fmax",
@@ -2528,15 +2528,13 @@ struct SIMD[type: DType, size: Int](
         ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
             return min(v1, v2)
 
-        @parameter
-        if is_x86() or size_out > 1:
-            return self.reduce[min_reduce_body, size_out]()
-
         if is_compile_time():
             return self.reduce[min_reduce_body, size_out]()
 
         @parameter
-        if type.is_floating_point():
+        if is_x86() or size_out > 1:
+            return self.reduce[min_reduce_body, size_out]()
+        elif type.is_floating_point():
             return rebind[SIMD[type, size_out]](
                 llvm_intrinsic[
                     "llvm.vector.reduce.fmin",
