@@ -51,7 +51,8 @@ FAKE_TOKEN = 999
 
 
 def is_h100() -> bool:
-    return "H100" in NVITOPDevice.all()[0].name()
+    devices = NVITOPDevice.all()
+    return len(devices) > 0 and "H100" in devices[0].name()
 
 
 def _attention_layer(
