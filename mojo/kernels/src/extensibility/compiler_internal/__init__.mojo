@@ -7,7 +7,6 @@
 from .directives import (
     StaticTensorSpec,
     elementwise,
-    enable_fusion_for,
     register,
     view_kernel,
 )

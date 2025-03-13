@@ -28,12 +28,6 @@ fn elementwise():
     return
 
 
-# Indicates which I/Os of the DPS kernel support fusion
-@__mogg_intrinsic_attr("mogg.enable_fusion_for")
-fn enable_fusion_for(*names: StringLiteral):
-    return
-
-
 # Indicates that a DPS Kernel is a view operation
 @__mogg_intrinsic_attr("mogg.view_kernel")
 fn view_kernel():
