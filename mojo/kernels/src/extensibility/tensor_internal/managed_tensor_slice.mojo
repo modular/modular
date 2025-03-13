@@ -28,6 +28,7 @@ from sys.info import is_gpu
 from sys.intrinsics import strided_load, strided_store
 from tensor_internal import RuntimeTensorSpec, TensorSpec
 from utils import IndexList, StaticTuple
+from utils._serialize import _serialize
 
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .io_spec import IOSpec, IO
@@ -349,7 +350,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[type, rank],
-](CollectionElement):
+](CollectionElement, Stringable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -881,6 +882,58 @@ struct ManagedTensorSlice[
             self.unsafe_ptr(),
             RuntimeLayout[layout](self.shape(), self.strides()),
         )
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """
+        Formats this buffer to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write("ManagedTensorSlice(")
+
+        @parameter
+        fn serialize[T: Writable](val: T):
+            writer.write(val)
+
+        var shape = List[Int, hint_trivial_type=True]()
+        for i in range(rank):
+            shape.append(self.shape()[i])
+
+        # TODO(1937): make this work with all valid strides
+        _serialize[serialize_fn=serialize, serialize_end_line=False](
+            self._ptr, shape
+        )
+
+        writer.write("){")
+        writer.write("static_shape = ", self._static_shape)
+        writer.write(", static_strides = ", self._static_strides)
+        writer.write(", dynamic_shape = ", self.shape())
+        writer.write(", dynamic_strides = ", self.strides())
+        writer.write(", alignment = ", self.alignment)
+        writer.write(", address_space = ", self.address_space)
+        writer.write("}")
+
+    @no_inline
+    fn __repr__(self) -> String:
+        """Gets the buffer as a string.
+
+        Returns:
+          A compact string representation of the buffer.
+        """
+        return self.__str__()
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets the buffer as a string.
+
+        Returns:
+          A compact string of the buffer.
+        """
+        return String.write(self)
 
 
 fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
