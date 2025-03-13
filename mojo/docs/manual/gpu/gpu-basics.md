@@ -67,7 +67,8 @@ If you prefer the traditional approach, create a file such as `main.mojo` and
 put everything except the imports into a `def main`:
 
 ```mojo :once
-from gpu import thread_idx, DeviceContext
+from gpu import thread_idx
+from gpu.host import DeviceContext
 
 def main():
     fn printing_kernel():
