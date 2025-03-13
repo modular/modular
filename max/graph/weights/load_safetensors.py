@@ -215,6 +215,10 @@ class SafetensorWeights(Weights):
             name=self._prefix,
             dtype=weight_dtype,
             shape=tensor.shape,
+            # Set align=1 because safetensors loads the data in as uint8 and
+            # not the tensor dtype. This has no effect on GPU because once the
+            # data is copied on GPU, the tensor will be properly aligned.
+            align=1,
         )
         self._allocated[self._prefix] = np_tensor
 
