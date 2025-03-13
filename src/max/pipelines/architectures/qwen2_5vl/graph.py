@@ -18,7 +18,7 @@ from max.graph import ops
 from max.graph.weights import Weights
 from max.nn import Conv3D
 
-from .nn.visual_transformer import VisionPatchEmbed
+from .nn.visual_transformer import VisionPatchEmbed, VisionRotaryEmbedding
 
 
 def patch_embed(
@@ -56,4 +56,14 @@ def patch_embed(
         temporal_patch_size=temporal_patch_size,
         in_channels=in_channels,
         embed_dim=embed_dim,
+    )
+
+
+def rotary_embedding_3d(
+    hidden_size: int,
+    num_heads: int,
+    theta: float,
+) -> VisionRotaryEmbedding:
+    return VisionRotaryEmbedding(
+        dim=hidden_size, n_heads=num_heads, theta=theta
     )
