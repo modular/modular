@@ -608,19 +608,6 @@ fn _mha_single_batch_sm90_fa3[
                 == TileMaskStatus.FULL_MASK
             ):
                 # wait to make sure we stay synchronized
-                TMABarrier(MbarPtrType(consumed_mbar_k_ptr + write_idx)).wait(
-                    write_phase
-                )
-                _ = TMABarrier(
-                    MbarPtrType(produced_mbar_k_ptr + write_idx)
-                ).arrive()
-                TMABarrier(MbarPtrType(consumed_mbar_v_ptr + write_idx)).wait(
-                    write_phase
-                )
-                _ = TMABarrier(
-                    MbarPtrType(produced_mbar_v_ptr + write_idx)
-                ).arrive()
-                write_pipeline_states.step()
                 return
 
             k_smem_subi = k_smem_iter.next_unsafe(write_idx * num_k_iters_0)
@@ -801,19 +788,6 @@ fn _mha_single_batch_sm90_fa3[
                 == TileMaskStatus.FULL_MASK
             ):
                 # wait to make sure we stay synchronized
-                TMABarrier(MbarPtrType(produced_mbar_k_ptr + read_idx)).wait(
-                    read_phase
-                )
-                _ = TMABarrier(
-                    MbarPtrType(consumed_mbar_k_ptr + read_idx)
-                ).arrive()
-                TMABarrier(MbarPtrType(produced_mbar_v_ptr + read_idx)).wait(
-                    read_phase
-                )
-                _ = TMABarrier(
-                    MbarPtrType(consumed_mbar_v_ptr + read_idx)
-                ).arrive()
-                read_pipeline_states.step()
                 return
 
             _ = p_reg_tile.fill(0)
