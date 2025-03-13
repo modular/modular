@@ -237,6 +237,7 @@ def conv3d(
 
     Returns:
         A symbolic tensor value with the convolution applied.
+        Output shape = (batch_size, depth, height, width, out_channels).
     """
     x, filter = dtype_promotion._promote_weak_dtypes(x, filter)
     if bias is not None:
