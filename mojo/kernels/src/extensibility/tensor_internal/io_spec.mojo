@@ -18,6 +18,9 @@ struct IO:
     fn __init__(out self, value: Int):
         self.value = value
 
+    fn __eq__(self, other: IO) -> Bool:
+        return self.value == other.value
+
 
 @value
 @register_passable("trivial")
@@ -36,7 +39,7 @@ struct IOSpec[mut: Bool, input: IO]:
     ...
 
 
-alias IOUnknown = IOSpec[False, IO.Unknown]()
+alias IOUnknown = IOSpec[True, IO.Unknown]()
 
 alias Input = IOSpec[False, IO.Input]()
 alias Output = IOSpec[True, IO.Output]()

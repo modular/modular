@@ -661,6 +661,11 @@ struct ManagedTensorSlice[
         Returns:
             Data from this tensor slice at dimension `index`.
         """
+        constrained[
+            input == IO.Input or input == IO.Unknown,
+            "loading not supported for output tensors",
+        ]()
+
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
         return simd_load_from_managed_tensor_slice[simd_width=width](self, ridx)
@@ -753,7 +758,14 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
-    ](self, index: IndexList[_rank], val: SIMD[type, width]):
+    ](
+        self: ManagedTensorSlice[
+            mut=True,
+            static_spec=static_spec,
+        ],
+        index: IndexList[_rank],
+        val: SIMD[type, width],
+    ):
         """Sets data in this tensor slice from a `SIMD`.
 
         Parameters:
@@ -780,7 +792,11 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
-    ](self, index: IndexList[_rank], val: SIMD[type, width]) capturing:
+    ](
+        self: ManagedTensorSlice[mut=True, static_spec=static_spec],
+        index: IndexList[_rank],
+        val: SIMD[type, width],
+    ) capturing:
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
 
@@ -805,7 +821,14 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
-    ](self, index: IndexList[_rank], val: SIMD[type, width]):
+    ](
+        self: ManagedTensorSlice[
+            io_spec = IOSpec[True, input](),
+            static_spec=static_spec,
+        ],
+        index: IndexList[_rank],
+        val: SIMD[type, width],
+    ):
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
         alias out_lambda = static_spec.out_lambda
@@ -962,7 +985,7 @@ fn foreach[
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
     _trace_name: StringLiteral = "mogg.for_each",
-](tensor: ManagedTensorSlice[type=type, rank=rank]) raises:
+](tensor: ManagedTensorSlice[mut=True, type=type, rank=rank]) raises:
     @parameter
     @always_inline
     fn elementwise_fn_wrapper[
@@ -992,7 +1015,8 @@ fn foreach[
     _synchronous: Bool = False,
     _trace_name: StringLiteral = "mogg.for_each",
 ](
-    tensor: ManagedTensorSlice[type=type, rank=rank], ctx: DeviceContextPtr
+    tensor: ManagedTensorSlice[mut=True, type=type, rank=rank],
+    ctx: DeviceContextPtr,
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
 
@@ -1040,7 +1064,7 @@ fn view_copy_impl[
     _synchronous: Bool,
     trace_name: StringLiteral = "mogg.view_copy_impl",
 ](
-    z: ManagedTensorSlice[type=type, rank=rank],
+    z: ManagedTensorSlice[mut=True, type=type, rank=rank],
     x: ManagedTensorSlice[static_spec=spec],
     ctx: DeviceContextPtr,
 ) raises:
