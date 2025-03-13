@@ -28,6 +28,7 @@ from collections import InlineArray
 from tensor_internal import IOUnknown
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 
+from layout import Layout, LayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 
 from utils import Index, IndexList
@@ -123,7 +124,7 @@ def test_unsafe_slice():
     _ = tensor^
 
 
-def test_unsafe_slice_simd():
+def test_layout_slice_simd():
     var shape = (10, 10)
     var tensor = Tensor[DType.float32, 2](TensorShape(shape))
 
@@ -133,13 +134,16 @@ def test_unsafe_slice_simd():
             tensor[i, j] = val
             val += 1
 
-    var unsafe_slice = tensor.unsafe_slice(slice(0, 5, 1), slice(0, 8, 2))
-    var value = unsafe_slice.load[4](IndexList[2](0, 1))
-    assert_equal(value, SIMD[DType.float32, 4](3, 5, 7, 9))
+    var unsafe_slice = tensor.to_layout_tensor().vectorize[1, 4]()
 
-    unsafe_slice.store(IndexList[2](0, 1), SIMD[DType.float32, 4](0))
-    value = unsafe_slice.load[4](IndexList[2](0, 1))
-    assert_equal(value, SIMD[DType.float32, 4](0))
+    alias simd_type = unsafe_slice.element_type
+
+    var value = unsafe_slice[0, 1]
+    assert_equal(value, simd_type(5, 6, 7, 8))
+
+    unsafe_slice[0, 1] = 0
+    value = unsafe_slice[0, 1]
+    assert_equal(value, simd_type(0))
 
     _ = tensor^
 
@@ -347,7 +351,7 @@ def main():
     test_kv_cache()
     test_raw_data()
     test_take()
-    test_unsafe_slice_simd()
+    test_layout_slice_simd()
     test_print()
     test_move()
     test_from_max_tensor()
