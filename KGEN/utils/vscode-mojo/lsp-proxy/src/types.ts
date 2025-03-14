@@ -84,6 +84,17 @@ export type ExitStatus = {
 export type ShutdownParams = {};
 
 /**
+ * A custom request sent by the extension to record all traffic sent to
+ * the underlying language server in a replayable form.
+ */
+export type RecordSessionParams = {
+  /*
+   * Whether to enable or disable session recording.
+   */
+  enabled: boolean;
+};
+
+/**
  * This union type represents all supported request params that contain a
  * `textDocument` entry.
  */

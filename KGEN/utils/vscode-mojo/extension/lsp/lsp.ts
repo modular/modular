@@ -17,6 +17,7 @@ import { Subject } from 'rxjs';
 import { Logger } from '../logging';
 import { MAXSDKManager } from '../sdk/sdkManager';
 import { TelemetryReporter } from '../telemetry';
+import { LSPRecorder } from './recorder';
 
 /**
  *  This class manages the LSP clients.
@@ -28,6 +29,8 @@ export class MojoLSPManager extends DisposableContext {
   public lspClientChanges = new Subject<Optional<vscodelc.LanguageClient>>();
   private logger: Logger;
   private reporter: TelemetryReporter;
+  private recorder: Optional<LSPRecorder>;
+  private statusBarItem: Optional<vscode.StatusBarItem>;
 
   constructor(
     sdkManager: MAXSDKManager,
@@ -47,6 +50,73 @@ export class MojoLSPManager extends DisposableContext {
       vscode.commands.registerCommand('mojo.lsp.restart', async () => {
         this.dispose();
         await this.activate();
+      }),
+    );
+
+    this.statusBarItem = vscode.window.createStatusBarItem(
+      'lsp-recording-state',
+      vscode.StatusBarAlignment.Right,
+    );
+    this.statusBarItem.text = 'Mojo LSP $(record)';
+    this.statusBarItem.backgroundColor = new vscode.ThemeColor(
+      'statusBarItem.warningBackground',
+    );
+    this.statusBarItem.command = 'mojo.lsp.stopRecord';
+    this.pushSubscription(this.statusBarItem);
+
+    this.pushSubscription(
+      vscode.commands.registerCommand('mojo.lsp.startRecord', async () => {
+        if (this.recorder) {
+          this.recorder.dispose();
+        }
+
+        if (
+          !vscode.workspace.workspaceFolders ||
+          vscode.workspace.workspaceFolders.length == 0
+        ) {
+          return;
+        }
+        const workspaceFolder = vscode.workspace.workspaceFolders[0];
+        const recordPath = vscode.Uri.joinPath(
+          workspaceFolder.uri,
+          'mojo-lsp-recording.jsonl',
+        );
+
+        this.recorder = new LSPRecorder(recordPath.fsPath);
+        this.pushSubscription(this.recorder);
+
+        vscode.window
+          .showInformationMessage(
+            `Started recording language server session to ${recordPath}.`,
+            'Stop',
+            'Open',
+          )
+          .then((action) => {
+            switch (action) {
+              case 'Open':
+                return vscode.commands.executeCommand(
+                  'vscode.open',
+                  recordPath,
+                );
+              case 'Stop':
+                return vscode.commands.executeCommand('mojo.lsp.stopRecord');
+            }
+          });
+
+        this.statusBarItem!.tooltip = `Recording Mojo LSP session to ${recordPath}`;
+        this.statusBarItem!.show();
+      }),
+    );
+
+    this.pushSubscription(
+      vscode.commands.registerCommand('mojo.lsp.stopRecord', async () => {
+        if (!this.recorder) {
+          return;
+        }
+
+        this.recorder!.dispose();
+        this.recorder = undefined;
+        this.statusBarItem!.hide();
       }),
     );
 
@@ -159,6 +229,23 @@ export class MojoLSPManager extends DisposableContext {
       // Don't switch to output window when the server returns output.
       revealOutputChannelOn: vscodelc.RevealOutputChannelOn.Never,
       initializationOptions: initializationOptions,
+    };
+
+    clientOptions.middleware = {
+      sendRequest: (method, param, token, next) => {
+        if (this.recorder) {
+          return this.recorder.sendRequest(method, param, token, next);
+        } else {
+          return next(method, param, token);
+        }
+      },
+      sendNotification: (method, next, param) => {
+        if (this.recorder) {
+          return this.recorder.sendNotification(method, next, param);
+        } else {
+          return next(method, param);
+        }
+      },
     };
 
     // Create the language client and start the client.

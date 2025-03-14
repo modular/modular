@@ -177,6 +177,16 @@
       },
       {
         "category": "Mojo",
+        "command": "mojo.lsp.startRecord",
+        "title": "Record requests and notifications sent to the Mojo language server."
+      },
+      {
+        "category": "Mojo",
+        "command": "mojo.lsp.stopRecord",
+        "title": "Stop recording requests and notifications sent to the Mojo language server."
+      },
+      {
+        "category": "Mojo",
         "command": "mojo.extension.restart",
         "title": "Restart the Extension"
       },
