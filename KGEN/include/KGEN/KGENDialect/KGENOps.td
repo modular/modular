@@ -2054,44 +2054,4 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
   let hasVerifier = 1;
 }
 
-//===----------------------------------------------------------------------===//
-// ClosureCapture
-//===----------------------------------------------------------------------===//
-
-def KGEN_ClosureCapture : KGENOp<"closure.capture"> {
-  let summary = "The closure capture relates a value to a function";
-  let description = [{
-    The `kgen.closure.capture` operation represents a copy or a move of
-    a captured value into the closure struct.
-
-    Example:
-    ```mlir
-    kgen.generator @foo_copy(%self:!kgen.pointer<struct<(index,index)>>,
-                             %src:!kgen.pointer<struct<(index,index)>>){
-      kgen.return
-    }
-    kgen.generator @closure_types(%foo: !kgen.pointer<struct<(index,index)>>) {
-      %c = kgen.closure.capture[@foo_copy](%foo) :
-          (!kgen.pointer<struct<(index,index)>) ->
-           !kgen.pointer<struct<(index,index)>>
-      kgen.param.declare.region fn = () {
-        %0 = kgen.struct.gep %c[0] : <struct<(index,index)>>
-        kgen.return
-      }
-      %0 = kgen.closure.init <: () -> () fn> :
-          <!kgen.closure<@closure_types, "fn", is_escaping=false>>
-      kgen.return
-    }
-
-    ```
-  }];
-
-  let arguments = (ins KGEN_SymbolConstantAttr:$callee,
-                       AnyType:$capture);
-  let results = (outs AnyType: $result);
-  let assemblyFormat = [{
-      `` custom<ClosureCaptureValue>($callee, $capture, type($capture), type($result)) attr-dict
-  }];
-}
-
 #endif // KGEN_KGENDIALECT_KGENOPS_TD
