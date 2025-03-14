@@ -59,7 +59,7 @@ def test_conv2d(session, input_type: TensorType, filter_type: TensorType):
 
         @modular_graph_test(session, graph)
         def test_correctness(execute, inputs, torch_inputs):
-            result = execute(inputs)
+            result = execute(inputs).to_numpy()
             x, w = torch_inputs
             expected = (
                 torch_conv2d(x, w, stride, dilation, padding).detach().numpy()

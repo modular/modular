@@ -15,6 +15,7 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
 from max.driver import Tensor
+from max.dtype import DType
 from max.graph import (
     Dim,
     StaticDim,
@@ -99,12 +100,20 @@ def shapes(
 
 
 def arrays(tensor_type: TensorType, static_dims={}, **kwargs):
-    dtype = np.dtype(tensor_type.dtype.to_numpy())
+    if tensor_type.dtype == DType.bfloat16:
+        tensor_type = TensorType(DType.float32, tensor_type.shape)
+        return arrays(tensor_type, static_dims=static_dims, **kwargs).map(
+            lambda t: Tensor.from_dlpack(
+                torch.from_dlpack(t).to(torch.bfloat16)
+            )
+        )
+
+    dtype = tensor_type.dtype.to_numpy()
     return nps.arrays(
         dtype,
         shapes(tensor_type, static_dims),
         elements=elements(dtype, **kwargs),
-    )
+    ).map(Tensor.from_dlpack)
 
 
 def given_input_types(
@@ -136,15 +145,12 @@ def given_input_types(
 
 
 def execute(model, inputs):
-    tensor_inputs = []
-    for inp in inputs:
-        if isinstance(inp, Tensor):
-            tensor_inputs.append(inp)
-        else:
-            tensor_inputs.append(Tensor.from_numpy(inp))
+    tensor_inputs = [
+        t if isinstance(t, Tensor) else Tensor.from_dlpack(t) for t in inputs
+    ]
     results = model.execute(*tensor_inputs)
     if results:
-        return results[0].to_numpy()
+        return results[0]
 
 
 def modular_graph_test(
@@ -171,14 +177,7 @@ def modular_graph_test(
         def test_correctness(inputs):
             model_execute = functools.partial(execute, model)
 
-            # If provided inputs are Tensors, we must convert to numpy first.
-            torch_inputs = []
-            for inp in inputs:
-                if isinstance(inp, Tensor):
-                    torch_inputs.append(torch.tensor(inp.to_numpy()))
-                else:
-                    torch_inputs.append(torch.tensor(inp))
-
+            torch_inputs = [torch.from_dlpack(t) for t in inputs]
             test_fn(model_execute, inputs, torch_inputs)
 
         if hypothesis_settings is not None:
