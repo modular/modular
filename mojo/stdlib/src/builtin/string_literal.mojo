@@ -116,7 +116,7 @@ struct StringLiteral(
             The concatenated string.
         """
         var res = String(capacity=self.byte_length() + rhs.byte_length() + 1)
-        res.write(self, rhs, "\0")
+        res.write(self, rhs)
         return res
 
     @always_inline("nodebug")
