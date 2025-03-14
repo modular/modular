@@ -244,6 +244,12 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
   LogicalResult
   matchAndRewrite(CastOp op, CastOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // Target-specific lowering that are known to be better than what LLVM can
+    // generate for a generic conversion.
+    if (succeeded(
+            convertToTargetSpecificCast(rewriter, op, adaptor.getInput())))
+      return success();
+
     KGENDType inDType = *op.getInput().getType().getResolvedDType();
     KGENDType outDType = *op.getOutput().getType().getResolvedDType();
 
@@ -308,6 +314,121 @@ private:
     if (dtype.isIndex())
       return getTypeConverter()->getIndexTypeBitwidth() / CHAR_BIT;
     return dtype.getSizeInBytes();
+  }
+
+  LLVM::InlineAsmOp createInlineAsm(ConversionPatternRewriter &rewriter,
+                                    Location loc, StringRef asmStr,
+                                    StringRef asmConstraints, Type resultType,
+                                    SmallVector<Value> operands) const {
+    const auto asmDialectAttr = LLVM::AsmDialectAttr::get(
+        rewriter.getContext(), LLVM::AsmDialect::AD_ATT);
+    return rewriter.create<LLVM::InlineAsmOp>(
+        loc, resultType,
+        /*operands=*/operands,
+        /*asm_string=*/asmStr,
+        /*constraints=*/asmConstraints, /*has_side_effects=*/false,
+        /*is_align_stack=*/false, /*asm_dialect=*/asmDialectAttr,
+        /*operand_attrs=*/mlir::ArrayAttr());
+  }
+
+  /// Fast conversion of f32 to bf16 on AMDGPU that is not supported by LLVM and
+  /// has different handling of NaNs.
+  /// The generated sequence has been moved from stdlib (see reference
+  /// implementation in PR##54249) to compiler in order:
+  ///   - remove boilerplate code from stdlib
+  ///   - reduce compile time as stdlib's code won't be parsed and will simply
+  ///   be represented by `pop.cast`
+  LogicalResult
+  convertF32ToBF16OnAMDGPU(ConversionPatternRewriter &rewriter, CastOp cast,
+                           Value value, APFloat::Semantics fromFloatSemantics,
+                           APFloat::Semantics toFloatSemantics) const {
+    assert(getTypeConverter()->getTarget().getTriple().isAMDGPU() &&
+           "fast lowering of f32 to bf16 only supported on AMDGPU");
+
+    Location loc = cast.getLoc();
+
+    // This implementation is a faster version for fp32 to bf16 type conversion
+    // It is from CK:
+    // https://github.com/cgmillette/composable_kernel/commit/b8addae29
+    // It uses less VGPR and less number of instructions compared to the
+    // previous implementation
+    Value roundedBias = rewriter.create<LLVM::ConstantOp>(
+        loc, rewriter.getIntegerType(32), 0x7FFF);
+    Type vecI64 = convertType(
+        SIMDType::get(rewriter.getContext(), /*size=*/1, KGENDType::ui64));
+    Value unorderedMask =
+        createInlineAsm(rewriter, loc, "v_cmp_u_f32 $0, $1, $1", "=s,v", vecI64,
+                        {value})
+            .getResult(0);
+
+    Type vecI32 = convertType(
+        SIMDType::get(rewriter.getContext(), /*size=*/1, KGENDType::ui32));
+    Value lsb = createInlineAsm(rewriter, loc, "v_bfe_u32 $0, $1, 16, 1",
+                                "=v,v", vecI32, {value})
+                    .getResult(0);
+
+    Value roundedVal =
+        createInlineAsm(rewriter, loc, "v_add3_u32 $0, $1, $2, $3", "=v,v,v,v",
+                        vecI32, {value, lsb, roundedBias})
+            .getResult(0);
+
+    Value nan = rewriter.create<LLVM::ConstantOp>(
+        loc, value.getType(),
+        APFloat::getNaN(APFloat::EnumToSemantics(fromFloatSemantics)));
+
+    Value floatBits =
+        createInlineAsm(rewriter, loc, "v_cndmask_b32 $0, $1, $2, $3",
+                        "=v,v,v,s", vecI32, {roundedVal, nan, unorderedMask})
+            .getResult(0);
+
+    Value mantissaDiff = rewriter.create<LLVM::ConstantOp>(
+        loc, rewriter.getIntegerType(32),
+        APFloat::semanticsPrecision(
+            APFloat::EnumToSemantics(fromFloatSemantics)) -
+            APFloat::semanticsPrecision(
+                APFloat::EnumToSemantics(toFloatSemantics)));
+    Value shifted = rewriter.create<LLVM::LShrOp>(loc, floatBits, mantissaDiff);
+
+    shifted = rewriter.create<LLVM::TruncOp>(loc, rewriter.getIntegerType(16),
+                                             shifted);
+
+    rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(
+        cast, convertType(cast.getType()), shifted);
+    return success();
+  }
+
+  /// Convert a `pop.cast` into optimized sequence of asm instructions that are
+  /// known to be more efficient for a target than general LLVM's conversion.
+  LogicalResult convertToTargetSpecificCast(ConversionPatternRewriter &rewriter,
+                                            CastOp cast, Value value) const {
+    TargetInfoAttr target = getTypeConverter()->getTarget();
+    if (!target || !target.getTriple().isAMDGPU() || !cast.getFastAttr())
+      return failure();
+
+    if (auto simd = dyn_cast<SIMDType>(cast.getInput().getType());
+        simd && !simd.isScalar())
+      return failure();
+
+    KGENDType fromDType = *cast.getInput().getType().getResolvedDType();
+    KGENDType toDType = *cast.getOutput().getType().getResolvedDType();
+
+    if (!fromDType.isFloat() || !toDType.isFloat())
+      return failure();
+
+    auto getFltSemantics = [](KGENDType dtype) {
+      return APFloat::SemanticsToEnum(*dtype.getFloatSemantics());
+    };
+
+    APFloat::Semantics fromFloatSemantics = getFltSemantics(fromDType);
+    APFloat::Semantics toFloatSemantics = getFltSemantics(toDType);
+
+    // Convert F32 to BF16
+    if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
+        toFloatSemantics == llvm::APFloat::Semantics::S_BFloat) {
+      return convertF32ToBF16OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
+                                      toFloatSemantics);
+    }
+    return failure();
   }
 };
 

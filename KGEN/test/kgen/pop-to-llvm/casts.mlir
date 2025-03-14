@@ -193,3 +193,27 @@ kgen.func @simd_cast(
     !pop.simd<2, f32>
 }
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch="", data_layout="">} {
+  // CHECK-LABEL: scalar_cast
+  kgen.func @scalar_cast(%f32: !pop.scalar<f32>) -> (!pop.scalar<bf16>, !pop.scalar<bf16>) {
+    // CHECK: %[[MANTISSA_DIFF:.*]] = llvm.mlir.constant(16 : i32) : i32
+    // CHECK-NEXT: %[[NAN:.*]] = llvm.mlir.constant(0x7FC00000 : f32) : f32
+    // CHECK-NEXT: %[[ROUNDED_BIAS:.*]] = llvm.mlir.constant(32767 : i32) : i32
+    // CHECK-NEXT: %[[UNORDERED_MASK:.*]] = llvm.inline_asm asm_dialect = att "v_cmp_u_f32 $0, $1, $1", "=s,v" %arg0 : (f32) -> i64
+    // CHECK-NEXT: %[[LSB:.*]] = llvm.inline_asm asm_dialect = att "v_bfe_u32 $0, $1, 16, 1", "=v,v" %arg0 : (f32) -> i32
+    // CHECK-NEXT: %[[ROUNDED_VALUE:.*]] = llvm.inline_asm asm_dialect = att "v_add3_u32 $0, $1, $2, $3", "=v,v,v,v" %arg0, %[[LSB]], %[[ROUNDED_BIAS]] : (f32, i32, i32) -> i32
+    // CHECK-NEXT: %[[FLOAT_BITS:.*]] = llvm.inline_asm asm_dialect = att "v_cndmask_b32 $0, $1, $2, $3", "=v,v,v,s" %[[ROUNDED_VALUE]], %[[NAN]], %[[UNORDERED_MASK]] : (i32, f32, i64) -> i32
+    // CHECK-NEXT: %[[SHIFTED_I32:.*]] = llvm.lshr %[[FLOAT_BITS]], %[[MANTISSA_DIFF]] : i32
+    // CHECK-NEXT: %[[SHIFTED_I16:.*]] = llvm.trunc %[[SHIFTED_I32]] : i32 to i16
+    // CHECK-NEXT: llvm.bitcast %[[SHIFTED_I16]] : i16 to bf16
+    %0 = pop.cast fast %f32 : !pop.scalar<f32> to !pop.scalar<bf16>
+    // CHECK-NEXT: llvm.fptrunc %{{.*}} : f32 to bf16
+    %1 = pop.cast %f32 : !pop.scalar<f32> to !pop.scalar<bf16>
+    kgen.return %0, %1 :
+      !pop.scalar<bf16>,
+      !pop.scalar<bf16>
+  }
+}

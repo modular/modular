@@ -548,19 +548,27 @@ def POP_CastOp : POPOp<"cast", [Pure,
     types. SIMD vectors must have the same size. The cast semantics are the same
     as C casts. Only bool, integer, and floating point dtypes are supported.
 
+    `fast` attribute indicates that lowering of the operation may generate
+    efficient sequence of instructions/assembly, but result may differ from
+    using LLVM's conversion instructions.
+
     Example:
 
     ```mlir
     %0 = pop.cast %a : !pop.scalar<si32> to !pop.scalar<f32>
     %1 = pop.cast %b : !pop.scalar<ui64> to !pop.scalar<si32>
     %2 = pop.cast %c : !pop.simd<4, f64> to !pop.simd<4, ui32>
+    %3 = pop.cast fast %c : !pop.scalar<f32> to !pop.scalar<bf16>
     ```
   }];
 
-  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$input);
+  let arguments = (ins
+    UnboundOrBoolOrIndexOrArithmeticSIMD:$input,
+    OptionalAttr<UnitAttr>:$fast);
   let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$output);
   let assemblyFormat = [{
-    $input attr-dict `:` qualified(type($input)) `to`  qualified(type($output))
+    (`fast` $fast^)? $input attr-dict `:`
+    qualified(type($input)) `to`  qualified(type($output))
   }];
   let hasFolder = 1;
   let hasCanonicalizeMethod = 1;
