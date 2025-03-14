@@ -76,9 +76,9 @@ fn bench_reduce[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[
-        UnsafePointer[Signal[max_num_blocks]], MAX_GPUS
-    ](UnsafePointer[Signal[max_num_blocks]]())
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+        UnsafePointer[Signal]()
+    )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * num_bytes
@@ -102,13 +102,11 @@ fn bench_reduce[
         # Create and initialize signal buffers
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
-                sizeof[Signal[max_num_blocks]]() + temp_buffer_num_bytes
+                sizeof[Signal]() + temp_buffer_num_bytes
             )
         )
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
-        rank_sigs[i] = (
-            signal_buffers[i].unsafe_ptr().bitcast[Signal[max_num_blocks]]()
-        )
+        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
         # Copy data to device
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
@@ -164,7 +162,7 @@ fn bench_reduce[
         @always_inline
         fn call_fn() raises:
             all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
-                list_of_ctx, in_bufs, out_bufs, rank_sigs
+                list_of_ctx, in_bufs, out_bufs, rank_sigs, max_num_blocks
             )
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
