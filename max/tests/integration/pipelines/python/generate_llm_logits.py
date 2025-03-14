@@ -283,60 +283,6 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
-class ExaonePipelineOracle(PipelineOracle):
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "cpu": ["float32"],
-            "gpu": ["float32"],
-        }
-
-    def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
-    ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            model_path="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            max_length=1024,
-            # TODO(E2EOPT-48): Remove batch size override.
-            max_batch_size=128,
-            trust_remote_code=True,
-        )
-        hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
-
-    def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
-    ) -> TorchModelAndDataProcessor:
-        hf_repo_id = "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision, trust_remote_code=True
-        )
-        model = transformers.AutoModelForCausalLM.from_pretrained(
-            hf_repo_id,
-            revision=revision,
-            config=config,
-            device_map=device,
-            torch_dtype=torch.bfloat16,
-            trust_remote_code=True,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
-
-
 class ReplitPipelineOracle(PipelineOracle):
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -423,55 +369,6 @@ class ReplitPipelineOracle(PipelineOracle):
         return [prompt[:prompt_length_limit] for prompt in super().prompts]
 
 
-class MistralPipelineOracle(PipelineOracle):
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
-    ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            model_path="mistralai/Mistral-Nemo-Instruct-2407",
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            max_length=512,
-        )
-        hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
-
-    def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
-    ) -> TorchModelAndDataProcessor:
-        hf_repo_id = "mistralai/Mistral-Nemo-Instruct-2407"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        model = transformers.AutoModelForCausalLM.from_pretrained(
-            hf_repo_id,
-            revision=revision,
-            config=config,
-            device_map=device,
-            torch_dtype=torch.bfloat16,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
-
-
 class PixtralPipelineOracle(MultiModalPipelineOracle):
     @property
     def prompts(self) -> Sequence[str]:
@@ -532,55 +429,6 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
-class QwenPipelineOracle(PipelineOracle):
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
-    ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            model_path="Qwen/Qwen2.5-7B-Instruct",
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            max_length=512,
-        )
-        hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
-
-    def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
-    ) -> TorchModelAndDataProcessor:
-        hf_repo_id = "Qwen/Qwen2.5-7B-Instruct"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        model = transformers.AutoModelForCausalLM.from_pretrained(
-            hf_repo_id,
-            revision=revision,
-            config=config,
-            device_map=device,
-            torch_dtype=torch.bfloat16,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
-
-
 class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -635,58 +483,6 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
         return evaluate.PROMPTS
 
 
-class OlmoPipelineOracle(PipelineOracle):
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "cpu": ["float32"],
-            "gpu": ["float32"],
-        }
-
-    def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
-    ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            model_path="allenai/OLMo-1B-hf",
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            max_length=1024,
-        )
-        hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
-
-    def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
-    ) -> TorchModelAndDataProcessor:
-        hf_repo_id = "allenai/OLMo-1B-hf"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        assert encoding == "float32"
-        torch_dtype = torch.float32
-        model = transformers.AutoModelForCausalLM.from_pretrained(
-            hf_repo_id,
-            revision=revision,
-            config=config,
-            device_map=device,
-            torch_dtype=torch_dtype,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
-
-
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
@@ -700,12 +496,12 @@ class GenericOracle(PipelineOracle):
         task: interfaces.PipelineTask = interfaces.PipelineTask.TEXT_GENERATION,
     ) -> None:
         self.model_path = model_path
+        self._device_encoding_map = device_encoding_map
         self.config_params = config_params
         self._prompts = prompts
         self.auto_model_cls = auto_model_cls
         self.auto_processor_cls = auto_processor_cls
         self.task = task
-        self._device_encoding_map = device_encoding_map
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -739,7 +535,11 @@ class GenericOracle(PipelineOracle):
     def create_torch_pipeline(
         self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
-        processor = self.auto_processor_cls.from_pretrained(self.model_path)
+        trust_remote_code = self.config_params.get("trust_remote_code", False)
+        processor = self.auto_processor_cls.from_pretrained(
+            self.model_path,
+            trust_remote_code=trust_remote_code,
+        )
         torch_dtype: torch.dtype
         if encoding == "float32":
             torch_dtype = torch.float32
@@ -756,6 +556,7 @@ class GenericOracle(PipelineOracle):
             revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
             device_map=device,
             torch_dtype=torch_dtype,
+            trust_remote_code=trust_remote_code,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
@@ -765,15 +566,35 @@ class GenericOracle(PipelineOracle):
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
-    "olmo": OlmoPipelineOracle(),
-    "exaone": ExaonePipelineOracle(),
+    "olmo": GenericOracle(
+        model_path="allenai/OLMo-1B-hf",
+        config_params={"max_length": 1024},
+        device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
+    ),
+    "exaone": GenericOracle(
+        model_path="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
+        config_params={
+            "max_length": 1024,
+            "max_batch_size": 128,  # TODO(E2EOPT-48): Remove batch size override.
+            "trust_remote_code": True,
+        },
+        device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
+    ),
     "llama3_1": Llama3_1PipelineOracle(),
     "llama3.3-70b": Llama3_3_70BInstructPipelineOracle(),
     "replit": ReplitPipelineOracle(),
-    "mistral": MistralPipelineOracle(),
+    "mistral": GenericOracle(
+        model_path="mistralai/Mistral-Nemo-Instruct-2407",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "llama3-vision": LlamaVisionPipelineOracle(),
     "pixtral": PixtralPipelineOracle(),
-    "qwen": QwenPipelineOracle(),
+    "qwen": GenericOracle(
+        model_path="Qwen/Qwen2.5-7B-Instruct",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "smollm": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
