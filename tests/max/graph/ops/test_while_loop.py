@@ -83,3 +83,30 @@ def test_while_loop_type_check() -> None:
             ops.while_loop(x, pred, body)
         except TypeError as e:
             assert "Results don't match expected types" in str(e)
+
+        graph.output()
+
+    graph._mlir_op.verify()
+
+
+def test_while_loop_with_raising() -> None:
+    with Graph(
+        "while_loop_with_raising", input_types=[TensorType(DType.int32, [])]
+    ) as graph:
+        x = graph.inputs[0]
+        chain = graph._current_chain
+
+        def pred(x):
+            return x < 10
+
+        def body(x):
+            raise Exception("raising")
+
+        try:
+            ops.while_loop(x, pred, body)
+        except Exception as e:
+            assert "raising" in str(e)
+
+        assert graph._current_chain == chain
+        graph.output()
+    graph._mlir_op.verify()

@@ -84,8 +84,9 @@ def cond(
         maintain mutation ordering constraints
     """
     pred = TensorValue(pred)
-    out_types_actual = [t.to_mlir() for t in out_types or []] + [
-        _ChainType().to_mlir()
+    out_types_actual = [
+        *(t.to_mlir() for t in out_types or []),
+        _ChainType().to_mlir(),
     ]
 
     results, if_op = Graph.current._add_op_get_op_with_results(
@@ -95,21 +96,25 @@ def cond(
     out_chain = results[results_len - 1]
     results = results[: results_len - 1]
 
-    Graph.current._build_block(
-        if_op.thenRegion.blocks[0],
-        then_fn,
-        mo.YieldOp,
-        "then_block",
-        out_types,
-    )
+    try:
+        Graph.current._build_block(
+            if_op.thenRegion.blocks[0],
+            then_fn,
+            mo.YieldOp,
+            "then_block",
+            out_types,
+        )
 
-    Graph.current._build_block(
-        if_op.elseRegion.blocks[0],
-        else_fn,
-        mo.YieldOp,
-        "else_block",
-        out_types,
-    )
+        Graph.current._build_block(
+            if_op.elseRegion.blocks[0],
+            else_fn,
+            mo.YieldOp,
+            "else_block",
+            out_types,
+        )
 
-    Graph.current._update_chain(out_chain)
-    return results
+        Graph.current._update_chain(out_chain)
+        return results
+    except Exception as e:
+        if_op.erase()
+        raise e

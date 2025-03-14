@@ -404,13 +404,23 @@ class Graph:
         Note:
             Manages the chain state automatically, restoring the parent chain after
             block construction. The chain is used to track operation ordering.
+
+            It is the caller's responsibility to update the graph chain after
+            the block is built.
         """
         parent_chain = self._current_chain
 
         with self._enter_block(block), self._location():
             expected_output_types = expected_output_types or []
 
-            results = block_fn() or []
+            try:
+                results = block_fn() or []
+                block_result_chain = self._current_chain
+            except Exception as e:
+                raise e
+            finally:
+                self._update_chain(parent_chain)
+
             results = (
                 list(results) if isinstance(results, Iterable) else [results]
             )
@@ -422,10 +432,8 @@ class Graph:
 
             _ = self._add_op(
                 block_terminator_op,
-                results + ([self._current_chain] if add_chain else []),
+                results + ([block_result_chain] if add_chain else []),
             )
-
-        self._update_chain(parent_chain)
 
     def output(self, *outputs: Value) -> None:
         """Sets the output nodes of the :obj:`Graph`."""

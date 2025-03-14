@@ -104,15 +104,6 @@ def while_loop(
     out_types = [arg.type for arg in initial_values]
     out_mlir_types = [t.to_mlir() for t in out_types]
 
-    # Create while loop operation with chain-aware signature
-    # The chain is passed as implicit final operand/result for state management
-    results, while_op = Graph.current._add_op_get_op_with_results(
-        mo.while_, out_mlir_types, initial_values
-    )
-
-    # Separate actual loop results from the execution chain
-    *results, out_chain = results
-
     def wrap_while_block_function(user_func, block_args):
         """Adapts a user-provided loop function to handle execution chain state.
 
@@ -155,27 +146,42 @@ def while_loop(
 
         return chain_aware_wrapper
 
-    pred_block = while_op.condRegion.blocks[0]
-    pred_wrapped_fn = wrap_while_block_function(predicate, pred_block.arguments)
-
-    Graph.current._build_block(
-        pred_block,
-        pred_wrapped_fn,
-        mo.YieldOp,
-        "pred_block",
-        [TensorType(DType.bool, [])],
-        add_chain=False,
+    # Create while loop operation with chain-aware signature
+    # The chain is passed as implicit final operand/result for state management
+    results, while_op = Graph.current._add_op_get_op_with_results(
+        mo.while_, out_mlir_types, initial_values
     )
 
-    body_block = while_op.bodyRegion.blocks[0]
-    body_wrapped_fn = wrap_while_block_function(body, body_block.arguments)
-    Graph.current._build_block(
-        body_block,
-        body_wrapped_fn,
-        mo.YieldOp,
-        "body_block",
-        out_types[:-1],
-    )
+    # Separate actual loop results from the execution chain
+    *results, out_chain = results
 
-    Graph.current._update_chain(out_chain)
-    return results
+    try:
+        pred_block = while_op.condRegion.blocks[0]
+        pred_wrapped_fn = wrap_while_block_function(
+            predicate, pred_block.arguments
+        )
+
+        Graph.current._build_block(
+            pred_block,
+            pred_wrapped_fn,
+            mo.YieldOp,
+            "pred_block",
+            [TensorType(DType.bool, [])],
+            add_chain=False,
+        )
+
+        body_block = while_op.bodyRegion.blocks[0]
+        body_wrapped_fn = wrap_while_block_function(body, body_block.arguments)
+        Graph.current._build_block(
+            body_block,
+            body_wrapped_fn,
+            mo.YieldOp,
+            "body_block",
+            out_types[:-1],
+        )
+
+        Graph.current._update_chain(out_chain)
+        return results
+    except Exception as e:
+        while_op.erase()
+        raise e

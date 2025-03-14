@@ -63,3 +63,28 @@ def test_conditional_type_check() -> None:
             )
         except TypeError as e:
             assert "Results don't match expected types" in str(e)
+
+        graph.output()
+
+    graph._mlir_op.verify()
+
+
+def test_conditional_with_raising() -> None:
+    with Graph("conditional_with_chain", input_types=()) as graph:
+        chain = graph._current_chain
+        cond = ops.constant(True, dtype=DType.bool)
+
+        def then_fn():
+            return
+
+        def else_fn():
+            raise Exception("else")
+
+        try:
+            result = ops.cond(cond, None, then_fn, else_fn)
+        except Exception as e:
+            assert "else" in str(e)
+
+        assert graph._current_chain == chain
+        graph.output()
+    graph._mlir_op.verify()
