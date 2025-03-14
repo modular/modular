@@ -54,7 +54,7 @@ fn is_defined[name: StringLiteral]() -> Bool:
 
 
 fn _is_bool_like[val: StringLiteral]() -> Bool:
-    return StringLiteral.get[val.lower()]() in (
+    return get_string_literal[val.lower()]() in (
         "true",
         "1",
         "on",
@@ -74,7 +74,7 @@ fn env_get_bool[name: StringLiteral]() -> Bool:
     Returns:
         An boolean parameter value.
     """
-    alias val = StringLiteral.get[env_get_string[name]().lower()]()
+    alias val = get_string_literal[env_get_string[name]().lower()]()
 
     constrained[
         _is_bool_like[val](),

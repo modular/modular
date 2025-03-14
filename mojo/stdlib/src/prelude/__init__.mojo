@@ -103,7 +103,7 @@ from builtin.simd import (
 )
 from builtin.sort import partition, sort
 from builtin.str import Stringable, StringableRaising, str
-from builtin.string_literal import StringLiteral
+from builtin.string_literal import StringLiteral, get_string_literal
 from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (

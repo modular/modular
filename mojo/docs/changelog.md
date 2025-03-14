@@ -183,6 +183,9 @@ def main():
 
 will print `var0 is evaluated at compile time, while var1 is evaluated at runtime`.
 
+- The `StringLiteral.get[value]()` method, which converts a compile-time value
+  of `Stringable` type has been renamed to `get_string_literal[value]()`.
+
 ### GPU changes
 
 - You can now skip compiling a GPU kernel first and then enqueueing it:
