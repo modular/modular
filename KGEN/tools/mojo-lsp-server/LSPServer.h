@@ -9,6 +9,7 @@
 
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Support/LogicalResult.h"
+#include <KGEN/Support/CompilerProfiling.h>
 #include <memory>
 
 namespace mlir::lsp {
@@ -21,9 +22,10 @@ class WorkQueue;
 
 namespace M::KGEN::LIT {
 /// Run the main loop using the given transport.
-mlir::LogicalResult runMojoLSPServer(mlir::lsp::JSONTransport &transport,
-                                     bool singleThreaded, bool waitOnShutdown,
-                                     ArrayRef<std::string> includeDirs);
+mlir::LogicalResult
+runMojoLSPServer(mlir::lsp::JSONTransport &transport, bool singleThreaded,
+                 bool waitOnShutdown, ArrayRef<std::string> includeDirs,
+                 std::unique_ptr<KGEN::TraceProfiler> profiler);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_LIB_MOJO_LSP_LSPSERVER_H

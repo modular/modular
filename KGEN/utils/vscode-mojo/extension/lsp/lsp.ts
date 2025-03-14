@@ -48,6 +48,11 @@ export class MojoLSPManager extends DisposableContext {
   async activate() {
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.lsp.restart', async () => {
+        // Wait for the language server to stop. This allows a graceful shutdown of the server instead of simply terminating the process, which is important for tracing.
+        if (this.lspClient) {
+          await this.lspClient.stop();
+        }
+
         this.dispose();
         await this.activate();
       }),
