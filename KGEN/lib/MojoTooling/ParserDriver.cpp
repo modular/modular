@@ -249,6 +249,44 @@ MojoASTDeclRef MojoParserContext::parseFileOrPackageNonRecursive(
   return MojoASTDeclRef(moduleDecl);
 }
 
+MojoASTDeclRef MojoParserContext::parseIsolatedFileOrPackage(
+    const std::filesystem::path &path) {
+  ASTDecl *moduleDecl = buildModuleOrPackageDecl(path, impl->sharedState);
+  if (!moduleDecl) {
+    return nullptr;
+  }
+
+  bool isPackage = isa<PackageOp>(*moduleDecl);
+
+  std::deque<ASTDecl *> worklist({moduleDecl});
+  while (!worklist.empty()) {
+    auto decl = worklist.back();
+    worklist.pop_back();
+
+    if (isPackage) {
+      if (auto parent = decl->getNearestDeclOfType<PackageOp>();
+          parent != moduleDecl)
+        continue;
+    } else {
+      if (auto parent = decl->getNearestDeclOfType<FileModuleOp>();
+          parent != moduleDecl) {
+        continue;
+      }
+    }
+
+    (void)impl->sharedState.declResolver->resolveFully(*decl, SMLoc());
+    for (auto &[_, decls] : decl->getDeclsInScope()) {
+      for (ASTDecl *childDecl : decls) {
+        if (childDecl->getParentDecl() == decl) {
+          worklist.push_front(childDecl);
+        }
+      }
+    }
+  }
+
+  return MojoASTDeclRef(moduleDecl);
+}
+
 bool MojoParserContext::wasErrorEmitted() const {
   return impl->sharedState.diags.isErrorEmitted();
 }

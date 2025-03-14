@@ -137,6 +137,13 @@ public:
   MojoASTDeclRef
   parseFileOrPackageNonRecursive(const std::filesystem::path &path);
 
+  /// Parse a module or package with the given path, without resolving
+  /// "external" decls that originate from other modules/packages.
+  ///
+  /// In the case of success, the corresponding decl is returned.
+  /// In the case of an error, a null decl is returned.
+  MojoASTDeclRef parseIsolatedFileOrPackage(const std::filesystem::path &path);
+
   /// Returns true if an error occurred during parsing.
   bool wasErrorEmitted() const;
 

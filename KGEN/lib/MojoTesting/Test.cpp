@@ -609,7 +609,7 @@ struct Test::TestDiscovery {
     sourceMgr.setIncludeDirs(additionalImportPaths);
     sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &diag, void *) {});
     MojoParserContext parserContext(sourceMgr, parserConfig);
-    MojoASTDeclRef moduleDecl = parserContext.parseFileOrPackage(path);
+    MojoASTDeclRef moduleDecl = parserContext.parseIsolatedFileOrPackage(path);
     if (!moduleDecl || !moduleDecl.getIfOperation())
       return std::nullopt;
 
