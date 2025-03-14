@@ -118,7 +118,7 @@ struct UnsafePointer[
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
     @doc_private
-    @always_inline
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self._mlir_type):
         """Create a pointer from a low-level pointer primitive.
@@ -137,7 +137,7 @@ struct UnsafePointer[
         """
         self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
 
-    @always_inline
+    @always_inline("builtin")
     @implicit
     fn __init__(
         out self, other: UnsafePointer[type, address_space=address_space, **_]
@@ -158,7 +158,7 @@ struct UnsafePointer[
         Returns:
             A copy of the value.
         """
-        return UnsafePointer(self.address)
+        return self
 
     # ===-------------------------------------------------------------------===#
     # Factory methods

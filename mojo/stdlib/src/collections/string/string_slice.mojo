@@ -461,8 +461,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #   Ensure StringLiteral _actually_ always uses UTF-8 encoding.
         self = StaticString(unsafe_from_utf8=lit.as_bytes())
 
-    @always_inline
-    fn __init__(out self, *, owned unsafe_from_utf8: Span[Byte, origin]):
+    @always_inline("builtin")
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, origin]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Args:
@@ -520,7 +520,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var ptr = unsafe_from_utf8_cstr_ptr.bitcast[Byte]()
         self = Self(unsafe_from_utf8_ptr=ptr)
 
-    @always_inline
+    @always_inline("builtin")
     fn __init__(out self, *, ptr: UnsafePointer[Byte], length: UInt):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
         encoded bytes and a length.
