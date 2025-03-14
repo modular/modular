@@ -8,14 +8,23 @@ from __future__ import annotations
 
 import enum
 import os
+import shlex
 import subprocess
 import sys
+import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Sequence, TextIO, Union
 
 import click
+
+# This is far from a universal standard, but this is the closest to a standard
+# that I could find: BSD-derived programs sometimes use exit codes from
+# "sysexits.h", which defines this exit code as "temp failure; user is invited
+# to retry".  generate_llm_logits will emit this if it detects a failure is
+# likely caused by a network flake and could be resolved by a retry.
+EX_TEMPFAIL = 75
 
 
 class DeviceKind(enum.Enum):
@@ -27,6 +36,7 @@ class VerificationVerdict(enum.Enum):
     OK = "ok"
     INVALID = "invalid"
     ERROR = "error"
+    FLAKE = "flake"
 
     @property
     def emoji(self) -> str:
@@ -37,7 +47,15 @@ _VERDICT_EMOJI = {
     VerificationVerdict.OK: "✅",
     VerificationVerdict.INVALID: "🟡",
     VerificationVerdict.ERROR: "❌",
+    VerificationVerdict.FLAKE: "❄️",
 }
+
+
+class Flake(Exception):
+    """A failure has occurred that appears to be of a temporary nature.
+
+    It is likely that retrying the operation would succeed.
+    """
 
 
 def resolve_rlocation(rloc: str) -> Path:
@@ -110,6 +128,33 @@ class TagFilterParamType(click.ParamType):
         return TagFilter(must_have=required, must_not_have=forbidden)
 
 
+def generate_llm_logits_nonretrying(
+    *,
+    framework: str,
+    device: str,
+    pipeline: str,
+    encoding: str,
+    output_path: Path,
+) -> None:
+    """Run :generate_llm_logits to generate logits for a model.
+
+    Do not retry on flake.
+    """
+    proc = subprocess.run(
+        [
+            os.environ["GENERATE_LLM_LOGITS_BIN"],
+            f"--framework={framework}",
+            f"--device={device}",
+            f"--pipeline={pipeline}",
+            f"--encoding={encoding}",
+            f"--output={output_path}",
+        ]
+    )
+    if proc.returncode == EX_TEMPFAIL:
+        raise Flake
+    proc.check_returncode()
+
+
 def generate_llm_logits(
     *,
     framework: str,
@@ -119,18 +164,33 @@ def generate_llm_logits(
     output_path: Path,
 ) -> None:
     """Run :generate_llm_logits to generate logits for a model."""
-    subprocess.run(
-        [
-            os.environ["GENERATE_LLM_LOGITS_BIN"],
-            f"--framework={framework}",
-            f"--device={device}",
-            f"--pipeline={pipeline}",
-            f"--encoding={encoding}",
-            f"--output={output_path}",
-        ],
-        check=True,
-    )
-    pass
+
+    def attempt() -> None:
+        generate_llm_logits_nonretrying(
+            framework=framework,
+            device=device,
+            pipeline=pipeline,
+            encoding=encoding,
+            output_path=output_path,
+        )
+
+    try:
+        attempt()
+    except Flake:
+        print(
+            "generate_llm_logits flaked... waiting a minute and trying again.",
+            file=sys.stderr,
+        )
+        time.sleep(60)
+        print("OK, trying again.", file=sys.stderr)
+        try:
+            attempt()
+        except Flake:
+            print(
+                "Flake remains after second attempt.  Giving up this time.",
+                file=sys.stderr,
+            )
+            raise
 
 
 def run_llm_verification(
@@ -239,6 +299,18 @@ class PipelineDef:
     ) -> VerificationVerdict:
         try:
             return self.run(device_type, devices, print_suggested_tolerances)
+        except Flake:
+            return VerificationVerdict.FLAKE
+        except subprocess.CalledProcessError as exc:
+            # These errors are fairly well-defined and do not usually need a
+            # whole traceback printed.  Printing just the status code and
+            # command line is usually easier to interpret.
+            print(
+                f"Subprocess call failed with exit code {exc.returncode}.",
+                file=sys.stderr,
+            )
+            print(f"Command line was: {shlex.join(exc.cmd)}", file=sys.stderr)
+            return VerificationVerdict.ERROR
         except Exception:
             traceback.print_exc()
             return VerificationVerdict.ERROR
@@ -648,6 +720,12 @@ def main(
     dump_results(verdicts)
 
     if any(v != VerificationVerdict.OK for v in verdicts.values()):
+        if all(
+            v in (VerificationVerdict.OK, VerificationVerdict.FLAKE)
+            for v in verdicts.values()
+        ):
+            # If every failure was a flake, propagate the EX_TEMPFAIL status code onward.
+            sys.exit(EX_TEMPFAIL)
         sys.exit(1)
 
 

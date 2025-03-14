@@ -6,13 +6,16 @@
 
 from __future__ import annotations
 
+import functools
 import os
+import sys
+import traceback
 
 # Standard library
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence, Union
+from typing import Any, Callable, Mapping, Optional, Sequence, TypeVar, Union
 
 # 3rd-party
 import click
@@ -21,6 +24,7 @@ import huggingface_hub
 
 # Tests
 import replit_compat
+import requests
 import torch
 import transformers
 
@@ -37,6 +41,7 @@ from test_common import (
     numpy_encoder,
     torch_utils,
 )
+from typing_extensions import ParamSpec
 
 
 @dataclass
@@ -640,6 +645,56 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
 }
 
 
+# This is far from a universal standard, but this is the closest to a standard
+# that I could find: BSD-derived programs sometimes use exit codes from
+# "sysexits.h", which defines this exit code as "temp failure; user is invited
+# to retry".
+EX_TEMPFAIL = 75
+
+_ParamsT = ParamSpec("_ParamsT")
+_ReturnT = TypeVar("_ReturnT")
+
+
+def _detect_hf_flakes(
+    inner: Callable[_ParamsT, _ReturnT],
+) -> Callable[_ParamsT, _ReturnT]:
+    """Decorator to exit with a distinct status on Hugging Face flake."""
+
+    def is_client_error(exc: requests.RequestException) -> bool:
+        if not isinstance(exc, requests.HTTPError):
+            return False
+        if exc.response is None:
+            return False
+        # 4xx status codes indicate client error.
+        return 400 <= exc.response.status_code < 500
+
+    @functools.wraps(inner)
+    def wrapper(*args, **kwargs):
+        try:
+            return inner(*args, **kwargs)
+        except requests.RequestException as exc:
+            if (
+                exc.request is not None
+                and exc.request.url is not None
+                and "huggingface.co" in exc.request.url
+                and not is_client_error(exc)
+            ):
+                # This is probably a Hugging Face flake.
+                print(
+                    "Seems like a Hugging Face flake has occurred:",
+                    file=sys.stderr,
+                )
+                traceback.print_exc()
+                print(
+                    "-- End of Hugging Face flake traceback --", file=sys.stderr
+                )
+                sys.exit(EX_TEMPFAIL)
+            else:
+                raise
+
+    return wrapper
+
+
 @click.command()
 @click.option(
     "--device",
@@ -683,6 +738,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     default=False,
     help="Dump goldens in non-JSON format to stdout",
 )
+@_detect_hf_flakes
 def main(
     device_type: str,
     framework_name: str,
