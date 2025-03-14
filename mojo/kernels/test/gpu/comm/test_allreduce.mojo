@@ -15,14 +15,7 @@ from utils import IndexList, StaticTuple
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.all_reduce import (
-    MAX_GPUS,
-    MAX_NUM_BLOCKS_DEFAULT,
-    Signal,
-    all_reduce,
-    can_enable_p2p,
-    _all_reduce_naive,
-)
+from gpu.all_reduce import MAX_GPUS, MAX_NUM_BLOCKS_DEFAULT, Signal, all_reduce
 from gpu.all_reduce import elementwise_epilogue_type
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
@@ -129,8 +122,6 @@ fn all_reduce_test[
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    var p2p_enabled = can_enable_p2p(list_of_ctx)
-
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[NDBuffer[type, rank], ngpus](
         NDBuffer[type, rank]()
@@ -159,12 +150,9 @@ fn all_reduce_test[
 
     # Warm up.
     for _ in range(num_warmups):
-        if p2p_enabled:
-            all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
-                list_of_ctx, in_bufs, out_bufs, rank_sigs
-            )
-        else:
-            _all_reduce_naive[max_num_blocks](list_of_ctx, in_bufs, out_bufs)
+        all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+            list_of_ctx, in_bufs, out_bufs, rank_sigs
+        )
 
     # Synchronize all devices.
     @parameter
@@ -176,12 +164,9 @@ fn all_reduce_test[
 
     @parameter
     for _ in range(num_iters):
-        if p2p_enabled:
-            all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
-                list_of_ctx, in_bufs, out_bufs, rank_sigs
-            )
-        else:
-            _all_reduce_naive[max_num_blocks](list_of_ctx, in_bufs, out_bufs)
+        all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+            list_of_ctx, in_bufs, out_bufs, rank_sigs
+        )
 
     # Synchronize all devices.
     @parameter
