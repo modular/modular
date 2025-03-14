@@ -43,13 +43,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
-from gpu.all_reduce import (
-    MAX_GPUS,
-    MAX_NUM_BLOCKS_DEFAULT,
-    Signal,
-    all_reduce,
-    _all_reduce_naive,
-)
+from gpu.all_reduce import MAX_GPUS, MAX_NUM_BLOCKS_DEFAULT, Signal, all_reduce
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
@@ -7832,100 +7826,81 @@ struct Struct_swishGLU:
         )
 
 
+@always_inline
+fn _check_signal_buffer_size[
+    max_num_blocks: Int
+](signal_buffer_size: Int, input_size_bytes: Int) raises:
+    # TODO: expose API in all_reduce.mojo to compute the expected size here.
+    # The signal buffer has to be large enough to hold the entire input buffer.
+    var min_signal_buffer_size = sizeof[
+        Signal[max_num_blocks]
+    ]() + input_size_bytes
+    if signal_buffer_size < min_signal_buffer_size:
+        raise Error(
+            "expected signal buffer to be at least ",
+            min_signal_buffer_size,
+            " bytes, but got ",
+            signal_buffer_size,
+        )
+
+
 @compiler.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
     alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
+    """Controls kernel concurrency."""
 
-    @always_inline
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         target: StringLiteral,
     ](
-        outputs: OutputVariadicTensors[type, rank, *_],
+        outputs: FusedOutputVariadicTensors[type, rank, *_],
         inputs: InputVariadicTensors[type, rank, *_],
+        signal_buffers: MutableInputVariadicTensors[
+            type = DType.uint8, rank=1, *_
+        ],
         dev_ctxs_input: StaticTuple[DeviceContextPtr, *_],
     ) raises:
+        """Distributed allreduce operation implementation for sum reduction.
+
+
+        Args:
+            outputs: Output tensors (one per GPU) to store reduced results.
+            inputs: Input tensors (one per GPU) containing values to reduce.
+            signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Implementation Notes:
+            1. Uses naive reduction implementation when P2P access unavailable.
+            2. Requires input/output buffers to be device-allocated and aligned.
+            3. Signal buffers must be device-allocated and large enough to fit
+               the buffer + signals metadata.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in all_reduce.mojo)
+            - Tensor element count must be multiple of SIMD width (per all_reduce.mojo)
+            - Requires identical tensor shapes across all participating GPUs
+        """
+        alias num_devices = inputs.size
+        constrained[
+            signal_buffers.size == num_devices and outputs.size == num_devices,
+            (
+                "expected allreduce inputs, outputs, and signal buffers to all"
+                " have the same number of elements"
+            ),
+        ]()
+
+        var input_size_bytes = inputs[0].size() * sizeof[type]()
+        _check_signal_buffer_size[Self.max_num_blocks](
+            signal_buffers[0].size(), input_size_bytes
+        )
+
         var dev_ctxs = List[DeviceContext]()
         for i in range(len(dev_ctxs_input)):
             dev_ctxs.append(dev_ctxs_input[i][])
 
         # Marshal input and output variadic tensors into the expected format.
-        alias ngpus = inputs.size
-        var in_bufs = InlineArray[NDBuffer[type, rank], size=ngpus](
-            managed_tensor_slice_to_ndbuffer(inputs[0])
-        )
-
-        @parameter
-        for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
-
-        var out_bufs = InlineArray[NDBuffer[type, rank], size=ngpus](
-            managed_tensor_slice_to_ndbuffer(outputs[0])
-        )
-
-        @parameter
-        for i in range(outputs.size):
-            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-
-        _all_reduce_naive[max_num_blocks = Self.max_num_blocks](
-            dev_ctxs, in_bufs, out_bufs
-        )
-
-
-@always_inline
-fn _check_signal_buffer_size[
-    max_num_blocks: Int
-](
-    signal_buffer: InputTensor[type = DType.uint8, rank=1],
-    input_size_bytes: Int,
-) raises:
-    # The signal buffer has to be large enough to hold the entire input buffer.
-    var min_signal_buffer_size = sizeof[
-        Signal[max_num_blocks]
-    ]() + input_size_bytes
-    if signal_buffer.size() < min_signal_buffer_size:
-        raise Error(
-            "expected signal buffer to be at least ",
-            min_signal_buffer_size,
-            " bytes, but got ",
-            signal_buffer.size(),
-        )
-
-
-@compiler.register("mo.distributed.allreduce.1gpu.sum")
-struct DistributedAllReduceSum1Devices:
-    alias num_devices = 1
-    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
-
-    @staticmethod
-    fn execute[
-        type: DType,
-        rank: Int,
-        target: StringLiteral,
-    ](
-        outputs: FusedOutputVariadicTensors[type, rank, *_],
-        signal_buffer0: InputTensor[type = DType.uint8, rank=1],
-        inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
-        _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
-        ctx: DeviceContextPtr,
-    ) raises:
-        var input_size_bytes = inputs[0].size() * sizeof[type]()
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer0, input_size_bytes
-        )
-
-        var dev_ctxs = List[DeviceContext](_dev_ctxs[0][])
-
-        var out_bufs = InlineArray[NDBuffer[type, rank], Self.num_devices](
-            NDBuffer[type, rank]()
-        )
-
-        @parameter
-        for i in range(Self.num_devices):
-            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-
         var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
             NDBuffer[type, rank]()
         )
@@ -7934,12 +7909,23 @@ struct DistributedAllReduceSum1Devices:
         for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
+        var out_bufs = InlineArray[NDBuffer[type, rank], num_devices](
+            NDBuffer[type, rank]()
+        )
+
+        @parameter
+        for i in range(num_devices):
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
+
         var rank_sigs = InlineArray[
             UnsafePointer[Signal[Self.max_num_blocks]], MAX_GPUS
         ](UnsafePointer[Signal[Self.max_num_blocks]]())
-        rank_sigs[0] = signal_buffer0._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[
+                Signal[Self.max_num_blocks]
+            ]()
 
         @always_inline
         @parameter
@@ -7952,309 +7938,13 @@ struct DistributedAllReduceSum1Devices:
             _alignment: Int,
         ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
             constrained[
-                input_index < Self.num_devices, "tensor index out of bounds"
+                input_index < num_devices, "tensor index out of bounds"
             ]()
             return outputs[input_index]._lambda_store[
                 width=_width, element_alignment=_alignment
             ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
 
-        all_reduce[ngpus = Self.num_devices, outputs_lambda=outputs_lambda](
-            dev_ctxs, in_bufs, out_bufs, rank_sigs
-        )
-
-
-@compiler.register("mo.distributed.allreduce.2gpu.sum")
-struct DistributedAllReduceSum2Devices:
-    alias num_devices = 2
-    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
-
-    @staticmethod
-    fn execute[
-        type: DType,
-        rank: Int,
-        target: StringLiteral,
-    ](
-        outputs: FusedOutputVariadicTensors[type, rank, *_],
-        signal_buffer0: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer1: InputTensor[type = DType.uint8, rank=1],
-        inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
-        _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
-        ctx: DeviceContextPtr,
-    ) raises:
-        var input_size_bytes = inputs[0].size() * sizeof[type]()
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer0, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer1, input_size_bytes
-        )
-
-        var dev_ctxs = List[DeviceContext](_dev_ctxs[0][], _dev_ctxs[1][])
-
-        var out_bufs = InlineArray[NDBuffer[type, rank], Self.num_devices](
-            NDBuffer[type, rank]()
-        )
-
-        @parameter
-        for i in range(Self.num_devices):
-            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-
-        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
-            NDBuffer[type, rank]()
-        )
-
-        @parameter
-        for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
-
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal[Self.max_num_blocks]], MAX_GPUS
-        ](UnsafePointer[Signal[Self.max_num_blocks]]())
-        rank_sigs[0] = signal_buffer0._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[1] = signal_buffer1._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-
-        @always_inline
-        @parameter
-        fn outputs_lambda[
-            input_index: Int,
-            _type: DType,
-            _rank: Int,
-            _width: Int,
-            *,
-            _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
-            constrained[
-                input_index < Self.num_devices, "tensor index out of bounds"
-            ]()
-            return outputs[input_index]._lambda_store[
-                width=_width, element_alignment=_alignment
-            ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
-
-        all_reduce[ngpus = Self.num_devices, outputs_lambda=outputs_lambda](
-            dev_ctxs, in_bufs, out_bufs, rank_sigs
-        )
-
-
-@compiler.register("mo.distributed.allreduce.4gpu.sum")
-struct DistributedAllReduceSum4Devices:
-    alias num_devices = 4
-    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
-
-    @staticmethod
-    fn execute[
-        type: DType,
-        rank: Int,
-        target: StringLiteral,
-    ](
-        outputs: FusedOutputVariadicTensors[type, rank, *_],
-        signal_buffer0: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer1: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer2: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer3: InputTensor[type = DType.uint8, rank=1],
-        inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
-        _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
-        ctx: DeviceContextPtr,
-    ) raises:
-        var input_size_bytes = inputs[0].size() * sizeof[type]()
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer0, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer1, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer2, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer3, input_size_bytes
-        )
-
-        var dev_ctxs = List[DeviceContext](
-            _dev_ctxs[0][], _dev_ctxs[1][], _dev_ctxs[2][], _dev_ctxs[3][]
-        )
-
-        var out_bufs = InlineArray[NDBuffer[type, rank], Self.num_devices](
-            NDBuffer[type, rank]()
-        )
-
-        @parameter
-        for i in range(Self.num_devices):
-            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-
-        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
-            NDBuffer[type, rank]()
-        )
-
-        @parameter
-        for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
-
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal[Self.max_num_blocks]], MAX_GPUS
-        ](UnsafePointer[Signal[Self.max_num_blocks]]())
-        rank_sigs[0] = signal_buffer0._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[1] = signal_buffer1._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[2] = signal_buffer2._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[3] = signal_buffer3._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-
-        @always_inline
-        @parameter
-        fn outputs_lambda[
-            input_index: Int,
-            _type: DType,
-            _rank: Int,
-            _width: Int,
-            *,
-            _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
-            constrained[
-                input_index < Self.num_devices, "tensor index out of bounds"
-            ]()
-            return outputs[input_index]._lambda_store[
-                width=_width, element_alignment=_alignment
-            ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
-
-        all_reduce[ngpus = Self.num_devices, outputs_lambda=outputs_lambda](
-            dev_ctxs, in_bufs, out_bufs, rank_sigs
-        )
-
-
-@compiler.register("mo.distributed.allreduce.8gpu.sum")
-struct DistributedAllReduceSum8Devices:
-    alias num_devices = 8
-    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
-
-    @staticmethod
-    @always_inline
-    fn execute[
-        type: DType,
-        rank: Int,
-        target: StringLiteral,
-    ](
-        outputs: FusedOutputVariadicTensors[type, rank, *_],
-        signal_buffer0: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer1: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer2: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer3: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer4: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer5: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer6: InputTensor[type = DType.uint8, rank=1],
-        signal_buffer7: InputTensor[type = DType.uint8, rank=1],
-        inputs: InputVariadicTensors[type, rank, size = Self.num_devices],
-        _dev_ctxs: StaticTuple[DeviceContextPtr, Self.num_devices],
-        ctx: DeviceContextPtr,
-    ) raises:
-        var input_size_bytes = inputs[0].size() * sizeof[type]()
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer0, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer1, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer2, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer3, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer4, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer5, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer6, input_size_bytes
-        )
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffer7, input_size_bytes
-        )
-
-        var dev_ctxs = List[DeviceContext](
-            _dev_ctxs[0][],
-            _dev_ctxs[1][],
-            _dev_ctxs[2][],
-            _dev_ctxs[3][],
-            _dev_ctxs[4][],
-            _dev_ctxs[5][],
-            _dev_ctxs[6][],
-            _dev_ctxs[7][],
-        )
-
-        var out_bufs = InlineArray[NDBuffer[type, rank], Self.num_devices](
-            NDBuffer[type, rank]()
-        )
-
-        @parameter
-        for i in range(Self.num_devices):
-            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-
-        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
-            NDBuffer[type, rank]()
-        )
-
-        @parameter
-        for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
-
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal[Self.max_num_blocks]], MAX_GPUS
-        ](UnsafePointer[Signal[Self.max_num_blocks]]())
-        rank_sigs[0] = signal_buffer0._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[1] = signal_buffer1._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[2] = signal_buffer2._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[3] = signal_buffer3._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[4] = signal_buffer0._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[5] = signal_buffer1._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[6] = signal_buffer2._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-        rank_sigs[7] = signal_buffer3._ptr.bitcast[
-            Signal[Self.max_num_blocks]
-        ]()
-
-        @always_inline
-        @parameter
-        fn outputs_lambda[
-            input_index: Int,
-            _type: DType,
-            _rank: Int,
-            _width: Int,
-            *,
-            _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
-            constrained[
-                input_index < Self.num_devices, "tensor index out of bounds"
-            ]()
-            return outputs[input_index]._lambda_store[
-                width=_width, element_alignment=_alignment
-            ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
-
-        all_reduce[ngpus = Self.num_devices, outputs_lambda=outputs_lambda](
+        all_reduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
             dev_ctxs, in_bufs, out_bufs, rank_sigs
         )
 
