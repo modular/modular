@@ -64,3 +64,23 @@ def if_(  # type: ignore[no-redef]
         # mypy doesn't see the IfOp definition above, but the one that is replaced
         IfOp(pred=pred, out_types=out_types, loc=loc, ip=ip)  # type: ignore[call-arg]
     )
+
+
+@_ods_common._cext.register_operation(_Dialect, replace=True)
+class WhileOp(WhileOp):  # type: ignore[no-redef]
+    """Extends mo.while op with simpler builders."""
+
+    def __init__(self, results_, inputs, *, loc=None, ip=None):
+        if results_ is None:
+            results_ = []
+        super().__init__(results_=results_, inputs=inputs, loc=loc, ip=ip)
+        Block.create_at_start(self.condRegion, results_)
+        Block.create_at_start(self.bodyRegion, results_)
+
+
+def while_(  # type: ignore[no-redef]
+    results_, inputs, *, loc=None, ip=None
+) -> _ods_common.VariadicResultValueT:
+    return _ods_common.get_op_result_or_op_results(
+        WhileOp(results_=results_, inputs=inputs, loc=loc, ip=ip)
+    )
