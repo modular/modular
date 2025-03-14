@@ -177,6 +177,17 @@ public:
   ErrorOrSuccess doExecute(const LSPServerStdioFiles &ioFiles,
                            StringRef lspServerPath);
 
+  /// Append an arbitrary request to the server input stream. The response will
+  /// not be capturable.
+  ///
+  /// This is used to support replaying recorded LSP sessions.
+  void replayRequest(StringRef method, const llvm::json::Value &params);
+
+  /// Append an arbitrary notification to the server input stream.
+  ///
+  /// This is used to support replaying recorded LSP sessions.
+  void replayNotification(StringRef method, const llvm::json::Value &params);
+
   /// Create a single JSON input for the server, then parse the response and
   /// invoke the corresponding response callbacks.
   ///

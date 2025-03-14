@@ -222,6 +222,11 @@ ErrorOrSuccess LSPBatchClient::dispatchResponse(StringRef json) {
       if (std::optional<int64_t> id = obj->getInteger("id")) {
         auto it = requestHandlers.find(*id);
 
+        // There may not be a response handler for replayed requests, which
+        // don't try to capture responses for analysis.
+        if (it == requestHandlers.end())
+          return success();
+
         // The request may have errored.
         if (auto err = obj->get("error")) {
           // If there's an error from the response handler, it's probably a
@@ -323,6 +328,17 @@ LSPBatchClient &LSPBatchClient::onDiagnostics(const Document &doc,
   return *this;
 }
 
+void LSPBatchClient::replayRequest(StringRef method,
+                                   const llvm::json::Value &params) {
+  RequestId id = requestId++;
+  appendJSONRequest(id, method, params);
+}
+
+void LSPBatchClient::replayNotification(StringRef method,
+                                        const llvm::json::Value &params) {
+  notify(method, params);
+}
+
 ErrorOrSuccess LSPBatchClient::doExecute(const LSPServerStdioFiles &ioFiles,
                                          StringRef lspServerPath) {
   appendShutdownAndExit();
@@ -399,9 +415,9 @@ LSPBatchClient::ExecutionResult LSPBatchClient::execute() {
   LSPBatchClient::ExecutionResult result;
   if (auto err = doExecute(ioFiles, lspServerPath)) {
     result.err = std::move(err);
-    result.serverIOFiles = std::move(ioFiles);
   }
   onExecuteCallback(result);
+  result.serverIOFiles = std::move(ioFiles);
   return result;
 }
 
