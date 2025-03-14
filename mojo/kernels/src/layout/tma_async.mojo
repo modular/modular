@@ -1175,3 +1175,91 @@ def create_tma_tile[
                 __desc_layout.shape[2].value(),
             ),
         )
+
+
+@value
+@register_passable("trivial")
+struct TMATensorTileArray[
+    num_of_tensormaps: Int,
+    dtype: DType,
+    cta_tile_layout: Layout,
+    desc_layout: Layout,
+]:
+    """An array of TMA descripotr.
+
+    Parameters:
+        num_of_tensormaps: Int
+            The number of TMA descriptors aka tensor map.
+        dtype: DType
+            The data type of the tensor elements.
+        cta_tile_layout: Layout
+            The layout of the tile in shared memory, typically specified as row_major.
+        desc_layout: Layout
+            The layout of the descriptor, which can be different from the shared memory layout
+            to accommodate hardware requirements like WGMMA.
+    """
+
+    var tensormaps: StaticTuple[
+        UnsafePointer[TMATensorTile[dtype, cta_tile_layout, desc_layout],],
+        num_of_tensormaps,
+    ]
+
+    @always_inline
+    fn __init__(
+        out self,
+        ctx: DeviceContext,
+        tensormaps_device: DeviceBuffer[DType.uint8],
+        template_tma_tensormap: Optional[
+            TMATensorTile[dtype, cta_tile_layout, desc_layout]
+        ],
+    ) raises:
+        """
+        Initializes a new TMATensorTileArray.
+
+        Args:
+            ctx: Device context.
+            tensormaps_device: Device buffer to store TMA descriptors.
+            template_tma_tensormap: TMA desctripor tempalate.
+        """
+        self.tensormaps = StaticTuple[
+            UnsafePointer[TMATensorTile[dtype, cta_tile_layout, desc_layout]],
+            num_of_tensormaps,
+        ]()
+        # initialize with a template tensor map if provided
+        if template_tma_tensormap:
+            var tensormaps_host_ptr = stack_allocation[
+                num_of_tensormaps * 128, UInt8
+            ]()
+
+            @parameter
+            for i in range(num_of_tensormaps):
+                for j in range(128):
+                    tensormaps_host_ptr[
+                        i * 128 + j
+                    ] = template_tma_tensormap.value().descriptor.data[j]
+            ctx.enqueue_copy(tensormaps_device, tensormaps_host_ptr)
+
+        tensormaps_device_ptr = tensormaps_device.unsafe_ptr()
+
+        @parameter
+        for i in range(num_of_tensormaps):
+            self.tensormaps[i] = UnsafePointer[Scalar[DType.uint8]](
+                tensormaps_device_ptr + i * 128
+            ).bitcast[TMATensorTile[dtype, cta_tile_layout, desc_layout]]()
+
+    @always_inline
+    fn __getitem__(
+        self,
+        index: Int,
+        out result: UnsafePointer[
+            TMATensorTile[dtype, cta_tile_layout, desc_layout]
+        ],
+    ):
+        """
+        Retrieve a TMA descriptor.
+
+        Args:
+            index: Index of the TMA descritpor.
+        """
+
+        return self.tensormaps[index]
