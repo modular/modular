@@ -1939,7 +1939,7 @@ static void printClosureInitOpValue(OpAsmPrinter &p, Operation *op,
   printVarDeclType(p, op, resultType, originDecl);
 }
 
-void ClosureInitOp::walkDefinitions(
+void LIT::ClosureInitOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
   walkDef(getParamDecl(), ParamDefValue());
 }
