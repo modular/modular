@@ -5,7 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from tensor import ManagedTensorSlice, MutableInputTensor
+from tensor import ManagedTensorSlice
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputTensor as MutableInputTensor,
+)
 
 
 @compiler.register("mutable_test_op")

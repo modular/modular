@@ -7,7 +7,10 @@
 
 from register import *
 from compiler_internal import register
-from tensor_internal import MutableInputVariadicTensors, OutputTensor
+from tensor_internal import OutputTensor
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputVariadicTensors as MutableInputVariadicTensors,
+)
 
 from utils.index import IndexList
 
