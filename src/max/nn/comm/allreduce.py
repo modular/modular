@@ -58,34 +58,19 @@ class Allreduce(Module):
         self.devices = [Accelerator(id=id) for id in range(num_accelerators)]
 
     def __call__(
-        self,
-        inputs: Iterable[TensorValue],
-        signal_buffers: list[BufferValue] | None = None,
+        self, inputs: Iterable[TensorValue], signal_buffers: list[BufferValue]
     ) -> list[TensorValue]:
         """Performs allreduce operation with automatic implementation selection.
 
         Args:
             inputs: Distributed tensor values to reduce
             signal_buffers: Buffers for peer-to-peer communication when using
-                optimized allreduce. Required if devices have p2p access.
+                optimized allreduce.
 
         Returns:
             List of reduced tensors, one per device
-
-        Raises:
-            ValueError: If p2p-optimized path is requested without signal buffers
         """
-        # Convert inputs to a list for consistency
-        inputs_list = list(inputs)
-
-        if len(self.devices) > 1 and self._p2p_available():
-            if not signal_buffers:
-                raise ValueError(
-                    "Signal buffers required for p2p-optimized allreduce"
-                )
-            return ops.allreduce.sum(inputs_list, signal_buffers)
-
-        return ops.allreduce.sum_naive(inputs_list)
+        return ops.allreduce.sum(inputs, signal_buffers)
 
     def _p2p_available(self) -> bool:
         """Check if peer-to-peer communication is available between devices."""
