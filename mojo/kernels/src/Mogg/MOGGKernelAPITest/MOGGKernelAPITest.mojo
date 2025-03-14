@@ -29,20 +29,10 @@ from tensor_internal import (
 from tensor_internal import IOUnknown
 from tensor_internal.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedInputTensor as FusedInputTensor,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedOutputTensor as FusedOutputTensor,
-)
-from tensor_internal.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedInputVariadicTensors as FusedInputVariadicTensors,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
 )
 
@@ -376,13 +366,12 @@ struct PrintTensorSpecFusedOp:
 
 
 @compiler.register("imposter_add_elementwise")
-@compiler.elementwise
 struct AddElementwise:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](z: OutputTensor, x: InputTensor, y: InputTensor) raises:
+    ](z: FusedOutputTensor, x: FusedInputTensor, y: FusedInputTensor) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
@@ -941,13 +930,12 @@ struct VariadicDeviceContext:
 
 
 @compiler.register("imposter_cast_elementwise")
-@compiler.elementwise
 struct CastElementwise:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -959,13 +947,12 @@ struct CastElementwise:
 
 
 @compiler.register("print_vector_size")
-@compiler.elementwise
 struct PrintVectorSize:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:

@@ -198,20 +198,10 @@ from tensor_internal import (
 
 from tensor_internal.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedInputTensor as FusedInputTensor,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedOutputTensor as FusedOutputTensor,
-)
-from tensor_internal.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedInputVariadicTensors as FusedInputVariadicTensors,
-)
-from tensor_internal.managed_tensor_slice import (
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
 )
 
@@ -760,15 +750,14 @@ struct Range:
 
 # useful for testing --> identity op that simply copies input into output
 @compiler.register("copy")
-@compiler.elementwise
 struct Copy:
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
     ](
-        output: OutputTensor[type=type, rank=rank],
-        input: InputTensor[type=type, rank=rank],
+        output: FusedOutputTensor[type=type, rank=rank],
+        input: FusedInputTensor[type=type, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -780,7 +769,6 @@ struct Copy:
 
 
 @compiler.register("mo.add")
-@compiler.elementwise
 struct Add:
     @staticmethod
     fn execute[
@@ -788,7 +776,10 @@ struct Add:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -806,7 +797,6 @@ struct Add:
 
 
 @compiler.register("mo.sub")
-@compiler.elementwise
 struct Sub:
     @staticmethod
     fn execute[
@@ -814,7 +804,10 @@ struct Sub:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -832,7 +825,6 @@ struct Sub:
 
 
 @compiler.register("mo.mul")
-@compiler.elementwise
 struct Mul:
     @staticmethod
     fn execute[
@@ -840,7 +832,10 @@ struct Mul:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -858,7 +853,6 @@ struct Mul:
 
 
 @compiler.register("mo.div")
-@compiler.elementwise
 struct Div:
     @staticmethod
     fn execute[
@@ -866,7 +860,10 @@ struct Div:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -884,7 +881,6 @@ struct Div:
 
 
 @compiler.register("mo.mod")
-@compiler.elementwise
 struct Mod:
     @staticmethod
     fn execute[
@@ -892,7 +888,10 @@ struct Mod:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -910,7 +909,6 @@ struct Mod:
 
 
 @compiler.register("mo.equal")
-@compiler.elementwise
 struct Equal:
     @staticmethod
     fn execute[
@@ -918,7 +916,10 @@ struct Equal:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -936,7 +937,6 @@ struct Equal:
 
 
 @compiler.register("mo.greater")
-@compiler.elementwise
 struct Greater:
     @staticmethod
     fn execute[
@@ -944,7 +944,10 @@ struct Greater:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -962,7 +965,6 @@ struct Greater:
 
 
 @compiler.register("mo.greater_equal")
-@compiler.elementwise
 struct GreaterEqual:
     @staticmethod
     fn execute[
@@ -970,7 +972,10 @@ struct GreaterEqual:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -988,7 +993,6 @@ struct GreaterEqual:
 
 
 @compiler.register("mo.not_equal")
-@compiler.elementwise
 struct NotEqual:
     @staticmethod
     fn execute[
@@ -996,7 +1000,10 @@ struct NotEqual:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -1014,7 +1021,6 @@ struct NotEqual:
 
 
 @compiler.register("mo.and")
-@compiler.elementwise
 struct And:
     @staticmethod
     fn execute[
@@ -1022,7 +1028,10 @@ struct And:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -1040,7 +1049,6 @@ struct And:
 
 
 @compiler.register("mo.or")
-@compiler.elementwise
 struct Or:
     @staticmethod
     fn execute[
@@ -1048,7 +1056,10 @@ struct Or:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -1066,7 +1077,6 @@ struct Or:
 
 
 @compiler.register("mo.xor")
-@compiler.elementwise
 struct Xor:
     @staticmethod
     fn execute[
@@ -1074,7 +1084,10 @@ struct Xor:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -1092,7 +1105,6 @@ struct Xor:
 
 
 @compiler.register("mo.pow")
-@compiler.elementwise
 struct Pow:
     @staticmethod
     fn execute[
@@ -1100,7 +1112,10 @@ struct Pow:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -1118,7 +1133,6 @@ struct Pow:
 
 
 @compiler.register("mo.max")
-@compiler.elementwise
 struct Max:
     @staticmethod
     fn execute[
@@ -1126,7 +1140,10 @@ struct Max:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -1144,7 +1161,6 @@ struct Max:
 
 
 @compiler.register("mo.min")
-@compiler.elementwise
 struct Min:
     @staticmethod
     fn execute[
@@ -1152,7 +1168,10 @@ struct Min:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        z: OutputTensor, x: InputTensor, y: InputTensor, ctx: DeviceContextPtr
+        z: FusedOutputTensor,
+        x: FusedInputTensor,
+        y: FusedInputTensor,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -1175,14 +1194,13 @@ struct Min:
 
 
 @compiler.register("mo.cast")
-@compiler.elementwise
 struct Cast:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1198,14 +1216,13 @@ struct Cast:
 
 
 @compiler.register("mo.negative")
-@compiler.elementwise
 struct Negative:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1220,14 +1237,13 @@ struct Negative:
 
 
 @compiler.register("mo.relu")
-@compiler.elementwise
 struct ReLU:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1242,14 +1258,13 @@ struct ReLU:
 
 
 @compiler.register("mo.gelu")
-@compiler.elementwise
 struct GeLU:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1264,14 +1279,13 @@ struct GeLU:
 
 
 @compiler.register("mo.ceil")
-@compiler.elementwise
 struct Ceil:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1286,14 +1300,13 @@ struct Ceil:
 
 
 @compiler.register("mo.floor")
-@compiler.elementwise
 struct Floor:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1308,14 +1321,13 @@ struct Floor:
 
 
 @compiler.register("mo.tanh")
-@compiler.elementwise
 struct Tanh:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1330,14 +1342,13 @@ struct Tanh:
 
 
 @compiler.register("mo.cos")
-@compiler.elementwise
 struct Cos:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1352,14 +1363,13 @@ struct Cos:
 
 
 @compiler.register("mo.sin")
-@compiler.elementwise
 struct Sin:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1374,14 +1384,13 @@ struct Sin:
 
 
 @compiler.register("mo.erf")
-@compiler.elementwise
 struct Erf:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1396,14 +1405,13 @@ struct Erf:
 
 
 @compiler.register("mo.exp")
-@compiler.elementwise
 struct Exp:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1418,14 +1426,13 @@ struct Exp:
 
 
 @compiler.register("mo.round")
-@compiler.elementwise
 struct Round:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1440,14 +1447,13 @@ struct Round:
 
 
 @compiler.register("mo.sqrt")
-@compiler.elementwise
 struct Sqrt:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1462,14 +1468,13 @@ struct Sqrt:
 
 
 @compiler.register("mo.isqrt")
-@compiler.elementwise
 struct Isqrt:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1484,7 +1489,6 @@ struct Isqrt:
 
 
 @compiler.register("mo.select")
-@compiler.elementwise
 struct Select:
     @staticmethod
     fn execute[
@@ -1492,10 +1496,10 @@ struct Select:
         _synchronous: Bool,
         _trace_name: StringLiteral,
     ](
-        out: OutputTensor,
-        condition: InputTensor,
-        true_case: InputTensor,
-        false_case: InputTensor,
+        out: FusedOutputTensor,
+        condition: FusedInputTensor,
+        true_case: FusedInputTensor,
+        false_case: FusedInputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -1519,14 +1523,13 @@ struct Select:
 
 
 @compiler.register("mo.trunc")
-@compiler.elementwise
 struct Trunc:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1546,14 +1549,13 @@ struct Trunc:
 
 
 @compiler.register("mo.log")
-@compiler.elementwise
 struct Log:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1568,14 +1570,13 @@ struct Log:
 
 
 @compiler.register("mo.log1p")
-@compiler.elementwise
 struct Log1p:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1590,14 +1591,13 @@ struct Log1p:
 
 
 @compiler.register("mo.is_nan")
-@compiler.elementwise
 struct IsNan:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1612,14 +1612,13 @@ struct IsNan:
 
 
 @compiler.register("mo.is_inf")
-@compiler.elementwise
 struct IsInf:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1634,14 +1633,13 @@ struct IsInf:
 
 
 @compiler.register("mo.not")
-@compiler.elementwise
 struct Not:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1657,14 +1655,13 @@ struct Not:
 
 
 @compiler.register("mo.abs")
-@compiler.elementwise
 struct Abs:
     @staticmethod
     fn execute[
         target: StringLiteral,
         _synchronous: Bool,
         _trace_name: StringLiteral,
-    ](y: OutputTensor, x: InputTensor, ctx: DeviceContextPtr) raises:
+    ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
         fn func[width: Int](idx: IndexList[y.rank]) -> SIMD[y.type, width]:
@@ -1679,7 +1676,6 @@ struct Abs:
 
 
 @compiler.register("mo.squeeze_shape")
-@compiler.elementwise
 struct SqueezeShape:
     @staticmethod
     fn execute[
@@ -1688,9 +1684,9 @@ struct SqueezeShape:
         type: DType,
         indices_type: DType,
     ](
-        output_shape: OutputTensor[type=type, rank=1],
-        input_shape: InputTensor[type=type, rank=1],
-        remove_indices: InputTensor[type=indices_type, rank=1],
+        output_shape: FusedOutputTensor[type=type, rank=1],
+        input_shape: FusedInputTensor[type=type, rank=1],
+        remove_indices: FusedInputTensor[type=indices_type, rank=1],
     ):
         # remove_indices may not be sorted so our strategy is to use -1 to
         # represent removed dimensions in a copied version of our input shape buffer
@@ -1749,7 +1745,6 @@ struct SqueezeShape:
 
 
 @compiler.register("mo.unsqueeze_shape")
-@compiler.elementwise
 struct UnsqueezeShape:
     @staticmethod
     fn execute[
@@ -1758,9 +1753,9 @@ struct UnsqueezeShape:
         type: DType,
         indices_type: DType,
     ](
-        output_shape: OutputTensor[type=type, rank=1],
-        input_shape: InputTensor[type=type, rank=1],
-        padding_indices: InputTensor[type=indices_type, rank=1],
+        output_shape: FusedOutputTensor[type=type, rank=1],
+        input_shape: FusedInputTensor[type=type, rank=1],
+        padding_indices: FusedInputTensor[type=indices_type, rank=1],
     ):
         # represent uninitialized dimensions, add the padding dimensions, and copy
         # over the remaining dimensions later.
