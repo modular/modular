@@ -188,15 +188,10 @@ from tensor_internal import (
     DynamicTensor,
     ManagedTensorSlice,
     InputTensor,
-    MutableInputTensor,
     OutputTensor,
-    FusedInputTensor,
-    FusedOutputTensor,
     VariadicTensors,
     InputVariadicTensors,
     OutputVariadicTensors,
-    FusedInputVariadicTensors,
-    FusedOutputVariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
@@ -206,6 +201,26 @@ from tensor_internal import (
     IOSpec,
     IOUnknown,
 )
+
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputTensor as MutableInputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedInputTensor as FusedInputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedOutputTensor as FusedOutputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputVariadicTensors as MutableInputVariadicTensors,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedInputVariadicTensors as FusedInputVariadicTensors,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
+)
+
 from tensor_internal.io_spec import IO
 from tensor_internal.managed_tensor_slice import get_kernel_simd_width
 
