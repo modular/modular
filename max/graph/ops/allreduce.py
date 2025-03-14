@@ -27,73 +27,6 @@ def sum(
     The result is then broadcasted back to the same devices that the inputs
     came from.
 
-    Args:
-        inputs: The input tensors to reduce.
-        signal_buffers: Device buffer values used for synchronization.
-
-    Returns:
-        An iterable outputs which all hold the reduction output.
-    """
-    # Convert `inputs` to list since we'll iterate over it twice.
-    inputs = list(inputs)
-
-    shape = None
-    devices = []
-
-    for input in inputs:
-        if not shape:
-            shape = input.shape
-        if input.shape != shape:
-            msg = (
-                "allreduce.sum operation must have the same shape across all"
-                " input tensors."
-            )
-            raise ValueError(msg)
-        if not input.device:
-            msg = (
-                f"allreduce.sum operation input = {input} needs to have an"
-                " explicit device."
-            )
-            raise ValueError(msg)
-        if input.device in devices:
-            msg = (
-                "allreduce.sum operation must have unique devices across its"
-                " input tensors."
-            )
-            raise ValueError(msg)
-        devices.append(input.device)
-
-    if len(devices) not in {1, 2, 4, 8}:
-        msg = f"allreduce sum only supports 1, 2, 4, or 8 devices, but got {len(devices)}"
-        raise ValueError(msg)
-
-    # Map from the number of devices to a fixed-num-devices allreduce kernel.
-    allreduce_op = {
-        1: mo.distributed_allreduce_1gpu_sum,
-        2: mo.distributed_allreduce_2gpu_sum,
-        4: mo.distributed_allreduce_4gpu_sum,
-        8: mo.distributed_allreduce_8gpu_sum,
-    }[len(devices)]
-
-    results = Graph.current._add_op(
-        allreduce_op,
-        *[x.type.to_mlir() for x in inputs],
-        *signal_buffers,
-        inputs,
-    )
-    return [res.tensor for res in results]
-
-
-def sum_naive(inputs: Iterable[TensorValue]) -> list[TensorValue]:
-    """Collective allreduce summation operation.
-
-    This op is a collective op which takes in tensors from different devices and
-    outputs tensors on different devices.
-    In particular, this operation will gather the inputs across different
-    devices and reduce them via a summation operation.
-    The result is then broadcasted back to the same devices that the inputs
-    came from.
-
     This version of the allreduce sum op uses device-to-device transfers and
     hence is expected to be much slower than the :obj:`ops.allreduce.sum` version.
 
@@ -106,6 +39,13 @@ def sum_naive(inputs: Iterable[TensorValue]) -> list[TensorValue]:
     """
     # Convert `inputs` to list since we'll iterate over it twice.
     inputs = list(inputs)
+    signal_buffers = list(signal_buffers)
+    if len(inputs) != len(signal_buffers):
+        msg = (
+            f"expected number of inputs ({len(inputs)}) and number of "
+            f"signal buffers ({len(signal_buffers)}) to match"
+        )
+        raise ValueError(msg)
 
     shape = None
     devices = []
@@ -137,5 +77,6 @@ def sum_naive(inputs: Iterable[TensorValue]) -> list[TensorValue]:
         mo.distributed_allreduce_sum,
         [x.type.to_mlir() for x in inputs],
         inputs,
+        signal_buffers,
     )
     return [res.tensor for res in results]

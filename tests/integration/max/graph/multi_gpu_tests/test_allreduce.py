@@ -107,43 +107,20 @@ def test_allreduce_execution() -> None:
     assert np.allclose(out_np, output[3].to(host).to_numpy())
 
 
-class AllreduceAddBase(Module):
-    """Base class for allreduce variants with elementwise add."""
+class AllreduceAdd(Module):
+    """A fused allreduce with an elementwise add."""
+
+    allreduce: Allreduce
+    """Allreduce layer."""
 
     num_devices: int
     """Number of devices to allreduce between."""
 
     def __init__(self, num_devices: int) -> None:
         super().__init__()
-        self.num_devices = num_devices
 
-    def __call__(
-        self,
-        *args: TensorValue | BufferValue,
-    ) -> list[TensorValue]:
-        raise NotImplementedError
-
-
-class AllreduceAddNaive(AllreduceAddBase):
-    """A naive allreduce with an elementwise add."""
-
-    def __call__(
-        self,
-        *args: TensorValue | BufferValue,
-    ) -> list[TensorValue]:
-        inputs = [cast(TensorValue, arg) for arg in args[: self.num_devices]]
-
-        # Allreduce implementation using device-to-device transfers.
-        results = ops.allreduce.sum_naive(inputs)
-        return [x + 42 for x in results]
-
-
-class AllreduceAdd(AllreduceAddBase):
-    """A fused allreduce with an elementwise add."""
-
-    def __init__(self, num_devices: int) -> None:
-        super().__init__(num_devices)
         self.allreduce = Allreduce(num_accelerators=num_devices)
+        self.num_devices = num_devices
 
     def __call__(
         self,
@@ -168,11 +145,8 @@ class AllreduceAdd(AllreduceAddBase):
         return [x + y for x, y in zip(results, biases)]
 
 
-@pytest.mark.parametrize("layer_cls", [AllreduceAdd, AllreduceAddNaive])
 @pytest.mark.parametrize("num_gpus", [1, 2, 4])
-def test_allreduce_epilogue_fusion(
-    layer_cls: type[AllreduceAddBase], num_gpus: int
-) -> None:
+def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
     """Tests that an elementwise add correctly follows an allreduce operation."""
     graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
     signals = Signals(devices=graph_devices)
@@ -181,9 +155,9 @@ def test_allreduce_epilogue_fusion(
     devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
     session = InferenceSession(devices=[host] + devices)
 
-    model = layer_cls(num_devices=len(devices))
+    model = AllreduceAdd(num_devices=len(devices))
     graph = Graph(
-        f"{layer_cls.__name__}_fusion",
+        "AllreduceAdd_fusion",
         forward=model,
         input_types=[
             *[
