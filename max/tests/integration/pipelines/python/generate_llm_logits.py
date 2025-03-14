@@ -75,17 +75,18 @@ class PipelineOracle(ABC):
 
     @property
     @abstractmethod
-    def supported_encodings(self) -> Sequence[str]:
-        """Encodings of a model that are (ever) supported.
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        """A dict where the key are the supported device types, and the
+        values are lists of supported encodings.
 
-        Not all combinations of encoding, and device are necessarily supported.
-        To check support for a particular combination, use is_supported.
-
-        Should be overridden by subclasses.
+        Example:
+            {
+                "cpu": ["float32"],
+                "gpu": ["bfloat16"]
+            }
         """
         raise NotImplementedError
 
-    @abstractmethod
     def is_supported(
         self, *, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
@@ -93,7 +94,10 @@ class PipelineOracle(ABC):
 
         Returns True if supported, False if not.
         """
-        raise NotImplementedError
+        device_type = device_spec.device_type
+        if device_type not in self.device_encoding_map:
+            return False
+        return encoding in self.device_encoding_map[device_type]
 
     @abstractmethod
     def create_max_pipeline(
@@ -139,22 +143,12 @@ class MultiModalPipelineOracle(PipelineOracle):
 
 class Llama3_1PipelineOracle(PipelineOracle):
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        return list(pipelines.SupportedEncoding)
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        assert encoding in self.supported_encodings
-        if device_spec.device_type == "cpu":
-            if encoding == "bfloat16":
-                return False
-        elif device_spec.device_type == "gpu":
-            if encoding not in ["bfloat16", "float32"]:
-                return False
-        else:
-            return False
-        return True
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        supported_encodings = [e.name for e in pipelines.SupportedEncoding]
+        return {
+            "cpu": [e for e in supported_encodings if e != "bfloat16"],
+            "gpu": ["float32", "bfloat16"],
+        }
 
     def _weight_path_for(self, encoding: str) -> Path:
         return Path(
@@ -224,14 +218,10 @@ class Llama3_1PipelineOracle(PipelineOracle):
 
 class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        return [pipelines.SupportedEncoding.bfloat16]
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        assert encoding in self.supported_encodings
-        return device_spec.device_type in {"cpu", "gpu"}
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -295,14 +285,11 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
 
 class ExaonePipelineOracle(PipelineOracle):
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        return ["float32"]
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        assert encoding in self.supported_encodings
-        return True
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "cpu": ["float32"],
+            "gpu": ["float32"],
+        }
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -352,22 +339,11 @@ class ExaonePipelineOracle(PipelineOracle):
 
 class ReplitPipelineOracle(PipelineOracle):
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        return ["bfloat16", "float32"]
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        assert encoding in self.supported_encodings
-        if device_spec.device_type == "cpu":
-            if encoding == "bfloat16":
-                return False
-        elif device_spec.device_type == "gpu":
-            if encoding not in ["bfloat16", "float32"]:
-                return False
-        else:
-            return False
-        return True
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "cpu": ["float32"],
+            "gpu": ["bfloat16", "float32"],
+        }
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -449,14 +425,10 @@ class ReplitPipelineOracle(PipelineOracle):
 
 class MistralPipelineOracle(PipelineOracle):
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        return ["bfloat16"]
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        assert encoding in self.supported_encodings
-        return device_spec.device_type == "gpu"
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -512,14 +484,10 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         return [evaluate.PIXTRAL_IMG_URL]
 
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        return [pipelines.SupportedEncoding.bfloat16]
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        assert encoding in self.supported_encodings
-        return device_spec.device_type == "gpu"
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -566,14 +534,10 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
 
 class QwenPipelineOracle(PipelineOracle):
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        return ["bfloat16"]
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        assert encoding in self.supported_encodings
-        return device_spec.device_type == "gpu"
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -619,14 +583,10 @@ class QwenPipelineOracle(PipelineOracle):
 
 class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        return ["bfloat16"]
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        assert encoding in self.supported_encodings
-        return device_spec.device_type == "gpu"
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -677,14 +637,11 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
 
 class OlmoPipelineOracle(PipelineOracle):
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        return ["float32"]
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        assert encoding in self.supported_encodings
-        return device_spec.device_type in {"cpu", "gpu"}
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "cpu": ["float32"],
+            "gpu": ["float32"],
+        }
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -735,6 +692,7 @@ class GenericOracle(PipelineOracle):
         self,
         *,
         model_path: str,
+        device_encoding_map: dict[str, list[str]],
         config_params: dict[str, Any] = {},
         prompts: list[str] | None = None,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
@@ -747,22 +705,11 @@ class GenericOracle(PipelineOracle):
         self.auto_model_cls = auto_model_cls
         self.auto_processor_cls = auto_processor_cls
         self.task = task
+        self._device_encoding_map = device_encoding_map
 
     @property
-    def supported_encodings(self) -> Sequence[str]:
-        if architecture := pipelines.PIPELINE_REGISTRY.retrieve_architecture(
-            model_path=self.model_path, trust_remote_code=True
-        ):
-            return [
-                encoding.name for encoding in architecture.supported_encodings
-            ]
-
-        return []
-
-    def is_supported(
-        self, *, encoding: str, device_spec: driver.DeviceSpec
-    ) -> bool:
-        return True
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return self._device_encoding_map
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -834,6 +781,10 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cache_strategy": KVCacheStrategy.CONTINUOUS,
         },
         prompts=[p[:502] for p in evaluate.PROMPTS],
+        device_encoding_map={
+            "cpu": ["float32", "q4_k", "q4_0", "q6_k", "gptq"],
+            "gpu": ["float32", "bfloat16"],
+        },
     ),
     "mpnet": GenericOracle(
         model_path="sentence-transformers/all-mpnet-base-v2",
@@ -842,16 +793,28 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         prompts=[p[:502] for p in evaluate.PROMPTS],
         auto_model_cls=transformers.AutoModel,
         task=interfaces.PipelineTask.EMBEDDINGS_GENERATION,
+        device_encoding_map={
+            "cpu": ["float32"],
+            "gpu": ["float32", "bfloat16"],
+        },
     ),
     # GPTQ llama with perm_idx
     "llama-gptq": GenericOracle(
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
         auto_model_cls=transformers.AutoModelForCausalLM,
+        device_encoding_map={
+            "cpu": ["float32", "q4_k", "q4_0", "q6_k", "gptq"],
+            "gpu": ["float32", "bfloat16", "gptq"],
+        },
     ),
     # GPTQ llama without perm_idx
     "llama-gptq-no-perm-idx": GenericOracle(
         model_path="kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit",
         auto_model_cls=transformers.AutoModelForCausalLM,
+        device_encoding_map={
+            "cpu": ["float32", "q4_k", "q4_0", "q6_k", "gptq"],
+            "gpu": ["float32", "bfloat16", "gptq"],
+        },
     ),
 }
 
@@ -921,11 +884,6 @@ def main(
         os.chdir(workspace_dir)
 
     pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
-    if encoding_name not in pipeline_oracle.supported_encodings:
-        raise ValueError(
-            f"Encoding {encoding_name!r} not one of supported encodings "
-            f"{pipeline_oracle.supported_encodings}"
-        )
 
     device_specs = DevicesOptionType.device_specs(device_type)
     for device_spec in device_specs:
@@ -933,7 +891,13 @@ def main(
             encoding=encoding_name,
             device_spec=device_spec,
         ):
-            raise ValueError("Combination of encoding/device not supported")
+            msg = (
+                f"Unsupported combination of encoding '{encoding_name}' and "
+                f"device '{device_spec.device_type}'. For pipeline "
+                f"'{pipeline_name}', supported combinations are: "
+                f"{pipeline_oracle.device_encoding_map}"
+            )
+            raise ValueError(msg)
 
     if framework_name == "max":
         max_pipeline_and_tokenizer = pipeline_oracle.create_max_pipeline(
