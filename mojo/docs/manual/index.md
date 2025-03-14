@@ -64,7 +64,7 @@ feedback](https://www.modular.com/community).
 
 - **GPU programming**
 
-  - [GPU basics](/mojo/manual/gpu/gpu-basics)
+  - [GPU basics](/mojo/manual/gpu/basics)
 
 - **Python**
 
