@@ -542,7 +542,9 @@ fn lane_group_reduce[
     func: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
-    nthreads: Int,
+    num_lanes: Int,
+    *,
+    stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Performs a generic warp-level reduction operation using shuffle operations.
 
@@ -556,14 +558,14 @@ fn lane_group_reduce[
                 offset and returns the shuffled result.
         func: A binary function that combines two SIMD values during reduction. This defines
               the reduction operation (e.g. add, max, min).
-        nthreads: The number of threads participating in the reduction. Must be a power of 2.
+        num_lanes: The number of lanes in a group. The reduction is done within each group. Must be a power of 2.
+        stride: The stride between lanes participating in the reduction.
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value.
 
     Returns:
-        A SIMD value containing the reduction result in all participating lanes.
-        Non-participating lanes (lane_id >= nthreads) retain their original values.
+        A SIMD value containing the reduction result.
 
     Example:
 
@@ -575,18 +577,18 @@ fn lane_group_reduce[
             fn add[type: DType, width: Int](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
                 return x + y
             var val = SIMD[DType.float32, 16](42.0)
-            var result = lane_group_reduce[shuffle_down, add, nthreads=16](val)
+            var result = lane_group_reduce[shuffle_down, add, num_lanes=16](val)
         ```
         .
     """
     var res = val
 
-    alias limit = log2_floor(nthreads)
+    alias limit = log2_floor(num_lanes)
 
     @parameter
     for i in reversed(range(limit)):
         alias offset = 1 << i
-        res = func(res, shuffle(res, offset))
+        res = func(res, shuffle(res, offset * stride))
 
     return res
 
@@ -636,7 +638,7 @@ fn reduce[
     ```
     .
     """
-    return lane_group_reduce[shuffle, func, nthreads=WARP_SIZE](val)
+    return lane_group_reduce[shuffle, func, num_lanes=WARP_SIZE](val)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -648,7 +650,8 @@ fn reduce[
 fn lane_group_sum[
     val_type: DType,
     simd_width: Int, //,
-    nthreads: Int,
+    num_lanes: Int,
+    stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Computes the sum of values across a group of lanes using warp-level operations.
 
@@ -659,28 +662,32 @@ fn lane_group_sum[
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in the SIMD vector.
-        nthreads: The number of threads participating in the reduction.
+        num_lanes: The number of threads participating in the reduction.
+        stride: The stride between lanes participating in the reduction.
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to the sum.
 
     Returns:
         A SIMD value where all participating lanes contain the sum found across the lane group.
-        Non-participating lanes (lane_id >= nthreads) retain their original values.
+        Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
     @parameter
     fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return x + y
 
-    return lane_group_reduce[shuffle_down, _reduce_add, nthreads=nthreads](val)
+    return lane_group_reduce[
+        shuffle_down, _reduce_add, num_lanes=num_lanes, stride=stride
+    ](val)
 
 
 @always_inline
 fn lane_group_sum_and_broadcast[
     val_type: DType,
     simd_width: Int, //,
-    nthreads: Int,
+    num_lanes: Int,
+    stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Computes the sum across a lane group and broadcasts the result to all lanes.
 
@@ -691,21 +698,24 @@ fn lane_group_sum_and_broadcast[
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in the SIMD vector.
-        nthreads: The number of threads participating in the reduction.
+        num_lanes: The number of threads participating in the reduction.
+        stride: The stride between lanes participating in the reduction.
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to the sum.
 
     Returns:
         A SIMD value where all participating lanes contain the sum found across the lane group.
-        Non-participating lanes (lane_id >= nthreads) retain their original values.
+        Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
     @parameter
     fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return x + y
 
-    return lane_group_reduce[shuffle_xor, _reduce_add, nthreads=nthreads](val)
+    return lane_group_reduce[
+        shuffle_xor, _reduce_add, num_lanes=num_lanes, stride=stride
+    ](val)
 
 
 @always_inline
@@ -729,7 +739,7 @@ fn sum[
         A SIMD value where all lanes contain the sum found across the entire warp.
         The sum is broadcast to all lanes.
     """
-    return lane_group_sum[nthreads=WARP_SIZE](val)
+    return lane_group_sum[num_lanes=WARP_SIZE](val)
 
 
 @value
@@ -845,7 +855,8 @@ fn sum[
 fn lane_group_max[
     val_type: DType,
     simd_width: Int, //,
-    nthreads: Int,
+    num_lanes: Int,
+    stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Reduces a SIMD value to its maximum within a lane group using warp-level operations.
 
@@ -856,27 +867,31 @@ fn lane_group_max[
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in the SIMD vector.
-        nthreads: The number of threads participating in the reduction.
+        num_lanes: The number of threads participating in the reduction.
+        stride: The stride between lanes participating in the reduction.
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to find the maximum.
 
     Returns:
         A SIMD value where all participating lanes contain the maximum value found across the lane group.
-        Non-participating lanes (lane_id >= nthreads) retain their original values.
+        Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
     @parameter
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _max(x, y)
 
-    return lane_group_reduce[shuffle_down, _reduce_max, nthreads=nthreads](val)
+    return lane_group_reduce[
+        shuffle_down, _reduce_max, num_lanes=num_lanes, stride=stride
+    ](val)
 
 
 fn lane_group_max_and_broadcast[
     val_type: DType,
     simd_width: Int, //,
-    nthreads: Int,
+    num_lanes: Int,
+    stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Reduces and broadcasts the maximum value within a lane group using warp-level operations.
 
@@ -887,21 +902,24 @@ fn lane_group_max_and_broadcast[
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in the SIMD vector.
-        nthreads: The number of threads participating in the reduction.
+        num_lanes: The number of threads participating in the reduction.
+        stride: The stride between lanes participating in the reduction.
 
     Args:
         val: The SIMD value to reduce and broadcast. Each lane contributes its value.
 
     Returns:
         A SIMD value where all participating lanes contain the maximum value found across the lane group.
-        Non-participating lanes (lane_id >= nthreads) retain their original values.
+        Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
     @parameter
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _max(x, y)
 
-    return lane_group_reduce[shuffle_xor, _reduce_max, nthreads=nthreads](val)
+    return lane_group_reduce[
+        shuffle_xor, _reduce_max, num_lanes=num_lanes, stride=stride
+    ](val)
 
 
 @always_inline
@@ -925,7 +943,7 @@ fn max[
     Returns:
         A SIMD value where all lanes contain the maximum value found across the entire warp.
     """
-    return lane_group_max[nthreads=WARP_SIZE](val)
+    return lane_group_max[num_lanes=WARP_SIZE](val)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -937,7 +955,8 @@ fn max[
 fn lane_group_min[
     val_type: DType,
     simd_width: Int, //,
-    nthreads: Int,
+    num_lanes: Int,
+    stride: Int = 1,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Reduces a SIMD value to its minimum within a lane group using warp-level operations.
 
@@ -948,21 +967,24 @@ fn lane_group_min[
     Parameters:
         val_type: The data type of the SIMD elements (e.g. float32, int32).
         simd_width: The number of elements in the SIMD vector.
-        nthreads: The number of threads participating in the reduction.
+        num_lanes: The number of threads participating in the reduction.
+        stride: The stride between lanes participating in the reduction.
 
     Args:
         val: The SIMD value to reduce. Each lane contributes its value to find the minimum.
 
     Returns:
         A SIMD value where all participating lanes contain the minimum value found across the lane group.
-        Non-participating lanes (lane_id >= nthreads) retain their original values.
+        Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
     @parameter
     fn _reduce_min(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _min(x, y)
 
-    return lane_group_reduce[shuffle_down, _reduce_min, nthreads=nthreads](val)
+    return lane_group_reduce[
+        shuffle_down, _reduce_min, num_lanes=num_lanes, stride=stride
+    ](val)
 
 
 @always_inline
@@ -986,7 +1008,7 @@ fn min[
         A SIMD value where all lanes contain the minimum value found across the entire warp.
         The minimum value is broadcast to all lanes.
     """
-    return lane_group_min[nthreads=WARP_SIZE](val)
+    return lane_group_min[num_lanes=WARP_SIZE](val)
 
 
 # ===-----------------------------------------------------------------------===#
