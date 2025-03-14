@@ -14,6 +14,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 
+#include <KGEN/Support/CompilerProfiling.h>
 #include <unistd.h>
 
 using namespace M;
@@ -86,6 +87,10 @@ int main(int argc, char **argv) {
            "integrating the language server with your editor.\n";
   }
 
+  // Unconditionally enable tracing when we are being built with tracing.
+  auto traceProfiler =
+      std::make_unique<KGEN::TraceProfiler>(KGEN::kIsTracingEnabled, 3);
+
   // When testing, updating flags that make the server a bit easier to interact
   // with.
   if (mojoTest) {
@@ -112,6 +117,7 @@ int main(int argc, char **argv) {
 
   // Start the server.
   // When testing we use a single thread to provide deterministic output.
-  return failed(runMojoLSPServer(transport, /*singleThreaded=*/mojoTest,
-                                 waitOnShutdown, includeDirs));
+  return failed(runMojoLSPServer(
+      transport, /*singleThreaded=*/mojoTest || KGEN::kIsTracingEnabled,
+      waitOnShutdown, includeDirs, std::move(traceProfiler)));
 }

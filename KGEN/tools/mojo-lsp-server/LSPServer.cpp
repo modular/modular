@@ -67,8 +67,9 @@ private:
 
 namespace {
 struct LSPServer {
-  LSPServer(MojoServer &server, JSONTransport &transport)
-      : server(server), transport(transport) {}
+  LSPServer(MojoServer &server, JSONTransport &transport,
+            std::unique_ptr<KGEN::TraceProfiler> profiler)
+      : server(server), transport(transport), profiler(std::move(profiler)) {}
 
   //===--------------------------------------------------------------------===//
   // Initialization
@@ -101,6 +102,8 @@ struct LSPServer {
   /// Used to indicate that the 'shutdown' request was received from the
   /// Language Server client.
   bool shutdownRequestReceived = false;
+
+  std::unique_ptr<KGEN::TraceProfiler> profiler;
 };
 } // namespace
 
@@ -202,6 +205,8 @@ void LSPServer::onInitialize(const InitializeParams &params,
 void LSPServer::onInitialized(const InitializedParams &) {}
 void LSPServer::onShutdown(const NoParams &,
                            LSPResponder<std::nullptr_t> responder) {
+  profiler.reset();
+
   server.getLSPTelemetryContext().reportShutdown();
   server.shutdown();
   shutdownRequestReceived = true;
@@ -260,7 +265,8 @@ void LSPServer::onNotebookDocumentDidChange(
 mlir::LogicalResult
 M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                                bool waitOnShutdown,
-                               ArrayRef<std::string> includeDirs) {
+                               ArrayRef<std::string> includeDirs,
+                               std::unique_ptr<KGEN::TraceProfiler> profiler) {
   MessageHandler messageHandler(transport);
   ErrorOr<MojoServer> serverOr = MojoServer::create(
       singleThreaded, waitOnShutdown,
@@ -277,7 +283,7 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
   MojoServer server(serverOr.takeValue());
   LSPRequestHandler requestHandler(server.getLSPTelemetryContext(),
                                    messageHandler);
-  LSPServer lspServer(server, transport);
+  LSPServer lspServer(server, transport, std::move(profiler));
 
   // Initialization
   requestHandler.method("initialize", &lspServer, &LSPServer::onInitialize);
