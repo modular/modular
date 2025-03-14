@@ -132,7 +132,7 @@ struct _GraphLayerContext:
 struct Graph(CollectionElement, Stringable, Writable):
     """Represents a single MAX graph.
 
-    A `Graph` is a callable routine in [MAX Engine](/max/engine), similar to a
+    A `Graph` is a callable routine in MAX Engine, similar to a
     function in Mojo. Like functions, graphs have a name and signature. Unlike
     a function, which follows an imperative programming model, a `Graph`
     follows a [dataflow](https://en.wikipedia.org/wiki/Dataflow_programming)
