@@ -327,10 +327,10 @@ fn _output_fusion_hook_impl[
 
 alias OutputTensor = ManagedTensorSlice[io_spec=Output]
 alias InputTensor = ManagedTensorSlice[io_spec=Input]
-alias MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
 
-alias FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput]
-alias FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput]
+alias _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
+alias _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput]
+alias _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput]
 
 
 struct DynamicTensor[
@@ -962,11 +962,11 @@ fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 alias InputVariadicTensors = VariadicTensors[io_spec=Input]
-alias MutableInputVariadicTensors = VariadicTensors[io_spec=MutableInput]
 alias OutputVariadicTensors = VariadicTensors[io_spec=Output]
 
-alias FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
-alias FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
+alias _MutableInputVariadicTensors = VariadicTensors[io_spec=MutableInput]
+alias _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
+alias _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
 
 
 @value
