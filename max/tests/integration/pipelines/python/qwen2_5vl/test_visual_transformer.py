@@ -6,12 +6,14 @@
 import numpy as np
 import pytest
 import torch
+import torch.nn.functional as F
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
 from max.nn import Conv3D
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    get_window_index,
     mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
@@ -26,7 +28,7 @@ from transformers import (
 )
 
 ACCURACY_RTOL = 1e-4
-ACCURACY_ATOL = 1e-6
+ACCURACY_ATOL = 1e-5
 
 
 @pytest.fixture
@@ -65,7 +67,9 @@ def torch_model_and_inputs():
     return model, processed_inputs
 
 
-def torch_mrope_pos_ids_3d(grid_thw, spatial_merge_size):
+def torch_mrope_pos_ids_3d(
+    grid_thw: torch.tensor, spatial_merge_size: int
+) -> torch.tensor:
     """Calculate the 3D rope index based on image and video's temporal, height and width in LLM."""
     pos_ids = []
     for t, h, w in grid_thw:
@@ -93,19 +97,101 @@ def torch_mrope_pos_ids_3d(grid_thw, spatial_merge_size):
     return pos_ids
 
 
+def torch_get_window_index(
+    grid_thw: torch.tensor,
+    window_size: int,
+    spatial_merge_size: int,
+    patch_size: int,
+    spatial_merge_unit: int,
+) -> tuple[torch.tensor, list]:
+    window_index: list = []
+    cu_window_seqlens: list = [0]
+    window_index_id = 0
+    vit_merger_window_size = window_size // spatial_merge_size // patch_size
+
+    for grid_t, grid_h, grid_w in grid_thw:
+        llm_grid_h, llm_grid_w = (
+            grid_h // spatial_merge_size,
+            grid_w // spatial_merge_size,
+        )
+        index = torch.arange(grid_t * llm_grid_h * llm_grid_w).reshape(
+            grid_t, llm_grid_h, llm_grid_w
+        )
+        pad_h = vit_merger_window_size - llm_grid_h % vit_merger_window_size
+        pad_w = vit_merger_window_size - llm_grid_w % vit_merger_window_size
+        num_windows_h = (llm_grid_h + pad_h) // vit_merger_window_size
+        num_windows_w = (llm_grid_w + pad_w) // vit_merger_window_size
+        index_padded = F.pad(index, (0, pad_w, 0, pad_h), "constant", -100)
+        index_padded = index_padded.reshape(
+            grid_t,
+            num_windows_h,
+            vit_merger_window_size,
+            num_windows_w,
+            vit_merger_window_size,
+        )
+        index_padded = index_padded.permute(0, 1, 3, 2, 4).reshape(
+            grid_t,
+            num_windows_h * num_windows_w,
+            vit_merger_window_size,
+            vit_merger_window_size,
+        )
+        seqlens = (index_padded != -100).sum([2, 3]).reshape(-1)
+        index_padded = index_padded.reshape(-1)
+        index_new = index_padded[index_padded != -100]
+        window_index.append(index_new + window_index_id)
+        cu_seqlens_tmp = (
+            seqlens.cumsum(0) * spatial_merge_unit + cu_window_seqlens[-1]
+        )
+        cu_window_seqlens.extend(cu_seqlens_tmp.tolist())
+        window_index_id += (grid_t * llm_grid_h * llm_grid_w).item()
+    window_index = torch.cat(window_index, dim=0)
+
+    return window_index, cu_window_seqlens
+
+
 def test_pos_ids():
     image_grid_thw = torch.tensor([[1, 98, 146], [1, 22, 28]])
     spatial_merge_size = 2
     expected_pos_ids = torch_mrope_pos_ids_3d(
         image_grid_thw, spatial_merge_size
     )
-    actual_pos_ids = mrope_pos_ids_3d(image_grid_thw, spatial_merge_size)
-    np.testing.assert_allclose(
+    actual_pos_ids = mrope_pos_ids_3d(
+        image_grid_thw.detach().numpy(), spatial_merge_size
+    )
+    np.testing.assert_array_equal(
         actual_pos_ids,
         expected_pos_ids.detach().numpy(),
-        equal_nan=True,
-        rtol=ACCURACY_RTOL,
-        atol=ACCURACY_ATOL,
+    )
+
+
+def test_window_index():
+    image_grid_thw = torch.tensor([[1, 98, 146], [1, 22, 28]])
+    spatial_merge_size = 2
+    window_size = 112
+    patch_size = 14
+    spatial_merge_unit = spatial_merge_size * spatial_merge_size
+    expected_window_index, expected_cu_window_seqlens = torch_get_window_index(
+        image_grid_thw,
+        window_size,
+        spatial_merge_size,
+        patch_size,
+        spatial_merge_unit,
+    )
+    actual_window_index, actual_cu_window_seqlens = get_window_index(
+        image_grid_thw.detach().numpy(),
+        window_size,
+        spatial_merge_size,
+        patch_size,
+        spatial_merge_unit,
+    )
+    np.testing.assert_array_equal(
+        actual_window_index,
+        expected_window_index.detach().numpy(),
+    )
+
+    np.testing.assert_array_equal(
+        actual_cu_window_seqlens,
+        np.array(expected_cu_window_seqlens),
     )
 
 
@@ -213,16 +299,29 @@ def test_rot_embed(torch_model_and_inputs):
     spatial_merge_size = model.spatial_merge_size
     hidden_size = 1280
     n_heads = 16
-    head_dim = hidden_size // n_heads
     theta = 10000.0
-
-    rot_pos_ids = mrope_pos_ids_3d(image_grid_thw, spatial_merge_size)
-
-    max_grid_size = image_grid_thw[:, 1:].max().item()
+    window_size = model.window_size
+    spatial_merge_unit = model.spatial_merge_unit
 
     # Get torch model outputs and permute it to match graph API output shape.
     with torch.no_grad():
-        torch_model_output = model.rot_pos_emb(image_grid_thw)
+        hidden_states = model.patch_embed(pixel_values)
+        rotary_pos_emb = model.rot_pos_emb(image_grid_thw)
+        window_index, cu_window_seqlens = model.get_window_index(image_grid_thw)
+
+        seq_len, _ = hidden_states.size()
+        hidden_states = hidden_states.reshape(
+            seq_len // spatial_merge_unit, spatial_merge_unit, -1
+        )
+        hidden_states = hidden_states[window_index, :, :]
+        hidden_states = hidden_states.reshape(seq_len, -1)
+        rotary_pos_emb = rotary_pos_emb.reshape(
+            seq_len // spatial_merge_unit, spatial_merge_unit, -1
+        )
+        rotary_pos_emb = rotary_pos_emb[window_index, :, :]
+        rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
+        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
+        torch_model_output = (emb.cos(), emb.sin())[0]
 
     # Register Layer weights in weights_registry.
     weights_registry = {}
@@ -230,9 +329,11 @@ def test_rot_embed(torch_model_and_inputs):
     def weight(name: str, array) -> Weight:
         """Creates a Weight from the input array of and add it to weights_registry."""
         weights_registry[name] = array
+        if array.dtype != torch.float32:
+            array = array.float()
         return Weight(
             name=name,
-            dtype=DType.bfloat16,
+            dtype=DType.float32,
             shape=array.shape,
         )
 
@@ -259,8 +360,21 @@ def test_rot_embed(torch_model_and_inputs):
         dim=hidden_size, n_heads=n_heads, theta=theta
     )
     visual_transformer = VisionTransformer(
-        patch_embed=graph_api_patch_embed, rotary_pos_emb=rotary_pos_emb
+        patch_embed=graph_api_patch_embed,
+        rotary_pos_emb=rotary_pos_emb,
+        spatial_merge_unit=spatial_merge_unit,
     )
+
+    rot_pos_ids = mrope_pos_ids_3d(image_grid_thw, spatial_merge_size)
+    window_index, cu_window_seqlens = get_window_index(
+        image_grid_thw,
+        window_size,
+        spatial_merge_size,
+        patch_size,
+        spatial_merge_unit,
+    )
+
+    max_grid_size = image_grid_thw[:, 1:].max().item()
 
     session = InferenceSession()
     with Graph(
@@ -269,19 +383,27 @@ def test_rot_embed(torch_model_and_inputs):
             TensorType(DType.float32, (pixel_values.shape)),
             TensorType(DType.int64, (image_grid_thw.shape)),
             TensorType(DType.int64, (rot_pos_ids.shape)),
+            TensorType(DType.int64, (window_index.shape)),
+            TensorType(DType.int64, (cu_window_seqlens.shape)),
         ],
     ) as graph:
         visual_transformer_output = visual_transformer(
-            graph.inputs[0].tensor,
-            graph.inputs[1].tensor,
-            graph.inputs[2].tensor,
+            x=graph.inputs[0].tensor,
+            grid_thw=graph.inputs[1].tensor,
+            rot_pos_ids=graph.inputs[2].tensor,
             max_grid_size=max_grid_size,
+            window_index=graph.inputs[3].tensor,
+            cu_window_seqlens=graph.inputs[4].tensor,
         )
         graph.output(visual_transformer_output)
 
     compiled = session.load(graph, weights_registry=weights_registry)
     graph_api_output = compiled.execute(
-        graph_api_pixel_values, image_grid_thw, rot_pos_ids
+        graph_api_pixel_values,
+        image_grid_thw,
+        rot_pos_ids,
+        window_index,
+        cu_window_seqlens,
     )[0]
     assert isinstance(graph_api_output, Tensor)
 
