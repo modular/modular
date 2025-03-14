@@ -342,10 +342,6 @@ private:
       if (ifOp && ifOp.getCond() == elementwiseOp.getResults()[0])
         continue;
 
-      ASSERT_STREAM(!gen->hasAttr(KGEN::MOGGPreElab::kMOGGElementFunction),
-                    << "Kernel marked elementwise but violates some fact "
-                       "about Kernel API. See offending op "
-                    << op << "\nFor generator " << gen.getSymNameAttr());
       return nullptr;
     }
     return elementwiseOp;

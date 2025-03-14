@@ -435,9 +435,6 @@ namespace {
 
 // Important metadata about the structs under the extensibility API
 struct ExtensibilityAPIStructInfo {
-  // Whether the operation is marked as an elementwise kernel
-  bool isElementwiseKernel = false;
-
   // Whether the operation is marked as a view kernel.
   bool isViewKernel = false;
 
@@ -460,13 +457,6 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
     if (auto directSym = dyn_cast<SymbolConstantAttr>(decorator)) {
       auto decoratorFunc =
           moduleOp.lookupSymbol<LIT::FnOp>(directSym.getSymbol());
-
-      if (decoratorFunc && decoratorFunc->hasAttr(MOGG_INTRINSIC_ELEMENTWISE)) {
-        if (registrationInfo.isElementwiseKernel)
-          return Error("Kernel has multiple elementwise annotations");
-        registrationInfo.isElementwiseKernel = true;
-        continue;
-      }
 
       if (decoratorFunc && decoratorFunc->hasAttr(MOGG_INTRINSIC_VIEW_KERNEL)) {
         if (registrationInfo.isViewKernel)
@@ -802,8 +792,6 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   }
 
   // Handle fusion if needed
-  if (registrationInfo.isElementwiseKernel)
-    func->setAttr(kMOGGElementFunction, UnitAttr::get(func->getContext()));
   if (registrationInfo.isViewKernel)
     func->setAttr(kMOGGViewKernel, UnitAttr::get(func->getContext()));
 
