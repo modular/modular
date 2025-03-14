@@ -159,9 +159,10 @@ what we publish.
   divide, remainder, etc.
 
 - Several more packages are now documented.
-  - `gpu` package - some modules in `gpu.host` subpackage are still in progress.
   - `compile` package
+  - `gpu` package
   - `layout` package is underway, beginning with core types, functions, and traits.
+  - `logger` package
 
 - A new `sys.is_compile_time` function is added. This enables one to query
 whether code is being executed at compile time or not. For example:
@@ -253,8 +254,6 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 
 - `List.bytecount()` has been renamed to `List.byte_length()` for consistency
   with the String-like APIs.
-
-- The `logger` package is now documented.
 
 - Large bigwidth integers are introduced. Specifically, the Int128, UInt128,
   Int256, and UInt256 are now supported.
