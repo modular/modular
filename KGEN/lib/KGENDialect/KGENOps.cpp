@@ -1758,55 +1758,6 @@ LogicalResult ClosureInitOp::verify() {
   return success();
 }
 
-//===----------------------------------------------------------------------===//
-// ClosureCaptureOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult
-parseClosureCaptureValue(OpAsmParser &p, SymbolConstantAttr &callee,
-                         OpAsmParser::UnresolvedOperand &capture,
-                         Type &captureType, Type &resultType) {
-  SymbolRefAttr symbol;
-  ParameterExprArrayAttr paramValues;
-  if (p.parseLSquare() || p.parseAttribute(symbol) ||
-      parseParameterValues(p, paramValues) || p.parseRSquare())
-    return failure();
-
-  if (p.parseLParen() || p.parseOperand(capture) || p.parseRParen() ||
-      p.parseColon())
-    return failure();
-
-  FuncTypeGeneratorType signature;
-  FunctionType functionType;
-  if (parseKGENFuncTypeGenerator(p, functionType, signature))
-    return failure();
-  if (functionType.getNumInputs() != 1 || functionType.getNumResults() != 1)
-    return failure();
-
-  captureType = functionType.getInput(0);
-  resultType = functionType.getResult(0);
-  FuncTypeGeneratorType fnGenType = FuncTypeGeneratorType::get(
-      signature.getInputParamTypes(),
-      FunctionType::get(p.getContext(), {captureType, resultType}, {}), {}, {},
-      {}, {});
-  callee = SymbolConstantAttr::get(symbol, fnGenType, paramValues);
-  return success();
-}
-
-static void printClosureCaptureValue(OpAsmPrinter &p, Operation *,
-                                     SymbolConstantAttr callee, Value capture,
-                                     Type captureType, Type resultType) {
-  p << "[";
-  p << callee.getSymbol();
-  printParameterValues(p, callee.getParamValues());
-  p << "]";
-  p << "(";
-  p.printOperand(capture);
-  p << ")";
-  p << " : ";
-  p << "(" << captureType << ") -> " << resultType;
-}
-
 ///===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
