@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Tensor
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
@@ -171,12 +171,7 @@ def _attention_layer(
     return graph, kv_cache_inputs
 
 
-@pytest.mark.parametrize(
-    "start_pos,seq_len",
-    [
-        (0, 128),
-    ],
-)
+@pytest.mark.parametrize(("start_pos", "seq_len"), [(0, 128)])
 def test_self_attention(session, start_pos, seq_len):
     layer_idx = 0
 
@@ -206,17 +201,12 @@ def test_self_attention(session, start_pos, seq_len):
         kv_cache_inputs
     )
 
-    prompt_lens = [30]
+    prompt_lens = np.array([30])
     assert len(prompt_lens) == BATCH_SIZE
-    input_row_offsets = Tensor(
-        [BATCH_SIZE + 1],
-        DType.uint32,
+    input_row_offsets = np.array(
+        [0, *prompt_lens.cumsum()],
+        dtype=cache_lengths.dtype.to_numpy(),
     )
-    running_sum = 0
-    for i in range(BATCH_SIZE):
-        input_row_offsets[i] = running_sum
-        running_sum += prompt_lens[i]
-    input_row_offsets[BATCH_SIZE] = running_sum
 
     # Set up PyTorch attention layer.
     torch_attention = TorchAttention(
@@ -233,16 +223,16 @@ def test_self_attention(session, start_pos, seq_len):
             "input_row_offsets": 1,
         },
         provided_inputs={
-            5: input_row_offsets.to_numpy(),
-            6: blocks.to_numpy(),
-            7: cache_lengths.to_numpy(),
-            8: lookup_table_tensor.to_numpy(),
-            9: is_cache_empty_buf.to_numpy(),
+            5: input_row_offsets,
+            6: blocks,
+            7: cache_lengths,
+            8: lookup_table_tensor,
+            9: is_cache_empty_buf,
         },
     )
     def test_correctness(execute, inputs, torch_inputs):
         inputs = list(inputs)
-        result = execute(inputs)
+        result = execute(inputs).to_numpy()
 
         x, wq, wk, wv, wo, *_ = torch_inputs
         # position_embeddings

@@ -207,7 +207,7 @@ def test_attention(session, start_pos, seq_len):
     )
     def test_correctness(execute, inputs, torch_inputs):
         inputs = list(inputs)
-        result = execute(inputs)
+        result = execute(inputs).to_numpy()
         expected = torch_attention(*torch_inputs).detach().numpy()
         # TODO(MSDK-1071): Consolidate and figure out how to call
         # assert_allclose(result, expected) to fire again on mismatched

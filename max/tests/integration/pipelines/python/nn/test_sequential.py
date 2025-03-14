@@ -34,7 +34,7 @@ def test_sequential__one_linear_layer(session):
             max_magnitude=1 / 64,
         )
         def test_correctness(execute, inputs, torch_inputs):
-            result = execute(inputs)
+            result = execute(inputs).to_numpy()
             x, w1 = torch_inputs
 
             expected = x @ w1.T
@@ -67,7 +67,7 @@ def test_sequential__two_linear_layers(session):
             max_magnitude=1 / 64,
         )
         def test_correctness(execute, inputs, torch_inputs):
-            result = execute(inputs)
+            result = execute(inputs).to_numpy()
             x, w1, w2 = torch_inputs
 
             expected = x @ w1.T
@@ -100,7 +100,7 @@ def test_sequential__two_linear_layers_with_activation(session):
             max_magnitude=1 / 64,
         )
         def test_correctness(execute, inputs, torch_inputs):
-            result = execute(inputs)
+            result = execute(inputs).to_numpy()
             x, w1, w2 = torch_inputs
 
             expected = x @ w1.T

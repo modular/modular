@@ -113,7 +113,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
         )
         graph.output(rope.freqs_cis)
         model = session.load(graph)
-    result = model.execute_legacy()["output0"]
+    result = model.execute()[0].to_numpy()
     # freq_cis result is stacked along a new dimension - real goes first, then imaginary.
     # The result is a tensor with shape (..., 2) where the last dimension holds [real, imaginary]
     # We extract and convert into a complex tensor type before comparing them.
@@ -177,7 +177,7 @@ def test_llama3_freqs_cis(
         )
         graph.output(rope.freqs_cis)
         model = session.load(graph)
-    result = model.execute_legacy()["output0"]
+    result = model.execute()[0].to_numpy()
     d0, d1 = result.shape
     result = result.reshape(d0, d1 // 2, 2)
     # freq_cis result is stacked along a new dimension - real goes first, then imaginary.
@@ -254,7 +254,7 @@ def test_rope(session, input_type: TensorType, start_pos: Dim):
             start_pos = cache.shape[0]
             seq_len = x.shape[1]
             assume(start_pos + seq_len < MAX_SEQ_LEN)
-            result = execute(inputs)
+            result = execute(inputs).to_numpy()
             expected = torch_rope(*torch_inputs).detach().numpy()
 
             np.testing.assert_allclose(
@@ -392,6 +392,6 @@ def test_kv_cache_ragged_rope(session):
     )
     def test_runs_without_nan(execute, inputs, torch_inputs):
         inputs = list(inputs)
-        result = execute(inputs)
+        result = execute(inputs).to_numpy()
         assert np.any(result != np.nan)
         assert np.any(result != np.inf)

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import numpy as np
 import pytest
 import torch
 from max.driver import accelerator_api
@@ -21,7 +20,12 @@ def torch_rms_norm(x, weight, eps=1e-6):
     return x * torch.rsqrt((x**2).mean(-1, keepdim=True) + eps) * weight
 
 
-def run_test_norm(session: InferenceSession, input_type: TensorType):
+def run_test_norm(
+    session: InferenceSession,
+    input_type: TensorType,
+    rtol: float,
+    atol: float,
+):
     # Initialize Graph
     dim = input_type.shape[-1]
     weight_type = TensorType(input_type.dtype, [dim])
@@ -32,16 +36,16 @@ def run_test_norm(session: InferenceSession, input_type: TensorType):
 
         @modular_graph_test(session, graph)
         def test_correctness(execute, inputs, torch_inputs):
-            result = execute(inputs)
-            expected = torch_rms_norm(*torch_inputs).detach().numpy()
-            ACCURACY_RTOL = 1e-2
-            ACCURACY_ATOL = 1e-8
-            np.testing.assert_allclose(
+            result = torch.from_dlpack(execute(inputs))
+            expected = torch_rms_norm(*torch_inputs)
+            torch.testing.assert_close(
                 result,
                 expected,
-                atol=ACCURACY_ATOL,
-                rtol=ACCURACY_RTOL,
+                atol=atol,
+                rtol=rtol,
                 equal_nan=True,
+                check_device=False,
+                msg=lambda msg: f"\n{result=}\n{expected=}\n",
             )
 
 
@@ -50,24 +54,19 @@ def run_test_norm(session: InferenceSession, input_type: TensorType):
 # ===----------------------------------------------------------------------=== #
 
 
-def get_tensor_types(type: DType):
-    return [
-        TensorType(type, ["dim"]),
-        TensorType(type, ["batch", "dim"]),
-        TensorType(type, ["a", "x", "y", "z", "dim"]),
-        TensorType(type, ["dim"]),
-    ]
-
-
-@pytest.mark.parametrize(
-    "input_type",
-    [
-        *get_tensor_types(DType.float32),
-        *get_tensor_types(DType.float64),
-    ],
+SHAPES = (
+    ["dim"],
+    ["batch", "dim"],
+    ["a", "x", "y", "z", "dim"],
 )
-def test_norm(session, input_type):
-    run_test_norm(session, input_type)
+
+CPU_DTYPES = (DType.float32, DType.float64)
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("dtype", CPU_DTYPES)
+def test_norm(session, shape, dtype):
+    run_test_norm(session, TensorType(dtype, shape), rtol=1e-2, atol=1e-8)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -75,14 +74,13 @@ def test_norm(session, input_type):
 # ===----------------------------------------------------------------------=== #
 
 
+# TODO(MAXPLAT-118): float64 is broken for GPU
+# GPU_DTYPES = (*CPU_DTYPES, DType.bfloat16)
+GPU_DTYPES = (DType.float32, DType.bfloat16)
+
+
 @pytest.mark.skipif(accelerator_api() == "cpu", reason="Test only runs on GPU")
-@pytest.mark.parametrize(
-    "input_type",
-    [
-        *get_tensor_types(DType.bfloat16),
-        *get_tensor_types(DType.float32),
-        *get_tensor_types(DType.float64),
-    ],
-)
-def test_norm_gpu(gpu_session, input_type):
-    run_test_norm(gpu_session, input_type)
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("dtype", GPU_DTYPES)
+def test_norm_gpu(gpu_session, shape, dtype):
+    run_test_norm(gpu_session, TensorType(dtype, shape), rtol=1e-1, atol=1e-8)

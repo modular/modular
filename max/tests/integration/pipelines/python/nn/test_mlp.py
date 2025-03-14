@@ -57,7 +57,7 @@ def test_mlp(session, input_type: TensorType):
         # This is set so it fits a float type with width of 32.
         @modular_graph_test(session, graph, max_magnitude=1 / 64)
         def test_correctness(execute, inputs, torch_inputs):
-            result = execute(inputs)
+            result = execute(inputs).to_numpy()
             x, w1, w2, w3 = torch_inputs
 
             # Transpose weights to match our Linear semantics.
