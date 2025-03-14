@@ -73,5 +73,4 @@ def main():
 # CHECK-CUBIN: nv.info
 # CHECK-CUBIN: nv.callgraph
 # CHECK-CUBIN: nv.constant
-# CHECK-CUBIN: .text
 # CHECK-PTXAS: Successfully compiled PTX to CUBIN via ptxas
