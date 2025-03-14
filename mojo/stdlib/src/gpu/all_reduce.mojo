@@ -180,25 +180,91 @@ fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
     return True
 
 
+fn _naive_reduce_kernel_with_lambda[
+    type: DType,
+    rank: Int,
+    *,
+    my_rank: Int,
+    width: Int,
+    alignment: Int,
+    outputs_lambda: elementwise_epilogue_type,
+](
+    dst_buf: NDBuffer[type, rank],
+    src_buf: UnsafePointer[Scalar[type]],
+    num_elements: Int,
+):
+    """Naive reduction kernel with elementwise lambda support."""
+    var tid = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+    alias simd_width = simdwidthof[type]()
+
+    for idx in range(tid, num_elements // simd_width, stride):
+        var elem_idx = idx * simd_width
+        outputs_lambda[
+            input_index=my_rank, width=simd_width, alignment=alignment
+        ](
+            dst_buf.get_nd_index(elem_idx),
+            src_buf.load[width=simd_width, alignment=alignment](elem_idx),
+        )
+
+
 @always_inline
 fn _all_reduce_naive[
     type: DType,
     rank: Int,
     ngpus: Int, //,
     max_num_blocks: Int,
+    outputs_lambda: elementwise_epilogue_type,
 ](
     ctxs: List[DeviceContext],
     list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
     list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
 ) raises:
-    """
-    Performs allreduce across GPUs without using peer-to-peer access.
+    """Performs allreduce across GPUs without using peer-to-peer access.
+
+    Implementation Steps (per GPU):
+    1. Create accumulation buffer initialized to zero
+    2. For each other GPU:
+       a. Allocate temporary buffer on current GPU
+       b. Copy remote GPU's data to temporary buffer
+    3. Reduce all buffers into accumulation buffer:
+       - Local buffer
+       - All temporary buffers
+    4. Apply output lambda to write accumulation buffer to final output
+
+    Data Flow (3 GPU example):
+
+    GPU0 Input  GPU1 Input  GPU2 Input
+          |         |         |
+          |         |         |
+          v         v         v
+    +---------------------------------+
+    | Temporary Buffers per GPU       |
+    | GPU0: [Temp01][Temp02]          |
+    | GPU1: [Temp10][Temp12]          |
+    | GPU2: [Temp20][Temp21]          |
+    +---------------------------------+
+                   |
+                   v
+    +---------------------------------+
+    | Accumulation Buffer per GPU     |
+    | GPU0: sum(Input0 + Temp01 + Temp02) |
+    | GPU1: sum(Input1 + Temp10 + Temp12) |
+    | GPU2: sum(Input2 + Temp20 + Temp21) |
+    +---------------------------------+
+                   |
+                   v
+    +---------------------------------+
+    | Output Lambda Application       |
+    | (Writes to final output buffers)|
+    +---------------------------------+
 
     Parameters:
         type: The data type of tensor elements.
         rank: Number of dimensions in input tensors.
         ngpus: Number of GPUs participating in allreduce.
         max_num_blocks: Maximum number of thread blocks to launch.
+        outputs_lambda: An elementwise output lambda function.
 
     Args:
         ctxs: List of device contexts for participating GPUs.
@@ -210,62 +276,72 @@ fn _all_reduce_naive[
     """
     var num_elements = list_of_in_bufs[0].num_elements()
 
-    var device_buffer_list = List[DeviceBuffer[type]](capacity=ngpus)
+    var device_buffers = List[DeviceBuffer[type]](capacity=ngpus)
     # Assemble input buffer structures from all devices
     for i in range(ngpus):
-        device_buffer_list.append(
+        device_buffers.append(
             DeviceBuffer(
                 ctxs[i], list_of_in_bufs[i].data, num_elements, owning=False
             )
         )
 
-    # Iterate over each device (GPU)
+    # Process each device
+    @parameter
     for device_idx in range(ngpus):
         var curr_ctx = ctxs[device_idx]
-        var curr_out_buf = list_of_out_bufs[device_idx]
 
-        # Create temporary buffers on the current device to store data from other devices
-        var tmp_buffer_list = List[DeviceBuffer[type]](capacity=ngpus)
+        # Create temporary accumulation buffer.
+        var accum_buffer = curr_ctx.enqueue_create_buffer[type](num_elements)
+        curr_ctx.enqueue_memset(accum_buffer, 0)  # Initialize to zero
+
+        # Create temporary buffers for remote data.
+        var tmp_buffers = List[DeviceBuffer[type]]()
         for i in range(ngpus):
-            # Skip allocating a copy for the current device
             if i != device_idx:
-                var tmp_buffer = curr_ctx.enqueue_create_buffer[type](
-                    num_elements
-                )
-                tmp_buffer_list.append(tmp_buffer)
+                var tmp = curr_ctx.enqueue_create_buffer[type](num_elements)
+                curr_ctx.enqueue_copy(tmp, device_buffers[i])
+                tmp_buffers.append(tmp)
 
-                # Copy data from other devices to the temporary buffer on the current device
-                curr_ctx.enqueue_copy(
-                    tmp_buffer,
-                    device_buffer_list[i],  # Source buffer from GPU i
-                )
-
-        # Launch reduction kernels
+        # Reduce all buffers into accumulation buffer.
         alias BLOCK_SIZE = 256
         var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
 
-        src_index = 0
-        for i in range(ngpus):
-            var src_buffer_ptr: UnsafePointer[Scalar[type]]
-            if i == device_idx:
-                src_buffer_ptr = device_buffer_list[i].unsafe_ptr()
-            else:
-                src_buffer_ptr = tmp_buffer_list[src_index].unsafe_ptr()
-                src_index += 1
+        # First reduce local buffer.
+        curr_ctx.enqueue_function[_naive_reduce_kernel[type]](
+            accum_buffer.unsafe_ptr(),
+            device_buffers[device_idx].unsafe_ptr(),
+            num_elements,
+            grid_dim=grid_size,
+            block_dim=BLOCK_SIZE,
+        )
 
-            if i == 0:
-                # Initialize the output buffer with the first buffer
-                curr_ctx.enqueue_copy(
-                    curr_out_buf.data, src_buffer_ptr, num_elements
-                )
-            else:
-                curr_ctx.enqueue_function[_naive_reduce_kernel[type]](
-                    curr_out_buf.data,
-                    src_buffer_ptr,
-                    num_elements,
-                    grid_dim=grid_size,
-                    block_dim=BLOCK_SIZE,
-                )
+        # Reduce remote buffers.
+        for tmp in tmp_buffers:
+            curr_ctx.enqueue_function[_naive_reduce_kernel[type]](
+                accum_buffer.unsafe_ptr(),
+                tmp[].unsafe_ptr(),
+                num_elements,
+                grid_dim=grid_size,
+                block_dim=BLOCK_SIZE,
+            )
+
+        # Apply output lambda to final accumulated buffer.
+        curr_ctx.enqueue_function[
+            _naive_reduce_kernel_with_lambda[
+                type,
+                rank,
+                my_rank=device_idx,
+                width = simdwidthof[type](),
+                alignment = alignof[SIMD[type, simdwidthof[type]()]](),
+                outputs_lambda=outputs_lambda,
+            ]
+        ](
+            list_of_out_bufs[device_idx],
+            accum_buffer.unsafe_ptr(),
+            num_elements,
+            grid_dim=grid_size,
+            block_dim=BLOCK_SIZE,
+        )
 
 
 @always_inline
@@ -281,9 +357,8 @@ fn _multi_gpu_barrier[
     self_sg: UnsafePointer[Signal[max_num_blocks]],
     my_rank: Int,
 ):
-    """
-    Implements a barrier synchronization across multiple GPUs to ensure all GPU blocks
-    reach a certain point before proceeding.
+    """Implements a barrier synchronization across multiple GPUs to ensure all
+    GPU blocks reach a certain point before proceeding.
 
     Parameters:
         max_num_blocks: Maximum number of thread blocks to launch.
@@ -619,7 +694,7 @@ fn _all_reduce_p2p[
     rank: Int,
     ngpus: Int,
     max_num_blocks: Int, //,
-    outputs_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    outputs_lambda: elementwise_epilogue_type,
 ](
     ctxs: List[DeviceContext],
     list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
@@ -634,7 +709,7 @@ fn _all_reduce_p2p[
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
         max_num_blocks: Maximum number of thread blocks to launch.
-        outputs_lambda: An optional output elementwise lambda.
+        outputs_lambda: An output elementwise lambda.
 
     Args:
         ctxs: List of device contexts for participating GPUs
@@ -673,7 +748,6 @@ fn _all_reduce_p2p[
         alias rank_8_byte_threshold = 256 * 1024
         var payload_bytecount = list_of_in_bufs[0].bytecount()
 
-        alias lambdas = outputs_lambda.value()
         if (rank <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
             rank <= 8 and (payload_bytecount < rank_8_byte_threshold)
         ):
@@ -686,7 +760,7 @@ fn _all_reduce_p2p[
                     max_num_blocks,
                     my_rank=i,
                     BLOCK_SIZE=BLOCK_SIZE,
-                    outputs_lambda=lambdas,
+                    outputs_lambda=outputs_lambda,
                 ]
             ](
                 curr_out_buf,
@@ -706,7 +780,7 @@ fn _all_reduce_p2p[
                     max_num_blocks,
                     my_rank=i,
                     BLOCK_SIZE=BLOCK_SIZE,
-                    outputs_lambda=lambdas,
+                    outputs_lambda=outputs_lambda,
                 ]
             ](
                 curr_out_buf,
@@ -723,7 +797,7 @@ fn all_reduce[
     rank: Int,
     ngpus: Int,
     max_num_blocks: Int, //,
-    outputs_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    outputs_lambda: elementwise_epilogue_type,
 ](
     ctxs: List[DeviceContext],
     input_buffers: InlineArray[NDBuffer[type, rank], ngpus],
@@ -745,7 +819,7 @@ fn all_reduce[
         rank: The number of dimensions in the input/output tensors.
         ngpus: The number of GPUs participating in the allreduce.
         max_num_blocks: The maximum number of thread blocks to launch per GPU.
-        outputs_lambda: An optional output elementwise lambda.
+        outputs_lambda: An output elementwise lambda.
 
     Args:
         ctxs: List of device contexts for each participating GPU.
@@ -761,14 +835,7 @@ fn all_reduce[
     var can_p2p = can_enable_p2p(ctxs)
 
     if not can_p2p:
-
-        @parameter
-        if outputs_lambda:
-            raise Error(
-                "elementwise lambda fusion unsupported by allreduce naive path"
-            )
-
-        return _all_reduce_naive[max_num_blocks](
+        return _all_reduce_naive[max_num_blocks, outputs_lambda=outputs_lambda](
             ctxs, input_buffers, output_buffers
         )
     else:
