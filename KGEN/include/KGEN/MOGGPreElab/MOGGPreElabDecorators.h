@@ -46,9 +46,6 @@ constexpr StringLiteral MOGG_RESULT_CONFORMANCES = "mogg.result_conformances";
 /// MOGG Intrinsic for the register kernel decorator.
 constexpr StringLiteral MOGG_INTRINSIC_REGISTER = "mogg.intrinsic_register";
 
-/// MOGG Intrinsic for the elementwise kernel decorator.
-constexpr StringLiteral MOGG_INTRINSIC_ELEMENTWISE = "mogg.elementwise";
-
 /// MOGG Intrinsic for the view kernel decorator.
 constexpr StringLiteral MOGG_INTRINSIC_VIEW_KERNEL = "mogg.view_kernel";
 
@@ -139,7 +136,6 @@ static constexpr StringLiteral kMOGGTargetParameterName = "target";
 static constexpr StringLiteral kMOGGOutputRankParameterName = "output_rank";
 
 // Generator level annotations for fusion.
-static constexpr StringLiteral kMOGGElementFunction = "mogg.elementwise";
 static constexpr StringLiteral kMOGGViewKernel = "mogg.view_kernel";
 
 // The number of DPS (Destination Passing Style) output operands there are.
