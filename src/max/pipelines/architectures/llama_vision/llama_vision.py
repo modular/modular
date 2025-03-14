@@ -172,15 +172,17 @@ class MultimodalKVCacheManager(KVCacheManager):
         )
 
         remaining_memory = available_cache_memory - vision_kv_cache_size
-        if remaining_memory > 0:
-            text_kv_cache_size = estimate_kv_cache_size(
-                params,
-                max_batch_size,
-                max_seq_len,
-                num_layers,
-                remaining_memory,
-                devices,
-            )
+        if remaining_memory <= 0:
+            return vision_kv_cache_size
+
+        text_kv_cache_size = estimate_kv_cache_size(
+            params,
+            max_batch_size,
+            max_seq_len,
+            num_layers,
+            remaining_memory,
+            devices,
+        )
         return vision_kv_cache_size + text_kv_cache_size
 
     @classmethod
