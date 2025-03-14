@@ -1257,6 +1257,10 @@ TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
       return std::get<1>(*it);
   }
 
+  // Fold UnknownAttr for convenience.
+  if (::isa<UnknownAttr>(structValue))
+    return UnknownAttr::get(resultType);
+
   return Base::get(context, structValue, field, resultType);
 }
 
