@@ -1212,7 +1212,7 @@ fn wgmma_async[
         )
 
         alias input_reg_spec = _str_iota[n // 2, prefix="$"]()
-        alias input_constraints_prefix = StringLiteral.get["=f," * (n // 2)]()
+        alias input_constraints_prefix = get_string_literal["=f," * (n // 2)]()
         alias input_constraints_suffix = _str_iota[n // 2, sep=","]()
         alias constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
 
@@ -1492,7 +1492,7 @@ fn _str_iota[
     count: Int, *, prefix: StringLiteral = "", sep: StringLiteral = ", "
 ]() -> StringLiteral:
     alias s = _str_iota_impl[count, prefix=prefix, sep=sep]()
-    return StringLiteral.get[s]()
+    return get_string_literal[s]()
 
 
 @always_inline("nodebug")

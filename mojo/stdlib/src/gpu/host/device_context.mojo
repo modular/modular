@@ -957,7 +957,7 @@ struct DeviceFunction[
     fn _dump_q[
         name: StringLiteral, val: Variant[Bool, Path, fn () capturing -> Path]
     ]() -> (Bool, Variant[Bool, Path, fn () capturing -> Path]):
-        alias name_upper = StringLiteral.get[String(name).upper()]()
+        alias name_upper = get_string_literal[String(name).upper()]()
         alias env_var = "DUMP_GPU_" + name_upper
 
         @parameter

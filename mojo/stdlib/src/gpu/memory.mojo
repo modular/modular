@@ -1880,4 +1880,4 @@ fn _int_to_str[val: Int]() -> StringLiteral:
     elif val == 256:
         return "256"
 
-    return StringLiteral.get[String(val)]()
+    return get_string_literal[val]()
