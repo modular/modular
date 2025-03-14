@@ -58,20 +58,32 @@ struct Level:
 
     var _value: Int
 
-    alias NOTSET = Self(0)  # Lowest level, used when no level is set
-    alias DEBUG = Self(10)  # Detailed information for debugging
-    alias INFO = Self(20)  # General information about program execution
-    alias WARNING = Self(30)  # Indicates a potential problem
-    alias ERROR = Self(40)  # Error that prevents normal program execution
-    alias CRITICAL = Self(
-        50
-    )  # Critical error that may lead to program termination
+    alias NOTSET = Self(0)
+    """Lowest level, used when no level is set."""
+
+    alias DEBUG = Self(10)
+    """Detailed information, typically of interest only when diagnosing problems."""
+
+    alias INFO = Self(20)
+    """Confirmation that things are working as expected."""
+
+    alias WARNING = Self(30)
+    """Indication that something unexpected happened, or may happen in the near future."""
+
+    alias ERROR = Self(40)
+    """Due to a more serious problem, the software has not been able to perform some function."""
+
+    alias CRITICAL = Self(50)
+    """A serious error indicating that the program itself may be unable to continue running."""
 
     fn __eq__(self, other: Self) -> Bool:
         """Returns True if this level equals the other level.
 
         Args:
             other: The level to compare with.
+
+        Returns:
+            Bool: True if the levels are equal, False otherwise.
         """
         return self._value == other._value
 
@@ -80,6 +92,9 @@ struct Level:
 
         Args:
             other: The level to compare with.
+
+        Returns:
+            Bool: True if the levels are not equal, False otherwise.
         """
         return not (self == other)
 
@@ -88,6 +103,9 @@ struct Level:
 
         Args:
             other: The level to compare with.
+
+        Returns:
+            Bool: True if this level is greater than the other level, False otherwise.
         """
         return self._value > other._value
 
@@ -96,6 +114,9 @@ struct Level:
 
         Args:
             other: The level to compare with.
+
+        Returns:
+            Bool: True if this level is greater than or equal to the other level, False otherwise.
         """
         return self._value >= other._value
 
@@ -104,6 +125,9 @@ struct Level:
 
         Args:
             other: The level to compare with.
+
+        Returns:
+            Bool: True if this level is less than the other level, False otherwise.
         """
         return self._value < other._value
 
@@ -112,6 +136,9 @@ struct Level:
 
         Args:
             other: The level to compare with.
+
+        Returns:
+            Bool: True if this level is less than or equal to the other level, False otherwise.
         """
         return self._value <= other._value
 
@@ -120,6 +147,9 @@ struct Level:
 
         Args:
             other: The level to compare with.
+
+        Returns:
+            Bool: True if this level is identical to the other level, False otherwise.
         """
         return self == other
 
@@ -128,6 +158,9 @@ struct Level:
 
         Args:
             other: The level to compare with.
+
+        Returns:
+            Bool: True if this level is not identical to the other level, False otherwise.
         """
         return self != other
 
@@ -159,6 +192,9 @@ struct Level:
     fn write_to[W: Writer](self, mut writer: W):
         """Writes the string representation of this level to a writer.
 
+        Parameters:
+            W: The writer type that implements the Writer trait.
+
         Args:
             writer: The writer to write to.
         """
@@ -177,12 +213,20 @@ struct Level:
 
     @no_inline
     fn __str__(self) -> String:
-        """Returns the string representation of this level."""
+        """Returns the string representation of this level.
+
+        Returns:
+            String: A human-readable string representation of the level (e.g., "DEBUG", "INFO").
+        """
         return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
-        """Returns the detailed string representation of this level."""
+        """Returns the detailed string representation of this level.
+
+        Returns:
+            String: A string representation including the type name and level value (e.g., "Level.DEBUG").
+        """
         return String("Level.", self)
 
 
@@ -216,6 +260,9 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Parameters:
             target_level: The level to check if disabled.
+
+        Returns:
+            True if logging at the target level is disabled, False otherwise.
         """
         if level == Level.NOTSET:
             return False
@@ -226,8 +273,9 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Parameters:
             Ts: The types of values to log.
+
         Args:
-            *values: The values to log.
+            values: The values to log.
         """
         alias target_level = Level.DEBUG
 
@@ -245,8 +293,9 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Parameters:
             Ts: The types of values to log.
+
         Args:
-            *values: The values to log.
+            values: The values to log.
         """
         alias target_level = Level.INFO
 
@@ -264,8 +313,9 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Parameters:
             Ts: The types of values to log.
+
         Args:
-            *values: The values to log.
+            values: The values to log.
         """
         alias target_level = Level.WARNING
 
@@ -283,8 +333,9 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Parameters:
             Ts: The types of values to log.
+
         Args:
-            *values: The values to log.
+            values: The values to log.
         """
         alias target_level = Level.ERROR
 
@@ -302,8 +353,9 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         Parameters:
             Ts: The types of values to log.
+
         Args:
-            *values: The values to log.
+            values: The values to log.
         """
         alias target_level = Level.CRITICAL
 
