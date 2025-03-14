@@ -43,7 +43,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
-from gpu.all_reduce import MAX_GPUS, MAX_NUM_BLOCKS_DEFAULT, Signal, all_reduce
+from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
@@ -7827,14 +7827,11 @@ struct Struct_swishGLU:
 
 
 @always_inline
-fn _check_signal_buffer_size[
-    max_num_blocks: Int
-](signal_buffer_size: Int, input_size_bytes: Int) raises:
-    # TODO: expose API in all_reduce.mojo to compute the expected size here.
+fn _check_signal_buffer_size(
+    signal_buffer_size: Int, input_size_bytes: Int
+) raises:
     # The signal buffer has to be large enough to hold the entire input buffer.
-    var min_signal_buffer_size = sizeof[
-        Signal[max_num_blocks]
-    ]() + input_size_bytes
+    var min_signal_buffer_size = sizeof[Signal]() + input_size_bytes
     if signal_buffer_size < min_signal_buffer_size:
         raise Error(
             "expected signal buffer to be at least ",
@@ -7846,9 +7843,6 @@ fn _check_signal_buffer_size[
 
 @compiler.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
-    alias max_num_blocks = MAX_NUM_BLOCKS_DEFAULT
-    """Controls kernel concurrency."""
-
     @staticmethod
     fn execute[
         type: DType,
@@ -7892,9 +7886,7 @@ struct DistributedAllReduceSum:
         ]()
 
         var input_size_bytes = inputs[0].size() * sizeof[type]()
-        _check_signal_buffer_size[Self.max_num_blocks](
-            signal_buffers[0].size(), input_size_bytes
-        )
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
         var dev_ctxs = List[DeviceContext]()
         for i in range(len(dev_ctxs_input)):
@@ -7917,15 +7909,13 @@ struct DistributedAllReduceSum:
         for i in range(num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal[Self.max_num_blocks]], MAX_GPUS
-        ](UnsafePointer[Signal[Self.max_num_blocks]]())
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+            UnsafePointer[Signal]()
+        )
 
         @parameter
         for i in range(signal_buffers.size):
-            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[
-                Signal[Self.max_num_blocks]
-            ]()
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
         @parameter
