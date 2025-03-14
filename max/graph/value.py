@@ -28,6 +28,7 @@ from .type import (
     Shape,
     ShapeLike,
     TensorType,
+    Type,
     _ChainType,
 )
 
@@ -132,6 +133,11 @@ class Value:
         msg = f"Value is not a TensorValue, was '{type(self).__name__}'"
         raise TypeError(msg)
 
+    @property
+    def type(self) -> Type:
+        """Returns the type of the :obj:`Value` as a :obj:`Type`."""
+        raise NotImplementedError
+
 
 class _ChainValue(Value):
     def __init__(self, value: Union[Value, mlir.Value]):
@@ -147,7 +153,7 @@ class _ChainValue(Value):
 
     @property
     def type(self) -> _ChainType:
-        """Returns the type of the :obj:`BufferValue` as a :obj`BufferType`."""
+        """Returns the type of the :obj:`_ChainValue` as a :obj:`_ChainType`."""
         return _ChainType.from_mlir(self._mlir_value.type)
 
 
