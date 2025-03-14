@@ -68,20 +68,16 @@ def input_tensor_rope(
 
 @pytest.fixture
 def attention_mask(
-    config: DeepseekV2Config,
-    seq_len: int = 40,
+    seq_len: int = 7,
     batch_size: int = 1,
-    seed: int = 1234,
 ) -> torch.Tensor:
-    # TODO: This likely needs to be generated differently to produce a valid attention mask (MODELS-369).
-    torch.manual_seed(seed)  # Set fixed seed for reproducibility
-    return torch.randn(
-        1,
-        batch_size,
-        seq_len,
-        seq_len,
-        dtype=torch.bfloat16,
+    # Create causal mask where future tokens can't attend to past tokens
+    mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
+    causal_mask = torch.zeros(
+        1, batch_size, seq_len, seq_len, dtype=torch.bfloat16
     )
+    causal_mask.masked_fill_(mask, float("-inf")).to(torch.bfloat16)
+    return causal_mask
 
 
 @pytest.fixture
