@@ -28,6 +28,7 @@ from memory import UnsafePointer
 from ._driver_library import DriverLibrary
 from ._status import Status, _CStatus
 from .device_memory import DeviceMemory, DeviceTensor
+from runtime.asyncrt import DeviceContextPtr
 
 
 struct _CPUDescriptor:
@@ -206,6 +207,16 @@ struct Device(Stringable):
             True if they are the same logical device.
         """
         return self._cdev == other._cdev
+
+    @staticmethod
+    fn wait_for(device: Device) raises:
+        """Blocks until all enqueued, asynchronous calls on the device have completed.
+        """
+        var device_context = call_dylib_func[DeviceContextPtr](
+            device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
+        )
+
+        device_context[].synchronize()
 
 
 fn cpu() raises -> Device:
