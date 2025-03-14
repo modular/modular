@@ -115,7 +115,9 @@ struct StringLiteral(
         Returns:
             The concatenated string.
         """
-        return self.as_string_slice() + rhs
+        var res = String(capacity=self.byte_length() + rhs.byte_length() + 1)
+        res.write(self, rhs, "\0")
+        return res
 
     @always_inline("nodebug")
     fn __mul__(self, n: Int) -> String:

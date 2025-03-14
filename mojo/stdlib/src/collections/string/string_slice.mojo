@@ -930,20 +930,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return atof(self)
 
-    @always_inline("nodebug")
-    fn __add__(self, rhs: StringSlice) -> String:
-        """Concatenate two strings.
-
-        Args:
-            rhs: The string to concat.
-
-        Returns:
-            The concatenated string.
-        """
-        var res = String(capacity=self.byte_length() + rhs.byte_length() + 1)
-        res.write(self, rhs)
-        return res
-
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.
 
