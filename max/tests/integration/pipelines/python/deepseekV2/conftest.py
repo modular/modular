@@ -96,3 +96,62 @@ def dummy_moe_weight(
     return torch.randn(
         (config.n_routed_experts, config.hidden_size), dtype=torch.float32
     )
+
+
+@pytest.fixture
+def shared_expert_weights(config: DeepseekV2Config) -> dict[str, torch.Tensor]:
+    """Create dummy weights for shared experts"""
+    torch.manual_seed(42)  # For reproducibility
+    assert isinstance(config.moe_intermediate_size, int)
+    assert isinstance(config.n_shared_experts, int)
+    shared_experts_intermediate_size = (
+        config.moe_intermediate_size * config.n_shared_experts
+    )
+    expert = {
+        "down_proj.weight": torch.randn(
+            config.hidden_size,
+            shared_experts_intermediate_size,
+            dtype=torch.bfloat16,
+        ),
+        "gate_proj.weight": torch.randn(
+            shared_experts_intermediate_size,
+            config.hidden_size,
+            dtype=torch.bfloat16,
+        ),
+        "up_proj.weight": torch.randn(
+            shared_experts_intermediate_size,
+            config.hidden_size,
+            dtype=torch.bfloat16,
+        ),
+    }
+    return expert
+
+
+@pytest.fixture
+def expert_weights(config: DeepseekV2Config) -> list[dict[str, torch.Tensor]]:
+    """Create dummy weights for individual experts"""
+    experts = []
+    n_experts = (
+        config.n_routed_experts if config.n_routed_experts is not None else 64
+    )
+    for i in range(n_experts):
+        torch.manual_seed(i)  # For reproducibility
+        expert = {
+            "down_proj.weight": torch.randn(
+                config.hidden_size,
+                config.moe_intermediate_size,
+                dtype=torch.bfloat16,
+            ),
+            "gate_proj.weight": torch.randn(
+                config.moe_intermediate_size,
+                config.hidden_size,
+                dtype=torch.bfloat16,
+            ),
+            "up_proj.weight": torch.randn(
+                config.moe_intermediate_size,
+                config.hidden_size,
+                dtype=torch.bfloat16,
+            ),
+        }
+        experts.append(expert)
+    return experts
