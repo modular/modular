@@ -21,7 +21,16 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, SymbolicDim, TensorType, ops
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    SymbolicDim,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.profiler import traced
 
 from .paged_cache_metadata import PagedCacheMetadata
@@ -62,15 +71,25 @@ def construct_cow_strided_memcpy_graph(
             max_num_tokens_tensor,
             *all_blocks,
         ) = graph.inputs
+
+        assert isinstance(block_dst_idx_tensor, TensorValue)
+        assert isinstance(block_src_idx_tensor, TensorValue)
+        assert isinstance(num_tokens_tensor, TensorValue)
+        assert isinstance(max_num_tokens_tensor, TensorValue)
+
         for blocks in all_blocks:
+            assert isinstance(blocks, BufferValue)
+            dev_ref = blocks.device
+            assert dev_ref is not None
+
             ops.inplace_custom(
                 "mo.kv_collection_cow_strided_memcpy.paged",
                 values=[
                     blocks,
-                    block_dst_idx_tensor,
-                    block_src_idx_tensor,
-                    num_tokens_tensor,
-                    max_num_tokens_tensor,
+                    block_dst_idx_tensor.to(dev_ref),
+                    block_src_idx_tensor.to(dev_ref),
+                    num_tokens_tensor.to(dev_ref),
+                    max_num_tokens_tensor.to(dev_ref),
                 ],
                 out_types=[],
             )
