@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
 import torch
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -15,28 +14,6 @@ from torch_reference.configuration_deepseek import (
     DeepseekV2Config,
 )
 from torch_reference.modeling_deepseek import MoEGate
-
-
-# TODO: Replace with real weights using indexing included in the upcoming Model API.
-@pytest.fixture
-def dummy_moe_weight(config: DeepseekV2Config) -> torch.Tensor:
-    """
-    Fixture to create dummy weights for an MLP layer.
-    Returns tensors in bfloat16 format.
-    """
-    torch.manual_seed(42)  # Set fixed seed for reproducibility
-    return torch.randn((64, config.hidden_size), dtype=torch.float32)
-
-
-@pytest.fixture
-def input_tensor(config: DeepseekV2Config, seq_len: int = 7) -> torch.Tensor:
-    torch.manual_seed(1234)  # Set fixed seed for reproducibility
-    return torch.randn(
-        1,
-        seq_len,
-        config.hidden_size,
-        dtype=torch.bfloat16,
-    )
 
 
 def generate_torch_outputs(
@@ -67,7 +44,11 @@ def generate_max_outputs(
         input_types=(
             TensorType(
                 DType.bfloat16,
-                (1, input_tensor.shape[1], config.hidden_size),
+                (
+                    input_tensor.shape[0],
+                    input_tensor.shape[1],
+                    config.hidden_size,
+                ),
             ),
         ),
     )

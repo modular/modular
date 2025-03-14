@@ -18,34 +18,6 @@ from torch_reference.configuration_deepseek import (
 from torch_reference.modeling_deepseek import DeepseekV2Attention
 
 
-@pytest.fixture
-def input_tensor(
-    config: DeepseekV2Config, seq_len: int = 40, batch_size: int = 1
-) -> torch.Tensor:
-    torch.manual_seed(42)  # Set fixed seed for reproducibility
-    return torch.randn(
-        batch_size,
-        seq_len,
-        config.hidden_size,
-        dtype=torch.bfloat16,
-    )
-
-
-@pytest.fixture
-def attention_mask(
-    config: DeepseekV2Config, seq_len: int = 40, batch_size: int = 1
-) -> torch.Tensor:
-    # TODO: This likely needs to be generated differently to produce a valid attention mask (MODELS-369).
-    torch.manual_seed(42)  # Set fixed seed for reproducibility
-    return torch.randn(
-        1,
-        batch_size,
-        seq_len,
-        seq_len,
-        dtype=torch.bfloat16,
-    )
-
-
 def generate_torch_outputs(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
