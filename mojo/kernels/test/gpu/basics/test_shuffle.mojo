@@ -268,7 +268,8 @@ fn test_shuffle_xor_fp16_packed(ctx: DeviceContext) raises:
 
 
 fn _warp_reduce_launch_helper[
-    type: DType, simd_width: Int
+    type: DType,
+    simd_width: Int,
 ](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
@@ -319,6 +320,68 @@ fn test_warp_reduce_fp16_packed(ctx: DeviceContext) raises:
     _warp_reduce_launch_helper[DType.float16, 2](ctx)
 
 
+fn _lane_group_reduce_launch_helper[
+    type: DType,
+    simd_width: Int,
+    num_lanes: Int,
+    stride: Int,
+](ctx: DeviceContext) raises:
+    alias block_size = WARP_SIZE
+    alias buffer_size = block_size * simd_width
+
+    var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
+    for i in range(buffer_size):
+        host_ptr[i] = i // simd_width
+
+    @parameter
+    fn reduce_add[
+        type: DType,
+        width: Int,
+    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        return x + y
+
+    @parameter
+    fn do_lane_group_reduce(
+        val: SIMD[type, simd_width]
+    ) -> SIMD[type, simd_width]:
+        return warp.lane_group_reduce[
+            shuffle_down, reduce_add, num_lanes=num_lanes, stride=stride
+        ](val)
+
+    _kernel_launch_helper[type, simd_width, do_lane_group_reduce](
+        host_ptr, buffer_size, block_size, ctx
+    )
+
+    for lane in range(block_size // num_lanes):
+        for i in range(simd_width):
+            assert_equal(
+                host_ptr[lane * simd_width + i],
+                (num_lanes // 2) * (2 * lane + (num_lanes - 1) * stride),
+            )
+
+    host_ptr.free()
+
+
+fn test_lane_group_reduce_fp32(ctx: DeviceContext) raises:
+    _lane_group_reduce_launch_helper[DType.float32, 1, 4, 8](ctx)
+
+
+fn test_lane_group_reduce_bf16(ctx: DeviceContext) raises:
+    _lane_group_reduce_launch_helper[DType.bfloat16, 1, 4, 8](ctx)
+
+
+fn test_lane_group_reduce_bf16_packed(ctx: DeviceContext) raises:
+    _lane_group_reduce_launch_helper[DType.bfloat16, 2, 4, 8](ctx)
+
+
+fn test_lane_group_reduce_fp16(ctx: DeviceContext) raises:
+    _lane_group_reduce_launch_helper[DType.float16, 1, 4, 8](ctx)
+
+
+fn test_lane_group_reduce_fp16_packed(ctx: DeviceContext) raises:
+    _lane_group_reduce_launch_helper[DType.float16, 2, 4, 8](ctx)
+
+
 fn main() raises:
     with DeviceContext() as ctx:
         test_shuffle_idx_fp32(ctx)
@@ -346,3 +409,8 @@ fn main() raises:
         test_warp_reduce_bf16_packed(ctx)
         test_warp_reduce_fp16(ctx)
         test_warp_reduce_fp16_packed(ctx)
+        test_lane_group_reduce_fp32(ctx)
+        test_lane_group_reduce_bf16(ctx)
+        test_lane_group_reduce_bf16_packed(ctx)
+        test_lane_group_reduce_fp16(ctx)
+        test_lane_group_reduce_fp16_packed(ctx)
