@@ -18,6 +18,10 @@ const repoConfig = {
 
 suite('LSP', () => {
   test('LSP should not be loaded on startup', async () => {
+    // Restart the extension. Tests run in a shared environment, so if other tests
+    // have created the LSP, this test will fail otherwise.
+    await vscode.commands.executeCommand('mojo.extension.restart');
+
     assert.strictEqual(extension.lspManager!.lspClient, undefined);
   });
 
