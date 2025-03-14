@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# UNSUPPORTED: H100-GPU
 # COM: Note: CPU function compilation not supported
 # COM: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu %s
