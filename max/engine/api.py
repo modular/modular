@@ -987,7 +987,7 @@ class InferenceSession:
         if mode == GPUProfilingMode.DETAILED:
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
-        set_gpu_profiling_state(str(mode))
+        set_gpu_profiling_state(mode.value)
 
     def _use_experimental_kernels(self, mode: str):
         """Enables experimental kernels."""
