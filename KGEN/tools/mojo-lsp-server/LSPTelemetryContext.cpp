@@ -59,3 +59,9 @@ void LSPTelemetryContext::reportShutdown() {
   ctx.getLogger("mojo")->emitL0Event("lsp.shutdown");
 #endif // MODULAR_ENABLE_TELEMETRY
 }
+
+void LSPTelemetryContext::flush() {
+#ifdef MODULAR_ENABLE_TELEMETRY
+  ctx.flush();
+#endif // MODULAR_ENABLE_TELEMETRY
+}

@@ -208,6 +208,7 @@ void LSPServer::onShutdown(const NoParams &,
   profiler.reset();
 
   server.getLSPTelemetryContext().reportShutdown();
+  server.getLSPTelemetryContext().flush();
   server.shutdown();
   shutdownRequestReceived = true;
   responder.reply(nullptr);
