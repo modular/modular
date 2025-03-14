@@ -2224,6 +2224,12 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       }
   }
 
+  if (auto bitcast = dyn_cast<POP::PointerBitcastOp>(op)) {
+    if (auto src = findValue(bitcast.getInput()))
+      return ParamOperatorAttr::get(
+          POC::PtrBitcast, src, evaluator.getReboundType(bitcast.getType()));
+  }
+
   if (auto call = dyn_cast<LIT::CallOp>(op)) {
     SmallVector<TypedAttr> calleeOperands;
     calleeOperands.push_back(evaluator.getReboundAttribute(call.getCallee()));
@@ -2236,8 +2242,11 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     // Note that the recursive call here always generates an error.  We know
     // that this was inside of a "builtin" function so we're not being
     // called speculatively on an arbitrary function.
-    return shared.foldInlineBuiltinFunction(calleeOperands, op.getLoc(),
-                                            /*emitError=*/true);
+    if (auto result =
+            shared.foldInlineBuiltinFunction(calleeOperands, op.getLoc(),
+                                             /*emitError=*/true))
+      return result;
+    return failure();
   }
 
   // For vardecls, the primary pattern we're trying to handle is:
@@ -2252,9 +2261,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     ASTDecl *decl = ASTType(eltType).getDecl(shared);
     StructDeclOp structOp;
     if (decl && (structOp = dyn_cast<StructDeclOp>(*decl)) &&
-        structOp.getConvention() == TypeConvention::RegisterPassableTrivial &&
-        // Support zero or one field.
-        std::distance(structOp.field_begin(), structOp.field_end()) <= 1) {
+        structOp.getConvention() == TypeConvention::RegisterPassableTrivial) {
       varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
       return TypedAttr();
     }
@@ -2280,10 +2287,25 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     if (value && ger && varDeclSoFar[ger.getContainer()]) {
       // Store to a subfield.
       auto gerBase = ger.getContainer();
+      auto &varEntry = varDeclSoFar[gerBase];
       auto structType = cast<LIT::StructType>(
           evaluator.getReboundType(gerBase.getType().getElementType()));
-      varDeclSoFar[gerBase] =
-          LITStructAttr::get({{ger.getFieldAttr(), value}}, structType);
+
+      // These asserting casts are checked when the VarDecl is processed.
+      auto structOp = cast<StructDeclOp>(*ASTType(structType).getDecl(shared));
+
+      // Form the new struct using all the same fields as before but with the
+      // new one replaced.
+      SmallVector<std::tuple<StringAttr, TypedAttr>> fields;
+      for (auto field : structOp.getFieldDecls()) {
+        TypedAttr fieldValue;
+        if (field.getName() == ger.getFieldAttr())
+          fieldValue = value;
+        else
+          fieldValue = LIT::StructExtractAttr::get(varEntry, field);
+        fields.push_back({field.getNameAttr(), fieldValue});
+      }
+      varEntry = LITStructAttr::get(fields, structType);
       return TypedAttr();
     }
   }
