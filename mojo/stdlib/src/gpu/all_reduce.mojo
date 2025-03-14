@@ -793,6 +793,8 @@ fn _all_reduce_p2p[
 @always_inline
 fn _dispatch_max_num_blocks[ngpus: Int](num_bytes: Int) -> Int:
     # TODO(GENAI-96): replace with dispatch table from autotuning.
+    if ngpus == 4 and num_bytes == (1 << 27):
+        return 232
     return 128
 
 
