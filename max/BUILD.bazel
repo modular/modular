@@ -69,7 +69,7 @@ modular_genrule(
     """.format(
         driver = ":stubfiles/driver/__init__.pyi",
         engine = ":stubfiles/engine/__init__.pyi",
-        excludes = "graph/__init__.pyi,dialects/mo/__init__.pyi",
+        excludes = "graph/__init__.pyi,dialects/mo/__init__.pyi,dialects/mosh/__init__.pyi",
         module = "_core",
         ruff = "//utils/bazel/lint:ruff-wrapper",
         stubgen = ":_core.stubfile_generator",
