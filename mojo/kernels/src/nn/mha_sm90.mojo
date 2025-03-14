@@ -630,9 +630,6 @@ fn _mha_single_batch_sm90_fa3[
                 kv_runtime_layout,
             )
             k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
-            TMABarrier(MbarPtrType(consumed_mbar_k_ptr + write_idx)).wait(
-                write_phase
-            )
 
             # load K tile into smem
             @parameter
