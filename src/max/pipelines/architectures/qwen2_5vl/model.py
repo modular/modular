@@ -30,6 +30,7 @@ from max.pipelines import (
     TextAndVisionContext,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    get_window_index,
     mrope_pos_ids_3d,
 )
 from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
@@ -57,12 +58,37 @@ class Qwen2_5VLInputs(ModelInputs):
     pixel_row_offsets: Tensor
 
     # Vision model inputs.
+    """ image pixel_values stacked in 2D tensor of shape [n_patches, in_channels * 
+    temporal_patch_size * patch_size * patch_size] """
     pixel_values: Tensor | None
+
+    """ grid of spatial and temporal coordinates of patches in pixel_values
+    """
     image_grid_thw: Tensor | None
+    """ ids for each patch in pixel_values according to their dims.
+    """
     image_rot_pos_ids: Tensor | None
+    """ video pixel_values
+    """
     pixel_values_videos: Tensor | None
+    """ grid of spatial and temporal coordinates of patches in pixel_values_videos
+    """
     video_grid_thw: Tensor | None
+    """ ids for each patch in pixel_values_videos according to their dims.
+    """
     video_rot_pos_ids: Tensor | None
+    """ indices of image patches included in windows for WindowAttention
+    """
+    image_window_index: Tensor | None
+    """ cumulative seq_len of windows for WindowAttention on images
+    """
+    image_cu_window_seqlens: Tensor | None
+    """ indices of video patches included in windows for WindowAttention
+    """
+    video_window_index: Tensor | None
+    """ cumulative seq_len of windows for WindowAttention on videos
+    """
+    video_cu_window_seqlens: Tensor | None
 
     def __init__(
         self,
@@ -76,6 +102,10 @@ class Qwen2_5VLInputs(ModelInputs):
         pixel_values_videos: Tensor | None,
         video_grid_thw: Tensor | None,
         video_rot_pos_ids: Tensor | None,
+        image_window_index: Tensor | None,
+        image_cu_window_seqlens: Tensor | None,
+        video_window_index: Tensor | None,
+        video_cu_window_seqlens: Tensor | None,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.tokens = tokens
@@ -88,6 +118,10 @@ class Qwen2_5VLInputs(ModelInputs):
         self.pixel_values_videos = pixel_values_videos
         self.video_grid_thw = video_grid_thw
         self.video_rot_pos_ids = video_rot_pos_ids
+        self.image_window_index = image_window_index
+        self.image_cu_window_seqlens = image_cu_window_seqlens
+        self.video_window_index = video_window_index
+        self.video_cu_window_seqlens = video_cu_window_seqlens
         self.kv_cache_inputs = kv_cache_inputs
 
     @property
@@ -130,10 +164,62 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
         """Returns the maximum number of vision tokens."""
         raise NotImplementedError
 
+    def _generate_pos_ids_and_window_indices(
+        self, pixel_values: np.ndarray, grid_thw: np.ndarray
+    ):
+        position_ids = Tensor.from_numpy(
+            mrope_pos_ids_3d(
+                grid_thw,
+                self.huggingface_config.spatial_merge_size,
+            )
+        )
+
+        window_index, cu_window_seqlens = get_window_index(
+            grid_thw,
+            self.huggingface_config.window_size,
+            self.huggingface_config.spatial_merge_size,
+            self.huggingface_config.patch_size,
+            self.huggingface_config.spatial_merge_unit,
+        )
+        return (
+            pixel_values,
+            grid_thw,
+            position_ids,
+            Tensor.from_numpy(window_index),
+            Tensor.from_numpy(cu_window_seqlens),
+        )
+
     def _prepare_vision_inputs(
         self,
         context_batch: Sequence[TextAndVisionContext],
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        has_images: bool,
+        has_videos: bool,
+    ) -> tuple[
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+        Tensor,
+    ]:
+        """
+        Returns
+            image_pixel_values,
+            image_grid_thw,
+            image_position_ids,
+            image_window_index,
+            image_cu_window_seqlens,
+            pixel_values_videos,
+            video_grid_thw,
+            video_position_ids,
+            video_window_index,
+            video_cu_window_seqlens,
+        """
+        # TODO: Call _generate_pos_ids_and_window_indices on image and video inputs for all contexts in the batch
         raise NotImplementedError
 
     def prepare_initial_token_inputs(
@@ -149,31 +235,24 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             return pixel_values is not None and len(pixel_values) > 0
 
         has_images = any(has_image(ctx.pixel_values) for ctx in context_batch)
-        # TODO: Update this after vision context updates to check for video pixel values too.
-        has_videos = any(has_image(ctx.pixel_values) for ctx in context_batch)
+        # TODO: Update this after vision context is updated to check for video pixel values too.
+        has_videos = False
 
         # Prepare vision inputs if applicable.
-        pixel_values = None
-        image_grid_thw = None
-        pixel_values_videos = None
-        video_grid_thw = None
-        if has_images and has_videos:
-            (
-                pixel_values,
-                image_grid_thw,
-                pixel_values_videos,
-                video_grid_thw,
-            ) = self._prepare_vision_inputs(context_batch)
-            img_position_ids = Tensor.from_numpy(
-                mrope_pos_ids_3d(
-                    image_grid_thw, self.huggingface_config.spatial_merge_size
-                )
-            )
-            video_position_ids = Tensor.from_numpy(
-                mrope_pos_ids_3d(
-                    video_grid_thw, self.huggingface_config.spatial_merge_size
-                )
-            )
+        (
+            pixel_values,
+            image_grid_thw,
+            img_position_ids,
+            image_window_index,
+            image_cu_window_seqlens,
+            pixel_values_videos,
+            video_grid_thw,
+            video_position_ids,
+            video_window_index,
+            video_cu_window_seqlens,
+        ) = self._prepare_vision_inputs(
+            context_batch, has_images=has_images, has_videos=has_videos
+        )
 
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_id_row_offsets = Tensor.from_numpy(
@@ -227,6 +306,10 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             pixel_values_videos=pixel_values_videos,
             video_grid_thw=video_grid_thw,
             video_rot_pos_ids=video_position_ids,
+            image_window_index=image_window_index,
+            image_cu_window_seqlens=image_cu_window_seqlens,
+            video_window_index=video_window_index,
+            video_cu_window_seqlens=video_cu_window_seqlens,
             kv_cache_inputs=kv_cache_inputs,
         )
 
