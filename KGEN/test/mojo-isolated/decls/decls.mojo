@@ -376,16 +376,18 @@ fn alias_parametric_fn() -> String:
         return "amdgpu-flat-work-group-size"
 
 
-# alias mname1 = alias_parametric_fn().value
+alias mname1 = get_string_literal[alias_parametric_fn()]().value
 
 # CHECK-LABEL: lit.fn @"kernel3{{.*}}"<x:
 
 
 # TODO: Figure out how to get the value of the alias.
-# HECK-SAME: LLVMMetadataArray = [#lit.struct.extract<:!StringLiteral apply(:!lit.generator<() -> !StringLiteral> @decls::@"alias_parametric_fn()"), "value"> : !kgen.string, #kgen.unknown : !lit.struct<#IntLiteral <:!pop.int_literal 128>>
-# @__llvm_metadata(
-#    mname1=128
-# )
+# CHECK-SAME: LLVMMetadataArray = [
+# CHECK-SAME: #kgen.param.expr<data_to_str, #lit.struct.extract<:!Int{{.*}}alias_parametric_fn
+# CHECK-SAME: #kgen.unknown : !lit.struct<#IntLiteral <:!pop.int_literal 128>>
+@__llvm_metadata(
+    mname1=128
+)
 fn kernel3[x: Int]():
     pass
 
