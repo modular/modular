@@ -39,7 +39,7 @@ KGEN_CompilerRT_RandomUInt64(uint64_t min, uint64_t max) {
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT double
-KGEN_CompilerRT_NormalDouble(double mean, double var) {
-  std::normal_distribution<double> dist{mean, var};
+KGEN_CompilerRT_NormalDouble(double mean, double standardDeviation) {
+  std::normal_distribution<double> dist{mean, standardDeviation};
   return dist(*(std::default_random_engine *)KGEN_CompilerRT_GetRandomState());
 }
