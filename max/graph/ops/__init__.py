@@ -66,6 +66,7 @@ from .top_k import top_k
 from .transfer_to import transfer_to
 from .transpose import transpose
 from .unsqueeze import unsqueeze
+from .while_loop import while_loop
 
 
 def min(  # type: ignore[no-redef]
