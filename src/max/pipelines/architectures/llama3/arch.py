@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.graph.weights import WeightsFormat
 from max.pipelines import (
     PipelineTask,
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
-    WeightsFormat,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 
@@ -41,7 +41,10 @@ llama_arch = SupportedArchitecture(
             KVCacheStrategy.PAGED,
         ],
         SupportedEncoding.q4_k: [KVCacheStrategy.NAIVE],
-        SupportedEncoding.q4_0: [KVCacheStrategy.NAIVE],
+        SupportedEncoding.q4_0: [
+            KVCacheStrategy.NAIVE,
+            KVCacheStrategy.CONTINUOUS,
+        ],
         SupportedEncoding.q6_k: [KVCacheStrategy.NAIVE],
         SupportedEncoding.float32: [
             KVCacheStrategy.PAGED,
@@ -52,6 +55,7 @@ llama_arch = SupportedArchitecture(
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
             KVCacheStrategy.NAIVE,
+            KVCacheStrategy.PAGED_FA3_FALLBACK,
         ],
     },
     pipeline_model=Llama3Model,

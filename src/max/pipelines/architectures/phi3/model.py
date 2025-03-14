@@ -13,10 +13,11 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from max.driver import Device
 from max.engine import InferenceSession
+from max.graph.weights import Weights, WeightsAdapter
 from max.pipelines import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
@@ -37,6 +38,8 @@ class Phi3Model(LlamaModelBase):
         encoding: SupportedEncoding,
         device: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -45,4 +48,6 @@ class Phi3Model(LlamaModelBase):
             encoding,
             device,
             kv_cache_config,
+            weights,
+            adapter,
         )

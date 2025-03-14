@@ -17,15 +17,15 @@ import logging
 import time
 import warnings
 from collections.abc import Sequence
-from typing import cast
+from typing import Optional, cast
 
 import numpy as np
 from max.driver import Device, DeviceSpec, Tensor
+from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph.weights import GGUFWeights
+from max.graph.weights import GGUFWeights, Weights, WeightsAdapter
 from max.pipelines import (
     KVCacheConfig,
-    LogProbabilities,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -34,6 +34,7 @@ from max.pipelines import (
     TextContext,
     upper_bounded_default,
 )
+from max.pipelines.interfaces import LogProbabilities
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -41,7 +42,7 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
+from max.pipelines.log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 
 from .graph import _build_graph
@@ -80,8 +81,10 @@ class ReplitModel(PipelineModel[TextContext]):
         encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
-        if pipeline_config.device_specs[0] == DeviceSpec.cpu():
+        if pipeline_config.model_config.device_specs[0] == DeviceSpec.cpu():
             msg = "Replit currently only supported on gpu."
             raise ValueError(msg)
 
@@ -92,6 +95,8 @@ class ReplitModel(PipelineModel[TextContext]):
             encoding,
             devices,
             kv_cache_config,
+            weights,
+            adapter,
         )
         self.model = self.load_model(session)
 
@@ -170,13 +175,13 @@ class ReplitModel(PipelineModel[TextContext]):
     @classmethod
     def get_kv_params(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         n_devices: int,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> KVCacheParams:
         return KVCacheParams(
-            dtype=pipeline_config.cache_dtype,
+            dtype=cache_dtype,
             n_kv_heads=huggingface_config.attn_config["kv_n_heads"],
             head_dim=huggingface_config.d_model // huggingface_config.n_heads,
             cache_strategy=kv_cache_config.cache_strategy,
@@ -210,10 +215,10 @@ class ReplitModel(PipelineModel[TextContext]):
     ) -> KVCacheManager:
         return load_kv_manager(
             params=self.get_kv_params(
-                self.pipeline_config,
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
             ),
             max_batch_size=self.pipeline_config.max_batch_size,
             max_seq_len=self.calculate_max_seq_len(
@@ -234,14 +239,15 @@ class ReplitModel(PipelineModel[TextContext]):
         devices: list[Device],
         huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
             params=cls.get_kv_params(
-                pipeline_config,
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
@@ -267,55 +273,33 @@ class ReplitModel(PipelineModel[TextContext]):
         ).to(self.devices[0])
 
         # Read in weights.
-        weights = self.pipeline_config.load_weights()
-        if not isinstance(weights, GGUFWeights):
+        if not isinstance(self.weights, GGUFWeights):
             msg = "only gguf weights supported in Replit."
             raise ValueError(msg)
 
-        self._weights = weights
-
-        if serialized_path := self.pipeline_config.serialized_model_path:
-            # Hydrate all weights to be referenced by the serialized path.
-            weights_registry = {}
-            for name, weight in self._weights.items():
-                weights_registry[name] = weight.raw_tensor()
-
-            logger.info("Loading serialized model from ", serialized_path)
-
-            return session.load(
-                serialized_path, weights_registry=weights_registry
-            )
-
-        else:
-            logger.info("Building and compiling model...")
-            before = time.perf_counter()
-            graph = _build_graph(
-                self.pipeline_config,
-                self._weights,
-                self.get_kv_params(
-                    self.pipeline_config,
-                    huggingface_config=self.huggingface_config,
-                    n_devices=len(self.devices),
-                    kv_cache_config=self.kv_cache_config,
-                ),
-                kv_manager=self.kv_manager,
+        logger.info("Building and compiling model...")
+        before = time.perf_counter()
+        graph = _build_graph(
+            self.pipeline_config,
+            self.weights,
+            self.get_kv_params(
                 huggingface_config=self.huggingface_config,
-                dtype=self.dtype,
-            )
-            model = session.load(
-                graph, weights_registry=self._weights.allocated_weights
-            )
-            after = time.perf_counter()
-            logger.info(
-                f"Building and compiling model took {after - before:.6f} seconds"
-            )
-            if (
-                export_path
-                := self.pipeline_config.save_to_serialized_model_path
-            ):
-                logger.info("Exporting serialized model to %s", export_path)
-                model._export_mef(export_path)
-            return model
+                n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
+            ),
+            kv_manager=self.kv_manager,
+            huggingface_config=self.huggingface_config,
+            dtype=self.dtype,
+        )
+        model = session.load(
+            graph, weights_registry=self.weights.allocated_weights
+        )
+        after = time.perf_counter()
+        logger.info(
+            f"Building and compiling model took {after - before:.6f} seconds"
+        )
+        return model
 
     def compute_log_probabilities(
         self,
@@ -329,7 +313,7 @@ class ReplitModel(PipelineModel[TextContext]):
             if model_outputs.logits is None:
                 warnings.warn(
                     "Could not get logprobs with echo because the full logits"
-                    f" were not returned by {self.pipeline_config.model_path}"
+                    f" were not returned by {self.pipeline_config.model_config.model_path}"
                     " model. Please ensure that this model is started with "
                     "`--enable-echo`."
                 )

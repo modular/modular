@@ -32,7 +32,6 @@ from max.tensor import (
 from memory import AddressSpace
 from memory import UnsafePointer
 from random import rand
-from runtime.asyncrt import DeviceContextPtr
 from sys import sizeof, has_nvidia_gpu_accelerator
 from utils import IndexList
 
@@ -237,6 +236,7 @@ def matmul():
         bench_matmul_kernel["tiled_register"]()
         bench_matmul_kernel["block_tiled"]()
         bench_matmul_kernel["block_tiled_vectorized"]()
+        bench_matmul_kernel["tensor_core"]()
 
     bench.config.verbose_metric_names = False
     print(bench)

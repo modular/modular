@@ -14,8 +14,6 @@
 from math import ceildiv
 
 from gpu import (
-    block_dim,
-    block_idx,
     thread_idx,
     global_idx,
     MAX_THREADS_PER_BLOCK_METADATA,

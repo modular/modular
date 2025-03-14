@@ -24,15 +24,8 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.graph.weights import Weights
-from max.pipelines import PipelineConfig, RopeType, WeightsFormat
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    FetchPagedKVCacheCollection,
-    KVCacheParams,
-    KVCacheStrategy,
-)
-from max.pipelines.nn import (
+from max.graph.weights import Weights, WeightsFormat, weights_format
+from max.nn import (
     MLP,
     AttentionWithRope,
     Embedding,
@@ -41,6 +34,13 @@ from max.pipelines.nn import (
     RMSNorm,
     Transformer,
     TransformerBlock,
+)
+from max.pipelines import PipelineConfig, RopeType
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    KVCacheParams,
+    KVCacheStrategy,
 )
 from transformers import AutoConfig
 
@@ -210,8 +210,11 @@ def transformer(
     dtype: DType,
 ) -> Transformer:
     with graph:
+        _weights_format = weights_format(
+            pipeline_config.model_config.weight_path
+        )
         interleaved_rope_weights = (
-            pipeline_config.weights_format == WeightsFormat.gguf
+            _weights_format == WeightsFormat.gguf
             and pipeline_config.rope_type == RopeType.normal
         )
         rope = OptimizedRotaryEmbedding(

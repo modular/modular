@@ -59,12 +59,13 @@ from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.tensor_core import TensorCore
 from layout.math import exp, sum, max
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu.id import block_idx
 from gpu.sync import barrier
 from gpu.memory import AddressSpace
+from runtime.asyncrt import DeviceContextPtr
 from utils import Index
 
-from tensor import ManagedTensorSlice, OutputTensor, InputTensor
+from tensor import OutputTensor, InputTensor
 
 
 @register("fused_attention_custom")

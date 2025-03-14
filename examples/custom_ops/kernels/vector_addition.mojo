@@ -16,13 +16,13 @@ from math import ceildiv
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
-from tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
+from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 
 from utils.index import IndexList
 
 
 fn _vector_addition_cpu(
-    out: ManagedTensorSlice,
+    out: ManagedTensorSlice[mut=True],
     lhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     rhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     ctx: DeviceContextPtr,
@@ -38,7 +38,7 @@ fn _vector_addition_cpu(
 
 
 fn _vector_addition_gpu(
-    out: ManagedTensorSlice,
+    out: ManagedTensorSlice[mut=True],
     lhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     rhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     ctx: DeviceContextPtr,

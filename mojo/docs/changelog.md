@@ -159,9 +159,10 @@ what we publish.
   divide, remainder, etc.
 
 - Several more packages are now documented.
-  - `gpu` package - some modules in `gpu.host` subpackage are still in progress.
   - `compile` package
+  - `gpu` package
   - `layout` package is underway, beginning with core types, functions, and traits.
+  - `logger` package
 
 - A new `sys.is_compile_time` function is added. This enables one to query
 whether code is being executed at compile time or not. For example:
@@ -182,6 +183,9 @@ def main():
 ```
 
 will print `var0 is evaluated at compile time, while var1 is evaluated at runtime`.
+
+- The `StringLiteral.get[value]()` method, which converts a compile-time value
+  of `Stringable` type has been renamed to `get_string_literal[value]()`.
 
 ### GPU changes
 
@@ -251,12 +255,28 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
 - `List.bytecount()` has been renamed to `List.byte_length()` for consistency
   with the String-like APIs.
 
-- The `logger` package is now documented.
-
 - Large bigwidth integers are introduced. Specifically, the Int128, UInt128,
   Int256, and UInt256 are now supported.
 
 ### Tooling changes
+
+- Mojo doc gen is now able to display function / struct parameter references
+  inside nested parametric types using names instead of indices. For example,
+  instead of
+
+  ```mojo
+
+  sort[type: CollectionElement, //, cmp_fn: fn($1|0, $1|0) capturing -> Bool](span: Span[type, origin])
+
+  ```
+
+    it now displays
+
+  ```mojo
+
+  sort[type: CollectionElement, //, cmp_fn: fn(type, type) capturing -> Bool](span: Span[type, origin])
+
+  ```
 
 #### Mojo Compiler
 

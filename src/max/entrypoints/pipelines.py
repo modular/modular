@@ -157,18 +157,6 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     This command runs text generation using the loaded model, optionally
     accepting image inputs for multimodal models.
     """
-    # Replit model_paths are kinda broken due to transformers
-    # version mismatch. We manually update trust_remote_code to True
-    # because the modularai version does not have the custom Python code needed
-    # Without this, we get:
-    #     ValueError: `attn_type` has to be either `multihead_attention` or
-    #     `multiquery_attention`. Received: grouped_query_attention
-    # Another reason why we override this flag here is because at PipelineConfig
-    # instantiation below, we'll call AutoConfig.from_pretrained, which will
-    # trigger the error above if not set to True.
-    if "replit" in config_kwargs["model_path"]:
-        config_kwargs["trust_remote_code"] = True
-
     if config_kwargs["max_new_tokens"] == -1:
         # Limit generate default max_new_tokens to 100.
         config_kwargs["max_new_tokens"] = 100

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
+from gpu import WARP_SIZE, barrier, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.layout_tensor import (
@@ -974,7 +974,7 @@ struct MatrixMultiplication[algorithm: StringLiteral]:
                 alias WN = 32
                 alias MMA_M = 16
                 alias MMA_N = 8
-                alias MMA_K = 8
+                alias MMA_K = 4
                 alias NUM_WARPS = (BM // WM) * (BN // WN)
                 gpu_ctx.enqueue_function[
                     tensor_core_matrix_multiplication[

@@ -115,7 +115,7 @@ async def _async_worker(
         pipeline_config
     )
     batch_config = batch_config_from_pipeline_config(pipeline_config)
-    model_name = pipeline_config.model_path
+    model_name = pipeline_config.model_config.model_path
 
     async with start_telemetry_consumer(settings) as metric_client:
         async with start_model_worker(

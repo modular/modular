@@ -90,7 +90,7 @@ fn integers():
    var v1 = 42   # typeof(v1) is Int
    
    alias a2 = a1-3 # typeof(a1.__sub__(3)) is still IntLiteral
-   alias v2 = v1-3 # typeof(v1.__sub__(3)) is still Int
+   var v2 = v1-3   # typeof(v1.__sub__(3)) is still Int
 ```
 
 This is good behavior “things that happen at compile time stay at compile time”,

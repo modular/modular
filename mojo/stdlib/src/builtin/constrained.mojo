@@ -88,4 +88,4 @@ fn constrained[cond: Bool, msg: String]():
             "at least two cores are required"
         ]()
     """
-    constrained[cond, StringLiteral.get[msg]()]()
+    constrained[cond, get_string_literal[msg]()]()
