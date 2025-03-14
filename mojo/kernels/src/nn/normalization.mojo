@@ -72,7 +72,7 @@ fn block_reduce[
     barrier()
 
     if warp_id == 0 and lane_idx < max_warps_per_block:
-        var block_m2 = warp.lane_group_sum[nthreads=max_warps_per_block](
+        var block_m2 = warp.lane_group_sum[num_lanes=max_warps_per_block](
             m2_shared[lane_idx]
         )
         if lane_idx == 0:
