@@ -430,10 +430,9 @@ def batch_config_from_pipeline_config(
 
     target_ce_batch_tokens = get_target_ce_batch_tokens(pipeline_config)
     assert pipeline_config.max_ce_batch_size is not None
-    if (
-        pipeline_config.model_config.kv_cache_config.cache_strategy
-        == KVCacheStrategy.CONTINUOUS
-    ):
+    kv_cache_config = pipeline_config.model_config.kv_cache_config
+    cache_strategy = kv_cache_config.cache_strategy
+    if cache_strategy == KVCacheStrategy.CONTINUOUS:
         batch_config = TokenGeneratorPipelineConfig.continuous_heterogenous(
             tg_batch_size=pipeline_config.max_batch_size,
             ce_batch_size=min(
@@ -446,16 +445,13 @@ def batch_config_from_pipeline_config(
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
         )
-    elif (
-        pipeline_config.model_config.kv_cache_config.cache_strategy
-        == KVCacheStrategy.NAIVE
-    ):
+    elif cache_strategy == KVCacheStrategy.NAIVE:
         batch_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
             batch_size=pipeline_config.max_batch_size,
             batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
         )
-    elif pipeline_config.model_config.kv_cache_config.cache_strategy in [
+    elif cache_strategy in [
         KVCacheStrategy.PAGED,
         KVCacheStrategy.PAGED_FA3_FALLBACK,
     ]:
@@ -473,16 +469,20 @@ def batch_config_from_pipeline_config(
         )
     else:
         raise ValueError(
-            f"{pipeline_config.model_config.kv_cache_config.cache_strategy} caching strategy is not"
-            " supported by Serving."
+            f"{cache_strategy} caching strategy is not supported by Serving."
         )
 
     log_str = "Server configured with:\n"
-    log_str += f"\tCache Strategy: {pipeline_config.model_config.kv_cache_config.cache_strategy}\n"
+    log_str += f"\tCache Strategy: {cache_strategy}\n"
+    if cache_strategy == KVCacheStrategy.PAGED:
+        log_str += f"\tKVCache Page Size: {kv_cache_config.kv_cache_page_size} Tokens\n"
+        log_str += f"\tPrefix Caching: {'Enabled' if kv_cache_config.enable_prefix_caching else 'Disabled'}\n"
     log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
     log_str += f"\tChunked Prefill: {'Enabled' if pipeline_config.enable_chunked_prefill else 'Disabled'}\n"
     if pipeline_config.enable_chunked_prefill:
-        log_str += f"\tChunked Prefill Chunk Size: {pipeline_config.target_num_new_tokens}\n"
+        log_str += (
+            f"\tChunked Prefill Chunk Size: {target_ce_batch_tokens} Tokens\n"
+        )
     logger.info(log_str)
 
     return batch_config
