@@ -161,13 +161,19 @@ fn bench_reduce[
         @parameter
         @always_inline
         fn call_fn() raises:
-            all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
-                list_of_ctx, in_bufs, out_bufs, rank_sigs, max_num_blocks
-            )
+            @parameter
+            if max_num_blocks:
+                all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+                    list_of_ctx, in_bufs, out_bufs, rank_sigs, max_num_blocks
+                )
+            else:
+                all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+                    list_of_ctx, in_bufs, out_bufs, rank_sigs
+                )
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
 
-    var name = String(_get_test_str[type](ngpus, length))
+    var name = String(_get_test_str[type](ngpus, num_bytes))
     m.bench_function[bench_iter](
         BenchId(name),
         # add data movement to measures
