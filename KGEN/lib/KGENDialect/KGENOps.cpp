@@ -169,19 +169,16 @@ LogicalResult ParamDeclareOp::verify() {
 // ParamDeclareRegionOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
-                       ParamDeclArrayAttr &inputParams, TypeAttr &functionType,
-                       TypeAttr &type, InlineLevelAttr &inlineLevel,
-                       Region &body) {
-  StringAttr paramName;
+static ParseResult parseRegionOnly(OpAsmParser &p,
+                                   ParamDeclArrayAttr &inputParams,
+                                   TypeAttr &functionType, TypeAttr &type,
+                                   InlineLevelAttr &inlineLevel, Region &body) {
   SmallVector<OpAsmParser::Argument> args;
   FunctionType functionTypeValue;
   FuncTypeGeneratorType sigGenType;
   llvm::SMLoc bodyLoc;
   ParamDeclArrayAttr resultParams;
-  if (parseParamName(p, paramName) || p.parseEqual() ||
-      parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
+  if (parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
                                      functionTypeValue, sigGenType) ||
       parseOptionalInline(p, inlineLevel) || p.getCurrentLocation(&bodyLoc) ||
       p.parseRegion(body, args))
@@ -195,8 +192,33 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
     argTypes.push_back(arg.type);
   functionType = TypeAttr::get(functionTypeValue);
   type = TypeAttr::get(sigGenType);
-  paramDecl = ParamDeclAttr::get(paramName, sigGenType);
   return success();
+}
+
+static ParseResult
+parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
+                       ParamDeclArrayAttr &inputParams, TypeAttr &functionType,
+                       TypeAttr &type, InlineLevelAttr &inlineLevel,
+                       Region &body) {
+  StringAttr paramName;
+
+  if (parseParamName(p, paramName) || p.parseEqual() ||
+      parseRegionOnly(p, inputParams, functionType, type, inlineLevel, body))
+    return failure();
+  paramDecl = ParamDeclAttr::get(paramName, type.getValue());
+  return success();
+}
+
+static void printRegionOnly(OpAsmPrinter &p, Operation *op,
+                            ParamDeclArrayAttr inputParams,
+                            TypeAttr functionType, TypeAttr type,
+                            InlineLevelAttr inlineLevel, Region &body) {
+  printFunctionFuncTypeGenerator(p, &body, inputParams, {},
+                                 cast<FunctionType>(functionType.getValue()),
+                                 cast<FuncTypeGeneratorType>(type.getValue()));
+  printOptionalInline(p, inlineLevel.getValue());
+  p << ' ';
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
 static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
@@ -206,12 +228,7 @@ static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                                    InlineLevelAttr inlineLevel, Region &body) {
   printParamName(p, paramDecl.getName());
   p << " = ";
-  printFunctionFuncTypeGenerator(p, &body, inputParams, {},
-                                 cast<FunctionType>(functionType.getValue()),
-                                 cast<FuncTypeGeneratorType>(type.getValue()));
-  printOptionalInline(p, inlineLevel.getValue());
-  p << ' ';
-  p.printRegion(body, /*printEntryBlockArgs=*/false);
+  printRegionOnly(p, op, inputParams, functionType, type, inlineLevel, body);
 }
 
 bool ParamDeclareRegionOp::isIsolatedFromAbove(unsigned regionNum) {
@@ -1614,6 +1631,131 @@ static void printCompileOffloadOp(OpAsmPrinter &p, Operation *op,
   printParamValue(p, emissionOption);
   p << ", ";
   printTypeParamValue(p, func);
+}
+
+//===----------------------------------------------------------------------===//
+// ClosureInitOp
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct SymbolParts {
+  SymbolRefAttr callee;
+  ParameterExprArrayAttr paramValues;
+};
+} // namespace
+
+static ParseResult parseClosureInitValue(
+    OpAsmParser &p, TypeAttr &funcTypeGenerator, TypeAttr &functionType,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
+    ArrayAttr &moveOrCopyCaptureSymbols, ParamDeclArrayAttr &inputParams,
+    InlineLevelAttr &inlineLevel, Region &body,
+    SmallVectorImpl<Type> &capturesTypes) {
+  if (p.parseLParen())
+    return failure();
+
+  // Collect the captures and symbols, if provided.
+  SmallVector<SymbolParts> symbols;
+  LogicalResult result = success();
+  if (p.parseOptionalRParen()) {
+    do {
+      if (p.parseOperand(captures.emplace_back()))
+        return failure();
+
+      // Build optional symbol.
+      if (p.parseOptionalLSquare()) {
+        symbols.push_back(SymbolParts());
+      } else {
+        SymbolRefAttr callee;
+        ParameterExprArrayAttr paramValues;
+        if (p.parseAttribute(callee) || parseParameterValues(p, paramValues) ||
+            p.parseRSquare())
+          return failure();
+        symbols.push_back(SymbolParts{callee, paramValues});
+      }
+
+      result = p.parseOptionalComma();
+    } while (succeeded(result));
+    if (p.parseRParen())
+      return failure();
+  }
+
+  // Parse the function signature and the body.
+  if (parseRegionOnly(p, inputParams, functionType, funcTypeGenerator,
+                      inlineLevel, body))
+    return failure();
+  if (p.parseColon() || p.parseLParen())
+    return failure();
+  if (p.parseOptionalRParen()) {
+    if (p.parseTypeList(capturesTypes) || p.parseRParen())
+      return failure();
+  }
+
+  // Parse the capture types.
+  if (capturesTypes.size() != symbols.size())
+    return p.emitError(p.getCurrentLocation(),
+                       "expected symbols to match number of capture types");
+
+  // Now that we have the capture types and the symbols, we can infer the
+  // signatures and build the symbol constant attributes.
+  SmallVector<Attribute> copyOrMoveSymbols;
+  for (auto [symbolParts, captureType] : llvm::zip(symbols, capturesTypes)) {
+    if (!symbolParts.callee) {
+      copyOrMoveSymbols.push_back(UnitAttr::get(p.getContext()));
+      continue;
+    }
+
+    FuncTypeGeneratorType fnGenType = FuncTypeGeneratorType::get(
+        {}, FunctionType::get(p.getContext(), {captureType, captureType}, {}),
+        {}, {}, {}, {});
+    copyOrMoveSymbols.push_back(SymbolConstantAttr::get(
+        symbolParts.callee, fnGenType, symbolParts.paramValues));
+  }
+  moveOrCopyCaptureSymbols = ArrayAttr::get(p.getContext(), copyOrMoveSymbols);
+  return success();
+}
+
+// Print function for ClosureInitValue custom format
+static void printClosureInitValue(OpAsmPrinter &p, Operation *op,
+                                  TypeAttr funcTypeGenerator,
+                                  TypeAttr functionType, ValueRange captures,
+                                  ArrayAttr moveOrCopyCaptureSymbols,
+                                  ParamDeclArrayAttr inputParams,
+                                  InlineLevelAttr inlineLevel, Region &body,
+                                  TypeRange capturesTypes) {
+  p << "(";
+  int i = 0;
+  int n = captures.size();
+  for (auto [capture, symbol] : llvm::zip(captures, moveOrCopyCaptureSymbols)) {
+    p << capture;
+    if (!isa<UnitAttr>(symbol)) {
+      p << "[";
+      SymbolConstantAttr callee = cast<SymbolConstantAttr>(symbol);
+      p << callee.getSymbol();
+      printParameterValues(p, callee.getParamValues());
+      p << "]";
+    }
+    if (++i < n)
+      p << ", ";
+  }
+  p << ")";
+  printRegionOnly(p, op, inputParams, functionType, funcTypeGenerator,
+                  inlineLevel, body);
+  p << " : ";
+  p << '(';
+  llvm::interleaveComma(capturesTypes, p,
+                        [&](Type type) { p.printType(type); });
+  p << ')';
+}
+
+LogicalResult ClosureInitOp::verify() {
+  if (getCaptures().size() != getMoveOrCopyCaptureSymbols().size())
+    return emitOpError("expected symbols to match number of capture types");
+  for (Attribute symbol : getMoveOrCopyCaptureSymbols()) {
+    if (!isa<SymbolConstantAttr, UnitAttr>(symbol))
+      return emitOpError(
+          "expected symbol constant attribute or unit attribute");
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

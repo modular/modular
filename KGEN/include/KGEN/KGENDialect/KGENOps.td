@@ -2006,34 +2006,52 @@ def KGEN_IsCompileTimeOp: KGENOp<"is_compile_time",
 // ClosureInit
 //===----------------------------------------------------------------------===//
 
-def KGEN_ClosureInit : KGENOp<"closure.init"> {
+def KGEN_ClosureInitOp : KGENOp<"closure.init", [
+  FunctionLike,
+  SingleBlock
+]> {
   let summary = "Allocate memory and store values into a closure struct.";
   let description = [{
     The `kgen.closure.init` operation represents the instantiation of a closure
     struct. The closure struct holds the captured values. It maps the nested
-    function to the capture struct. The input, a nested function, is represented
-    as a function typed parameter. The result contains a symbol like label that
-    will be replaced with the struct type after lowering.
+    function to the capture struct.
 
     Example:
     ```mlir
-     kgen.func @closure_types(%arg0 : index) {
-       kgen.param.declare.region fn = () {
-         kgen.call @use(%arg0) : (index) -> ()
-         kgen.return
-       }
-       %0 = kgen.closure.init <:() -> () fn>
-              : <!kgen.closure<@closure_types, "fn"", is_escaping=false>>
-       kgen.return
-     }
+      kgen.generator @closure_types(%arg0 : index,
+          %foo: !kgen.pointer<struct<(index,index)>>) {
+        %3 = kgen.closure.init(%foo[@foo_copy])(%arg1: index) -> index {
+	        %0 = kgen.struct.gep %foo[0] : !kgen.pointer<struct<(index,index)>>
+	        %1 = pop.load %0 : !kgen.pointer<index>
+	        kgen.return %1 : index
+      } : (!kgen.pointer<struct<(index,index)>>),
+          <!kgen.closure<@closure_types, "name" escaping>>
+
     ```
   }];
 
-  let arguments = (ins TypedAttrInterface: $closure);
+  let arguments = (ins TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
+                   TypeAttrOf<FunctionType>:$functionType,
+                   Variadic<AnyType>:$captures,
+                   ArrayAttr:$moveOrCopyCaptureSymbols,
+                   KGEN_ParamDeclArrayAttr:$inputParams,
+                   KGEN_InlineLevelAttr:$inlineLevel
+                  );
+
+  let regions = (region SizedRegion<1>:$bodyRegion);
   let results = (outs PointerOf<KGEN_ClosureType>: $result);
   let assemblyFormat = [{
-      `` `<` custom<ColonTypeParamValue>($closure) `>` `:` type($result) attr-dict
+    `` custom<ClosureInitValue>($funcTypeGenerator, $functionType,
+                                   $captures, $moveOrCopyCaptureSymbols,
+                                   $inputParams, $inlineLevel,$bodyRegion,
+                                   type($captures)) `,`
+                                    type($result) attr-dict
   }];
+  let extraClassDeclaration = [{
+    Region *getCallableRegion() { return &getBodyRegion(); }
+    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+  }];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
