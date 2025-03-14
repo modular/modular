@@ -333,6 +333,23 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
         return Bool()
 
 
+@always_inline("nodebug")
+fn get_string_literal[
+    value: String
+](
+    out result: StringLiteral[
+        __mlir_attr[
+            `#kgen.param.expr<data_to_str,`,
+            value.byte_length().value,
+            `,`,
+            value.unsafe_ptr().address,
+            `> : !kgen.string`,
+        ]
+    ]
+):
+    result = __type_of(result)()
+
+
 struct String(KeyElement):
     fn __init__(out self):
         pass
@@ -358,6 +375,9 @@ struct String(KeyElement):
 
     fn __iadd__(mut self, rhs: String):
         pass
+
+    fn byte_length(self) -> Int:
+        return 0
 
     fn unsafe_ptr(self) -> UnsafePointer[UInt8]:
         return UnsafePointer[UInt8]()
