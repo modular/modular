@@ -39,6 +39,9 @@ public:
   /// a crash.
   void reportShutdown();
 
+  /// Flushes the underlying telemetry context.
+  void flush();
+
 private:
   Telemetry::Histogram<uint64_t> responseTimeHistogram;
   Telemetry::Counter<uint64_t> outdatedRequestCounter;
