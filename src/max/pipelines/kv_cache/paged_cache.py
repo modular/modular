@@ -308,7 +308,7 @@ class PagedKVCacheManager(KVCacheManager):
         if max_batch_size > self.total_num_pages:
             logger.warning(
                 f"Insufficient cache memory to support a batch containing {max_batch_size} requests with one token per request. "
-                f"Need to allocate at least {max_batch_size} blocks, but only have enough memory for {self.total_num_pages} blocks. "
+                f"Need to allocate at least {max_batch_size} pages, but only have enough memory for {self.total_num_pages} pages. "
                 f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
             )
 
@@ -316,9 +316,13 @@ class PagedKVCacheManager(KVCacheManager):
         if blocks_needed_for_max_seq_len > self.total_num_pages:
             logger.warning(
                 f"Insufficient cache memory to support a batch containing one request at the max sequence length of {max_seq_len} tokens. "
-                f"Need to allocate at least {blocks_needed_for_max_seq_len} blocks, but only have enough memory for {self.total_num_pages} blocks. "
-                f"One page requires {single_page_size_bytes} but only {cache_memory_per_device} are available."
+                f"Need to allocate at least {blocks_needed_for_max_seq_len} pages, but only have enough memory for {self.total_num_pages} pages. "
+                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
             )
+
+        logger.info(
+            f"Paged KVCache Manager allocated {self.total_num_pages} pages using {single_page_size_bytes_str} per page"
+        )
 
         # call our base class constructor
         super().__init__(
