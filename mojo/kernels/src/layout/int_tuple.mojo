@@ -56,6 +56,7 @@ from builtin.range import _StridedRange
 from memory import UnsafePointer, memcpy
 from collections import List
 from buffer import DimList
+import sys
 
 alias INT_TUPLE_VALIDATION = False
 
@@ -432,7 +433,6 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         """
         self = Self(elements)
 
-    @implicit
     @always_inline
     fn __init__(out self, elements: VariadicList[Int]):
         """Initialize an `IntTuple` with a list of integers.
@@ -459,6 +459,19 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             if value < Self.MinimumValue:
                 abort("Only integers greater than MinimumValue are supported")
             self._store[i + 1] = value
+
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            self.validate_structure()
+
+    @implicit
+    @always_inline
+    fn __init__(out self, value: Int):
+        if value < Self.MinimumValue:
+            abort("Only integers greater than MinimumValue are supported")
+        self._store = IntArray(2)
+        self._store[0] = 1
+        self._store[1] = value
 
         @parameter
         if INT_TUPLE_VALIDATION:
@@ -742,6 +755,9 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         Returns:
             A new `IntTuple` containing all integer values in a flat structure.
         """
+        if len(self) == 0 or self.is_value():
+            return rebind[IntTuple](self)
+
         var result = IntTuple(num_elems=self.count_values())
         _ = result._fill(self)
         return result
@@ -796,10 +812,10 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
         # update old offsets
         for i in range(old_len):
-            if self.is_value(i):
-                new_store[i + 1] = self.value(i)
-            else:
-                new_store[i + 1] = self._store[i + 1] - len_delta
+            new_store[i + 1] = (
+                self.value(i) if self.is_value(i) else self._store[i + 1]
+                - len_delta
+            )
 
         # copy old data
         var new_offset = new_len + 1
@@ -1551,20 +1567,19 @@ fn zip(
     )
 
 
-# Python-style reduce functions
+# Python-style reduce
 
 
 fn reduce[
-    T: AnyTrivialRegType, func: fn (a: T, b: IntTuple) capturing [_] -> T
-](t: IntTuple, initializer: T) -> T:
+    reducer: fn (a: Int, b: IntTuple) capturing [_] -> Int
+](t: IntTuple, initializer: Int) -> Int:
     """Apply a reduction function to an `IntTuple` with an initial value.
 
     This function iterates through each element of the `IntTuple` and applies
     the provided reduction function cumulatively, starting with the initializer.
 
     Parameters:
-        T: A trivial register type that can be used for accumulation.
-        func: A function that combines the accumulated result with the next element.
+        reducer: A function that combines the accumulated result with the next element.
 
     Args:
         t: The `IntTuple` to reduce.
@@ -1574,41 +1589,10 @@ fn reduce[
         The final accumulated result after applying the reduction function
         to all elements in the `IntTuple`.
     """
-    var result: T = initializer
-    for e in t:
-        result = func(result, e)
-    return result
+    if is_int(t):
+        return Int(t)
 
-
-# fn reduce[
-#     T: CollectionElement, func: fn (owned a: T, b: IntTuple) capturing [_] -> T
-# ](t: IntTuple, initializer: T) -> T:
-#     var result: T = initializer
-#     for e in t:
-#         result = func(result, e)
-#     return result
-
-
-# TODO: This used to be more generic, see above
-fn reduce[
-    reducer: fn (a: IntTuple, b: IntTuple) capturing [_] -> IntTuple,
-](t: IntTuple) -> IntTuple:
-    """Apply a reduction function to an `IntTuple` without an initial value.
-
-    This function iterates through each element of the `IntTuple` and applies
-    the provided reduction function cumulatively, starting with an empty `IntTuple`.
-
-    Parameters:
-        reducer: A function that combines two `IntTuple`s into a single result `IntTuple`.
-
-    Args:
-        t: The `IntTuple` to reduce.
-
-    Returns:
-        The final accumulated result after applying the reduction function
-        to all elements in the `IntTuple`.
-    """
-    var result = IntTuple()
+    var result = initializer
     for e in t:
         result = reducer(result, e)
     return result
@@ -1814,7 +1798,7 @@ fn sum(t: IntTuple) -> Int:
             Int(b) if is_int(b) else sum(b)
         )
 
-    return reduce[Int, reducer](t, 0)
+    return reduce[reducer](t, 0)
 
 
 @always_inline("nodebug")
@@ -1839,7 +1823,7 @@ fn product(t: IntTuple) -> Int:
             Int(b) if is_int(b) else product(b)
         )
 
-    return reduce[Int, reducer](t, 1)
+    return reduce[reducer](t, 1)
 
 
 # TODO: Can't call this `max` otherwise the compiler incorrectly
@@ -1864,7 +1848,7 @@ fn tuple_max(t: IntTuple) -> Int:
         return max(a, Int(b) if is_int(b) else tuple_max(b))
 
     alias int_min_val = 0
-    return reduce[Int, reducer](t, int_min_val)
+    return reduce[reducer](t, int_min_val)
 
 
 fn apply[func: fn (Int) capturing [_] -> Int](t: IntTuple) -> IntTuple:
@@ -2303,11 +2287,11 @@ fn prefix_product(a: IntTuple) -> IntTuple:
     Returns:
         A new `IntTuple` containing the exclusive prefix product of the input.
     """
-    return prefix_product(a, IntTuple(1))
+    return prefix_product(a, 1)
 
 
 @always_inline("nodebug")
-fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
+fn prefix_product(a: IntTuple, init: Int) -> IntTuple:
     """Compute the exclusive prefix product of an `IntTuple` with an initial value.
 
     This function delegates to the implementation in prefix_product2.
@@ -2319,10 +2303,17 @@ fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
     Returns:
         A new `IntTuple` containing the exclusive prefix product of the input.
     """
-    return prefix_product2(a, init)
+    # Short-circuit for empty tuple
+    if len(a) == 0:
+        return IntTuple()
+    # Short-circuit for single integer
+    if is_int(a) == 1:
+        return init
+
+    return _prefix_product2(a, init)
 
 
-fn prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
+fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
     """Implementation of exclusive prefix product computation.
 
     Computes the exclusive prefix product of elements in the input `IntTuple`.
@@ -2349,12 +2340,12 @@ fn prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
         if is_tuple(init):  # tuple tuple
             if len(a) != len(init):
                 abort("len(a) != len(init)")
-            return apply_zip[prefix_product2](a, init)
+            return apply_zip[_prefix_product2](a, init)
         else:  # tuple "int"
             var v_init = Int(init)
             var r = IntTuple()
             for v in a:
-                r.append(prefix_product2(v, v_init))
+                r.append(_prefix_product2(v, v_init))
                 v_init = (
                     UNKNOWN_VALUE if v_init
                     == UNKNOWN_VALUE else v_init * product(v)
@@ -2567,9 +2558,94 @@ fn crd2idx(
         - If shape and stride dimensions don't match.
         - If input type combinations are invalid.
     """
+
+    # Quick check for direct values in coordinate tuple
+    if len(crd) == 1 and crd.is_value(0):
+        var c_val = crd.value(0)
+
+        # Fast path for 1D coordinate into 1D shape with direct values
+        if len(shape) == 1 and shape.is_value(0):
+            var s_val = shape.value(0)
+
+            # Check for unknown values
+            if c_val == UNKNOWN_VALUE or s_val == UNKNOWN_VALUE:
+                return UNKNOWN_VALUE
+
+            # If stride is provided with length 1 and is a direct value
+            if len(_stride) == 1 and _stride.is_value(0):
+                var st_val = _stride.value(0)
+                if st_val == UNKNOWN_VALUE:
+                    return UNKNOWN_VALUE
+                return c_val * st_val
+            elif len(_stride) == 0:
+                # For a single element tuple with no stride, the stride is 1
+                return c_val
+
+        # Fast path for 1D coordinate into 2D shape with direct values
+        elif len(shape) == 2 and len(_stride) == 2:
+            # Early check for unknown coordinate
+            if c_val == UNKNOWN_VALUE:
+                return UNKNOWN_VALUE
+
+            # Fast path for non-nested shape and stride (direct integer values)
+            if (
+                shape.is_value(0)
+                and shape.is_value(1)
+                and _stride.is_value(0)
+                and _stride.is_value(1)
+            ):
+                var s0_val = shape.value(0)
+                var s1_val = shape.value(1)
+                var st0_val = _stride.value(0)
+                var st1_val = _stride.value(1)
+
+                # Check for unknown values
+                if (
+                    s0_val == UNKNOWN_VALUE
+                    or s1_val == UNKNOWN_VALUE
+                    or st0_val == UNKNOWN_VALUE
+                    or st1_val == UNKNOWN_VALUE
+                ):
+                    return UNKNOWN_VALUE
+
+                # Inline coordinate calculation and stride application (single expression)
+                return (c_val % s0_val) * st0_val + (
+                    (c_val // s0_val) % s1_val
+                ) * st1_val
+
+            # Fast path for 2D shape with potentially nested tuples
+            else:
+                # Compute shape products only once
+                var s0_prod = product(shape[0])
+                if s0_prod == UNKNOWN_VALUE:
+                    return UNKNOWN_VALUE
+
+                # Extract coordinates
+                var c0 = c_val % s0_prod
+                var c1 = c_val // s0_prod
+
+                # Handle direct stride values case
+                if _stride.is_value(0) and _stride.is_value(1):
+                    var st0_val = _stride.value(0)
+                    var st1_val = _stride.value(1)
+
+                    if st0_val == UNKNOWN_VALUE or st1_val == UNKNOWN_VALUE:
+                        return UNKNOWN_VALUE
+
+                    # Direct calculation with stride values
+                    return c0 * st0_val + c1 * st1_val
+
+                # Handle complex nested strides with minimal recursion
+                else:
+                    # We know len(_stride) == 2, use direct indexing
+                    return crd2idx(c0, shape[0], _stride[0]) + crd2idx(
+                        c1, shape[1], _stride[1]
+                    )
+
+    # Original implementation for all other cases
     var stride: IntTuple
     if len(_stride) == 0:
-        stride = prefix_product(shape).owned_copy()
+        stride = prefix_product(shape)
     else:
         stride = _stride.owned_copy()
 
@@ -2667,8 +2743,8 @@ fn reverse(src: IntTuple) -> IntTuple:
     Example:
 
         ```mojo
-        from layout import IntTuple
-        var t = IntTuple(1, 2, (3, 4))
+        from layout.int_tuple import IntTuple, reverse
+        var t = IntTuple(1, 2, IntTuple(3, 4))
         var reversed = reverse(t) # returns ((4, 3), 2, 1)
         ```
         .
@@ -2702,12 +2778,12 @@ fn depth(src: IntTuple) -> Int:
     Example:
 
         ```mojo
-        from layout.layout_tuple import depth
+        from layout import IntTuple, depth
 
-        print(depth(1)) # prints 0
-        print(depth((1, 2))) # prints 1
-        print(depth((1, (1, 2)))) # prints 2
-        ```
+        print(depth(IntTuple(1))) # prints 0
+        print(depth(IntTuple(1, 2))) # prints 1
+        print(depth((IntTuple(1, 2)))) # prints 2
+        ````
         .
     """
     if is_int(src):
@@ -2728,7 +2804,6 @@ particularly for operations like permutations and indices.
 """
 
 
-# Returns permutation indices that would sort the tuple
 fn _sorted_perm(tuple: IntTuple) -> IntList:
     """Returns permutation indices that would sort the tuple."""
     var n = len(tuple)
