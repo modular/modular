@@ -13,7 +13,6 @@ from tensor_internal import (
     ManagedTensorSlice,
     StaticTensorSpec,
     InputTensor,
-    MutableInputTensor,
     OutputTensor,
     IOSpec,
     Input,
