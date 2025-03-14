@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from max.mlir.dialects import mo
 
 from ..graph import Graph  # noqa
+from ..type import _ChainType
 from ..value import BufferValue, TensorValue
 
 
@@ -73,10 +74,17 @@ def sum(
             raise ValueError(msg)
         devices.append(input.device)
 
-    results = Graph.current._add_op(
+    in_chain = Graph.current._current_chain
+    *results, out_chain = Graph.current._add_op(
         mo.distributed_allreduce_sum,
+        # Types for 2 outputs: list of tensors, chain.
         [x.type.to_mlir() for x in inputs],
+        _ChainType().to_mlir(),
+        in_chain,
         inputs,
         signal_buffers,
     )
+
+    Graph.current._update_chain(out_chain)
+
     return [res.tensor for res in results]
