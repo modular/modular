@@ -22,12 +22,6 @@ fn register(name: StringLiteral):
     pass
 
 
-# Indicates that a DPS Kernel is elementwise
-@__mogg_intrinsic_attr("mogg.elementwise")
-fn elementwise():
-    return
-
-
 # Indicates that a DPS Kernel is a view operation
 @__mogg_intrinsic_attr("mogg.view_kernel")
 fn view_kernel():

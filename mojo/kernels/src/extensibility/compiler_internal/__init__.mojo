@@ -6,7 +6,6 @@
 
 from .directives import (
     StaticTensorSpec,
-    elementwise,
     register,
     view_kernel,
 )
