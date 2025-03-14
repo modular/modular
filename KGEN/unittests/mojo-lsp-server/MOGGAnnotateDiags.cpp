@@ -91,7 +91,8 @@ TEST(MOGGAnnotateTests, NonInputTensorList) {
   Document doc("test:///foo.mojo", R"(
 from compiler_internal import StaticTensorSpec
 import compiler_internal as compiler
-from tensor import OutputTensor, MutableInputTensor
+from tensor import OutputTensor
+from tensor_internal.managed_tensor_slice import _MutableInputTensor as MutableInputTensor
 
 @compiler.register("non_input_tensor_list")
 struct NonInputTensorList:
