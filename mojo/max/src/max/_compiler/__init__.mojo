@@ -7,6 +7,5 @@
 
 from compiler import (
     StaticTensorSpec,
-    elementwise,
     register,
 )
