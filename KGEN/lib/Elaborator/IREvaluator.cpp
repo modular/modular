@@ -227,14 +227,39 @@ IREvaluator::evaluateInstantiateStruct(ParamOperatorAttr op) {
   return symOr.takeValue();
 }
 
+// See if we can decode the first 'numBytes' of the memory blob into a
+// StringAttr.
+static StringAttr getFirstBytesOf(MemoryBlobAttr value, size_t numBytes) {
+  // We don't bother handling these.
+  if (!value.getPointerRegions().empty() || !value.getSymbolRegions().empty())
+    return {};
+
+  if (numBytes <= value.getHandle().getSize()) {
+    return StringAttr::get(StringRef(value.getHandle().getData(), numBytes),
+                           StringType::get(value.getContext()));
+  }
+  return {};
+}
+
 /// Evaluate POC::DataToStr "data_to_str" operator.
 FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
   auto lengthAttr = dyn_cast<IntegerAttr>(op.getOperand(0));
-  TypedAttr pointerAttr = dyn_cast<MemRefAttr>(op.getOperand(1));
+  MemRefAttr pointerAttr = dyn_cast<MemRefAttr>(op.getOperand(1));
   if (!lengthAttr || !pointerAttr) {
     emitError({*errorLoc, "'data_to_str' did not narrow to a constant"});
     return failure();
   }
+  size_t numBytes = lengthAttr.getInt();
+
+  // Check to see if we have a memref(interp.memory_handle(...)) because
+  // we can just immediately fold it in common cases without materializing the
+  // memory.
+  // We don't handle index/offset yet.
+  if (pointerAttr.getIndex() == 0 && pointerAttr.getOffset() == 0)
+    if (pointerAttr.getModel().getMemory().size() >= 1)
+      if (auto result = getFirstBytesOf(
+              pointerAttr.getModel().getMemory().front(), numBytes))
+        return TypedAttr(result);
 
   if (ErrorOrSuccess err = internalizeMemory(pointerAttr)) {
     emitError({*errorLoc, "'data_to_str' failed to read data"});
@@ -242,7 +267,6 @@ FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
   }
 
   size_t address = cast<PointerAttr>(pointerAttr).getAddr();
-  size_t numBytes = lengthAttr.getInt();
   Type byteType = IntegerType::get(getContext(), 8);
 
   // Read each of the bytes into 'result' one at a time.  If any fail,

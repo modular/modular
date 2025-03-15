@@ -180,7 +180,7 @@ def MemoryBlobAttr : InterpreterAttr<"MemoryBlob", "memory_blob"> {
 
 def MemorySpaceAttr : ArrayOfAttr<InterpreterDialect, "MemorySpace",
                                   "memory_space", "MemoryBlobAttr"> {
-  let summary = "IR reprsentation of a memory space and values";
+  let summary = "IR representation of a memory space and values";
   let description = [{
     The `#interp.memory_space` attribute describes an abstract memory space
     consisting of distinct memory allocations represented as blobs. The contents
