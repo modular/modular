@@ -7843,6 +7843,7 @@ struct DistributedAllReduceSum:
         type: DType,
         rank: Int,
         target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         outputs: FusedOutputVariadicTensors[type, rank, *_],
         inputs: InputVariadicTensors[type, rank, *_],
@@ -7929,9 +7930,10 @@ struct DistributedAllReduceSum:
                 width=_width, element_alignment=_alignment
             ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
 
-        all_reduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
-            dev_ctxs, in_bufs, out_bufs, rank_sigs
-        )
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            all_reduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
+                dev_ctxs, in_bufs, out_bufs, rank_sigs
+            )
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
