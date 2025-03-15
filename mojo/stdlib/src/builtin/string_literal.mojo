@@ -857,12 +857,11 @@ struct StringLiteral(
         return String(String(self).lstrip())
 
 
-# TODO(MOCO-1460): This should be an initializer, but Mojo tries to bind the
-# parameter in `StringLiteral["foo"]()` to the type instead of the initializer.
-# Use a global function to work around this for now.
+# FIXME(MOCO-1707): This should be named get_string_literal[value: StringSlice],
+# but Mojo isn't picking the most specific overload correctly.
 @always_inline("nodebug")
-fn get_string_literal[value: String]() -> StringLiteral:
-    """Form a string literal from an arbitrary compile-time String value.
+fn get_string_literal_slice[value: StringSlice]() -> StringLiteral:
+    """Form a string literal from an arbitrary compile-time StringSlice value.
 
     Parameters:
         value: The value to convert to StringLiteral.
@@ -879,6 +878,22 @@ fn get_string_literal[value: String]() -> StringLiteral:
     ]
 
 
+# TODO(MOCO-1460): get_string_literal should be an initializer, but Mojo tries
+# to bind the parameter in `StringLiteral["foo"]()` to the type instead of the
+# initializer.   Use a global function to work around this for now.
+@always_inline("nodebug")
+fn get_string_literal[value: String]() -> StringLiteral:
+    """Form a string literal from an arbitrary compile-time String value.
+
+    Parameters:
+        value: The value to convert to StringLiteral.
+
+    Returns:
+        The string value as a StringLiteral.
+    """
+    return get_string_literal_slice[value]()
+
+
 @always_inline("nodebug")
 fn get_string_literal[type: Stringable, //, value: type]() -> StringLiteral:
     """Form a string literal from an arbitrary compile-time stringable value.
@@ -890,7 +905,7 @@ fn get_string_literal[type: Stringable, //, value: type]() -> StringLiteral:
     Returns:
         The string value as a StringLiteral.
     """
-    return get_string_literal[String(value)]()
+    return get_string_literal_slice[String(value)]()
 
 
 fn _base64_encode[str: StringLiteral]() -> StringLiteral:
