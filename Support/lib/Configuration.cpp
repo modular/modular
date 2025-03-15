@@ -212,10 +212,9 @@ ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
 ErrorOrSuccess Config::copyFrom(const Config &other) {
   const llvm::StringMap<std::string> &otherContents = other.getAllValues();
   for (const auto &mapEntry : otherContents) {
-    if (kv.contains(mapEntry.first()))
+    if (!kv.insert({mapEntry.first(), mapEntry.second}).second)
       return Error(Twine("key ") + mapEntry.first() +
                    " already exists in the map");
-    kv.insert({mapEntry.first(), mapEntry.second});
   }
   return success();
 }
