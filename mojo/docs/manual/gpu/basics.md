@@ -49,7 +49,7 @@ specialized knowledge to build high-performance, GPU-enabled applications. By
 lowering the barrier to entry, we aim to fuel more breakthroughs and accelerate
 innovation.
 
-:::tip Setup
+## Setup
 
 All of these notebook cells are runnable through a VS Code extension. You can
 install
@@ -82,8 +82,6 @@ def main():
 
 Then run the file, if you haven't setup Mojo yet, check out the [Getting
 Started](../get-started.mdx) guide.
-
-:::
 
 ## Imports
 
@@ -418,13 +416,14 @@ var tensor = LayoutTensor[dtype, layout](in_dev)
 
 This `LayoutTensor` is a wrapper over the data stored inside `in_dev`, it
 doesn't own its memory but allows us to index using block and thread ids. We'll
-create an alias so that we don't have to repeat the type information, arguments
-on GPU have a [static origin](/mojo/manual/values/lifetimes) which means it
-lives for the duration of the kernel:
+create an alias so that we don't have to repeat the type information for each
+kernel launch:
 
 ```mojo
-alias InputLayoutTensor = LayoutTensor[dtype, layout, StaticConstantOrigin]
+alias InputLayoutTensor = LayoutTensor[dtype, layout, MutableAnyOrigin]
 ```
+
+More information on [origins here](/mojo/manual/values/lifetimes).
 
 Initially we'll just print the values to confirm it's indexing as we expect:
 
@@ -532,7 +531,8 @@ memory in a simple example.  We'll cover better solutions in the next sections.
 fn sum_reduce_kernel(
     tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
 ):
-    # Allocates memory to be shared between threads once, prior to the kernel launch
+    # This allocates memory to be shared between threads in a block prior to the
+    # kernel launching. Each kernel gets a pointer to the allocated memory.
     var shared = stack_allocation[
         blocks * sizeof[dtype](),
         Scalar[dtype],
