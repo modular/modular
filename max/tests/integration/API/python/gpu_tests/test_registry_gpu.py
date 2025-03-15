@@ -647,7 +647,7 @@ def test_registry__raise_oom_error_weights_size_exceeds_available_memory():
     ):
         device_mock.return_value = {"free_memory": 5 * 1024 * 1024}
         with pytest.raises(
-            RuntimeError, match="Weights size exceeds available memory"
+            RuntimeError, match="Model size exceeds available memory"
         ):
             PIPELINE_REGISTRY.validate_pipeline_config(config)
 
