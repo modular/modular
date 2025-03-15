@@ -420,8 +420,8 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
                              bool create = true) -> LLVM::AllocaOp {
         if (!useDbgValueMode && allocaOp)
           return allocaOp;
-        if (allocaMap.contains(valueOp))
-          return allocaMap.lookup(valueOp);
+        if (auto it = allocaMap.find(valueOp); it != allocaMap.end())
+          return it->second;
         if (!create)
           return {};
 
