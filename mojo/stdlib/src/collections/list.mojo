@@ -663,7 +663,8 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         Parameters:
             realloc: Whether to reallocate the buffer when
-                `len(self) * 4 < self.capacity and self.capacity > 1`.
+                `len(self) * 4 < self.capacity and self.capacity > 1`. Defaults
+                to `True`.
 
         Args:
             i: The index of the value to pop.
@@ -693,7 +694,8 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         Parameters:
             realloc: Whether to reallocate the buffer when
-                `len(self) * 4 < self.capacity and self.capacity > 1`.
+                `len(self) * 4 < self.capacity and self.capacity > 1`. Defaults
+                to `True`.
 
         Returns:
             The popped value.
