@@ -1857,12 +1857,12 @@ fn is_row_major[rank: Int](layout: Layout) -> Bool:
         False otherwise.
     """
     var flat_shape = flatten(layout.shape)
-    var flat_stride = flatten(layout.stride)
     var flat_rank = len(flat_shape)
 
     if flat_rank != rank:
         return False
 
+    var flat_stride = flatten(layout.stride)
     if flat_stride[flat_rank - 1].value() != 1:
         return False
 
