@@ -3432,41 +3432,9 @@ fn _f32_to_bfloat16_scalar(
         return _unchecked_zero[DType.bfloat16, 1]()
 
     elif is_amd_gpu():
-        alias round_bias = Int32(0x7FFF)
-
-        # Compute the mask of unordered values.
-        var unordered_mask = inlined_assembly[
-            "v_cmp_u_f32 $0, $1, $1",
-            SIMD[DType.uint64, 1],
-            constraints="=s,v",
-            has_side_effect=False,
-        ](val)
-
-        # Compute "rounded_val = val + lsb + round_bias" to round-to-nearest.
-        var lsb = inlined_assembly[
-            "v_bfe_u32 $0, $1, 16, 1",
-            SIMD[DType.uint32, 1],
-            constraints="=v,v",
-            has_side_effect=False,
-        ](val)
-        var rounded_val = inlined_assembly[
-            "v_add3_u32 $0, $1, $2, $3",
-            SIMD[DType.uint32, 1],
-            constraints="=v,v,v,v",
-            has_side_effect=False,
-        ](val, lsb, round_bias)
-
-        # Select the rounded value or NaN based on the unordered mask.
-        var float_bits = inlined_assembly[
-            "v_cndmask_b32 $0, $1, $2, $3",
-            SIMD[DType.uint32, 1],
-            constraints="=v,v,v,s",
-            has_side_effect=False,
-        ](rounded_val, _nan[DType.float32](), unordered_mask)
-
-        return bitcast[DType.bfloat16, 1](
-            UInt16(float_bits >> _fp32_bf16_mantissa_diff)
-        )
+        return __mlir_op.`pop.cast`[
+            _type = __mlir_type.`!pop.scalar<bf16>`, fast = __mlir_attr.unit
+        ](rebind[Scalar[DType.float32]](val).value)
 
     if _isnan(val):
         return _nan[DType.bfloat16]()

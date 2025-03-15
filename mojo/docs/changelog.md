@@ -345,3 +345,7 @@ ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
   capacity constructor, or an `InlineArray`.
 
 ### 🛠️ Fixed
+
+- [#3976](https://github.com/modular/max/issues/3976) The `variance` argument
+  in `random.randn_float64` and `random.randn` has been renamed to
+  `standard_deviation` so that values are drawn from the correct distribution.

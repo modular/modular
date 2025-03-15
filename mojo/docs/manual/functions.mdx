@@ -387,13 +387,13 @@ fn sum(*values: Int) -> Int:
 Memory-only types, such as `String`, are available as a
 [`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem).
 Iterating over this list directly with a `for..in` loop currently produces a
-[`Reference`](/mojo/stdlib/memory/reference/Reference) for each value instead
+[`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to each value instead
 of the value itself. You must add an empty subscript operator `[]` to
-dereference the reference and retrieve the value:
+dereference the pointer and retrieve the value:
 
 ```mojo
 def make_worldly(mut *strs: String):
-    # Requires extra [] to dereference the reference for now.
+    # Requires extra [] to dereference the pointer for now.
     for i in strs:
         i[] += " world"
 

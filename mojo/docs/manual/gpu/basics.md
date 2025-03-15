@@ -61,7 +61,7 @@ git clone git@github.com:modular/max
 cd max/mojo/docs/manual/gpu
 ```
 
-And open e.g. `gpu-basics.md` to run the code cells interactively.
+And open `basics.md` to run the code cells interactively.
 
 If you prefer the traditional approach, create a file such as `main.mojo` and
 put everything except the imports into a `def main`:
