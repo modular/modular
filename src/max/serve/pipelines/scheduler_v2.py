@@ -454,12 +454,22 @@ class TokenGenerationSchedulerV2(Scheduler):
             )
 
         # Keep preempting requests until we can schedule the entire active batch
+        max_seq_len = self.paged_manager.max_seq_len
         initial_active_batch_size = len(self.active_batch)
         while len(self.active_batch) > 1:
+            # Compute the number of steps available for the active batch
+            num_steps = self.scheduler_config.max_forward_steps_tg
+            for context in self.active_batch.values():
+                num_available_steps = context.compute_num_available_steps(
+                    max_seq_len
+                )
+                num_steps = min(num_steps, num_available_steps)
+            assert num_steps > 0
+
             seq_ids_and_prompts = self._construct_fetch_input(self.active_batch)
             if self.paged_manager.can_fetch(
                 seq_ids_and_prompts,
-                num_steps=self.scheduler_config.max_forward_steps_tg,
+                num_steps=num_steps,
             ):
                 return SchedulerOutput(
                     batch_type=BatchType.TokenGeneration,
