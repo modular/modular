@@ -43,7 +43,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
-from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
+from gpu.allreduce import MAX_GPUS, Signal, allreduce
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
@@ -7868,8 +7868,8 @@ struct DistributedAllReduceSum:
                the buffer + signals metadata.
 
         Limitations:
-            - Maximum of 8 GPUs supported (matches MAX_GPUS in all_reduce.mojo)
-            - Tensor element count must be multiple of SIMD width (per all_reduce.mojo)
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in allreduce.mojo)
+            - Tensor element count must be multiple of SIMD width (per allreduce.mojo)
             - Requires identical tensor shapes across all participating GPUs
         """
         alias num_devices = inputs.size
@@ -7931,7 +7931,7 @@ struct DistributedAllReduceSum:
             ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            all_reduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
+            allreduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
                 dev_ctxs, in_bufs, out_bufs, rank_sigs
             )
 
