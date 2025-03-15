@@ -328,7 +328,7 @@ struct UInt(Indexer, _HashableWithHasher):
         var x = self
         var n = exp
         while n > 0:
-            if n & 1 != 0:
+            if n & 1:
                 res *= x
             x *= x
             n >>= 1
