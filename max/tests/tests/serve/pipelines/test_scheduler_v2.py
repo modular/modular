@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from functools import partial
 from queue import Queue
+from typing import cast
 from unittest.mock import MagicMock, Mock
 
 import numpy as np
@@ -14,6 +14,7 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -22,6 +23,7 @@ from max.pipelines.kv_cache import (
 from max.serve.pipelines.scheduler_v2 import (
     BatchType,
     SchedulerOutput,
+    TextGenerationResponse,
     TokenGenerationSchedulerConfig,
     TokenGenerationSchedulerV2,
 )
@@ -29,32 +31,19 @@ from max.serve.pipelines.scheduler_v2 import (
 
 @pytest.fixture
 def mock_pipeline():
-    def next_token_behavior(batch, num_steps=1):
+    def next_token_behavior(
+        batch: dict[str, TextContext], num_steps=1
+    ) -> dict[str, TextGenerationResponse]:
         responses = {}
 
-        print(f"batch: {batch}")
         for request_id, request in batch.items():
             responses[request_id] = Mock()
             responses[request_id].tokens = []
             responses[request_id].is_done = False
             for _ in range(num_steps):
-                # Simulate chunked prefill behavior
-                if request.active_idx < request.current_length:
-                    request.start_idx = request.active_idx
-                    request.active_idx = request.current_length
-                    request.active_length = (
-                        request.active_idx - request.start_idx
-                    )
-                # Simulate token generation behavior
-                else:
-                    request.start_idx = request.active_idx
-                    request.active_idx += 1
-                    request.current_length += 1
-                    request.active_length = 1
+                request.update(new_token=1)
 
-                responses[request_id].tokens.append(Mock())
-
-        return responses
+        return cast(dict[str, TextGenerationResponse], responses)
 
     pipeline = Mock()
     pipeline.next_token = Mock(side_effect=next_token_behavior)
@@ -100,49 +89,19 @@ def scheduler(mock_pipeline, mock_process_control, scheduler_config, queues):
 
 
 def create_mock_request(
+    cache_seq_id=0,
     seq_len=30,
     start_idx=0,
-    active_idx=None,
-    active_length=None,
-    current_length=None,
-    cache_seq_id=None,
-):
-    """Create a mock request with common attributes.
-
-    Args:
-        seq_len (int): Total sequence length
-        start_idx (int): Starting index
-        active_idx (int, optional): Current active index. Defaults to seq_len
-        active_length (int, optional): Active length. Defaults to seq_len - start_idx
-        current_length (int, optional): Current length. Defaults to seq_len
-        cache_seq_id (int, optional): Cache sequence ID. Defaults to None
-    """
-    mock_data = MagicMock()
-    mock_data.tokens = {}
-    mock_data.active_length = active_length
-    mock_data.start_idx = start_idx
-    mock_data.active_idx = active_idx if active_idx is not None else seq_len
-    mock_data.active_length = (
-        active_length if active_length is not None else seq_len - start_idx
+) -> TextContext:
+    tokens = np.ones(seq_len)
+    context = TextContext(
+        cache_seq_id=cache_seq_id,
+        prompt=tokens.tolist(),
+        max_length=seq_len,
+        tokens=tokens,
     )
-    mock_data.current_length = (
-        current_length if current_length is not None else seq_len
-    )
-    mock_data.end_idx = mock_data.active_idx
-    mock_data.cache_seq_id = cache_seq_id
-    mock_data.next_tokens = np.ones(mock_data.active_length)
-
-    def bump_token_indices(self, start_idx=0, active_idx=0, end_idx=0):
-        self.start_idx += start_idx
-        self.active_idx += active_idx
-        self.end_idx += end_idx
-        self.active_length = self.active_idx - self.start_idx
-
-    mock_data.bump_token_indices.side_effect = partial(
-        bump_token_indices, mock_data
-    )
-
-    return mock_data
+    context.bump_token_indices(start_idx=start_idx)
+    return context
 
 
 def test_should_schedule_ce_empty_queue(scheduler):
@@ -198,7 +157,7 @@ def test_try_create_chunked_ce_batch(scheduler):
     scheduler.scheduler_config.max_forward_steps_ce = 1
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
 
-    mock_data = create_mock_request(seq_len=30)
+    mock_data = create_mock_request(cache_seq_id=0, seq_len=30)
     scheduler.request_q.put(("req1", mock_data))
 
     batch = scheduler._try_create_ce_batch().batch_inputs
@@ -413,14 +372,16 @@ def create_paged_manager(
     return kv_manager
 
 
+@pytest.mark.parametrize("num_reqs", [1, 2])
 def test_schedule_paged_manager_exceed_max_seq_len(
-    scheduler_config, mock_process_control, mock_pipeline, queues
+    scheduler_config, mock_process_control, mock_pipeline, queues, num_reqs
 ):
     # Create a paged manager that has one slot
     max_seq_len = 2048
+    page_size = 128
     paged_manager = create_paged_manager(
-        num_blocks=16,
-        max_batch_size=1,
+        num_blocks=max_seq_len / page_size * num_reqs,
+        max_batch_size=2,
         max_seq_len=max_seq_len,
         page_size=128,
     )
@@ -441,21 +402,26 @@ def test_schedule_paged_manager_exceed_max_seq_len(
     assert prompt_len + num_steps > max_seq_len
 
     # Run CE on 2045 tokens for this req in paged manager
-    cache_seq_id = 0
-    paged_manager.external_claim([cache_seq_id])
-    seq_ids_and_prompts = {cache_seq_id: np.ones(prompt_len)}
+    seq_ids_and_prompts: dict[int, np.ndarray] = {}
+    seq_ids_and_new_tokens: dict[int, np.ndarray] = {}
+    for cache_seq_id in range(num_reqs):
+        paged_manager.external_claim([cache_seq_id])
+        seq_ids_and_prompts[cache_seq_id] = np.ones(prompt_len)
+        seq_ids_and_new_tokens[cache_seq_id] = np.ones(1)
     paged_manager.fetch(seq_ids_and_prompts)
-    seq_ids_and_new_tokens = {cache_seq_id: np.ones(1)}
     paged_manager.step(seq_ids_and_new_tokens)
 
     # Create a mock request and add it to the active batch
     # This request has already encoded its prompt and is ready for its first TG step
-    mock_request = create_mock_request(
-        cache_seq_id=cache_seq_id, seq_len=prompt_len + 1, start_idx=prompt_len
-    )
-    assert mock_request.active_length == 1
-    scheduler.active_batch["req1"] = mock_request
+    for cache_seq_id in range(num_reqs):
+        mock_request = create_mock_request(
+            cache_seq_id=cache_seq_id,
+            seq_len=prompt_len + 1,
+            start_idx=prompt_len,
+        )
+        assert mock_request.active_length == 1
+        scheduler.active_batch[f"req{cache_seq_id}"] = mock_request
 
     # Try to construct TG batch and make sure it is non-empty
     batch_to_execute = scheduler._create_tg_batch().batch_inputs
-    assert len(batch_to_execute) == 1
+    assert len(batch_to_execute) == num_reqs
