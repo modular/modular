@@ -14,7 +14,7 @@ from sys import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.all_reduce import MAX_GPUS, Signal, all_reduce, can_enable_p2p
+from gpu.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from testing import assert_almost_equal
@@ -163,11 +163,11 @@ fn bench_reduce[
         fn call_fn() raises:
             @parameter
             if max_num_blocks:
-                all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+                allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
                     list_of_ctx, in_bufs, out_bufs, rank_sigs, max_num_blocks
                 )
             else:
-                all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+                allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
                     list_of_ctx, in_bufs, out_bufs, rank_sigs
                 )
 
