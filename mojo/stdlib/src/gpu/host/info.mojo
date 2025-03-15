@@ -15,6 +15,7 @@ from math import ceildiv, floor
 from os import abort
 from sys import env_get_string
 from sys.info import _accelerator_arch, _get_arch
+from collections.string.string_slice import StringSlice
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()
 alias DEFAULT_GPU = Info.from_name[DEFAULT_GPU_ARCH]()
@@ -1330,7 +1331,7 @@ fn _quantized_floor(a: Float64, b: Int) -> Int:
     return Int(floor(a / b) * b)
 
 
-fn is_gpu[target: StringLiteral]() -> Bool:
+fn is_gpu[target: StringSlice]() -> Bool:
     """
     Checks if the target is a GPU (compile-time version).
 
@@ -1343,7 +1344,7 @@ fn is_gpu[target: StringLiteral]() -> Bool:
     return is_gpu(target)
 
 
-fn is_gpu(target: String) -> Bool:
+fn is_gpu(target: StringSlice) -> Bool:
     """
     Checks if the target is a GPU (runtime version).
 
@@ -1356,7 +1357,7 @@ fn is_gpu(target: String) -> Bool:
     return target == "gpu"
 
 
-fn is_cpu[target: StringLiteral]() -> Bool:
+fn is_cpu[target: StringSlice]() -> Bool:
     """
     Checks if the target is a CPU (compile-time version).
 
@@ -1369,7 +1370,7 @@ fn is_cpu[target: StringLiteral]() -> Bool:
     return is_cpu(target)
 
 
-fn is_cpu(target: String) -> Bool:
+fn is_cpu(target: StringSlice) -> Bool:
     """
     Checks if the target is a CPU (runtime version).
 
@@ -1382,7 +1383,7 @@ fn is_cpu(target: String) -> Bool:
     return target == "cpu"
 
 
-fn is_valid_target[target: StringLiteral]() -> Bool:
+fn is_valid_target[target: StringSlice]() -> Bool:
     """
     Checks if the target is valid (compile-time version).
 
@@ -1395,7 +1396,7 @@ fn is_valid_target[target: StringLiteral]() -> Bool:
     return is_valid_target(target)
 
 
-fn is_valid_target(target: String) -> Bool:
+fn is_valid_target(target: StringSlice) -> Bool:
     """
     Checks if the target is valid (runtime version).
 
