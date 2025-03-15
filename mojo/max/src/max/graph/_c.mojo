@@ -44,7 +44,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
 
 @always_inline
-fn cfunc[func_name: StringLiteral, T: AnyTrivialRegType]() -> T:
+fn cfunc[func_name: StringSlice, T: AnyTrivialRegType]() -> T:
     var f = _get_dylib_function[
         MOF_LIB(),
         func_name,

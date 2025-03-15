@@ -15,7 +15,7 @@ from sys.ffi import (
     external_call,
 )
 from sys.param_env import env_get_string, is_defined
-
+from collections.string import StringSlice
 from memory import UnsafePointer
 
 
@@ -44,7 +44,7 @@ alias MOF_LIB = _Global["MOF_LIB", _OwnedDLHandle, _init_dylib]
 
 @always_inline
 fn MLIR_func[
-    name: StringLiteral, T: AnyTrivialRegType, *Args: AnyType
+    name: StringSlice, T: AnyTrivialRegType, *Args: AnyType
 ](*args: *Args) -> T:
     var loaded_args_pack = args.get_loaded_kgen_pack()
 
