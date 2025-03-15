@@ -913,3 +913,11 @@ kgen.generator @struct_extract() {
   kgen.param.constant = <#kgen.struct.extract<:struct<(index, index)> #interp.uninitmem, 0>>
   kgen.return
 }
+
+// CHECK-LABEL: @data_to_str
+kgen.generator @data_to_str<idx: index, ptr: pointer<i8>>() {
+  // CHECK: = kgen.param.constant: string = <data_to_str(:pointer<i8> idx, ptr)>
+  %0 = kgen.param.constant: string = <data_to_str(:pointer<i8> idx, ptr)>
+
+  kgen.return
+}
