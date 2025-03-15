@@ -735,6 +735,14 @@ static ASTType addImplicitTypeParams(ASTType type,
     insertFn(paramList.paramDeclAttrs, paramDeclAttrs);
     insertFn(paramList.names, names);
     insertFn(paramList.passingKinds, passingKinds);
+
+    // If we're inserting a parameter at the start, then any variadics before it
+    // will need to be updated to account for the new parameter, e.g.:
+    //     fn test[*elts: Int, autoparm: StructWithParam]():
+    if (!append) {
+      for (auto &idx : paramList.variadicIndices)
+        idx += paramDeclAttrs.size();
+    }
   });
 
   // The parameter decl references that will be used to fully bind the type,

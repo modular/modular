@@ -1824,3 +1824,8 @@ struct MOCO1320[mut: Bool, //, origin: Origin[mut]]:
 
     fn __init__(out self, *, ref [origin]to: Int):
         self._value = __get_mvalue_as_litref(to)
+
+struct StructWithParam[a: Int]: pass
+
+# CHECK-LABEL: lit.fn @"autoparam_mangler_crash
+fn autoparam_mangler_crash[*types: Int, constraints: StructWithParam](): pass
