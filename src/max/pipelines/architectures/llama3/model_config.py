@@ -190,15 +190,28 @@ class Llama3Config(MAXConfig):
         )
         rope_scaling_params = None
         rope_scaling = huggingface_config.rope_scaling
-        if rope_scaling is not None and rope_scaling["rope_type"] == "llama3":
-            rope_scaling_params = Llama3RopeScalingParams(
-                factor=rope_scaling["factor"],
-                low_freq_factor=rope_scaling["low_freq_factor"],
-                high_freq_factor=rope_scaling["high_freq_factor"],
-                orig_max_position=rope_scaling[
-                    "original_max_position_embeddings"
-                ],
-            )
+
+        if rope_scaling is not None:
+            # Since "rope_type" huggingface config is not standardized, we need
+            # to check for both "type" and "rope_type" keys.
+            # TODO: A better solution would be for those family of models to
+            # create their own subclass of MAXModelConfig or Llama3Config, then
+            # parts of it like rope_scaling to account for such differences.
+            rope_type = rope_scaling.get("type")
+            rope_type_alt = rope_scaling.get("rope_type")
+            if rope_type is None and rope_type_alt is None:
+                raise ValueError(
+                    "Neither 'type' nor 'rope_type' found in rope_scaling huggingface config"
+                )
+            if rope_type == "llama3" or rope_type_alt == "llama3":
+                rope_scaling_params = Llama3RopeScalingParams(
+                    factor=rope_scaling["factor"],
+                    low_freq_factor=rope_scaling["low_freq_factor"],
+                    high_freq_factor=rope_scaling["high_freq_factor"],
+                    orig_max_position=rope_scaling[
+                        "original_max_position_embeddings"
+                    ],
+                )
 
         return Llama3Config(
             hidden_size=huggingface_config.hidden_size,

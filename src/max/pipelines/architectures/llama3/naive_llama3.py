@@ -253,8 +253,5 @@ class StackedMLP(Module):
 
     def __call__(self, x: TensorValue) -> TensorValue:
         up_states = self.gate_up_proj(x)
-
-        gate = up_states[:, : up_states.shape.static_dims[0] // 2]
-        up_states = up_states[:, up_states.shape.static_dims[0] // 2 :]
-
+        up_states, gate = ops.chunk(up_states, 2)
         return self.down_proj(ops.silu(gate) * up_states)
