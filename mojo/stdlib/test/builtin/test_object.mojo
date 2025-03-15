@@ -159,9 +159,9 @@ def test_object_bitwise():
     assert_true(2 << object(1) == 4)
     assert_true(2 >> object(1) == 1)
 
-    assert_true(object(15) & object(7) == 7)
-    assert_true(object(15) | object(7) == 15)
-    assert_true(object(15) ^ object(7) == 8)
+    assert_true((object(15) & object(7)) == 7)
+    assert_true((object(15) | object(7)) == 15)
+    assert_true((object(15) ^ object(7)) == 8)
 
     a = object(15)
     b = object(7)
@@ -174,9 +174,9 @@ def test_object_bitwise():
     a ^= b
     assert_true(a == 8)
 
-    assert_true(15 & object(7) == 7)
-    assert_true(15 | object(7) == 15)
-    assert_true(15 ^ object(7) == 8)
+    assert_true((15 & object(7)) == 7)
+    assert_true((15 | object(7)) == 15)
+    assert_true((15 ^ object(7)) == 8)
 
 
 def test_function(lhs, rhs) -> object:
