@@ -141,6 +141,14 @@ class InputContext(Protocol):
         that must be returned to the user."""
         ...
 
+    def compute_num_available_steps(
+        self,
+        max_seq_len: int,
+    ) -> int:
+        """Compute the max number of steps we can execute for a given context
+        without exceeding the max_seq_len."""
+        ...
+
 
 class TextContext:
     """A base class for model context, specifically for Text model variants."""
@@ -336,6 +344,14 @@ class TextContext:
         self._completion_start_idx = self._completion_end_idx
 
         return res
+
+    def compute_num_available_steps(
+        self,
+        max_seq_len: int,
+    ) -> int:
+        """Compute the max number of steps we can execute for a given context
+        without exceeding the max_seq_len."""
+        return max_seq_len - (self.current_length - self.active_length)
 
 
 class TextAndVisionContext(TextContext):

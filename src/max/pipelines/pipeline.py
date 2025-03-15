@@ -528,10 +528,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
             self._pipeline_config,
             huggingface_config=self.huggingface_config,
         )
-        # this is effectively: max_seq_len - (num_tokens_in_kv_cache + num_new_tokens) - num_new_tokens
-        num_available_steps = max_seq_len - (
-            context.current_length - context.active_length
-        )
+        num_available_steps = context.compute_num_available_steps(max_seq_len)
+
         if num_available_steps <= 0:
             raise ValueError(
                 f"Request {context.cache_seq_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"
