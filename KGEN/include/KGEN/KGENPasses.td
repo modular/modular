@@ -207,6 +207,26 @@ def OutlineClosures : Pass<"outline-closures", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// OutlineClosuresNew
+//===----------------------------------------------------------------------===//
+
+def OutlineClosuresNew : Pass<"outline-closures-new", "ModuleOp"> {
+  let summary = "Outlines region parameters into explicit closures.";
+  let description = [{
+    This pass outlines the region of closure init ops and replaces
+    references to the closure with a reference to a capture struct
+    instance.
+  }];
+
+  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
+
+  let options = [
+    Option<"debugBuild", "debug-build", "bool", "false",
+           "Whether to check locations for parameter uses.">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // LowerKGENToLLVM
 //===----------------------------------------------------------------------===//
 
