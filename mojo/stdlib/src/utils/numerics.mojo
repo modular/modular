@@ -611,9 +611,7 @@ fn isnan[
         var ival = bitcast[int_dtype, simd_width](val)
         return (ival & 0x7C00) == 0x7C00 and (ival & 0x03FF) != 0
     elif type is DType.bfloat16:
-        alias x7FFF = SIMD[int_dtype, simd_width](0x7FFF)
-        alias x7F80 = SIMD[int_dtype, simd_width](0x7F80)
-        return bitcast[int_dtype, simd_width](val) & x7FFF > x7F80
+        return (bitcast[int_dtype, simd_width](val) & 0x7FFF) > 0x7F80
 
     alias signaling_nan_test: UInt32 = 0x0001
     alias quiet_nan_test: UInt32 = 0x0002
