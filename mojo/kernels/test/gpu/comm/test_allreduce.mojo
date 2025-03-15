@@ -15,8 +15,8 @@ from utils import IndexList, StaticTuple
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
-from gpu.all_reduce import elementwise_epilogue_type
+from gpu.allreduce import MAX_GPUS, Signal, allreduce
+from gpu.allreduce import elementwise_epilogue_type
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from testing import assert_almost_equal
@@ -48,7 +48,7 @@ fn _human_memory(size: Int) -> String:
     return String(size) + "B"
 
 
-fn all_reduce_test[
+fn allreduce_test[
     type: DType, rank: Int, ngpus: Int
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     alias num_warmups = 5
@@ -147,7 +147,7 @@ fn all_reduce_test[
 
     # Warm up.
     for _ in range(num_warmups):
-        all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+        allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
             list_of_ctx, in_bufs, out_bufs, rank_sigs
         )
 
@@ -161,7 +161,7 @@ fn all_reduce_test[
 
     @parameter
     for _ in range(num_iters):
-        all_reduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
+        allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
             list_of_ctx, in_bufs, out_bufs, rank_sigs
         )
 
@@ -251,4 +251,4 @@ def main():
                 alias length = test_lengths[length_idx]
 
                 print(_get_test_str[dtype](num_gpus, length))
-                all_reduce_test[type=dtype, rank=1, ngpus=num_gpus](ctx, length)
+                allreduce_test[type=dtype, rank=1, ngpus=num_gpus](ctx, length)
