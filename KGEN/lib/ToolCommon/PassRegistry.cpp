@@ -51,6 +51,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerLowerSemanticCF();
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
+  KGEN::registerOutlineClosuresNew();
   KGEN::registerRaiseForLoops();
   KGEN::registerRemoveUnusedParams();
   KGEN::registerSROA();
