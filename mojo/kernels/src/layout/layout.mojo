@@ -1380,7 +1380,7 @@ fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
     return apply_tiler[logical_product](layout_a, tiler)
 
 
-fn hier_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
+fn hierarchical_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
     """Hierarchically unzips a layout according to a list of layouts.
 
     This function creates a hierarchical layout by unzipping the first layout
@@ -1400,13 +1400,13 @@ fn hier_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
 
         ```mojo
         from layout import Layout, LayoutList, IntTuple
-        from layout.layout import hier_unzip
+        from layout.layout import hierarchical_unzip
 
         # Create a layout to unzip
         var base = Layout.row_major(6, 8)
         var tilers = LayoutList()
         tilers.append(Layout(IntTuple(2, 2)))
-        var result = hier_unzip(base, tilers)
+        var result = hierarchical_unzip(base, tilers)
         ```
         .
     """
@@ -1414,7 +1414,7 @@ fn hier_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
     var res_2 = Layout()
 
     for i in range(len(tiler)):
-        var split = hier_unzip(layout_a[i], tiler[i])
+        var split = hierarchical_unzip(layout_a[i], tiler[i])
         res_1.append(split[0])
         res_2.append(split[1])
 
@@ -1426,7 +1426,7 @@ fn hier_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
 
 
 @always_inline("nodebug")
-fn hier_unzip(
+fn hierarchical_unzip(
     layout_a: Layout,
     layout_b: Layout,
 ) -> Layout:
@@ -1449,12 +1449,12 @@ fn hier_unzip(
 
         ```mojo
         from layout import Layout, IntTuple
-        from layout.layout import hier_unzip
+        from layout.layout import hierarchical_unzip
 
         # Create layouts
         var base = Layout.row_major(6, 8)
         var pattern = Layout(IntTuple(2, 2))
-        var result = hier_unzip(base, pattern)
+        var result = hierarchical_unzip(base, pattern)
         ```
         .
     """
@@ -1466,7 +1466,7 @@ fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
     """Divides a layout into blocks according to another layout.
 
     This function creates a hierarchical layout by dividing the first layout
-    according to the second layout. It's an alias for hier_unzip that provides a
+    according to the second layout. It's an alias for hierarchical_unzip that provides a
     more intuitive name for the division operation. This is useful for creating
     blocked or tiled representations of tensors.
 
@@ -1491,7 +1491,7 @@ fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
         ```
         .
     """
-    return hier_unzip(layout_a, layout_b)
+    return hierarchical_unzip(layout_a, layout_b)
 
 
 @always_inline("nodebug")
@@ -1499,7 +1499,7 @@ fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     """Divides a layout into blocks according to a list of layouts.
 
     This function creates a hierarchical layout by dividing the first layout
-    according to the layouts in the tiler list. It's an alias for hier_unzip that
+    according to the layouts in the tiler list. It's an alias for hierarchical_unzip that
     provides a more intuitive name for the division operation when working with
     multiple tiling patterns.
 
@@ -1525,7 +1525,7 @@ fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
         ```
         .
     """
-    return hier_unzip(layout_a, tiler)
+    return hierarchical_unzip(layout_a, tiler)
 
 
 @no_inline
