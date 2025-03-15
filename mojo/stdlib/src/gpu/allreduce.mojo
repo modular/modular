@@ -206,7 +206,7 @@ fn _naive_reduce_kernel_with_lambda[
 
 
 @always_inline
-fn _all_reduce_naive[
+fn _allreduce_naive[
     type: DType,
     rank: Int,
     ngpus: Int,
@@ -687,7 +687,7 @@ fn _allreduce_1stage_kernel[
 
 
 @always_inline
-fn _all_reduce_p2p[
+fn _allreduce_p2p[
     type: DType,
     rank: Int,
     ngpus: Int,
@@ -799,7 +799,7 @@ fn _dispatch_max_num_blocks[ngpus: Int](num_bytes: Int) -> Int:
 
 
 @parameter
-fn all_reduce[
+fn allreduce[
     type: DType,
     rank: Int,
     ngpus: Int,
@@ -855,10 +855,10 @@ fn all_reduce[
     var can_p2p = can_enable_p2p(ctxs)
 
     if not can_p2p:
-        return _all_reduce_naive[outputs_lambda=outputs_lambda](
+        return _allreduce_naive[outputs_lambda=outputs_lambda](
             ctxs, input_buffers, output_buffers, max_num_blocks
         )
     else:
-        return _all_reduce_p2p[outputs_lambda=outputs_lambda](
+        return _allreduce_p2p[outputs_lambda=outputs_lambda](
             ctxs, input_buffers, output_buffers, rank_sigs, max_num_blocks
         )
