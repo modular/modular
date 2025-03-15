@@ -110,3 +110,27 @@ def test_while_loop_with_raising() -> None:
         assert graph._current_chain == chain
         graph.output()
     graph._mlir_op.verify()
+
+
+def test_while_loop_with_pred_block_chain_mutation() -> None:
+    with Graph(
+        "while_loop_with_pred_block_chain_mutation",
+        input_types=[TensorType(DType.int32, [])],
+    ) as graph:
+        x = graph.inputs[0]
+
+        def pred(x):
+            # print mutates the chain
+            x.print()
+            return x < 10
+
+        def body(x):
+            return x + 1
+
+        try:
+            ops.while_loop(x, pred, body)
+        except Exception as e:
+            assert "Chain mutation detected" in str(e)
+
+        graph.output()
+    graph._mlir_op.verify()

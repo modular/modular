@@ -104,7 +104,11 @@ def while_loop(
     out_types = [arg.type for arg in initial_values]
     out_mlir_types = [t.to_mlir() for t in out_types]
 
-    def wrap_while_block_function(user_func, block_args):
+    def wrap_while_block_function(
+        user_func,
+        block_args: Iterable[mlir.BlockArgument],
+        guard_against_chain_mutations: bool = True,
+    ):
         """Adapts a user-provided loop function to handle execution chain state.
 
         This wrapper handles the implicit execution chain that tracks operation
@@ -142,7 +146,13 @@ def while_loop(
             Graph.current._update_chain(execution_chain)
 
             # Invoke user function with only the loop variables
-            return user_func(*loop_vars)
+            user_func_result = user_func(*loop_vars)
+
+            if guard_against_chain_mutations:
+                if Graph.current._current_chain != execution_chain:
+                    raise Exception("Chain mutation detected")
+
+            return user_func_result
 
         return chain_aware_wrapper
 
@@ -157,8 +167,10 @@ def while_loop(
 
     try:
         pred_block = while_op.condRegion.blocks[0]
+        # TODO: We won't need the guard_against_chain_mutations flag once we
+        # have a way to track the chain state across the while loop's predicate block
         pred_wrapped_fn = wrap_while_block_function(
-            predicate, pred_block.arguments
+            predicate, pred_block.arguments, guard_against_chain_mutations=True
         )
 
         Graph.current._build_block(
@@ -171,7 +183,9 @@ def while_loop(
         )
 
         body_block = while_op.bodyRegion.blocks[0]
-        body_wrapped_fn = wrap_while_block_function(body, body_block.arguments)
+        body_wrapped_fn = wrap_while_block_function(
+            body, body_block.arguments, guard_against_chain_mutations=False
+        )
         Graph.current._build_block(
             body_block,
             body_wrapped_fn,
