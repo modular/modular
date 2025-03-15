@@ -9,6 +9,7 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._amdgpu_hip import _ihipStream_t
+from collections.string import StringSlice
 
 alias hipblasLtHandle_t = UnsafePointer[NoneType]
 alias hipblasLtMatmulDesc_t = UnsafePointer[NoneType]
@@ -203,7 +204,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StringLiteral, result_type: AnyTrivialRegType
+    func_name: StringSlice, result_type: AnyTrivialRegType
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         HIPBLASLT_LIBRARY(), func_name, result_type

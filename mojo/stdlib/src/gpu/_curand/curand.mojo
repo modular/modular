@@ -11,7 +11,7 @@ from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
 from memory import UnsafePointer
-
+from collections.string import StringSlice
 from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
@@ -36,7 +36,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StringLiteral, result_type: AnyTrivialRegType
+    func_name: StringSlice, result_type: AnyTrivialRegType
 ]() -> result_type:
     return _ffi_get_dylib_function[
         CUDA_CURAND_LIBRARY(),

@@ -9,6 +9,7 @@ from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
+from collections.string import StringSlice
 
 from .types import Status
 
@@ -35,7 +36,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StringLiteral, result_type: AnyTrivialRegType
+    func_name: StringSlice, result_type: AnyTrivialRegType
 ]() -> result_type:
     return _ffi_get_dylib_function[
         ROCM_ROCBLAS_LIBRARY,
