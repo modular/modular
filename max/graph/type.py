@@ -757,6 +757,10 @@ class TensorType(Type):
     # Utilities
     # ===------------------------------------------------------------------=== #
 
+    def as_buffer(self) -> BufferType:
+        """Returns the analogous buffer type."""
+        return BufferType(self.dtype, self.shape, self.device)
+
     def num_elements(self) -> int:
         """Counts the total number of elements in the tensor type.
 
@@ -915,6 +919,10 @@ class BufferType(Type):
     # ===------------------------------------------------------------------=== #
     # Utilities
     # ===------------------------------------------------------------------=== #
+
+    def as_tensor(self) -> TensorType:
+        """Returns the analogous tensor type."""
+        return TensorType(self.dtype, self.shape, self.device)
 
     def num_elements(self) -> int:
         """Counts the total number of elements in the buffer type.
