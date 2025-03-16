@@ -6,6 +6,7 @@
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug-no-assert %s
 
+from collections.string import StringSlice
 from gpu import thread_idx
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.intrinsics import ldg
@@ -41,7 +42,7 @@ fn register_intrinsics(
 
 
 @always_inline
-fn _verify_register_intrinsics(asm: String) raises -> None:
+fn _verify_register_intrinsics(asm: StringSlice) raises -> None:
     assert_true("ld.global.nc.u8" in asm)
     assert_true("ld.global.nc.u16" in asm)
     assert_true("ld.global.nc.u32" in asm)

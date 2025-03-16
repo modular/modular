@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 from time import sleep
+from collections.string import StringSlice
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from testing import *
@@ -16,12 +17,12 @@ fn sleep_intrinsics():
 
 
 @always_inline
-fn _verify_sleep_intrinsics_nvidia(asm: String) raises -> None:
+fn _verify_sleep_intrinsics_nvidia(asm: StringSlice) raises -> None:
     assert_true("nanosleep.u32" in asm)
 
 
 @always_inline
-fn _verify_sleep_intrinsics_mi300x(asm: String) raises -> None:
+fn _verify_sleep_intrinsics_mi300x(asm: StringSlice) raises -> None:
     assert_true("s_sleep" in asm)
 
 

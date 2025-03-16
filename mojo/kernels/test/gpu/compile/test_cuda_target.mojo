@@ -8,6 +8,7 @@
 
 from math import erf
 from sys.info import is_nvidia_gpu, simdwidthof
+from collections.string import StringSlice
 
 from algorithm.functional import elementwise
 from bit import log2_floor
@@ -49,7 +50,7 @@ fn parameterized_on_cuda() -> Int:
 
 
 @always_inline
-fn _verify_parameterized_on_cuda(asm: String) raises -> None:
+fn _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
     assert_true("test_cuda_target_parameterized" in asm)
     assert_true("mov.b64" in asm)
 
@@ -78,7 +79,7 @@ fn hello_mojo():
 
 
 @always_inline
-fn _verify_hello(asm: String) raises -> None:
+fn _verify_hello(asm: StringSlice) raises -> None:
     assert_true("test_cuda_target_hello_mojo" in asm)
     assert_true("vprintf" in asm)
 
@@ -123,7 +124,7 @@ fn erf_elementwise(
     )
 
 
-def _verify_erf_elementwise(asm: String):
+def _verify_erf_elementwise(asm: StringSlice):
     assert_true("test_cuda_target_erf_elementwis" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.x" in asm)
@@ -372,7 +373,7 @@ fn test_warp_shuffle_up(val: Float32) -> Float32:
 
 
 @always_inline
-fn _verify_warp_shuffle_up(asm: String) raises -> None:
+fn _verify_warp_shuffle_up(asm: StringSlice) raises -> None:
     assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.up.b32" in asm)
 
