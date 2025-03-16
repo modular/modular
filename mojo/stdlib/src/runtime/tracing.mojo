@@ -305,6 +305,8 @@ struct Trace[
         name: Variant[String, StringLiteral],
         detail: String = "",
         parent_id: Int = 0,
+        *,
+        task_id: OptionalReg[Int] = None,
     ):
         """Creates a Mojo trace with the given name.
 
@@ -313,53 +315,7 @@ struct Trace[
             detail: Details of the trace entry.
             parent_id: Parent to associate the trace with. Trace name will be
                 appended to parent name. 0 (default) indicates no parent.
-        """
-
-        self.event_id = 0  # Known only when begin recording in __enter__
-        self.parent_id = parent_id
-
-        @parameter
-        if _is_gpu_profiler_enabled[category, level]():
-            self.name = name
-
-            @parameter
-            if _gpu_is_enabled_details():
-                self.detail = detail
-            else:
-                self.detail = ""
-            self.int_payload = None
-        elif is_profiling_enabled[category, level]():
-            self.name = name
-            self.detail = detail
-
-            @parameter
-            if target:
-                if self.detail:
-                    self.detail += ";"
-                self.detail += "target=" + String(target.value())
-            self.int_payload = None
-        else:
-            self.name = ""
-            self.detail = ""
-            self.int_payload = None
-
-    @always_inline
-    fn __init__(
-        out self,
-        name: Variant[String, StringLiteral],
-        task_id: Int,
-        detail: String = "",
-        parent_id: Int = 0,
-    ):
-        """Creates a Mojo trace with the given name.
-
-        This does not start the trace range.
-
-        Args:
-            name: The name that is used to identify this Mojo trace.
             task_id: Int that is appended to name.
-            detail: Details of the trace entry.
-            parent_id: Parent to associate the trace with. Trace name will be appended to parent name.
         """
 
         self.event_id = 0  # Known only when begin recording in __enter__
