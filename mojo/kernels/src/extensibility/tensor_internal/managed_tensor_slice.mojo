@@ -1053,13 +1053,13 @@ fn foreach[
         var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
-    with Trace[TraceLevel.OP, target=target](_trace_name):
-        algorithm.functional.elementwise[
-            elementwise_fn_wrapper,
-            simd_width,
-            use_blocking_impl=_synchronous,
-            target=target,
-        ](tensor.shape())
+    algorithm.functional.elementwise[
+        elementwise_fn_wrapper,
+        simd_width,
+        use_blocking_impl=_synchronous,
+        target=target,
+        _trace_description=_trace_name,
+    ](tensor.shape())
 
 
 @__mogg_intrinsic_attr("mogg.for_each")
@@ -1101,13 +1101,13 @@ fn foreach[
         var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
-    with Trace[TraceLevel.OP, target=target](_trace_name):
-        algorithm.functional.elementwise[
-            elementwise_fn_wrapper,
-            simd_width,
-            use_blocking_impl=_synchronous,
-            target=target,
-        ](tensor.shape(), ctx)
+    algorithm.functional.elementwise[
+        elementwise_fn_wrapper,
+        simd_width,
+        use_blocking_impl=_synchronous,
+        target=target,
+        _trace_description=_trace_name,
+    ](tensor.shape(), ctx)
 
 
 # TensorCopy intrinsic used by view kernels.
