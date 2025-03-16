@@ -238,7 +238,7 @@ fn incr_int__wrapper(
     py_self: PythonObject,
     py_args: TypedPythonObject["Tuple"],
 ) raises -> PythonObject:
-    check_arguments_arity("incr_int", 1, py_args)
+    check_arguments_arity("incr_int".value, 1, py_args)
 
     var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
         "incr_int", "Int", py_args, 0
@@ -254,7 +254,7 @@ fn add_to_int__wrapper(
     py_self: PythonObject,
     py_args: TypedPythonObject["Tuple"],
 ) raises -> PythonObject:
-    check_arguments_arity("add_to_int", 2, py_args)
+    check_arguments_arity("add_to_int".value, 2, py_args)
 
     var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
         "add_to_int", "Int", py_args, 0
@@ -300,7 +300,7 @@ fn create_string__wrapper(
     alias func_name = "create_int"
     alias func_arity = 0
 
-    check_arguments_arity(func_name, func_arity, py_args)
+    check_arguments_arity(func_name.value, func_arity, py_args)
 
     var cpython = Python().impl.cpython()
 
