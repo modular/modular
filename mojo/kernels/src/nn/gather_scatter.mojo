@@ -770,7 +770,7 @@ fn scatter_nd_generator[
         ] (SIMD[type, width], SIMD[type, width]) capturing -> SIMD[type, width]
     ] = None,
     *,
-    trace_description: StringLiteral = "scatter_nd",
+    _trace_description: StringLiteral = "scatter_nd",
 ](
     data: NDBuffer[output_type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
@@ -793,7 +793,7 @@ fn scatter_nd_generator[
         target: Target cpu or cuda.
         reduce_fn: Reduction function to apply: none (default), add, mul, max,
                    min.
-        trace_description: A description of the function, used for profiling and tracing.
+        _trace_description: A description of the function, used for profiling and tracing.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -804,7 +804,7 @@ fn scatter_nd_generator[
         output: Tensor of rank data_rank, shaped the same as data tensor.
         context: Pointer to DeviceContext.
     """
-    with Trace[TraceLevel.OP, target=target](trace_description):
+    with Trace[TraceLevel.OP, target=target](_trace_description):
         if data.get_shape() != output.get_shape():
             raise Error(
                 "Input and output shapes in scatter_nd must be the same."
@@ -960,7 +960,7 @@ fn scatter_nd_generator[
             simd_width=1,
             use_blocking_impl=single_thread_blocking_override,
             target=target,
-            trace_description = "elementwise_impl_" + trace_description,
+            _trace_description = "elementwise_impl_" + _trace_description,
         ](iter_shape, context)
 
 
