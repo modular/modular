@@ -229,7 +229,7 @@ IREvaluator::evaluateInstantiateStruct(ParamOperatorAttr op) {
 
 // See if we can decode the first 'numBytes' of the memory blob into a
 // StringAttr.
-static StringAttr getFirstBytesOf(MemoryBlobAttr value, size_t numBytes) {
+static StringAttr getBytesOf(MemoryBlobAttr value, size_t numBytes) {
   // We don't bother handling these.
   if (!value.getPointerRegions().empty() || !value.getSymbolRegions().empty())
     return {};
@@ -255,11 +255,15 @@ FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
   // we can just immediately fold it in common cases without materializing the
   // memory.
   // We don't handle index/offset yet.
-  if (pointerAttr.getIndex() == 0 && pointerAttr.getOffset() == 0)
-    if (pointerAttr.getModel().getMemory().size() >= 1)
-      if (auto result = getFirstBytesOf(
-              pointerAttr.getModel().getMemory().front(), numBytes))
-        return TypedAttr(result);
+  // FIXME: This is good for compile-time performance, but why is this required
+  // for correctness?  The implementation below seems to be breaking
+  // "interpreter determinism".
+  if (auto result =
+          getBytesOf(pointerAttr.getModel().getMemory()[pointerAttr.getIndex()],
+                     numBytes)) {
+    if (pointerAttr.getOffset() == 0)
+      return TypedAttr(result);
+  }
 
   if (ErrorOrSuccess err = internalizeMemory(pointerAttr)) {
     emitError({*errorLoc, "'data_to_str' failed to read data"});
