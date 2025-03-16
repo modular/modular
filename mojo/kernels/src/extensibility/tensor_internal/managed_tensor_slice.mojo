@@ -146,6 +146,7 @@ fn simd_load_from_managed_tensor_slice[
 
     # Load alignment cannot exceed the data type's alignment.
     alias max_alignment = _gcd_pow2[tensor.alignment, alignof[type]()]()
+    alias invariant = not tensor.io_spec.mut
 
     # Stride = 1
     @parameter
@@ -155,14 +156,12 @@ fn simd_load_from_managed_tensor_slice[
         if type is DType.bool:
             var v = tensor._ptr.bitcast[UInt8]().load[
                 width=simd_width,
-                invariant = not tensor.io_spec.mut,
+                invariant=invariant,
             ](flat_index)
             return v.cast[type]()
         else:
             return tensor._ptr.load[
-                width=simd_width,
-                alignment=max_alignment,
-                invariant = not tensor.io_spec.mut,
+                width=simd_width, alignment=max_alignment, invariant=invariant
             ](flat_index)
 
     # Stride > 1
@@ -171,13 +170,13 @@ fn simd_load_from_managed_tensor_slice[
     fn load_strided(stride: Int) -> SIMD[type, simd_width]:
         @parameter
         if type is DType.bool:
-            var v = strided_load[simd_width](
+            var v = strided_load[simd_width, invariant=invariant](
                 tensor._ptr.bitcast[UInt8]().offset(flat_index),
                 stride,
             )
             return v.cast[type]()
         else:
-            return strided_load[simd_width](
+            return strided_load[simd_width, invariant=invariant](
                 tensor._ptr.offset(flat_index), stride
             )
 
@@ -186,7 +185,7 @@ fn simd_load_from_managed_tensor_slice[
         var stride = tensor._runtime_strides[rank - 1]
         # Dynamic stride
         if stride == 0:
-            return tensor._ptr.load(flat_index)
+            return tensor._ptr.load[invariant=invariant](flat_index)
         elif stride == 1:
             return load_stride1()
         else:
@@ -195,7 +194,7 @@ fn simd_load_from_managed_tensor_slice[
         # Static stride
         @parameter
         if static_stride.get() == 0:
-            return tensor._ptr.load(flat_index)
+            return tensor._ptr.load[invariant=invariant](flat_index)
         elif static_stride.get() == 1:
             return load_stride1()
         else:
