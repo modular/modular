@@ -1900,7 +1900,7 @@ struct ScatterNDAdd:
             _synchronous,
             target,
             reduce_fn=reduce_fn,
-            trace_description="scatter_nd.add",
+            _trace_description="scatter_nd.add",
         ](
             input_ndbuffer,
             indices_ndbuffer,
@@ -1959,7 +1959,7 @@ struct ScatterNDMul:
             _synchronous,
             target,
             reduce_fn=reduce_fn,
-            trace_description="scatter_nd.mul",
+            _trace_description="scatter_nd.mul",
         ](
             input_ndbuffer,
             indices_ndbuffer,
@@ -2018,7 +2018,7 @@ struct ScatterNDMin:
             _synchronous,
             target,
             reduce_fn=reduce_fn,
-            trace_description="scatter_nd.min",
+            _trace_description="scatter_nd.min",
         ](
             input_ndbuffer,
             indices_ndbuffer,
@@ -2077,7 +2077,7 @@ struct ScatterNDMax:
             _synchronous,
             target,
             reduce_fn=reduce_fn,
-            trace_description="scatter_nd.max",
+            _trace_description="scatter_nd.max",
         ](
             input_ndbuffer,
             indices_ndbuffer,
@@ -4086,6 +4086,7 @@ struct Matmul:
         lambdas_have_fusion: Bool,
         target: StringLiteral,
         _synchronous: Bool,
+        _trace_name: StringLiteral,
     ](
         c: FusedOutputTensor[rank=2],
         a: InputTensor[rank=2],
@@ -4126,6 +4127,7 @@ struct Matmul:
             saturated_vnni=False,
             single_thread_blocking_override=_synchronous,
             target=target,
+            _trace_description=_trace_name,
         ](c_buffer, a_buffer, b_buffer, ctx)
 
 
