@@ -1220,7 +1220,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
-    trace_description: StringLiteral = "",
+    _trace_description: StringLiteral = "",
 ](shape: Int) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1231,7 +1231,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
-        trace_description: Description of the trace.
+        _trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
@@ -1242,7 +1242,7 @@ fn elementwise[
         simd_width=simd_width,
         use_blocking_impl=use_blocking_impl,
         target=target,
-        trace_description=trace_description,
+        _trace_description=_trace_description,
     ](Index(shape))
 
 
@@ -1254,7 +1254,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
-    trace_description: StringLiteral = "",
+    _trace_description: StringLiteral = "",
 ](shape: IndexList[rank, **_]) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1266,7 +1266,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
-        trace_description: Description of the trace.
+        _trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
@@ -1292,7 +1292,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
-    trace_description: StringLiteral = "",
+    _trace_description: StringLiteral = "",
 ](shape: Int, context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1303,7 +1303,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
-        trace_description: Description of the trace.
+        _trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
@@ -1326,7 +1326,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
-    trace_description: StringLiteral = "",
+    _trace_description: StringLiteral = "",
 ](shape: IndexList[rank, **_], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1338,7 +1338,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
-        trace_description: Description of the trace.
+        _trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
@@ -1358,7 +1358,7 @@ fn elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StringLiteral = "cpu",
-    trace_description: StringLiteral = "",
+    _trace_description: StringLiteral = "",
 ](shape: IndexList[rank, **_], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1370,7 +1370,7 @@ fn elementwise[
         simd_width: The SIMD vector width to use.
         use_blocking_impl: Do not invoke the function using asychronous calls.
         target: The target to run on.
-        trace_description: Description of the trace.
+        _trace_description: Description of the trace.
 
     Args:
         shape: The shape of the buffer.
@@ -1390,7 +1390,7 @@ fn elementwise[
 
     with Trace[TraceLevel.OP, target=target](
         "elementwise"
-        + ("(" + trace_description + ")" if trace_description else ""),
+        + ("(" + _trace_description + ")" if _trace_description else ""),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 
