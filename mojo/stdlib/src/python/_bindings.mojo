@@ -16,6 +16,7 @@ from os import abort
 from sys.ffi import c_int
 from sys.info import sizeof
 
+from collections.string import StringSlice, StaticString
 from memory import UnsafePointer
 from python import PythonObject, TypedPythonObject
 from python._cpython import (
@@ -30,6 +31,8 @@ from python._cpython import (
     newfunc,
 )
 from python.python import _get_global_python_itf
+
+alias MLIRKGENString = __mlir_type.`!kgen.string`
 
 
 trait ConvertibleFromPython(CollectionElement):
@@ -299,7 +302,7 @@ fn py_c_function_wrapper[
 
 
 fn check_arguments_arity(
-    func_name: StringLiteral,
+    func_name: MLIRKGENString,
     arity: Int,
     args: TypedPythonObject["Tuple"],
 ) raises:
@@ -321,7 +324,7 @@ fn check_arguments_arity(
             raise Error(
                 String.format(
                     "TypeError: {}() missing {} required positional {}",
-                    func_name,
+                    StringLiteral(func_name),
                     missing_arg_count,
                     _pluralize(missing_arg_count, "argument", "arguments"),
                 )
@@ -330,7 +333,7 @@ fn check_arguments_arity(
             raise Error(
                 String.format(
                     "TypeError: {}() takes {} positional {} but {} were given",
-                    func_name,
+                    StringLiteral(func_name),
                     arity,
                     _pluralize(arity, "argument", "arguments"),
                     arg_count,
@@ -341,8 +344,8 @@ fn check_arguments_arity(
 fn check_argument_type[
     T: AnyType
 ](
-    func_name: StringLiteral,
-    type_name_id: StringLiteral,
+    func_name: StringSlice,
+    type_name_id: StringSlice,
     obj: PythonObject,
 ) raises -> UnsafePointer[T]:
     """Raise an error if the provided Python object does not contain a wrapped
@@ -369,9 +372,9 @@ fn check_argument_type[
 
 fn _pluralize(
     count: Int,
-    singular: StringLiteral,
-    plural: StringLiteral,
-) -> StringLiteral:
+    singular: StaticString,
+    plural: StaticString,
+) -> StaticString:
     if count == 1:
         return singular
     else:
