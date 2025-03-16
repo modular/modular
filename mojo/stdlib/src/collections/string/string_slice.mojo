@@ -602,11 +602,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             This will allocate a new string that copies the string contents from
             the provided string slice.
         """
-        var length = self.byte_length()
-        var ptr = UnsafePointer[Byte].alloc(length + 1)  # null terminator
-        memcpy(ptr, self.unsafe_ptr(), length)
-        ptr[length] = 0
-        return String(ptr=ptr, length=length + 1)
+        var buffer = String._buffer_type(capacity=self.byte_length() + 1)
+        buffer.extend(self.as_bytes())
+        buffer.append(0)
+        return String(buffer=buffer^)
 
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of this string slice.
@@ -899,7 +898,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         buf.append(0)
         return String(buf^)
 
-    fn __contains__(ref self, substr: StringSlice) -> Bool:
+    fn __contains__(self, substr: StringSlice) -> Bool:
         """Returns True if the substring is contained within the current string.
 
         Args:
@@ -1623,7 +1622,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return _FormatCurlyEntry.format(self, args)
 
-    fn find(ref self, substr: StringSlice, start: Int = 0) -> Int:
+    fn find(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset in bytes of the first occurrence of `substr`
         starting at `start`. If not found, returns `-1`.
 
