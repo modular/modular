@@ -20,9 +20,7 @@ fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
 
 fn main():
     alias myCompiledFn = compiled_fn[DType.uint32]
-    var myAsm: String = _internal_compile_code[
-        myCompiledFn, emission_kind="llvm"
-    ]()
+    var myAsm = _internal_compile_code[myCompiledFn, emission_kind="llvm"]()
     print(myAsm)
 
 
