@@ -738,7 +738,7 @@ fn _allreduce_p2p[
     for i in range(ngpus):
         list_of_in_ptrs[i] = list_of_in_bufs[i].data
 
-    alias BLOCK_SIZE = 512
+    alias BLOCK_SIZE = 256
     alias rank_4_byte_threshold = 512 * 1024
     alias rank_8_byte_threshold = 256 * 1024
     var payload_bytecount = list_of_in_bufs[0].bytecount()
@@ -810,7 +810,7 @@ fn _dispatch_max_num_blocks[ngpus: Int](num_bytes: Int) -> Int:
     # TODO(GENAI-96): replace with dispatch table from autotuning.
     if ngpus == 4 and num_bytes == (1 << 27):
         return 232
-    return 128
+    return 216
 
 
 @parameter
