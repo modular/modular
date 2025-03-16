@@ -464,7 +464,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
     ASTType rvType = getFunctionArgumentRValueType(type, conv);
 
     ArrayRef<ASTDecl *> checkAndGetArgFnDecls = shared.getBuiltinFunction(
-        *pyBindDecl, "check_and_get_arg", (*wrapperDecl).getLoc());
+        *pyBindDecl, "check_and_get_arg", wrapperDecl->getLoc());
     ParamBindings bindings(*wrapperDecl);
     bindings.add(synth, PValue(rvType));
     OverloadSet checkAndGetArgOv("check_and_get_arg", checkAndGetArgFnDecls,
