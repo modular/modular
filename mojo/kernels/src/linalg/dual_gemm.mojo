@@ -1321,7 +1321,6 @@ fn swishGLU[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList, //,
-    trace_description: StringLiteral = "",
     target: StringLiteral = "cpu",
 ](
     a: NDBuffer[a_type, 2, a_shape],
@@ -1354,7 +1353,7 @@ fn swishGLU[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "swish_glu(" + trace_description + ")",
+        "swish_glu",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         dual_gemm[transpose_b=True](c, a, b0, b1, ctx=ctx.get_device_context())

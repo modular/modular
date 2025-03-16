@@ -743,7 +743,7 @@ fn matmul[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
-    trace_description: StringLiteral = "",
+    _trace_description: StringLiteral = "",
     target: StringLiteral = "cpu",
 ](
     c: NDBuffer[_, 2, _],
@@ -762,7 +762,7 @@ fn matmul[
         elementwise_lambda_fn=elementwise_lambda_fn,
         saturated_vnni=saturated_vnni,
         single_thread_blocking_override=single_thread_blocking_override,
-        trace_description=trace_description,
+        _trace_description=_trace_description,
         target=target,
     ](c, a, b, cuda_ctx)
 
@@ -775,7 +775,7 @@ fn matmul[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
-    trace_description: StringLiteral = "",
+    _trace_description: StringLiteral = "",
     target: StringLiteral = "cpu",
 ](
     c: NDBuffer[_, 2, _],
@@ -808,7 +808,9 @@ fn matmul[
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     with Trace[TraceLevel.OP, target=target](
-        "matmul(" + trace_description + ")" if trace_description else "matmul",
+        "matmul("
+        + _trace_description
+        + ")" if _trace_description else "matmul",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 
