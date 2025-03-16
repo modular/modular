@@ -281,6 +281,15 @@ public:
       if (!inserted)
         result = it->second;
     });
+    if (result != value) {
+      llvm::errs() << "\nresult != value\n";
+      llvm::errs() << "result: " << result << "\n";
+      llvm::errs() << "value: " << value << "\n";
+      llvm::errs() << "operands: " << operands << "\n";
+      llvm::errs() << "\n";
+      func.dump();
+    }
+
     assert(result == value && "non-deterministic interpreter results");
     return result;
   }
