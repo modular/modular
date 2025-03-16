@@ -17,7 +17,7 @@ def test_compile_llvm():
         return x + y
 
     alias func = my_add_function[DType.float32, 4]
-    var asm: String = _internal_compile_code[func, emission_kind="llvm"]()
+    var asm = _internal_compile_code[func, emission_kind="llvm"]()
 
     assert_true("fadd" in asm)
 
