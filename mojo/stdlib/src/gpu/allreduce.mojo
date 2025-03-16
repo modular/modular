@@ -46,6 +46,7 @@ from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host._compile import _get_gpu_target
 from gpu.intrinsics import (
     load_acquire,
     load_volatile,
@@ -193,7 +194,7 @@ fn _naive_reduce_kernel_with_lambda[
     """Naive reduction kernel with elementwise lambda support."""
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
 
     for idx in range(tid, num_elements // simd_width, stride):
         var elem_idx = idx * simd_width
@@ -271,6 +272,7 @@ fn _allreduce_naive[
     This implementation copies all data to each GPU and performs local reduction.
     Used as fallback when P2P access is not available.
     """
+    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
 
     var device_buffers = List[DeviceBuffer[type]](capacity=ngpus)
@@ -328,8 +330,8 @@ fn _allreduce_naive[
                 type,
                 rank,
                 my_rank=device_idx,
-                width = simdwidthof[type](),
-                alignment = alignof[SIMD[type, simdwidthof[type]()]](),
+                width=simd_width,
+                alignment = alignof[SIMD[type, simd_width]](),
                 outputs_lambda=outputs_lambda,
             ]
         ](
@@ -372,6 +374,7 @@ fn _multi_gpu_barrier[
     Implementation ported from VLLM's _multi_gpu_barrier in
     https://github.com/vllm-project/vllm/blob/main/csrc/custom_all_reduce.cuh#L169-L198
     """
+    constrained[ngpus <= MAX_GPUS, "too many GPUs for barrier implementation"]()
 
     @parameter
     if not is_start:
@@ -485,7 +488,7 @@ fn _allreduce_2stage_kernel[
         max_num_blocks: Maximum number of thread blocks to launch.
     """
     alias accum_type = get_accum_type[type]()
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
     alias alignment = alignof[SIMD[type, simd_width]]()
 
     # --- Thread Indexing and Vector Setup ---
@@ -636,7 +639,7 @@ fn _allreduce_1stage_kernel[
     Synchronizes using _multi_gpu_barrier before and after reduction.
     """
     alias accum_type = get_accum_type[type]()
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
     alias alignment = alignof[SIMD[type, simd_width]]()
 
     var global_tid = global_idx.x
@@ -717,8 +720,9 @@ fn _allreduce_p2p[
 
     Launches P2P reduction kernel on each GPU to perform direct reduction.
     """
+    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
-    if num_elements % simdwidthof[type]() != 0:
+    if num_elements % simd_width != 0:
         raise Error(
             "non SIMD-width multiple number of elements unsupported by"
             " allreduce"
@@ -734,21 +738,25 @@ fn _allreduce_p2p[
     for i in range(ngpus):
         list_of_in_ptrs[i] = list_of_in_bufs[i].data
 
+    alias BLOCK_SIZE = 512
+    alias rank_4_byte_threshold = 512 * 1024
+    alias rank_8_byte_threshold = 256 * 1024
+    var payload_bytecount = list_of_in_bufs[0].bytecount()
+
     @parameter
     for i in range(ngpus):
         var curr_ctx = ctxs[i]
         var curr_out_buf = list_of_out_bufs[i]
 
-        alias BLOCK_SIZE = 512
-        var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
-
-        alias rank_4_byte_threshold = 512 * 1024
-        alias rank_8_byte_threshold = 256 * 1024
-        var payload_bytecount = list_of_in_bufs[0].bytecount()
-
         if (rank <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
             rank <= 8 and (payload_bytecount < rank_8_byte_threshold)
         ):
+            # Define grid size for 1-stage, which processes all elements.
+            var grid_size = min(
+                max_num_blocks,
+                ceildiv(num_elements // simd_width, BLOCK_SIZE),
+            )
+
             # Use the 1-stage allreduce when transfer is latency bound.
             curr_ctx.enqueue_function[
                 _allreduce_1stage_kernel[
@@ -769,6 +777,13 @@ fn _allreduce_p2p[
                 block_dim=BLOCK_SIZE,
             )
         else:
+            # Define grid size for 2-stage, which processes 1/ngpus of the
+            # number of elements.
+            var grid_size = min(
+                max_num_blocks,
+                ceildiv(num_elements // (simd_width * ngpus), BLOCK_SIZE),
+            )
+
             # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
             curr_ctx.enqueue_function[
                 _allreduce_2stage_kernel[
