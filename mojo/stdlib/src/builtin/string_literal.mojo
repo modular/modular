@@ -407,7 +407,7 @@ struct StringLiteral(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @always_inline("builtin")
     fn byte_length(self) -> Int:
         """Get the string length in bytes.
 
@@ -448,7 +448,7 @@ struct StringLiteral(
         """
         return self.unsafe_ptr().bitcast[c_char]()
 
-    @always_inline
+    @always_inline("nodebug")
     fn as_string_slice(self) -> StaticString:
         """Returns a string slice of this static string literal.
 
@@ -461,7 +461,7 @@ struct StringLiteral(
         #   guaranteed to be valid.
         return StaticString(ptr=self.unsafe_ptr(), length=self.byte_length())
 
-    @always_inline
+    @always_inline("nodebug")
     fn as_bytes(self) -> Span[Byte, StaticConstantOrigin]:
         """
         Returns a contiguous Span of the bytes owned by this string.
