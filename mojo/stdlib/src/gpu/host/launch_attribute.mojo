@@ -267,7 +267,18 @@ struct LaunchAttributeValue:
         Args:
             dim: The dimension specification to store in this attribute value.
         """
-        var tmp = StaticTuple[UInt32, 3](dim.x(), dim.y(), dim.z())
+        var tmp = StaticTuple[UInt32, 4](dim.x(), dim.y(), dim.z(), 0)
+        var ptr = UnsafePointer.address_of(tmp)
+        self._storage = ptr.bitcast[Self._storage_type]()[]
+
+    @implicit
+    fn __init__(out self, value: Bool):
+        """Initializes a LaunchAttributeValue from a boolean object..
+
+        Args:
+            value: The boolean value to store in this attribute value.
+        """
+        var tmp = StaticTuple[UInt32, 4](Int(value), 0, 0, 0)
         var ptr = UnsafePointer.address_of(tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
@@ -401,6 +412,17 @@ struct LaunchAttribute:
         self.__pad = __type_of(self.__pad)()
         self.value = LaunchAttributeValue()
 
+    fn __init__(out self, id: LaunchAttributeID, value: LaunchAttributeValue):
+        """Initializes a `LaunchAttribute` with a specific ID and value.
+
+        Args:
+            id: The `LaunchAttributeID` to set.
+            value: The `LaunchAttributeValue` to set.
+        """
+        self.id = id
+        self.__pad = __type_of(self.__pad)()
+        self.value = value
+
     @implicit
     fn __init__(out self, policy: AccessPolicyWindow):
         """Initializes a `LaunchAttribute` from an `AccessPolicyWindow`.
@@ -465,7 +487,7 @@ struct AccessPolicyWindow:
     """AccessProperty applied to hit segments within the window."""
 
     var miss_prop: AccessProperty
-    """AccessProperty applied to miss segments within the window. 
+    """AccessProperty applied to miss segments within the window.
     Must be either NORMAL or STREAMING."""
 
     fn __init__(out self):
