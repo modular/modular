@@ -14,10 +14,12 @@
 
 These are Mojo built-ins, so you don't need to import them.
 """
+from collections.string.string_slice import StringSlice
+from builtin.string_literal import get_string_literal_slice
 
 
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: StringLiteral = "param assertion failed"]():
+fn constrained[cond: Bool, msg: StringSlice]():
     """Compile time checks that the condition is true.
 
     The `constrained` is similar to `static_assert` in C++ and is used to
@@ -52,22 +54,21 @@ fn constrained[cond: Bool, msg: StringLiteral = "param assertion failed"]():
 
     """
     __mlir_op.`kgen.param.assert`[
-        cond = cond.__mlir_i1__(), message = msg.value
+        cond = cond.__mlir_i1__(),
+        message = get_string_literal_slice[msg]().value,
     ]()
 
 
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: String]():
+fn constrained[cond: Bool]():
     """Compile time checks that the condition is true.
 
     The `constrained` is similar to `static_assert` in C++ and is used to
     introduce constraints on the enclosing function. In Mojo, the assert places
-    a constraint on the function. The message is displayed when the assertion
-    fails, and takes a generalized string.
+    a constraint on the function.
 
     Parameters:
         cond: The bool value to assert.
-        msg: The message to display on failure.
 
     Example:
 
@@ -79,13 +80,7 @@ fn constrained[cond: Bool, msg: String]():
         multicore_check[cores_to_use]()
 
     def multicore_check[cores: Int]():
-        constrained[
-            cores <= num_physical_cores(),
-            "build failed: not enough cores"
-        ]()
-        constrained[
-            cores >= 2,
-            "at least two cores are required"
-        ]()
+        constrained[cores <= num_physical_cores()]()
+        constrained[cores >= 2]()
     """
-    constrained[cond, get_string_literal[msg]()]()
+    constrained[cond, "param assertion failed"]()

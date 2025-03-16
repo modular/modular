@@ -38,6 +38,7 @@ from bit import count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer
+from collections.string import StringSlice
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
@@ -2356,7 +2357,7 @@ fn _type_is_libm_supported(type: DType) -> Bool:
 
 
 fn _call_libm[
-    func_name: StringLiteral,
+    func_name: StringSlice,
     arg_type: DType,
     simd_width: Int,
     *,
@@ -2384,13 +2385,15 @@ fn _call_libm[
 
 
 fn _call_libm_impl[
-    func_name: StringLiteral,
+    func_name: StringSlice,
     arg_type: DType,
     simd_width: Int,
     *,
     result_type: DType = arg_type,
 ](arg: SIMD[arg_type, simd_width]) -> SIMD[result_type, simd_width]:
-    alias libm_name = func_name if arg_type is DType.float64 else func_name + "f"
+    alias libm_name = String(
+        func_name
+    ) if arg_type is DType.float64 else String(func_name) + "f"
 
     var res = SIMD[result_type, simd_width]()
 
