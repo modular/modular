@@ -2230,6 +2230,12 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           POC::PtrBitcast, src, evaluator.getReboundType(bitcast.getType()));
   }
 
+  // FIXME(StringLiteral): Remove this operation.
+  if (auto strSize = dyn_cast<POP::StringSizeOp>(op)) {
+    if (auto str = findValue(strSize.getStr()))
+      return POP::StringSizeAttr::get(str.getContext(), str);
+  }
+
   if (auto call = dyn_cast<LIT::CallOp>(op)) {
     SmallVector<TypedAttr> calleeOperands;
     calleeOperands.push_back(evaluator.getReboundAttribute(call.getCallee()));
