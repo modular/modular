@@ -326,7 +326,7 @@ fn bench_compile_time[
         fn bench_iter() raises:
             @parameter
             if emission_kind == "asm" or emission_kind == "llvm":
-                var s: String = _internal_compile_code[
+                var s = _internal_compile_code[
                     func, emission_kind=emission_kind
                 ]()
                 keep(s.unsafe_ptr())
