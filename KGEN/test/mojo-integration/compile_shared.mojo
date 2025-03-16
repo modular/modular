@@ -23,7 +23,7 @@ fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
 def main():
     alias myCompiledFn = compiled_fn[DType.uint32]
     # compile myCompileFn into a shared object binary
-    var myShared: String = _internal_compile_code[
+    var myShared = _internal_compile_code[
         myCompiledFn, emission_kind="object"
     ]()
 
