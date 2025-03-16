@@ -548,15 +548,17 @@ fn _allreduce_2stage_kernel[
     for idx in range(start + global_tid, end, stride):
         # float32 accumulator for numerical stability.
         var elem_idx = idx * simd_width
-        var accum = ptrs[0].load[width=simd_width, alignment=alignment](
-            elem_idx
-        ).cast[accum_type]()
+        var accum = ptrs[0].load[
+            width=simd_width, alignment=alignment, invariant=True
+        ](elem_idx).cast[accum_type]()
 
         @parameter
         for gpu_idx in range(1, ngpus):
             accum += (
                 ptrs[gpu_idx]
-                .load[width=simd_width, alignment=alignment](elem_idx)
+                .load[width=simd_width, alignment=alignment, invariant=True](
+                    elem_idx
+                )
                 .cast[accum_type]()
             )
 
@@ -667,15 +669,17 @@ fn _allreduce_1stage_kernel[
     # Vectorized grid-strided loop with SIMD loads.
     for idx in range(global_tid, num_simd_vectors, stride):
         var elem_idx = idx * simd_width
-        var accum = ptrs[0].load[width=simd_width, alignment=alignment](
-            elem_idx
-        ).cast[accum_type]()
+        var accum = ptrs[0].load[
+            width=simd_width, alignment=alignment, invariant=True
+        ](elem_idx).cast[accum_type]()
 
         @parameter
         for _id in range(1, ngpus):
             accum += (
                 ptrs[_id]
-                .load[width=simd_width, alignment=alignment](elem_idx)
+                .load[width=simd_width, alignment=alignment, invariant=True](
+                    elem_idx
+                )
                 .cast[accum_type]()
             )
 
