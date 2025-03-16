@@ -107,7 +107,7 @@ fn mha_sm90[
 ):
     alias depth = config.depth
     alias num_heads = config.num_heads
-    batch_idx = block_idx.z
+    var batch_idx = block_idx.z
 
     # mha inputs
     var seq_len: Int
@@ -983,15 +983,14 @@ fn _mha_single_batch_sm90_fa3[
                                 @parameter
                                 if masked:
                                     p_reg_vec2[mma_id, i + j * 2] = mask.mask(
-                                        IndexList[
-                                            4,
+                                        Index[
                                             element_bitwidth=32,
                                             unsigned=True,
                                         ](
-                                            Int(block_idx.z),
-                                            Int(block_idx.y),
-                                            Int(score_row_with_start_pos),
-                                            Int(score_col),
+                                            block_idx.z,
+                                            block_idx.y,
+                                            score_row_with_start_pos,
+                                            score_col,
                                         ),
                                         p_reg_vec2[mma_id, i + j * 2]
                                         * scale_log2e,
@@ -1006,15 +1005,14 @@ fn _mha_single_batch_sm90_fa3[
                                 if use_score_mod:
                                     p_reg_vec2[mma_id, i + j * 2] = (
                                         score_mod.score_mod(
-                                            IndexList[
-                                                4,
+                                            Index[
                                                 element_bitwidth=32,
                                                 unsigned=True,
                                             ](
-                                                Int(block_idx.z),
-                                                Int(block_idx.y),
-                                                Int(score_row_with_start_pos),
-                                                Int(score_col),
+                                                block_idx.z,
+                                                block_idx.y,
+                                                score_row_with_start_pos,
+                                                score_col,
                                             ),
                                             p_reg_vec2[mma_id, i + j * 2],
                                             max_seq_len,
@@ -1052,19 +1050,11 @@ fn _mha_single_batch_sm90_fa3[
                                 score_col = mask_frag_col + j * 8
 
                                 p_reg_vec2[mma_id, i + j * 2] = _kernel_mask(
-                                    IndexList[
-                                        2,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
+                                    Index[element_bitwidth=32, unsigned=True](
                                         Int(score_row),
                                         Int(score_col),
                                     ),
-                                    IndexList[
-                                        2,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
+                                    Index[element_bitwidth=32, unsigned=True](
                                         seq_len,
                                         num_keys,
                                     ),
@@ -1125,10 +1115,10 @@ fn _mha_single_batch_sm90_fa3[
         while True:
             mask_status = mask.status(
                 Index[element_bitwidth=32, unsigned=True](
-                    Int(q_tile_idx * BM + start_pos),
-                    Int(current_offset),
+                    q_tile_idx * BM + start_pos,
+                    current_offset,
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[element_bitwidth=32, unsigned=True](BM, BN),
             )
             current_offset += BN
             if mask_status != TileMaskStatus.FULL_MASK:
@@ -1145,10 +1135,10 @@ fn _mha_single_batch_sm90_fa3[
                 break
             mask_status = mask.status(
                 Index[element_bitwidth=32, unsigned=True](
-                    Int(q_tile_idx * BM + start_pos),
-                    Int(current_offset),
+                    q_tile_idx * BM + start_pos,
+                    current_offset,
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[element_bitwidth=32, unsigned=True](BM, BN),
             )
             current_offset += BN
             if mask_status != TileMaskStatus.FULL_MASK:
