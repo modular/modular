@@ -809,7 +809,7 @@ fn matmul[
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     with Trace[TraceLevel.OP, target=target](
-        String("matmul(")
+        "matmul("
         + _trace_description
         + String(")") if _trace_description else String("matmul"),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
