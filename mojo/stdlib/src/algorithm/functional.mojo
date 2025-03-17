@@ -15,6 +15,7 @@ from algorithm import map
 from math import align_down, ceildiv
 from os import abort
 from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
+from collections.string import StaticString
 
 from bit import is_power_of_two
 from buffer import NDBuffer
@@ -365,7 +366,7 @@ fn sync_parallelize[
     @always_inline
     fn func_wrapped(i: Int):
         with FlushDenormals():
-            with Trace[TraceLevel.THREAD, target="cpu"](
+            with Trace[TraceLevel.THREAD, target = StaticString("cpu")](
                 "task", task_id=i, parent_id=parent_id
             ):
                 try:
@@ -1219,8 +1220,8 @@ fn elementwise[
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
-    target: StringLiteral = "cpu",
-    _trace_description: StringLiteral = "",
+    target: StaticString = "cpu",
+    _trace_description: StaticString = "",
 ](shape: Int) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1253,8 +1254,8 @@ fn elementwise[
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
-    target: StringLiteral = "cpu",
-    _trace_description: StringLiteral = "",
+    target: StaticString = "cpu",
+    _trace_description: StaticString = "",
 ](shape: IndexList[rank, **_]) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1291,8 +1292,8 @@ fn elementwise[
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
-    target: StringLiteral = "cpu",
-    _trace_description: StringLiteral = "",
+    target: StaticString = "cpu",
+    _trace_description: StaticString = "",
 ](shape: Int, context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1325,8 +1326,8 @@ fn elementwise[
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
-    target: StringLiteral = "cpu",
-    _trace_description: StringLiteral = "",
+    target: StaticString = "cpu",
+    _trace_description: StaticString = "",
 ](shape: IndexList[rank, **_], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1357,8 +1358,8 @@ fn elementwise[
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
-    target: StringLiteral = "cpu",
-    _trace_description: StringLiteral = "",
+    target: StaticString = "cpu",
+    _trace_description: StaticString = "",
 ](shape: IndexList[rank, **_], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -1388,9 +1389,13 @@ fn elementwise[
             vector_width_str,
         )
 
+    alias kind = get_string_literal[
+        String("elementwise")
+        + (String("(") + _trace_description + ")" if _trace_description else "")
+    ]()
+
     with Trace[TraceLevel.OP, target=target](
-        "elementwise"
-        + ("(" + _trace_description + ")" if _trace_description else ""),
+        StaticString(kind),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 
@@ -1411,7 +1416,7 @@ fn _elementwise_impl[
     /,
     *,
     use_blocking_impl: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](shape: IndexList[rank, **_], context: DeviceContext) raises:
     @parameter
     if is_cpu[target]():

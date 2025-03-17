@@ -30,6 +30,7 @@ from gpu.host.info import is_cpu, is_valid_target
 from memory.unsafe import bitcast
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
+from collections.string import StaticString
 
 from utils.index import Index, IndexList, StaticTuple
 from utils.loop import unroll
@@ -428,7 +429,7 @@ fn _reduce_generator[
     ) capturing [_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: StaticTuple[Scalar[init_type], num_reductions],
@@ -629,7 +630,7 @@ fn _reduce_generator_wrapper[
     ) capturing [_] -> SIMD[type, width],
     /,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: Scalar,
@@ -686,7 +687,7 @@ fn _reduce_generator[
     ) capturing [_] -> SIMD[ty, width],
     /,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
     init: Scalar,
@@ -1121,7 +1122,7 @@ fn max[
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
@@ -1246,7 +1247,7 @@ fn min[
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
@@ -1371,7 +1372,7 @@ fn sum[
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
@@ -1496,7 +1497,7 @@ fn product[
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
@@ -1636,7 +1637,7 @@ fn mean[
     ) capturing [_] -> None,
     /,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     input_shape: IndexList[
         _, element_bitwidth = bitwidthof[Int](), unsigned=False
