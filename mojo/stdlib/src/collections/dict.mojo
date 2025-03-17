@@ -1042,10 +1042,11 @@ struct Dict[K: KeyElement, V: CollectionElement](
             elif index == Self.REMOVED:
                 pass
             else:
-                var entry = self._entries[index]
-                debug_assert(entry.__bool__(), "entry in index must be full")
-                if hash == entry.value().hash and key == entry.value().key:
-                    return (True, slot, index)
+                var entry = Pointer.address_of(self._entries[index])
+                debug_assert(entry[].__bool__(), "entry in index must be full")
+                if hash == entry[].unsafe_value().hash:
+                    if K.__eq__(key, entry[].unsafe_value().key):
+                        return (True, slot, index)
             self._next_index_slot(slot, perturb)
 
     fn _over_load_factor(self) -> Bool:

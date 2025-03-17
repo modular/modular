@@ -14,8 +14,9 @@
 
 from collections import Dict, KeyElement, Optional
 from collections.dict import OwnedKwargsDict
+from memory import UnsafePointer
 
-from test_utils import CopyCounter
+from test_utils import CopyCounter, ObservableDel
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -619,6 +620,30 @@ def test_compile_time_dict():
         assert_equal(val, i)
 
 
+def test_dict_find_index():
+    """Testing `Dict._find_index` for no `__copyinit__` on entries."""
+
+    var dict = Dict[Int, ObservableDel]()
+    var observable_del = False
+
+    for i in range(4):
+        dict[i] = ObservableDel(UnsafePointer.address_of(observable_del))
+
+    for i in range(4):
+        var found: Bool
+        found, _, _ = dict._find_index(hash(i), i)
+        assert_equal(observable_del, False)
+        assert_equal(found, True)
+
+    var found = True
+    found, _, _ = dict._find_index(hash(123), 123)
+    assert_equal(found, False)
+    assert_equal(observable_del, False)
+
+    dict^.__del__()
+    assert_equal(observable_del, True)
+
+
 def main():
     test_dict()
     test_dict_fromkeys()
@@ -633,3 +658,4 @@ def main():
     test_init_initial_capacity()
     test_dict_setdefault()
     test_compile_time_dict()
+    test_dict_find_index()
