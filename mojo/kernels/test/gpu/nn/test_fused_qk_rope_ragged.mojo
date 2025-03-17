@@ -380,6 +380,326 @@ def execute_fused_qk_rope_ragged(
     _ = mixed_ce_output_device^
 
 
+# We test the fused_qk_rope_ragged kernel with rope_dim = 64 and q_head_size = 192
+# and kv_params.head_size = 576 (shapes are chosen based on Deepseek models).
+# For Q, we confirm that the only the last 64 elements in each head are correctly roped,
+# and the first 128 elements in each head are simply copied from the input Q tensor.
+# For KV cache, we confirm that the only the last 64 elements in each head are correctly roped,
+# and the first 512 elements are left unchanged.
+def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
+    alias num_q_heads = 16
+    alias q_head_size = 192
+    alias kv_params = KVCacheStaticParams(num_heads=1, head_size=576)
+    alias kv_params_64 = KVCacheStaticParams(num_heads=1, head_size=64)
+    alias type = DType.bfloat16
+    alias num_paged_blocks = 2
+    alias page_size = 128
+    alias rope_dim = 64
+    alias max_seq_len = 256
+    alias num_layers = 1
+    alias layer_idx = 0
+
+    alias seq_len = 200
+    alias batch_size = 1
+
+    # create a random query tensor and KV cache with above params
+    var q_ragged_host = HostNDBuffer[
+        type, 3, DimList(Dim(), num_q_heads, q_head_size)
+    ](IndexList[3](seq_len, num_q_heads, q_head_size))
+    random(q_ragged_host.tensor)
+    var q_ragged_device = q_ragged_host.copy_to_device(ctx)
+
+    # create a query tensor that only has 64 elements in each head,
+    # then copy the last 64 elements of each head from q_ragged_device
+    # to the new tensor
+    var q_ragged_host_64 = HostNDBuffer[
+        type, 3, DimList(Dim(), num_q_heads, rope_dim)
+    ](IndexList[3](seq_len, num_q_heads, rope_dim))
+    for seq_idx in range(seq_len):
+        for head_idx in range(num_q_heads):
+            memcpy(
+                q_ragged_host_64.tensor._offset(
+                    IndexList[3](seq_idx, head_idx, 0)
+                ),
+                q_ragged_host.tensor._offset(
+                    IndexList[3](seq_idx, head_idx, q_head_size - rope_dim)
+                ),
+                rope_dim,
+            )
+    var q_ragged_device_64 = q_ragged_host_64.copy_to_device(ctx)
+
+    # create a random KV cache with above params
+    var kv_block_paged_host = HostNDBuffer[type, 6](
+        IndexList[6](
+            num_paged_blocks,
+            2,
+            num_layers,
+            page_size,
+            kv_params.num_heads,
+            kv_params.head_size,
+        )
+    )
+    random(kv_block_paged_host.tensor)
+    var kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
+
+    # create a KV cache that only has 64 elements in each head,
+    # then copy the last 64 elements of each head from kv_block_paged_device
+    # to the new tensor
+    var kv_block_paged_host_64 = HostNDBuffer[type, 6](
+        IndexList[6](
+            num_paged_blocks,
+            2,
+            num_layers,
+            page_size,
+            kv_params.num_heads,
+            rope_dim,
+        )
+    )
+    for page_idx in range(num_paged_blocks):
+        for kv_idx in range(2):
+            for layer_idx in range(num_layers):
+                for tok_idx in range(page_size):
+                    for head_idx in range(kv_params.num_heads):
+                        memcpy(
+                            kv_block_paged_host_64.tensor._offset(
+                                IndexList[6](
+                                    page_idx,
+                                    kv_idx,
+                                    layer_idx,
+                                    tok_idx,
+                                    head_idx,
+                                    0,
+                                )
+                            ),
+                            kv_block_paged_host.tensor._offset(
+                                IndexList[6](
+                                    page_idx,
+                                    kv_idx,
+                                    layer_idx,
+                                    tok_idx,
+                                    head_idx,
+                                    kv_params.head_size - rope_dim,
+                                )
+                            ),
+                            rope_dim,
+                        )
+    var kv_block_paged_device_64 = kv_block_paged_host_64.copy_to_device(ctx)
+
+    # create a random freqs_cis tensor with above params
+    var freqs_cis_host = HostNDBuffer[type, 2, DimList(max_seq_len, rope_dim)](
+        IndexList[2](max_seq_len, rope_dim)
+    )
+    random(freqs_cis_host.tensor)
+    var freqs_cis_device = freqs_cis_host.copy_to_device(ctx)
+
+    # create a output tensor with above params
+    var output_host = HostNDBuffer[type, 3](
+        IndexList[3](seq_len, num_q_heads, q_head_size)
+    )
+    var output_device = output_host.copy_to_device(ctx)
+
+    # create a output tensor for reference
+    var output_host_ref = HostNDBuffer[type, 3](
+        IndexList[3](seq_len, num_q_heads, rope_dim)
+    )
+    var output_device_ref = output_host_ref.copy_to_device(ctx)
+
+    # initialize our row_offsets, we only has 1 sequence
+    var row_offsets_host = HostNDBuffer[DType.uint32, 1](
+        IndexList[1](batch_size + 1)
+    )
+    row_offsets_host.tensor[0] = 0
+    row_offsets_host.tensor[1] = seq_len
+    var row_offsets_device = row_offsets_host.copy_to_device(ctx)
+
+    # initialize our lut, we only has 2 pages
+    var paged_lut_host = HostNDBuffer[DType.uint32, 2](
+        IndexList[2](batch_size, 2)
+    )
+    paged_lut_host.tensor[0, 0] = 0
+    paged_lut_host.tensor[0, 1] = 1
+    var paged_lut_device = paged_lut_host.copy_to_device(ctx)
+
+    # initialize our cache_lengths, we only has 1 sequence
+    var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
+        IndexList[1](batch_size)
+    )
+    cache_lengths_host.tensor[0] = 0
+    var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
+
+    # intialize our max_prompt_length and max_cache_length
+    var max_prompt_length = Int(seq_len)
+    var max_cache_length = Int(0)
+
+    # initialize our k_cache_collection
+    var k_cache_collection = PagedKVCacheCollection[type, kv_params, page_size](
+        kv_block_paged_device.tensor,
+        cache_lengths_device.tensor,
+        paged_lut_device.tensor,
+        max_prompt_length,
+        max_cache_length,
+    )
+
+    # initialize our k_cache_collection_64
+    var k_cache_collection_64 = PagedKVCacheCollection[
+        type, kv_params_64, page_size
+    ](
+        kv_block_paged_device_64.tensor,
+        cache_lengths_device.tensor,
+        paged_lut_device.tensor,
+        max_prompt_length,
+        max_cache_length,
+    )
+
+    # execute the kernel
+    var freqs_cis = rebind[
+        NDBuffer[type, 2, shape = DimList(max_seq_len, rope_dim)]
+    ](freqs_cis_device.tensor)
+    fused_qk_rope_ragged[
+        k_cache_collection.CacheType, interleaved=True, target="gpu"
+    ](
+        q_ragged_device.tensor,
+        row_offsets_device.tensor,
+        k_cache_collection,
+        freqs_cis,
+        layer_idx,
+        output=output_device.tensor,
+        context=ctx,
+    )
+
+    # execute the kernel for 64
+    fused_qk_rope_ragged[
+        k_cache_collection_64.CacheType, interleaved=True, target="gpu"
+    ](
+        q_ragged_device_64.tensor,
+        row_offsets_device.tensor,
+        k_cache_collection_64,
+        freqs_cis,
+        layer_idx,
+        output=output_device_ref.tensor,
+        context=ctx,
+    )
+
+    # copy the output back to host
+    ctx.enqueue_copy(output_host.tensor.data, output_device.buffer)
+    ctx.enqueue_copy(output_host_ref.tensor.data, output_device_ref.buffer)
+    ctx.synchronize()
+
+    # compare the output, the first 128 elements in each head should be the same
+    # as in input Q tensor, the last 64 elements should be the same as the reference
+    for seq_idx in range(seq_len):
+        for head_idx in range(num_q_heads):
+            for head_dim_idx in range(q_head_size - rope_dim):
+                assert_almost_equal(
+                    output_host.tensor[seq_idx, head_idx, head_dim_idx],
+                    q_ragged_host.tensor[seq_idx, head_idx, head_dim_idx],
+                )
+
+            for head_dim_idx in range(rope_dim):
+                assert_almost_equal(
+                    output_host.tensor[
+                        seq_idx, head_idx, q_head_size - rope_dim + head_dim_idx
+                    ],
+                    output_host_ref.tensor[seq_idx, head_idx, head_dim_idx],
+                )
+
+    # copy the kv_block_paged_device back to a new host buffer
+    var kv_block_paged_host_copy = HostNDBuffer[type, 6](
+        IndexList[6](
+            num_paged_blocks,
+            2,
+            num_layers,
+            page_size,
+            kv_params.num_heads,
+            kv_params.head_size,
+        )
+    )
+    ctx.enqueue_copy(
+        kv_block_paged_host_copy.tensor.data, kv_block_paged_device.buffer
+    )
+    # copy the kv_block_paged_device_64 back to the original host buffer
+    ctx.enqueue_copy(
+        kv_block_paged_host_64.tensor.data, kv_block_paged_device_64.buffer
+    )
+    ctx.synchronize()
+
+    # compare the KV cache, the first 512 elements should be the same as the input
+    # the last 64 elements should be the same as the reference
+    for page_idx in range(num_paged_blocks):
+        # only compare the K cache
+        for kv_idx in range(1):
+            for layer_idx in range(num_layers):
+                for tok_idx in range(page_size):
+                    if tok_idx + page_idx * page_size < seq_len:
+                        for head_idx in range(kv_params.num_heads):
+                            for head_dim_idx in range(
+                                kv_params.head_size - rope_dim
+                            ):
+                                assert_almost_equal(
+                                    kv_block_paged_host_copy.tensor[
+                                        page_idx,
+                                        kv_idx,
+                                        layer_idx,
+                                        tok_idx,
+                                        head_idx,
+                                        head_dim_idx,
+                                    ],
+                                    kv_block_paged_host.tensor[
+                                        page_idx,
+                                        kv_idx,
+                                        layer_idx,
+                                        tok_idx,
+                                        head_idx,
+                                        head_dim_idx,
+                                    ],
+                                )
+                            for head_dim_idx in range(rope_dim):
+                                assert_almost_equal(
+                                    kv_block_paged_host_copy.tensor[
+                                        page_idx,
+                                        kv_idx,
+                                        layer_idx,
+                                        tok_idx,
+                                        head_idx,
+                                        kv_params.head_size
+                                        - rope_dim
+                                        + head_dim_idx,
+                                    ],
+                                    kv_block_paged_host_64.tensor[
+                                        page_idx,
+                                        kv_idx,
+                                        layer_idx,
+                                        tok_idx,
+                                        head_idx,
+                                        head_dim_idx,
+                                    ],
+                                )
+
+    # clean up
+    _ = q_ragged_host^
+    _ = q_ragged_device^
+    _ = q_ragged_host_64^
+    _ = q_ragged_device_64^
+    _ = kv_block_paged_host^
+    _ = kv_block_paged_host_copy^
+    _ = kv_block_paged_device^
+    _ = kv_block_paged_host_64^
+    _ = kv_block_paged_device_64^
+    _ = freqs_cis_host^
+    _ = freqs_cis_device^
+    _ = output_host^
+    _ = output_device^
+    _ = output_host_ref^
+    _ = output_device_ref^
+    _ = row_offsets_host^
+    _ = row_offsets_device^
+    _ = paged_lut_host^
+    _ = paged_lut_device^
+    _ = cache_lengths_host^
+    _ = cache_lengths_device^
+
+
 def main():
     with DeviceContext() as ctx:
         execute_fused_qk_rope_ragged(ctx)
+        execute_fused_qk_rope_ragged_mla(ctx)
