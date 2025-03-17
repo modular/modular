@@ -380,7 +380,6 @@ struct Trace[
         if is_profiling_disabled[category, level]():
             return
 
-        # Should be name_str = self._get_name_as_str()
         name_str = self.name[StringLiteral]
         if self.detail:
             # 1. If there is a detail string we must heap allocate the string
@@ -392,7 +391,7 @@ struct Trace[
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBeginDetail", Int
             ](
-                name_str.unsafe_cstr_ptr(),
+                name_str.unsafe_ptr(),
                 len(name_str),
                 self.detail.unsafe_ptr(),
                 len(self.detail),
@@ -404,7 +403,7 @@ struct Trace[
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBeginTask", Int
             ](
-                name_str.unsafe_cstr_ptr(),
+                name_str.unsafe_ptr(),
                 len(name_str),
                 self.parent_id,
                 self.int_payload.value(),
@@ -415,12 +414,10 @@ struct Trace[
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBegin", Int
             ](
-                name_str.unsafe_cstr_ptr(),
+                name_str.unsafe_ptr(),
                 len(name_str),
                 self.parent_id,
             )
-        # FIXME(MSTDL-1288): unsafe_cstr_ptr not maintaining origin
-        _ = name_str^
 
         external_call[
             "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
