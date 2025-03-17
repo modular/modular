@@ -214,8 +214,8 @@ fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
 # compiler optimization to satisfy the input type requirement,
 # but this is fragile.
 @always_inline
-fn _hash_module_name(s: StringLiteral) -> StringLiteral:
-    return __mlir_op.`pop.string.hash`(s.value)
+fn _hash_module_name(s: StringLiteral) -> StaticString:
+    return StringLiteral(__mlir_op.`pop.string.hash`(s.value))
 
 
 @always_inline
