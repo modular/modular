@@ -195,7 +195,7 @@ fn test_shared_stack_allocation() -> (
 
 
 @always_inline
-fn _verify_shared_stack_allocation(asm: String) raises -> None:
+fn _verify_shared_stack_allocation(asm: StringSlice) raises -> None:
     assert_true("test_cuda_target_test_shared_" in asm)
     assert_true(".shared .align 8 .b8" in asm)
 
@@ -224,7 +224,7 @@ fn test_barrier():
 
 
 @always_inline
-fn _verify_barrier(asm: String) raises -> None:
+fn _verify_barrier(asm: StringSlice) raises -> None:
     assert_true("barrier" in asm)
     assert_true("bar.sync 	0" in asm)
 
@@ -339,7 +339,7 @@ fn gemm(
             set_c(row, col + out_idx, c_reg.load(out_idx))
 
 
-def _verify_gemm(asm: String):
+def _verify_gemm(asm: StringSlice):
     assert_true("gemm" in asm)
     assert_true(".shared .align 4 .b8" in asm)
     assert_true("st.shared.f32" in asm)
@@ -404,7 +404,7 @@ fn test_warp_shuffle_down(val: Int32) -> Int32:
 
 
 @always_inline
-fn _verify_warp_shuffle_down(asm: String) raises -> None:
+fn _verify_warp_shuffle_down(asm: StringSlice) raises -> None:
     assert_true("test_warp_shuf" in asm)
     assert_true("shfl.sync.down.b32" in asm)
 
@@ -440,7 +440,7 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 
 
 @always_inline
-fn _verify_warp_sum_reduce(asm: String) raises -> None:
+fn _verify_warp_sum_reduce(asm: StringSlice) raises -> None:
     assert_true("warp_sum_" in asm)
     assert_true("shfl.sync.bfly.b32" in asm)
 
@@ -482,7 +482,7 @@ fn block_reduce(val: Float32) -> Float32:
 
 
 @always_inline
-fn _verify_block_reduce(asm: String) raises -> None:
+fn _verify_block_reduce(asm: StringSlice) raises -> None:
     assert_true("block_reduce" in asm)
     assert_true("mov.u32" in asm)
 
