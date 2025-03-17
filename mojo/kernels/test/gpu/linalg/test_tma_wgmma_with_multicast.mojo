@@ -48,7 +48,8 @@ from gpu.memory import fence_mbarrier_init
 from gpu.cluster import cluster_sync, block_rank_in_cluster
 
 
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 2](0, 1))
+@__llvm_arg_metadata(a_tma_tile, `nvvm.grid_constant`)
+@__llvm_arg_metadata(b_tma_tile, `nvvm.grid_constant`)
 fn multicast_tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,

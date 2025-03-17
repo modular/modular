@@ -39,7 +39,7 @@ from gpu.memory import fence_mbarrier_init
 
 
 # Test loading a single 2d tile.
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](1))
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn tma_swizzle_multicast_load_kernel[
     dtype: DType,
     layout: Layout,

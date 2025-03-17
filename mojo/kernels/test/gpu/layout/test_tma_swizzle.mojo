@@ -26,7 +26,7 @@ from utils.static_tuple import StaticTuple
 
 
 # Test loading a single 2d tile.
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](1))
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn tma_swizzle_load_kernel[
     dtype: DType,
     layout: Layout,

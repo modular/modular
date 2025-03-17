@@ -30,7 +30,7 @@ from gpu.host._nvidia_cuda import TensorMapSwizzle
 
 
 # Test loading a single 2d tile.
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](1))
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_3d_load_kernel[
     dtype: DType,
     dst_layout: Layout,
