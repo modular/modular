@@ -92,10 +92,9 @@ fn cluster_size[cluster_shape: StaticTuple[Int32, 3]]() -> Int32:
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
+    `nvvm.grid_constant`=StaticTuple[Int, 2](0, 1),
     `nvvm.cluster_dim`=cluster_shape,
 )
-@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 fn tma_wgmma_warp_specialized_gemm_kernel[
     a_type: DType,
     b_type: DType,
@@ -621,10 +620,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
+    `nvvm.grid_constant`=StaticTuple[Int, 2](0, 1),
     `nvvm.cluster_dim`=cluster_shape,
 )
-@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     a_type: DType,
     b_type: DType,
@@ -1163,8 +1161,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
         cluster_sync()
 
 
-@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 2](0, 1))
 fn hopper_matmul_tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
