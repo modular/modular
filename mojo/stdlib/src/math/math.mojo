@@ -384,7 +384,7 @@ fn exp2[
         if type is DType.float16:
 
             @parameter
-            if StringLiteral(_current_arch()) == "sm_90a":
+            if _current_arch() == "sm_90a":
                 return _call_ptx_intrinsic[
                     scalar_instruction="ex2.approx.f16",
                     vector2_instruction="ex2.approx.f16x2",
@@ -395,10 +395,7 @@ fn exp2[
                 return _call_ptx_intrinsic[
                     instruction="ex2.approx.f16", constraints="=h,h"
                 ](x)
-        elif (
-            type is DType.bfloat16
-            and StringLiteral(_current_arch()) == "sm_90a"
-        ):
+        elif type is DType.bfloat16 and _current_arch() == "sm_90a":
             return _call_ptx_intrinsic[
                 scalar_instruction="ex2.approx.ftz.bf16",
                 vector2_instruction="ex2.approx.ftz.bf16x2",

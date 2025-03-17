@@ -13,10 +13,11 @@
 """Provides functions to examine build configuration."""
 
 from .param_env import env_get_string, is_defined
+from collections.string import StaticString
 
 
 @always_inline("nodebug")
-fn _build_type() -> StringLiteral:
+fn _build_type() -> StaticString:
     constrained[is_defined["BUILD_TYPE"](), "the build type must be defined"]()
     return env_get_string["BUILD_TYPE"]()
 
@@ -52,7 +53,7 @@ fn is_release_build() -> Bool:
     if is_defined["DEBUG"]():
         return False
     elif is_defined["BUILD_TYPE"]():
-        alias build_type: StringLiteral = _build_type()
+        alias build_type = _build_type()
         return (
             build_type == "release"
             or build_type == "relwithdebinfo"
