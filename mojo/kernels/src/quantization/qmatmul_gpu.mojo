@@ -6,6 +6,7 @@
 
 from bit import log2_floor
 from collections import Optional, OptionalReg
+from collections.string import StaticString
 from math import ceildiv, isclose
 from pathlib import Path
 from random import rand, randint, random_float64, seed
@@ -1484,7 +1485,7 @@ fn matmul_gpu_qint4[
     c_type: DType,
     a_type: DType, //,
     group_size: Int,
-    target: StringLiteral,
+    target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, _],
@@ -1505,7 +1506,7 @@ fn matmul_gpu_qint4_impl[
     c_type: DType,
     a_type: DType, //,
     group_size: Int,
-    target: StringLiteral,
+    target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, _],
@@ -1965,7 +1966,7 @@ fn matmul_gpu_qint4_impl[
 @always_inline
 fn gpu_qint4_repack_Q4_0[
     b_shape: DimList, //,
-    target: StringLiteral,
+    target: StaticString,
 ](
     b: NDBuffer[DType.uint8, 2, b_shape],
     b_packed: NDBuffer[DType.uint8, 2, b_shape],
@@ -2011,7 +2012,7 @@ fn gpu_qint4_repack_GPTQ[
     b_shape: DimList,
     b_packed_shape: DimList, //,
     group_size: Int,
-    target: StringLiteral,
+    target: StaticString,
 ](
     b: NDBuffer[DType.uint8, 2, b_shape],
     b_packed: NDBuffer[DType.uint8, 2, b_packed_shape],
