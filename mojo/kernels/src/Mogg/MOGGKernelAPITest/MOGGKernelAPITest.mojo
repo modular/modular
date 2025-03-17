@@ -11,7 +11,7 @@ import compiler_internal as compiler
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
-from runtime.asyncrt import DeviceContextPtr
+from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
 from tensor_internal import (
     ManagedTensorSlice,
     VariadicTensors,
@@ -877,9 +877,9 @@ struct SingleDeviceContext:
     ](
         out: OutputTensor[type=type, *_],
         x: InputTensor[type=type, *_],
-        dev_ctx: StaticTuple[DeviceContextPtr, 1],
+        dev_ctx: DeviceContextPtrList[1],
     ) raises:
-        dev_ctx[0][].synchronize()
+        dev_ctx[0].synchronize()
 
 
 @compiler.register("multi_device_context")
@@ -890,12 +890,12 @@ struct MultiDeviceContext:
     ](
         out: OutputTensor[type=type, *_],
         x: InputTensor[type=type, *_],
-        dev_ctxs: StaticTuple[DeviceContextPtr, 2],
+        dev_ctxs: DeviceContextPtrList[2],
     ) raises:
-        print("dev_ctx0.id() =", dev_ctxs[0][].id())
-        print("dev_ctx1.id() =", dev_ctxs[1][].id())
-        dev_ctxs[0][].synchronize()
-        dev_ctxs[1][].synchronize()
+        print("dev_ctx0.id() =", dev_ctxs[0].id())
+        print("dev_ctx1.id() =", dev_ctxs[1].id())
+        dev_ctxs[0].synchronize()
+        dev_ctxs[1].synchronize()
 
 
 @compiler.register("multi_device_context_dedup")
@@ -907,10 +907,10 @@ struct MultiDeviceContextDedup:
         out: OutputTensor[type=type, *_],
         x: InputTensor[type=type, *_],
         y: InputTensor[type=type, *_],
-        dev_ctxs: StaticTuple[DeviceContextPtr, 2],
+        dev_ctxs: DeviceContextPtrList[2],
     ) raises:
-        dev_ctxs[0][].synchronize()
-        dev_ctxs[1][].synchronize()
+        dev_ctxs[0].synchronize()
+        dev_ctxs[1].synchronize()
 
 
 @compiler.register("variadic_device_context")
@@ -922,11 +922,11 @@ struct VariadicDeviceContext:
     ](
         outputs: OutputVariadicTensors[type, rank, *_],
         inputs: InputVariadicTensors[type, rank, *_],
-        dev_ctxs: StaticTuple[DeviceContextPtr, *_],
+        dev_ctxs: DeviceContextPtrList,
     ) raises:
         for i in range(len(dev_ctxs)):
-            print("dev_ctxs[", i, "].id() =", dev_ctxs[i][].id())
-            dev_ctxs[i][].synchronize()
+            print("dev_ctxs[", i, "].id() =", dev_ctxs[i].id())
+            dev_ctxs[i].synchronize()
 
 
 @compiler.register("imposter_cast_elementwise")

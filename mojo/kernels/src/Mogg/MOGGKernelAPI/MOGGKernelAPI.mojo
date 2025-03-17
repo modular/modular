@@ -178,7 +178,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
+from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import (
     DynamicTensor,
@@ -7888,7 +7888,7 @@ struct DistributedAllReduceSum:
         signal_buffers: MutableInputVariadicTensors[
             type = DType.uint8, rank=1, *_
         ],
-        dev_ctxs_input: StaticTuple[DeviceContextPtr, *_],
+        dev_ctxs_input: DeviceContextPtrList,
     ) raises:
         """Distributed allreduce operation implementation for sum reduction.
 
@@ -7924,7 +7924,7 @@ struct DistributedAllReduceSum:
 
         var dev_ctxs = List[DeviceContext]()
         for i in range(len(dev_ctxs_input)):
-            dev_ctxs.append(dev_ctxs_input[i][])
+            dev_ctxs.append(dev_ctxs_input[i])
 
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
