@@ -14,6 +14,7 @@ from sys.param_env import is_defined
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import DeviceContext
 from memory import UnsafePointer
+from utils import StaticTuple
 
 from .tracing import TraceLevel, is_mojo_profiling_disabled
 
@@ -413,3 +414,21 @@ struct DeviceContextPtr:
 
     fn get_device_context(self) -> DeviceContext:
         return self[]
+
+
+@register_passable("trivial")
+struct DeviceContextPtrList[size: Int]:
+    var ptrs: StaticTuple[DeviceContextPtr, size]
+
+    @always_inline
+    fn __init__(out self, ptrs: StaticTuple[DeviceContextPtr, size]):
+        self.ptrs = ptrs
+
+    fn __getitem__[index: Int](self) -> DeviceContext:
+        return self.ptrs[index][]
+
+    fn __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext:
+        return self.ptrs[idx][]
+
+    fn __len__(self) -> Int:
+        return size
