@@ -5,13 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.info import _current_target
+from collections.string import StaticString
 
 
 fn get_linkage_name[
     func_type: AnyTrivialRegType, //,
     target: __mlir_type.`!kgen.target`,
     func: func_type,
-]() -> StringLiteral:
+]() -> StaticString:
     """Returns `func` symbol name.
 
     Parameters:
@@ -22,19 +23,21 @@ fn get_linkage_name[
     Returns:
         Symbol name.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<get_linkage_name,`,
-        target,
-        `,`,
-        func,
-        `> : !kgen.string`,
-    ]
+    return StringLiteral(
+        __mlir_attr[
+            `#kgen.param.expr<get_linkage_name,`,
+            target,
+            `,`,
+            func,
+            `> : !kgen.string`,
+        ]
+    )
 
 
 fn get_linkage_name[
     func_type: AnyTrivialRegType, //,
     func: func_type,
-]() -> StringLiteral:
+]() -> StaticString:
     """Returns `func` symbol name.
 
     Parameters:

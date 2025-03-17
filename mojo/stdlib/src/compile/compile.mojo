@@ -35,6 +35,8 @@ Example:
 from os import PathLike
 from pathlib import Path
 from sys.info import _current_target
+from collections.string import StringSlice, StaticString
+from builtin.string_literal import get_string_literal_slice
 
 from memory import UnsafePointer
 
@@ -100,13 +102,13 @@ struct Info[func_type: AnyTrivialRegType, func: func_type]:
         is_error: Whether compilation had errors
     """
 
-    var asm: StringLiteral
+    var asm: StaticString
     """Generated assembly/IR code from the compilation process."""
 
-    var function_name: StringLiteral
+    var function_name: StaticString
     """Mangled name of the compiled function, used for symbol resolution."""
 
-    var module_name: StringLiteral
+    var module_name: StaticString
     """Name of the module containing the compiled function."""
 
     var num_captures: Int
@@ -122,7 +124,7 @@ struct Info[func_type: AnyTrivialRegType, func: func_type]:
     )
     """Function pointer to populate captured variables in the function closure."""
 
-    var error_msg: StringLiteral
+    var error_msg: StaticString
     """Error message if compilation failed, empty if successful."""
 
     var is_error: Bool
@@ -182,12 +184,7 @@ alias _EMISSION_KIND_LLVM_OPT = 2
 alias _EMISSION_KIND_OBJECT = 3
 
 
-fn _get_emission_kind_id[emission_kind: StringLiteral]() -> Int:
-    constrained[
-        emission_kind in ("llvm", "llvm-opt", "object", "asm"),
-        "invalid emission kind '" + emission_kind + "'",
-    ]()
-
+fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
     @parameter
     if emission_kind == "llvm":
         return _EMISSION_KIND_LLVM
@@ -196,6 +193,11 @@ fn _get_emission_kind_id[emission_kind: StringLiteral]() -> Int:
     elif emission_kind == "object":
         return _EMISSION_KIND_OBJECT
     else:
+        constrained[
+            emission_kind == "asm",
+            String("invalid emission kind '") + emission_kind + "'",
+        ]()
+
         return _EMISSION_KIND_ASM
 
 
@@ -222,7 +224,7 @@ fn _compile_info_non_failable_impl[
     func: func_type,
     /,
     emission_kind: Int,
-    compile_options: StringLiteral,
+    compile_options: StringSlice,
     target: __mlir_type.`!kgen.target`,
 ]() -> Info[func_type, func]:
     """Internal implementation of compile_info that cannot fail.
@@ -240,13 +242,13 @@ fn _compile_info_non_failable_impl[
     var offload = __mlir_op.`kgen.compile_offload`[
         target_type=target,
         emission_kind = index(emission_kind),
-        emission_option = compile_options.value,
+        emission_option = get_string_literal_slice[compile_options]().value,
         func=func,
         _type=_Info,
     ]()
 
     var result = Info[func_type, func](
-        offload.asm,
+        StringLiteral(offload.asm),
         get_linkage_name[target, func](),
         _hash_module_name(offload.asm),
         offload.num_captures,
@@ -262,8 +264,8 @@ fn compile_info[
     func: func_type,
     /,
     *,
-    emission_kind: StringLiteral = "asm",
-    compile_options: StringLiteral = "",
+    emission_kind: StaticString = "asm",
+    compile_options: StaticString = "",
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> Info[func_type, func]:
     """Compiles a function and returns detailed compilation information.
@@ -328,10 +330,10 @@ fn _internal_compile_code[
     func: func_type,
     /,
     *,
-    emission_kind: StringLiteral = "asm",
-    compile_options: StringLiteral = "",
+    emission_kind: StaticString = "asm",
+    compile_options: StaticString = "",
     target: __mlir_type.`!kgen.target` = _current_target(),
-]() -> StringLiteral:
+]() -> StaticString:
     """Compiles a function and returns the raw assembly/IR code.
 
     This is an internal utility function used by other compilation functions. It
