@@ -878,11 +878,11 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         type,
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     ],
-    gamma: NDBuffer[type, 1],
+    gamma: NDBuffer[type, 1, *_],
     epsilon: Scalar[type],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: NDBuffer[DType.uint32, 1],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     context: DeviceContextPtr,
 ):
     """Performs RMSNorm in place on new entries in the key cache.
@@ -894,13 +894,27 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     index, and use that together with the static head and channel indices to
     store to/load from the key cache.
     This uses the input/output lambdas on the RMSNorm kernel.
+
+    This function could apply RMSNorm to a subset of dimensions in each head,
+    determined by the size of the gamma tensor. In this case, it operates on a
+    ragged tensor view of the key cache with shape (total_seq_len, num_heads,
+    rms_norm_cols), where rms_norm_cols is the length of gamma and must be <=
+    head_size.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     alias rank = 3
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
+    alias rms_norm_cols = gamma.shape.get[0]()
+
+    constrained[gamma.shape.has_value[0](), "Need static shape for gamma"]()
+    constrained[
+        rms_norm_cols <= kv_collection.kv_params.head_size,
+        "Size of gamma must be smaller or equal to head size",
+    ]()
+
     var shape = IndexList[rank](
-        Int(total_seq_len), kv_params.num_heads, kv_params.head_size
+        Int(total_seq_len), kv_params.num_heads, rms_norm_cols
     )
 
     @always_inline
@@ -911,7 +925,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     ](idx: IndexList[rank_]) -> SIMD[type, width]:
         constrained[
             rank_ == rank,
-            "rms_norm_key_cache input lambda index should have rank 4",
+            "rms_norm_key_cache input lambda index should have rank 3",
         ]()
 
         var global_token_idx = idx[0]
@@ -948,7 +962,111 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         )
 
     with Trace[TraceLevel.OP](
-        "rms_norm_kv_cache_ragged_continuous_batching_nhead_8_hdim_128"
+        "rms_norm_kv_cache_ragged_continuous_batching_nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+    ):
+        _rms_norm_impl[
+            type, rank, key_cache_input_fn, key_cache_output_fn, target=target
+        ](shape, gamma, epsilon, context)
+
+
+def rms_norm_kv_cache_ragged_paged[
+    type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+](
+    kv_collection: PagedKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+    ],
+    gamma: NDBuffer[type, 1, *_],
+    epsilon: Scalar[type],
+    layer_idx: UInt32,
+    total_seq_len: UInt32,
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    context: DeviceContextPtr,
+):
+    """Performs RMSNorm in place on new entries in the key cache.
+
+    This is done by first creating the ragged tensor weight_shape
+    (total_seq_len, num_heads, head_dim) of the new token tensor.
+    To do this we need to pass in `total_seq_len` on host.
+    Then, using `input_row_offsets` we find the corresponding batch and token
+    index, and use that together with the static head and channel indices to
+    store to/load from the key cache.
+    This uses the input/output lambdas on the RMSNorm kernel.
+
+    This function could apply RMSNorm to a subset of dimensions in each head,
+    determined by the size of the gamma tensor. In this case, it operates on a
+    ragged tensor view of the key cache with shape (total_seq_len, num_heads,
+    rms_norm_cols), where rms_norm_cols is the length of gamma and must be <=
+    head_size.
+    """
+    # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
+    alias rank = 3
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    var kv_params = k_cache.kv_params
+    alias rms_norm_cols = gamma.shape.get[0]()
+
+    constrained[gamma.shape.has_value[0](), "Need static shape for gamma"]()
+    constrained[
+        rms_norm_cols <= kv_collection.kv_params.head_size,
+        "Length of gamma must be smaller or equal to head size",
+    ]()
+
+    var shape = IndexList[rank](
+        Int(total_seq_len), kv_params.num_heads, rms_norm_cols
+    )
+
+    @always_inline
+    @parameter
+    @__copy_capture(k_cache, input_row_offsets)
+    fn key_cache_input_fn[
+        width: Int, rank_: Int
+    ](idx: IndexList[rank_]) -> SIMD[type, width]:
+        constrained[
+            rank_ == rank,
+            "rms_norm_key_cache input lambda index should have rank 3",
+        ]()
+
+        var global_token_idx = idx[0]
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+
+        return k_cache.load[width=width](
+            bs=batch_idx,
+            tok_idx=token_idx,
+            head_idx=idx[1],
+            head_dim_idx=idx[2],
+        )
+
+    @always_inline
+    @parameter
+    @__copy_capture(k_cache)
+    fn key_cache_output_fn[
+        width: Int
+    ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+        var global_token_idx = idx[0]
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+
+        k_cache.store(
+            bs=batch_idx,
+            tok_idx=token_idx,
+            head_idx=idx[1],
+            head_dim_idx=idx[2],
+            val=val,
+        )
+
+    with Trace[TraceLevel.OP](
+        "rms_norm_kv_cache_ragged_paged_nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
     ):
         _rms_norm_impl[
             type, rank, key_cache_input_fn, key_cache_output_fn, target=target
