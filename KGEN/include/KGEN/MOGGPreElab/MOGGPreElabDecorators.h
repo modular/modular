@@ -209,6 +209,13 @@ constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "stdlib::List";
 // The stored mojo type symbol name of device contexts in extensibility kernels.
 constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
     "runtime::DeviceContextPtr";
+
+// The stored mojo type symbol name of device contexts list in extensibility
+// kernels.
+constexpr StringLiteral
+    MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_LIST_TYPE_NAME =
+        "runtime::DeviceContextPtrList";
+
 //===----------------------------------------------------------------------===//
 // Parameter Inference
 //===----------------------------------------------------------------------===//

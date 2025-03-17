@@ -44,6 +44,8 @@ static constexpr std::array<StringLiteral, 4> kMaxList = {
     "stdlib", "collections", "list", "List"};
 static constexpr std::array<StringLiteral, 4> kPythonObject = {
     "stdlib", "python", "python_object", "PythonObject"};
+static constexpr std::array<StringLiteral, 3> kMaxRuntimeDeviceContextPtrList =
+    {"runtime", "asyncrt", "DeviceContextPtrList"};
 
 // TODO(GEX-1822): Should be able to query this information from
 // The lit.struct.decl ops for each of these types rather than hard-coding them.
@@ -72,6 +74,8 @@ enum class SIMDParams { kDType, kSize, kNumParams };
 
 // Parameter indexes for List struct
 enum class ListParams { kElementType, kNumParams };
+
+enum class DeviceContextPtrListParams { kSize, kNumParams };
 
 // Helper function to convert enum class to underlying index
 template <typename T>
@@ -377,6 +381,25 @@ getUnboundParametersForTensorList(LIT::StructType structType,
   return listNamedAttrs;
 }
 
+static SmallVector<NamedAttribute>
+getUnboundParametersForDeviceContextPtrList(LIT::StructType structType,
+                                            Builder &builder) {
+  auto allParameters = structType.getParamValues();
+  ASSERT_STREAM(
+      allParameters.size() >= toIndex(DeviceContextPtrListParams::kNumParams),
+      << "Expected at least " << toIndex(DeviceContextPtrListParams::kNumParams)
+      << " parameters on the DeviceContextrPtrList type");
+
+  auto size = allParameters[toIndex(DeviceContextPtrListParams::kSize)];
+
+  SmallVector<NamedAttribute> tensorSpecNamedAttrs;
+  if (size)
+    tensorSpecNamedAttrs.push_back(
+        NamedAttribute{builder.getStringAttr(kParameterSize), size});
+
+  return tensorSpecNamedAttrs;
+}
+
 static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
   Builder builder{funcOp.getContext()};
 
@@ -422,6 +445,11 @@ static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
       } else {
         tensorSpecs.push_back(builder.getDictionaryAttr(*tensorSpecNamedAttrs));
       }
+    } else if (symbolMatches(asStructType.getSymbol(),
+                             kMaxRuntimeDeviceContextPtrList)) {
+      auto tensorSpecNamedAttrs =
+          getUnboundParametersForDeviceContextPtrList(asStructType, builder);
+      tensorSpecs.push_back(builder.getDictionaryAttr(tensorSpecNamedAttrs));
     } else {
       // Unsupported type, can ignore
       tensorSpecs.push_back(emptyAttr);
