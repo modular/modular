@@ -20,6 +20,7 @@ from sys import is_x86
 """
 
 from memory import UnsafePointer
+from collections.string import StaticString
 
 from .ffi import OpaquePointer, _external_call_const, external_call
 
@@ -30,8 +31,10 @@ fn _current_target() -> __mlir_type.`!kgen.target`:
 
 
 @always_inline("nodebug")
-fn _accelerator_arch() -> StringLiteral:
-    return __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
+fn _accelerator_arch() -> StaticString:
+    return StringLiteral(
+        __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
+    )
 
 
 fn _get_arch[target: __mlir_type.`!kgen.target`]() -> StringLiteral:
