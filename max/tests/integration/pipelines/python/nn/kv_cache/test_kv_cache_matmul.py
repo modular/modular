@@ -16,13 +16,16 @@ from max.graph import Graph, TensorType, TensorValue, ops
 from max.mlir import StringAttr
 from max.nn.kernels import (
     fused_qkv_ragged_matmul,
+    matmul_k_cache_ragged,
     matmul_kv_cache_ragged,
 )
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
@@ -290,6 +293,175 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
 
     # Check that the matmul wrote output to the KV cache.
     assert kv_blocks.to_numpy().any()
+
+
+@dataclass(frozen=True)
+class MatmulKRaggedModel:
+    """Model containing a single matmul KV ragged op."""
+
+    fetch_layer: FetchPagedKVCacheCollection
+    """Layer for fetching a kv cache collection."""
+
+    kv_params: KVCacheParams
+    """Hyperparameters describing this instance of the KV cache."""
+
+    layer_idx: int
+    """Layer index of the KV cache collection."""
+
+    def __call__(
+        self,
+        hidden_states: TensorValue,
+        input_row_offsets: TensorValue,
+        weight: TensorValue,
+        *fetch_args: TensorValue,
+    ) -> None:
+        """Stages a graph consisting of a matmul KV cache ragged custom op.
+
+        This contains both the matmul KV cache ragged custom op and a "fetch"
+        op to get a KVCacheCollection.
+        """
+        matmul_k_cache_ragged(
+            self.kv_params,
+            hidden_states,
+            input_row_offsets,
+            weight,
+            kv_collection=self.fetch_layer(*fetch_args),
+            layer_idx=self.layer_idx,
+        )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DType.float32,
+    ],
+)
+def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
+    """Tests the matmul_k_cache_ragged custom op."""
+    # Set up hyperparameters for the test.
+    page_size = 128
+    torch_dtype = {
+        DType.float32: torch.float32,
+        DType.bfloat16: torch.bfloat16,
+    }[dtype]
+    num_q_heads = 32
+    kv_params = KVCacheParams(
+        dtype=dtype,
+        n_kv_heads=8,
+        head_dim=128,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=page_size,
+    )
+    prompt_lens = [10, 30]
+    batch_size = len(prompt_lens)
+    total_seq_len = sum(prompt_lens)
+
+    # Set MLIR types for the graph.
+    hidden_state_type = TensorType(
+        dtype, ["total_seq_len", num_q_heads * kv_params.head_dim]
+    )
+    wk_type = TensorType(
+        dtype,
+        [
+            kv_params.n_kv_heads * kv_params.head_dim,
+            num_q_heads * kv_params.head_dim,
+        ],
+    )
+    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+
+    kv_manager = PagedKVCacheManager(
+        kv_params,
+        cache_memory=1024 * 1024 * 1024,
+        page_size=page_size,
+        max_batch_size=2,
+        max_seq_len=100,
+        num_layers=1,
+        devices=[CPU()],
+        session=session,
+    )
+    fetch_layer = FetchPagedKVCacheCollection(kv_params)
+
+    graph = Graph(
+        "matmul_k_cache_ragged",
+        forward=MatmulKRaggedModel(fetch_layer, kv_params, layer_idx=0),
+        input_types=[
+            hidden_state_type,
+            input_row_offsets_type,
+            wk_type,
+            *kv_manager.input_symbols()[0],
+        ],
+    )
+
+    # Compile and init the model.
+    model = session.load(graph)
+
+    # Claim seq_ids in cache.
+    seq_ids = []
+    for _ in range(batch_size):
+        seq_id = kv_manager.claim(1)
+        seq_ids.append(seq_id[0])
+
+    # Compute input row offsets for ragged tensors.
+    input_row_offsets = Tensor([batch_size + 1], DType.uint32)
+    running_sum = 0
+    for i in range(batch_size):
+        input_row_offsets[i] = running_sum
+        running_sum += prompt_lens[i]
+    input_row_offsets[batch_size] = running_sum
+
+    seq_ids_to_prompts = {
+        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+        for i, s in enumerate(seq_ids)
+    }
+    fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
+    kv_blocks = fetch_args[0]
+    # First check that the KV cache was zeroed out on initialization.
+    assert not kv_blocks.to_numpy().any()
+
+    hidden_states = torch.randn(
+        size=[total_seq_len, num_q_heads * kv_params.head_dim],
+        dtype=torch_dtype,
+    )
+    wk = torch.randn(size=wk_type.shape.static_dims, dtype=torch_dtype)
+    model(hidden_states, input_row_offsets, wk, *fetch_args)
+
+    ref_results = (hidden_states @ wk.T).numpy()
+
+    # Check that the matmul wrote output to the KV cache.
+    host_kv_blocks = kv_blocks.to_numpy()
+    host_page_table = fetch_args[2].to_numpy()
+
+    for batch_idx in range(batch_size):
+        # Calculate starting position for this batch
+        batch_start = (
+            int(np.cumsum(prompt_lens[:batch_idx])) if batch_idx != 0 else 0
+        )
+        batch_len = prompt_lens[batch_idx]
+        num_pages = int(np.ceil(batch_len / float(page_size)))
+
+        # Validate each page in the batch
+        for page_idx in range(num_pages):
+            block = host_page_table[batch_idx, page_idx]
+            tokens_in_page = min(page_size, batch_len - page_idx * page_size)
+
+            # Validate each head's projections
+            for head_idx in range(kv_params.n_kv_heads):
+                head_start = head_idx * kv_params.head_dim
+                head_end = head_start + kv_params.head_dim
+
+                # Compare cached values with reference results
+                cached = host_kv_blocks[
+                    block, 0, 0, :tokens_in_page, head_idx, :
+                ]
+                expected = ref_results[
+                    batch_start : (batch_start + tokens_in_page),
+                    head_start:head_end,
+                ]
+                assert np.isclose(
+                    cached, expected, rtol=1e-03, atol=1e-03
+                ).all()
+
+            batch_start += page_size
 
 
 @pytest.mark.parametrize(
