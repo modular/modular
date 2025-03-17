@@ -955,9 +955,9 @@ struct DeviceFunction[
 
     @staticmethod
     fn _dump_q[
-        name: StringLiteral, val: Variant[Bool, Path, fn () capturing -> Path]
+        name: String, val: Variant[Bool, Path, fn () capturing -> Path]
     ]() -> (Bool, Variant[Bool, Path, fn () capturing -> Path]):
-        alias name_upper = get_string_literal[String(name).upper()]()
+        alias name_upper = get_string_literal[name.upper()]()
         alias env_var = "DUMP_GPU_" + name_upper
 
         @parameter
@@ -1635,7 +1635,7 @@ struct DeviceContext:
         mut self,
         device_id: Int = 0,
         *,
-        api: String = Self.device_api,
+        api: String = String(Self.device_api),
         buffer_cache_size: UInt = 0,
     ) raises:
         """Constructs a `DeviceContext` for the specified device.
@@ -3410,7 +3410,7 @@ struct DeviceContext:
 
     @staticmethod
     @always_inline
-    fn number_of_devices(*, api: String = Self.device_api) -> Int:
+    fn number_of_devices(*, api: String = String(Self.device_api)) -> Int:
         """Returns the number of devices available that support the specified API.
 
         This function queries the system for available devices that support the

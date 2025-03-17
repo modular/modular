@@ -26,7 +26,7 @@ from collections.string import StaticString
 
 @always_inline
 fn _get_gpu_target[
-    # TODO: Ideally this is an Optional[StringLiteral] but blocked by MOCO-1039
+    # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = DEFAULT_GPU_ARCH,
 ]() -> __mlir_type.`!kgen.target`:
     alias info = HardwareInfo.from_name[target_arch]() if target_arch else A100
@@ -49,9 +49,9 @@ fn _compile_code[
     func: func_type,
     /,
     *,
-    emission_kind: StringLiteral = "asm",
+    emission_kind: StaticString = "asm",
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
-    compile_options: StringLiteral = HardwareInfo.from_target[
+    compile_options: StaticString = HardwareInfo.from_target[
         target
     ]().compile_options,
 ]() -> Info[func_type, func]:
@@ -69,9 +69,9 @@ fn _compile_code_asm[
     func: func_type,
     /,
     *,
-    emission_kind: StringLiteral = "asm",
+    emission_kind: StaticString = "asm",
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
-    compile_options: StringLiteral = HardwareInfo.from_target[
+    compile_options: StaticString = HardwareInfo.from_target[
         target
     ]().compile_options,
 ]() -> StaticString:

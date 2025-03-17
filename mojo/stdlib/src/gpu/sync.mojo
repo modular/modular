@@ -615,7 +615,7 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
     """
 
     @parameter
-    fn get_asm() -> StringLiteral:
+    fn get_asm() -> String:
         alias base = "llvm.nvvm.cp.async.bulk.wait.group"
         if read:
             return base + ".read"

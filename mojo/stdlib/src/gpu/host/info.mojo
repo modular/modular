@@ -634,25 +634,25 @@ struct Info:
     characteristics.
     """
 
-    var name: StringLiteral
+    var name: StaticString
     """The model name of the GPU."""
 
     var vendor: Vendor
     """The vendor/manufacturer of the GPU (e.g., NVIDIA, AMD)."""
 
-    var api: StringLiteral
+    var api: StaticString
     """The graphics/compute API supported by the GPU (e.g., CUDA, ROCm)."""
 
-    var arch_name: StringLiteral
+    var arch_name: StaticString
     """The architecture name of the GPU (e.g., sm_80, gfx942)."""
 
-    var compile_options: StringLiteral
+    var compile_options: StaticString
     """Compiler options specific to this GPU architecture."""
 
     var compute: Float32
     """Compute capability version number for NVIDIA GPUs."""
 
-    var version: StringLiteral
+    var version: StaticString
     """Version string of the GPU architecture."""
 
     var sm_count: Int
@@ -685,7 +685,7 @@ struct Info:
     var register_allocation_unit_size: Int
     """Minimum allocation size for registers in bytes."""
 
-    var allocation_granularity: StringLiteral
+    var allocation_granularity: StaticString
     """Description of how resources are allocated on the GPU."""
 
     var max_registers_per_thread: Int

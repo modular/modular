@@ -42,7 +42,7 @@ struct ProfileBlock[enabled: Bool = False]:
         enabled: Whether profiling is enabled for this block.
     """
 
-    var name: StringLiteral
+    var name: StaticString
     """Name of the profiling block used for identification in timing output."""
 
     var loc: _SourceLocation
@@ -53,7 +53,7 @@ struct ProfileBlock[enabled: Bool = False]:
 
     @always_inline
     @implicit
-    fn __init__(out self, name: StringLiteral):
+    fn __init__(out self, name: StaticString):
         """Initialize a new ProfileBlock.
 
         Args:
@@ -89,6 +89,6 @@ struct ProfileBlock[enabled: Bool = False]:
 
         var end_time = perf_counter_ns()
 
-        _printf["@ %s %ld\n"](
-            self.name.unsafe_cstr_ptr(), self.start_time - end_time
+        _printf["@ %.*s %ld\n"](
+            len(self.name), self.name.unsafe_ptr(), self.start_time - end_time
         )

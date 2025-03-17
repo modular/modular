@@ -616,12 +616,12 @@ fn threadfence[scope: Scope = Scope.GPU]():
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_type_suffix[type: DType]() -> StringLiteral:
-    alias str = "u" + _int_to_str[bitwidthof[type]()]()
+fn _get_type_suffix[type: DType]() -> StaticString:
+    alias str = get_string_literal["u" + _int_to_str[bitwidthof[type]()]()]()
     return str
 
 
-fn _get_register_constraint[type: DType]() -> StringLiteral:
+fn _get_register_constraint[type: DType]() -> StaticString:
     if type is DType.bool:
         return "b"
     if type.is_half_float():
@@ -642,7 +642,7 @@ fn _get_register_constraint[type: DType]() -> StringLiteral:
     return "<<unknown_register_constraint>>"
 
 
-fn _get_pointer_constraint() -> StringLiteral:
+fn _get_pointer_constraint() -> StaticString:
     return _get_register_constraint[DType.index]()
 
 

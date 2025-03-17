@@ -46,7 +46,7 @@ alias _TraceType_MAX = 4
 fn _setup_category(
     name_category: fn (UInt32, UnsafePointer[UInt8]) -> NoneType,
     value: Int,
-    name: StringLiteral,
+    name: StaticString,
 ):
     name_category(value, name.unsafe_ptr())
 

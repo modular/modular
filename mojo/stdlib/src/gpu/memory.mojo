@@ -1839,7 +1839,7 @@ fn multimem_st[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_type_mnemonic[type: DType]() -> StringLiteral:
+fn _get_type_mnemonic[type: DType]() -> StaticString:
     """Returns the mnemonic string representation for a given DType.
 
     This internal utility function converts floating point DTypes into their
@@ -1857,7 +1857,7 @@ fn _get_type_mnemonic[type: DType]() -> StringLiteral:
     return "unknown type mnemonic"
 
 
-fn _int_to_str[val: Int]() -> StringLiteral:
+fn _int_to_str[val: Int]() -> StaticString:
     """Converts specific integer values to their string representation."""
 
     @parameter
