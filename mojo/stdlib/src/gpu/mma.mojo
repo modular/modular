@@ -15,6 +15,7 @@ from memory import UnsafePointer, bitcast
 
 from utils import StaticTuple
 from utils.index import Index
+from builtin.string_literal import get_string_literal_slice
 
 
 @always_inline
@@ -495,7 +496,7 @@ fn ld_matrix[
     alias base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
 
     @parameter
-    fn get_suffix() -> StringLiteral:
+    fn get_suffix() -> String:
         alias sfx = ".b16.p3"
         if transpose:
             return ".trans" + sfx
@@ -599,7 +600,7 @@ fn st_matrix[
     alias base = "stmatrix.sync.aligned"
 
     @parameter
-    fn get_suffix() -> StringLiteral:
+    fn get_suffix() -> String:
         alias sfx = ".m8n8"
         if transpose:
             return ".trans" + sfx
@@ -836,8 +837,8 @@ fn wgmma_async[
     a_type: DType,
     b_type: DType,
     accum_type: DType = c_dtype,
-    layout_a: StringLiteral = "row",
-    layout_b: StringLiteral = "col",
+    layout_a: StaticString = "row",
+    layout_b: StaticString = "col",
 ](
     mat_a_desc: WGMMADescriptor,
     mat_b_desc: WGMMADescriptor,
@@ -889,6 +890,9 @@ fn wgmma_async[
         mat_b_desc.desc.value
     )
 
+    alias layout_a_value = get_string_literal_slice[layout_a]().value
+    alias layout_b_value = get_string_literal_slice[layout_b]().value
+
     @parameter
     if a_type is DType.tensor_float32:
         return __mlir_op.`pop.nvvm.wgmma.mma_async`[
@@ -898,8 +902,8 @@ fn wgmma_async[
             type_a = __mlir_attr.`tf32`,
             type_b = __mlir_attr.`tf32`,
             type_c = __mlir_attr.`f32`,
-            layout_a = layout_a.value,
-            layout_b = layout_b.value,
+            layout_a=layout_a_value,
+            layout_b=layout_b_value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.bfloat16:
@@ -910,8 +914,8 @@ fn wgmma_async[
             type_a = __mlir_attr.`bf16`,
             type_b = __mlir_attr.`bf16`,
             type_c = __mlir_attr.`f32`,
-            layout_a = layout_a.value,
-            layout_b = layout_b.value,
+            layout_a=layout_a_value,
+            layout_b=layout_b_value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float16:
@@ -923,8 +927,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f16`,
                 type_b = __mlir_attr.`f16`,
                 type_c = __mlir_attr.`f16`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -935,8 +939,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f16`,
                 type_b = __mlir_attr.`f16`,
                 type_c = __mlir_attr.`f32`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float8_e4m3fn and b_type is DType.float8_e4m3fn:
@@ -948,8 +952,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f8E4M3`,
                 type_b = __mlir_attr.`f8E4M3`,
                 type_c = __mlir_attr.`f16`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -960,8 +964,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f8E4M3`,
                 type_b = __mlir_attr.`f8E4M3`,
                 type_c = __mlir_attr.`f32`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float8_e5m2 and b_type is DType.float8_e5m2:
@@ -973,8 +977,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f8E5M2`,
                 type_b = __mlir_attr.`f8E5M2`,
                 type_c = __mlir_attr.`f16`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -985,8 +989,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f8E5M2`,
                 type_b = __mlir_attr.`f8E5M2`,
                 type_c = __mlir_attr.`f32`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float8_e4m3fn and b_type is DType.float8_e5m2:
@@ -998,8 +1002,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f8E4M3`,
                 type_b = __mlir_attr.`f8E5M2`,
                 type_c = __mlir_attr.`f16`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -1010,8 +1014,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f8E4M3`,
                 type_b = __mlir_attr.`f8E5M2`,
                 type_c = __mlir_attr.`f32`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float8_e5m2 and b_type is DType.float8_e4m3fn:
@@ -1023,8 +1027,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f8E5M2`,
                 type_b = __mlir_attr.`f8E4M3`,
                 type_c = __mlir_attr.`f16`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -1035,8 +1039,8 @@ fn wgmma_async[
                 type_a = __mlir_attr.`f8E5M2`,
                 type_b = __mlir_attr.`f8E4M3`,
                 type_c = __mlir_attr.`f32`,
-                layout_a = layout_a.value,
-                layout_b = layout_b.value,
+                layout_a=layout_a_value,
+                layout_b=layout_b_value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.int8 and b_type is DType.int8:
@@ -1047,8 +1051,8 @@ fn wgmma_async[
             type_a = __mlir_attr.`si8`,
             type_b = __mlir_attr.`si8`,
             type_c = __mlir_attr.`si32`,
-            layout_a = layout_a.value,
-            layout_b = layout_b.value,
+            layout_a=layout_a_value,
+            layout_b=layout_b_value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.uint8 and b_type is DType.uint8:
@@ -1059,8 +1063,8 @@ fn wgmma_async[
             type_a = __mlir_attr.`ui8`,
             type_b = __mlir_attr.`ui8`,
             type_c = __mlir_attr.`si32`,
-            layout_a = layout_a.value,
-            layout_b = layout_b.value,
+            layout_a=layout_a_value,
+            layout_b=layout_b_value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.int8 and b_type is DType.uint8:
@@ -1071,8 +1075,8 @@ fn wgmma_async[
             type_a = __mlir_attr.`si8`,
             type_b = __mlir_attr.`ui8`,
             type_c = __mlir_attr.`si32`,
-            layout_a = layout_a.value,
-            layout_b = layout_b.value,
+            layout_a=layout_a_value,
+            layout_b=layout_b_value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.uint8 and b_type is DType.int8:
@@ -1083,8 +1087,8 @@ fn wgmma_async[
             type_a = __mlir_attr.`ui8`,
             type_b = __mlir_attr.`si8`,
             type_c = __mlir_attr.`si32`,
-            layout_a = layout_a.value,
-            layout_b = layout_b.value,
+            layout_a=layout_a_value,
+            layout_b=layout_b_value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     return c_reg
@@ -1104,8 +1108,8 @@ fn wgmma_async[
     a_type: DType,
     b_type: DType,
     accum_type: DType = c_dtype,
-    layout_a: StringLiteral = "row",
-    layout_b: StringLiteral = "col",
+    layout_a: StaticString = "row",
+    layout_b: StaticString = "col",
 ](
     mat_a_frag: SIMD[a_dtype, frag_a_width],
     mat_b_desc: WGMMADescriptor,
@@ -1489,15 +1493,15 @@ fn wgmma_async[
 
 @always_inline("nodebug")
 fn _str_iota[
-    count: Int, *, prefix: StringLiteral = "", sep: StringLiteral = ", "
-]() -> StringLiteral:
+    count: Int, *, prefix: StaticString = "", sep: StaticString = ", "
+]() -> String:
     alias s = _str_iota_impl[count, prefix=prefix, sep=sep]()
     return get_string_literal[s]()
 
 
 @always_inline("nodebug")
 fn _str_iota_impl[
-    count: Int, *, prefix: StringLiteral = "", sep: StringLiteral = ", "
+    count: Int, *, prefix: StaticString = "", sep: StaticString = ", "
 ]() -> String:
     var s = String("")
     for i in range(count):

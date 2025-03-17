@@ -561,7 +561,7 @@ struct Scope:
         return String("Scope(", self, ")")
 
     @always_inline("nodebug")
-    fn mnemonic(self) -> StringLiteral:
+    fn mnemonic(self) -> StaticString:
         """Returns the mnemonic string representation of the memory scope.
 
         Converts the memory scope level into a string mnemonic used by LLVM/NVVM
@@ -1065,7 +1065,7 @@ fn buffer_load[
     var src_wave_addr_offset: Int32 = 0
 
     @parameter
-    fn get_inst_name() -> StringLiteral:
+    fn get_inst_name() -> StaticString:
         @parameter
         if bytes == 1:
             return "llvm.amdgcn.raw.buffer.load.i8"
@@ -1121,7 +1121,7 @@ fn buffer_store[
     var src_wave_addr_offset: Int32 = 0
 
     @parameter
-    fn get_inst_name() -> StringLiteral:
+    fn get_inst_name() -> StaticString:
         @parameter
         if bytes == 1:
             return "llvm.amdgcn.raw.buffer.store.i8"

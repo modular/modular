@@ -20,6 +20,7 @@ achieve optimal memory access patterns and cache utilization.
 """
 
 from collections import OptionalReg
+from collections.string import StaticString
 from sys import alignof, bitwidthof, is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
 from sys._assembly import inlined_assembly
 from sys.intrinsics import _RegisterPackType
@@ -35,6 +36,7 @@ from utils.numerics import get_accum_type
 from utils import IndexList, StaticTuple
 from .intrinsics import Scope
 from ._utils import to_i16, to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
+from builtin.string_literal import get_string_literal_slice
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -152,7 +154,7 @@ struct CacheOperation:
         return self != other
 
     @always_inline
-    fn mnemonic(self) -> StringLiteral:
+    fn mnemonic(self) -> StaticString:
         """Returns the PTX mnemonic string for this cache operation.
 
         Converts the cache operation into its corresponding PTX assembly
@@ -287,7 +289,7 @@ struct CacheEviction:
         return self != other
 
     @always_inline
-    fn mnemonic(self) -> StringLiteral:
+    fn mnemonic(self) -> StaticString:
         """Returns the string mnemonic for this cache eviction policy.
 
         Converts the cache eviction policy into its corresponding string
@@ -487,10 +489,10 @@ struct Consistency:
         Returns:
             A string describing the consistency level.
         """
-        return self.mnemonic()
+        return String(self.mnemonic())
 
     @always_inline
-    fn mnemonic(self) -> StringLiteral:
+    fn mnemonic(self) -> StaticString:
         """Returns the mnemonic string for the consistency level.
 
         Returns:
@@ -605,10 +607,10 @@ struct ReduceOp:
         Returns:
             A string describing the reduction operation.
         """
-        return self.mnemonic()
+        return String(self.mnemonic())
 
     @always_inline
-    fn mnemonic(self) -> StringLiteral:
+    fn mnemonic(self) -> StaticString:
         """Returns the mnemonic string for the reduction operation.
 
         Returns:
@@ -915,7 +917,7 @@ fn external_memory[
     *,
     address_space: _AddressSpace,
     alignment: Int,
-    name: StringLiteral = "extern_ptr_syml",
+    name: StaticString = "extern_ptr_syml",
 ]() -> UnsafePointer[type, address_space=address_space, alignment=alignment]:
     """Gets a pointer to dynamically allocated external memory.
 
@@ -949,7 +951,7 @@ fn external_memory[
                 address_space=address_space,
                 alignment=alignment,
             ]._mlir_type,
-            name = name.value,
+            name = get_string_literal_slice[name]().value,
             alignment = alignment.value,
         ]()
     )
@@ -1581,7 +1583,7 @@ fn _get_multimem_ld_reduce_asm[
     consistency: Consistency,
     accum_type: DType,
     output_width: Int,
-]() -> StringLiteral:
+]() -> String:
     """Generates the assembly instruction string for multimem load-reduce operations.
 
     This internal function constructs the appropriate NVIDIA PTX assembly instruction
@@ -1628,7 +1630,6 @@ fn _get_multimem_ld_reduce_asm[
         ".acc::" + _get_type_mnemonic[accum_type]()
     ) if accum_type is not type else ""
     alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + type_mnemonic
-
     return asm
 
 
@@ -1726,7 +1727,7 @@ fn _get_multimem_st_asm[
     scope: Scope,
     consistency: Consistency,
     width: Int = 1,
-]() -> StringLiteral:
+]() -> String:
     constrained[_is_sm_9x(), "multimem is only supported on SM90+ GPUs"]()
     constrained[type.is_floating_point(), "type must be floating point"]()
     constrained[
@@ -1745,7 +1746,6 @@ fn _get_multimem_st_asm[
         "x" + _int_to_str[width]() if width > 1 else ""
     )
     alias asm = "multimem.st." + consistency.mnemonic() + "." + scope.mnemonic() + ss + vec + type_mnemonic
-
     return asm
 
 

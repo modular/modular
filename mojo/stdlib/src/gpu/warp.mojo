@@ -25,6 +25,7 @@ integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
 from sys import is_nvidia_gpu, llvm_intrinsic
+from collections.string import StringSlice
 
 from bit import log2_floor
 from gpu import lane_id
@@ -48,7 +49,7 @@ alias _WIDTH_MASK_SHUFFLE_UP = 0
 
 @always_inline
 fn _shuffle[
-    mnemonic: StringLiteral,
+    mnemonic: StringSlice,
     type: DType,
     simd_width: Int,
     *,
