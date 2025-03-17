@@ -195,7 +195,7 @@ fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
     else:
         constrained[
             emission_kind == "asm",
-            String("invalid emission kind '") + emission_kind + "'",
+            "invalid emission kind '" + emission_kind + "'",
         ]()
 
         return _EMISSION_KIND_ASM
