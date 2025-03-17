@@ -136,6 +136,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     kv_matmul_ragged_continuous_batching,
+    k_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized,
     generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged,
 )
@@ -7757,6 +7758,46 @@ struct Struct_kv_matmul_ragged_continuous_batching:
         ctx: DeviceContextPtr,
     ) raises:
         kv_matmul_ragged_continuous_batching[target=target](
+            managed_tensor_slice_to_ndbuffer(hidden_state),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(weight),
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Matmul K cache
+#
+# Expected kernel name format:
+# mo.k_matmul.ragged.<continuous_batching/paged>
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.k_matmul.ragged.paged")
+struct Struct_k_matmul_ragged_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
+    ](
+        hidden_state: InputTensor[type=type, rank=2],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        weight: InputTensor[type=type, rank=2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        k_matmul_ragged_paged[target=target](
             managed_tensor_slice_to_ndbuffer(hidden_state),
             managed_tensor_slice_to_ndbuffer(input_row_offsets),
             managed_tensor_slice_to_ndbuffer(weight),
