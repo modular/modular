@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 from time import perf_counter_ns, sleep, time_function
+from collections.string import StringSlice
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.intrinsics import *
@@ -17,7 +18,7 @@ fn clock_functions():
 
 
 @always_inline
-fn _verify_clock_functions(asm: String) raises -> None:
+fn _verify_clock_functions(asm: StringSlice) raises -> None:
     assert_false("mov.u32" in asm)
     assert_true("mov.u64" in asm)
 
@@ -50,7 +51,7 @@ fn time_functions(some_value: Int) -> Int:
 
 
 @always_inline
-fn _verify_time_functions(asm: String) raises -> None:
+fn _verify_time_functions(asm: StringSlice) raises -> None:
     assert_true("mov.u64" in asm)
     assert_true("add.s64" in asm)
 

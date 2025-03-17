@@ -160,7 +160,7 @@ fn erf_kernel(buf: UnsafePointer[Float32], len: Int):
 
 
 @always_inline
-fn _verify_erf_kernel(asm: String) raises -> None:
+fn _verify_erf_kernel(asm: StringSlice) raises -> None:
     assert_true("erf_kernel" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.y" in asm)
