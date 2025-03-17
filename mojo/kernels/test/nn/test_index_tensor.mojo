@@ -14,11 +14,14 @@ from nn.index_tensor import (
     _index_tensor_1d,
     _index_tensor_impl,
     index_tensor_shape,
+    advanced_indexing_getitem,
+    advanced_indexing_getitem_shape,
+    advanced_indexing_setitem_inplace,
 )
 from collections import InlineArray
 from runtime.asyncrt import DeviceContextPtr
 
-from utils import IndexList
+from utils import IndexList, StaticTuple
 from utils.index import Index
 
 
@@ -483,8 +486,181 @@ fn test_index_tensor_llama2_mistral() raises:
     print("Results match")
 
 
+# CHECK-LABEL: test_advanced_indexing_getitem
+# Matches equivalent numpy: input[:, :, index_a, index_b]
+# CHECK{LITERAL}: NDBuffer([[[[1, 8, 15],
+# CHECK{LITERAL}: [22, 24, 1]],
+# CHECK{LITERAL}: [[31, 38, 45],
+# CHECK{LITERAL}: [52, 54, 31]],
+# CHECK{LITERAL}: [[61, 68, 75],
+# CHECK{LITERAL}: [82, 84, 61]],
+# CHECK{LITERAL}: [[91, 98, 105],
+# CHECK{LITERAL}: [112, 114, 91]],
+# CHECK{LITERAL}: [[121, 128, 135],
+# CHECK{LITERAL}: [142, 144, 121]],
+# CHECK{LITERAL}: [[151, 158, 165],
+# CHECK{LITERAL}: [172, 174, 151]]]], dtype=int32, shape=2x3x2x3)
+fn test_advanced_indexing_getitem() raises:
+    print("== test_advanced_indexing_getitem")
+
+    # Initialize input with sequential data for test purposes.
+    alias input_type = DType.int32
+    alias input_rank = 4
+    alias input_shape = IndexList[input_rank](2, 3, 5, 6)
+    var input_stack = InlineArray[
+        Scalar[input_type], Int(input_shape.flattened_length())
+    ](uninitialized=True)
+    var input_buffer = NDBuffer[input_type, input_rank](
+        input_stack.unsafe_ptr(), input_shape
+    )
+    for i in range(input_shape.flattened_length()):
+        input_buffer.data[i] = i
+
+    # Create tensors for indexing in a somewhat predictable pattern
+    alias index_rank = 2
+    alias index_shape = IndexList[index_rank](2, 3)
+    alias index_type = DType.uint64
+    var a_stack = InlineArray[
+        Scalar[index_type], Int(index_shape.flattened_length())
+    ](uninitialized=True)
+    var index_a = NDBuffer[index_type, index_rank](
+        a_stack.unsafe_ptr(), index_shape
+    )
+    var b_stack = InlineArray[
+        Scalar[index_type], Int(index_shape.flattened_length())
+    ](uninitialized=True)
+    var index_b = NDBuffer[index_type, index_rank](
+        b_stack.unsafe_ptr(), index_shape
+    )
+    for i in range(index_shape.flattened_length()):
+        index_a.data[i] = i % 5
+        index_b.data[i] = (i + 1) % 5
+
+    # Create output tensor
+    alias output_rank = input_rank + index_rank - num_index_tensors
+    alias ref_shape = IndexList[output_rank](2, 3, 2, 3)
+    alias start_axis = 2
+    alias num_index_tensors = 2
+    alias output_shape = advanced_indexing_getitem_shape[
+        start_axis=start_axis, num_index_tensors=num_index_tensors
+    ](input_shape, index_shape)
+    var output_data_stack = InlineArray[
+        Scalar[input_type], output_shape.flattened_length()
+    ](uninitialized=True)
+    var output_data_buffer = NDBuffer[input_type, output_rank](
+        output_data_stack.unsafe_ptr(), output_shape
+    )
+
+    advanced_indexing_getitem[
+        input_rank=input_rank,
+        index_rank=index_rank,
+        start_axis=start_axis,
+        target="cpu",
+        single_thread_blocking_override=False,
+        trace_description="test_advanced_indexing_getitem",
+    ](
+        input_buffer,
+        StaticTuple[NDBuffer[index_type, index_rank], 2](index_a, index_b),
+        output_data_buffer,
+        DeviceContextPtr(),
+    )
+
+    # Print to filecheck
+    print(output_data_buffer)
+
+
+# CHECK-LABEL: test_advanced_indexing_setitem_inplace
+# Matches equivalent numpy: input[:, :, index_a, index_b] = updates
+# CHECK{LITERAL}: NDBuffer([[[[0, 1, 0, 0],
+# CHECK{LITERAL}: [0, 0, 2, 0],
+# CHECK{LITERAL}: [0, 0, 0, 3],
+# CHECK{LITERAL}: [4, 0, 0, 0]],
+# CHECK{LITERAL}: [[0, 5, 0, 0],
+# CHECK{LITERAL}: [0, 0, 6, 0],
+# CHECK{LITERAL}: [0, 0, 0, 7],
+# CHECK{LITERAL}: [8, 0, 0, 0]],
+# CHECK{LITERAL}: [[0, 9, 0, 0],
+# CHECK{LITERAL}: [0, 0, 10, 0],
+# CHECK{LITERAL}: [0, 0, 0, 11],
+# CHECK{LITERAL}: [12, 0, 0, 0]],
+# CHECK{LITERAL}: [[0, 13, 0, 0],
+# CHECK{LITERAL}: [0, 0, 14, 0],
+# CHECK{LITERAL}: [0, 0, 0, 15],
+# CHECK{LITERAL}: [16, 0, 0, 0]]]], dtype=int32, shape=2x2x4x4)
+fn test_advanced_indexing_setitem_inplace() raises:
+    print("== test_advanced_indexing_setitem_inplace")
+
+    # Create input vector
+    alias input_type = DType.int32
+    alias input_rank = 4
+    alias input_shape = IndexList[input_rank](2, 2, 4, 4)
+    var input_stack = InlineArray[
+        Scalar[input_type], Int(input_shape.flattened_length())
+    ](uninitialized=True)
+    var input_buffer = NDBuffer[input_type, input_rank](
+        input_stack.unsafe_ptr(), input_shape
+    )
+
+    # Initialize with all zeros to make it obvious where we write to
+    for i in range(input_shape.flattened_length()):
+        input_buffer.data[i] = 0
+
+    # Create indexing tensors, ensure no pair of indices point to the same
+    # location in `input` to avoid nondeterministic behavior.
+    alias index_rank = 2
+    alias index_shape = IndexList[index_rank](2, 2)
+    alias index_type = DType.uint64
+
+    var a_stack = InlineArray[
+        Scalar[index_type], Int(index_shape.flattened_length())
+    ](uninitialized=True)
+    var index_a = NDBuffer[index_type, index_rank](
+        a_stack.unsafe_ptr(), index_shape
+    )
+    var b_stack = InlineArray[
+        Scalar[index_type], Int(index_shape.flattened_length())
+    ](uninitialized=True)
+    var index_b = NDBuffer[index_type, index_rank](
+        b_stack.unsafe_ptr(), index_shape
+    )
+    for i in range(index_shape.flattened_length()):
+        index_a.data[i] = i % 4
+        index_b.data[i] = (i + 1) % 4
+
+    # Create the updates list and set it sequential data to make it easy to read
+    alias updates_rank = 4
+    alias updates_shape = IndexList[updates_rank](2, 2, 2, 2)
+    var updates_stack = InlineArray[
+        Scalar[input_type], Int(updates_shape.flattened_length())
+    ](uninitialized=True)
+    var updates = NDBuffer[input_type, updates_rank](
+        updates_stack.unsafe_ptr(), updates_shape
+    )
+    for i in range(updates_shape.flattened_length()):
+        updates.data[i] = 1 + i
+
+    alias start_axis = 2
+    advanced_indexing_setitem_inplace[
+        input_rank=input_rank,
+        index_rank=index_rank,
+        start_axis=start_axis,
+        target="cpu",
+        single_thread_blocking_override=False,
+        trace_description="test_advanced_indexing_setitem_inplace",
+    ](
+        input_buffer,
+        updates,
+        StaticTuple[NDBuffer[index_type, index_rank], 2](index_a, index_b),
+        DeviceContextPtr(),
+    )
+
+    print(input_buffer)
+
+
 def main():
     test_index_tensor_DLRM()
     test_index_tensor_DLRM_batch()
     test_index_tensor_CLIPVIT()
     test_index_tensor_llama2_mistral()
+    test_advanced_indexing_getitem()
+    test_advanced_indexing_setitem_inplace()

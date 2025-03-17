@@ -20,7 +20,7 @@ from memory import UnsafePointer, memcpy, memset_zero
 from nn.gather_scatter import normalize_neg_index
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
-from utils import Index, IndexList
+from utils import Index, IndexList, StaticTuple
 
 
 @always_inline
@@ -395,3 +395,326 @@ fn _index_tensor_impl[
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output.get_shape(), cuda_ctx)
+
+
+# ===-----------------------------------------------------------------------===#
+# Advanced Indexing
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn advanced_indexing_getitem[
+    input_rank: Int,
+    index_rank: Int,
+    input_type: DType,
+    index_type: DType,
+    num_index_tensors: Int, //,
+    start_axis: Int,
+    target: StringLiteral,
+    single_thread_blocking_override: Bool,
+    trace_description: StringLiteral,
+](
+    input_tensor: NDBuffer[input_type, input_rank],
+    indices: StaticTuple[NDBuffer[index_type, index_rank], num_index_tensors],
+    out_tensor: NDBuffer[
+        input_type, input_rank + index_rank - num_index_tensors
+    ],
+    ctx: DeviceContextPtr,
+) raises:
+    """Implement basic numpy-style advanced indexing.
+
+    This is designed to be fused with other view-producing operations to
+    implement full numpy-indexing semantics.
+
+    This assumes the dimensions in `input_tensor` not indexed by index tensors
+    are ":", ie selecting all indices along the slice. For example in numpy:
+
+    ```
+    # rank(indices1) == 3
+    # rank(indices2) == 3
+    out_tensor = input_tensor[:, :, :, indices1, indices2, :, :]
+    ```
+
+    We calculate the following for all valid valued indexing variables:
+
+    ```
+    out_tensor[a, b, c, i, j, k, d, e] = input_tensor[
+        a, b, c,
+        indices1[i, j, k],
+        indices2[i, j, k],
+        d, e
+    ]
+    ```
+
+    In this example `start_axis = 3` and `num_index_tensors = 2`.
+
+    Parameters:
+        input_rank: The rank of the input tensor.
+        index_rank: The rank of the indexing tensors.
+        input_type: The dtype of the input tensor.
+        index_type: The dtype of the indexing tensors.
+        num_index_tensors: The number of indexing tensors.
+        start_axis: The first dimension in input where the indexing tensors
+            are applied. It is assumed the indexing tensors are applied in
+            consecutive dimensions.
+        target: The target architecture to operation on.
+        single_thread_blocking_override: If True, then the operation is run
+            synchronously using a single thread.
+        trace_description: For profiling, the trace name the operation will
+            appear under.
+
+    Args:
+        input_tensor: The input tensor being indexed into.
+        indices: The set of indexing tensors to apply to input.
+        out_tensor: The output tensor to write to.
+        ctx: The DeviceContextPtr as prepared by the graph compiler.
+
+    TODO(GEX-1951): Support boolean tensor mask support
+    TODO(GEX-1952): Support non-contiguous indexing tensor case
+    TODO(GEX-1953): Support fusion (especially view-fusion)
+    """
+    # Do not support boolean masks at this time.
+    constrained[index_type != DType.bool]()
+
+    @parameter
+    @always_inline
+    fn elementwise_fn_wrapper[
+        width: Int, out_tensor_rank: Int
+    ](output_index: IndexList[out_tensor_rank]) capturing:
+        input_index = IndexList[input_tensor.rank]()
+
+        # Find the associated output index from input index
+        @parameter
+        for input_dim in range(input_rank):
+
+            @parameter
+            if input_dim < start_axis:
+                input_index[input_dim] = output_index[input_dim]
+            elif input_dim >= start_axis + num_index_tensors:
+                input_index[input_dim] = output_index[
+                    input_dim - num_index_tensors + index_rank
+                ]
+            else:
+                alias index_tensor_offset = input_dim - start_axis
+                var index_tensor_indices = IndexList[index_rank]()
+
+                @parameter
+                for offset in range(index_rank):
+                    index_tensor_indices[offset] = output_index[
+                        offset + start_axis
+                    ]
+                input_index[input_dim] = Int(
+                    indices[index_tensor_offset][index_tensor_indices]
+                )
+
+        out_tensor.store[width=width](
+            rebind[IndexList[out_tensor.rank]](output_index),
+            input_tensor.load[width=width](input_index),
+        )
+
+    # We can do further optimization, e.g. use a larger
+    # simd_width in certain scenarios though this is future work.
+    elementwise[
+        elementwise_fn_wrapper,
+        1,
+        use_blocking_impl=single_thread_blocking_override,
+        target=target,
+        _trace_description=trace_description,
+    ](out_tensor.get_shape(), ctx)
+
+
+@always_inline
+fn advanced_indexing_getitem_shape[
+    input_rank: Int,
+    index_rank: Int, //,
+    start_axis: Int,
+    num_index_tensors: Int,
+](
+    input_shape: IndexList[input_rank],
+    index_shape: IndexList[index_rank],
+) -> IndexList[input_rank + index_rank - num_index_tensors]:
+    """Calculate the output shape from advanced indexing.
+
+    Parameters:
+        input_rank: The rank of the input tensor.
+        index_rank: The rank of the indexing tensors.
+        start_axis: The first dimension in input where the indexing tensors
+            are applied. It is assumed the indexing tensors are applied in
+            consecutive dimensions.
+        num_index_tensors: The number of indexing tensors.
+
+    Args:
+        input_shape: The shape of the input tensor in the operation.
+        index_shape: The shape of the indexing tensors in the operation.
+    """
+    alias output_rank = input_rank + index_rank - num_index_tensors
+    var answer = IndexList[output_rank]()
+
+    @parameter
+    for i in range(output_rank):
+        if i < start_axis:
+            answer[i] = input_shape[i]
+        elif i >= start_axis + index_rank:
+            answer[i] = input_shape[i - index_rank + num_index_tensors]
+        else:
+            answer[i] = index_shape[i - start_axis]
+
+    return answer
+
+
+@always_inline
+fn advanced_indexing_setitem_inplace[
+    input_rank: Int,
+    index_rank: Int,
+    updates_rank: Int,
+    input_type: DType,
+    index_type: DType,
+    num_index_tensors: Int, //,
+    start_axis: Int,
+    target: StringLiteral,
+    single_thread_blocking_override: Bool,
+    trace_description: StringLiteral,
+](
+    input_tensor: NDBuffer[type=input_type, rank=input_rank],
+    updates: NDBuffer[type=input_type, rank=updates_rank],
+    indices: StaticTuple[NDBuffer[index_type, index_rank], num_index_tensors],
+    ctx: DeviceContextPtr,
+) raises:
+    """Implement basic numpy-style advanced indexing with assignment.
+
+    This is designed to be fused with other view-producing operations to
+    implement full numpy-indexing semantics.
+
+    This assumes the dimensions in `input_tensor` not indexed by index tensors
+    are ":", ie selecting all indices along the slice. For example in numpy:
+
+    ```
+    # rank(indices1) == 2
+    # rank(indices2) == 2
+    # rank(updates) == 2
+    input_tensor[:, :, :, indices1, indices2, :, :] = updates
+    ```
+
+    We calculate the following for all valid valued indexing variables:
+
+    ```
+    input_tensor[
+        a, b, c,
+        indices1[i, j],
+        indices2[i, j],
+        d, e
+    ] = updates[i, j]
+    ```
+
+    In this example `start_axis = 3` and `num_index_tensors = 2`.
+
+    In terms of implementation details, our strategy is to iterate over
+    all indices over a common iteration range. The idea is we can map
+    indices in this range to the write location in `input_tensor` as well
+    as the data location in `updates`. An update can illustrate how this is
+    possible best:
+
+    Imagine the `input_tensor` shape is [A, B, C, D] and we have indexing
+    tensors I1 and I2 with shape [M, N, K]. Assume I1 and I2 are applied
+    to dimensions 1 and 2.
+
+    I claim an appropriate common iteration range is then (A, M, N, K, D).
+    Note we expect `updates` to be the shape [A, M, N, K, D]. We will show
+    this by providing the mappings into `updates` and `input_tensor`:
+
+    Consider an arbitrary set of indices in this range (a, m, n, k, d):
+        - The index into `updates` is (a, m, n, k, d).
+        - The index into `input_tensor` is (a, I1[m, n, k], I2[m, n, k], d).
+
+    Parameters:
+        input_rank: The rank of the input tensor.
+        index_rank: The rank of the indexing tensors.
+        updates_rank: The rank of the updates tensor.
+        input_type: The dtype of the input tensor.
+        index_type: The dtype of the indexing tensors.
+        num_index_tensors: The number of indexing tensors.
+        start_axis: The first dimension in input where the indexing tensors
+            are applied. It is assumed the indexing tensors are applied in
+            consecutive dimensions.
+        target: The target architecture to operation on.
+        single_thread_blocking_override: If True, then the operation is run
+            synchronously using a single thread.
+        trace_description: For profiling, the trace name the operation will
+            appear under.
+
+    Args:
+        input_tensor: The input tensor being indexed into and modified in-place.
+        updates: The tensor containing updates for the indexed slice.
+        indices: The set of indexing tensors to apply to input.
+        ctx: The DeviceContextPtr as prepared by the graph compiler.
+
+    TODO(GEX-1951): Support boolean tensor mask support
+    TODO(GEX-1952): Support non-contiguous indexing tensor case
+    TODO(GEX-1953): Support fusion (especially view-fusion)
+    TODO(GEX-1954): Unify getitem and setitem using generic views.
+                    (Requires non-strided view functions).
+    """
+
+    # First calculate
+    alias iteration_rank = input_rank + index_rank - num_index_tensors
+    constrained[iteration_rank == updates_rank]()
+    var iteration_shape = IndexList[iteration_rank]()
+
+    # Find the common iteration space
+    @parameter
+    for i in range(iteration_rank):
+
+        @parameter
+        if i < start_axis:
+            iteration_shape[i] = input_tensor.get_shape()[i]
+        elif i >= start_axis + index_rank:
+            iteration_shape[i] = input_tensor.get_shape()[
+                i - index_rank + num_index_tensors
+            ]
+        else:
+            iteration_shape[i] = indices[0].get_shape()[i - start_axis]
+
+    @parameter
+    @always_inline
+    fn elementwise_fn_wrapper[
+        width: Int, iteration_rank: Int
+    ](iteration_indices: IndexList[iteration_rank]) capturing:
+        var index_tensor_indices = IndexList[index_rank]()
+
+        # Find the index into the indexing tensors from the common index
+        @parameter
+        for i in range(index_rank):
+            index_tensor_indices[i] = iteration_indices[i + start_axis]
+
+        # Find the index into the inputs from the common index
+        var input_tensor_indices = IndexList[input_rank]()
+
+        @parameter
+        for i in range(input_rank):
+
+            @parameter
+            if i < start_axis:
+                input_tensor_indices[i] = iteration_indices[i]
+            elif i >= start_axis + num_index_tensors:
+                input_tensor_indices[i] = iteration_indices[
+                    i - num_index_tensors + index_rank
+                ]
+            else:
+                alias index_tensor_offset = i - start_axis
+                input_tensor_indices[i] = Int(
+                    indices[index_tensor_offset][index_tensor_indices]
+                )
+
+        input_tensor.store[width=width](
+            input_tensor_indices, updates.load[width=width](iteration_indices)
+        )
+
+    # We can do further optimization, e.g. use a larger
+    # simd_width in certain scenarios though this is future work.
+    elementwise[
+        elementwise_fn_wrapper,
+        1,
+        use_blocking_impl=single_thread_blocking_override,
+        target=target,
+        _trace_description=trace_description,
+    ](iteration_shape, ctx)
