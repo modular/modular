@@ -958,6 +958,183 @@ fn _matmul_kv_cache_ragged_impl[
 
 
 # ===-----------------------------------------------------------------------===#
+# Unfused K cache matmul (ragged)
+# ===-----------------------------------------------------------------------===#
+
+
+fn k_matmul_ragged_paged[
+    type: DType,
+    num_heads: Int,
+    head_dim: Int,
+    page_size: Int, //,
+    target: StaticString,
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        page_size,
+    ],
+    layer_idx: UInt32,
+    ctx: DeviceContextPtr,
+) raises:
+    """Performs a matmul, writing the output into a mutable PagedKVCacheCollection object.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("weight", weight),
+            "layer_idx=" + String(layer_idx),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.k_matmul.ragged.paged.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _matmul_k_cache_ragged[target=target](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@always_inline
+fn _matmul_k_cache_ragged[
+    type: DType, //,
+    *,
+    target: StaticString,
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    context: DeviceContextPtr,
+) raises:
+    """Helper for performing matmul with custom PagedKVCacheCollection types.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size)
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        context: Pointer containing the runtime context for the target device.
+    """
+    var cuda_ctx: Optional[DeviceContext] = None
+    layer_idx_cast = Int(layer_idx)
+    k_cache = kv_collection.get_key_cache(layer_idx_cast)
+
+    @parameter
+    if is_gpu[target]():
+        cuda_ctx = context.get_device_context()
+
+    _matmul_k_cache_ragged_impl[target=target](
+        hidden_state,
+        input_row_offsets,
+        weight,
+        k_cache,
+        cuda_ctx,
+    )
+
+
+@always_inline
+fn _matmul_k_cache_ragged_impl[
+    type: DType,
+    cache_t: KVCacheT, //,
+    *,
+    target: StaticString,
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    k_cache: cache_t,
+    ctx: Optional[DeviceContext],
+) raises:
+    """Helper for performing matmul with custom KVCacheT types.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size)
+        k_cache: The historical KVCacheT for keys, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        ctx: Pointer containing the runtime context for the target device.
+    """
+    if hidden_state.num_elements() == 0:
+        # Nothing to do.
+        return
+
+    alias kv_params = cache_t.kv_params
+    alias N: UInt = weight.shape.get[0]()
+    alias K: UInt = weight.shape.get[1]()
+
+    batch_size = input_row_offsets.dim[0]() - 1
+
+    @parameter
+    @__copy_capture(batch_size)
+    @always_inline
+    fn write_to_cache[
+        type_: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[type_, width],):
+        alias kv_type = cache_t.type
+
+        constrained[
+            kv_type == type_,
+            "Mismatch in type between hidden state and KV tensors",
+        ]()
+
+        # Token index in the "ragged" combined sequence dimension.
+        global_token_idx = idx[0]
+
+        batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+
+        h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
+
+        cache_length = k_cache.cache_length(batch_idx)
+        cache_token_idx = token_idx + cache_length
+        k_cache.store(
+            batch_idx,
+            h_idx,
+            cache_token_idx,
+            hd_idx,
+            rebind[SIMD[kv_type, width]](val),
+        )
+
+    _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
+        hidden_state, weight, ctx
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # Unfused gguf quantized QKV cache matmul (ragged)
 # ===-----------------------------------------------------------------------===#
 
