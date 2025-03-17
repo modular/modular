@@ -8,7 +8,7 @@ kgen.func export @kernel() {
 
 // CHECK: void @kernel_grid_constant
 kgen.func export @kernel_grid_constant(%0: !kgen.pointer<none> read_mem, %1: !kgen.pointer<none> read_mem) attributes {
-  LLVMArgMetadata = [{}, {nvvm.grid_constant = unit}]
+  LLVMMetadata = { nvvm.grid_constant = #pop.array<1> : !pop.array<1, i32> }
 } {
   kgen.return
 }
