@@ -456,6 +456,70 @@ def matmul_kv_cache_ragged(
     )
 
 
+def matmul_k_cache_ragged(
+    kv_params: KVCacheParams,
+    hidden_states: TensorValue,
+    input_row_offsets: TensorValue,
+    weight: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: int | np.integer,
+) -> None:
+    """Computes key projections with ragged input.
+
+    `hidden_states` and `input_row_offsets` are used together to
+    implement the ragged tensor.
+    `input_row_offsets` indicates where each batch starts and ends in `input`
+    """
+    if hidden_states.dtype != weight.dtype:
+        msg = (
+            "expected hidden_states and weight to have the same dtype, but got"
+            f" {hidden_states.dtype} and {weight.dtype}, respectively."
+        )
+        raise ValueError(msg)
+
+    hidden_states_rank_expected = 2
+    if hidden_states.rank != hidden_states_rank_expected:
+        msg = (
+            "expected hidden_states to have rank "
+            f"{hidden_states_rank_expected}, was {hidden_states.rank}"
+        )
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = (
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+    }
+    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        assert kv_params.page_size is not None
+        parameters["page_size"] = kv_params.page_size
+
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    op_name = f"mo.k_matmul.ragged.{cache_strategy_str}"
+
+    ops.inplace_custom(
+        name=op_name,
+        values=[
+            hidden_states,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            ops.constant(layer_idx, DType.uint32),
+        ],
+        parameters=parameters,
+    )
+
+
 def fused_qk_ragged_rope(
     kv_params: KVCacheParams,
     input: TensorValue,
