@@ -30,7 +30,7 @@ fn api() -> String:
 
         @parameter
         if api == "gpu":
-            return DeviceContext.device_api
+            return String(DeviceContext.device_api)
         return api
     return "default"
 
