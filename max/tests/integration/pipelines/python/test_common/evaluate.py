@@ -115,7 +115,11 @@ async def run_model_async(
             print(
                 "Output:",
                 await tokenizer.decode(
-                    context, [v["next_token"] for v in values[curr_req_id]]
+                    context,
+                    np.array(
+                        [v["next_token"] for v in values[curr_req_id]],
+                        dtype=np.int64,
+                    ),
                 ),
             )
         model.kv_manager.release(context.cache_seq_id)
