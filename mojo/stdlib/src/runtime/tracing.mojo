@@ -340,7 +340,7 @@ struct Trace[
             if target:
                 if self.detail:
                     self.detail += ";"
-                self.detail += "target=" + String(target.value())
+                self.detail += "target=" + target.value()
             self.int_payload = task_id
         else:
             self.name = StaticString("")
@@ -480,10 +480,9 @@ struct Trace[
 
     @always_inline
     fn _get_name_as_str(self) -> String:
-        message = String(self.name[StaticString]) if self.name.isa[
+        return String(self.name[StaticString]) if self.name.isa[
             StaticString
         ]() else self.name[String]
-        return message
 
     # WAR: passing detail_fn to __init__ causes internal compiler crash
     @staticmethod
