@@ -1044,14 +1044,21 @@ def swish_glu(
 
 def rms_norm_key_cache(
     kv_params: KVCacheParams,
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: ContinuousBatchingKVCacheCollection | PagedKVCacheCollection,
     gamma: TensorValue,
     epsilon: float | np.floating,
     layer_idx: int | np.integer,
     total_seq_len: Dim,
     input_row_offsets: TensorValue,
+    rms_norm_cols: Optional[int] = None,
 ) -> None:
     """Computes RMSNorm on the _new_ entries in the KVCache.
+
+    This function applies RMSNorm to either all dimensions or a subset of
+    dimensions in each head of the key cache. The size of the gamma tensor
+    determines how many dimensions will be normalized. If gamma's size doesn't
+    match head_dim, rms_norm_cols must be explicitly specified to confirm the
+    intention to normalize only a subset of dimensions.
 
     Currently, the KVCacheT class itself isn't aware of the new cache entries
     until cache length increment, which happens after model forward.
@@ -1071,6 +1078,26 @@ def rms_norm_key_cache(
         msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         raise ValueError(msg)
 
+    if gamma.shape[0] != kv_params.head_dim:
+        if rms_norm_cols is None:
+            msg = (
+                "Size of gamma doesn't match head_dim. Please pass rms_norm_cols "
+                "explicitly if you intend to apply RMSNorm to only a subset of "
+                "head dimensions"
+            )
+            raise ValueError(msg)
+        elif rms_norm_cols != gamma.shape[0]:
+            msg = f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
+            raise ValueError(msg)
+
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+    }
+    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        assert kv_params.page_size is not None
+        parameters["page_size"] = kv_params.page_size
+
     ops.inplace_custom(
         op_name,
         values=[
@@ -1081,8 +1108,5 @@ def rms_norm_key_cache(
             ops.cast(TensorValue.from_dim(total_seq_len), DType.uint32),
             input_row_offsets,
         ],
-        parameters={
-            "num_heads": kv_params.n_kv_heads_per_device,
-            "head_dim": kv_params.head_dim,
-        },
+        parameters=parameters,
     )
