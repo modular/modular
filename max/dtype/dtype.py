@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Data types for tensors in MAX Engine."""
 
 from __future__ import annotations
 
