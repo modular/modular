@@ -882,7 +882,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
             return entry_value^.reap_value()
         raise "KeyError"
 
-    fn popitem(mut self) raises -> DictEntry[K, V]:
+    fn popitem(mut self, out ret: DictEntry[K, V]) raises:
         """Remove and return a (key, value) pair from the dictionary. Pairs are returned in LIFO order.
         popitem() is useful to destructively iterate over a dictionary, as often used in set algorithms.
         If the dictionary is empty, calling popitem() raises a KeyError.
@@ -896,17 +896,23 @@ struct Dict[K: KeyElement, V: CollectionElement](
             "KeyError" if the dictionary is empty.
         """
 
-        var key = Optional[K](None)
-        var val = Optional[V](None)
+        var tmp_iter = reversed(self.items())
+        if tmp_iter.__has_next__():
+            var ptr = tmp_iter.__next__()
+            tmp_iter^.__del__()
 
-        for item in reversed(self.items()):
-            key = Optional(item[].key)
-            val = Optional(item[].value)
-            break
-
-        if key:
-            _ = self.pop(key.value())
-            return DictEntry[K, V](key.value(), val.value())
+            var found: Bool
+            var slot: UInt64
+            var index: Int
+            found, slot, index = self._find_index(ptr[].hash, ptr[].key)
+            if found:
+                self._set_index(slot, Self.REMOVED)
+                var entry = Pointer.address_of(self._entries[index])
+                debug_assert(entry[].__bool__(), "entry in index must be full")
+                self.size -= 1
+                ret = entry[].unsafe_take()
+                debug_assert(not entry[].__bool__(), "entry not cleared")
+                return
 
         raise "KeyError: popitem(): dictionary is empty"
 
