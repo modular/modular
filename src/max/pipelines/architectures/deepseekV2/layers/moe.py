@@ -152,20 +152,21 @@ class MoE(Module):
         topk_up_proj = ops.gather(up_proj, topk_idx, axis=0)
 
         # Unsqueeze the hidden states to match the shape of the topk weights
-        # (seq_len, 1, 1, h)
+        # (seq_len, w) -> (seq_len, 1, w, 1)
         hidden_states = ops.unsqueeze(
-            ops.unsqueeze(hidden_states[0], axis=1), axis=1
+            ops.unsqueeze(hidden_states[0], axis=1), axis=-1
         )
-        # (seq_len, k, h, w)
-        up_projs = ops.sum(topk_up_proj * hidden_states, axis=3)
-        # (seq_len, k, 1, w)
-        gate_projs = ops.silu(ops.sum(topk_gate_proj * hidden_states, axis=3))
-        # (seq_len, k, moe_intermediate_size, 1)
-        up_gate_projs = ops.transpose(up_projs * gate_projs, 2, 3)
-        # (seq_len, k, moe_intermediate_size, 1)
-        down_projs = ops.squeeze(
-            ops.sum(topk_down_proj * up_gate_projs, axis=3), axis=3
-        )
+        # (seq_len, k, h, w) @ (seq_len, 1, w, 1) -> (seq_len, k, h, 1)
+        up_projs = topk_up_proj @ hidden_states
+
+        # (seq_len, k, h, w) @ (seq_len, 1, w, 1) -> (seq_len, k, h, 1)
+        gate_projs = ops.silu(topk_gate_proj @ hidden_states)
+
+        # (seq_len, k, h, 1) * (seq_len, k, h, 1) -> (seq_len, k, h, 1)
+        up_gate_projs = up_projs * gate_projs
+
+        # (seq_len, k, w, h) @ (seq_len, k, h, 1) -> (seq_len, k, w)
+        down_projs = ops.squeeze(topk_down_proj @ up_gate_projs, axis=-1)
 
         topk_weight = ops.unsqueeze(topk_weight, axis=2)
         final_out = ops.squeeze(
