@@ -855,7 +855,7 @@ fn softmax[
                 context.get_device_context(),
             )
         else:
-            constrained[False, String("unsupported target ") + target]()
+            constrained[False, "unsupported target " + target]()
 
 
 # ===----------------------------------------------------------------------=== #

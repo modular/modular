@@ -958,7 +958,7 @@ fn scatter_nd_generator[
             iter_shape[i] = indices.dim[i]()
 
         alias trace_description_str = get_string_literal_slice[
-            String("elementwise_impl_") + _trace_description
+            "elementwise_impl_" + _trace_description
         ]()
 
         elementwise[

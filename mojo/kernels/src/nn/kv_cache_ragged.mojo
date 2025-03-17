@@ -1017,9 +1017,9 @@ fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
             "head_size=" + String(kv_collection.kv_params.head_size),
-            "quantization_encoding_q=" + String(quantization_encoding_q),
-            "quantization_encoding_k=" + String(quantization_encoding_k),
-            "quantization_encoding_v=" + String(quantization_encoding_v),
+            "quantization_encoding_q=" + quantization_encoding_q,
+            "quantization_encoding_k=" + quantization_encoding_k,
+            "quantization_encoding_v=" + quantization_encoding_v,
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](

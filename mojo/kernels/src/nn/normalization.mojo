@@ -700,7 +700,7 @@ fn layer_norm[
                 ctx=ctx.get_device_context(),
             )
         else:
-            constrained[False, String("unsupported target ") + target]()
+            constrained[False, "unsupported target " + target]()
 
 
 @always_inline
@@ -1072,7 +1072,7 @@ fn _rms_norm_impl[
             shape, gamma, epsilon, ctx.get_device_context()
         )
     else:
-        constrained[False, String("unsupported target ") + target]()
+        constrained[False, "unsupported target " + target]()
 
 
 @register_internal("rms_norm")
