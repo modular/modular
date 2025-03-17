@@ -209,7 +209,14 @@ class TokenGenerationSchedulerV2(Scheduler):
         # No CE to schedule if queue is empty
         if self.request_q.empty():
             return False
-
+        if self.paged_manager is not None:
+            # If there are less than 10% free blocks, don't schedule CE
+            if (
+                float(self.paged_manager.get_num_free_blocks())
+                / self.paged_manager.total_num_pages
+                < 0.1
+            ):
+                return False
         # At this point there are incoming requests, we start the batch timer if not yet
         if self.ce_batch_start_time is None:
             self.ce_batch_start_time = time.monotonic()
