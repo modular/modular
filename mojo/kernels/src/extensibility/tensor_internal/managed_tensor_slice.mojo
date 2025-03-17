@@ -12,6 +12,7 @@ from bit import is_power_of_two
 from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_partially_static_index_list
 from collections import InlineArray, OptionalReg
+from collections.string import StaticString
 from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu
@@ -1023,7 +1024,7 @@ struct VariadicTensors[
 
 
 @doc_private
-fn get_kernel_simd_width[type: DType, target: StringLiteral]() -> Int:
+fn get_kernel_simd_width[type: DType, target: StaticString]() -> Int:
     return simdwidthof[type]() if is_cpu[target]() else simdwidthof[
         type, target = _get_gpu_target()
     ]()
@@ -1039,10 +1040,10 @@ fn foreach[
     rank: Int, //,
     func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
     *,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
-    _trace_name: StringLiteral = "mogg.for_each",
+    _trace_name: StaticString = "mogg.for_each",
 ](tensor: ManagedTensorSlice[mut=True, type=type, rank=rank]) raises:
     @parameter
     @always_inline
@@ -1068,10 +1069,10 @@ fn foreach[
     rank: Int, //,
     func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
     *,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[type, target](),
     _synchronous: Bool = False,
-    _trace_name: StringLiteral = "mogg.for_each",
+    _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[mut=True, type=type, rank=rank],
     ctx: DeviceContextPtr,
@@ -1082,7 +1083,7 @@ fn foreach[
         type: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
         func: The function to apply to each element of the tensor slice.
-        target: A `StringLiteral` indicating the type of the target device (e.g. "cpu", "gpu").
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _synchronous: True to run the custom op synchronously in the runtime (defaults to False).
         _trace_name: Name of the executed operation displayed in the trace_description.
@@ -1118,9 +1119,9 @@ fn view_copy_impl[
     rank: Int,
     spec: StaticTensorSpec[type, rank], //,
     *,
-    target: StringLiteral,
+    target: StaticString,
     _synchronous: Bool,
-    trace_name: StringLiteral = "mogg.view_copy_impl",
+    trace_name: StaticString = "mogg.view_copy_impl",
 ](
     z: ManagedTensorSlice[mut=True, type=type, rank=rank],
     x: ManagedTensorSlice[static_spec=spec],
