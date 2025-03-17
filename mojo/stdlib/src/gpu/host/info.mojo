@@ -15,7 +15,8 @@ from math import ceildiv, floor
 from os import abort
 from sys import env_get_string
 from sys.info import _accelerator_arch, _get_arch
-from collections.string.string_slice import StringSlice
+from collections.string.string_slice import StringSlice, StaticString
+from builtin.string_literal import get_string_literal_slice
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()
 alias DEFAULT_GPU = Info.from_name[DEFAULT_GPU_ARCH]()
@@ -746,7 +747,7 @@ struct Info:
         return _get_info_from_target[_get_arch[target]()]()
 
     @staticmethod
-    fn from_name[name: StringLiteral]() -> Self:
+    fn from_name[name: StaticString]() -> Self:
         """
         Creates an Info instance from a GPU architecture name.
 
@@ -1245,7 +1246,7 @@ fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
 
 
 @always_inline
-fn _get_info_from_target[target_arch0: StringLiteral]() -> Info:
+fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     """
     Gets GPU Info for a specific target architecture.
 
@@ -1257,7 +1258,9 @@ fn _get_info_from_target[target_arch0: StringLiteral]() -> Info:
     Returns:
         Info instance for the specified target architecture.
     """
-    alias target_arch = target_arch0.replace("sm_", "")
+    alias target_arch = get_string_literal_slice[target_arch0]().replace(
+        "sm_", ""
+    )
 
     constrained[
         target_arch

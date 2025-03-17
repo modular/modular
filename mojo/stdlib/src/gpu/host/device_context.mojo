@@ -1003,7 +1003,7 @@ struct DeviceFunction[
         return val.isa[fn () capturing -> Path](), val
 
     @staticmethod
-    fn _cleanup_asm(s: StringLiteral) -> String:
+    fn _cleanup_asm(s: StringSlice) -> String:
         return (
             String(s)
             .replace("\t// begin inline asm\n", "")
@@ -1047,7 +1047,7 @@ struct DeviceFunction[
             help disambiguate multiple kernel dumps.
         """
 
-        fn get_asm() -> StringLiteral:
+        fn get_asm() -> StaticString:
             @parameter
             if Self._emission_kind == "asm":
                 return self._func_impl.asm
@@ -1059,7 +1059,7 @@ struct DeviceFunction[
 
         @parameter
         if _ptxas_info_verbose:
-            print(_ptxas_compile[target](get_asm(), options="-v"))
+            print(_ptxas_compile[target](String(get_asm()), options="-v"))
 
         alias dump_asm_tup = Self._dump_q["asm", dump_asm]()
         alias do_dump_asm = dump_asm_tup[0]
