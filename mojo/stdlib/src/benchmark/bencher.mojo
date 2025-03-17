@@ -15,6 +15,7 @@ from gpu.host import DeviceContext
 from stdlib.builtin.file import FileHandle
 from stdlib.builtin.io import _snprintf
 from testing import assert_true
+from collections.string import StaticString
 
 from utils.numerics import FlushDenormals
 
@@ -221,11 +222,20 @@ struct Format(Writable, Stringable):
     alias table = "table"
     """Table format with dynamically aligned columns."""
 
-    var value: StringLiteral
+    var value: StaticString
     """The format to print results."""
 
     @implicit
     fn __init__(out self, value: StringLiteral):
+        """Constructs a Format object from a string literal.
+
+        Args:
+            value: The format to print results.
+        """
+        self.value = value
+
+    @implicit
+    fn __init__(out self, value: StaticString):
         """Constructs a Format object from a string literal.
 
         Args:
@@ -1077,14 +1087,14 @@ struct Bench:
         if self.config.format == Format.table:
             writer.write(line_sep, "\n")
 
-    fn _get_max_name_width(self, label: StringLiteral) -> Int:
+    fn _get_max_name_width(self, label: StaticString) -> Int:
         var max_val = len(label)
         for i in range(len(self.info_vec)):
             var namelen = len(String(self.info_vec[i].name))
             max_val = max(max_val, namelen)
         return max_val
 
-    fn _get_max_iters_width(self, label: StringLiteral) -> Int:
+    fn _get_max_iters_width(self, label: StaticString) -> Int:
         var max_val = len(label)
         for i in range(len(self.info_vec)):
             var iters = self.info_vec[i].result.iters()
@@ -1121,7 +1131,7 @@ struct Bench:
                         abort(e)
         return metrics
 
-    fn _get_max_timing_widths(self, met_label: StringLiteral) -> List[Int]:
+    fn _get_max_timing_widths(self, met_label: StaticString) -> List[Int]:
         # If label is larger than any value, will pad to the label length
 
         var max_met = len(met_label)
