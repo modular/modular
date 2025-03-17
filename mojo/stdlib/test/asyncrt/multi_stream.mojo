@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# UNSUPPORTED: H100-GPU
 # COM: Note: CPU function compilation not supported
 # COM: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu %s
@@ -234,10 +233,14 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
+    # Wait for ctx2 to be done with running the function to make sure `out_dev4` writes
+    # have settled since `out_dev4` is associated with ctx1.
     ctx1.enqueue_wait_for(ctx2)
+    # Schedule a cross-context copy `out_dev4`@ctx1->`out_host`@ctx2
     out_dev4.enqueue_copy_to(out_host)
-
-    # Wait for the copies to be completed.
+    # Reassign ownership of `out_host` to ctx1, then synchronize on ctx1 for the
+    #  copies to be completed.
+    out_host.reassign_ownership_to(ctx1)
     ctx1.synchronize()
 
     for i in range(length):
@@ -254,6 +257,9 @@ fn test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             i,
             "] is ",
             out_host[i],
+            " (expected=",
+            Float32(o2 + o3),
+            ")",
         )
 
     print("Done.")
