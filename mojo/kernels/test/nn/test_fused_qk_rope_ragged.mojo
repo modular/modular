@@ -30,7 +30,7 @@ from testdata.fused_qk_rope_goldens import (
 from utils import IndexList
 
 
-def test_fused_qk_rope[type: DType]() -> None:
+def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     constrained[type == DType.float32, "goldens only for float32, currently"]()
 
@@ -131,9 +131,15 @@ def test_fused_qk_rope[type: DType]() -> None:
         len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
         "invalid freqs_cis_table init",
     )
+    # Create a view into freqs_cis tensor that only includes the roped dimensions
     freqs_cis_table = NDBuffer[
-        type, rank=2, shape = DimList(max_seq_len, head_dim)
-    ](freqs_cis_table_buffer.data)
+        type,
+        rank=2,
+        shape = DimList(max_seq_len, rope_dim),
+        strides = DimList(head_dim, 1),
+    ](
+        freqs_cis_table_buffer.data + (head_dim - rope_dim)
+    )  # Offset to last rope_dim elements
 
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden[type]()
@@ -167,23 +173,59 @@ def test_fused_qk_rope[type: DType]() -> None:
     )
 
     # Compare output and expected query tensors.
-    assert_almost_equal(
-        q_out.data, expected_q_out.data, expected_q_out.num_elements()
-    )
+    for batch_idx in range(batch_size):
+        for seq_idx in range(seq_len):
+            for head_idx in range(num_heads):
+                # Calculate base offset for current head
+                base_offset = (
+                    batch_idx * seq_len * dim  # batch offset
+                    + seq_idx * dim  # sequence offset
+                    + head_idx * head_dim  # head offset
+                )
+                # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
+                assert_almost_equal(
+                    q_out.data + base_offset,
+                    q.data + base_offset,
+                    head_dim - rope_dim,
+                )
+
+                # Verify roped region: Last rope_dim elements should match expected output
+                roped_offset = base_offset + (head_dim - rope_dim)
+                assert_almost_equal(
+                    q_out.data + roped_offset,
+                    expected_q_out.data + roped_offset,
+                    rope_dim,
+                )
 
     # Compare output and expected key cache buffers.
     for batch_idx in range(batch_size):
-        assert_almost_equal(
-            (
-                k_cache_block_buffer.data
-                + (batch_idx * max_seq_len * dim)
-                # Account for the start_pos (cache_length) for this batch item.
-                + Int(start_positions[batch_idx] * dim)
-            ),
-            expected_k_out_buffer.data + (batch_idx * seq_len * dim),
-            # Number of elements in one batch item.
-            len(expected_k_out_buffer) // batch_size,
-        )
+        for seq_idx in range(seq_len):
+            for head_idx in range(num_heads):
+                # Calculate offsets for current position
+                seq_offset = seq_idx * dim + head_idx * head_dim
+                cache_offset = (
+                    batch_idx * max_seq_len * dim  # batch offset in cache
+                    + Int(
+                        start_positions[batch_idx] * dim
+                    )  # start position offset
+                    + seq_offset  # sequence and head offset
+                )
+                input_offset = batch_idx * seq_len * dim + seq_offset
+
+                # Verify unroped region: Should match original input
+                assert_almost_equal(
+                    k_cache_block_buffer.data + cache_offset,
+                    k_cache_input_buffer.data + input_offset,
+                    head_dim - rope_dim,
+                )
+
+                # Verify roped region: Should match expected output
+                roped_offset = head_dim - rope_dim
+                assert_almost_equal(
+                    k_cache_block_buffer.data + cache_offset + roped_offset,
+                    expected_k_out_buffer.data + input_offset + roped_offset,
+                    rope_dim,
+                )
 
     _ = q_out_buffer^
     _ = expected_q_out_buffer^
@@ -194,4 +236,7 @@ def test_fused_qk_rope[type: DType]() -> None:
 
 
 def main() -> None:
-    test_fused_qk_rope[DType.float32]()
+    # Full head RoPE
+    test_fused_qk_rope[8, DType.float32]()
+    # Partial RoPE (last 4 elements of each head)
+    test_fused_qk_rope[4, DType.float32]()

@@ -38,6 +38,15 @@ fn get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> (Int, Int):
 
 
 @always_inline
+fn get_identity_rope_coeff[width: Int, type: DType]() -> SIMD[type, width]:
+    # Creates a SIMD vector with real parts set to 1 and imaginary parts to
+    # 0, effectively making the RoPE transformation an identity operation.
+    return rebind[SIMD[type, width]](
+        SIMD[type, width // 2](1).interleave(SIMD[type, width // 2](0))
+    )
+
+
+@always_inline
 fn rope_q_proj[
     type: DType, rank: Int, width: Int, //, *, interleaved: Bool
 ](
@@ -246,11 +255,39 @@ fn fused_qk_rope_ragged[
     output: NDBuffer[type, 3, *_],
     context: Optional[DeviceContext],
 ) raises:
+    """Applies RoPE (Rotary Position Embedding) to query and key tensors.
+
+    This function can applies RoPE only to the last `rope_dim` elements of each
+    head, leaving the first `unroped_dim` elements unchanged. This is required
+    for DeepSeek models where only part of each head undergoes rotary
+    transformation.
+    """
     alias kv_params = cache_t.kv_params
     alias num_q_heads = q_proj.shape.get[1]()
     alias num_k_heads = kv_params.num_heads
-    alias head_size = q_proj.shape.get[2]()
+    alias q_head_size = q_proj.shape.get[2]()
+    alias k_head_size = kv_params.head_size
     var batch_size = input_row_offsets.dim[0]() - 1
+
+    # Add rope dimension parameters
+    alias rope_dim = freqs_cis.shape.get[1]()
+
+    # Check if shape of freqs_cis matches head_size.
+    # If not, we only rope the last `rope_dim` dimensions of each head.
+    alias unroped_dim = q_head_size - rope_dim
+    alias has_nope = unroped_dim > 0
+
+    constrained[
+        freqs_cis.shape.has_value[1](), "Need static shape for freqs_cis"
+    ]()
+    constrained[
+        rope_dim <= q_head_size and rope_dim <= k_head_size,
+        "rope_dim must be smaller or equal to head size",
+    ]()
+    constrained[
+        (rope_dim == q_head_size and rope_dim == k_head_size) or interleaved,
+        "Partial RoPE operation only supported for interleaved pattern",
+    ]()
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
@@ -280,15 +317,37 @@ fn fused_qk_rope_ragged[
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
             var is_q_proj = head_idx < num_q_heads
-            var f_idx = IndexList[2](post_seq_idx, head_dim_idx)
-            var f_c_temp = freqs_cis.load[width=width](f_idx)
+            var is_unroped_region = head_dim_idx < unroped_dim
+
+            var f_c_temp: SIMD[type, width]
+
+            @parameter
+            if has_nope:
+                if is_unroped_region:
+                    f_c_temp = get_identity_rope_coeff[width, type]()
+                else:
+                    var f_idx = IndexList[2](
+                        post_seq_idx, head_dim_idx - unroped_dim
+                    )
+                    f_c_temp = freqs_cis.load[width=width](f_idx)
+            else:
+                var f_idx = IndexList[2](post_seq_idx, head_dim_idx)
+                f_c_temp = freqs_cis.load[width=width](f_idx)
 
             if is_q_proj:
                 rope_q_proj[interleaved=interleaved](
-                    q_proj, output, idx, f_c_temp, head_size
+                    q_proj, output, idx, f_c_temp, q_head_size
                 )
             else:
+
+                @parameter
+                if has_nope:
+                    if is_unroped_region:
+                        return
+
                 head_idx -= num_q_heads
+                # in case k_head_size != q_head_size
+                head_dim_idx += k_head_size - q_head_size
                 rope_k_cache[interleaved=interleaved](
                     k_cache,
                     batch_idx,
@@ -296,19 +355,19 @@ fn fused_qk_rope_ragged[
                     post_seq_idx,
                     head_dim_idx,
                     f_c_temp,
-                    head_size,
+                    k_head_size,
                 )
 
     var launch_shape = IndexList[3](
         q_proj.dim[0](),
         num_q_heads + num_k_heads,  # concat q and k along head dim
-        head_size,
+        q_head_size,
     )
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else _get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
-    alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
+    alias kernel_simd_width = gcd(target_simd_width, rope_dim)
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
     @parameter
