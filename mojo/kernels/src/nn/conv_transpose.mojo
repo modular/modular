@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from collections.string import StaticString
 from math import align_down, ceildiv
 from sys.info import simdwidthof
 
@@ -1313,7 +1314,7 @@ fn conv_transposed[
         )
         # fmt: on
 
-    with Trace[TraceLevel.OP, target="cpu"](
+    with Trace[TraceLevel.OP, target = StaticString("cpu")](
         "conv_transposed",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):

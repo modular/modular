@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from collections import List
+from collections import OptionalReg, List
+from collections.string import StaticString
 from math import align_down, align_up, ceildiv
 from sys._build import is_debug_build
 from sys.info import bitwidthof, simdwidthof, sizeof
@@ -574,7 +574,7 @@ fn concat[
     rank: Int,
     type: DType,
     single_thread_blocking_override: Bool,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     output: NDBuffer[type, rank],
@@ -987,7 +987,7 @@ fn fused_concat[
         IndexList[_rank]
     ) capturing -> SIMD[type, width],
     output_0_fn: elementwise_epilogue_type,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],

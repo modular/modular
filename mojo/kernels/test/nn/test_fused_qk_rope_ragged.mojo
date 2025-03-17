@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from collections import Optional
+from collections.string import StaticString
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
@@ -154,7 +155,7 @@ def test_fused_qk_rope[type: DType]() -> None:
     q_out_buffer.resize(new_size=len(q_buffer), value=0)
     q_out = NDBuffer[type, rank=3](q_out_buffer.data, q.dynamic_shape)
     fused_qk_rope_ragged[
-        kv_collection.CacheType, interleaved=True, target="cpu"
+        kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
     ](
         q_proj=q,
         input_row_offsets=input_row_offsets.tensor,

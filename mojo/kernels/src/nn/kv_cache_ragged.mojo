@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional, OptionalReg
+from collections.string import StaticString
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
@@ -45,7 +46,7 @@ from utils.index import Index, IndexList
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
     type: DType, //,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -107,7 +108,7 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
 fn generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged[
     type: DType,
     weight_type: DType,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
@@ -176,7 +177,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged[
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
     type: DType,
     weight_type: DType,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
@@ -243,7 +244,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     type: DType,
     weight_type: DType,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
@@ -316,7 +317,7 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
-    target: StringLiteral,
+    target: StaticString,
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
@@ -373,7 +374,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_bias[
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
-    target: StringLiteral,
+    target: StaticString,
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
@@ -432,7 +433,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     weight_type: DType,
     cache_t: KVCacheT, //,
     *,
-    target: StringLiteral,
+    target: StaticString,
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
@@ -555,7 +556,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     weight_type: DType,
     cache_t: KVCacheT, //,
     *,
-    target: StringLiteral,
+    target: StaticString,
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
@@ -680,7 +681,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
 fn _matmul_common[
     type: DType, //,
     *,
-    target: StringLiteral,
+    target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     hidden_state: NDBuffer[type, 2, _],
@@ -725,7 +726,7 @@ fn _qmatmul_common[
     type: DType, //,
     *,
     group_size: Int,
-    target: StringLiteral,
+    target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     hidden_state: NDBuffer[type, 2, _],
@@ -756,7 +757,7 @@ fn _qmatmul_common[
 
 
 fn kv_matmul_ragged_continuous_batching[
-    type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+    type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -813,7 +814,7 @@ fn kv_matmul_ragged_continuous_batching[
 fn _matmul_kv_cache_ragged[
     type: DType, //,
     *,
-    target: StringLiteral,
+    target: StaticString,
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -859,7 +860,7 @@ fn _matmul_kv_cache_ragged_impl[
     type: DType,
     cache_t: KVCacheT, //,
     *,
-    target: StringLiteral,
+    target: StaticString,
 ](
     hidden_state: NDBuffer[type, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -965,9 +966,9 @@ fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
     type: DType,
     num_heads: Int,
     head_dim: Int, //,
-    quantization_encoding_q: StringLiteral,
-    quantization_encoding_k: StringLiteral,
-    quantization_encoding_v: StringLiteral,
+    quantization_encoding_q: StaticString,
+    quantization_encoding_k: StaticString,
+    quantization_encoding_v: StaticString,
 ](
     hidden_state: NDBuffer[DType.float32, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1016,12 +1017,12 @@ fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
             "layer_idx=" + String(layer_idx),
             "num_heads=" + String(kv_collection.kv_params.num_heads),
             "head_size=" + String(kv_collection.kv_params.head_size),
-            "quantization_encoding_q=" + quantization_encoding_q,
-            "quantization_encoding_k=" + quantization_encoding_k,
-            "quantization_encoding_v=" + quantization_encoding_v,
+            "quantization_encoding_q=" + String(quantization_encoding_q),
+            "quantization_encoding_k=" + String(quantization_encoding_k),
+            "quantization_encoding_v=" + String(quantization_encoding_v),
         )
 
-    with Trace[TraceLevel.OP, target="cpu"](
+    with Trace[TraceLevel.OP, target = StaticString("cpu")](
         "mo.kv_matmul.ragged.continuous_batching.nhead_"
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
@@ -1055,9 +1056,9 @@ fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
 
 @always_inline
 fn _unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized_impl[
-    quantization_encoding_q: StringLiteral,
-    quantization_encoding_k: StringLiteral,
-    quantization_encoding_v: StringLiteral,
+    quantization_encoding_q: StaticString,
+    quantization_encoding_k: StaticString,
+    quantization_encoding_v: StaticString,
 ](
     hidden_state: NDBuffer[DType.float32, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1099,9 +1100,9 @@ fn _unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized_impl[
 @always_inline
 fn _matmul_kv_cache_ragged_gguf_quantized_impl[
     cache_t: KVCacheT,
-    quantization_encoding_q: StringLiteral,
-    quantization_encoding_k: StringLiteral,
-    quantization_encoding_v: StringLiteral,
+    quantization_encoding_q: StaticString,
+    quantization_encoding_k: StaticString,
+    quantization_encoding_v: StaticString,
 ](
     hidden_state: NDBuffer[DType.float32, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1149,7 +1150,7 @@ fn _matmul_kv_cache_ragged_gguf_quantized_impl[
 @always_inline
 fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     cache_t: KVCacheT,
-    quantization_encoding: StringLiteral,
+    quantization_encoding: StaticString,
 ](
     hidden_state: NDBuffer[DType.float32, 2, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, _],
@@ -1213,7 +1214,7 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
 
 @always_inline
 fn _qmatmul_gguf_quantized_alloc_output[
-    quantization_encoding: StringLiteral,
+    quantization_encoding: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     hidden_state: NDBuffer[DType.float32, 2, _],
@@ -1243,7 +1244,7 @@ fn _qmatmul_gguf_quantized_alloc_output[
 
 @always_inline
 fn _qmatmul_gguf_quantized_common[
-    quantization_encoding: StringLiteral,
+    quantization_encoding: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     hidden_state: NDBuffer[DType.float32, 2, _],
@@ -1291,7 +1292,7 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     type: DType, //,
     *,
     interleaved: Bool,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q_proj: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1344,7 +1345,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     type: DType, //,
     *,
     interleaved: Bool,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q_proj: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1411,7 +1412,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
 
 @always_inline
 fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
-    target: StringLiteral, type: DType
+    target: StaticString, type: DType
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1457,7 +1458,7 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
 @always_inline
 fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
     type: DType, //,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1503,7 +1504,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
 @always_inline
 fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
     type: DType, //,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1547,7 +1548,7 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
 
 @always_inline
 fn generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[
-    type: DType, //, target: StringLiteral
+    type: DType, //, target: StaticString
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1596,7 +1597,7 @@ fn _flash_attention_kv_cache_ragged[
     collection_t: KVCollectionT,
     mask_t: MHAMask, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1643,7 +1644,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged[
     type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1688,7 +1689,7 @@ fn _flash_attention_kv_cache_ragged_impl[
     collection_t: KVCollectionT,
     mask_t: MHAMask, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1733,7 +1734,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
     type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1786,7 +1787,7 @@ fn _flash_attention_kv_cache_ragged_gpu[
     cache_t: KVCacheT,
     mask_t: MHAMask, //,
     *,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1819,7 +1820,7 @@ fn _flash_attention_kv_cache_ragged_gpu[
 
 @always_inline
 fn _flash_attention_kv_cache_alibi_mask_ragged_gpu[
-    type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
+    type: DType, cache_t: KVCacheT, //, *, target: StaticString
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1],
@@ -1863,7 +1864,7 @@ fn _cross_attention_kv_cache_ragged[
     collection_t: KVCollectionT,
     mask_t: MHAMask, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
     q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1931,7 +1932,7 @@ fn _cross_attention_kv_cache_ragged[
 
 @always_inline
 fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
-    type: DType, //, target: StringLiteral
+    type: DType, //, target: StaticString
 ](
     q: NDBuffer[type, 3, *_],
     q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],

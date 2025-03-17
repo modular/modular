@@ -8,6 +8,7 @@ from math import ceil
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from collections.string import StaticString
 
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
@@ -104,7 +105,7 @@ fn roi_align_nhwc[
     input_shape: DimList,
     roi_shape: DimList, //,
     aligned: Bool,
-    mode: StringLiteral = "AVG",
+    mode: StaticString = "AVG",
 ](
     output: NDBuffer[type, 4, *_],
     input: NDBuffer[type, 4, input_shape, *_],

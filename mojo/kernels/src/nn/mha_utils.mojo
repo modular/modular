@@ -71,6 +71,9 @@ struct FlashAttentionAlgorithm(Stringable, Writable):
             writer.write("invalid algorithm")
 
 
+alias is_sm90 = ":90" in _accelerator_arch()
+
+
 @value
 @register_passable("trivial")
 struct MHAConfig:
@@ -190,7 +193,7 @@ struct MHAConfig:
         BK: OptionalReg[UInt] = None,
         WM: OptionalReg[UInt] = None,
         WN: OptionalReg[UInt] = None,
-        num_pipeline_stages: UInt = 2 if ":90" in _accelerator_arch() else 4,
+        num_pipeline_stages: UInt = 2 if is_sm90 else 4,
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(),
     ):
@@ -204,7 +207,7 @@ struct MHAConfig:
         # Currently, all are `OptionalReg` for consistency.
         # BN
         self.num_keys_per_block = num_keys_per_block.or_else(depth)
-        alias is_sm90 = ":90" in _accelerator_arch()
+
         if is_sm90 and type.is_half_float():
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(

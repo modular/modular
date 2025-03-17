@@ -5,10 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional, OptionalReg
+from collections.string import StaticString
 from math import align_down, ceildiv
 from sys import has_neon, simdwidthof, sizeof
 from sys.info import _current_target
 from sys.intrinsics import PrefetchOptions
+from builtin.string_literal import get_string_literal_slice
 
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import tile
@@ -279,7 +281,7 @@ fn gather[
     indices_type: DType, //,
     *,
     axis: Int,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     output: NDBuffer[type, *_],
     input: NDBuffer[type, *_],
@@ -378,7 +380,7 @@ fn gather[
     indices_type: DType, //,
     *,
     axis: Int,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     output: NDBuffer[type, *_],
     input: NDBuffer[type, *_],
@@ -604,7 +606,7 @@ fn gather[
             input_rank: Int, indices_rank: Int
         ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
     axis: Axis,
@@ -684,7 +686,7 @@ fn gather[
             input_rank: Int, indices_rank: Int
         ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
     axis: Axis,
@@ -762,7 +764,7 @@ fn scatter_nd_generator[
     indices_rank: Int,
     updates_rank: Int,
     single_thread_blocking_override: Bool,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     /,
     reduce_fn: OptionalReg[
         fn[
@@ -770,7 +772,7 @@ fn scatter_nd_generator[
         ] (SIMD[type, width], SIMD[type, width]) capturing -> SIMD[type, width]
     ] = None,
     *,
-    _trace_description: StringLiteral = "scatter_nd",
+    _trace_description: StaticString = "scatter_nd",
 ](
     data: NDBuffer[output_type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
@@ -955,12 +957,16 @@ fn scatter_nd_generator[
         for i in range(indices_rank - 1):
             iter_shape[i] = indices.dim[i]()
 
+        alias trace_description_str = get_string_literal_slice[
+            String("elementwise_impl_") + _trace_description
+        ]()
+
         elementwise[
             update_func,
             simd_width=1,
             use_blocking_impl=single_thread_blocking_override,
             target=target,
-            _trace_description = "elementwise_impl_" + _trace_description,
+            _trace_description=trace_description_str,
         ](iter_shape, context)
 
 
@@ -972,7 +978,7 @@ fn scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
     single_thread_blocking_override: Bool,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     data: NDBuffer[output_type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
@@ -1396,7 +1402,7 @@ fn gather_nd[
     indices_rank: Int,
     output_rank: Int,
     batch_dims: Int,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
     data: NDBuffer[type, data_rank],
@@ -1452,7 +1458,7 @@ fn _gather_nd_impl[
     indices_rank: Int,
     output_rank: Int, //,
     batch_dims: Int,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
     data: NDBuffer[type, data_rank],

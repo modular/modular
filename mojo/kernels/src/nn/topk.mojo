@@ -8,6 +8,7 @@ from collections import List, OptionalReg
 from math import ceildiv, exp, iota
 from random import random_float64
 from sys import alignof, simdwidthof, sizeof
+from collections.string import StaticString
 
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
@@ -101,7 +102,7 @@ fn top_k[
     type: DType,
     out_idx_type: DType, //,
     largest: Bool = True,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     input: NDBuffer[type, rank],
     k: Int,

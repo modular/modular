@@ -6,6 +6,7 @@
 
 from algorithm import sync_parallelize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
+from collections.string import StaticString
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from register import register_internal
@@ -38,7 +39,7 @@ fn arg_nonzero[
         output_buffer: The indices of all non-zero elements.
     """
 
-    with Trace[TraceLevel.OP, target="cpu"]("arg_nonzero"):
+    with Trace[TraceLevel.OP, target = StaticString("cpu")]("arg_nonzero"):
         var numel = input_buffer.get_shape().flattened_length()
         if numel == 0:
             return

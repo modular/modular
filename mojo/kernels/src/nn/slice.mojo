@@ -9,6 +9,7 @@ from math import clamp
 from algorithm import elementwise
 from buffer import NDBuffer
 from runtime.asyncrt import DeviceContextPtr
+from collections.string import StaticString
 
 from utils._select import _select_register_value as select
 from utils.index import IndexList
@@ -134,7 +135,7 @@ fn copy_to_slice[
     end_type: DType,
     step_type: DType,
     in_rank: Int,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     buffer: NDBuffer[type, in_rank],
     in_slice: NDBuffer[type, in_rank],

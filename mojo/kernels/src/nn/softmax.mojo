@@ -6,6 +6,7 @@
 
 from math import align_down, align_up, ceildiv, exp, exp2, log
 from sys import alignof, is_nvidia_gpu, simdwidthof
+from collections.string import StaticString
 
 from algorithm import sync_parallelize, vectorize
 from algorithm._gpu.reduction import block_reduce, row_reduce
@@ -825,7 +826,7 @@ fn softmax[
     input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
         _
     ] -> SIMD[type, _simd_width],
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     shape: IndexList[rank],
     output: NDBuffer[type, rank, static_shape],
@@ -854,7 +855,7 @@ fn softmax[
                 context.get_device_context(),
             )
         else:
-            constrained[False, "unsupported target " + target]()
+            constrained[False, String("unsupported target ") + target]()
 
 
 # ===----------------------------------------------------------------------=== #

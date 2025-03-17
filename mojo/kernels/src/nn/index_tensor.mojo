@@ -8,6 +8,7 @@ from collections import Optional
 from math import ceildiv
 from sys import simdwidthof
 from sys.info import _current_target
+from collections.string import StaticString
 
 from algorithm import elementwise, sync_parallelize
 from buffer import NDBuffer
@@ -151,7 +152,7 @@ fn index_tensor[
     indices_rank: Int,
     output_rank: Int,
     batch_dims: Int,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
     data: NDBuffer[type, data_rank],
@@ -209,7 +210,7 @@ fn _index_tensor_1d[
     indices_rank: Int,
     output_rank: Int, //,
     batch_dims: Int,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
     data: NDBuffer[type, data_rank],
@@ -293,7 +294,7 @@ fn _index_tensor_impl[
     indices_rank: Int,
     output_rank: Int, //,
     batch_dims: Int,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
     data: NDBuffer[type, data_rank],

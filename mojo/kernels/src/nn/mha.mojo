@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-
+from collections.string import StaticString
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp, recip
 from math.constants import log2e
@@ -128,11 +128,11 @@ fn flash_attention[
 
     var ctx = context.get_device_context()
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = StaticString(ctx.device_info.api)](
         "flash_attention",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = StaticString(ctx.device_info.api)
+        ]._get_detail_str[description_fn](),
     ):
         return flash_attention[
             add_attn_mask=add_attn_mask,
@@ -260,11 +260,11 @@ fn flash_attention[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target = ctx.device_info.api](
+    with Trace[TraceLevel.OP, target = StaticString(ctx.device_info.api)](
         "flash_attention",
-        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
-            description_fn
-        ](),
+        Trace[
+            TraceLevel.OP, target = StaticString(ctx.device_info.api)
+        ]._get_detail_str[description_fn](),
     ):
         # TODO: This helps differentiate between CE/TG. Not batch-specific.
         #       We'll just implement a flag on the cache object which is true

@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from collections import InlineArray, Optional, OptionalReg
+from collections.string import StaticString
 from math import gcd, isqrt
 from sys.info import _current_target, simdwidthof
 
@@ -45,7 +46,7 @@ from utils import Index, IndexList
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     type: DType,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     hidden_state: NDBuffer[type, 3, _],
     weight: NDBuffer[type, 2, _],
@@ -99,7 +100,7 @@ fn _fused_qkv_matmul_kv_cache[
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
-    target: StringLiteral,
+    target: StaticString,
 ](
     hidden_state: NDBuffer[type, 3, _],
     weight: NDBuffer[type, 2, _],
@@ -146,7 +147,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     output_shape: DimList,
     collection_t: KVCollectionT, //,
     *,
-    target: StringLiteral,
+    target: StaticString,
     q_embed_fn: OptionalReg[embed_fn_type] = None,
     k_embed_fn: OptionalReg[embed_fn_type] = None,
 ](
@@ -241,7 +242,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
 fn _matmul_common[
     type: DType, //,
     *,
-    target: StringLiteral,
+    target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     hidden_state: NDBuffer[type, 3, _],
@@ -297,7 +298,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     type: DType, //,
     *,
     interleaved: Bool,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q_proj: NDBuffer[type, 4, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
@@ -361,7 +362,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
 
 @always_inline
 fn generic_flash_attention_kv_cache_continuous_batch[
-    target: StringLiteral, type: DType
+    target: StaticString, type: DType
 ](
     q: NDBuffer[type, 4, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
@@ -411,7 +412,7 @@ fn _flash_attention_kv_cache[
     type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
@@ -458,7 +459,7 @@ fn _flash_attention_kv_cache_impl[
     type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
@@ -498,7 +499,7 @@ fn _flash_attention_kv_cache_impl[
 
 @always_inline
 fn generic_flash_attention_kv_cache_causal_mask_continuous_batch[
-    target: StringLiteral, type: DType
+    target: StaticString, type: DType
 ](
     q: NDBuffer[type, 4, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
@@ -537,7 +538,7 @@ fn _flash_attention_kv_cache_causal_mask[
     type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
@@ -575,7 +576,7 @@ fn _flash_attention_kv_cache_causal_mask_impl[
     type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
@@ -618,7 +619,7 @@ fn _flash_attention_kv_cache_causal_mask_impl[
 #       passing CausalMask().
 @always_inline
 fn _flash_attention_kv_cache_causal_mask_gpu[
-    type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
+    type: DType, cache_t: KVCacheT, //, *, target: StaticString
 ](
     q: NDBuffer[type, 4, *_],
     k: cache_t,
@@ -651,7 +652,7 @@ fn _flash_attention_kv_cache_causal_mask_gpu[
 
 @always_inline
 fn _flash_attention_kv_cache_gpu[
-    type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
+    type: DType, cache_t: KVCacheT, //, *, target: StaticString
 ](
     q: NDBuffer[type, 4, *_],
     k: cache_t,
@@ -709,7 +710,7 @@ fn _flash_attention_kv_cache_gpu[
 
 @always_inline
 fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[
-    target: StringLiteral, type: DType
+    target: StaticString, type: DType
 ](
     q: NDBuffer[type, 4, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
@@ -748,7 +749,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask[
     type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
@@ -787,7 +788,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_impl[
     type: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
@@ -831,7 +832,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_impl[
 #       passing CausalMask() and AlibiScoreMod().
 @always_inline
 fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
-    type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
+    type: DType, cache_t: KVCacheT, //, *, target: StaticString
 ](
     q: NDBuffer[type, 4, *_],
     k: cache_t,
@@ -871,7 +872,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
 
 
 def rms_norm_kv_cache_ragged_continuous_batching[
-    type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+    type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
 ](
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
@@ -1002,7 +1003,7 @@ def _print_cache[
 
 
 def print_kv_cache_cont_batch_generic_cpu[
-    target: StringLiteral, type: DType, kv_params: KVCacheStaticParams
+    target: StaticString, type: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
     kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
@@ -1031,7 +1032,7 @@ def print_kv_cache_cont_batch_generic_cpu[
 
 
 def print_kv_cache_paged_generic_cpu[
-    target: StringLiteral,
+    target: StaticString,
     type: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
@@ -1063,7 +1064,7 @@ def print_kv_cache_paged_generic_cpu[
 
 
 def print_kv_cache_cont_batch_generic_gpu[
-    target: StringLiteral, type: DType, kv_params: KVCacheStaticParams
+    target: StaticString, type: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
     kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
@@ -1157,7 +1158,7 @@ def print_kv_cache_cont_batch_generic_gpu[
 
 
 def print_kv_cache_paged_generic_gpu[
-    target: StringLiteral,
+    target: StaticString,
     type: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,

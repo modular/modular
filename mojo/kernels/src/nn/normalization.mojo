@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from collections.string import StaticString
+
 from math import align_down, ceildiv, isqrt
 from sys.info import alignof, simdwidthof
 
@@ -655,7 +657,7 @@ fn layer_norm[
         IndexList[_rank]
     ) capturing -> SIMD[type, _width],
     /,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     shape: IndexList[rank],
     gamma_shape: IndexList[1],
@@ -698,7 +700,7 @@ fn layer_norm[
                 ctx=ctx.get_device_context(),
             )
         else:
-            constrained[False, "unsupported target " + target]()
+            constrained[False, String("unsupported target ") + target]()
 
 
 @always_inline
@@ -1041,7 +1043,7 @@ fn _rms_norm_impl[
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     /,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
@@ -1070,7 +1072,7 @@ fn _rms_norm_impl[
             shape, gamma, epsilon, ctx.get_device_context()
         )
     else:
-        constrained[False, "unsupported target " + target]()
+        constrained[False, String("unsupported target ") + target]()
 
 
 @register_internal("rms_norm")

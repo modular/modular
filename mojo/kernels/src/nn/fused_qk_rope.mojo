@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
+from collections.string import StaticString
 from math import gcd
 from sys.info import _current_target, simdwidthof
 
@@ -145,7 +146,7 @@ fn fused_qk_rope[
     cache_t: KVCacheT,
     *,
     interleaved: Bool,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q_proj: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
@@ -235,7 +236,7 @@ fn fused_qk_rope_ragged[
     cache_t: KVCacheT,
     *,
     interleaved: Bool,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q_proj: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from collections.string import StaticString
 from math import align_down, ceildiv
 from sys.info import alignof, simdwidthof
 
@@ -2916,7 +2917,7 @@ fn conv_nhwc_direct[
             "padding_w=" + String("x").join(pad_w),
         )
 
-    with Trace[TraceLevel.OP, target="cpu"](
+    with Trace[TraceLevel.OP, target = StaticString("cpu")](
         "conv",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
+from collections.string import StaticString
 from math import align_down, align_up, ceildiv, exp
 from sys import alignof, has_avx512f, has_neon, simdwidthof
 
@@ -1020,7 +1021,7 @@ fn flash_attention_split_kv[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target="cpu"](
+    with Trace[TraceLevel.OP, target = StaticString("cpu")](
         "flash_attention_split_kv",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
