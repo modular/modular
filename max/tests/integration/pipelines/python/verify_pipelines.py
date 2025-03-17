@@ -597,6 +597,23 @@ PIPELINES = {
             kl_div_threshold=1e-4,
         ),
     ),
+    "Phi-3.5-mini-instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=lambda device_type,
+        devices,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="phi-3.5-mini",
+            encoding="bfloat16",
+            # TODO(MODELS-458): This model seems broken based on the thresholds
+            absolute_tolerance=7.5,
+            relative_tolerance=1.0,
+            cos_dist_threshold=0.2,
+            kl_div_threshold=1.1,
+        ),
+    ),
     "llama-gptq": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
