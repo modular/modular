@@ -17,6 +17,7 @@ from gpu.host._tracing import _is_enabled as _gpu_is_enabled
 from gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
 from gpu.host._tracing import _mark as _mark_gpu
 from gpu.host._tracing import _start_range as _start_gpu_range
+from collections.string import StaticString
 
 from utils import IndexList, Variant
 
@@ -289,11 +290,11 @@ struct Trace[
     level: TraceLevel,
     *,
     category: TraceCategory = TraceCategory.MAX,
-    target: OptionalReg[StringLiteral] = None,
+    target: Optional[StaticString] = None,
 ]:
     """An object representing a specific trace."""
 
-    var name: Variant[String, StringLiteral]
+    var name: Variant[String, StaticString]
     var int_payload: OptionalReg[Int]
     var detail: String
     var event_id: Int
@@ -302,7 +303,7 @@ struct Trace[
     @always_inline
     fn __init__(
         out self,
-        name: Variant[String, StringLiteral],
+        name: Variant[String, StaticString],
         detail: String = "",
         parent_id: Int = 0,
         *,
@@ -342,9 +343,21 @@ struct Trace[
                 self.detail += "target=" + String(target.value())
             self.int_payload = task_id
         else:
-            self.name = ""
+            self.name = StaticString("")
             self.detail = ""
             self.int_payload = None
+
+    # TODO(StringLiteral): Remove this overload when StringLiteral changes.
+    @always_inline
+    fn __init__(
+        out self,
+        name: StringLiteral,
+        detail: String = "",
+        parent_id: Int = 0,
+        *,
+        task_id: OptionalReg[Int] = None,
+    ):
+        self = Self(StaticString(name), detail, parent_id, task_id=task_id)
 
     @always_inline
     fn __enter__(mut self):
@@ -380,7 +393,10 @@ struct Trace[
         if is_profiling_disabled[category, level]():
             return
 
-        name_str = self.name[StringLiteral]
+        # FIXME: The tracing builtins below expect an immortal string, so there
+        # is no way to support the dynamic [String] case.  Should it just be
+        # removed?
+        name_str = self.name[StaticString]
         if self.detail:
             # 1. If there is a detail string we must heap allocate the string
             #    because it presumably contains information only known at
@@ -464,8 +480,8 @@ struct Trace[
 
     @always_inline
     fn _get_name_as_str(self) -> String:
-        message = String(self.name[StringLiteral]) if self.name.isa[
-            StringLiteral
+        message = String(self.name[StaticString]) if self.name.isa[
+            StaticString
         ]() else self.name[String]
         return message
 
