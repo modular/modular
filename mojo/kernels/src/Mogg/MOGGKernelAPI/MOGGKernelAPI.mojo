@@ -9,6 +9,7 @@
 # ===-----------------------------------------------------------------------===#
 
 from collections import InlineArray, Optional, OptionalReg, List
+from collections.string import StaticString
 from math import (
     ceil,
     cos,
@@ -2923,7 +2924,7 @@ struct ArgMax:
     ) raises:
         var axis_val = normalize_neg_index(Int(axis), rank)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
 
             @parameter
             if target == "cpu":
@@ -2963,7 +2964,7 @@ struct ArgMin:
     ) raises:
         var axis_val = normalize_neg_index(Int(axis), rank)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
 
             @parameter
             if target == "cpu":
@@ -3090,7 +3091,7 @@ struct ReduceAdd:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             sum[
                 output.type,
                 input_fn,
@@ -3144,7 +3145,7 @@ struct ReduceMul:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             product[
                 output.type,
                 input_fn,
@@ -3198,7 +3199,7 @@ struct ReduceMax:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             reduce_max[
                 output.type,
                 input_fn,
@@ -3252,7 +3253,7 @@ struct ReduceMin:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             reduce_min[
                 output.type,
                 input_fn,
@@ -3364,7 +3365,7 @@ struct ReduceMinMax:
         var init_max = Scalar[type].MIN
         var init = StaticTuple[Scalar[type], num_reductions](init_min, init_max)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             _reduce_generator[
                 num_reductions,
                 type,
@@ -3608,7 +3609,7 @@ struct PadConstant:
                 ctx.get_device_context(),
             )
         else:
-            constrained[False, "Unknown target " + target]()
+            constrained[False, String("Unknown target ") + target]()
 
     @staticmethod
     fn shape[
@@ -3708,8 +3709,8 @@ struct GatherND:
         var data_ndbuffer = managed_tensor_slice_to_ndbuffer(data)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
-            gather_nd[batch_dims=batchDims, target=target](
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+            gather_nd[batch_dims=batchDims, target = StaticString(target)](
                 data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
             )
 
@@ -3774,7 +3775,7 @@ struct Gather:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             gather[
                 type = output.type,
                 indices_type = indices.type,
@@ -5498,7 +5499,7 @@ struct GGMLQ40Dequantize:
         output: OutputTensor[type = DType.float32, rank=2],
         input: InputTensor[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             Q4sym[group_size=32].dequantize_and_write_to_tensor(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
@@ -5527,7 +5528,7 @@ struct VroomQ40Matmul:
         a: InputTensor[type = DType.float32, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_qint4[32](
                 managed_tensor_slice_to_ndbuffer(a),
                 managed_tensor_slice_to_ndbuffer(b),
@@ -5553,7 +5554,7 @@ struct VroomQ40RepackWeights:
         b_packed: OutputTensor[type = DType.uint8, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_qint4_pack_b[32](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5583,7 +5584,7 @@ struct GGMLQ4KDequantize:
         output: OutputTensor[type = DType.float32, rank=2],
         input: InputTensor[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             q4_k_dequantize_impl(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
@@ -5616,7 +5617,7 @@ struct VroomQ4KMatmul:
         a: InputTensor[type = DType.float32, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q4_K(
                 managed_tensor_slice_to_ndbuffer(a),
                 managed_tensor_slice_to_ndbuffer(b),
@@ -5642,7 +5643,7 @@ struct VroomQ4KRepackWeights:
         b_packed: OutputTensor[type = DType.uint8, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q4_K_pack_b(
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5672,7 +5673,7 @@ struct GGMLQ6KDequantize:
         output: OutputTensor[type = DType.float32, rank=2],
         input: InputTensor[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             q6_k_dequantize_impl(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
@@ -5706,7 +5707,7 @@ struct VroomQ6KMatmul:
         a: InputTensor[type = DType.float32, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q6_K(
                 managed_tensor_slice_to_ndbuffer(a),
                 managed_tensor_slice_to_ndbuffer(b),
@@ -5732,7 +5733,7 @@ struct VroomQ6KRepackWeights:
         b_packed: OutputTensor[type = DType.uint8, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
     ) raises:
-        with Trace[TraceLevel.OP, target="cpu"](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString("cpu")](_trace_name):
             matmul_Q6_K_pack_b(
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5767,7 +5768,7 @@ struct QMatmulGPU_b4_g32:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             matmul_gpu_qint4[32, target](
                 managed_tensor_slice_to_ndbuffer(c),
                 managed_tensor_slice_to_ndbuffer(a),
@@ -5799,7 +5800,7 @@ struct QMatmulGPU_b4_g128:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             matmul_gpu_qint4[128, target](
                 managed_tensor_slice_to_ndbuffer(c),
                 managed_tensor_slice_to_ndbuffer(a),
@@ -5830,7 +5831,7 @@ struct QMatmulGPURepackGGUF:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             gpu_qint4_repack_Q4_0[target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5859,7 +5860,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             gpu_qint4_repack_GPTQ[128, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5889,7 +5890,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             gpu_qint4_repack_GPTQ[128, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5923,7 +5924,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
 
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
-    target: StringLiteral,
+    target: StaticString,
     type: DType,
 ](
     output: ManagedTensorSlice[type=type, rank=2],
@@ -5992,7 +5993,7 @@ struct Struct_fused_qkv_matmul_ragged_continuous_batching:
 
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
-    target: StringLiteral,
+    target: StaticString,
     type: DType,
 ](
     output: ManagedTensorSlice[type=type, rank=3],
@@ -6052,7 +6053,7 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching:
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     type: DType,
     weight_type: DType,
-    target: StringLiteral,
+    target: StaticString,
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
@@ -6086,7 +6087,7 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
 fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     type: DType,
     weight_type: DType,
-    target: StringLiteral,
+    target: StaticString,
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
@@ -6335,7 +6336,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     type: DType, //,
     *,
     interleaved: Bool,
-    target: StringLiteral,
+    target: StaticString,
 ](
     output: ManagedTensorSlice[type=type, rank=4],
     q_proj: ManagedTensorSlice[type=type, rank=4],
@@ -6403,7 +6404,7 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
 
 @always_inline
 fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
-    type: DType, //, *, interleaved: Bool, target: StringLiteral
+    type: DType, //, *, interleaved: Bool, target: StaticString
 ](
     output: ManagedTensorSlice[type=type, rank=3],
     q_proj: ManagedTensorSlice[type=type, rank=3],
@@ -6462,7 +6463,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     type: DType, //,
     *,
     interleaved: Bool,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q_proj: ManagedTensorSlice[type=type, rank=3],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
@@ -6572,7 +6573,7 @@ struct Struct_fused_qk_rope_ragged_paged_fa3_fallback[interleaved: Bool]:
         ) + ".hdim_" + String(
             kv_collection.kv_params.head_size
         )
-        with Trace[TraceLevel.OP, target=target](
+        with Trace[TraceLevel.OP, target = StaticString(target)](
             name,
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         ):
@@ -6599,7 +6600,7 @@ struct Struct_fused_qk_rope_ragged_paged_fa3_fallback[interleaved: Bool]:
 
 @always_inline
 fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
-    target: StringLiteral, type: DType
+    target: StaticString, type: DType
 ](
     output: ManagedTensorSlice[type=type, rank=4],
     q: ManagedTensorSlice[type=type, rank=4],
@@ -6655,7 +6656,7 @@ struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
 
 @always_inline
 fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
-    target: StringLiteral, type: DType
+    target: StaticString, type: DType
 ](
     output: ManagedTensorSlice[type=type, rank=4],
     q: ManagedTensorSlice[type=type, rank=4],
@@ -6704,7 +6705,7 @@ struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
 @always_inline
 fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
     type: DType, //,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: ManagedTensorSlice[type=type, rank=3],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
@@ -6728,7 +6729,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
 @always_inline
 fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
     type: DType, //,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: ManagedTensorSlice[type=type, rank=3],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
@@ -6814,7 +6815,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
 @always_inline
 fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     type: DType,
-    target: StringLiteral,
+    target: StaticString,
 ](
     q: ManagedTensorSlice[type=type, rank=3],
     input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
@@ -6896,7 +6897,7 @@ struct Struct_mha_ragged_paged_fa3_fallback_causal_mask_no_pos:
     ) raises:
         constrained[
             "gpu" in target,
-            "fa3_fallback only supports GPU execution, got: " + target,
+            String("fa3_fallback only supports GPU execution, got: ") + target,
         ]()
         constrained[
             type == DType.bfloat16, "fa3_fallback only support BF16 execution"
@@ -6944,7 +6945,7 @@ struct Struct_mha_ragged_paged_fa3_fallback_causal_mask_no_pos:
 
 @always_inline
 fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
-    type: DType, //, target: StringLiteral
+    type: DType, //, target: StaticString
 ](
     output: ManagedTensorSlice[type=type, rank=3],
     q: ManagedTensorSlice[type=type, rank=3],
@@ -7383,7 +7384,7 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
 
 
 fn print_kv_cache_cont_batch_generic_kernel_api[
-    type: DType, //, target: StringLiteral
+    type: DType, //, target: StaticString
 ](
     valid_lengths: InputTensor[type = DType.uint32, rank=1],
     kv_collection: ContinuousBatchingKVCacheCollection[type, _],
@@ -7412,7 +7413,7 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
 
 fn print_kv_cache_paged_generic_kernel_api[
     type: DType, //,
-    target: StringLiteral,
+    target: StaticString,
 ](
     valid_lengths: InputTensor[type = DType.uint32, rank=1],
     kv_collection: PagedKVCacheCollection[type, *_],
@@ -7780,7 +7781,7 @@ struct Struct_topk_fused_sampling:
 
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var out_idxs_buf = managed_tensor_slice_to_ndbuffer(out_idxs)
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
 
             @parameter
             if is_cpu[target]():
@@ -7932,7 +7933,7 @@ struct DistributedAllReduceSum:
                 width=_width, element_alignment=_alignment
             ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             allreduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
                 dev_ctxs, in_bufs, out_bufs, rank_sigs
             )
