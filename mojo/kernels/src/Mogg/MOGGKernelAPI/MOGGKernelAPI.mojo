@@ -118,6 +118,7 @@ from nn.kv_cache import (
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
     rms_norm_kv_cache_ragged_continuous_batching,
+    rms_norm_kv_cache_ragged_paged,
 )
 from nn.kv_cache_ragged import (
     generic_cross_attention_kv_cache_null_mask_cont_batch_ragged,
@@ -7365,6 +7366,40 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
         context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_continuous_batching[target=target](
+            kv_collection,
+            managed_tensor_slice_to_ndbuffer(gamma),
+            epsilon,
+            layer_idx,
+            total_seq_len,
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            context,
+        )
+
+
+@compiler.register("mo.rms_norm_kv_cache.ragged.paged")
+struct Struct_rms_norm_kv_cache_ragged_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        target: StringLiteral,
+    ](
+        kv_collection: PagedKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        gamma: InputTensor[type=type, rank=1],
+        epsilon: Scalar[type],
+        layer_idx: UInt32,
+        total_seq_len: UInt32,
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        rms_norm_kv_cache_ragged_paged[target=target](
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
             epsilon,
