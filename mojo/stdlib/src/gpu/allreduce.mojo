@@ -47,12 +47,7 @@ from gpu import (
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.intrinsics import (
-    load_acquire,
-    load_volatile,
-    store_release,
-    store_volatile,
-)
+from gpu.intrinsics import load_acquire, store_release
 from utils.index import StaticTuple
 from utils.numerics import get_accum_type
 
@@ -433,10 +428,8 @@ fn _multi_gpu_barrier[
             while load_acquire(self_counter_ptr) != val:
                 continue
         else:
-            # TODO: (KERN-1207) get rid of these inlined assembly intrinsics to use ptr.store/load[volatile=True]
-            # currently using store_volatile/load_volatile because they're much faster
-            store_volatile(peer_counter_ptr, val)
-            while load_volatile(self_counter_ptr) != val:
+            peer_counter_ptr.store[volatile=True](val)
+            while self_counter_ptr.load[volatile=True]() != val:
                 continue
 
     @parameter
