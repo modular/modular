@@ -88,7 +88,10 @@ modular_cc_test(
         "A100",
         "gpu",
     ],
-    deps = ["//AsyncRT:DeviceContextImpl"],
+    deps = [
+        ":TestUtils",
+        "//AsyncRT:DeviceContextImpl",
+    ],
 )
 
 modular_cc_test(
