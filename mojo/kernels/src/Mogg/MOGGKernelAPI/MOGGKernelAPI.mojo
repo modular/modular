@@ -104,7 +104,11 @@ from nn.gather_scatter import (
     scatter_nd_shape,
 )
 from gpu.host.info import is_cpu, is_gpu
-from nn.index_tensor import index_tensor
+from nn.index_tensor import (
+    index_tensor,
+    advanced_indexing_getitem,
+    advanced_indexing_setitem_inplace,
+)
 from nn.kv_cache import (
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
     generic_flash_attention_kv_cache_causal_mask_continuous_batch,
@@ -573,6 +577,20 @@ fn managed_tensor_slice_to_ndbuffer[
         address_space = spec.address_space,
         exclusive = spec.exclusive,
     ](ptr, tensor.shape(), tensor._runtime_strides)
+
+
+@always_inline
+fn input_variadic_tensors_to_static_tuple_ndbuffer[
+    type: DType, rank: Int, size: Int
+](indices: InputVariadicTensors[type, rank, size=size]) -> StaticTuple[
+    NDBuffer[type, rank], size
+]:
+    var result = StaticTuple[NDBuffer[type, rank], size]()
+
+    @parameter
+    for i in range(size):
+        result[i] = managed_tensor_slice_to_ndbuffer(indices[i])
+    return result
 
 
 @always_inline("nodebug")
@@ -8007,3 +8025,142 @@ struct IndexTensor:
             managed_tensor_slice_to_ndbuffer(output),
             ctx,
         )
+
+
+# ===-----------------------------------------------------------------------===#
+# Advanced Indexing
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("advanced_indexing_getitem")
+struct AdvancedIndexingGetItem:
+    @staticmethod
+    fn execute[
+        input_rank: Int,
+        index_rank: Int,
+        input_type: DType,
+        index_type: DType,
+        num_index_tensors: Int, //,
+        start_axis: Int,
+        target: StringLiteral,
+        _synchronous: Bool,
+        _trace_name: StringLiteral,
+    ](
+        out_tensor: OutputTensor[
+            type=input_type, rank = input_rank + index_rank - num_index_tensors
+        ],
+        input_tensor: InputTensor[type=input_type, rank=input_rank],
+        indices: InputVariadicTensors[
+            index_type, index_rank, size=num_index_tensors
+        ],
+        ctx: DeviceContextPtr,
+    ) raises:
+        advanced_indexing_getitem[
+            start_axis=start_axis,
+            target=target,
+            single_thread_blocking_override=_synchronous,
+            trace_description=_trace_name,
+        ](
+            managed_tensor_slice_to_ndbuffer(input_tensor),
+            input_variadic_tensors_to_static_tuple_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer(out_tensor),
+            ctx,
+        )
+
+
+@compiler.register("advanced_indexing_setitem_inplace")
+struct AdvancedIndexingSetItemInplace:
+    @staticmethod
+    fn execute[
+        input_rank: Int,
+        index_rank: Int,
+        updates_rank: Int,
+        input_type: DType,
+        index_type: DType,
+        num_index_tensors: Int, //,
+        start_axis: Int,
+        target: StringLiteral,
+        _synchronous: Bool,
+        _trace_name: StringLiteral,
+    ](
+        input_tensor: MutableInputTensor[type=input_type, rank=input_rank],
+        updates: InputTensor[type=input_type, rank=updates_rank],
+        indices: InputVariadicTensors[
+            index_type, index_rank, size=num_index_tensors
+        ],
+        ctx: DeviceContextPtr,
+    ) raises:
+        advanced_indexing_setitem_inplace[
+            start_axis=start_axis,
+            target=target,
+            single_thread_blocking_override=_synchronous,
+            trace_description=_trace_name,
+        ](
+            managed_tensor_slice_to_ndbuffer(input_tensor),
+            managed_tensor_slice_to_ndbuffer(updates),
+            input_variadic_tensors_to_static_tuple_ndbuffer(indices),
+            ctx,
+        )
+
+
+@compiler.register("advanced_indexing_setitem")
+struct AdvancedIndexingSetItem:
+    # TODO: implement view fusion on inputs
+    @staticmethod
+    fn execute[
+        input_rank: Int,
+        index_rank: Int,
+        updates_rank: Int,
+        input_type: DType,
+        index_type: DType,
+        num_index_tensors: Int, //,
+        start_axis: Int,
+        target: StringLiteral,
+        _synchronous: Bool,
+        _trace_name: StringLiteral,
+    ](
+        output_tensor: OutputTensor[type=input_type, rank=input_rank],
+        input_tensor: InputTensor[type=input_type, rank=input_rank],
+        updates: InputTensor[type=input_type, rank=updates_rank],
+        indices: InputVariadicTensors[
+            index_type, index_rank, size=num_index_tensors
+        ],
+        ctx: DeviceContextPtr,
+    ) raises:
+        """Implement basic numpy-style advanced indexing with assignment but returns a copy.
+        """
+
+        # First copy over input tensor into the output
+        @parameter
+        @always_inline
+        fn func[
+            width: Int
+        ](idx: IndexList[output_tensor.rank]) -> SIMD[
+            output_tensor.type, width
+        ]:
+            return input_tensor._fused_load[width](idx)
+
+        foreach[
+            func,
+            target=target,
+            _synchronous=_synchronous,
+            _trace_name = _trace_name + "_p1/2_copy",
+        ](output_tensor, ctx)
+
+        # Then run the updates in-place.
+        # For type checking
+        var tensor = MutableInputTensor[
+            type=input_type,
+            rank=input_rank,
+            static_spec = output_tensor.static_spec,
+        ](
+            output_tensor._ptr,
+            output_tensor._spec,
+            output_tensor._runtime_strides,
+        )
+        AdvancedIndexingSetItemInplace.execute[
+            target=target,
+            start_axis=start_axis,
+            _synchronous=_synchronous,
+            _trace_name = _trace_name + "_p2/2_update",
+        ](tensor, updates, indices, ctx)
