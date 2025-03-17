@@ -26,7 +26,7 @@ from utils.index import Index
 from utils.static_tuple import StaticTuple
 
 
-@__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
+@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](0))
 fn kernel_copy_async_tma(descriptor: TMADescriptor):
     var shmem = stack_allocation[
         16, DType.float32, alignment=16, address_space = _GPUAddressSpace.SHARED

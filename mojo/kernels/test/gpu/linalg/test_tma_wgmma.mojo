@@ -92,8 +92,7 @@ fn _load_a_reg_tile[
             vret.tile[1, 4](r_id, 0).copy_from(smem_wg)
 
 
-@__llvm_arg_metadata(a_tma_tile, `nvvm.grid_constant`)
-@__llvm_arg_metadata(b_tma_tile, `nvvm.grid_constant`)
+@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 2](0, 1))
 fn tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
