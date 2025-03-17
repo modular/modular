@@ -24,6 +24,8 @@ from sys.info import is_gpu, _is_sm_9x
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
+from collections.string import StringSlice
+from builtin.string_literal import get_string_literal_slice
 
 from ._assembly import inlined_assembly
 from .info import is_amd_gpu, is_nvidia_gpu, sizeof
@@ -35,7 +37,7 @@ from .info import is_amd_gpu, is_nvidia_gpu, sizeof
 
 @always_inline("nodebug")
 fn llvm_intrinsic[
-    intrin: StringLiteral,
+    intrin: StringSlice,
     type: AnyTrivialRegType,
     *types: AnyType,
     has_side_effect: Bool = True,
@@ -58,19 +60,21 @@ fn llvm_intrinsic[
 
     var loaded_pack = args.get_loaded_kgen_pack()
 
+    alias intrin_literal = get_string_literal_slice[intrin]().value
+
     @parameter
     if _mlirtype_is_eq[type, NoneType]():
 
         @parameter
         if has_side_effect:
             __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin = intrin.value,
+                intrin=intrin_literal,
                 _type=None,
             ](loaded_pack)
             return rebind[type](None)
         else:
             __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin = intrin.value,
+                intrin=intrin_literal,
                 _type=None,
                 hasSideEffects = __mlir_attr.false,
             ](loaded_pack)
@@ -80,12 +84,12 @@ fn llvm_intrinsic[
         @parameter
         if has_side_effect:
             return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin = intrin.value,
+                intrin=intrin_literal,
                 _type=type,
             ](loaded_pack)
         else:
             return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin = intrin.value,
+                intrin=intrin_literal,
                 _type=type,
                 hasSideEffects = __mlir_attr.false,
             ](loaded_pack)

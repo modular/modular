@@ -929,11 +929,33 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return atof(self)
 
+    fn __add__(self, rhs: StringSlice) -> String:
+        """Returns a string with this value prefixed on another string.
+
+        Args:
+            rhs: The right side of the result.
+
+        Returns:
+            The result string.
+        """
+        return String(self) + rhs
+
+    fn __radd__(self, lhs: StringSlice) -> String:
+        """Returns a string with this value appended to another string.
+
+        Args:
+            lhs: The left side of the result.
+
+        Returns:
+            The result string.
+        """
+        return String(lhs) + self
+
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.
 
         Args:
-            n : The number of times to concatenate the string.
+            n: The number of times to concatenate the string.
 
         Returns:
             The string concatenated `n` times.
