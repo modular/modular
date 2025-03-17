@@ -299,6 +299,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
     emitError({*errorLoc, "argument is not a concrete string"});
     return failure();
   }
+
   StringRef str(value.data(), value.size() + 1);
   if (value.getValue().empty())
     str = "\0";
