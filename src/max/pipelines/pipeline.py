@@ -212,6 +212,7 @@ class PipelineModel(ABC, Generic[T]):
             "PipelineModel must implement calculate_max_seq_len"
         )
 
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
     @classmethod
     @abstractmethod
     def get_kv_params(
@@ -224,6 +225,7 @@ class PipelineModel(ABC, Generic[T]):
         """Returns the KV cache params for the pipeline model."""
         ...
 
+    # TODO(AITLIB-264): Move this to model-specific MAXModelConfig class.
     @classmethod
     @abstractmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:

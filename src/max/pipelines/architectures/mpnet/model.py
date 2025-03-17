@@ -42,6 +42,7 @@ from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams
 from transformers import AutoConfig
 
 from .graph import build_graph
+from .model_config import MPNetConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -102,16 +103,11 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_attention_heads,
-            head_dim=(
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            ),
-            cache_strategy=kv_cache_config.cache_strategy,
+        return MPNetConfig.get_kv_params(
+            huggingface_config=huggingface_config,
             n_devices=n_devices,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     @classmethod

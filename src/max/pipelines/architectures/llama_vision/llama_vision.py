@@ -55,6 +55,7 @@ from max.pipelines.kv_cache._utils import build_max_lengths_tensor
 from transformers import AutoConfig
 
 from .language_model import CausalLanguageModel, instantiate_language_model
+from .model_config import LlamaVisionConfig
 from .vision_model import instantiate_vision_model
 
 logger = logging.getLogger("max.pipelines")
@@ -1093,17 +1094,11 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.text_config.num_key_value_heads,
-            head_dim=(
-                huggingface_config.text_config.hidden_size
-                // huggingface_config.text_config.num_attention_heads
-            ),
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+        return LlamaVisionConfig.get_kv_params(
+            huggingface_config=huggingface_config,
             n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     def load_kv_manager(

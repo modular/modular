@@ -46,6 +46,7 @@ from max.pipelines.log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 
 from .graph import _build_graph
+from .model_config import ReplitConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -180,14 +181,11 @@ class ReplitModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.attn_config["kv_n_heads"],
-            head_dim=huggingface_config.d_model // huggingface_config.n_heads,
-            cache_strategy=kv_cache_config.cache_strategy,
-            page_size=kv_cache_config.kv_cache_page_size,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+        return ReplitConfig.get_kv_params(
+            huggingface_config=huggingface_config,
             n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     @classmethod

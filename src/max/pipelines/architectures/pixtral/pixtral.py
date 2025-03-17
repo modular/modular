@@ -44,6 +44,7 @@ from max.pipelines.kv_cache import (
 from transformers import AutoConfig
 
 from .model.graph import _build_text_graph, _build_vision_graph
+from .model_config import PixtralConfig
 from .vision_encoder.attention_utils import causal_attention_mask_2d_from_imgs
 
 logger = logging.getLogger("max.pipelines")
@@ -239,14 +240,11 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            page_size=kv_cache_config.kv_cache_page_size,
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.text_config.num_key_value_heads,
-            head_dim=huggingface_config.text_config.head_dim,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+        return PixtralConfig.get_kv_params(
+            huggingface_config=huggingface_config,
             n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     @classmethod
