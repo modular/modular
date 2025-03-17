@@ -8,6 +8,7 @@
 import math
 from random import rand
 from sys import alignof, simdwidthof
+from collections.string import StaticString
 
 import benchmark
 from algorithm import Static2DTileUnitFunc as Tile2DFunc
@@ -310,7 +311,7 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
 @always_inline
 fn bench[
-    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StringLiteral
+    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StaticString
 ]() raises:
     var A = Matrix[M, K].rand()
     var B = Matrix[K, N].rand()
