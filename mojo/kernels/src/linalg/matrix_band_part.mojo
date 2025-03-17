@@ -11,6 +11,7 @@ from buffer.dimlist import DimList
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import TraceLevel
+from collections.string import StaticString
 
 from utils.index import Index, IndexList
 
@@ -27,7 +28,7 @@ fn matrix_band_part[
     ] -> SIMD[type, width],
     simd_width: Int,
     single_thread_blocking_override: Bool,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     input_shape: IndexList[rank],
     num_lower: NDBuffer[int_type, 1],
@@ -71,7 +72,7 @@ fn _matrix_band_part_impl[
     simd_width: Int,
     single_thread_blocking_override: Bool,
     exclude: Bool,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     input_shape: IndexList[rank],
     lower_diagonal_index: Int,

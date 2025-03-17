@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from hashlib._hasher import _Hasher
+from collections.string import StaticString
 from math import ceildiv
 from sys import (
     env_get_bool,
@@ -443,7 +444,7 @@ fn get_config_from_shape[
     static_N: Int,
     static_K: Int,
     transpose_b: Bool = False,
-    target: StringLiteral = DEFAULT_GPU_ARCH,
+    target: StaticString = DEFAULT_GPU_ARCH,
 ](dyn_M: Int, ctx: DeviceContext) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:

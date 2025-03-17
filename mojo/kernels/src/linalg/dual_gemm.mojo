@@ -8,6 +8,7 @@ from collections import OptionalReg
 from math import ceildiv, exp
 from os import abort
 from sys import alignof, is_defined, simdwidthof
+from collections.string import StaticString
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -1352,7 +1353,7 @@ fn swishGLU[
             trace_arg("C", IndexList[2](shape.M, shape.N), c.type),
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target = StaticString(target)](
         "swish_glu",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):

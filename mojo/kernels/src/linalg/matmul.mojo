@@ -6,6 +6,7 @@
 from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from sys.info import alignof, has_neon, has_nvidia_gpu_accelerator, simdwidthof
+from collections.string import StaticString
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import NDBuffer
@@ -743,8 +744,8 @@ fn matmul[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
-    _trace_description: StringLiteral = "",
-    target: StringLiteral = "cpu",
+    _trace_description: StaticString = "",
+    target: StaticString = "cpu",
 ](
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
@@ -775,8 +776,8 @@ fn matmul[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
-    _trace_description: StringLiteral = "",
-    target: StringLiteral = "cpu",
+    _trace_description: StaticString = "",
+    target: StaticString = "cpu",
 ](
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
@@ -808,9 +809,9 @@ fn matmul[
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     with Trace[TraceLevel.OP, target=target](
-        "matmul("
+        String("matmul(")
         + _trace_description
-        + ")" if _trace_description else "matmul",
+        + String(")") if _trace_description else String("matmul"),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 

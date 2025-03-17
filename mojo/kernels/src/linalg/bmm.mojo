@@ -8,6 +8,7 @@ from collections import OptionalReg
 from math import align_up, ceildiv, gcd
 from sys import alignof
 from sys.info import simdwidthof
+from collections.string import StaticString
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import (
@@ -261,7 +262,7 @@ fn batched_matmul[
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
@@ -644,7 +645,7 @@ fn batched_matmul[
     transpose_b: Bool,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
