@@ -21,6 +21,11 @@ import gpu.warp as warp
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
+from gpu.grid_controls import (
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+    pdl_launch_attributes,
+)
 
 from utils import IndexList
 from utils.numerics import get_accum_type
@@ -292,6 +297,8 @@ fn reduce_kernel[
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
+    wait_on_dependent_grids()
+
     # grid stride loop over rows
     # each block reduces a row, which requires no partial reductions
     for row_idx in range(block_idx.x, UInt(num_rows), grid_dim.x):
@@ -319,6 +326,8 @@ fn reduce_kernel[
 
             row_coords[axis] = 0
             output_fn[type, 1, rank](row_coords, row_accum_cast)
+
+    launch_dependent_grids()
 
 
 fn reduce_launch[
@@ -365,6 +374,7 @@ fn reduce_launch[
         shape,
         axis,
         init,
-        grid_dim=(num_blocks,),
-        block_dim=(BLOCK_SIZE,),
+        grid_dim=num_blocks,
+        block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(),
     )

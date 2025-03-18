@@ -26,6 +26,11 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
+from gpu.grid_controls import (
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+    launch_dependent_grids,
+)
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_cpu, is_gpu, is_valid_target
 from runtime import tracing
@@ -1659,6 +1664,9 @@ fn _elementwise_impl_gpu[
     fn _elementwise_gpu_kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
+
+        wait_on_dependent_grids()
+
         for idx in range(
             tid,
             num_packed_elems,
@@ -1692,18 +1700,28 @@ fn _elementwise_impl_gpu[
             ).canonicalize()
             func[1, rank](index_tup)
 
+        launch_dependent_grids()
+
     if shape[rank - 1] % simd_width == 0:
         ctx.enqueue_function[
             _elementwise_gpu_kernel[
                 block_size=block_size, handle_uneven_simd=False
             ]
-        ](grid_dim=Int(num_blocks), block_dim=Int(block_size))
+        ](
+            grid_dim=Int(num_blocks),
+            block_dim=Int(block_size),
+            attributes=pdl_launch_attributes(),
+        )
     else:
         ctx.enqueue_function[
             _elementwise_gpu_kernel[
                 block_size=block_size, handle_uneven_simd=True
             ]
-        ](grid_dim=Int(num_blocks), block_dim=Int(block_size))
+        ](
+            grid_dim=Int(num_blocks),
+            block_dim=Int(block_size),
+            attributes=pdl_launch_attributes(),
+        )
 
 
 # ===-----------------------------------------------------------------------===#
