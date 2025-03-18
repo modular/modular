@@ -38,7 +38,7 @@ def test_flash_attention[
     ctx: DeviceContext,
 ):
     alias type = DType.bfloat16
-    alias num_paged_blocks = 1024
+    alias num_paged_blocks = 4096
     var flattened_num_paged_blocks = num_paged_blocks * num_layers
     var num_splits = 1
     alias PagedCacheType = PagedKVCache[type, kv_params, page_size]
@@ -152,15 +152,14 @@ def test_flash_attention[
         for block_idx in range(0, ceildiv(seq_len, page_size)):
             if len(paged_lut_set) == num_paged_blocks:
                 raise "Not enough paged blocks to handle request"
-            var randval = Int(random_ui64(0, num_paged_blocks))
+            var randval = Int(random_ui64(0, num_paged_blocks - 1))
             while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks))
+                randval = Int(random_ui64(0, num_paged_blocks - 1))
 
             paged_lut_set.add(randval)
             our_paged_lut_host.tensor[bs, block_idx] = randval
             their_randval = randval * num_layers + layer_idx
             their_paged_lut_host.tensor[bs, block_idx] = their_randval
-
             memcpy(
                 our_kv_block_paged_host.tensor._offset(
                     StaticTuple[Int, 6](randval, 0, layer_idx, 0, 0, 0)
@@ -243,8 +242,6 @@ def test_flash_attention[
     ctx.enqueue_copy(ref_output_host.tensor.data, ref_output_device.buffer)
     ctx.synchronize()
 
-    err_counts = 0
-    max_diff = -1.0
     for i in range(batch_size):
         seq_len = valid_lengths[i]
         start_offset = input_row_offsets_host.tensor[i]
@@ -261,7 +258,6 @@ def test_flash_attention[
                             rtol=1e-5,
                         )
                     except e:
-                        err_counts += 1
                         print(
                             "Error at",
                             i,
@@ -273,23 +269,8 @@ def test_flash_attention[
                                 Int(start_offset + s), j, k
                             ],
                         )
-                        max_diff = max(
-                            max_diff,
-                            Float64(
-                                abs(
-                                    ref_output_host.tensor[
-                                        Int(start_offset + s), j, k
-                                    ]
-                                    - test_output_host.tensor[
-                                        Int(start_offset + s), j, k
-                                    ]
-                                )
-                            ),
-                        )
-    if err_counts > 0:
-        raise "Encountered " + String(
-            err_counts
-        ) + " errors, max diff: " + String(max_diff)
+                        raise e
+
     _ = ref_output_device^
     _ = q_device^
     _ = their_kv_block_paged_device^
