@@ -20,7 +20,7 @@ These primitives are essential for implementing complex GPU execution pipelines 
 multiple kernels need to execute in a specific order with minimal overhead. They
 eliminate the need for host-side synchronization when orchestrating dependent GPU work.
 """
-from sys import is_nvidia_gpu, has_nvidia_gpu_accelerator
+from sys import has_nvidia_gpu_accelerator
 from .host.info import H100, DEFAULT_GPU
 from .host.launch_attribute import (
     LaunchAttribute,
@@ -45,7 +45,7 @@ fn _enable_pdl_launch() -> Bool:
         True if PDL is supported and enabled, False otherwise.
     """
 
-    if not (has_nvidia_gpu_accelerator() or is_nvidia_gpu()):
+    if not has_nvidia_gpu_accelerator():
         return False
 
     if DEFAULT_GPU < H100:
