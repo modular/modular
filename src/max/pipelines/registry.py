@@ -382,10 +382,17 @@ class PipelineRegistry:
         # devices.
         for device_spec in model_config.device_specs:
             if not model_config.quantization_encoding.supported_on(device_spec):
-                raise ValueError(
-                    f"{model_config.quantization_encoding} is not supported on {device_spec.device_type}. "
-                    "Please use the flag --devices=cpu or --devices=gpu to configure the device."
+                available_encodings = list(arch.supported_encodings.keys())
+
+                msg = (
+                    f"The encoding '{model_config.quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
+                    f"You have two options to resolve this:\n"
+                    f"1. Use a different device\n"
+                    f"2. Use a different encoding (encodings available for this model: {', '.join(str(enc) for enc in available_encodings)})\n\n"
+                    f"Please use the --help flag for more information."
                 )
+
+                raise ValueError(msg)
 
         model_config.finalize_encoding_config()
 
