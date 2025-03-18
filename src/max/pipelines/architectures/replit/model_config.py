@@ -25,7 +25,7 @@ from max.pipelines.kv_cache import KVCacheParams
 from transformers import AutoConfig
 
 
-@dataclass(kw_only=True)  # type: ignore[call-overload]
+@dataclass
 class ReplitConfig(MAXModelConfig):
     @staticmethod
     def help() -> dict[str, str]:

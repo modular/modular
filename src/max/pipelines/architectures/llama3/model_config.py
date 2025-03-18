@@ -26,7 +26,8 @@ from max.nn import Llama3RopeScalingParams
 from max.pipelines import upper_bounded_default
 from max.pipelines.config import (
     KVCacheConfig,
-    MAXConfig,
+    MAXModelConfig,
+    MAXModelConfigBase,
     PipelineConfig,
     RopeType,
 )
@@ -34,12 +35,11 @@ from max.pipelines.kv_cache import KVCacheParams
 from transformers import AutoConfig
 
 
-# TODO(zheng): Move this under MAXModelConfig. The challenge here is that
-# MAXModelConfig has optional fields, and Llama3Config has required fields.
-# We can work around this by having a superclass of MAXModelConfig that has
-# the abstract methods, and then having Llama3Config extend that.
 @dataclass
-class Llama3Config(MAXConfig):
+class Llama3ConfigBase(MAXModelConfigBase):
+    """Base configuration for Llama3 models."""
+
+    # Required fields
     hidden_size: int
     num_attention_heads: int
     num_key_value_heads: int
@@ -51,7 +51,7 @@ class Llama3Config(MAXConfig):
     interleaved_rope_weights: bool
     vocab_size: int
     dtype: DType
-    quantization_encoding: Optional[QuantizationEncoding]
+    model_quantization_encoding: Optional[QuantizationEncoding]
     quantization_config: Optional[QuantizationConfig]
     kv_params: KVCacheParams
     all_logits: bool
@@ -70,6 +70,11 @@ class Llama3Config(MAXConfig):
     @staticmethod
     def help() -> dict[str, str]:
         return {}
+
+
+@dataclass
+class Llama3Config(MAXModelConfig, Llama3ConfigBase):
+    """Implementation of MAXModelConfig for Llama3 models."""
 
     @staticmethod
     def calculate_attention_multiplier(
@@ -229,7 +234,11 @@ class Llama3Config(MAXConfig):
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
-            quantization_encoding=pipeline_config.graph_quantization_encoding,
+            # TODO: Since pipeline_config.model_config is a MAXModelConfig, these
+            # fields should not have to reinstantiated. Once we roll out the final
+            # iteration of MAXModelConfig, it will automatically instantiate based
+            # on the underlying model repo id.
+            model_quantization_encoding=pipeline_config.model_config.graph_quantization_encoding,
             quantization_config=pipeline_config.model_config._quant_config,
             all_logits=pipeline_config.enable_echo,
             max_seq_len=Llama3Config.calculate_max_seq_len(

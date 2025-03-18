@@ -578,7 +578,21 @@ class KVCacheConfig(MAXConfig):
 
 
 @dataclass
-class MAXModelConfig(MAXConfig):
+class MAXModelConfigBase(MAXConfig):
+    """Abstract base class for all (required) MAX model configs.
+
+    This base class is used to configure a model to use for a pipeline, but also
+    handy to sidestep the need to pass in optional fields when subclassing
+    MAXModelConfig.
+    """
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        return {}
+
+
+@dataclass
+class MAXModelConfig(MAXModelConfigBase):
     """Abstract base class for all MAX model configs.
 
     This class is used to configure a model to use for a pipeline.

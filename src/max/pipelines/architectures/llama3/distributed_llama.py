@@ -134,7 +134,7 @@ class DistributedLlama3(DistributedTransformer):
                 ),
                 mlp=mlp_cls(
                     config.dtype,
-                    config.quantization_encoding,
+                    config.model_quantization_encoding,
                     config.hidden_size,
                     config.intermediate_size,
                     linear_cls,
@@ -151,8 +151,8 @@ class DistributedLlama3(DistributedTransformer):
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
-        embedding_output_quantization = config.quantization_encoding
-        if config.quantization_encoding == QuantizationEncoding.GPTQ:
+        embedding_output_quantization = config.model_quantization_encoding
+        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
 

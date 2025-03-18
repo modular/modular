@@ -81,17 +81,17 @@ class Llama3(Transformer):
             linear_cls = LinearV2
         mlp_cls = StackedMLP if config.stacked_mlp else MLPV2
         attention_cls: Callable[..., AttentionWithRopeV2]
-        if config.quantization_encoding == QuantizationEncoding.GPTQ:
+        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             assert config.quantization_config is not None
             attention_cls = functools.partial(
                 GPTQAttentionWithRope,
                 quantization_config=config.quantization_config,
                 scale=config.attention_multiplier,
             )
-        elif config.quantization_encoding is not None:
+        elif config.model_quantization_encoding is not None:
             attention_cls = functools.partial(
                 GGUFQAttentionWithRope,
-                quantization_encoding=config.quantization_encoding,
+                quantization_encoding=config.model_quantization_encoding,
                 scale=config.attention_multiplier,
             )
         else:
@@ -117,7 +117,7 @@ class Llama3(Transformer):
                 ),
                 mlp=mlp_cls(
                     config.dtype,
-                    config.quantization_encoding,
+                    config.model_quantization_encoding,
                     config.hidden_size,
                     config.intermediate_size,
                     linear_cls,
@@ -132,8 +132,8 @@ class Llama3(Transformer):
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
-        embedding_output_quantization = config.quantization_encoding
-        if config.quantization_encoding == QuantizationEncoding.GPTQ:
+        embedding_output_quantization = config.model_quantization_encoding
+        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
         embedding_layer = EmbeddingV2(
