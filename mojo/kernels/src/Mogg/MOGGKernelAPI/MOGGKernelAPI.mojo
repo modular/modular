@@ -45,6 +45,7 @@ from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
 from gpu.allreduce import MAX_GPUS, Signal, allreduce
+from gpu.allgather import allgather
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
@@ -8031,6 +8032,57 @@ struct DistributedAllReduceSum:
             allreduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
                 dev_ctxs, in_bufs, out_bufs, rank_sigs
             )
+
+
+@compiler.register("mo.distributed.allgather")
+struct DistributedAllGather:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        target: StringLiteral,
+    ](
+        outputs: OutputVariadicTensors[type, rank, *_],
+        inputs: InputVariadicTensors[type, rank, *_],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) raises:
+        """Distributed allgather operation implementation.
+
+        Args:
+            outputs: Output tensors (one per GPU) to store gathered results.
+            inputs: Input tensors (one per GPU) containing values to gather.
+            dev_ctxs_input: Device contexts for participating GPUs.
+        """
+        alias num_devices = inputs.size
+        constrained[
+            outputs.size == num_devices,
+            (
+                "expected allgather input and output buffers to all"
+                " have the same number of elements (devices)"
+            ),
+        ]()
+
+        var dev_ctxs = List[DeviceContext]()
+        for i in range(len(dev_ctxs_input)):
+            dev_ctxs.append(dev_ctxs_input[i])
+
+        # Marshal input and output variadic tensors into the expected format.
+        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
+            NDBuffer[type, rank]()
+        )
+
+        @parameter
+        for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+
+        var out_bufs = InlineArray[NDBuffer[type, rank], num_devices](
+            NDBuffer[type, rank]()
+        )
+
+        @parameter
+        for i in range(num_devices):
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
+        allgather[ngpus=num_devices](dev_ctxs, in_bufs, out_bufs)
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
