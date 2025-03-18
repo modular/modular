@@ -152,24 +152,24 @@ class Transformer(Module):
         for _, layer in enumerate(self.layers):
             h = layer(h, kv_collection, **kwargs)
 
-        normalized = self.norm(h)
-
         if "input_row_offsets" in kwargs:
             # Ragged inputs/activations
             last_indices = kwargs["input_row_offsets"][1:] - 1
-            last_tokens = ops.gather(normalized, last_indices, axis=0)
+            last_h = ops.gather(h, last_indices, axis=0)
         else:
             # Dense padded inputs/activations
             valid_lengths = kwargs["valid_lengths"]
             # TODO: Remove once `gather_nd` works with nonstatic last dims.
             indices = ops.unsqueeze(valid_lengths - 1, -1)
-            last_tokens = ops.gather_nd(normalized, indices, batch_dims=1)
+            last_h = ops.gather_nd(h, indices, batch_dims=1)
+
+        norm_last_h = self.norm(last_h)
 
         # Always return float32 logits, no matter the activation type.
-        last_token_logits = ops.cast(self.lm_head(last_tokens), DType.float32)
+        last_token_logits = ops.cast(self.lm_head(norm_last_h), DType.float32)
 
         if self.all_logits:
-            all_logits = ops.cast(self.lm_head(normalized), DType.float32)
+            all_logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
             return self._apply_logits_postprocessor(
                 (last_token_logits, all_logits)
             )
