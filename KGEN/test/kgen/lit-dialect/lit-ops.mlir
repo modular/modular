@@ -485,23 +485,31 @@ lit.fn @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
 // -----
 
 // CHECK-LABEL: lit.fn @make_closure
-lit.fn @make_closure(%x:index) -> !kgen.none {
-  lit.fn my_closure(%y: index) -> index {
-    %6 = index.add %x, %y
+  lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<@String, imm Y> owned_in_mem, %x: index, %z: !lit.ref<@String, imm Z> owned_in_mem) -> !kgen.none {
+    // CHECK: lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__[2](!lit.ref<@String, mut *[0,0]>, !lit.ref<@String, imm *[0,1]>)])(%arg0[y2]: index) -> index
+    // CHECK: } : (!lit.ref<@String, imm Y>, index, !lit.ref<@String, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+    %0 = lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__[2](!lit.ref<@String, mut *[0,0]>, !lit.ref<@String, imm *[0,1]>)])(%arg0[y2]: index) -> index {
+      lit.end_fn
+    } : (!lit.ref<@String, imm Y>, index, !lit.ref<@String, imm Z>),
+        !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+    // CHECK: lit.closure.init()(%arg0[y2]: index) -> index
+    // CHECK: } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, mut C2>
+    %1 = lit.closure.init()(%arg0[y2]: index) -> index {
+      lit.end_fn
+    } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, mut C2>
     lit.end_fn
   }
-  // CHECK: lit.closure.init<: !lit.generator<("y": index) -> index> my_closure> :
-  // CHECK-SAME: !lit.ref<!kgen.closure<@make_closure, "my_closure" nonescaping>, mut C>
-  %ptr = lit.closure.init <: !kgen.generator<!lit.generator<("y": index) -> index>> my_closure>
-         : !lit.ref<!kgen.closure<@make_closure, "my_closure" nonescaping>, mut C>
-  lit.end_fn
-}
+
+  lit.struct.decl @String {
+
+  }
 
 // -----
 
 // COM: Ensure Closure Symbols Are Valid VTable Entries
 
 !Closure = !lit.trait<@Closure>
+!String = !lit.struct<@String>
 !Impl = !kgen.closure<@make_closure, "foo" nonescaping>
 
 // CHECK: #kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>,
@@ -519,13 +527,10 @@ lit.trait.decl @Closure<?, SELF: !Closure> {
   }
 }
 
-lit.fn @make_closure(%x:index) -> !kgen.none {
-  lit.fn foo(%y: index) -> index {
-    %6 = index.add %x, %y
+lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x:index, %z: !lit.ref<!String, imm Z> owned_in_mem) -> !kgen.none {
+  %impl = lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__[2](!lit.ref<!String, imm *[0,0]>, !lit.ref<!String, imm *[0,1]>)])(%y2: index) -> index {
     lit.end_fn
-  }
-  %impl = lit.closure.init <: !kgen.generator<!lit.generator<("y": index) -> index>> foo>
-           : !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+  } : (!lit.ref<!String, imm Y>, index, !lit.ref<!String, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
   %2 = lit.call @direct[mut C]<:!Closure #Impl1>(%impl, %x) :
            !lit.generator<[1]("c":!lit.ref<:!Closure #Impl1, mut *[0,0]> read_mem, "x": index) -> !kgen.none>
   lit.end_fn
@@ -535,4 +540,42 @@ lit.fn @direct<CT: !Closure>[mut Origin0](%c: !lit.ref<:!Closure CT, mut Origin0
    %0 = lit.call[!lit.generator<[1]("self": !lit.ref<:!Closure CT, imm *[0,0]> read_mem, "y": index) -> index>:
         get_vtable_entry(:!Closure CT, "__call__")][mut Origin0](%c, %x)
    lit.end_fn
+}
+
+lit.struct.decl @String
+    copy :!lit.generator<[2]("existing": !lit.ref<!String, imm *[0,0]> read_mem, ?, "self": !lit.ref<!String, mut *[0,1]> byref_result) -> !kgen.none> @String::@"__copyinit__" {
+    lit.fn @__copyinit__[imm E1, mut E2](%existing: !lit.ref<!String, imm E2> read_mem, ?, %self: !lit.ref<!String, mut E1> byref_result) -> !kgen.none {
+        %none = kgen.param.constant: none = <#kgen.none>
+        lit.return %none : !kgen.none
+        lit.end_fn
+    }
+}
+
+// -----
+
+// COM: Ensure lifetimes and parameters and parsed/printed correctly.
+// Note that symbols of copy/move captures are specified similar to a lit.call:
+// (1) lifetimes
+// (2) the values bound to the parameters of the symbol
+// (3) the existing and self types
+// The existing and self types are provided to avoid parameter inference from the capture types.
+
+lit.struct.decl @Foo<PARAM: index>
+  copy :!lit.generator<<"P": index, "Q": index>[2]("existing": !lit.ref<@Foo<:index *(0,0)>, imm *[0,0]> read_mem, ?, "self": !lit.ref<@Foo<:index *(0,0)>, mut *[0,1]> byref_result) -> !kgen.none> @Foo::@__copyinit__ {
+  lit.struct.field x : index
+  lit.struct.field y : index
+  lit.fn @__copyinit__<P: index, Q: index>[imm O1, mut O2](%existing: !lit.ref<@Foo<:index P>, imm O1> read_mem, ?, %self: !lit.ref<@Foo<:index P>, mut O2> byref_result) -> !kgen.none {
+    lit.end_fn
+  }
+}
+
+lit.fn @"bar"<PARAM: index>[mut R](?, %__result__: !lit.ref<@Foo<:index PARAM>, mut R> byref_result) -> !kgen.none {
+  %foo = lit.var.decl "foo" var : !lit.ref<@Foo<:index PARAM>, mut FOO>
+  // CHECK: lit.closure.init(%foo[@Foo::@__copyinit__[2]<PARAM, 2>(!lit.ref<@Foo<*(0,0)>, imm *[0,0]>, !lit.ref<@Foo<*(0,0)>, mut *[0,1]>)])(%arg0[y2]: index) -> index {
+  // CHECK-NEXT: lit.end_fn
+  // CHECK-NEXT: } : (!lit.ref<@Foo<PARAM>, mut FOO>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+  %impl = lit.closure.init(%foo[@Foo::@__copyinit__[2]<PARAM, 2>(!lit.ref<@Foo<:index *(0,0)>, imm *[0,0]>, !lit.ref<@Foo<:index *(0,0)>, mut *[0,1]>)])(%y2: index) -> index {
+    lit.end_fn
+  } : (!lit.ref<@Foo<:index PARAM>, mut FOO>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+  lit.end_fn
 }

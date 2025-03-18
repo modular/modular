@@ -969,7 +969,7 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
 // EndFnOp
 //===----------------------------------------------------------------------===//
 
-def LIT_EndFnOp : LITOp<"end_fn", [Terminator, HasParent<"LIT::FnOp">]> {
+def LIT_EndFnOp : LITOp<"end_fn", [Terminator]> {
   let summary = "Function terminator.";
   let description = [{
     The `lit.end_fn` operation denotes the end of a `lit.fn` body. This
@@ -984,6 +984,7 @@ def LIT_EndFnOp : LITOp<"end_fn", [Terminator, HasParent<"LIT::FnOp">]> {
   }];
 
   let assemblyFormat = "attr-dict";
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1735,35 +1736,70 @@ def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
 //===----------------------------------------------------------------------===//
 
 def LIT_ClosureInitOp : LITOp<"closure.init",
-                [DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
+                [FunctionLike, SingleBlock,
+                  DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
   let summary = "Allocate memory and store values into a closure struct.";
   let description = [{
     The `lit.closure.init` operation represents the instantiation of a closure
     struct. The closure struct holds the captured values. It maps the nested
-    function to the capture struct. The input, a nested function, is represented
-    as a function typed parameter. The result contains a symbol like label that
-    will be replaced with the struct type after lowering.
+    function to the capture struct.
+
+    The capture semantics are modeled in this operation so that when the struct
+    is created later in the pipeline we know how to copy the original value into
+    the struct.
+
+    There are three ways to capture a value:
+    1. By move/copy
+    2. By value
+    3. By reference
+
+    In case 1, you will need to specify the symbol of the copy or move function.
+    In case 2, you specify nothing.
+    In case 3, you provide the lifetime of the lit.reference typed value so that
+    Mojo can ensure lifetime satefy.
 
     Example:
     ```mlir
-    lit.fn @make_closure(%x:index) -> !kgen.none {
-      lit.fn *"foo"(%y: index) -> index {
-          %6 = index.add %x, %y
-          lit.return %6 : index
+    lit.fn @make_closure[imm A, imm B](%y: !lit.ref<@String, imm A>,
+                                       %x:index,
+                                       %z: !lit.ref<@String, imm B>) -> !kgen.none {
+      %ptr = lit.closure.init(%y:[ref: imm A], %x,
+             %z[@String::@__copyinit__[2](!lit.ref<@String, imm *[0,0]>, !lit.ref<@String, imm *[0,1]>)]
+             )(%arg1: index) -> index {
           lit.end_fn
-      }
-      %ptr = lit.closure.init <:
-              !kgen.generator<!lit.generator<("y": index) -> index>> *"foo">
-             : !lit.ref<!ClosureImpl, mut C>
+      } : (index), !lit.ref<!ClosureImpl, mut C>
       lit.return %none : !kgen.none
       lit.end_fn
       }
      ```
     }];
 
-  let arguments = (ins TypedAttrInterface: $closure, KGEN_ParamDeclAttr:$paramDecl);
+  let arguments = (ins TypeAttrOf<LIT_FnTypeGeneratorType>:$funcTypeGenerator,
+                       TypeAttrOf<FunctionType>:$functionType,
+                       Variadic<AnyType>:$captures,
+                       ArrayAttr:$moveOrCopyCaptureSymbols,
+                       TypedAttrInterface:$captureOrigins,
+                       KGEN_ParamDeclArrayAttr:$inputParams,
+                       KGEN_InlineLevelAttr:$inlineLevel,
+                       KGEN_ParamDeclAttr:$paramDecl);
   let results = (outs LIT_RefType:$result);
+  let regions = (region SizedRegion<1>:$bodyRegion);
   let assemblyFormat = [{
-      `` custom<ClosureInitOpValue>($closure, type($result), $paramDecl) attr-dict
+      `` custom<ClosureInitOpValue>($funcTypeGenerator,
+                                    $functionType,
+                                    $captures,
+                                    $moveOrCopyCaptureSymbols,
+                                    $captureOrigins,
+                                    $inputParams,
+                                    $inlineLevel,
+                                    $bodyRegion,
+                                    type($captures),
+                                    type($result),
+                                    $paramDecl)  attr-dict
   }];
+  let extraClassDeclaration = [{
+    Region *getCallableRegion() { return &getBodyRegion(); }
+    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+  }];
+  let hasVerifier = 1;
 }
