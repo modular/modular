@@ -29,7 +29,11 @@ from gpu import (
     syncwarp,
     thread_idx,
 )
-from gpu.grid_controls import launch_dependent_grids, wait_on_dependent_grids
+from gpu.grid_controls import (
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+    pdl_launch_attributes,
+)
 from gpu.host import DeviceContext
 from gpu.host.info import H100
 from gpu.host.launch_attribute import (
@@ -50,20 +54,6 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 from .reshape import reshape
-
-
-@always_inline
-fn _launch_dependent_grids():
-    @parameter
-    if _is_sm_9x():
-        launch_dependent_grids()
-
-
-@always_inline
-fn _wait_on_dependent_grids():
-    @parameter
-    if _is_sm_9x():
-        wait_on_dependent_grids()
 
 
 @always_inline
@@ -291,7 +281,7 @@ fn layer_norm_gpu_warp_tiling[
     var thread_m2 = Scalar[accum_type]()
     var thread_count = Scalar[accum_type]()
 
-    _wait_on_dependent_grids()
+    wait_on_dependent_grids()
 
     if idx < num_cols:
         vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
@@ -318,7 +308,7 @@ fn layer_norm_gpu_warp_tiling[
         ]() + beta_val.cast[accum_type]()
         output.store[alignment=align](Index(row, idx), norm_val.cast[type]())
 
-    _launch_dependent_grids()
+    launch_dependent_grids()
 
 
 fn layer_norm_gpu_block[
@@ -343,7 +333,7 @@ fn layer_norm_gpu_block[
     var row_m2 = Scalar[accum_type]()
     var row_count = Scalar[accum_type]()
 
-    _wait_on_dependent_grids()
+    wait_on_dependent_grids()
 
     # Every block has a single row to process
     for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
@@ -389,7 +379,7 @@ fn layer_norm_gpu_block[
                 Index(row, offset), norm_val.cast[type]()
             )
 
-    _launch_dependent_grids()
+    launch_dependent_grids()
 
 
 fn layer_norm_reshape[
@@ -459,17 +449,6 @@ fn layer_norm_gpu[
         WARP_SIZE * max_warps_per_block,
     )
 
-    var attrs = List[LaunchAttribute]()
-
-    @parameter
-    if ctx.device_info is H100:
-        attrs = List[LaunchAttribute](
-            LaunchAttribute(
-                LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION,
-                LaunchAttributeValue(True),
-            )
-        )
-
     if cols % simd_width == 0:
         # When the number of columns are less enough that they can be placed in
         # registers we do warp tiling which is a single pass to do mean/var
@@ -483,7 +462,7 @@ fn layer_norm_gpu[
                 epsilon,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=attrs^,
+                attributes=pdl_launch_attributes(),
             )
         else:
             ctx.enqueue_function[
@@ -494,7 +473,7 @@ fn layer_norm_gpu[
                 epsilon,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=attrs^,
+                attributes=pdl_launch_attributes(),
             )
     else:
         ctx.enqueue_function[layer_norm_gpu_block[1, input_fn_2d, gamma_fn]](
@@ -503,7 +482,7 @@ fn layer_norm_gpu[
             epsilon,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            attributes=attrs^,
+            attributes=pdl_launch_attributes(),
         )
 
 
@@ -757,7 +736,7 @@ fn rms_norm_gpu_warp_tiling[
     var idx: UInt = tid * simd_width
     var thread_m2 = Scalar[accum_type](0)
 
-    _wait_on_dependent_grids()
+    wait_on_dependent_grids()
 
     # To utilize simd vector load
     if idx < num_cols:
@@ -776,7 +755,7 @@ fn rms_norm_gpu_warp_tiling[
         var norm_val = vec_data * norm_factor * gamma_val.cast[accum_type]()
         output_fn(row, idx, norm_val.cast[type]())
 
-    _launch_dependent_grids()
+    launch_dependent_grids()
 
 
 fn rms_norm_gpu_block[
@@ -797,7 +776,7 @@ fn rms_norm_gpu_block[
     var row: UInt = block_idx.x
     var thread_m2 = Scalar[accum_type](0)
 
-    _wait_on_dependent_grids()
+    wait_on_dependent_grids()
 
     # Every block has a single row to process
     for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
@@ -826,7 +805,7 @@ fn rms_norm_gpu_block[
             )
             output_fn(row, offset, norm_val.cast[type]())
 
-    _launch_dependent_grids()
+    launch_dependent_grids()
 
 
 fn rms_norm_gpu[
@@ -884,17 +863,6 @@ fn rms_norm_gpu[
         WARP_SIZE * max_warps_per_block,
     )
 
-    var attrs = List[LaunchAttribute]()
-
-    @parameter
-    if ctx.device_info is H100:
-        attrs = List[LaunchAttribute](
-            LaunchAttribute(
-                LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION,
-                LaunchAttributeValue(True),
-            )
-        )
-
     if cols % simd_width == 0:
         # When the number of columns are less enough that they can be placed in
         # registers we do warp tiling which is a single pass to do mean/var
@@ -910,7 +878,7 @@ fn rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=attrs^,
+                attributes=pdl_launch_attributes(),
             )
         else:
             ctx.enqueue_function[
@@ -923,7 +891,7 @@ fn rms_norm_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=attrs^,
+                attributes=pdl_launch_attributes(),
             )
     else:
         ctx.enqueue_function[
@@ -936,7 +904,7 @@ fn rms_norm_gpu[
             cols,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            attributes=attrs^,
+            attributes=pdl_launch_attributes(),
         )
 
 
