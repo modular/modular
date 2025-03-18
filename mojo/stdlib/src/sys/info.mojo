@@ -889,7 +889,7 @@ fn has_accelerator() -> Bool:
     Returns:
         True if the host system has an accelerator.
     """
-    return _accelerator_arch() != ""
+    return is_gpu() or _accelerator_arch() != ""
 
 
 @always_inline("nodebug")
@@ -899,7 +899,7 @@ fn has_amd_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an AMD GPU.
     """
-    return "amd" in _accelerator_arch()
+    return is_amd_gpu() or "amd" in _accelerator_arch()
 
 
 @always_inline("nodebug")
@@ -909,4 +909,4 @@ fn has_nvidia_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an NVIDIA GPU.
     """
-    return "nvidia" in _accelerator_arch()
+    return is_nvidia_gpu() or "nvidia" in _accelerator_arch()
