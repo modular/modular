@@ -29,7 +29,20 @@ class EchoTokenGeneratorContext:
     # Scheduler_V2 use them to determine if a context has been chunked.
     start_idx: int = 0
     active_idx: int = 0
-    cache_seq_id: int = 0
+    cache_seq_id: int = -1
+
+    def assign_to_cache(self, cache_seq_id: int) -> None:
+        """Assigns the context to a cache slot."""
+        self.cache_seq_id = cache_seq_id
+
+    def unassign_from_cache(self) -> None:
+        """Unassigns the context from a cache slot."""
+        self.cache_seq_id = -1
+
+    @property
+    def is_assigned_to_cache(self) -> bool:
+        """Returns True if input is assigned to a cache slot, False otherwise."""
+        return self.cache_seq_id != -1
 
 
 @dataclass

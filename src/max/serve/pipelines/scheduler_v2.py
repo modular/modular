@@ -10,10 +10,10 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping, Optional, TypeVar
+from typing import Any, Mapping, Optional
 
-import numpy as np
 from max.pipelines import TokenGenerator
+from max.pipelines.context import InputContext
 from max.pipelines.interfaces import (
     EmbeddingsGenerator,
     TextGenerationResponse,
@@ -28,10 +28,6 @@ from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 logger = logging.getLogger("max.serve")
-
-BatchReqId = TypeVar("BatchReqId")
-BatchReqInput = TypeVar("BatchReqInput")
-BatchInputs = dict[BatchReqId, BatchReqInput]
 
 
 class BatchType(Enum):
@@ -50,7 +46,7 @@ class SchedulerOutput:
     def __init__(
         self,
         batch_type: BatchType = BatchType.TokenGeneration,
-        batch_inputs: BatchInputs = {},
+        batch_inputs: dict[str, InputContext] = {},
         prompt_tokens: Optional[int] = None,
         tokens_to_encode: Optional[int] = None,
     ):
@@ -83,9 +79,9 @@ class RequestDeque:
 
     def __init__(self, queue: Queue):
         self.queue = queue
-        self.preempted: list[BatchInputs] = []
+        self.preempted: list[tuple[str, InputContext]] = []
 
-    def put_front_nowait(self, item):
+    def put_front_nowait(self, item: tuple[str, InputContext]):
         """A new method that allows us to add requests to the front of the queue."""
         self.preempted.append(item)
 
@@ -95,7 +91,7 @@ class RequestDeque:
     def put_nowait(self, *args, **kwargs) -> None:
         return self.queue.put_nowait(*args, **kwargs)
 
-    def get_nowait(self) -> Any:
+    def get_nowait(self) -> tuple[str, InputContext]:
         if self.preempted:
             return self.preempted.pop()
         return self.queue.get_nowait()
@@ -190,7 +186,7 @@ class TokenGenerationSchedulerV2(Scheduler):
         self.cancel_q = queues["CANCEL"]
 
         # Initialize Scheduler state.
-        self.active_batch: BatchInputs = {}
+        self.active_batch: dict[str, InputContext] = {}
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_tg)
         )
@@ -247,17 +243,6 @@ class TokenGenerationSchedulerV2(Scheduler):
 
         return True
 
-    def _construct_fetch_input(self, batch) -> dict[int, np.ndarray]:
-        """Construct input to the `fetch` method of paged manager"""
-        seq_ids_and_prompts: dict[int, np.ndarray] = {}
-        for data in batch.values():
-            seq_id = data.cache_seq_id
-            # we want to assign a unique unused id for seqs not in cache
-            if seq_id is None:
-                seq_id = -(len(seq_ids_and_prompts) + 1)
-            seq_ids_and_prompts[seq_id] = data.next_tokens
-        return seq_ids_and_prompts
-
     @traced
     def _try_create_ce_batch(self) -> SchedulerOutput:
         """Try to create a context encoding batch"""
@@ -280,7 +265,7 @@ class TokenGenerationSchedulerV2(Scheduler):
                 * self.scheduler_config.max_forward_steps_tg
             )
 
-        ce_batch: BatchInputs = {}
+        ce_batch: dict[str, InputContext] = {}
         tot_tokens_to_encode = 0
         tot_prompt_tokens = 0
 
@@ -315,7 +300,7 @@ class TokenGenerationSchedulerV2(Scheduler):
                 # This is a partly encoded request if the start_idx !=0.
                 # In this scenario, we already allocated a cache slot to it.
                 if data.start_idx == 0:
-                    data.cache_seq_id = None
+                    data.unassign_from_cache()
             except queue.Empty:
                 break
 
@@ -324,9 +309,11 @@ class TokenGenerationSchedulerV2(Scheduler):
             new_pages_needed = 0
             cache_hit_blocks: set[int] = set()
             if self.paged_manager:
-                seq_id = data.cache_seq_id
-                if seq_id is None:
-                    seq_id = -(len(self.active_batch) + 1)
+                # If the request is not assigned, we use a negative seq_id to
+                # explicitly indicate that it is not present in the cache.
+                seq_id = -1
+                if data.is_assigned_to_cache:
+                    seq_id = data.cache_seq_id
                 cache_hit_blocks, tokens_to_encode, new_pages_needed = (
                     self.paged_manager.query_fetch_stats(
                         seq_id, data.next_tokens, num_steps_with_headroom
@@ -366,8 +353,8 @@ class TokenGenerationSchedulerV2(Scheduler):
                     assert token_num_diff >= 0
                     data.bump_token_indices(active_idx=-token_num_diff)
 
-                    if data.cache_seq_id is None:
-                        data.cache_seq_id = self.available_cache_indices.pop()
+                    if not data.is_assigned_to_cache:
+                        data.assign_to_cache(self.available_cache_indices.pop())
                         logger.debug(
                             f"Request {req_id} is chunked to len {tokens_to_encode}."
                         )
@@ -385,7 +372,7 @@ class TokenGenerationSchedulerV2(Scheduler):
                     # we need to schedule this request even it exceeds the
                     # `target_tokens_per_batch_ce` limit; otherwise, it will
                     # never be scheduled.
-                    data.cache_seq_id = self.available_cache_indices.pop()
+                    data.assign_to_cache(self.available_cache_indices.pop())
                     ce_batch[req_id] = data
                 else:
                     # we cannot schedule this request so return it to the head of
@@ -404,8 +391,8 @@ class TokenGenerationSchedulerV2(Scheduler):
             tot_prompt_tokens += data.active_length
 
             # We will allocate cache if this is a new request
-            if data.cache_seq_id is None:
-                data.cache_seq_id = self.available_cache_indices.pop()
+            if not data.is_assigned_to_cache:
+                data.assign_to_cache(self.available_cache_indices.pop())
             else:
                 logger.debug(
                     f"Chunked request {req_id} with len {tokens_to_encode} is already allocated to cache slot #{data.cache_seq_id}"
@@ -466,7 +453,10 @@ class TokenGenerationSchedulerV2(Scheduler):
                 num_steps = min(num_steps, num_available_steps)
             assert num_steps > 0
 
-            seq_ids_and_prompts = self._construct_fetch_input(self.active_batch)
+            seq_ids_and_prompts = {
+                data.cache_seq_id: data.next_tokens
+                for data in self.active_batch.values()
+            }
             if self.paged_manager.can_fetch(
                 seq_ids_and_prompts,
                 num_steps=num_steps,
@@ -483,7 +473,10 @@ class TokenGenerationSchedulerV2(Scheduler):
         # We can schedule the remaining request if we can run just one step.
         # This request will be terminated in `next_token` if it exceeds the
         # max_seq_len prior to executing all of the steps.
-        seq_ids_and_prompts = self._construct_fetch_input(self.active_batch)
+        seq_ids_and_prompts = {
+            data.cache_seq_id: data.next_tokens
+            for data in self.active_batch.values()
+        }
         if self.paged_manager.can_fetch(
             seq_ids_and_prompts,
             num_steps=1,
