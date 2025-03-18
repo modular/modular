@@ -19,18 +19,14 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.pipelines.config import (
     KVCacheConfig,
-    MAXConfig,
+    MAXModelConfig,
 )
 from max.pipelines.kv_cache import KVCacheParams
 from transformers import AutoConfig
 
 
-# TODO(zheng): Move this under MAXModelConfig. The challenge here is that
-# MAXModelConfig has optional fields, and Qwen2Config has required fields.
-# We can work around this by having a superclass of MAXModelConfig that has
-# the abstract methods, and then having Qwen2Config extend that.
-@dataclass
-class Qwen2Config(MAXConfig):
+@dataclass(kw_only=True)  # type: ignore[call-overload]
+class Qwen2Config(MAXModelConfig):
     @staticmethod
     def help() -> dict[str, str]:
         return {}
