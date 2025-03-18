@@ -21,3 +21,15 @@ def test_mosh(mlir_context):
     assert isinstance(shape_type, mosh.ShapeType)
     # TODO(MAXPLAT-67)
     # assert isinstance(shape_type, mlir.Type)
+
+
+def test_mosh_shapeattr(mlir_context):
+    shape_type = mosh.ShapeType(mlir_context)
+    attr = mosh.MKGENShapeAttr([1, 2, 3], shape_type)
+    # Next: validate `attr.values`!
+
+
+def test_mosh_shapeattr_empty(mlir_context):
+    shape_type = mosh.ShapeType(mlir_context)
+    attr = mosh.MKGENShapeAttr([], shape_type)
+    # assert list(attr.values) == []
