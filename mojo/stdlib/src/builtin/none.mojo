@@ -19,6 +19,7 @@ These are Mojo built-ins, so you don't need to import them.
 @value
 @register_passable("trivial")
 struct NoneType(
+    Boolable,
     CollectionElement,
     CollectionElementNew,
     Writable,
@@ -55,6 +56,15 @@ struct NoneType(
             A copy of the value.
         """
         return Self(None)
+
+    @always_inline("nodebug")
+    fn __bool__(self) -> Bool:
+        """Returns `False` for `None`.
+
+        Returns:
+            `False`.
+        """
+        return False
 
     @no_inline
     fn __str__(self) -> String:

@@ -185,15 +185,6 @@ struct Bool(
         """
         self = value.__bool__()
 
-    @always_inline
-    fn __init__(out self, value: None):
-        """Set the bool representation of the `None` type to `False`.
-
-        Args:
-            value: The object to get the bool representation of.
-        """
-        self = False
-
     @always_inline("nodebug")
     @implicit
     fn __init__(out self, value: SIMD[DType.bool, 1]):
