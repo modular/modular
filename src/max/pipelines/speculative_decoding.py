@@ -15,10 +15,19 @@
 
 from typing import Type, TypeVar
 
-from max.graph.weights import WeightsAdapter, WeightsFormat
+from max.driver import load_devices, scan_available_devices
+from max.engine import InferenceSession
+from max.graph.weights import (
+    WeightsAdapter,
+    WeightsFormat,
+    load_weights,
+    weights_format,
+)
+from transformers import AutoConfig
 
-from .config import PipelineConfig
+from .config import HuggingFaceRepo, PipelineConfig, RepoType
 from .context import InputContext
+from .hf_utils import download_weight_files
 from .interfaces import TextGenerationResponse, TokenGenerator
 from .pipeline import PipelineModel
 
@@ -35,8 +44,110 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
-        raise NotImplementedError(
-            "init not yet implemented for SpeculativeDecodingTextGenerationPipeline"
+        self.pipeline_config = pipeline_config
+
+        # Load target model
+        target_devices = load_devices(
+            self.pipeline_config.model_config.device_specs
+        )
+        target_session = InferenceSession(devices=target_devices)
+        target_config = AutoConfig.from_pretrained(
+            self.pipeline_config.model_config.model_path,
+            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
+            revision=self.pipeline_config.model_config.huggingface_revision,
+        )
+        target_repo_id = (
+            self.pipeline_config.model_config._weights_repo_id
+            if self.pipeline_config.model_config._weights_repo_id
+            else self.pipeline_config.model_config.model_path
+        )
+        weight_paths = download_weight_files(
+            huggingface_model_id=target_repo_id,
+            filenames=[
+                str(x) for x in self.pipeline_config.model_config.weight_path
+            ],
+            revision=self.pipeline_config.model_config.huggingface_revision,
+            max_workers=8,
+        )
+        target_weights = load_weights(weight_paths)
+        _target_weights_format = weights_format(weight_paths)
+
+        if not self.pipeline_config.model_config.quantization_encoding:
+            raise ValueError(
+                f"quantization_encoding must be provided, {self.pipeline_config.model_config.quantization_encoding}"
+            )
+
+        self._target_model = pipeline_model(
+            pipeline_config=self.pipeline_config,
+            session=target_session,
+            huggingface_config=target_config,
+            encoding=self.pipeline_config.model_config.quantization_encoding,
+            devices=target_devices,
+            kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
+            weights=target_weights,
+            adapter=weight_adapters.get(_target_weights_format, None),
+        )
+
+        # Load draft model
+        # For now, we are assuming we are placing the draft model will sit
+        draft_devices = load_devices(scan_available_devices()[:1])
+        draft_session = InferenceSession(devices=draft_devices)
+
+        # TODO: Allow user to set trust_remote_code and revision for draft_model
+        draft_config = AutoConfig.from_pretrained(
+            self.pipeline_config.draft_model,
+            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
+            revision=None,
+        )
+
+        # Retrieve Encoding, and Files for Draft Model
+        if not self.pipeline_config.draft_model:
+            raise ValueError(
+                "draft_model must be provided for speculative decoding"
+            )
+
+        draft_hf_repo = HuggingFaceRepo(
+            repo_id=self.pipeline_config.draft_model,
+            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
+            repo_type=RepoType.online,
+        )
+        encodings = draft_hf_repo.supported_encodings
+        if not encodings:
+            raise ValueError(
+                "could not identify supported encodings for draft model."
+            )
+
+        if len(encodings) > 1:
+            raise ValueError(
+                "repos that only support one encoding, currently supported for draft model."
+            )
+
+        # Get weight files
+        weight_files = draft_hf_repo.files_for_encoding(
+            encoding=encodings[0],
+        )
+
+        if not weight_files:
+            raise ValueError("could not identify weight_files for draft model.")
+
+        _draft_weights_format = list(weight_files.keys())[0]
+        _draft_weight_paths = download_weight_files(
+            huggingface_model_id=self.pipeline_config.draft_model,
+            filenames=[str(x) for x in weight_files[_draft_weights_format]],
+            revision=None,
+            max_workers=8,
+        )
+        draft_weights = load_weights(_draft_weight_paths)
+
+        self._draft_model = pipeline_model(
+            pipeline_config=self.pipeline_config,
+            session=draft_session,
+            huggingface_config=draft_config,
+            encoding=encodings[0],
+            devices=draft_devices,
+            kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
+            weights=draft_weights,
+            adapter=weight_adapters.get(_draft_weights_format, None),
         )
 
     def next_token(
