@@ -239,13 +239,23 @@ class Graph:
             CURRENT_GRAPH.reset(token)
 
     @contextlib.contextmanager
-    def _enter_block(self, block: mlir.Block):
-        current_block = self._current_block
-        self._current_block = block
+    def local_weights_and_chain(self):
+        weights = self._weights.copy()
+        current_chain = self._current_chain
         try:
             yield
         finally:
-            self._current_block = current_block
+            self._weights = weights
+            self._current_chain = current_chain
+
+    @contextlib.contextmanager
+    def _block(self, block: mlir.Block):
+        with self.local_weights_and_chain():
+            current_block, self._current_block = self._current_block, block
+            try:
+                yield self._current_block
+            finally:
+                self._current_block = current_block
 
     @contextlib.contextmanager
     def _capturing_mlir_diagnostics(self):
@@ -410,16 +420,10 @@ class Graph:
         """
         parent_chain = self._current_chain
 
-        with self._enter_block(block), self._location():
+        with self._block(block), self._location():
             expected_output_types = expected_output_types or []
 
-            try:
-                results = block_fn() or []
-                block_result_chain = self._current_chain
-            except Exception as e:
-                raise e
-            finally:
-                self._update_chain(parent_chain)
+            results = block_fn() or []
 
             results = (
                 list(results) if isinstance(results, Iterable) else [results]
@@ -432,7 +436,7 @@ class Graph:
 
             _ = self._add_op(
                 block_terminator_op,
-                results + ([block_result_chain] if add_chain else []),
+                results + ([self._current_chain] if add_chain else []),
             )
 
     def output(self, *outputs: Value) -> None:
@@ -466,6 +470,7 @@ class Graph:
             with self._capturing_mlir_diagnostics():
                 assert self._mlir_op.verify()
         except Exception as e:
+            print(self)
             raise ValueError(
                 "Graph failed to verify. Please file an issue. This should be"
                 " impossible." + f"\n{e}"
