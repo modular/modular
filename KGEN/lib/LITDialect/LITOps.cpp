@@ -1916,32 +1916,214 @@ LogicalResult RefPackExtractOp::inferReturnTypes(
 // ClosureInitOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseClosureInitOpValue(OpAsmParser &p, TypedAttr &value,
-                                           Type &resultType,
-                                           ParamDeclAttr &originDecl) {
-  Type valueType;
-  if (p.parseLess() || parseColonTypeOrIndex(p, valueType) ||
-      parseParamValue(p, value, valueType) || p.parseGreater())
-    return failure();
-  if (p.parseColon() || parseVarDeclType(p, resultType, originDecl))
-    return failure();
-  return success();
-}
-
-static void printClosureInitOpValue(OpAsmPrinter &p, Operation *op,
-                                    TypedAttr value, Type resultType,
-                                    ParamDeclAttr originDecl) {
-  p << "<";
-  printColonTypeOrIndex(p, value.getType());
-  p << " ";
-  printParamValue(p, value);
-  p << "> : ";
-  printVarDeclType(p, op, resultType, originDecl);
-}
-
 void LIT::ClosureInitOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
   walkDef(getParamDecl(), ParamDefValue());
+}
+
+static ParseResult parseRegionOnly(OpAsmParser &p,
+                                   ParamDeclArrayAttr &inputParams,
+                                   TypeAttr &funcType, TypeAttr &type,
+                                   InlineLevelAttr &inlineLevel, Region &body) {
+  FnTypeGeneratorType sigGenType;
+  llvm::SMLoc bodyLoc;
+  SmallVector<OpAsmParser::Argument> args;
+  FunctionType functionType;
+  if (parseLITFunctionSignature(p, args, inputParams, functionType,
+                                sigGenType) ||
+      parseOptionalInline(p, inlineLevel) || p.getCurrentLocation(&bodyLoc) ||
+      p.parseRegion(body, args))
+    return failure();
+
+  SmallVector<Type> argTypes;
+  for (const OpAsmParser::Argument &arg : args)
+    argTypes.push_back(arg.type);
+  funcType = TypeAttr::get(functionType);
+  type = TypeAttr::get(sigGenType);
+  return success();
+}
+
+static ParseResult parseClosureInitOpValue(
+    OpAsmParser &p, TypeAttr &funcTypeGenerator, TypeAttr &functionType,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &captures,
+    ArrayAttr &moveOrCopyCaptureSymbols, TypedAttr &captureOrigins,
+    KGEN::ParamDeclArrayAttr &inputParams, KGEN::InlineLevelAttr &inlineLevel,
+    Region &bodyRegion, SmallVectorImpl<Type> &captureTypes, Type &resultType,
+    KGEN::ParamDeclAttr &paramDecl) {
+  if (p.parseLParen())
+    return failure();
+
+  // Collect the captures and symbols, if provided.
+  SmallVector<TypedAttr> origins;
+  SmallVector<Attribute> copyOrMoveSymbols;
+  LogicalResult result = success();
+  if (failed(p.parseOptionalRParen())) {
+    do {
+      OpAsmParser::UnresolvedOperand capture;
+      if (p.parseOperand(capture))
+        return failure();
+      captures.push_back(capture);
+
+      // Parse captures and how they should be captured.
+      // There are three possibilities:
+      // (1) capture by value. This is a register passable type.
+      // (2) capture by reference. This uses a keyword "ref" and expects a
+      // lifetime. (3) capture by copy/move. There is no keyword, only a symbol
+      // indicating the method to call.
+      if (p.parseOptionalLSquare()) {
+        // No attribute specified; capture by value.
+        copyOrMoveSymbols.push_back(BoolAttr::get(p.getContext(), false));
+      } else {
+        if (succeeded(p.parseOptionalKeyword("ref"))) {
+          // capture by reference, parse the origin.
+          if (p.parseColon() ||
+              parseOriginParamValue(p, origins.emplace_back()) ||
+              p.parseRSquare())
+            return failure();
+          copyOrMoveSymbols.push_back(BoolAttr::get(p.getContext(), true));
+        } else {
+          // capture by copy/move, parse the symbol.
+          SymbolRefAttr callee;
+          ParameterExprArrayAttr paramValues;
+          int numOrigins = 0;
+          if (p.parseAttribute(callee) || p.parseLSquare() ||
+              p.parseInteger(numOrigins) || p.parseRSquare() ||
+              parseParameterValues(p, paramValues))
+            return failure();
+
+          Type existingType;
+          Type selfType;
+          if (p.parseLParen() || p.parseType(existingType) || p.parseComma() ||
+              p.parseType(selfType) || p.parseRParen() || p.parseRSquare())
+            return failure();
+
+          // TODO MOCO-1721: Name metadata is discarded when inferring the type
+          // of the symbol. Parameters and lifetimes are preserved. Lifetimes
+          // should not be needed since the function call is not generated until
+          // after lower-lit. I am uncertain what relies on the symbol type
+          // contained the same metadata as the function type on the function
+          // the symbol refers to. Revisit this TODO once the frontend pipeline
+          // is built out.
+          FnType funType =
+              FnType::get(p.getContext(), {existingType, selfType}, {},
+                          /*numImplicitOriginDecls=*/numOrigins);
+          FnTypeGeneratorType signatureType = LITGeneratorType::get(
+              /*inputParamTypes=*/llvm::to_vector(
+                  llvm::map_range(paramValues.getValue(),
+                                  [](TypedAttr in) { return in.getType(); })),
+              funType,
+              PogListAttr::get(
+                  p.getContext(),
+                  llvm::to_vector(llvm::map_range(
+                      paramValues.getValue(), [&](TypedAttr param) {
+                        StringAttr name = StringAttr::get(p.getContext(), "");
+                        return PogMetadataAttr::get(
+                            name, PassingKind::PosOnly,
+                            isa<VariadicType>(param.getType()));
+                        ;
+                      }))));
+          copyOrMoveSymbols.push_back(
+              SymbolConstantAttr::get(callee, signatureType, paramValues));
+        }
+      }
+
+      result = p.parseOptionalComma();
+    } while (succeeded(result));
+    if (p.parseRParen())
+      return failure();
+  }
+  // Parse the function signature and the body.
+  if (parseRegionOnly(p, inputParams, functionType, funcTypeGenerator,
+                      inlineLevel, bodyRegion))
+    return failure();
+  if (p.parseColon() || p.parseLParen())
+    return failure();
+  if (p.parseOptionalRParen()) {
+    if (p.parseTypeList(captureTypes) || p.parseRParen())
+      return failure();
+  }
+  if (p.parseComma() || parseVarDeclType(p, resultType, paramDecl))
+    return failure();
+
+  if (captureTypes.size() != copyOrMoveSymbols.size())
+    return p.emitError(p.getCurrentLocation(),
+                       "expected symbols to match number of capture types");
+  moveOrCopyCaptureSymbols = ArrayAttr::get(p.getContext(), copyOrMoveSymbols);
+  captureOrigins = OriginSetAttr::get(p.getContext(), origins);
+  return success();
+}
+
+static void printClosureInitOpValue(
+    OpAsmPrinter &p, Operation *op, TypeAttr funcTypeGenerator,
+    TypeAttr functionType, ValueRange captures,
+    ArrayAttr moveOrCopyCaptureSymbols, TypedAttr captureOrigins,
+    KGEN::ParamDeclArrayAttr inputParams, KGEN::InlineLevelAttr inlineLevel,
+    Region &bodyRegion, TypeRange captureTypes, Type resultType,
+    KGEN::ParamDeclAttr paramDecl) {
+  p << "(";
+  int i = 0;
+  int j = 0;
+  ArrayRef<TypedAttr> origins =
+      cast<OriginSetAttr>(captureOrigins).getOperands();
+  int n = captures.size();
+  for (auto [capture, symbol] : llvm::zip(captures, moveOrCopyCaptureSymbols)) {
+    p << capture;
+    if (SymbolConstantAttr callee = dyn_cast<SymbolConstantAttr>(symbol)) {
+      p << "[";
+      p << callee.getSymbol();
+      p << "[";
+      FnTypeGeneratorType fnTypeGen =
+          cast<FnTypeGeneratorType>(callee.getType());
+      p << fnTypeGen.getBody().getNumImplicitOriginDecls();
+      p << "]";
+      printParameterValues(p, callee.getParamValues());
+      p << "(";
+      p.printType(fnTypeGen.getValues().getInput(0));
+      p << ", ";
+      p.printType(fnTypeGen.getValues().getInput(1));
+      p << ")";
+      p << "]";
+    } else if (BoolAttr hasLifetime = dyn_cast<BoolAttr>(symbol)) {
+      if (hasLifetime.getValue()) {
+        p << "[ref: ";
+        printOriginParamValue(p, op, origins[j++]);
+        p << "]";
+      }
+    }
+    if (++i < n)
+      p << ", ";
+  }
+  p << ")";
+  printLITFunctionSignature(
+      p, &bodyRegion, inputParams, cast<FunctionType>(functionType.getValue()),
+      cast<FnTypeGeneratorType>(funcTypeGenerator.getValue()));
+  printOptionalInline(p, inlineLevel.getValue());
+  p << ' ';
+  p.printRegion(bodyRegion, /*printEntryBlockArgs=*/false);
+  p << " : ";
+  p << '(';
+  llvm::interleaveComma(captureTypes, p, [&](Type type) { p.printType(type); });
+  p << ')';
+  p << ", ";
+  printVarDeclType(p, op, resultType, paramDecl);
+}
+
+LogicalResult LIT::ClosureInitOp::verify() {
+  if (getMoveOrCopyCaptureSymbols().size() != getCaptures().size())
+    return emitOpError(
+        "expected move or copy capture symbols to match number of captures");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// EndFnOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult EndFnOp::verify() {
+  auto func = (*this)->getParentOfType<KGEN::FunctionLike>();
+  if (!func)
+    return emitOpError("expected to be nested inside a function");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
