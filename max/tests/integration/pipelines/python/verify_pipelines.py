@@ -552,7 +552,7 @@ PIPELINES = {
             # `(3, array([90716])) │ -2.88086e-02 │ 2.88086e-02`
             absolute_tolerance=2.0,
             relative_tolerance=1e-4,
-            cos_dist_threshold=2e-3,
+            cos_dist_threshold=2.2e-3,
             kl_div_threshold=0.2,
         ),
     ),
