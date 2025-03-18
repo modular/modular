@@ -368,8 +368,13 @@ def greet(*names: String):
 Inside the function body, the variadic argument is available as an iterable list
 for ease of use. Currently there are some differences in handling the list
 depending on whether the arguments are register-passable types (such as `Int`)
-or memory-only types (such as `String`). TODO: We hope to remove these
-differences in the future.
+or memory-only types (such as `String`). 
+
+:::note TODO
+
+We hope to remove these differences in the future.
+
+:::
 
 Register-passable types, such as `Int`, are available as a
 [`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList) type. As
