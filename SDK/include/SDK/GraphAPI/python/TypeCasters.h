@@ -12,8 +12,12 @@
 #include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/IR/BuiltinDialect.h"
+#include "nanobind/make_iterator.h"
 #include "nanobind/nanobind.h"
+#include <Support/AssertStream.h>
+#include <exception>
 #include <type_traits>
+#include <vector>
 
 namespace nb = nanobind;
 
@@ -52,11 +56,6 @@ public:
 
   operator ::mlir::MLIRContext *() { return value; }
   operator ::mlir::MLIRContext *&() { return value; }
-  template <typename T>
-  using cast_op_type = std::conditional_t<
-      std::is_pointer<std::remove_reference_t<T>>::value,
-      typename std::add_pointer<intrinsic_t<T>>::type,
-      typename std::add_lvalue_reference<intrinsic_t<T>>::type>;
 
   bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
     if (src.is_none()) {
@@ -109,6 +108,79 @@ struct type_caster<::M::DType> {
                          cleanup_list *cleanup) noexcept {
     return DTypeCaster::from_cpp(static_cast<M::DType::Cases>(t.getValue()),
                                  policy, cleanup);
+  }
+};
+
+/// Casts sequence <-> ArrayRef.
+template <typename Entry>
+struct type_caster<::llvm::ArrayRef<Entry>> {
+  using Caster = make_caster<Entry>;
+  using VecCaster = make_caster<std::vector<Entry>>;
+  NB_TYPE_CASTER(::llvm::ArrayRef<Entry>,
+                 const_name("collections.abc.Sequence[") + Caster::Name +
+                     const_name("]"))
+
+  VecCaster caster;
+  bool used = false;
+
+  bool from_python(handle_t<nb::sequence> src, uint8_t flags,
+                   cleanup_list *cleanup) noexcept {
+    // Nanobind's built in typecasters for collections re-use
+    // their internal typecasters, which isn't safe for array refs.
+    // We can do something smart like specialize the caster for
+    // std::vector<ArrayRef<T>> to hold a vector of typecaster instances.
+    ASSERT_STREAM(!used, "ArrayRef typecasters cannot be reused.");
+    if (!caster.from_python(src, flags, cleanup))
+      return false;
+    used = true;
+    const Entry *start = caster.value.data();
+    value = ::llvm::ArrayRef<Entry>(start, caster.value.size());
+    return true;
+  }
+  static handle from_cpp(::llvm::ArrayRef<Entry> ar, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    // TODO(MAXPLAT-123): Make these views.
+    return VecCaster::from_cpp(ar.vec(), policy, cleanup);
+  }
+};
+
+/// Casts sequence[bool] <-> ArrayRef<bool>.
+/// The default implementation doesn't work because std::vector<bool>
+/// is specialized as a bit vector, which we can't take a reference to.
+template <>
+struct type_caster<::llvm::ArrayRef<bool>> {
+  using Caster = make_caster<bool>;
+  NB_TYPE_CASTER(::llvm::ArrayRef<bool>,
+                 const_name("collections.abc.Sequence[bool]"))
+
+  Caster caster;
+  ::llvm::SmallVector<bool> storage;
+  bool used = false;
+
+  bool from_python(handle_t<nb::sequence> src, uint8_t flags,
+                   cleanup_list *cleanup) noexcept {
+    // Nanobind's built in typecasters for collections re-use
+    // their internal typecasters, which isn't safe for array refs.
+    // We can do something smart like specialize the caster for
+    // std::vector<ArrayRef<T>> to hold a vector of typecaster instances.
+    ASSERT_STREAM(!used, "ArrayRef typecasters cannot be reused.");
+    for (auto entry : src) {
+      if (!caster.from_python(entry, flags, cleanup)) {
+        storage.clear();
+        return false;
+      }
+      storage.push_back(caster.value);
+    }
+    used = true;
+    const bool *start = storage.data();
+    value = ::llvm::ArrayRef<bool>(start, storage.size());
+    return true;
+  }
+
+  static handle from_cpp(::llvm::ArrayRef<bool> ar, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    // TODO(MAXPLAT-123): Make these views.
+    return make_caster<std::vector<bool>>::from_cpp(ar.vec(), policy, cleanup);
   }
 };
 
