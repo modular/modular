@@ -214,7 +214,8 @@ fn uncentered_unweighted_correlation[
     var uv = _dot[out_type=out_type](u, v, len)
     var uu = _dot[out_type=out_type](u, u, len)
     var vv = _dot[out_type=out_type](v, v, len)
-    return (uv / sqrt(uu * vv)).clamp(-1, 1)
+    alias eps = Scalar[out_type](1e-6)
+    return uv / (sqrt(uu * vv) + eps)
 
 
 # ===----------------------------------------------------------------------=== #
