@@ -127,15 +127,6 @@ struct Bool(
         """Construct a default, `False` Bool."""
         self = False
 
-    @always_inline("nodebug")
-    fn copy(self) -> Self:
-        """Explicitly construct a deep copy of the provided value.
-
-        Returns:
-            A copy of the value.
-        """
-        return self
-
     @doc_private
     @always_inline("builtin")
     @implicit
@@ -173,7 +164,7 @@ struct Bool(
         """
         self = value.__bool__()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__[T: Boolable, //](out self, value: T):
         """Set the bool representation of the object.
 
@@ -185,7 +176,7 @@ struct Bool(
         """
         self = value.__bool__()
 
-    @always_inline
+    @always_inline("builtin")
     fn __init__(out self, value: None):
         """Set the bool representation of the `None` type to `False`.
 
@@ -203,6 +194,15 @@ struct Bool(
             value: The scalar value.
         """
         self = value.__bool__()
+
+    @always_inline("builtin")
+    fn copy(self) -> Self:
+        """Explicitly construct a deep copy of the provided value.
+
+        Returns:
+            A copy of the value.
+        """
+        return self
 
     @always_inline("builtin")
     fn __bool__(self) -> Bool:
@@ -235,12 +235,6 @@ struct Bool(
             The underlying value for the Bool.
         """
         return self.value
-
-    @always_inline("nodebug")
-    fn _as_scalar_bool(self) -> __mlir_type.`!pop.scalar<bool>`:
-        return __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<bool>`
-        ](self.value)
 
     @no_inline
     fn __str__(self) -> String:
@@ -277,16 +271,16 @@ struct Bool(
         """
         return String(self)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __int__(self) -> Int:
         """Convert this Bool to an integer.
 
         Returns:
             1 if the Bool is True, 0 otherwise.
         """
-        return _select_register_value(self, Int(1), Int(0))
+        return Int(1) if self else Int(0)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __as_int__(self) -> Int:
         """Implicitly convert to an integral representation of the value,
         wherever an `Int` is expected.
@@ -295,6 +289,15 @@ struct Bool(
             The integral representation of the value.
         """
         return self.__int__()
+
+    @always_inline("builtin")
+    fn __index__(self) -> __mlir_type.index:
+        """Convert to index.
+
+        Returns:
+            1 if the Bool is True, 0 otherwise.
+        """
+        return self.__int__().value
 
     @always_inline("nodebug")
     fn __float__(self) -> Float64:
@@ -305,16 +308,7 @@ struct Bool(
         """
         return _select_register_value(self, Float64(1.0), Float64(0.0))
 
-    @always_inline("nodebug")
-    fn __index__(self) -> __mlir_type.index:
-        """Convert to index.
-
-        Returns:
-            1 if the Bool is True, 0 otherwise.
-        """
-        return Int(self).value
-
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __eq__(self, rhs: Bool) -> Bool:
         """Compare this Bool to RHS.
 
@@ -327,11 +321,9 @@ struct Bool(
         Returns:
             True if the two values match and False otherwise.
         """
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
-            self._as_scalar_bool(), rhs._as_scalar_bool()
-        )
+        return not self != rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ne__(self, rhs: Bool) -> Bool:
         """Compare this Bool to RHS.
 
@@ -345,11 +337,9 @@ struct Bool(
         Returns:
             False if the two values do match and True otherwise.
         """
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-            self._as_scalar_bool(), rhs._as_scalar_bool()
-        )
+        return self ^ rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __lt__(self, rhs: Self) -> Bool:
         """Compare this Bool to RHS using less-than comparison.
 
@@ -360,11 +350,9 @@ struct Bool(
             True if self is False and rhs is True.
         """
 
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred lt>`](
-            self._as_scalar_bool(), rhs._as_scalar_bool()
-        )
+        return not self and rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __le__(self, rhs: Self) -> Bool:
         """Compare this Bool to RHS using less-than-or-equal comparison.
 
@@ -375,11 +363,9 @@ struct Bool(
             True if self is False and rhs is True or False.
         """
 
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred le>`](
-            self._as_scalar_bool(), rhs._as_scalar_bool()
-        )
+        return not self or rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __gt__(self, rhs: Self) -> Bool:
         """Compare this Bool to RHS using greater-than comparison.
 
@@ -390,11 +376,9 @@ struct Bool(
             True if self is True and rhs is False.
         """
 
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred gt>`](
-            self._as_scalar_bool(), rhs._as_scalar_bool()
-        )
+        return self and not rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ge__(self, rhs: Self) -> Bool:
         """Compare this Bool to RHS using greater-than-or-equal comparison.
 
@@ -405,28 +389,28 @@ struct Bool(
             True if self is True and rhs is True or False.
         """
 
-        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ge>`](
-            self._as_scalar_bool(), rhs._as_scalar_bool()
-        )
+        return self or not rhs
 
     # ===-------------------------------------------------------------------===#
     # Bitwise operations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __invert__(self) -> Bool:
         """Inverts the Bool value.
 
         Returns:
             True if the object is false and False otherwise.
         """
-        var true = __mlir_op.`index.bool.constant`[
-            _type = __mlir_type.i1,
-            value = __mlir_attr.`true : i1`,
-        ]()
-        return __mlir_op.`pop.xor`(self.value, true)
+        return __mlir_op.`pop.xor`(
+            self.value,
+            __mlir_op.`kgen.param.constant`[
+                _type = __mlir_type.i1,
+                value = __mlir_attr.`true : i1`,
+            ](),
+        )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __and__(self, rhs: Bool) -> Bool:
         """Returns `self & rhs`.
 
@@ -450,7 +434,7 @@ struct Bool(
         """
         self = self & rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rand__(self, lhs: Bool) -> Bool:
         """Returns `lhs & self`.
 
@@ -462,7 +446,7 @@ struct Bool(
         """
         return lhs & self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __or__(self, rhs: Bool) -> Bool:
         """Returns `self | rhs`.
 
@@ -486,7 +470,7 @@ struct Bool(
         """
         self = self | rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ror__(self, lhs: Bool) -> Bool:
         """Returns `lhs | self`.
 
@@ -498,7 +482,7 @@ struct Bool(
         """
         return lhs | self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __xor__(self, rhs: Bool) -> Bool:
         """Returns `self ^ rhs`.
 
@@ -522,7 +506,7 @@ struct Bool(
         """
         self = self ^ rhs
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rxor__(self, lhs: Bool) -> Bool:
         """Returns `lhs ^ self`.
 
@@ -534,14 +518,14 @@ struct Bool(
         """
         return lhs ^ self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __neg__(self) -> Int:
         """Defines the unary `-` operation.
 
         Returns:
-            0 for -False and -1 for -True.
+            0 for False and -1 for True.
         """
-        return __mlir_op.`index.casts`[_type = __mlir_type.index](self.value)
+        return Int(-1) if self else Int(0)
 
     fn __hash__[H: _Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
