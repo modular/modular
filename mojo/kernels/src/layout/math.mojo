@@ -12,19 +12,35 @@ from layout import LayoutTensor
 from utils.numerics import min_or_neg_inf
 
 
-# Updates res with the outer product of lhs, rhs vectors, res += outer(lhs, rhs).
-#
 @always_inline
 fn outer_product_acc(
     res: LayoutTensor,
     lhs: LayoutTensor,
     rhs: LayoutTensor,
 ):
+    """Updates result tensor with the outer product of two vectors.
+
+    Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
+    `res` is a matrix.
+
+    Args:
+        res: The result matrix to accumulate into, shape (M, N).
+        lhs: The left-hand side vector, shape (M,).
+        rhs: The right-hand side vector, shape (N,).
+
+    Constraints:
+
+        All tensors must have statically known shapes.
+        `res` must be rank 2.
+        `lhs` and `rhs` must be rank 1.
+        `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
+    """
+
     constrained[
         res.layout.known_shape()
         and lhs.layout.known_shape()
         and rhs.layout.known_shape(),
-        "outer_product_acc expects inputs with statically know shapes",
+        "outer_product_acc expects inputs with statically known shapes",
     ]()
     constrained[res.rank == 2, "Only rank 2 res is allowed."]()
     constrained[lhs.rank == 1, "Only rank 1 lhs is allowed."]()
@@ -122,6 +138,48 @@ fn _reduce[
 
 @always_inline
 fn sum[axis: Int](inp: LayoutTensor, out: LayoutTensor):
+    """Computes sum reduction along specified axis.
+
+    Reduces the input tensor by summing elements along the specified axis
+    and stores the result in the output tensor.
+
+    Parameters:
+        axis: The axis to sum along.
+
+    Args:
+        inp: The input tensor to sum.
+        out: The output tensor to store sum results.
+
+    Constraints:
+        All tensors must have statically known shapes.
+        `out.rank` must equal `inp.rank - 1`.
+        Non-reduction dimensions must match between inp and out.
+        Currently only supports rank-2 inputs.
+
+    Example:
+
+    ```mojo
+    from layout import LayoutTensor, Layout
+    from layout.math import sum
+
+    data = InlineArray[Int32, 6](0, 1, 2, 3, 4, 5)
+    tensor = LayoutTensor[DType.int32, Layout.row_major(2, 3)](data)
+    print(tensor)
+    print("-----")
+    print(sum[0](tensor))
+    ```
+
+    Output:
+
+    ```plaintext
+    0 1 2
+    3 4 5
+    -----
+    3 5 7
+    ```
+    .
+    """
+
     fn sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
         return 0
 
@@ -135,6 +193,25 @@ fn sum[axis: Int](inp: LayoutTensor, out: LayoutTensor):
 
 @always_inline
 fn max[axis: Int](inp: LayoutTensor, out: LayoutTensor):
+    """Computes maximum reduction along specified axis.
+
+    Reduces the input tensor by taking maximum elements along the specified
+    axis and stores the result in the output tensor.
+
+    Parameters:
+        axis: The axis to take maximum along.
+
+    Args:
+        inp: The input tensor to reduce.
+        out: The output tensor to store maximum results.
+
+    Constraints:
+        All tensors must have statically known shapes.
+        `out.rank` must equal `inp.rank - 1`.
+        Non-reduction dimensions must match between `inp` and `out`.
+        Currently only supports rank-2 inputs.
+    """
+
     fn max_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
         return SIMD[dtype, width].MIN
 
@@ -169,6 +246,27 @@ fn max[
         layout_bitwidth = inp.layout_bitwidth,
     ],
 ):
+    """Computes maximum reduction along specified axis, returning a new tensor.
+
+    Reduces the input tensor by taking maximum elements along the specified
+    axis and returns a new tensor with the results.
+
+    Parameters:
+        axis: The axis to take maximum along.
+
+    Args:
+        inp: The input tensor to reduce.
+
+    Returns:
+        A new tensor containing the maximum values along the specified axis.
+
+    Constraints:
+        All tensors must have statically known shapes.
+        Result will have rank equal to `inp.rank` - 1.
+        Non-reduction dimensions in the result match the input.
+        Currently only supports rank-2 inputs.
+    """
+
     var res_tensor = __type_of(res).stack_allocation()
     max[axis](inp, res_tensor)
     return res_tensor
@@ -180,6 +278,26 @@ fn max[
 ](
     x: LayoutTensor[dtype, layout, **_], y: LayoutTensor[dtype, layout, **_]
 ) -> __type_of(x.origin_cast[True, MutableAnyOrigin]()):
+    """Computes element-wise maximum of two tensors.
+
+    Returns a new tensor containing the element-wise maximum between the
+    input tensors.
+
+    Parameters:
+        dtype: The data type of the input tensors.
+        layout: The layout of the input tensors.
+
+    Args:
+        x: First input tensor.
+        y: Second input tensor.
+
+    Returns:
+        A new tensor containing the element-wise maximum.
+
+    Constraints:
+        Input tensors must have statically known shapes and matching layouts.
+    """
+
     constrained[
         x.layout.all_dims_known(), "max expects tensor of statically know shape"
     ]()
@@ -206,6 +324,27 @@ fn sum[
         layout_bitwidth = inp.layout_bitwidth,
     ],
 ):
+    """Computes sum reduction along specified axis, returning a new tensor.
+
+    Reduces the input tensor by summing elements along the specified axis
+    and returns a new tensor with the results.
+
+    Parameters:
+        axis: The axis to sum along.
+
+    Args:
+        inp: The input tensor to sum.
+
+    Returns:
+        A new tensor containing the sum values along the specified axis.
+
+    Constraints:
+        All tensors must have statically known shapes.
+        Result will have rank equal to `inp.rank` - 1.
+        Non-reduction dimensions in the result match the input.
+        Currently only supports rank-2 inputs.
+    """
+
     var res_tensor = __type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)
     return res_tensor
@@ -215,6 +354,18 @@ fn sum[
 fn exp(
     inp: LayoutTensor,
 ) -> __type_of(inp.origin_cast[True, MutableAnyOrigin]()):
+    """Computes element-wise exponential function.
+
+    Returns a new tensor containing the
+    [element-wise exponential](/mojo/stdlib/math/math/exp/) of the input tensor.
+
+    Args:
+        inp: Input tensor.
+
+    Returns:
+        A new tensor containing the element-wise exponential.
+    """
+
     @parameter
     fn exp_func(val: inp.element_type) -> inp.element_type:
         return math.exp(val)
