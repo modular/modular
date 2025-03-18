@@ -38,6 +38,7 @@ Note:
 from collections._index_normalization import normalize_index
 from sys.intrinsics import _type_is_eq
 
+import math
 from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 
@@ -164,8 +165,15 @@ struct InlineArray[
 
     @always_inline
     @implicit
-    fn __init__(out self, fill: Self.ElementType):
+    fn __init__[batch_size: Int = 64](out self, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied value.
+
+        Parameters:
+            batch_size: The number of elements to unroll for filling the array.
+                Default is 64, which optimizes for AVX512 operations on modern CPUs.
+                For large arrays (>2k elements), this batched approach significantly
+                improves compile times compared to full unrolling while maintaining
+                good runtime performance.
 
         Args:
             fill: The element value to fill each index with.
@@ -173,13 +181,38 @@ struct InlineArray[
         Example:
             ```mojo
             var filled = InlineArray[Int, 5](fill=42)  # [42, 42, 42, 42, 42]
+
+            # For large arrays, consider adjusting batch_size to balance
+            # compile time and runtime performance:
+            var large = InlineArray[Int, 10000, batch_size=32](fill=0)
             ```
+
+        Notes:
+
+            - Full unrolling with large arrays (>2k elements) can cause significant
+              compiler slowdowns
+            - Using batch_size=64 balances AVX512 efficiency and instruction cache usage
+            - For very large arrays, using smaller batch sizes (e.g., 32 or 16) can
+              further improve compilation speed while still maintaining good runtime
+              performance
         """
         _inline_array_construction_checks[size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
+        alias unroll_end = math.align_down(size, batch_size)
+
+        for i in range(0, unroll_end, batch_size):
+
+            @parameter
+            for j in range(batch_size):
+                var ptr = UnsafePointer.address_of(
+                    self.unsafe_get(i * batch_size + j)
+                )
+                ptr.init_pointee_copy(fill)
+
+        # Fill the remainder
         @parameter
-        for i in range(size):
+        for i in range(unroll_end, size):
             var ptr = UnsafePointer.address_of(self.unsafe_get(i))
             ptr.init_pointee_copy(fill)
 
