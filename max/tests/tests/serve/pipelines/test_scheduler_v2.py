@@ -14,7 +14,7 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.pipelines.context import TextContext
+from max.pipelines.context import InputContext, TextContext
 from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -222,7 +222,7 @@ def test_handle_cancelled_requests(scheduler):
 
 def test_schedule_ce(scheduler):
     mock_request = create_mock_request(cache_seq_id=0)
-    batch_to_execute = {"req1": mock_request}
+    batch_to_execute: dict[str, InputContext] = {"req1": mock_request}
     sch_output = SchedulerOutput(
         batch_type=BatchType.ContextEncoding, batch_inputs=batch_to_execute
     )
@@ -297,7 +297,7 @@ def test_schedule_mixed_ce_tg(scheduler):
 
 def test_schedule_tg(scheduler):
     mock_request = create_mock_request(cache_seq_id=0)
-    batch_to_execute = {"req1": mock_request}
+    batch_to_execute: dict[str, InputContext] = {"req1": mock_request}
     sch_output = SchedulerOutput(batch_inputs=batch_to_execute)
 
     scheduler._schedule_tg(sch_output)
