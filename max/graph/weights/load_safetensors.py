@@ -12,12 +12,11 @@ from os import PathLike
 from typing import Any, Optional
 
 import numpy.typing as npt
-from max.dtype import DType
+from max.dtype import DType, max_to_torch_type, torch_to_max_type
 
 from ..quantization import QuantizationEncoding
 from ..type import Shape, ShapeLike
 from ..weight import Weight
-from ._torch_dtype_map import modular_to_torch_type, torch_to_modular_type
 from .weights import WeightData, Weights
 
 try:
@@ -147,8 +146,8 @@ class SafetensorWeights(Weights):
         # Some checkpoints have mixed bf16/float32 weights, while others have
         # weights that are all the same precision.
         # The max graph expects a certain dtype so make sure to convert it here.
-        if dtype is not None and torch_to_modular_type(tensor.dtype) != dtype:
-            tensor = tensor.to(modular_to_torch_type(dtype))
+        if dtype is not None and torch_to_max_type(tensor.dtype) != dtype:
+            tensor = tensor.to(max_to_torch_type(dtype))
 
         self._st_weight_map[self._prefix] = tensor
         return tensor
@@ -177,7 +176,7 @@ class SafetensorWeights(Weights):
         return WeightData(
             np_array,
             self.name,
-            torch_to_modular_type(tensor.dtype),
+            torch_to_max_type(tensor.dtype),
             Shape(tensor.shape),
         )
 
@@ -198,7 +197,7 @@ class SafetensorWeights(Weights):
                 f" format. Got: {quantization_encoding}"
             )
         tensor = self._load_tensor(dtype)
-        weight_dtype = torch_to_modular_type(tensor.dtype)
+        weight_dtype = torch_to_max_type(tensor.dtype)
         if tensor.dtype == torch.bfloat16:
             np_tensor = tensor.view(torch.float16).numpy()
             weight_dtype = DType.bfloat16

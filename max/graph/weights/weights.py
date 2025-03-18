@@ -23,12 +23,11 @@ try:
     import torch  # type: ignore
 except ImportError:
     torch = None
-from max.dtype import DType
+from max.dtype import DType, max_to_torch_type
 
 from ..quantization import QuantizationEncoding
 from ..type import Shape, ShapeLike
 from ..weight import Weight
-from ._torch_dtype_map import modular_to_torch_type
 
 _Self = TypeVar("_Self", bound="Weights")
 
@@ -126,11 +125,11 @@ class WeightData:
         if self.dtype == DType.bfloat16:
             assert torch is not None
             data = torch.from_numpy(self.data).view(torch.bfloat16)
-            data = data.to(modular_to_torch_type(dtype)).numpy()
+            data = data.to(max_to_torch_type(dtype)).numpy()
         elif dtype == DType.bfloat16:
             assert torch is not None
             data = torch.from_numpy(self.data).view(
-                modular_to_torch_type(self.dtype)
+                max_to_torch_type(self.dtype)
             )
             data = data.to(torch.bfloat16).view(torch.float16).numpy()
         else:
