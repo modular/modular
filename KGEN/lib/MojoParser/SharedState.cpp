@@ -2191,6 +2191,12 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return foldBinOp(POC::Shl);
   if (auto shrOp = dyn_cast<mlir::index::ShrSOp>(op))
     return foldBinOp(POC::Shr);
+  if (auto andOp = dyn_cast<POP::AndOp>(op)) // i1 operations.
+    return foldBinOp(POC::And);
+  if (auto orOp = dyn_cast<POP::OrOp>(op))
+    return foldBinOp(POC::Or);
+  if (auto xorOp = dyn_cast<POP::XOrOp>(op))
+    return foldBinOp(POC::Xor);
 
   // Sub doesn't have a POC opcode: "x-y" is "x+(y*-1)".
   if (auto sub = dyn_cast<mlir::index::SubOp>(op)) {
