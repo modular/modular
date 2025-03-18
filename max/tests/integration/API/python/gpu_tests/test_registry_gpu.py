@@ -868,7 +868,9 @@ def test_registry__validates_supported_device():
         quantization_encoding=SupportedEncoding.bfloat16,
         max_length=1,
     )
-    with pytest.raises(ValueError, match="not supported on cpu"):
+    with pytest.raises(
+        ValueError, match="not compatible with the selected device type 'cpu'"
+    ):
         PIPELINE_REGISTRY.validate_pipeline_config(config)
 
     config = PipelineConfig(
@@ -877,5 +879,7 @@ def test_registry__validates_supported_device():
         quantization_encoding=SupportedEncoding.q6_k,
         max_length=1,
     )
-    with pytest.raises(ValueError, match="not supported on gpu"):
+    with pytest.raises(
+        ValueError, match="not compatible with the selected device type 'gpu'"
+    ):
         PIPELINE_REGISTRY.validate_pipeline_config(config)
