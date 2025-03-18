@@ -3,11 +3,16 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: mojo %s | FileCheck %s
+# RUN: %mojo-no-debug --target-accelerator=nvidia:90 -D MODULAR_ENABLE_KERNEL_PDL=True %s | FileCheck %s
 
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.grid_controls import wait_on_dependent_grids, launch_dependent_grids
+from gpu.grid_controls import (
+    wait_on_dependent_grids,
+    launch_dependent_grids,
+    ENABLE_PDL_LAUNCH,
+)
+from testing import assert_true
 
 
 fn control_dep_grids_kernel():
@@ -22,6 +27,7 @@ fn control_dep_grids_kernel():
 
 
 def test_grid_control_primitives():
+    assert_true(ENABLE_PDL_LAUNCH)
     print(
         _compile_code_asm[
             control_dep_grids_kernel,
