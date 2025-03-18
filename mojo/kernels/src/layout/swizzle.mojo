@@ -3,6 +3,31 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Defines swizzle layouts for optimizing memory access patterns,
+particularly in shared memory for GPU kernels, to mitigate bank
+conflicts.
+
+This module provides tools to create and apply swizzle
+transformations to memory indices. Swizzling rearranges the memory
+access order to distribute accesses across different memory banks,
+thereby reducing bank contention and improving memory access
+efficiency.
+
+The module includes:
+  - `Swizzle` struct: Represents a swizzle transformation with
+    configurable parameters like bits, base, and shift.
+  - Helper functions: `make_ldmatrix_swizzle`, `make_swizzle` to
+    create predefined swizzle patterns optimized for specific
+    scenarios like `ldmatrix` instructions and general 2D memory
+    access.
+  - `ComposedLayout` struct: Allows combining a base layout with a
+    swizzle layout for more complex memory access optimizations.
+
+The primary use case is in GPU kernel development where shared memory
+bank conflicts can significantly degrade performance. By applying
+appropriate swizzle layouts, memory access patterns can be optimized
+to achieve higher throughput.
+"""
 
 from collections import OptionalReg
 from sys import simdwidthof, sizeof
@@ -211,21 +236,61 @@ from .layout import LayoutTrait
 
 @always_inline
 fn shiftr(a: Int, s: Int) -> Int:
+    """Shift right or left based on sign of shift amount.
+
+    Args:
+        a: The integer value to be shifted.
+        s: The shift amount. Positive for right shift, negative for
+           left shift.
+
+    Returns:
+        The shifted integer value.
+    """
     return a >> s if s > 0 else a << -s
 
 
 @always_inline
 fn shiftl(a: Int, s: Int) -> Int:
+    """Shift left or right based on sign of shift amount.
+
+    Args:
+        a: The integer value to be shifted.
+        s: The shift amount. Positive for left shift, negative for
+           right shift.
+
+    Returns:
+        The shifted integer value.
+    """
     return a << s if s > 0 else a >> -s
 
 
 @always_inline
 fn shiftr(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
+    """Shift right or left based on sign of shift amount for scalars.
+
+    Args:
+        a: The scalar value to be shifted.
+        s: The shift amount. Positive for right shift, negative for
+           left shift.
+
+    Returns:
+        The shifted scalar value.
+    """
     return a >> s if s > 0 else a << -s
 
 
 @always_inline
 fn shiftl(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
+    """Shift left or right based on sign of shift amount for scalars.
+
+    Args:
+        a: The scalar value to be shifted.
+        s: The shift amount. Positive for left shift, negative for
+           right shift.
+
+    Returns:
+        The shifted scalar value.
+    """
     return a << s if s > 0 else a >> -s
 
 
@@ -237,17 +302,38 @@ fn shiftl(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
 @value
 @register_passable("trivial")
 struct Swizzle(LayoutTrait, Stringable, Writable):
+    """A swizzle functor for memory access pattern optimization.
+
+    This struct implements a swizzling pattern to reduce bank
+    conflicts in shared memory accesses by XORing specific bits of
+    memory indices.
+    """
+
     alias has_shape = False
-    """Indicates whether the layout has a valid shape. This is always False."""
+    """Indicates whether the layout has a valid shape. This is always
+    False."""
 
     var bits: Int
+    """Number of bits in the mask."""
     var base: Int
+    """Number of least significant bits to keep constant."""
     var shift: Int
+    """Distance to shift the mask (positive shifts right, negative
+    left)."""
     var yyy_mask: Int
+    """Mask for the bits to be shifted."""
     var zzz_mask: Int
+    """Mask for the target bits."""
 
     @always_inline
     fn __init__(out self, bits: Int, base: Int, shift: Int):
+        """Initialize a Swizzle object.
+
+        Args:
+            bits: Number of bits in the mask.
+            base: Number of least significant bits to keep constant.
+            shift: Distance to shift the mask.
+        """
         # if bits < 0 or base < 0:
         #     raise Error("Require non-negative mask bits and base")
 
@@ -266,25 +352,64 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
 
     @always_inline
     fn __call__(self, index: IntTuple) -> Int:
+        """Apply swizzle to an IntTuple index.
+
+        Args:
+            index: The index to swizzle.
+
+        Returns:
+            The swizzled index value.
+        """
         return self.__call__(index.value())
 
     @always_inline
     fn __call__(self, offset: Int) -> Int:
+        """Apply swizzle to an integer offset.
+
+        Args:
+            offset: The offset to swizzle.
+
+        Returns:
+            The swizzled offset value.
+        """
         return offset ^ shiftr(offset & self.yyy_mask, self.shift)
 
     @always_inline
     fn __call__(self, offset: Scalar) -> Scalar[offset.type]:
+        """Apply swizzle to a scalar offset.
+
+        Args:
+            offset: The scalar offset to swizzle.
+
+        Returns:
+            The swizzled scalar value.
+        """
         return offset ^ shiftr(offset & self.yyy_mask, self.shift)
 
     @always_inline
     fn size(self) -> Int:
+        """Get the size of the swizzle pattern.
+
+        Returns:
+            The size of the swizzle pattern.
+        """
         return 1 << (self.bits + self.base + abs(self.shift))
 
     @always_inline
     fn cosize(self) -> Int:
+        """Get the cosize of the swizzle pattern.
+
+        Returns:
+            The cosize, which is the same as size for swizzle.
+        """
         return self.size()
 
     fn write_to[W: Writer](self, mut writer: W):
+        """Write the swizzle to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
         writer.write("(")
         writer.write(String(self.bits))
         writer.write(",")
@@ -294,6 +419,11 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
         writer.write(")")
 
     fn __str__(self) -> String:
+        """Convert the swizzle to a string.
+
+        Returns:
+            String representation of the swizzle.
+        """
         return String.write(self)
 
 
@@ -301,7 +431,21 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
 fn make_ldmatrix_swizzle[
     type: DType, row_size: Int, log2_vector_width: Int = 0
 ]() -> Swizzle:
-    """Make a swizzle to avoid bank conflict for ldmatrix."""
+    """Make a swizzle to avoid bank conflict for ldmatrix.
+
+    This function creates a swizzle pattern optimized for ldmatrix
+    operations to minimize bank conflicts in shared memory. It
+    calculates appropriate swizzle parameters based on the data type
+    and row size.
+
+    Parameters:
+        type: The data type of the elements.
+        row_size: The size of each row in elements.
+        log2_vector_width: Log2 of the vector width (default: 0).
+
+    Returns:
+        A `Swizzle` object configured to avoid bank conflicts.
+    """
 
     # For Nvidia GPU, there are 32 4B banks.
     alias bytes_32_banks = 128
@@ -310,23 +454,24 @@ fn make_ldmatrix_swizzle[
     constrained[
         bytes_row % bytes_32_banks == 0 or bytes_32_banks % bytes_row == 0,
         (
-            "Should choose row sizes to be multiple of 32 banks or multiple"
-            " rows fit in 32 banks."
+            "Should choose row sizes to be multiple of 32 banks or"
+            " multiple rows fit in 32 banks."
         ),
     ]()
 
-    # `ldmatrix` loads 8x4 matrix, where each row is 4x4B = 16B vector and is
-    # handled by one 16B load. The stride between two adjacent vectors is `row_size`.
-    # The number of conflicts (aka conflict ways) is total number of banks the
-    # 8x4 matrix spans divided by 32.
+    # `ldmatrix` loads 8x4 matrix, where each row is 4x4B = 16B vector and
+    # is handled by one 16B load. The stride between two adjacent vectors
+    # is `row_size`.
+    # The number of conflicts (aka conflict ways) is total number of banks
+    # the 8x4 matrix spans divided by 32.
     # E.g fp32 and row_size = 16, row 0, 2, 4, 6 in `ld_matrix` conflict.
     alias conflict_ways = min(
         8 * row_size * sizeof[type]() // bytes_32_banks, 8
     )
     alias bits = log2_floor(conflict_ways)
 
-    # One swizzle bit pattern e.g. ^01 is applied to the same row if the row
-    # is longer than 32 banks or multiple rows that fits in 32 banks.
+    # One swizzle bit pattern e.g. ^01 is applied to the same row if the
+    # row is longer than 32 banks or multiple rows that fits in 32 banks.
     alias simd_size = simdwidthof[type]()
     alias shifts = log2_floor(max(row_size // simd_size, 8))
 
@@ -335,14 +480,18 @@ fn make_ldmatrix_swizzle[
 
 @always_inline
 fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
-    """2D swizzle to avoid bank conflict.
-    Access access_size elements in num_rows x row_size in shared memory tile.
-    num_rows should be for minimun access pattern.
-    E.g. store 16x8 mma result to a 64 x 64 tile.
-    The minimum access pattern is 8x8 sub-matrix, num_rows = 8, row_size = 64.
-    We should swizzle the layout to avoid bank conflict for loading in the data
-    in future. The load is most likely 16B, i.e. access_size = 4 for fp32 and 8
-    for bf16.
+    """Create a 2D swizzle to avoid bank conflicts.
+
+    This function creates a swizzle pattern for a 2D memory layout to
+    minimize bank conflicts when accessing data in shared memory.
+
+    Parameters:
+        num_rows: Number of rows in the minimum access pattern.
+        row_size: Size of each row in elements.
+        access_size: Number of elements accessed at once.
+
+    Returns:
+        A `Swizzle` object configured to avoid bank conflicts.
     """
 
     alias bits = log2_floor(num_rows)
@@ -358,11 +507,17 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
 
 @always_inline
 fn make_swizzle[type: DType, mode: TensorMapSwizzle]() -> Swizzle:
-    """Return swizzle functor based on input swizzle mode.
+    """Create a swizzle functor based on predefined swizzle modes.
 
-    The supported modes are 32B, 64B, 128B, or none.
-    Note that the swizzle swaps 16B vectors. We need to convert that
-    into number of elements based on data type.
+    This function returns a swizzle pattern based on standard swizzle
+    modes (32B, 64B, 128B, or none) adjusted for the data type.
+
+    Parameters:
+        type: The data type of the elements.
+        mode: The swizzle mode to use.
+
+    Returns:
+        A `Swizzle` object configured according to the mode.
     """
 
     @parameter
@@ -387,15 +542,36 @@ fn make_swizzle[type: DType, mode: TensorMapSwizzle]() -> Swizzle:
 struct ComposedLayout[
     LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: OptionalReg[Int] = 0
 ](LayoutTrait):
+    """A layout composed of two layouts applied in sequence.
+
+    This struct combines two layouts where the output of the first
+    layout is used as input to the second layout, with an optional
+    offset in between.
+
+    Parameters:
+        LayoutA: The first layout to apply.
+        LayoutB: The second layout to apply.
+        offset: An optional offset to apply between layouts (default:
+            0).
+    """
+
     alias has_shape = LayoutA.has_shape or LayoutB.has_shape
-    """Indicates whether the layout has a valid shape. This is True if either
-    layouts has a shape."""
+    """Indicates whether the layout has a valid shape. This is True if
+    either layouts has a shape."""
 
     var layout_a: LayoutA
+    """The first layout to apply."""
     var layout_b: LayoutB
+    """The second layout to apply."""
 
     @always_inline
     fn __init__(out self, layout_a: LayoutA, layout_b: LayoutB):
+        """Initialize the composed layout with two layouts.
+
+        Args:
+            layout_a: The first layout to apply.
+            layout_b: The second layout to apply.
+        """
         constrained[
             not offset or offset.value() >= 0,
             "Requires non-negative offset if present",
@@ -405,16 +581,38 @@ struct ComposedLayout[
 
     @always_inline
     fn __copyinit__(out self, other: Self):
+        """Copy constructor for the composed layout.
+
+        Args:
+            other: The composed layout to copy from.
+        """
         self.layout_a = other.layout_a
         self.layout_b = other.layout_b
 
     @always_inline
     fn __call__(self, idx: IntTuple) -> Int:
+        """Apply the composed layout to an index.
+
+        Args:
+            idx: The index to transform.
+
+        Returns:
+            The transformed index.
+        """
         var offset_val = offset.value() if offset else 0
         return self.layout_b(offset_val + self.layout_a(idx))
 
     @always_inline
     fn __call__(self, idx: IntTuple, offset_val: Int) -> Int:
+        """Apply composed layout with a runtime offset.
+
+        Args:
+            idx: The index to transform.
+            offset_val: The runtime offset to apply.
+
+        Returns:
+            The transformed index.
+        """
         constrained[
             not offset,
             "Offset has been statically set and should not take runtime value.",
@@ -423,10 +621,20 @@ struct ComposedLayout[
 
     @always_inline
     fn size(self) -> Int:
+        """Get the size of the composed layout.
+
+        Returns:
+            The size of the first layout.
+        """
         return self.layout_a.size()
 
     @always_inline
     fn cosize(self) -> Int:
+        """Get the cosize of the composed layout.
+
+        Returns:
+            The cosize of the second layout.
+        """
         return self.layout_b.cosize()
 
 
@@ -436,6 +644,21 @@ fn eval_composed[
     # type is not complete. However, this limits the usage to a single comb.
     composed_layout: ComposedLayout[Layout, Swizzle]
 ](idx: UInt, offset: UInt = 0) -> UInt:
+    """Evaluate a composed layout with swizzle.
+
+    This function evaluates a composed layout consisting of a layout
+    and a swizzle, with an optional offset. It calculates the final
+    index by applying the layout, adding the offset, and then
+    applying the swizzle.
+
+    Args:
+        idx: The input index to transform.
+        offset: An optional offset to apply between layouts (default:
+            0).
+
+    Returns:
+        The transformed index after applying both layouts.
+    """
     var a_idx = idx
     var b_idx = 0
 
@@ -460,7 +683,7 @@ fn eval_composed[
 
     b_idx += offset
 
-    # !!! The following check must be commented out becasue layout_b is limited
+    # !!! The following check must be commented out because layout_b is limited
     # to be a swizzle, which doesn't have shape or stride.
     # # layout or composed layout
     # @parameter
