@@ -171,7 +171,7 @@ class ReplitModel(PipelineModel[TextContext]):
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.n_layers
+        return ReplitConfig.get_num_layers(huggingface_config)
 
     @classmethod
     def get_kv_params(
@@ -212,7 +212,7 @@ class ReplitModel(PipelineModel[TextContext]):
         available_cache_memory: int,
     ) -> KVCacheManager:
         return load_kv_manager(
-            params=self.get_kv_params(
+            params=ReplitConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,
@@ -241,7 +241,7 @@ class ReplitModel(PipelineModel[TextContext]):
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
-            params=cls.get_kv_params(
+            params=ReplitConfig.get_kv_params(
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
@@ -280,7 +280,7 @@ class ReplitModel(PipelineModel[TextContext]):
         graph = _build_graph(
             self.pipeline_config,
             self.weights,
-            self.get_kv_params(
+            ReplitConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,

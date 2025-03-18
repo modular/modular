@@ -178,7 +178,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
+        return Llama3Config.get_num_layers(huggingface_config)
 
     def execute(
         self,
@@ -328,7 +328,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=self.get_num_layers(
+            num_layers=Llama3Config.get_num_layers(
                 huggingface_config=self.huggingface_config
             ),
             devices=self.devices,
@@ -360,7 +360,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 pipeline_config,
                 huggingface_config=huggingface_config,
             ),
-            num_layers=cls.get_num_layers(
+            num_layers=Llama3Config.get_num_layers(
                 huggingface_config=huggingface_config,
             ),
             available_cache_memory=available_cache_memory,

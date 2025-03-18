@@ -230,7 +230,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.text_config.num_hidden_layers
+        return PixtralConfig.get_num_layers(huggingface_config)
 
     @classmethod
     def get_kv_params(

@@ -225,7 +225,7 @@ class PipelineModel(ABC, Generic[T]):
         """Returns the KV cache params for the pipeline model."""
         ...
 
-    # TODO(AITLIB-264): Move this to model-specific MAXModelConfig class.
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
     @classmethod
     @abstractmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:

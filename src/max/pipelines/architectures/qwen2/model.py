@@ -273,7 +273,7 @@ class Qwen2Model(PipelineModel[TextContext]):
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
+        return Qwen2Config.get_num_layers(huggingface_config)
 
     @classmethod
     def calculate_max_seq_len(

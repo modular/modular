@@ -40,14 +40,15 @@ class MistralConfig(MAXModelConfig):
         cache_dtype: DType,
     ) -> KVCacheParams:
         return KVCacheParams(
+            page_size=kv_cache_config.kv_cache_page_size,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=(
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            ),
-            page_size=kv_cache_config.kv_cache_page_size,
+            head_dim=huggingface_config.head_dim,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             n_devices=n_devices,
         )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers

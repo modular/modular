@@ -42,6 +42,7 @@ from max.pipelines.kv_cache import (
 from transformers import AutoConfig
 
 from .graph import _build_graph
+from .model_config import MistralConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -158,19 +159,16 @@ class MistralModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            page_size=kv_cache_config.kv_cache_page_size,
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+        return MistralConfig.get_kv_params(
+            huggingface_config=huggingface_config,
             n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
+        return MistralConfig.get_num_layers(huggingface_config)
 
     @classmethod
     def calculate_max_seq_len(
@@ -197,7 +195,7 @@ class MistralModel(PipelineModel[TextContext]):
     ) -> KVCacheManager:
         assert self.devices, "devices must be provided to load kv manager."
         return load_kv_manager(
-            params=self.get_kv_params(
+            params=MistralConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,
@@ -227,7 +225,7 @@ class MistralModel(PipelineModel[TextContext]):
         """Estimates the size of the kv cache in bytes."""
         assert devices, "devices must be provided to estimate kv cache size."
         return estimate_kv_cache_size(
-            params=cls.get_kv_params(
+            params=MistralConfig.get_kv_params(
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
@@ -273,7 +271,7 @@ class MistralModel(PipelineModel[TextContext]):
                 self.pipeline_config,
                 huggingface_config=self.huggingface_config,
             ),
-            kv_params=self.get_kv_params(
+            kv_params=MistralConfig.get_kv_params(
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,

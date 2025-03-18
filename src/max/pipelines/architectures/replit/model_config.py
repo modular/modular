@@ -47,3 +47,7 @@ class ReplitConfig(MAXModelConfig):
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             n_devices=n_devices,
         )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        return huggingface_config.n_layers

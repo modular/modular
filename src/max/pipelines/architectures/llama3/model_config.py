@@ -122,6 +122,10 @@ class Llama3Config(MAXConfig):
             n_devices=n_devices,
         )
 
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers
+
     # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     # Also, these should just be class properties since they're already made
     # unique as a model config.
