@@ -583,6 +583,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
+    "phi-4": GenericOracle(
+        model_path="microsoft/phi-4",
+        device_encoding_map={
+            "cpu": ["float32"],
+            "gpu": ["float32", "bfloat16"],
+        },
+    ),
     "exaone": GenericOracle(
         model_path="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
         config_params={

@@ -614,6 +614,23 @@ PIPELINES = {
             kl_div_threshold=1.1,
         ),
     ),
+    "Phi-4-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big"],
+        run=lambda device_type,
+        devices,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="phi-4",
+            encoding="bfloat16",
+            absolute_tolerance=7.5,
+            relative_tolerance=2.0,
+            cos_dist_threshold=7e-1,
+            kl_div_threshold=20.0,
+        ),
+    ),
     "llama-gptq": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
