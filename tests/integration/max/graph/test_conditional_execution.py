@@ -16,9 +16,11 @@ from max.engine import InferenceSession
 from max.graph import (
     BufferType,
     BufferValue,
+    DeviceRef,
     Graph,
     TensorType,
     TensorValue,
+    Weight,
     ops,
 )
 
@@ -226,3 +228,156 @@ def test_conditional_nested_conditionals(session, capfd):
     assert "true_false_2" not in captured.out
     assert "false_true_2" not in captured.out
     assert "false_false_2" in captured.out
+
+
+def test_conditional_with_same_name_weight(session) -> None:
+    """Tests adding an external weight to a graph."""
+    weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
+    with Graph(
+        "graph_with_cond_weights", input_types=[TensorType(DType.bool, [])]
+    ) as graph:
+
+        def true_fn():
+            w = Weight(
+                "random_weight",
+                dtype=DType.int64,
+                shape=[5, 10],
+                device=DeviceRef.CPU(),
+            )
+            return w * 2
+
+        def false_fn():
+            w = Weight(
+                "random_weight",
+                dtype=DType.int64,
+                shape=[5, 10],
+                device=DeviceRef.CPU(),
+            )
+            return w * 3
+
+        graph.output(
+            *ops.cond(
+                graph.inputs[0],
+                [TensorType(DType.int64, [5, 10], device=DeviceRef.CPU())],
+                true_fn,
+                false_fn,
+            )
+        )
+
+        compiled = session.load(
+            graph, weights_registry={"random_weight": weight}
+        )
+        output = compiled.execute(True)
+        np.testing.assert_array_equal(weight * 2, output[0].to_numpy())
+
+        output = compiled.execute(False)
+        np.testing.assert_array_equal(weight * 3, output[0].to_numpy())
+
+
+def test_conditional_with_diff_names_weights(session) -> None:
+    """Tests adding an external weight to a graph."""
+    with Graph(
+        "graph_with_cond_weights", input_types=[TensorType(DType.bool, [])]
+    ) as graph:
+        true_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
+        false_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
+
+        def true_fn():
+            w = Weight("true_weight", dtype=DType.int64, shape=[5, 10])
+            graph.add_weight(w, DeviceRef.CPU())
+            return w * 2
+
+        def false_fn():
+            w = Weight("false_weight", dtype=DType.int64, shape=[5, 10])
+            graph.add_weight(w, DeviceRef.CPU())
+            return w * 3
+
+        graph.output(
+            *ops.cond(
+                graph.inputs[0],
+                [TensorType(DType.int64, [5, 10], device=DeviceRef.CPU())],
+                true_fn,
+                false_fn,
+            )
+        )
+
+        compiled = session.load(
+            graph,
+            weights_registry={
+                "true_weight": true_weight,
+                "false_weight": false_weight,
+            },
+        )
+        output = compiled.execute(True)
+        np.testing.assert_array_equal(true_weight * 2, output[0].to_numpy())
+
+        output = compiled.execute(False)
+        np.testing.assert_array_equal(false_weight * 3, output[0].to_numpy())
+
+
+def test_conditional_with_returned_weights(session) -> None:
+    """Tests adding an external weight to a graph."""
+    with Graph(
+        "graph_with_cond_weights", input_types=[TensorType(DType.bool, [])]
+    ) as graph:
+        weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
+        w = Weight("random_weight", dtype=DType.int64, shape=[5, 10])
+        graph.add_weight(w, DeviceRef.CPU())
+
+        graph.output(
+            *ops.cond(
+                graph.inputs[0],
+                [TensorType(DType.int64, [5, 10], device=DeviceRef.CPU())],
+                lambda: w,
+                lambda: w,
+            )
+        )
+        compiled = session.load(
+            graph, weights_registry={"random_weight": weight}
+        )
+        output = compiled.execute(True)
+        np.testing.assert_array_equal(weight, output[0].to_numpy())
+
+        output = compiled.execute(False)
+        np.testing.assert_array_equal(weight, output[0].to_numpy())
+
+
+@pytest.mark.skip(reason="This is causes a crash in the graph compiler.")
+def test_cond_returned_diff_weights(session) -> None:
+    """Tests adding an external weight to a graph."""
+    with Graph(
+        "graph_with_cond_weights", input_types=[TensorType(DType.bool, [])]
+    ) as graph:
+        true_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
+        false_weight = np.random.uniform(1, 100, size=[5, 10]).astype(np.int64)
+
+        def true_fn():
+            w = Weight("true_weight", dtype=DType.int64, shape=[5, 10])
+            graph.add_weight(w, DeviceRef.CPU())
+            return w
+
+        def false_fn():
+            w = Weight("false_weight", dtype=DType.int64, shape=[5, 10])
+            graph.add_weight(w, DeviceRef.CPU())
+            return w
+
+        results = ops.cond(
+            graph.inputs[0],
+            [TensorType(DType.int64, [5, 10], device=DeviceRef.CPU())],
+            true_fn,
+            false_fn,
+        )
+        result = results[0] * 2
+        graph.output(result)
+        compiled = session.load(
+            graph,
+            weights_registry={
+                "true_weight": true_weight,
+                "false_weight": false_weight,
+            },
+        )
+        output = compiled.execute(True)
+        np.testing.assert_array_equal(true_weight * 2, output[0].to_numpy())
+
+        output = compiled.execute(False)
+        np.testing.assert_array_equal(false_weight * 2, output[0].to_numpy())
