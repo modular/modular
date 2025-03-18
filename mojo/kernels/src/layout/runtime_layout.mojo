@@ -3,6 +3,17 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+Provides the `RuntimeLayout` type and functions for working with it. You can use
+`RuntimeLayout` to define a layout where the dimensions are not known at compile
+time.
+
+You can import these APIs from `layout.runtime_layout`.
+
+```mojo
+from layout.runtime_layout import RuntimeLayout, make_layout
+```
+"""
 
 from sys import bitwidthof
 
@@ -24,14 +35,53 @@ from .runtime_tuple import RuntimeTuple, crd2idx, product
 struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     Stringable, Writable
 ):
+    """A runtime-configurable layout that uses `RuntimeTuple` for storage.
+
+    This struct provides a layout implementation that can be modified at runtime,
+    unlike the static [`Layout`](/mojo/stdlib/layout/layout/Layout) type. It
+    uses [`RuntimeTuple`](/mojo/stdlib/layout/runtime_tuple/RuntimeTuple) for
+    shape and stride storage.
+
+    Parameters:
+        layout: The static `Layout` type to base this runtime layout on.
+        bitwidth: The bit width to use for shape storage, defaults to system
+            `Int`.
+
+    The layout must have statically known dimensions at compile time, but the
+    actual shape and stride values can be modified during execution.
+    """
+
     var shape: RuntimeTuple[
         layout.shape, element_bitwidth=bitwidth, unsigned=True
     ]
+    """The shape of the layout as a runtime tuple.
+
+    Stores the size of each dimension. Uses the specified bitwidth and is
+    unsigned. Must match the static layout's shape dimensions.
+    """
+
     # stride can be huge so default to int64 for now
     var stride: RuntimeTuple[layout.stride, unsigned=True]
+    """The stride of the layout as a runtime tuple.
+
+    Stores the stride (step size) for each dimension. Uses 64-bit unsigned
+    integers since strides can be large values. Must match the static layout's
+    stride dimensions.
+    """
 
     @always_inline
     fn __init__(out self):
+        """Initialize a `RuntimeLayout` with default values.
+
+        Creates a new `RuntimeLayout` instance with default shape and stride
+        values. Requires that the static layout has known dimensions at compile
+        time.
+
+        Constraints:
+            The static layout that this runtime layout is based on must have all
+            dimensions known.
+        """
+
         constrained[
             layout.all_dims_known(), "Static layout with known dims is required"
         ]()
@@ -48,24 +98,63 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         ],
         stride: RuntimeTuple[layout.stride, unsigned=True],
     ):
+        """Initialize a `RuntimeLayout` with specified shape and stride.
+
+        Args:
+            shape: A `RuntimeTuple` containing the dimensions of each axis.
+            stride: A `RuntimeTuple` containing the stride values for each axis.
+        """
+
         self.shape = shape
         self.stride = stride
 
     # FIXME: This should probably better done in the RuntimeTuple constructor
     @always_inline
     fn __call__(self, idx: Int) -> Int:
+        """Convert a single index to a flat linear index.
+
+        Args:
+            idx: The one-dimensional index to convert.
+
+        Returns:
+            The corresponding flat linear index in the layout.
+        """
         return self.__call__(RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx))
 
     @always_inline
     fn __call__[t: IntTuple](self, idx: RuntimeTuple[t, **_]) -> Int:
+        """Convert a multi-dimensional index to a flat linear index.
+
+        Parameters:
+            t: The `IntTuple` type for the index.
+
+        Args:
+            idx: A `RuntimeTuple` containing the multi-dimensional coordinates.
+
+        Returns:
+            The corresponding flat linear index in the layout.
+        """
         return crd2idx(idx, self.shape, self.stride)
 
     @always_inline
     fn size(self) -> Int:
+        """Calculate the total number of elements in the layout.
+
+        Returns:
+            The product of all dimensions in the shape, representing the total
+            number of elements that can be addressed by this layout.
+        """
         return product(self.shape)
 
     @always_inline
     fn bound_check_required(self) -> Bool:
+        """Determine if bounds checking is required for this layout.
+
+        Returns:
+            True if any dimension in the shape differs from the static layout's
+            shape, False otherwise.
+        """
+
         @parameter
         for i in range(layout.rank()):
             alias dim_i = Int(layout.shape[i])
@@ -77,10 +166,24 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     fn cast[
         type: DType
     ](self, out result: RuntimeLayout[layout, bitwidth = bitwidthof[type]()]):
+        """Cast the layout to use a different element bitwidth.
+
+        Parameters:
+            type: The target data type that determines the new bitwidth.
+
+        Returns:
+            A new `RuntimeLayout` with the shape cast to the specified type's
+            bitwidth.
+        """
         return __type_of(result)(self.shape.cast[type](), self.stride)
 
     @no_inline
     fn __str__(self) -> String:
+        """Convert the layout to a string representation.
+
+        Returns:
+            A string representation of the layout.
+        """
         return String.write(self)
 
     @staticmethod
@@ -90,6 +193,21 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         shape: IndexList[rank, **_],
         out result: RuntimeLayout[layout, bitwidth = shape.element_bitwidth],
     ):
+        """Create a row-major layout from the given shape.
+
+        In row-major layout, elements with adjacent rightmost indices are
+        adjacent in memory.
+
+        Parameters:
+            rank: The number of dimensions in the layout.
+
+        Args:
+            shape: An `IndexList` containing the dimensions of each axis.
+
+        Returns:
+            A `RuntimeLayout` with row-major stride ordering.
+        """
+
         var stride = __type_of(shape)()
         var c_stride = 1
         stride[rank - 1] = c_stride
@@ -108,6 +226,21 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         shape: IndexList[rank, **_],
         out result: RuntimeLayout[layout, bitwidth = shape.element_bitwidth],
     ):
+        """Create a column-major layout from the given shape.
+
+        In column-major layout, elements with adjacent leftmost indices are
+        adjacent in memory.
+
+        Parameters:
+            rank: The number of dimensions in the layout.
+
+        Args:
+            shape: An `IndexList` containing the dimensions of each axis.
+
+        Returns:
+            A `RuntimeLayout` with column-major stride ordering.
+        """
+
         var stride = __type_of(shape)()
         var c_stride = 1
         stride[0] = c_stride
@@ -121,6 +254,15 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
+        """Write a string representation of the layout to a writer.
+
+        Parameters:
+            W: The `Writer` type.
+
+        Args:
+            writer: The `Writer` object to write the layout representation to.
+        """
+
         writer.write("(")
         writer.write(self.shape)
         writer.write(":")
@@ -130,6 +272,14 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     fn sublayout[
         i: Int
     ](self, out result: RuntimeLayout[layout[i], bitwidth=bitwidth]):
+        """Extract a nested sublayout at the specified index.
+
+        Parameters:
+            i: The index of the nested layout to extract.
+
+        Returns:
+            A `RuntimeLayout` representing the nested layout at index i.
+        """
         return __type_of(result)(
             rebind[
                 RuntimeTuple[
@@ -144,10 +294,23 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         )
 
     fn dim(self, i: Int) -> Int:
+        """Get the size of the dimension at the specified index.
+
+        Args:
+            i: The index of the dimension to retrieve.
+
+        Returns:
+            The size of the dimension at index `i`.
+        """
         return self.shape.value[i]
 
     @staticmethod
     fn __len__() -> Int:
+        """Get the number of dimensions in the layout.
+
+        Returns:
+            The number of dimensions (rank) of the layout.
+        """
         return len(layout)
 
 
@@ -160,6 +323,22 @@ fn coalesce[
         coalesce_layout(l, keep_rank), bitwidth = layout.bitwidth
     ],
 ):
+    """Coalesce adjacent dimensions in a runtime layout when possible.
+
+    This optimizes the layout by merging adjacent dimensions when their
+    relationship allows it, potentially reducing the number of dimensions.
+
+    Parameters:
+        l: The static layout type to coalesce.
+        keep_rank: Whether to maintain the original rank (currently unsupported).
+
+    Args:
+        layout: The input `RuntimeLayout` to coalesce.
+
+    Returns:
+        A new `RuntimeLayout` with coalesced dimensions.
+    """
+
     constrained[not keep_rank, "Unsupported coalesce mode"]()
 
     var res_shape = RuntimeTuple[
@@ -219,6 +398,23 @@ fn make_layout[
         make_layout_static(l1, l2), bitwidth = b.bitwidth
     ],
 ):
+    """Combine two runtime layouts into a single composite layout.
+
+    This creates a new layout by concatenating the dimensions and strides of the
+    input layouts.
+
+    Parameters:
+        l1: The static layout type of `a`.
+        l2: The static layout type of `b`.
+
+    Args:
+        a: The first `RuntimeLayout` to combine.
+        b: The second `RuntimeLayout` to combine.
+
+    Returns:
+        A new `RuntimeLayout` with dimensions from both input layouts.
+    """
+
     var res_shape = RuntimeTuple[
         make_layout_static(l1, l2).shape,
         element_bitwidth = b.bitwidth,
