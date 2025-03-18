@@ -106,6 +106,14 @@ trait LayoutTrait(Copyable):
     different layout implementations to be used interchangeably in algorithms.
     """
 
+    alias has_shape: Bool
+    """Indicates whether the layout has a valid shape.
+
+    Layouts and ComposedLayouts with at least one Layout have valid shapes
+    and can be used in layout algebra. Swizzles don't have shapes and
+    should be excluded from layout algebra.
+    """
+
     fn __call__(self, index: IntTuple) -> Int:
         """Maps a logical coordinate to a linear memory index.
 
@@ -136,19 +144,6 @@ trait LayoutTrait(Copyable):
 
         Returns:
             The size of the memory region required by the layout.
-        """
-        ...
-
-    @staticmethod
-    fn has_shape() -> Bool:
-        """Indicates whether the layout has a valid shape.
-
-        Layouts and ComposedLayouts with at least one Layout have valid shapes
-        and can be used in layout algebra. Swizzles don't have shapes and
-        should be excluded from layout algebra.
-
-        Returns:
-            True if the layout has a valid shape, False otherwise.
         """
         ...
 
@@ -330,6 +325,9 @@ struct Layout(
     Layouts can be hierarchical, with nested shapes and strides, allowing
     for complex memory access patterns like blocked or tiled layouts.
     """
+
+    alias has_shape = True
+    """Indicates whether the layout has a valid shape."""
 
     var shape: IntTuple
     var stride: IntTuple
@@ -699,16 +697,6 @@ struct Layout(
         """
         return self(self.size() - 1) + 1
         # return math.max(1, inner_product(self.shape, self.stride))
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn has_shape() -> Bool:
-        """Indicates whether the layout has a valid shape.
-
-        Returns:
-            Always returns True for Layout objects.
-        """
-        return True
 
     @always_inline("nodebug")
     fn __getitem__(self, index: Int) -> Self:

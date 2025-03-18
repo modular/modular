@@ -237,6 +237,9 @@ fn shiftl(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
 @value
 @register_passable("trivial")
 struct Swizzle(LayoutTrait, Stringable, Writable):
+    alias has_shape = False
+    """Indicates whether the layout has a valid shape. This is always False."""
+
     var bits: Int
     var base: Int
     var shift: Int
@@ -280,11 +283,6 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
     @always_inline
     fn cosize(self) -> Int:
         return self.size()
-
-    @staticmethod
-    @always_inline
-    fn has_shape() -> Bool:
-        return False
 
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("(")
@@ -389,6 +387,10 @@ fn make_swizzle[type: DType, mode: TensorMapSwizzle]() -> Swizzle:
 struct ComposedLayout[
     LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: OptionalReg[Int] = 0
 ](LayoutTrait):
+    alias has_shape = LayoutA.has_shape or LayoutB.has_shape
+    """Indicates whether the layout has a valid shape. This is True if either
+    layouts has a shape."""
+
     var layout_a: LayoutA
     var layout_b: LayoutB
 
@@ -427,11 +429,6 @@ struct ComposedLayout[
     fn cosize(self) -> Int:
         return self.layout_b.cosize()
 
-    @staticmethod
-    @always_inline
-    fn has_shape() -> Bool:
-        return LayoutA.has_shape() or LayoutB.has_shape()
-
 
 @always_inline
 fn eval_composed[
@@ -444,7 +441,7 @@ fn eval_composed[
 
     # layout or composed layout
     @parameter
-    if composed_layout.layout_a.has_shape():
+    if composed_layout.layout_a.has_shape:
         alias shape_a = flatten(composed_layout.layout_a.shape)
         alias stride_a = flatten(composed_layout.layout_a.stride)
 
@@ -467,7 +464,7 @@ fn eval_composed[
     # to be a swizzle, which doesn't have shape or stride.
     # # layout or composed layout
     # @parameter
-    # if composed_layout.layout_b.has_shape():
+    # if composed_layout.layout_b.has_shape:
     #     var res = 0
 
     #     alias shape_b = flatten(composed_layout.layout_b.shape)
