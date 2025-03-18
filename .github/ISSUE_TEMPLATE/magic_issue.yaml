@@ -15,7 +15,7 @@ name: Magic issue report
 description: Create an issue to help us improve Magic
 title: "[Magic]"
 labels:
-  - "magic"
+  - "magic,max-repo"
 body:
   - type: markdown
     attributes:

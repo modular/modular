@@ -15,7 +15,7 @@ name: Mojo bug report
 description: Create a bug report to help us improve Mojo
 title: "[BUG]"
 labels:
-  - "bug,mojo"
+  - "bug,mojo,max-repo"
 body:
   - type: markdown
     attributes:
