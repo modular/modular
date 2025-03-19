@@ -239,8 +239,6 @@ class TokenGenerationScheduler(Scheduler):
                     # If not enough requests then hold off the CE and continue with TG
                     return False
 
-                return False
-
         return True
 
     @traced
