@@ -38,7 +38,7 @@ from gpu.memory import (
 )
 
 
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](2))
+@__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)
 fn test_tma_replace_in_gmem_descriptor_kernel[
     dtype: DType,
     num_of_tensormaps: Int,
@@ -159,7 +159,7 @@ def test_tma_replace_in_gmem_descriptor[
 
 
 # Test loading a single 2d tile.
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](2))
+@__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)
 fn test_tma_replace_in_smem_descriptor_kernel[
     dtype: DType,
     num_of_tensormaps: Int,

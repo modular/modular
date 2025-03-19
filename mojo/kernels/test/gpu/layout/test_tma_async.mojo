@@ -28,7 +28,7 @@ from utils.static_tuple import StaticTuple
 
 
 # Test loading a single 2d tile.
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](1))
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_load_kernel[
     dtype: DType,
     layout: Layout,
@@ -67,7 +67,7 @@ fn test_tma_load_kernel[
 
 
 # Test loading tiles along the last axis.
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](1))
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_multiple_loads_kernel[
     dtype: DType,
     layout: Layout,
@@ -181,7 +181,7 @@ def test_tma_load_row_major[
     _ = dst^
 
 
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](0))
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_async_store_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
@@ -211,7 +211,7 @@ fn test_tma_async_store_kernel[
     cp_async_bulk_wait_group[0]()
 
 
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](0))
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_async_multiple_store_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
@@ -311,7 +311,7 @@ def test_tma_async_store[
     _ = dst^
 
 
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](0))
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_async_reduce_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
@@ -343,7 +343,7 @@ fn test_tma_async_reduce_kernel[
     cp_async_bulk_wait_group[0]()
 
 
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](0))
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_async_multiple_reduce_kernel[
     dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
 ](
@@ -446,7 +446,8 @@ def test_tma_async_reduce[
 
 
 # Test loading tiles along the last axis.
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 2](2, 3))
+@__llvm_arg_metadata(a_tma_tile, `nvvm.grid_constant`)
+@__llvm_arg_metadata(b_tma_tile, `nvvm.grid_constant`)
 fn test_tma_loads_two_buffers_kernel[
     dtype: DType,
     a_layout: Layout,
@@ -591,7 +592,10 @@ def test_tma_load_two_buffers_row_major[
 
 
 # Test loading tiles along the last axis.
-@__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 4](0, 1, 2, 3))
+@__llvm_arg_metadata(a_tma_dst_tile, `nvvm.grid_constant`)
+@__llvm_arg_metadata(b_tma_dst_tile, `nvvm.grid_constant`)
+@__llvm_arg_metadata(a_tma_src_tile, `nvvm.grid_constant`)
+@__llvm_arg_metadata(b_tma_src_tile, `nvvm.grid_constant`)
 fn test_tma_loads_and_store_two_buffers_kernel[
     dtype: DType,
     a_tile_layout: Layout,
