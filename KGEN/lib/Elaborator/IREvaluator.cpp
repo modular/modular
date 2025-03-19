@@ -19,6 +19,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Support/DebugStringHelper.h"
+#include "llvm/ADT/ScopeExit.h"
 
 using namespace M;
 using namespace KGEN;
@@ -255,15 +256,15 @@ FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
   // we can just immediately fold it in common cases without materializing the
   // memory.
   // We don't handle index/offset yet.
-  // FIXME: This is good for compile-time performance, but why is this required
-  // for correctness?  The implementation below seems to be breaking
-  // "interpreter determinism".
   if (auto result =
           getBytesOf(pointerAttr.getModel().getMemory()[pointerAttr.getIndex()],
                      numBytes)) {
     if (pointerAttr.getOffset() == 0)
       return TypedAttr(result);
   }
+
+  // Reset memory upon exit.
+  auto resetState = llvm::make_scope_exit([&] { reset(); });
 
   if (ErrorOrSuccess err = internalizeMemory(pointerAttr)) {
     emitError({*errorLoc, "'data_to_str' failed to read data"});

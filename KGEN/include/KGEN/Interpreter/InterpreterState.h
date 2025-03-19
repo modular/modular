@@ -276,19 +276,20 @@ public:
   /// Map the results of the current operation.
   virtual void mapResults(ArrayRef<Attribute> results) = 0;
 
-private:
-  /// The MLIR context.
-  MLIRContext *ctx;
-
-  /// The interpreter target configuration.
-  TargetInfoAttr target;
-
+protected:
   void reset() {
     resetExecutor();
     for (MemoryTable &table : memory)
       table.reset();
     symbols.clear();
   }
+
+private:
+  /// The MLIR context.
+  MLIRContext *ctx;
+
+  /// The interpreter target configuration.
+  TargetInfoAttr target;
 
   //===--------------------------------------------------------------------===//
   // Interpreter Memory Model
