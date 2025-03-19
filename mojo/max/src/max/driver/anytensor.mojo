@@ -22,7 +22,7 @@ def main():
 ```
 """
 from collections import Optional
-from sys import alignof, external_call, is_x86, sizeof
+from sys import alignof, external_call, CompilationTarget, sizeof
 
 from max._utils import exchange
 from max.tensor import TensorSpec
@@ -232,7 +232,7 @@ struct AnyTensor:
         try:
 
             @parameter
-            if is_x86():
+            if CompilationTarget.is_x86():
                 type._dispatch_custom[
                     dispatcher,
                     DType.bool,
