@@ -20,12 +20,12 @@ from max.pipelines.pipeline import KVCacheMixin, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
-from max.serve.pipelines.scheduler_v2 import (
+from max.serve.pipelines.scheduler import (
     EmbeddingsScheduler,
     EmbeddingsSchedulerConfig,
     Scheduler,
+    TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
-    TokenGenerationSchedulerV2,
 )
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.scheduler.process_control import ProcessControl, ProcessMonitor
@@ -255,7 +255,7 @@ def _create_token_generation_scheduler(
     pc: ProcessControl,
     pipeline_config: TokenGeneratorPipelineConfig,
     queues: Mapping[str, Queue],
-) -> TokenGenerationSchedulerV2:
+) -> TokenGenerationScheduler:
     config = pipeline_config
     max_batch_size_tg = config.token_generation.size
     max_forward_steps_tg = config.token_generation.max_forward_steps
@@ -299,7 +299,7 @@ def _create_token_generation_scheduler(
     ):
         paged_manager = pipeline._pipeline_model.kv_manager
 
-    return TokenGenerationSchedulerV2(
+    return TokenGenerationScheduler(
         process_control=pc,
         scheduler_config=scheduler_config,
         pipeline=pipeline,

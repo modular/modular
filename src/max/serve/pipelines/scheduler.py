@@ -166,7 +166,7 @@ class TokenGenerationSchedulerConfig:
             raise ValueError(msg)
 
 
-class TokenGenerationSchedulerV2(Scheduler):
+class TokenGenerationScheduler(Scheduler):
     def __init__(
         self,
         process_control: ProcessControl,
