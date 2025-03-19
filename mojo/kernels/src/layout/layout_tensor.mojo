@@ -349,9 +349,13 @@ struct LayoutTensor[
     """
 
     alias rank = layout.rank()
+    """The number of dimensions in the tensor's layout."""
 
     alias index_type: DType = _get_index_type(layout, address_space)
+    """The data type used for indexing, optimized for the layout and address space."""
+
     alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
+    """The unsigned scalar type used for indexing operations, based on layout and address space."""
 
     var ptr: UnsafePointer[
         Scalar[dtype],
@@ -360,13 +364,27 @@ struct LayoutTensor[
         mut=mut,
         origin=origin,
     ]
+    """Pointer to the underlying memory buffer containing the tensor data.
+
+    This pointer respects the specified address space, alignment, mutability, and origin
+    tracking for memory safety and performance optimization."""
 
     var runtime_layout: RuntimeLayout[layout, bitwidth=layout_bitwidth]
+    """Runtime representation of the tensor's memory layout.
+
+    Handles both compile-time and runtime-determined dimensions, enabling efficient
+    mapping between logical tensor coordinates and physical memory locations."""
 
     var runtime_element_layout: RuntimeLayout[element_layout]
+    """Runtime representation of each element's internal layout.
+
+    Used when elements themselves have structure, such as in blocked or tiled layouts."""
 
     alias element_size = element_layout.size()
+    """The number of scalar values in each element of the tensor."""
+
     alias element_type = SIMD[dtype, Self.element_size]
+    """The SIMD vector type used for vectorized operations on tensor elements."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -641,6 +659,10 @@ struct LayoutTensor[
             new_type: The new data type it is casting to.
             address_space: The address space of the returned LayoutTensor.
             element_layout: The element layout of the returned LayoutTensor.
+
+        Returns:
+            A new LayoutTensor with the same memory location but with the specified
+            data type, address space, and element layout.
         """
         return __type_of(result)(
             self.ptr.bitcast[Scalar[new_type]]().address_space_cast[
@@ -2030,6 +2052,11 @@ struct LayoutTensor[
         and performance. This operation does not move or copy data; it only changes
         how the same memory is interpreted.
 
+        Returns:
+            A tensor with the same data but with a coalesced memory layout.
+            The returned tensor has type LayoutTensor with the same dtype but
+            with a coalesced layout.
+
         Performance:
 
             - Coalesced layouts typically provide better cache utilization and
@@ -2110,6 +2137,7 @@ struct LayoutTensor[
             tile_coords: The coordinates of the specific tile to extract.
                         For example, `tile[32, 32](1, 2)` extracts the tile at position (1, 2)
                         in the grid of 32×32 tiles.
+
         Returns:
             A view into the original tensor representing the specified tile.
 
@@ -2419,6 +2447,12 @@ struct LayoutTensor[
         Parameters:
             count: Number of portion to split.
             axis: The axis where the split is applied to.
+
+        Returns:
+            A StaticTuple containing 'count' LayoutTensors, each representing
+            an equal-sized partition of the original tensor along the specified axis.
+            Each partition has the same data type and memory characteristics as the
+            original tensor, but with a reduced size along the split axis.
         """
 
         constrained[
@@ -3901,6 +3935,15 @@ struct LayoutTensor[
 
     @no_inline
     fn __str__(self) -> String:
+        """Convert the tensor to a string representation.
+
+        This method converts the tensor to a human-readable string representation
+        by writing its contents to a string. It delegates to the `write_to` method
+        which formats the tensor appropriately based on its rank and shape.
+
+        Returns:
+            A string representation of the tensor.
+        """
         return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
@@ -4230,20 +4273,54 @@ struct ThreadScope:
     """
 
     var _value: Int32
+    """The internal integer value representing the thread scope."""
+
     alias BLOCK = Self(0)
+    """Represents operations at the thread block level, where all threads in a block participate."""
+
     alias WARP = Self(1)
+    """Represents operations at the warp level, where only threads within the same warp participate."""
 
     @implicit
     fn __init__(out self, value: Int):
+        """Initialize a `ThreadScope` with the given integer value.
+
+        Args:
+            value: An integer representing the thread scope (0 for BLOCK, 1 for WARP).
+        """
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
+        """Compare two `ThreadScope` objects for equality.
+
+        Args:
+            other: Another `ThreadScope` object to compare with.
+
+        Returns:
+            True if the thread scopes are equal, False otherwise.
+        """
         return self._value == other._value
 
     fn __ne__(self, other: Self) -> Bool:
+        """Compare two `ThreadScope` objects for inequality.
+
+        Args:
+            other: Another `ThreadScope` object to compare with.
+
+        Returns:
+            True if the thread scopes are not equal, False otherwise.
+        """
         return not (self == other)
 
     fn __str__(self) -> String:
+        """Convert the `ThreadScope` to a human-readable string representation.
+
+        Returns:
+            A string representation of the thread scope ("BLOCK" or "WARP").
+
+        Aborts:
+            If the thread scope has an invalid value.
+        """
         if self == Self.BLOCK:
             return "BLOCK"
         if self == Self.WARP:
@@ -4251,6 +4328,11 @@ struct ThreadScope:
         return abort[String]("invalid ThreadScope entry")
 
     fn __int__(self) -> Int:
+        """Convert the `ThreadScope` to an integer value.
+
+        Returns:
+            The integer value of the thread scope (0 for BLOCK, 1 for WARP).
+        """
         return Int(self._value)
 
 
@@ -4458,11 +4540,34 @@ fn copy_dram_to_sram[
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor):
-    """
-    Used to copy data from DRAM to SRAM for AMD GPUs. It uses buffer_load intrinsic
-    to load data and can check for bounds. In addition to dst and src, it takes
-    src_base as an argument to construct the buffer descriptor of the src tensor.
-    src_base is the original global memory tensor from which src is derived.
+    """Efficiently copy data from global memory (DRAM) to shared memory (SRAM) on AMD GPUs.
+
+    This function implements an optimized memory transfer operation specifically for AMD GPU
+    architectures. It utilizes the hardware's buffer_load intrinsic to efficiently transfer
+    data while handling bounds checking. The function distributes the copy operation across
+    multiple threads for maximum throughput.
+
+    Parameters:
+        src_thread_layout: The layout used to distribute the source tensor across threads.
+                          This determines how the workload is divided among participating threads.
+        dst_thread_layout: The layout used to distribute the destination tensor across threads.
+                          Defaults to the same layout as src_thread_layout.
+        swizzle: Optional swizzling pattern to apply when distributing the destination tensor.
+                This can improve memory access patterns and reduce bank conflicts.
+                Defaults to None (no swizzling).
+        num_threads: The total number of threads participating in the copy operation.
+                    Defaults to the size of src_thread_layout.
+        thread_scope: Defines whether operations are performed at BLOCK or WARP level.
+                     BLOCK scope involves all threads in a thread block, while WARP scope
+                     restricts operations to threads within the same warp.
+                     Defaults to ThreadScope.BLOCK.
+
+    Args:
+        dst: The destination tensor in shared memory (SRAM).
+        src: The source tensor in global memory (DRAM) to be copied.
+        src_base: The original global memory tensor from which src is derived.
+                 This is used to construct the buffer descriptor required by AMD's
+                 buffer_load intrinsic.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
     _copy_dram_to_sram_validate_args(dst, src)
@@ -5412,6 +5517,30 @@ fn copy_local_to_dram[
     dst_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor):
+    """Efficiently copy data from registers (LOCAL) to global memory (DRAM).
+
+    This function implements a high-performance memory transfer operation from register memory
+    to global memory. It distributes the copy operation across multiple threads for maximum
+    throughput while handling bounds checking for safety.
+
+    Parameters:
+        dst_thread_layout: The layout used to distribute the destination tensor across threads.
+                          This determines how the workload is divided among participating threads.
+        thread_scope: Defines whether operations are performed at BLOCK or WARP level.
+                     BLOCK scope involves all threads in a thread block, while WARP scope
+                     restricts operations to threads within the same warp.
+                     Defaults to `ThreadScope.BLOCK`.
+
+    Args:
+        dst: The destination tensor in global memory (DRAM).
+        src: The source tensor in register memory (LOCAL) to be copied.
+
+    Constraints:
+
+        - The source tensor must be in LOCAL address space (registers).
+        - The destination tensor must be in GENERIC or GLOBAL address space (DRAM).
+        - Both tensors must have compatible data types.
+    """
     _copy_local_to_dram_validate_args(dst, src)
 
     var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
@@ -5469,11 +5598,40 @@ fn copy_local_to_dram[
     dst_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
-    """
-    Used to copy data from registers to DRAM for AMD GPUs. It uses buffer_store intrinsic
-    to store data and can check for bounds. In addition to dst and src, it takes
-    dst_base as an argument to construct the buffer descriptor of the dst tensor.
-    dst_base is the original global memory tensor from which dst is derived.
+    """Efficiently copy data from registers (LOCAL) to global memory (DRAM) on AMD GPUs.
+
+    This function implements an optimized memory transfer operation specifically for AMD GPU
+    architectures. It utilizes the hardware's buffer_store intrinsic to efficiently transfer
+    data from registers to global memory while handling bounds checking. The function distributes
+    the copy operation across multiple threads for maximum throughput.
+
+    Parameters:
+        dst_thread_layout: The layout used to distribute the destination tensor across threads.
+                          This determines how the workload is divided among participating threads.
+        thread_scope: Defines whether operations are performed at BLOCK or WARP level.
+                     BLOCK scope involves all threads in a thread block, while WARP scope
+                     restricts operations to threads within the same warp.
+                     Defaults to `ThreadScope.BLOCK`.
+
+    Args:
+        dst: The destination tensor in global memory (DRAM).
+        src: The source tensor in register memory (LOCAL address space) to be copied.
+        dst_base: The original global memory tensor from which dst is derived.
+                 This is used to construct the buffer descriptor required by AMD's
+                 buffer_store intrinsic.
+
+    Constraints:
+
+        - Only supported on AMD GPUs.
+        - Destination tensor must be in GLOBAL address space.
+        - Source tensor must be in LOCAL address space.
+        - Data types must match between source and destination tensors.
+
+    Notes:
+
+        - This function is particularly useful for writing computed results from registers
+          back to global memory with minimal latency.
+        - The offset calculation is optimized for performance rather than flexibility.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
     _copy_local_to_dram_validate_args(dst, src)
@@ -5524,11 +5682,40 @@ fn copy_dram_to_local[
     src_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor):
-    """
-    Used to copy data from DRAM to registers for AMD GPUs. It uses buffer_load intrinsic
-    to load data and can check for bounds. In addition to dst and src, it takes
-    src_base as an argument to construct the buffer descriptor of the src tensor.
-    src_base is the original global memory tensor from which src is derived.
+    """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
+
+    This function implements an optimized memory transfer operation specifically for AMD GPU
+    architectures. It utilizes the hardware's buffer_load intrinsic to efficiently transfer
+    data from global memory to registers while handling bounds checking. The function distributes
+    the copy operation across multiple threads for maximum throughput.
+
+    Parameters:
+        src_thread_layout: The layout used to distribute the source tensor across threads.
+                          This determines how the workload is divided among participating threads.
+        thread_scope: Defines whether operations are performed at BLOCK or WARP level.
+                     BLOCK scope involves all threads in a thread block, while WARP scope
+                     restricts operations to threads within the same warp.
+                     Defaults to `ThreadScope.BLOCK`.
+
+    Args:
+        dst: The destination tensor in register memory (LOCAL address space).
+        src: The source tensor in global memory (DRAM) to be copied.
+        src_base: The original global memory tensor from which src is derived.
+                 This is used to construct the buffer descriptor required by AMD's
+                 buffer_load intrinsic.
+
+    Constraints:
+
+        - Only supported on AMD GPUs.
+        - The destination element layout size must match the SIMD width.
+        - Source fragments must be rank 2 with known dimensions.
+
+    Notes:
+
+        - The offset calculation method significantly impacts performance.
+          Current implementation optimizes for throughput over flexibility.
+        - This function is particularly useful for prefetching data into registers
+          before performing computations, reducing memory access latency.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
     alias simd_width = simdwidthof[src.dtype]()
@@ -5905,6 +6092,7 @@ struct LayoutTensorIter[
     """
 
     alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
+    """The unsigned integer type used for indexing, based on layout and address space."""
 
     var ptr: UnsafePointer[
         Scalar[type],
@@ -5913,12 +6101,25 @@ struct LayoutTensorIter[
         mut=mut,
         origin=origin,
     ]
+    """Pointer to the memory region being iterated, with appropriate type and memory attributes."""
+
     var offset: Self.uint_type
+    """Current offset from the base pointer, representing the iterator's position in memory."""
+
     var stride: Self.uint_type
+    """Step size between consecutive elements or blocks in memory during iteration."""
+
     var bound: Self.uint_type
+    """Upper bound of the memory region, limiting the iteration range."""
+
     var runtime_layout: RuntimeLayout[layout, bitwidth=layout_bitwidth]
+    """Runtime representation of the layout pattern used for mapping logical indices to memory locations."""
+
     var dimension_bound: Self.uint_type
+    """Boundary value for the current dimension when iterating along a specific axis."""
+
     var idx: Self.uint_type
+    """Current logical index position within the iteration sequence."""
 
     @always_inline
     fn __init__(out self):
@@ -6059,6 +6260,11 @@ struct LayoutTensorIter[
 
         Returns a layout tensor representing the data at the current position
         of the iterator.
+
+        Returns:
+            LayoutTensor: A tensor view at the current iterator position with the
+            same type, layout, and memory characteristics as specified by the
+            output parameter.
         """
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
@@ -6113,6 +6319,9 @@ struct LayoutTensorIter[
         """Increment the iterator by an integer value.
 
         Advances the iterator by the specified number of positions.
+
+        Parameters:
+            T: A type that can be converted to an integer.
 
         Args:
             rhs: The number of positions to advance.
@@ -6173,6 +6382,9 @@ struct LayoutTensorIter[
         """Return an iterator pointing to a position ahead by rhs steps.
 
         Creates a new iterator that points rhs positions ahead of the current one.
+
+        Parameters:
+            T: An integer-convertible type for the step size.
 
         Args:
             rhs: The number of positions to advance.

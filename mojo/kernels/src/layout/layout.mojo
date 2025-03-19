@@ -330,7 +330,21 @@ struct Layout(
     """Indicates whether the layout has a valid shape."""
 
     var shape: IntTuple
+    """The dimensions of the layout.
+
+    This field defines the size of each dimension in the logical coordinate space.
+    For example, a shape of (3, 4) represents a 3×4 grid of elements.
+    """
+
     var stride: IntTuple
+    """The memory step sizes for each dimension.
+
+    This field defines how many elements to skip in memory when moving one unit
+    in each dimension. For example, in a row-major 3×4 layout, the strides might
+    be (4, 1), meaning moving one unit in the first dimension requires skipping
+    4 elements in memory, while moving one unit in the second dimension requires
+    skipping 1 element.
+    """
 
     # ===------------------------------------------------------------------===#
     # Initializers
@@ -483,6 +497,35 @@ struct Layout(
 
     @staticmethod
     fn row_major[rank: Int](dims: DimList) -> Layout:
+        """Creates a row-major layout from a DimList with compile-time rank.
+
+        This method creates a row-major layout where the last dimension varies fastest in memory.
+        It handles both known and unknown dimensions at compile time, properly calculating
+        strides for each dimension. If any dimension is unknown, subsequent strides will
+        also be marked as unknown.
+
+        Parameters:
+            rank: The compile-time rank (number of dimensions) of the layout.
+
+        Args:
+            dims: A DimList containing the dimensions of the layout.
+
+        Returns:
+            A row-major Layout with the specified dimensions and computed strides.
+
+        Example:
+
+            ```mojo
+            from layout import Layout
+            from layout.layout import DimList
+
+            # Create a row-major layout with compile-time rank
+            var dims = DimList(3, 4)
+            var layout = Layout.row_major[2](dims)
+            # Result: Layout with shape (3,4) and stride (4,1)
+            ```
+            .
+        """
         var c_stride = 1
         var shape = IntTuple()
         var stride = IntTuple(c_stride)

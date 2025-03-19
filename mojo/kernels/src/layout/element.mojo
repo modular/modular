@@ -93,10 +93,26 @@ struct Element[
     """
 
     alias element_data_type = SIMD[dtype, size = layout.size()]
+    """The SIMD type used to store and process the element data.
+
+    This type alias defines a SIMD vector with the specified data type and size
+    matching the layout's total element count, enabling efficient vectorized operations.
+    """
 
     var element_data: Self.element_data_type
+    """The actual SIMD data stored in this element.
+
+    This field contains the vectorized data values that can be processed
+    efficiently using SIMD operations.
+    """
 
     var runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth]
+    """The runtime layout information for memory access patterns.
+
+    This field stores the layout information needed to map between logical tensor
+    coordinates and physical memory locations, supporting both compile-time and
+    runtime-determined access patterns.
+    """
 
     @implicit
     fn __init__(out self, element_data: Self.element_data_type):
