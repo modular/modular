@@ -4984,9 +4984,9 @@ fn copy_dram_to_sram_async[
     ]()
 
     constrained[
-        (swizzle and row_size in (16, 32, 64, 128, 256)) or not swizzle,
+        (swizzle and row_size in (16, 32, 64, 128, 256, 512)) or not swizzle,
         (
-            "Only support 2^4-2^8 elements per row in shared memory tile for"
+            "Only support 2^4-2^9 elements per row in shared memory tile for"
             " async copy with swizzling."
         ),
     ]()
