@@ -1342,7 +1342,7 @@ fn _online_softmax_iter_for_mma_output[
     # FIXME: require `warp_split_k` when delaying inter-warp communication.
     constrained[
         num_output_replications == 1
-        or num_output_replications == num_rowwise_warps
+        or num_output_replications % num_rowwise_warps == 0
         # or (warp_split_k and num_output_replications == num_rowwise_warps)
     ]()
 
