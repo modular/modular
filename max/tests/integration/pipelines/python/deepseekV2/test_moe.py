@@ -35,7 +35,7 @@ def generate_torch_outputs(
 
     # Update shared expert weights
     if layer.config.n_shared_experts is not None:
-        for name, param in expert.named_parameters():
+        for name, param in layer.shared_experts.named_parameters():
             param.data = shared_expert_weights[name].to(torch.bfloat16)
 
     layer.gate.weight.data = dummy_moe_weight
