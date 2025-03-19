@@ -45,7 +45,7 @@ from layout.layout_tensor import (
     copy_sram_to_local,
 )
 from layout.math import outer_product_acc
-from layout.nd_buffer_stub import (
+from layout._ndbuffer_stub import (
     copy_from_nd_buffer,
     distribute,
     from_ndbuffer_row_major,

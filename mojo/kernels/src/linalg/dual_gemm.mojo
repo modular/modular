@@ -38,7 +38,7 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
-from layout.nd_buffer_stub import from_ndbuffer_row_major
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import make_swizzle
