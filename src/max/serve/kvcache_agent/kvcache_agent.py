@@ -4,13 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import argparse
 import concurrent.futures
 import logging
 import multiprocessing
 import queue
 import threading
-import time
 from dataclasses import dataclass
 from typing import Dict, Iterator, Set
 
@@ -328,94 +326,3 @@ def start_kvcache_agent_service(
     server = KVCacheAgentServer(config, queue)
     server.start()
     return server
-
-
-def main():
-    """
-    Entry point for the KVCacheAgent service. This function is used for testing purposes.
-
-    This function parses command-line arguments and starts the KVCacheAgent service
-    with the specified configuration.
-    """
-
-    parser = argparse.ArgumentParser(description="KVCache Agent Service")
-    parser.add_argument(
-        "--host",
-        type=str,
-        default="0.0.0.0",
-        help="Host address to bind the server to (default: 0.0.0.0)",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=50051,
-        help="Port to listen on (default: 50051)",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=4,
-        help="Number of worker threads for handling requests (default: 4)",
-    )
-    parser.add_argument(
-        "--verbose", action="store_true", help="Enable verbose logging"
-    )
-
-    args = parser.parse_args()
-
-    # Configure logging based on verbosity
-    if args.verbose:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=logging.INFO)
-
-    # Create a queue for the server to communicate with the main process
-    queue = multiprocessing.Queue()
-
-    # Start the service
-    server = start_kvcache_agent_service(
-        queue=queue, host=args.host, port=args.port, num_workers=args.workers
-    )
-
-    try:
-        # TODO: move this to a test file
-        # test the server
-        queue.put(
-            KVCacheChangeMessage(
-                cache_id="cache_id_1",
-                memory_tier=MemoryTier.MEMORY_TIER_GPU,
-                update_type=UpdateType.UPDATE_TYPE_ADDED,
-            )
-        )
-        queue.put(
-            KVCacheChangeMessage(
-                cache_id="cache_id_2",
-                memory_tier=MemoryTier.MEMORY_TIER_CPU,
-                update_type=UpdateType.UPDATE_TYPE_ADDED,
-            )
-        )
-        time.sleep(1)
-        queue.put(
-            KVCacheChangeMessage(
-                cache_id="cache_id_1",
-                memory_tier=MemoryTier.MEMORY_TIER_GPU,
-                update_type=UpdateType.UPDATE_TYPE_REMOVED,
-            )
-        )
-        queue.put(
-            KVCacheChangeMessage(
-                cache_id="cache_id_2",
-                memory_tier=MemoryTier.MEMORY_TIER_CPU,
-                update_type=UpdateType.UPDATE_TYPE_REMOVED,
-            )
-        )
-        time.sleep(1)
-
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        logger.info("Shutting down KVCache Agent Service...")
-        server.stop()
-
-
-if __name__ == "__main__":
-    main()
