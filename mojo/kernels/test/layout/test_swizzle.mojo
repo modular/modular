@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections import OptionalReg
-from sys import is_x86, sizeof
+from sys import sizeof
 
 from layout.element import Element
 from layout.int_tuple import IntTuple, size

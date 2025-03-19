@@ -10,7 +10,7 @@
 from math import fma, isclose
 from os import abort
 from random import rand
-from sys import argv, has_avx512f, is_x86, simdwidthof, sizeof
+from sys import argv, has_avx512f, CompilationTarget, simdwidthof, sizeof
 
 import benchmark
 from algorithm.functional import vectorize
@@ -953,14 +953,14 @@ fn bench_b2b[
 
 
 fn getMr() -> Int:
-    if is_x86():
+    if CompilationTarget.is_x86():
         if has_avx512f():
             return 9
     return 6
 
 
 fn getNr() -> Int:
-    if is_x86():
+    if CompilationTarget.is_x86():
         if has_avx512f():
             return 3
         else:
