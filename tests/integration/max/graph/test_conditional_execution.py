@@ -342,7 +342,6 @@ def test_conditional_with_returned_weights(session) -> None:
         np.testing.assert_array_equal(weight, output[0].to_numpy())
 
 
-@pytest.mark.skip(reason="This is causes a crash in the graph compiler.")
 def test_cond_returned_diff_weights(session) -> None:
     """Tests adding an external weight to a graph."""
     with Graph(
