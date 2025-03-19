@@ -12,9 +12,9 @@ from sys import (
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
     is_apple_silicon,
-    is_x86,
     simdwidthof,
     sizeof,
+    CompilationTarget,
 )
 from sys.intrinsics import llvm_intrinsic
 
@@ -503,7 +503,7 @@ fn _pack_block_Q4_K[
             var q_mins_row_1_val = q_mins_row_1_ptr[n]
 
             @parameter
-            if is_x86():
+            if CompilationTarget.is_x86():
                 var reorder_idx = g * block_n + n * 2
                 q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
                 q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
@@ -745,7 +745,7 @@ fn _matmul_group_stream[
     constrained[is_power_of_two(tile_k) and tile_k <= 4]()
 
     @parameter
-    if is_x86():
+    if CompilationTarget.is_x86():
         return _matmul_group_stream_x86[group_size, stream_b_vals_fn](
             a_q_bits_ptr, c_int32_group
         )
@@ -831,7 +831,7 @@ fn _apply_zero_point_correction[
     for g in range(0, group_count, 2):
 
         @parameter
-        if is_x86():
+        if CompilationTarget.is_x86():
             # Use `pmaddwd` + `paddd' (optimized to `vpdpwssd` on processors
             # that support VNNI) to multiply/add a pair of minimum values with
             # a pair of group sums from matrix A.
@@ -1253,7 +1253,7 @@ fn _matmul_Q6_K_tile[
         c_int32_group.init()
 
         @parameter
-        if is_x86():
+        if CompilationTarget.is_x86():
             # Initialize the accumulators with the zero point correction
             # values. This is necessary for x86 as there are no VNNI
             # instructions for s8s8.
