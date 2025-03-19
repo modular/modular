@@ -92,9 +92,9 @@ def POP_UnionType : POPType<"Union", "union", [
     Example:
 
     ```mlir
-    !kgen.union<>
-    !kgen.union<i32>
-    !kgen.union<i32, i64>
+    !pop.union<>
+    !pop.union<i32>
+    !pop.union<i32, i64>
     ```
   }];
 
