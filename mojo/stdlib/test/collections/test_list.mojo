@@ -907,6 +907,23 @@ def test_list_repr():
     assert_equal(empty.__repr__(), "[]")
 
 
+def test_fill_ctor():
+    var l = List(fill=10, count=5)
+    assert_equal(len(l), 5)
+    # Sanity check that this doesn't affect allocated length of the list buffer
+    assert_equal(l.capacity, 5)
+    assert_equal(l, List(10, 10, 10, 10, 10))
+
+
+def test_fill_method():
+    var l = List(1, 2, 3)
+    var capacity_before = l.capacity
+    l.fill(10)
+    assert_equal(len(l), 3)
+    assert_equal(l.capacity, capacity_before)
+    assert_equal(l, List(10, 10, 10))
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
@@ -947,3 +964,5 @@ def main():
     test_list_dtor()
     test_destructor_trivial_elements()
     test_list_repr()
+    test_fill_ctor()
+    test_fill_method()

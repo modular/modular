@@ -187,6 +187,18 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self._len = length
         self.capacity = capacity
 
+    fn __init__(out self, *, fill: T, count: UInt):
+        """Constructs a list containing `count` copies of the `fill` element.
+
+        Args:
+            fill: The value used to fill the list.
+            count: The number of values in the list.
+        """
+        self = Self(capacity=count)
+        for i in range(count):
+            (self.data + i).init_pointee_copy(fill)
+        self._len = count
+
     fn __moveinit__(out self, owned existing: Self):
         """Move data of an existing list into a new one.
 
@@ -536,6 +548,15 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
             earlier_idx -= 1
             later_idx -= 1
+
+    fn fill(mut self, fill: T):
+        """Replace all existing values in the list with `fill` value.
+
+        Args:
+            fill: The value to fill the list with.
+        """
+        for i in range(len(self)):
+            (self.data + i)[] = fill
 
     fn __mul(mut self, x: Int):
         """Appends the original elements of this list x-1 times.
