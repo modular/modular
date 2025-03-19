@@ -387,6 +387,7 @@ struct Variant[*Ts: CollectionElement](
         """Check if a type can be used by the `Variant`.
 
         Example:
+        
         ```mojo
         def MyFunction(mut arg: Variant):
             if arg.is_type_supported[Float64]():
