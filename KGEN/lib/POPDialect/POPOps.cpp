@@ -15,6 +15,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/POPDialect/POPEnums.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MAttrs.h"
@@ -28,6 +29,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/LogicalResult.h"
 
 using namespace M;
 using namespace KGEN;
@@ -202,9 +204,27 @@ LogicalResult SIMDSplatOp::verify() {
 
 void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
                    std::optional<unsigned> alignment, bool isVolatile,
-                   bool isInvariant) {
+                   bool isInvariant, AtomicOrdering ordering) {
   build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
-        isVolatile, isInvariant);
+        isVolatile, isInvariant, ordering);
+}
+
+LogicalResult LoadOp::verify() {
+  AtomicOrdering ordering = getOrdering();
+  if ((getIsVolatile() || getIsInvariant()) &&
+      (ordering != AtomicOrdering::NOT_ATOMIC))
+    return emitOpError(
+        "invalid combination of volatile or invariant with atomic load");
+
+  if (ordering == AtomicOrdering::RELEASE ||
+      ordering == AtomicOrdering::ACQUIRE_RELEASE) {
+    return emitOpError("invalid atomic ordering '")
+           << stringifyAtomicOrdering(ordering)
+           << "' for load operation. Valid orderings are: unordered, "
+              "monotonic, acquire, seq_cst";
+  }
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

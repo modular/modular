@@ -1228,8 +1228,8 @@ kgen.func @string_ops() -> (
   %6 = pop.string.compress %hello_mojo
   // CHECK-DAG: kgen.param.constant: string = <"hello mojo">
   %7 = pop.string.decompress %6
-  kgen.return %0, %1, %2, %3, %4, %5, %6, %7 : index, !kgen.string, 
-      !kgen.string, !kgen.string, !kgen.string, !kgen.string, 
+  kgen.return %0, %1, %2, %3, %4, %5, %6, %7 : index, !kgen.string,
+      !kgen.string, !kgen.string, !kgen.string, !kgen.string,
       !kgen.string, !kgen.string
 }
 
@@ -1304,7 +1304,7 @@ kgen.func @load_bitcast_ptr_ptr(%arg0: !kgen.pointer<none>) -> !kgen.pointer<non
 
 // CHECK-LABEL: @load_bitcast_func_ptr
 kgen.func @load_bitcast_func_ptr(%arg0: !kgen.generator<() -> ()>) ->
-                                  (!kgen.pointer<index>,!kgen.pointer<index>,!kgen.pointer<index>) {
+                                  (!kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>) {
   // CHECK-NEXT: %0 = pop.pointer.bitcast %arg0
   %0 = pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.load %0
@@ -1313,7 +1313,9 @@ kgen.func @load_bitcast_func_ptr(%arg0: !kgen.generator<() -> ()>) ->
   %2 = pop.load volatile %0 : !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.load volatile invariant %0
   %3 = pop.load volatile invariant %0 : !kgen.pointer<pointer<index>>
-  kgen.return %1, %2, %3 : !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>
+  // CHECK-NEXT: pop.load atomic acquire %0
+  %4 = pop.load atomic acquire %0 : !kgen.pointer<pointer<index>>
+  kgen.return %1, %2, %3, %4 : !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>
 }
 
 // CHECK-LABEL: @load_of_store

@@ -224,6 +224,14 @@ kgen.func @func() {
 
 // -----
 
+kgen.func @load_atomic(%p: !kgen.pointer<scalar<f32>>) {
+  // expected-error @below {{invalid combination of volatile or invariant with atomic load}}
+  pop.load volatile atomic acquire %p: !kgen.pointer<scalar<f32>>
+  kgen.return
+}
+
+// -----
+
 kgen.func @fence() {
   // expected-error @below {{'pop.fence' op can be given only acquire, release, acq_rel, and seq_cst orderings}}
   pop.fence not_atomic

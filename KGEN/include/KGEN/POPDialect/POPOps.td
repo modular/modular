@@ -744,7 +744,12 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     the load. An optional `volatile` attribute can be provided to make the load
     volatile. An optional `invariant` attribute can be provided to make the the
     memory location referenced by the load contain the same value at all points
-    in the program where the memory location is dereferenceable
+    in the program where the memory location is dereferenceable.
+
+    When using atomic ordering (`atomic` keyword), valid orderings are:
+    `unordered`, `monotonic`, `acquire`, and `sequentially_consistent`.
+    `release` and `acquire_release` orderings are invalid for load operations.
+    `volatile` or `invariant` loads cannot be atomic.
 
     Example:
 
@@ -754,15 +759,22 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     %2 = pop.load %ptr0 align<8> : !kgen.pointer<scalar<f32>>
     %3 = pop.load volatile %ptr0 align<8> : !kgen.pointer<scalar<f32>>
     %4 = pop.load volatile invariant %ptr0 align<8> : !kgen.pointer<scalar<f32>>
+    %5 = pop.load atomic acquire %ptr0 : !kgen.pointer<scalar<f32>>
     ```
   }];
 
   let arguments = (ins Arg<PointerType, "", [MemRead]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
-                       UnitAttr:$isVolatile, UnitAttr:$isInvariant);
+                       UnitAttr:$isVolatile,
+                       UnitAttr:$isInvariant,
+                       DefaultValuedAttr<
+                        POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    (`volatile` $isVolatile^)? (`invariant` $isInvariant^)? $ptr
+    (`volatile` $isVolatile^)?
+    (`invariant` $isInvariant^)?
+    (`atomic` $ordering^)?
+    $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)? attr-dict `:`
     qualified(type($ptr))
   }];
@@ -771,11 +783,13 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     OpBuilder<(ins "Value":$ptr,
                    CArg<"std::optional<unsigned>", "{}">:$alignment,
                    CArg<"bool", "false">:$isVolatile,
-                   CArg<"bool", "false">:$isInvariant)>,
+                   CArg<"bool", "false">:$isInvariant,
+                   CArg<"AtomicOrdering", "AtomicOrdering::NOT_ATOMIC">:$ordering)>,
   ];
 
   let hasFolder = 1;
   let hasCanonicalizeMethod = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

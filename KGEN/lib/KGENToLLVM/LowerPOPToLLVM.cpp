@@ -938,7 +938,7 @@ struct ConvertPOPArrayGEP : public ConvertPOPToLLVMPattern<ArrayGEPOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// getAlignment
+// getAlignment, getAtomicOrdering
 //===----------------------------------------------------------------------===//
 
 static unsigned getAlignment(const POPToLLVMTypeConverter *tc,
@@ -949,6 +949,26 @@ static unsigned getAlignment(const POPToLLVMTypeConverter *tc,
     return cast<IntegerAttr>(alignmentAttr).getInt();
 
   return tc->getTypeABIAlign(tc->convertType(ptrType.getElementType()));
+}
+
+static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
+  switch (ordering) {
+  case AtomicOrdering::NOT_ATOMIC:
+    return LLVM::AtomicOrdering::not_atomic;
+  case AtomicOrdering::UNORDERED:
+    return LLVM::AtomicOrdering::unordered;
+  case AtomicOrdering::MONOTONIC:
+    return LLVM::AtomicOrdering::monotonic;
+  case AtomicOrdering::ACQUIRE:
+    return LLVM::AtomicOrdering::acquire;
+  case AtomicOrdering::RELEASE:
+    return LLVM::AtomicOrdering::release;
+  case AtomicOrdering::ACQUIRE_RELEASE:
+    return LLVM::AtomicOrdering::acq_rel;
+  case AtomicOrdering::SEQUENTIALLY_CONSISTENT:
+    return LLVM::AtomicOrdering::seq_cst;
+  }
+  llvm_unreachable("unknown atomic ordering");
 }
 
 //===----------------------------------------------------------------------===//
@@ -967,8 +987,10 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/adaptor.getIsVolatile(), /*nontemporal=*/false,
-        /*invariant=*/adaptor.getIsInvariant());
+        /*isVolatile=*/adaptor.getIsVolatile(), /*isNonTemporal=*/false,
+        /*isInvariant=*/adaptor.getIsInvariant(),
+        /*isInvariantGroup=*/false,
+        /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
     return success();
   }
 };
@@ -1269,26 +1291,6 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
 //===----------------------------------------------------------------------===//
 // ConvertPOPAtomicCmpXchg
 //===----------------------------------------------------------------------===//
-
-static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
-  switch (ordering) {
-  case AtomicOrdering::NOT_ATOMIC:
-    return LLVM::AtomicOrdering::not_atomic;
-  case AtomicOrdering::UNORDERED:
-    return LLVM::AtomicOrdering::unordered;
-  case AtomicOrdering::MONOTONIC:
-    return LLVM::AtomicOrdering::monotonic;
-  case AtomicOrdering::ACQUIRE:
-    return LLVM::AtomicOrdering::acquire;
-  case AtomicOrdering::RELEASE:
-    return LLVM::AtomicOrdering::release;
-  case AtomicOrdering::ACQUIRE_RELEASE:
-    return LLVM::AtomicOrdering::acq_rel;
-  case AtomicOrdering::SEQUENTIALLY_CONSISTENT:
-    return LLVM::AtomicOrdering::seq_cst;
-  }
-  llvm_unreachable("unknown atomic ordering");
-}
 
 class ConvertPOPAtomicCmpXchg
     : public ConvertPOPToLLVMPattern<AtomicCmpXchgOp> {
