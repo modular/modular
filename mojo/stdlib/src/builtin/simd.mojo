@@ -62,11 +62,11 @@ from sys import (
     is_big_endian,
     is_gpu,
     is_nvidia_gpu,
-    is_x86,
     llvm_intrinsic,
     prefetch,
     simdwidthof,
     sizeof,
+    CompilationTarget,
 )
 from sys._assembly import inlined_assembly
 from sys.info import _current_arch, _is_sm_9x
@@ -2168,7 +2168,7 @@ struct SIMD[type: DType, size: Int](
         @parameter
         if (
             # TODO: Allow SSE3 when we have sys.has_sse3()
-            (sys.has_sse4() or sys.has_neon())
+            (CompilationTarget.has_sse4() or sys.has_neon())
             and Self.type == DType.uint8
             and Self.size == 16
         ):
@@ -2456,7 +2456,7 @@ struct SIMD[type: DType, size: Int](
             return self[0]
 
         @parameter
-        if is_x86() or size_out > 1:
+        if CompilationTarget.is_x86() or size_out > 1:
 
             @always_inline
             @parameter
@@ -2514,7 +2514,7 @@ struct SIMD[type: DType, size: Int](
             return self[0]
 
         @parameter
-        if is_x86() or size_out > 1:
+        if CompilationTarget.is_x86() or size_out > 1:
 
             @always_inline
             @parameter
@@ -2921,7 +2921,9 @@ fn _pshuf_or_tbl1(
     lookup_table: SIMD[DType.uint8, 16], indices: SIMD[DType.uint8, 16]
 ) -> SIMD[DType.uint8, 16]:
     @parameter
-    if sys.has_sse4():  # TODO: Allow SSE3 when we have sys.has_sse3()
+    if (
+        CompilationTarget.has_sse4()
+    ):  # TODO: Allow SSE3 when we have sys.has_sse3()
         return _pshuf(lookup_table, indices)
     elif sys.has_neon():
         return _tbl1(lookup_table, indices)

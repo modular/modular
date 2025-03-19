@@ -22,12 +22,12 @@ from sys import (
     has_neon,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
-    has_sse4,
     has_vnni,
     num_logical_cores,
     num_performance_cores,
     num_physical_cores,
     sizeof,
+    CompilationTarget,
 )
 
 from testing import assert_equal, assert_true
@@ -73,7 +73,7 @@ fn test_target_has_feature():
     has_feature = has_neon()
     has_feature = has_neon_int8_dotprod()
     has_feature = has_neon_int8_matmul()
-    has_feature = has_sse4()
+    has_feature = CompilationTarget.has_sse4()
     has_feature = has_vnni()
 
 

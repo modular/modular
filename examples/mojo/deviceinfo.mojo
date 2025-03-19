@@ -18,7 +18,6 @@ from sys import (
     has_avx512f,
     has_intel_amx,
     has_neon,
-    has_sse4,
     has_vnni,
     is_apple_m1,
     is_apple_m2,
@@ -28,6 +27,7 @@ from sys import (
     os_is_linux,
     os_is_macos,
     os_is_windows,
+    CompilationTarget,
 )
 
 # This sample prints the current host system information using APIs from the
@@ -46,7 +46,7 @@ def main():
     var cpu = _current_arch()
     var arch = _triple_attr()
     var cpu_features = String("")
-    if has_sse4():
+    if CompilationTarget.has_sse4():
         cpu_features += " sse4"
     if has_avx():
         cpu_features += " avx"
