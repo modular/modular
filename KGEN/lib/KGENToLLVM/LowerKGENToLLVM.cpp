@@ -160,6 +160,7 @@ struct AttributeIdentifiers {
 /// compatible representation. Unsupport metadata values are rejected.
 static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
                                          DictionaryAttr metadata,
+                                         ArrayAttr argMetadata,
                                          const AttributeIdentifiers &ids,
                                          const TypeConverter *tc,
                                          TargetInfoAttr target) {
@@ -167,7 +168,6 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
   SmallVector<Attribute> passthrough =
       llvm::to_vector(func.getPassthroughAttr());
   Builder b(func.getContext());
-  SmallVector<NamedAttrList> argAttrLists(func.getNumArguments(), {});
 
   for (const NamedAttribute &attr : metadata) {
     // Treat `llvm.*` metadata attributes as passthrough function attributes.
@@ -202,47 +202,6 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
                << value;
       }
       continue;
-    } else if (isa<mlir::NVVM::NVVMDialect>(nameDialect)) {
-      // `grid_constant` needs to be converted into arg attrs.
-      if (attr.getName() ==
-          mlir::NVVM::NVVMDialect::getGridConstantAttrName()) {
-        auto array = dyn_cast<POP::ArrayAttr>(value);
-        if (!array)
-          return mlir::emitError(func.getLoc(),
-                                 "unsupported `nvvm.grid_constant` value: ")
-                 << value;
-
-        for (TypedAttr indexValue : array.getValues()) {
-          auto integer = dyn_cast<IntegerAttr>(indexValue);
-          if (!integer)
-            return mlir::emitError(
-                       func.getLoc(),
-                       "unsupported `nvvm.grid_constant` array element: ")
-                   << indexValue;
-
-          int64_t argIndex = integer.getInt();
-          if (argIndex < 0 || argIndex >= (int64_t)argAttrLists.size())
-            return mlir::emitError(func.getLoc(),
-                                   "`nvvm.grid_constant` index out of bounds: ")
-                   << argIndex << " (function has " << argAttrLists.size()
-                   << "arguments)";
-
-          if (!hasAddress(sig.getArgConvention(argIndex)))
-            return mlir::emitError(func.getLoc(),
-                                   "`nvvm.grid_constant` argument cannot be "
-                                   "passed by register. See argument at index ")
-                   << argIndex;
-
-          argAttrLists[argIndex].set(attr.getName(), b.getUnitAttr());
-          // FIXME(MOCO-1342): Remove this, once we are able to
-          // explicitly pass alignment.
-          argAttrLists[argIndex].set(
-              StringAttr::get(func->getContext(),
-                              LLVM::LLVMDialect::getAlignAttrName()),
-              IntegerAttr::get(b.getI32Type(), 64));
-        }
-        continue;
-      }
     } else if (isa<mlir::ROCDL::ROCDLDialect>(nameDialect)) {
       // FIXME: Remove when integer conversion to StringAttr is done by the
       // ROCDL -> LLVM IR
@@ -314,7 +273,38 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
   SmallVector<Attribute> argAttrs;
   for (auto [i, conv, type] :
        llvm::enumerate(sig.getArgConventions(), sig.getArguments())) {
-    NamedAttrList &list = argAttrLists[i];
+    NamedAttrList list;
+
+    if (!argMetadata.empty()) {
+      // `argMetadata` is legalized to either be empty or have same size as the
+      // number of function arguments.
+      for (const NamedAttribute &attr : cast<DictionaryAttr>(argMetadata[i])) {
+        Attribute value = attr.getValue();
+        Dialect *nameDialect = attr.getNameDialect();
+        if (!nameDialect) {
+          return mlir::emitError(
+                     func.getLoc(),
+                     "dialect not loaded for LLVM passthrough attribute: ")
+                 << attr.getName() << '=' << value;
+        }
+
+        if (isa<mlir::NVVM::NVVMDialect>(nameDialect)) {
+          if (attr.getName() ==
+              mlir::NVVM::NVVMDialect::getGridConstantAttrName()) {
+            list.set(attr.getName(), b.getUnitAttr());
+            // FIXME(MOCO-1342): Remove this, once we are able to
+            // explicitly pass alignment.
+            list.set(StringAttr::get(func->getContext(),
+                                     LLVM::LLVMDialect::getAlignAttrName()),
+                     IntegerAttr::get(b.getI32Type(), 64));
+            continue;
+          }
+        }
+
+        return mlir::emitError(func.getLoc(), "unsupported LLVM arg metadata: ")
+               << attr.getName();
+      }
+    }
 
     switch (conv) {
     case ArgConvention::OwnedMem:
@@ -489,7 +479,8 @@ public:
     }
     if (failed(convertLLVMMetadata(
             funcOp, func.getFuncTypeGenerator().getBody(),
-            func.getLLVMMetadataAttr(), ids, typeConverter, target)))
+            func.getLLVMMetadataAttr(), func.getLLVMArgMetadata(), ids,
+            typeConverter, target)))
       return failure();
 
     if (func.getCoroutineType()) {
