@@ -224,6 +224,7 @@ modular_py_binary(
         "run_lm_eval.py",
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
+        "//KGEN:ptxas",
         "//SDK/integration-test/pipelines/python/eval_tasks",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
         "@llvm-project//compiler-rt:orc_rt",
