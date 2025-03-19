@@ -857,14 +857,20 @@ class SamplingConfig(MAXConfig):
     top_k: int = 1
     """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
 
+    in_dtype: DType = DType.float32
+    """The data type of the input tokens."""
+
+    out_dtype: DType = DType.float32
+    """The data type of the output logits."""
+
     enable_structured_output: bool = False
     """Enable structured generation/guided decoding for the server. This allows the user to pass a json
     schema in the response_format field, which the LLM will adhere to."""
 
-    in_dtype: DType = DType.float32
-    """The data type of the input tokens."""
-    out_dtype: DType = DType.float32
-    """The data type of the output logits."""
+    enable_variable_logits: bool = False
+    """Enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with
+    their associated logit_offsets. This is needed to produce additional logits for echo and speculative
+    decoding purposes."""
 
     @staticmethod
     def help() -> dict[str, str]:

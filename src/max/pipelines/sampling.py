@@ -18,78 +18,75 @@ from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
 from max.pipelines import SamplingConfig
 
 
-def _bitmask_sampler(sampling_config: SamplingConfig) -> Graph:
-    logits_in_type = TensorType(
-        sampling_config.in_dtype, ["batch", "vocab_size"]
-    )
-    prev_tokens_type = TensorType(DType.int64, ["batch", "num_prev_steps"])
-    bitmask_type = TensorType(DType.bool, ["batch", "vocab_size"])
+def _sampling_input_types(sampling_config: SamplingConfig) -> list[TensorType]:
+    input_types = []
 
-    with Graph(
-        "bitmask_sampler",
-        input_types=[logits_in_type, prev_tokens_type, bitmask_type],
-    ) as graph:
-        # Deconstruct inputs and cast.
-        logits, prev_tokens, bitmask = (val.tensor for val in graph.inputs)
-        logits = ops.cast(logits, sampling_config.out_dtype)
-
-        # Mask the logits out.
-        logits = ops.select(
-            bitmask, logits, ops.constant(-10000, dtype=DType.float32)
+    # Logits are always provided
+    if sampling_config.enable_variable_logits:
+        logits_in_type = TensorType(
+            sampling_config.in_dtype, ["total_output_len", "vocab_size"]
         )
+        input_types.append(logits_in_type)
+    else:
+        logits_in_type = TensorType(
+            sampling_config.in_dtype, ["batch", "vocab_size"]
+        )
+        input_types.append(logits_in_type)
 
-        # Apply top_k or argmax sampling.
-        shape = Shape(logits.shape)
-        shape[-1] = Dim(1)
-        tokens = ops.custom(
-            "topk_fused_sampling",
-            [
-                ops.constant(sampling_config.top_k, dtype=DType.int64),
-                logits,
-            ],
-            [TensorType(DType.int64, shape)],
-        )[0]
-        assert isinstance(tokens, TensorValue)
-
-        all_tokens = ops.concat([prev_tokens, tokens], -1)
-        tokens = ops.squeeze(tokens, -1)
-        graph.output(tokens, all_tokens)
-
-        return graph
-
-
-def _vanilla_sampler(sampling_config: SamplingConfig) -> Graph:
-    logits_in_type = TensorType(
-        sampling_config.in_dtype, ["batch", "vocab_size"]
-    )
+    # We are currently, always passing tokens through
     prev_tokens_type = TensorType(DType.int64, ["batch", "num_prev_steps"])
-    with Graph(
-        "token_sampler", input_types=[logits_in_type, prev_tokens_type]
-    ) as graph:
-        logits, prev_tokens = (val.tensor for val in graph.inputs)
-        logits = ops.cast(logits, sampling_config.out_dtype)
+    input_types.append(prev_tokens_type)
 
-        shape = Shape(logits.shape)
-        shape[-1] = Dim(1)
-        tokens = ops.custom(
-            "topk_fused_sampling",
-            [
-                ops.constant(sampling_config.top_k, dtype=DType.int64),
-                logits,
-            ],
-            [TensorType(DType.int64, shape)],
-        )[0]
-        assert isinstance(tokens, TensorValue)
+    # If we have variable token logits enabled
+    if sampling_config.enable_variable_logits:
+        logit_offset_type = TensorType(DType.uint32, ["logit_offsets_len"])
+        input_types.append(logit_offset_type)
 
-        all_tokens = ops.concat([prev_tokens, tokens], -1)
-        tokens = ops.squeeze(tokens, -1)
-        graph.output(tokens, all_tokens)
+    # If we have structured_outputs enabled
+    if sampling_config.enable_structured_output:
+        bitmask_type = TensorType(DType.bool, ["batch", "vocab_size"])
+        input_types.append(bitmask_type)
 
-        return graph
+    return input_types
 
 
 def token_sampler(sampling_config: SamplingConfig) -> Graph:
-    if sampling_config.enable_structured_output:
-        return _bitmask_sampler(sampling_config)
-    else:
-        return _vanilla_sampler(sampling_config)
+    _input_types = _sampling_input_types(sampling_config)
+    with Graph("top_k_sampler", input_types=_input_types) as graph:
+        # Deconstruct inputs
+        # TODO: Explore better ways of indexing into these input values
+        # tightly coupling the input order with element indices feels
+        # quite brittle.
+        logits = graph.inputs[0].tensor
+        logits = ops.cast(logits, sampling_config.out_dtype)
+        prev_tokens = graph.inputs[1].tensor
+
+        if sampling_config.enable_variable_logits:
+            logit_offsets = graph.inputs[2].tensor
+            logits = ops.gather(logits, logit_offsets[1:] - 1, axis=0)
+            logits = ops.rebind(logits, shape=("batch", "vocab_size"))
+
+        if sampling_config.enable_structured_output:
+            bitmask = graph.inputs[-1].tensor
+            logits = ops.select(
+                bitmask, logits, ops.constant(-10000, dtype=DType.float32)
+            )
+
+        # Apply top_k sampling
+        shape = Shape(logits.shape)
+        shape[-1] = Dim(1)
+        tokens = ops.custom(
+            "topk_fused_sampling",
+            [
+                ops.constant(sampling_config.top_k, dtype=DType.int64),
+                logits,
+            ],
+            [TensorType(DType.int64, shape)],
+        )[0]
+        assert isinstance(tokens, TensorValue)
+
+        all_tokens = ops.concat([prev_tokens, tokens], -1)
+        tokens = ops.squeeze(tokens, -1)
+        graph.output(tokens, all_tokens)
+
+        return graph
