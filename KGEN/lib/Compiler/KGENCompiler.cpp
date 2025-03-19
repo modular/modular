@@ -109,6 +109,7 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   }
   wrapper.setLLVMMetadataArrayAttr(
       ArrayAttr::get(sliced.getContext(), metadataArray));
+  wrapper.setLLVMArgMetadataArrayAttr(sliced.getLLVMArgMetadataArrayAttr());
   Block *entry =
       b.createBlock(&wrapper.getBodyRegion(), {}, sigBase.getArguments(),
                     llvm::map_to_vector(sliced.getArguments(),
