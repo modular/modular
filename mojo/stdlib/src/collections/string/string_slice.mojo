@@ -938,7 +938,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             The result string.
         """
-        return String(self) + rhs
+        var res = List[Byte](
+            capacity=self.byte_length() + rhs.byte_length() + 1
+        )
+        res.extend(self.as_bytes())
+        res.extend(rhs.as_bytes())
+        res.append(0)
+        return String(buffer=res^)
 
     fn __radd__(self, lhs: StringSlice) -> String:
         """Returns a string with this value appended to another string.
@@ -949,7 +955,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             The result string.
         """
-        return String(lhs) + self
+        var res = List[Byte](
+            capacity=self.byte_length() + lhs.byte_length() + 1
+        )
+        res.extend(lhs.as_bytes())
+        res.extend(self.as_bytes())
+        res.append(0)
+        return String(buffer=res^)
 
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.
