@@ -1908,11 +1908,9 @@ ObjectCompiler::emitGPUKernels(
 
   std::string moduleName = llvmModule->getName().str();
 
-  SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;
-  SmallVector<AsyncRT::AnyAsyncValueRef> cachedIDResults;
-
   (void)writeTempModule(options.saveTempsPrefix, ".pre-split", *llvmModule);
 
+  SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;
   auto handleSplit =
       [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
           std::optional<int64_t> idx, unsigned numFunctionsBase) {
@@ -1920,13 +1918,10 @@ ObjectCompiler::emitGPUKernels(
             std::move(produceModule), moduleLoc, transformCache, idx, runtime,
             options, isJIT, kernelEmissionKinds);
         cachedResults.push_back(std::move(result.first));
-        cachedIDResults.push_back(std::move(result.second));
+        cachedResults.push_back(std::move(result.second));
       };
 
   splitPerExported(std::move(llvmModule), handleSplit);
-  for (auto &value : cachedIDResults) {
-    cachedResults.push_back(std::move(value));
-  }
 
   auto result = AsyncRT::AsyncValueRef<
       DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(runtime);
@@ -1935,11 +1930,10 @@ ObjectCompiler::emitGPUKernels(
       cachedResults, [result = result.copy(), options = options](
                          MutableArrayRef<AnyAsyncValueRef> values) mutable {
         DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>> results;
-        size_t numTotalKernels = values.size() / 2;
 
-        for (size_t i = 0; i < numTotalKernels; ++i) {
+        for (size_t i = 0; i < values.size(); i += 2) {
           AnyAsyncValueRef &bufs = values[i];
-          AnyAsyncValueRef &kernelId = values[i + numTotalKernels];
+          AnyAsyncValueRef &kernelId = values[i + 1];
 
           if (kernelId.isError()) {
             if (isGPUBackend(options))
