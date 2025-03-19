@@ -65,8 +65,8 @@ env["MODULAR_MOJO_MAX_LLDB_VISUALIZERS_PATH"] = str(lib / "lldb-visualizers")
 env["MODULAR_MOJO_MAX_LSP_SERVER_PATH"] = str(bin / "mojo-lsp-server")
 # MODULAR_MOJO_MAX_MBLACK_PATH
 env["MODULAR_MOJO_MAX_ORCRT_PATH"] = str(lib / "liborc_rt.a")
-env["MODULAR_MOJO_MAX_REPL_ENTRY_POINT"] = str(lib / "mojo-repl-entry-point")
 env["MODULAR_MOJO_MAX_PTXAS_PATH"] = str(bin / "ptxas")
+env["MODULAR_MOJO_MAX_REPL_ENTRY_POINT"] = str(lib / "mojo-repl-entry-point")
 env["MODULAR_MOJO_MAX_SYSTEM_LIBS"] = (
     "-lm,-lz,-lcurses"
     if sys.platform == "darwin"
