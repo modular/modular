@@ -215,8 +215,8 @@ fn multistage_mma[
     alias async_copy_b_layout = Layout.row_major(
         min(num_threads, b_num_ves)
         * simd_size
-        // b_smem_layout.stride[0].value(),
-        b_smem_layout.stride[0].value() // simd_size,
+        // b_smem_layout.shape[1].value(),
+        b_smem_layout.shape[1].value() // simd_size,
     )
 
     # TODO (KERN-1337): Enable swizzle for matrix B for FP8 data type and tranpose_b==False
