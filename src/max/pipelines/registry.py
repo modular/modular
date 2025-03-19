@@ -513,6 +513,12 @@ class PipelineRegistry:
 
         model_weights_size = model_cls.estimate_weights_size(pipeline_config)
 
+        if model_weights_size > free_memory:
+            raise RuntimeError(
+                f"Model size exceeds available memory ({to_human_readable_bytes(model_weights_size)} > {to_human_readable_bytes(free_memory)}). "
+                "Try running a smaller model, using a smaller precision, or using a device with more memory."
+            )
+
         total_size = model_weights_size
         available_kv_cache_memory = int(
             free_memory * model_config.kv_cache_config.device_memory_utilization
@@ -560,7 +566,6 @@ class PipelineRegistry:
         )
 
         total_size += actual_kv_cache_size
-
         # If the model is too large to fit in memory, and the user did not
         # specify a max_length, try to infer a value that would fit.
         if total_size > free_memory and not user_provided_max_length:
@@ -583,20 +588,19 @@ class PipelineRegistry:
                     f"Truncated model's default max_length from {original_max_length} to {inferred_max_length} to fit in memory."
                 )
                 pipeline_config.max_length = inferred_max_length
-                if not model_config.quantization_encoding:
-                    msg = "quantization_encoding must be provided in PipelineConfig"
-                    raise ValueError(msg)
+            else:
+                pipeline_config.max_length = 1
 
-                actual_kv_cache_size = self._calculate_kv_cache_size(
-                    model_cls,
-                    pipeline_config,
-                    available_kv_cache_memory,
-                    huggingface_config,
-                    devices=devices,
-                    kv_cache_config=model_config.kv_cache_config,
-                    cache_dtype=model_config.quantization_encoding.cache_dtype,
-                )
-                total_size = model_weights_size + actual_kv_cache_size
+            actual_kv_cache_size = self._calculate_kv_cache_size(
+                model_cls,
+                pipeline_config,
+                available_kv_cache_memory,
+                huggingface_config,
+                devices=devices,
+                kv_cache_config=model_config.kv_cache_config,
+                cache_dtype=model_config.quantization_encoding.cache_dtype,
+            )
+            total_size = model_weights_size + actual_kv_cache_size
 
         if free_memory:
             free_memory_str = f" / {to_human_readable_bytes(free_memory)} free"
@@ -681,11 +685,6 @@ class PipelineRegistry:
                         | set to default ║ Recommend max_length | Recommend both           |
                         +----------------+----------------------+--------------------------+
         """
-        if weights_size > original_free_memory:
-            raise RuntimeError(
-                "Weights size exceeds available memory. Try running a smaller model, using a smaller precision, or using a device with more memory."
-            )
-
         original_max_length = cast(int, pipeline_config.max_length)
         original_max_batch_size = cast(int, pipeline_config.max_batch_size)
 

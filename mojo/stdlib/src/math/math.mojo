@@ -38,6 +38,7 @@ from bit import count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer
+from collections.string import StringSlice
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
@@ -383,7 +384,7 @@ fn exp2[
         if type is DType.float16:
 
             @parameter
-            if String(_current_arch()) == "sm_90a":
+            if _current_arch() == "sm_90a":
                 return _call_ptx_intrinsic[
                     scalar_instruction="ex2.approx.f16",
                     vector2_instruction="ex2.approx.f16x2",
@@ -394,7 +395,7 @@ fn exp2[
                 return _call_ptx_intrinsic[
                     instruction="ex2.approx.f16", constraints="=h,h"
                 ](x)
-        elif type is DType.bfloat16 and String(_current_arch()) == "sm_90a":
+        elif type is DType.bfloat16 and _current_arch() == "sm_90a":
             return _call_ptx_intrinsic[
                 scalar_instruction="ex2.approx.ftz.bf16",
                 vector2_instruction="ex2.approx.ftz.bf16x2",
@@ -2356,7 +2357,7 @@ fn _type_is_libm_supported(type: DType) -> Bool:
 
 
 fn _call_libm[
-    func_name: StringLiteral,
+    func_name: StringSlice,
     arg_type: DType,
     simd_width: Int,
     *,
@@ -2384,13 +2385,15 @@ fn _call_libm[
 
 
 fn _call_libm_impl[
-    func_name: StringLiteral,
+    func_name: StringSlice,
     arg_type: DType,
     simd_width: Int,
     *,
     result_type: DType = arg_type,
 ](arg: SIMD[arg_type, simd_width]) -> SIMD[result_type, simd_width]:
-    alias libm_name = func_name if arg_type is DType.float64 else func_name + "f"
+    alias libm_name = String(
+        func_name
+    ) if arg_type is DType.float64 else func_name + "f"
 
     var res = SIMD[result_type, simd_width]()
 
@@ -2404,8 +2407,8 @@ fn _call_libm_impl[
 fn _call_ptx_intrinsic_scalar[
     type: DType, //,
     *,
-    instruction: StringLiteral,
-    constraints: StringLiteral,
+    instruction: StringSlice,
+    constraints: StringSlice,
 ](arg: Scalar[type]) -> Scalar[type]:
     return inlined_assembly[
         instruction + " $0, $1;",
@@ -2418,8 +2421,8 @@ fn _call_ptx_intrinsic_scalar[
 fn _call_ptx_intrinsic_scalar[
     type: DType, //,
     *,
-    instruction: StringLiteral,
-    constraints: StringLiteral,
+    instruction: StringSlice,
+    constraints: StringSlice,
 ](arg0: Scalar[type], arg1: Scalar[type]) -> Scalar[type]:
     return inlined_assembly[
         instruction + " $0, $1, $2;",
@@ -2433,8 +2436,8 @@ fn _call_ptx_intrinsic[
     type: DType,
     simd_width: Int, //,
     *,
-    instruction: StringLiteral,
-    constraints: StringLiteral,
+    instruction: StringSlice,
+    constraints: StringSlice,
 ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     @parameter
     if simd_width == 1:
@@ -2456,10 +2459,10 @@ fn _call_ptx_intrinsic[
     type: DType,
     simd_width: Int, //,
     *,
-    scalar_instruction: StringLiteral,
-    vector2_instruction: StringLiteral,
-    scalar_constraints: StringLiteral,
-    vector_constraints: StringLiteral,
+    scalar_instruction: StringSlice,
+    vector2_instruction: StringSlice,
+    scalar_constraints: StringSlice,
+    vector_constraints: StringSlice,
 ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     @parameter
     if simd_width == 1:
@@ -2487,10 +2490,10 @@ fn _call_ptx_intrinsic[
     type: DType,
     simd_width: Int, //,
     *,
-    scalar_instruction: StringLiteral,
-    vector2_instruction: StringLiteral,
-    scalar_constraints: StringLiteral,
-    vector_constraints: StringLiteral,
+    scalar_instruction: StringSlice,
+    vector2_instruction: StringSlice,
+    scalar_constraints: StringSlice,
+    vector_constraints: StringSlice,
 ](arg0: SIMD[type, simd_width], arg1: SIMD[type, simd_width]) -> SIMD[
     type, simd_width
 ]:

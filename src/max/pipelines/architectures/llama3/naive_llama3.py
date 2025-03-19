@@ -114,7 +114,7 @@ class NaiveLlama3(NaiveTransformer):
                     config.num_key_value_heads,
                     rope,
                     config.dtype,
-                    config.quantization_encoding,
+                    config.model_quantization_encoding,
                     linear_cls,
                     scale=config.attention_multiplier,
                     device=config.devices[0],
@@ -122,7 +122,7 @@ class NaiveLlama3(NaiveTransformer):
                 ),
                 mlp=mlp_cls(
                     config.dtype,
-                    config.quantization_encoding,
+                    config.model_quantization_encoding,
                     config.hidden_size,
                     config.intermediate_size,
                     linear_cls,
@@ -140,7 +140,7 @@ class NaiveLlama3(NaiveTransformer):
             config.hidden_size,
             config.dtype,
             config.devices[0],
-            quantization_encoding=config.quantization_encoding,
+            quantization_encoding=config.model_quantization_encoding,
         )
 
         output = LinearV2(
@@ -148,7 +148,7 @@ class NaiveLlama3(NaiveTransformer):
             config.vocab_size,
             config.dtype,
             config.devices[0],
-            quantization_encoding=config.quantization_encoding,
+            quantization_encoding=config.model_quantization_encoding,
         )
         if config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
@@ -253,5 +253,8 @@ class StackedMLP(Module):
 
     def __call__(self, x: TensorValue) -> TensorValue:
         up_states = self.gate_up_proj(x)
-        up_states, gate = ops.chunk(up_states, 2)
+
+        gate = up_states[:, : up_states.shape.static_dims[0] // 2]
+        up_states = up_states[:, up_states.shape.static_dims[0] // 2 :]
+
         return self.down_proj(ops.silu(gate) * up_states)
