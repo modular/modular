@@ -334,53 +334,23 @@ class TokenGenerationSchedulerV2(Scheduler):
                 self.request_q.put_front_nowait((req_id, data))
                 break
 
-            if self._exceeds_batch_token_limit(
-                tot_tokens_to_encode, tokens_to_encode
+            if (
+                self.scheduler_config.target_tokens_per_batch_ce is not None
+                and self.scheduler_config.enable_chunked_prefill
+                and (tot_tokens_to_encode + tokens_to_encode)
+                > self.scheduler_config.target_tokens_per_batch_ce
             ):
-                if self.scheduler_config.enable_chunked_prefill:
-                    # We can only schedule part of the prompt.
-                    # We achieve this by setting the active_idx of the context class.
-                    assert (
-                        self.scheduler_config.target_tokens_per_batch_ce
-                        is not None
-                    )
-
-                    token_num_diff = (
-                        tot_tokens_to_encode
-                        + tokens_to_encode
-                        - self.scheduler_config.target_tokens_per_batch_ce
-                    )
-                    assert token_num_diff >= 0
-                    data.bump_token_indices(active_idx=-token_num_diff)
-
-                    if not data.is_assigned_to_cache:
-                        data.assign_to_cache(self.available_cache_indices.pop())
-                        logger.debug(
-                            f"Request {req_id} is chunked to len {tokens_to_encode}."
-                        )
-                    else:
-                        logger.debug(
-                            f"Request {req_id} is chunked again to len {tokens_to_encode}."
-                        )
-                    ce_batch[req_id] = data
-
-                elif (
-                    self.scheduler_config.target_tokens_per_batch_ce is None
-                    or tokens_to_encode
-                    > self.scheduler_config.target_tokens_per_batch_ce
-                ):
-                    # we need to schedule this request even it exceeds the
-                    # `target_tokens_per_batch_ce` limit; otherwise, it will
-                    # never be scheduled.
-                    data.assign_to_cache(self.available_cache_indices.pop())
-                    ce_batch[req_id] = data
-                else:
-                    # we cannot schedule this request so return it to the head of
-                    # the request queue
-                    self.request_q.put_front_nowait((req_id, data))
-
-                # break because we exceeded the target tokens per batch limit
-                break
+                # We can only schedule part of the prompt.
+                # We achieve this by decreasing the active_idx of the context class.
+                token_num_diff = (
+                    tot_tokens_to_encode
+                    + tokens_to_encode
+                    - self.scheduler_config.target_tokens_per_batch_ce
+                )
+                tokens_to_encode -= token_num_diff
+                assert tokens_to_encode > 0
+                assert token_num_diff > 0
+                data.bump_token_indices(active_idx=-token_num_diff)
 
             # Schedule the requests as it fits in KVCache and token limit
             tot_new_pages_needed += new_pages_needed
@@ -393,10 +363,6 @@ class TokenGenerationSchedulerV2(Scheduler):
             # We will allocate cache if this is a new request
             if not data.is_assigned_to_cache:
                 data.assign_to_cache(self.available_cache_indices.pop())
-            else:
-                logger.debug(
-                    f"Chunked request {req_id} with len {tokens_to_encode} is already allocated to cache slot #{data.cache_seq_id}"
-                )
             ce_batch[req_id] = data
 
         return SchedulerOutput(
@@ -681,22 +647,6 @@ class TokenGenerationSchedulerV2(Scheduler):
                 if request_id in self.active_batch:
                     del self.active_batch[request_id]
 
-    def _exceeds_batch_token_limit(
-        self, total_seq_len: int, new_seq_len: int
-    ) -> bool:
-        """Check if adding a new sequence would exceed the target tokens per batch limit.
-
-        Args:
-            total_seq_len: Current total sequence length in the batch
-            new_seq_len: Length of the new sequence to be added
-        """
-        if not self.scheduler_config.target_tokens_per_batch_ce:
-            return False
-
-        return (
-            total_seq_len + new_seq_len
-        ) > self.scheduler_config.target_tokens_per_batch_ce
-
     @traced
     def _handle_chunked_requests(
         self,
@@ -706,7 +656,7 @@ class TokenGenerationSchedulerV2(Scheduler):
         """Handle chunked requests"""
 
         # Only the last request in a batch could be chunked. We discard its response
-        # and put it back into the request quene if it is chunked.
+        # and put it back into the request queue if it is chunked.
         last_req = list(batch_executed.values())[-1]
         if last_req.active_idx - last_req.start_idx > 1:
             req_id, data = batch_executed.popitem()
