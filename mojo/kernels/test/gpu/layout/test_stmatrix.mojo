@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: AMD-GPU
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 

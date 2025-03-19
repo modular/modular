@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# FIXME: KERN-1448
-# UNSUPPORTED: AMD-GPU
 # RUN: not --crash %mojo %s 2>&1 | FileCheck %s
 
 from buffer import NDBuffer

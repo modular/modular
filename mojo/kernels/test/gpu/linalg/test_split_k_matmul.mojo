@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1377
-# UNSUPPORTED: AMD-GPU, asan
+# UNSUPPORTED: asan
 # RUN: %mojo-no-debug-no-assert %s
 
 from random import rand

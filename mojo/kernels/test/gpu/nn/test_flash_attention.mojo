@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# FIXME: KERN-1448
-# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose, isqrt

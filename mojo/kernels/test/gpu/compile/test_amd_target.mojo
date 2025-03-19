@@ -8,8 +8,6 @@
 
 from gpu.host import DeviceContext
 from gpu.id import block_dim, block_idx, grid_dim, thread_idx
-from builtin.io import _get_stdout_stream
-from sys._libc import fflush
 
 
 # CHECK-LABEL: test_amd_dims
@@ -37,7 +35,5 @@ fn test_amd_dims(ctx: DeviceContext) raises:
 
 
 def main():
-    var stdout_stream = _get_stdout_stream()
     with DeviceContext() as ctx:
         test_amd_dims(ctx)
-        _ = fflush(stdout_stream)

@@ -10,11 +10,7 @@ from layout import Layout, LayoutTensor
 from layout._fillers import *
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_builder import static
-
 from utils.index import Index
-
-from builtin.io import _get_stdout_stream
-from sys._libc import fflush
 
 
 fn print_tensor_info[gpu: Bool = False](tensor: LayoutTensor):
@@ -442,13 +438,8 @@ fn test_iterator():
 
 
 fn main() raises:
-    var stdout_stream = _get_stdout_stream()
     test_row_major()
-    fflush(stdout_stream)
     test_col_major()
     test_shared_and_local()
-    fflush(stdout_stream)
     test_layout()
-    fflush(stdout_stream)
     test_iterator()
-    fflush(stdout_stream)
