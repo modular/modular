@@ -389,7 +389,7 @@ struct Variant[*Ts: CollectionElement](
         Example:
         
         ```mojo
-        def MyFunction(mut arg: Variant):
+        def my_function(mut arg: Variant):
             if arg.is_type_supported[Float64]():
                 arg = Float64(1.5)
 
