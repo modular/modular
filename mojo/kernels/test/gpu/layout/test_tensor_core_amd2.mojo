@@ -19,9 +19,6 @@ from tensor_core_kernels import (
 
 from utils.index import Index, IndexList
 
-from builtin.io import _get_stdout_stream
-from sys._libc import fflush
-
 
 # CHECK-LABEL: == test_load_and_mma_f32_f16_16x16x16
 # CHECK: thread 0 a_vals=[0 1 2 3], b_vals=[0 16 32 48], d_vals=[19841 50561 81281 112001]
@@ -524,25 +521,15 @@ def test_load_f32_f32_16x16x4_ldmatrix(ctx: DeviceContext):
 
 
 def main():
-    var stdout_stream = _get_stdout_stream()
     with DeviceContext() as ctx:
         test_load_and_mma_f32_f16_16x16x16(ctx)
-        fflush(stdout_stream)
         test_load_and_mma_f32_bf16_16x16x16(ctx)
-        fflush(stdout_stream)
         test_load_and_mma_f32_f32_16x16x4(ctx)
-        fflush(stdout_stream)
         test_write_f32_f32_16x16x4(ctx)
-        fflush(stdout_stream)
         test_write_f32_f16_16x16x16(ctx)
-        fflush(stdout_stream)
         test_write_f32_bf16_16x16x16(ctx)
-        fflush(stdout_stream)
 
         # ldmatrix
         test_load_f32_f16_16x16x16_ldmatrix(ctx)
-        fflush(stdout_stream)
         test_load_f32_bf16_16x16x16_ldmatrix(ctx)
-        fflush(stdout_stream)
         test_load_f32_f32_16x16x4_ldmatrix(ctx)
-        fflush(stdout_stream)
