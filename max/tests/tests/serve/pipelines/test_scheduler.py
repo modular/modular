@@ -20,12 +20,12 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     PagedKVCacheManager,
 )
-from max.serve.pipelines.scheduler_v2 import (
+from max.serve.pipelines.scheduler import (
     BatchType,
     SchedulerOutput,
     TextGenerationResponse,
+    TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
-    TokenGenerationSchedulerV2,
 )
 
 
@@ -80,7 +80,7 @@ def queues():
 
 @pytest.fixture
 def scheduler(mock_pipeline, mock_process_control, scheduler_config, queues):
-    return TokenGenerationSchedulerV2(
+    return TokenGenerationScheduler(
         process_control=mock_process_control,
         scheduler_config=scheduler_config,
         pipeline=mock_pipeline,
@@ -387,7 +387,7 @@ def test_schedule_paged_manager_exceed_max_seq_len(
     )
 
     # Create a scheduler with a paged manager
-    scheduler = TokenGenerationSchedulerV2(
+    scheduler = TokenGenerationScheduler(
         process_control=mock_process_control,
         scheduler_config=scheduler_config,
         pipeline=mock_pipeline,
