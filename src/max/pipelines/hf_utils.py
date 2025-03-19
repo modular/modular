@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import logging
 import os
@@ -30,6 +31,7 @@ from huggingface_hub import (
 )
 from huggingface_hub.utils import tqdm as hf_tqdm
 from tqdm.contrib.concurrent import thread_map
+from tqdm.std import TqdmDefaultWriteLock
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -77,6 +79,44 @@ class HuggingFaceFile:
         return file_exists(self.repo_id, self.filename, revision=self.revision)
 
 
+class _ThreadingOnlyTqdmLock(TqdmDefaultWriteLock):
+    """A version of TqdmDefaultWriteLock that only uses threading locks.
+
+    The tqdm write lock will not be enforced across processes.
+    """
+
+    mp_lock = None
+
+
+@contextlib.contextmanager
+def _hf_tqdm_using_threading_only_lock():
+    """Use a threading-only lock if there is no existing write lock.
+
+    If a write lock already exists, it is not replaced.  The sole purpose of
+    this is to override the default creation of a lock that is problematic in
+    this context (as we cannot always ensure proper shutdown of a
+    multiprocessing lock, in some cases causing leaks).
+
+    This function exists rather than another hf_tqdm subclass directly
+    replacing _lock because Hugging Face internals still use hf_tqdm, and tqdm
+    uses class-resident state NOT shared across subclasses, so we have to
+    override hf_tqdm directly and cannot use a subclass.
+    """
+    # N.B.: _lock nonpresence is treated differently than presence with a None
+    # value.  Make sure we go down the default path even for None; we only
+    # replace the lock if the attribute is not present.  We can't use the
+    # public get_lock API for this since that creates the lock we're trying to
+    # avoid in the first place.
+    if hasattr(hf_tqdm, "_lock"):
+        yield
+        return
+    setattr(hf_tqdm, "_lock", _ThreadingOnlyTqdmLock())
+    try:
+        yield
+    finally:
+        delattr(hf_tqdm, "_lock")
+
+
 def download_weight_files(
     huggingface_model_id: str,
     filenames: list[str],
@@ -118,21 +158,22 @@ def download_weight_files(
 
     start_time = datetime.datetime.now()
     logger.info(f"Starting download of model: {huggingface_model_id}")
-    weight_paths = list(
-        thread_map(
-            lambda filename: Path(
-                hf_hub_download(
-                    huggingface_model_id,
-                    filename,
-                    revision=revision,
-                    force_download=force_download,
-                )
-            ),
-            filenames,
-            max_workers=max_workers,
-            tqdm_class=hf_tqdm,
+    with _hf_tqdm_using_threading_only_lock():
+        weight_paths = list(
+            thread_map(
+                lambda filename: Path(
+                    hf_hub_download(
+                        huggingface_model_id,
+                        filename,
+                        revision=revision,
+                        force_download=force_download,
+                    )
+                ),
+                filenames,
+                max_workers=max_workers,
+                tqdm_class=hf_tqdm,
+            )
         )
-    )
 
     logger.info(
         f"Finished download of model: {huggingface_model_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
