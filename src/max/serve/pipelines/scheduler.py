@@ -21,8 +21,8 @@ from max.pipelines.interfaces import (
 )
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 from max.profiler import traced
+from max.serve.scheduler.max_queue import MaxQueue
 from max.serve.scheduler.process_control import ProcessControl
-from max.serve.scheduler.queue import Queue
 from max.serve.scheduler.queues import STOP_STREAM
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -72,12 +72,12 @@ class SchedulerOutput:
         return self.cached_prompt_tokens / self.prompt_tokens
 
 
-class RequestDeque:
+class RequestDeque(MaxQueue):
     """A wrapper around the multiprocessing queue that allows us to add
     requests to the front of the queue.
     """
 
-    def __init__(self, queue: Queue):
+    def __init__(self, queue: MaxQueue):
         self.queue = queue
         self.preempted: list[tuple[str, InputContext]] = []
 
@@ -88,9 +88,15 @@ class RequestDeque:
     def put(self, *args, **kwargs) -> None:
         return self.queue.put(*args, **kwargs)
 
-    def put_nowait(self, *args, **kwargs) -> None:
-        return self.queue.put_nowait(*args, **kwargs)
+    def put_nowait(self, item: tuple[str, InputContext]) -> None:
+        return self.queue.put_nowait(item)
 
+    def get(self, *args, **kwargs) -> tuple[str, InputContext]:
+        if self.preempted:
+            return self.preempted.pop()
+        return self.queue.get(*args, **kwargs)
+
+    @traced
     def get_nowait(self) -> tuple[str, InputContext]:
         if self.preempted:
             return self.preempted.pop()
@@ -172,7 +178,7 @@ class TokenGenerationScheduler(Scheduler):
         process_control: ProcessControl,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TokenGenerator,
-        queues: Mapping[str, Queue],
+        queues: Mapping[str, MaxQueue],
         paged_manager: Optional[PagedKVCacheManager] = None,
     ):
         self.scheduler_config = scheduler_config
@@ -766,7 +772,7 @@ class EmbeddingsScheduler(Scheduler):
         process_control: ProcessControl,
         scheduler_config: EmbeddingsSchedulerConfig,
         pipeline: EmbeddingsGenerator,
-        queues: Mapping[str, Queue],
+        queues: Mapping[str, MaxQueue],
     ):
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

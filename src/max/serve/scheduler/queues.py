@@ -17,9 +17,9 @@ from enum import Enum
 from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 
 import sentinel
+from max.serve.scheduler import mp_queue, zmq_queue
+from max.serve.scheduler.max_queue import MaxQueue
 from max.serve.scheduler.process_control import ProcessControl
-
-from .queue import Queue
 
 logger = logging.getLogger("max.serve")
 
@@ -69,6 +69,25 @@ class BatchQueueConfig:
     """Target sum of the sequence lengths in the batch."""
 
 
+class QueueType(Enum):
+    ZMQ = "zmq"
+    """Use ZMQ sockets for multiprocessing."""
+    MP = "mp"
+    """Use Python stdlib multiprocessing queue."""
+
+
+def create_queue(
+    queue_type: QueueType,
+    context: multiprocessing.context.BaseContext,
+) -> MaxQueue:
+    if queue_type == QueueType.ZMQ:
+        return zmq_queue.ZmqQueue(context)
+    elif queue_type == QueueType.MP:
+        return mp_queue.MpQueue(context)
+    else:
+        raise ValueError(f"Invalid queue type: {queue_type}")
+
+
 class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
     """Container for managing interactions between a remote model worker process
 
@@ -81,12 +100,13 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self,
         context: multiprocessing.context.BaseContext,
         worker_pc: ProcessControl,
+        queue_type: QueueType = QueueType.ZMQ,
     ):
         super().__init__()
         self.context = context
-        self.request_q: Queue = Queue(ctx=context)
-        self.response_q: Queue = Queue(ctx=context)
-        self.cancel_q: Queue = Queue(ctx=context)
+        self.request_q = create_queue(queue_type, context)
+        self.response_q = create_queue(queue_type, context)
+        self.cancel_q = create_queue(queue_type, context)
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.worker_pc: ProcessControl = worker_pc
         self._proc: Optional[multiprocessing.process.BaseProcess] = None
