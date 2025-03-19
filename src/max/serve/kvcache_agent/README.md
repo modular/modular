@@ -17,3 +17,10 @@ bazelw run \
     //SDK/lib/API/python/max/serve/kvcache_agent:kvcache_agent_server -- \
     --host=0.0.0.0 --port=50051 --workers=4
 ```
+
+### Testing
+
+```bash
+# integration tests
+bazelw test //SDK/integration-test/serve/kvcache_agent:tests --test_output=streamed --test_arg="-svv"
+```

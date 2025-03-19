@@ -73,8 +73,11 @@ class KVCacheAgentServicer(KVCacheAgentServiceServicer):
         Yields:
             CacheStateUpdate: Stream of cache state updates.
         """
+        logger.debug(f"New subscription request received from {context.peer()}")
+        logger.debug(f"Current subscribers count: {len(self._subscribers)}")
+        logger.debug(f"Current cache state: {self._cache_state}")
         subscription_event = threading.Event()
-        updates_queue = []
+        subscription_queue = queue.Queue()
 
         # Add subscriber
         with self._lock:
@@ -87,33 +90,42 @@ class KVCacheAgentServicer(KVCacheAgentServiceServicer):
                             memory_tier=memory_tier,
                             cache_ids=list(self._cache_state[memory_tier]),
                         )
-                        updates_queue.append(initial_update)
+                        logger.debug(
+                            f"preparing initial update: {initial_update}"
+                        )
+                        subscription_queue.put(initial_update)
 
             # Add this client to subscribers
-            subscriber = (updates_queue, subscription_event)
+            subscription_event.set()
+            subscriber = (subscription_queue, subscription_event)
             self._subscribers.add(subscriber)
+            logger.debug(f"added subscriber: {subscriber}")
 
         try:
-            while not context.is_active() or not context.done():
+            while context.is_active():
                 # Wait for updates or cancellation
                 if not subscription_event.wait(timeout=1.0):
                     continue
 
                 # Process available updates
                 with self._lock:
-                    if not updates_queue:
+                    if subscription_queue.empty():
                         subscription_event.clear()
                         continue
 
-                    # Send all queued updates
-                    updates = updates_queue.copy()
-                    updates_queue.clear()
+                    # Get all queued updates
+                    updates_to_send = []
+                    while not subscription_queue.empty():
+                        updates_to_send.append(subscription_queue.get())
 
-                for update in updates:
+                # Send all updates
+                for update in updates_to_send:
+                    logger.debug(f"sending update: {update}")
                     yield update
 
         finally:
             # Remove subscriber when done
+            logger.debug(f"removing subscriber: {subscriber}")
             with self._lock:
                 self._subscribers.discard(subscriber)
 
@@ -175,9 +187,9 @@ class KVCacheAgentServicer(KVCacheAgentServiceServicer):
             cache_ids=[cache_id],
         )
 
-        for subscriber_queue, subscriber_event in self._subscribers:
-            subscriber_queue.append(update)
-            subscriber_event.set()
+        for subscription_queue, subscription_event in self._subscribers:
+            subscription_queue.put(update)
+            subscription_event.set()
 
 
 class KVCacheAgentServer:
