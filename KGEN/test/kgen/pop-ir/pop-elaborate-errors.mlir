@@ -25,7 +25,7 @@ kgen.generator @return_stack_addr() -> !kgen.pointer<index> {
 // expected-note @below {{failed to interpret function @stack_use_after_free}}
 kgen.generator @stack_use_after_free() -> index {
   %0 = kgen.call @return_stack_addr() : () -> !kgen.pointer<index>
-  // expected-note @below {{failed to interpret operation pop.load(#interp.pointer}}
+  // expected-note @below {{failed to interpret operation pop.load{ordering: #pop<atomic_ordering not_atomic>}(#interp.pointer}}
   // expected-note @below {{address is out-of-bounds}}
   %1 = pop.load %0 : !kgen.pointer<index>
   kgen.return %1 : index
@@ -45,7 +45,7 @@ kgen.generator @heap_use_after_free() -> i64 {
   %idx8 = index.constant 8
   %0 = pop.aligned_alloc %idx32, %idx8 : <i64>
   pop.aligned_free %0 : <i64>
-  // expected-note @below {{failed to interpret operation pop.load(#interp.pointer}}
+  // expected-note @below {{failed to interpret operation pop.load{ordering: #pop<atomic_ordering not_atomic>}(#interp.pointer}}
   // expected-note @below {{accessing memory that was freed}}
   %1 = pop.load %0 : !kgen.pointer<i64>
   kgen.return %1 : i64

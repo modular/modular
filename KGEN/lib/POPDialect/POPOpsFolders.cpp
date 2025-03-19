@@ -378,6 +378,11 @@ OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
 
 /// We can fold loads of `pop.global_constant` ops.
 OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
+  if (adaptor.getOrdering() != AtomicOrdering::NOT_ATOMIC) {
+    // Don't fold atomic loads.
+    return {};
+  }
+
   Operation *parent = getPtr().getDefiningOp();
   if (!parent)
     return {};
@@ -431,6 +436,11 @@ OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
 }
 
 LogicalResult LoadOp::canonicalize(LoadOp op, PatternRewriter &b) {
+  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC) {
+    // Don't canonicalize atomic loads.
+    return failure();
+  }
+
   // Canonicalize "store x -> ptr; tmp = load ptr" into "store; tmp = x".
   if (auto store = dyn_cast_if_present<StoreOp>(op->getPrevNode())) {
     if (store.getPtr() == op.getPtr()) {

@@ -273,6 +273,15 @@ kgen.func @load_with_invariant(%p: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f3
   kgen.return %0 : !pop.scalar<f32>
 }
 
+// CHECK-LABEL: @load_with_atomic
+// CHECK-SAME: [[ARG0:%[a-z0-0]*]]:
+kgen.func @load_with_atomic(%p: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f32> {
+  // CHECK: [[PTR:%.*]] = builtin.unrealized_conversion_cast [[ARG0]]
+  // CHECK: llvm.load [[PTR]] atomic acquire
+  %0 = pop.load atomic acquire %p : !kgen.pointer<scalar<f32>>
+  kgen.return %0 : !pop.scalar<f32>
+}
+
 
 // CHECK-LABEL: @store
 kgen.func @store(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
