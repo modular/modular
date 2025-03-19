@@ -1203,6 +1203,15 @@ struct TMATensorTileArray[
         UnsafePointer[TMATensorTile[dtype, cta_tile_layout, desc_layout],],
         num_of_tensormaps,
     ]
+    """A static tuple of pointers to TMA descriptors.
+
+    This field stores an array of pointers to `TMATensorTile` instances, where each pointer
+    references a TMA descriptor in device memory. The array has a fixed size determined by
+    the num_of_tensormaps parameter.
+
+    The TMA descriptors are used by the GPU hardware to efficiently transfer data between
+    global and shared memory with specific memory access patterns defined by the layouts.
+    """
 
     @always_inline
     fn __init__(
@@ -1259,7 +1268,10 @@ struct TMATensorTileArray[
         Retrieve a TMA descriptor.
 
         Args:
-            index: Index of the TMA descritpor.
+            index: Index of the TMA descriptor.
+
+        Returns:
+            `UnsafePointer` to the `TMATensorTile` at the specified index.
         """
 
         return self.tensormaps[index]
