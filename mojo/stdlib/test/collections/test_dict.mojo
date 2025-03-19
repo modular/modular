@@ -15,8 +15,9 @@
 from collections import Dict, KeyElement, Optional
 from collections.dict import OwnedKwargsDict
 
-from test_utils import CopyCounter
+from test_utils import CopyCounter, DelRecorder
 from testing import assert_equal, assert_false, assert_raises, assert_true
+from memory import UnsafePointer
 
 
 def test_dict_construction():
@@ -619,6 +620,43 @@ def test_compile_time_dict():
         assert_equal(val, i)
 
 
+def test_popitem_no_copyinit_on_value():
+    # Temporary test, to be replaced with the one just below,
+    # once __copyinit__ from _find_index removed
+    var dict = Dict[Int, DelRecorder]()
+    var del_count = List[Int]()
+    for i in range(4):
+        dict[i] = DelRecorder(i, UnsafePointer.address_of(del_count))
+
+    for i in reversed(range(4)):
+        del_count.clear()
+        _, _, _ = dict._find_index(hash(i), i)
+        var by_find_index = len(del_count)
+        del_count.clear()
+        dict.popitem().__del__()
+        assert_equal(len(del_count), by_find_index + 1)
+
+    del_count.clear()
+    dict^.__del__()
+    assert_equal(len(del_count), 0)
+
+
+# def test_popitem_no_copyinit_on_value():
+#     var dict = Dict[Int, ObservableDel]()
+#     var observable_del = False
+#     for i in range(4):
+#         dict[i] = ObservableDel(UnsafePointer.address_of(observable_del))
+#     observable_del = False # some __copyinit__ while inserting
+#     var list = List[DictEntry[dict.K,dict.V,]](capacity = 4)
+#     for i in range(4):
+#         list.append(dict.popitem())
+#     assert_equal(observable_del, False)
+#     dict^.__del__()
+#     assert_equal(observable_del, False)
+#     list^.__del__()
+#     assert_equal(observable_del, True)
+
+
 def main():
     test_dict()
     test_dict_fromkeys()
@@ -633,3 +671,4 @@ def main():
     test_init_initial_capacity()
     test_dict_setdefault()
     test_compile_time_dict()
+    test_popitem_no_copyinit_on_value()
