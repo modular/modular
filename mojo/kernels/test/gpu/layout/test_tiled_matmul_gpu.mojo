@@ -18,7 +18,7 @@ from layout import *
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
 from layout.math import outer_product_acc
-from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
+from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from memory import UnsafePointer
 
 from utils import IndexList

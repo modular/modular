@@ -38,7 +38,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter, copy_local_to_dram
-from layout.nd_buffer_stub import from_ndbuffer_row_major
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from utils.numerics import get_accum_type
 from layout.tensor_core_async import (
     TensorCoreAsync,
