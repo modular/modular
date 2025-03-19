@@ -25,7 +25,7 @@ M = 512
 N = 1024
 
 
-def allgather_graph(devices) -> Graph:
+def allgather_graph(devices, dim) -> Graph:
     with Graph(
         "allgather",
         input_types=[
@@ -35,20 +35,24 @@ def allgather_graph(devices) -> Graph:
     ) as graph:
         for input in graph.inputs:
             assert isinstance(input, TensorValue)
-        allgather_outputs = ops.allgather(v.tensor for v in graph.inputs)
+        allgather_outputs = ops.allgather(
+            (v.tensor for v in graph.inputs), dim=dim
+        )
         graph.output(*allgather_outputs)
         return graph
 
 
-@pytest.mark.parametrize("num_gpus", [1, 2, 4])
-def test_allgather_execution(num_gpus) -> None:
+@pytest.mark.parametrize("num_gpus, dim", [(1, 0), (2, 0), (4, 0)])
+def test_allgather_execution(num_gpus: int, dim: int) -> None:
     """Tests multi-device allgather execution."""
 
     if num_gpus > accelerator_count():
         pytest.skip(
             f"Not enough GPUs to run allgather test with {num_gpus} GPUs."
         )
-    graph = allgather_graph([DeviceRef.GPU(id=id) for id in range(num_gpus)])
+    graph = allgather_graph(
+        [DeviceRef.GPU(id=id) for id in range(num_gpus)], dim
+    )
     host = CPU()
     devices = [Accelerator(n) for n in range(num_gpus)]
 
@@ -75,7 +79,7 @@ def test_allgather_execution(num_gpus) -> None:
 
     outputs = compiled.execute(*tensor_inputs)
 
-    expected_output = np.concatenate(numpy_inputs, axis=0)
+    expected_output = np.concatenate(numpy_inputs, axis=dim)
 
     for n, output in enumerate(outputs):
         assert isinstance(output, Tensor)

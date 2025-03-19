@@ -14,9 +14,10 @@ from max.mlir.dialects import mo
 from ..graph import Graph  # noqa
 from ..type import Shape, TensorType
 from ..value import TensorValue
+from .concat import concat
 
 
-def allgather(inputs: Iterable[TensorValue]) -> list[TensorValue]:
+def allgather(inputs: Iterable[TensorValue], dim: int = 0) -> list[TensorValue]:
     """Collective allgather operation.
 
     This op is a collective op which takes in tensors from different devices and
@@ -28,6 +29,7 @@ def allgather(inputs: Iterable[TensorValue]) -> list[TensorValue]:
 
     Args:
         inputs: The input tensors to gather.
+        dim: Dimension to concatenate the input tensors. Defaults to 0.
 
     Returns:
         An iterable outputs which all hold the gathered output. Each output
@@ -71,8 +73,14 @@ def allgather(inputs: Iterable[TensorValue]) -> list[TensorValue]:
             raise ValueError(msg)
         devices.append(input.device)
 
+    if not -shape.rank <= dim < shape.rank:
+        raise IndexError(f"Dimension out of range {shape.rank}, {dim=}")
+    if dim < 0:
+        dim += shape.rank
+
     output_shape = Shape(shape)
-    output_shape[0] = inputs[0].shape[0] * len(inputs)
+    num_devices = len(inputs)
+    output_shape[0] = shape[0] * num_devices
     output_types = [
         TensorType(dtype, output_shape, device=x.device).to_mlir()
         for x in inputs
@@ -82,4 +90,18 @@ def allgather(inputs: Iterable[TensorValue]) -> list[TensorValue]:
         output_types,
         inputs,
     )
-    return [res.tensor for res in results]
+    outputs = [res.tensor for res in results]
+
+    if dim == 0:
+        return outputs
+
+    # Slice the output tensors and re-concatenate along the desired dim.
+    reconcatenated_outputs = []
+    for output in outputs:
+        # Can't use ops.chunk because the 0th dimension might be dynamic.
+        chunked_outputs = [
+            output[i * shape[0] : (i + 1) * shape[0], ...]
+            for i in range(num_devices)
+        ]
+        reconcatenated_outputs.append(concat(chunked_outputs, axis=dim))
+    return reconcatenated_outputs
