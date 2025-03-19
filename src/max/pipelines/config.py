@@ -973,6 +973,9 @@ class PipelineConfig(MAXConfig):
     draft_model: Optional[str] = None
     """Draft model for use during Speculative Decoding."""
 
+    ignore_eos: bool = False
+    """Ignore EOS and continue generating tokens, even when an EOS variable is hit."""
+
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
 
@@ -1133,6 +1136,7 @@ class PipelineConfig(MAXConfig):
             "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
             "draft_model": "Draft model for use in speculative decoding.",
+            "ignore_eos": "Ignore EOS and continue generating tokens, even when an EOS variable is hit.",
         }
 
         # Add help text for all MAX config classes
