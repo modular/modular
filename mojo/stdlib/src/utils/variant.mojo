@@ -66,7 +66,7 @@ struct Variant[*Ts: CollectionElement](
             - This currently does an extra copy/move until we have origins
             - It also temporarily requires the value to be mutable
         - use `set[T](owned new_value: T)` to reset the variant to a new value
-        - use `is_type_supported[T]` to check if the variant support a type
+        - use `is_type_supported[T]` to check if the variant permits the type `T`
 
     Example:
     ```mojo
