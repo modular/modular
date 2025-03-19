@@ -81,7 +81,7 @@ def main():
 ```
 
 Then run the file, if you haven't setup Mojo yet, check out the [Getting
-Started](../get-started.mdx) guide.
+Started](/magic/) guide.
 
 ## Imports
 
@@ -91,7 +91,7 @@ your file if you're running from `mojo main.mojo`:
 ```mojo
 from gpu import thread_idx, block_idx, warp, barrier
 from gpu.host import DeviceContext, DeviceBuffer
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import AddressSpace
 from memory import stack_allocation
 from layout import Layout, LayoutTensor
 from math import iota
@@ -152,6 +152,14 @@ order depending on which thread reaches that `print()` call first.
 
 Now add the y and z dimensions with `block_dim=(2, 2, 2)`:
 
+:::note
+
+For the `grid_dim` and `block_dim` arguments you can use a single value or a
+tuple. A single value will launch N blocks/threads on the x dimension, while
+using a tuple with up to three values will determine the (x, y, z) dimensions.
+
+:::
+
 ```mojo :once
 ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=(2, 2, 2))
 ctx.synchronize()
@@ -183,11 +191,11 @@ the CPU without first synchronizing might result in out-of-order output:
 
 ```mojo :once
 ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
-print("This might finish before the GPU has completed its work")
+print("This might print before the GPU has completed its work")
 ```
 
 ```text
-This might finish before the GPU has completed its work
+This might print before the GPU has completed its work
 GPU thread: [ 0 0 0 ]
 GPU thread: [ 1 0 0 ]
 GPU thread: [ 2 0 0 ]
@@ -201,7 +209,7 @@ see that output after the host output. Let's add a `synchronize()` call:
 ```mojo :once
 ctx.enqueue_function[printing_kernel](grid_dim=1, block_dim=4)
 ctx.synchronize()
-print("This will finish after the GPU has completed its work")
+print("This will print after the GPU has completed its work")
 ```
 
 ```text
@@ -209,7 +217,7 @@ GPU thread: [ 0 0 0 ]
 GPU thread: [ 1 0 0 ]
 GPU thread: [ 2 0 0 ]
 GPU thread: [ 3 0 0 ]
-This will finish after the GPU has completed its work
+This will print after the GPU has completed its work
 ```
 
 Any method or function you `enqueue` to run on the device, will run in the order
@@ -265,10 +273,10 @@ ctx.synchronize()
 ```
 
 ```text
-block: [ 1 1 0 ] thread: [ 0 0 0 ]
-block: [ 1 1 0 ] thread: [ 1 0 0 ]
 block: [ 0 0 0 ] thread: [ 0 0 0 ]
 block: [ 0 0 0 ] thread: [ 1 0 0 ]
+block: [ 1 1 0 ] thread: [ 0 0 0 ]
+block: [ 1 1 0 ] thread: [ 1 0 0 ]
 block: [ 1 0 0 ] thread: [ 0 0 0 ]
 block: [ 1 0 0 ] thread: [ 1 0 0 ]
 block: [ 0 1 0 ] thread: [ 0 0 0 ]
@@ -336,17 +344,17 @@ alias dtype = DType.uint32
 alias blocks = 4
 alias threads = 4
 # One value per thread
-alias in_els = blocks * threads
+alias elements_in = blocks * threads
 
 # Allocate data on the host and return a buffer which owns that data
-var in_host = ctx.enqueue_create_host_buffer[dtype](in_els)
+var host_in_buffer = ctx.enqueue_create_host_buffer[dtype](elements_in)
 
 # Ensure the host buffer has finished being created
 ctx.synchronize()
 
 # Fill in the buffer with values from 0 to 15 and print it
-iota(in_host.unsafe_ptr(), in_els)
-print(in_host)
+iota(host_in_buffer.unsafe_ptr(), elements_in)
+print(host_in_buffer)
 ```
 
 ```text
@@ -359,10 +367,10 @@ We now have a host buffer that we can copy to the GPU:
 
 ```mojo
 # Allocate a buffer for the GPU
-var in_dev = ctx.enqueue_create_buffer[dtype](in_els)
+var device_in_buffer = ctx.enqueue_create_buffer[dtype](elements_in)
 
 # Copy the data from the CPU to the GPU buffer
-in_host.enqueue_copy_to(in_dev)
+host_in_buffer.enqueue_copy_to(device_in_buffer)
 ```
 
 Creating the GPU buffer is allocating _global memory_ which can be accessed from
@@ -371,19 +379,19 @@ which is shared between all of the threads in a block, more on that later.
 
 ## Enqueue scheduling
 
-As previously stated, when you `enqueue` multiple method/function calls to run
+As previously stated, when you enqueue multiple method or function calls to run
 on a device they will be scheduled to run in the order that you enqueue them:
 
-```mojo
+```mojo :once
 alias size = 4
-alias type = DType.uint8
+alias dtype_u8 = DType.uint8
 
-fn dummy_kernel(buffer: DeviceBuffer[type]):
+fn dummy_kernel(buffer: DeviceBuffer[dtype_u8]):
     buffer[thread_idx.x] = thread_idx.x
 
 # All of these method calls run in the order that they were enqueued
-var host_buffer = ctx.enqueue_create_host_buffer[type](size)
-var dev_buffer = ctx.enqueue_create_buffer[type](size)
+var host_buffer = ctx.enqueue_create_host_buffer[dtype_u8](size)
+var dev_buffer = ctx.enqueue_create_buffer[dtype_u8](size)
 ctx.enqueue_function[dummy_kernel](dev_buffer, grid_dim=1, block_dim=size)
 dev_buffer.enqueue_copy_to(host_buffer)
 
@@ -411,10 +419,10 @@ get its corresponding value:
 # Column major: used in some GPU optimizations, stored as [0, 4, 8, 12, 1, ...]
 alias layout = Layout.row_major(blocks, threads)
 
-var tensor = LayoutTensor[dtype, layout](in_dev)
+var in_tensor = LayoutTensor[dtype, layout](device_in_buffer)
 ```
 
-This `LayoutTensor` is a wrapper over the data stored inside `in_dev`, it
+This `LayoutTensor` is a wrapper over the data stored inside `device_in_buffer`, it
 doesn't own its memory but allows us to index using block and thread ids. We'll
 create an alias so that we don't have to repeat the type information for each
 kernel launch:
@@ -428,34 +436,34 @@ More information on [origins here](/mojo/manual/values/lifetimes).
 Initially we'll just print the values to confirm it's indexing as we expect:
 
 ```mojo :once
-fn print_values_kernel(tensor: InputLayoutTensor):
+fn print_values_kernel(in_tensor: InputLayoutTensor):
     var bid = block_idx.x
     var tid = thread_idx.x
-    print("block:", bid, "thread:", tid, "val:", tensor[bid, tid])
+    print("block:", bid, "thread:", tid, "val:", in_tensor[bid, tid])
 
 ctx.enqueue_function[print_values_kernel](
-    tensor, grid_dim=blocks, block_dim=threads,
+    in_tensor, grid_dim=blocks, block_dim=threads,
 )
 ctx.synchronize()
 ```
 
 ```text
-block: 0 thread: 0 val: 0
-block: 0 thread: 1 val: 1
-block: 0 thread: 2 val: 2
-block: 0 thread: 3 val: 3
 block: 3 thread: 0 val: 12
 block: 3 thread: 1 val: 13
 block: 3 thread: 2 val: 14
 block: 3 thread: 3 val: 15
-block: 2 thread: 0 val: 8
-block: 2 thread: 1 val: 9
-block: 2 thread: 2 val: 10
-block: 2 thread: 3 val: 11
+block: 0 thread: 0 val: 0
+block: 0 thread: 1 val: 1
+block: 0 thread: 2 val: 2
+block: 0 thread: 3 val: 3
 block: 1 thread: 0 val: 4
 block: 1 thread: 1 val: 5
 block: 1 thread: 2 val: 6
 block: 1 thread: 3 val: 7
+block: 2 thread: 0 val: 8
+block: 2 thread: 1 val: 9
+block: 2 thread: 2 val: 10
+block: 2 thread: 3 val: 11
 ```
 
 As in the visualization above, the block/thread is getting the corresponding
@@ -467,20 +475,20 @@ Now that we've verified we're getting the correct values when indexing, we'll
 launch a kernel to multiply each value:
 
 ```mojo :once
-fn multiply_kernel[multiplier: Int](tensor: InputLayoutTensor):
-    tensor[block_idx.x, thread_idx.x] *= multiplier
+fn multiply_kernel[multiplier: Int](in_tensor: InputLayoutTensor):
+    in_tensor[block_idx.x, thread_idx.x] *= multiplier
 
 ctx.enqueue_function[multiply_kernel[2]](
-    tensor,
+    in_tensor,
     grid_dim=blocks,
     block_dim=threads,
 )
 
 # Copy data back to host and print as 2D array
-in_dev.enqueue_copy_to(in_host)
+device_in_buffer.enqueue_copy_to(host_in_buffer)
 ctx.synchronize()
 
-var host_tensor = LayoutTensor[dtype, layout](in_host)
+var host_tensor = LayoutTensor[dtype, layout](host_in_buffer)
 print(host_tensor)
 ```
 
@@ -496,7 +504,7 @@ GPU, and printed the result on your CPU. You can see above that each thread
 multiplied a single value by 2 in parallel on the GPU, and copied the result
 back to the CPU.
 
-## Sum reduce output tensor
+## Sum reduce output
 
 We're going to set up a new buffer which will have all the reduced values with
 the sum of each thread in the block:
@@ -508,11 +516,11 @@ Output: [ block[0] block[1] block[2] block[3] ]
 Set up the output buffer for the host and device:
 
 ```mojo
-var out_host = ctx.enqueue_create_host_buffer[dtype](blocks)
-var out_dev = ctx.enqueue_create_buffer[dtype](blocks)
+var host_output_buffer = ctx.enqueue_create_host_buffer[dtype](blocks)
+var device_output_buffer = ctx.enqueue_create_buffer[dtype](blocks)
 
 # Zero the values on the device as they'll be used to accumulate results
-ctx.enqueue_memset(out_dev, 0)
+ctx.enqueue_memset(device_output_buffer, 0)
 ```
 
 The problem here is that we can't have all the threads summing their values into
@@ -529,18 +537,18 @@ memory in a simple example.  We'll cover better solutions in the next sections.
 
 ```mojo :once
 fn sum_reduce_kernel(
-    tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
+    in_tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
 ):
     # This allocates memory to be shared between threads in a block prior to the
     # kernel launching. Each kernel gets a pointer to the allocated memory.
     var shared = stack_allocation[
-        blocks * sizeof[dtype](),
+        threads * sizeof[dtype](),
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
     ]()
 
     # Place the corresponding value into shared memory
-    shared[thread_idx.x] = tensor[block_idx.x, thread_idx.x][0]
+    shared[thread_idx.x] = in_tensor[block_idx.x, thread_idx.x][0]
 
     # Await all the threads to finish loading their values into shared memory
     barrier()
@@ -551,17 +559,17 @@ fn sum_reduce_kernel(
             out_buffer[block_idx.x] += shared[i]
 
 ctx.enqueue_function[sum_reduce_kernel](
-    tensor,
-    out_dev,
+    in_tensor,
+    device_output_buffer,
     grid_dim=blocks,
     block_dim=threads,
 )
 
 # Copy the data back to the host and print out the SIMD vector
-out_dev.enqueue_copy_to(out_host)
+device_output_buffer.enqueue_copy_to(host_output_buffer)
 ctx.synchronize()
 
-print(out_host)
+print(host_output_buffer)
 ```
 
 ```text
@@ -581,72 +589,73 @@ position. Every tile/block has been reduced to:
 [ 6 22 38 54]
 ```
 
-## Thread level SIMD
+## Sum multiple values from a single thread
 
-We could skip using shared memory altogether using [Single Instruction, Multiple
-Data](/mojo/manual/operators#simd-values) (SIMD), this is a faster option to consider
-if it suits your problem. Each thread has access to SIMD registers which can
-perform operations on a vector in a single instruction. Here we'll be launching
-one thread per block, loading the 4 corresponding values from that block as a
-SIMD vector, and summing them together in a single instruction:
+We could skip using shared memory altogether by launching a single thread per
+block. Each thread can load more than a single value, here we'll be launching
+one thread per block, loading the 4 corresponding values from that block, and
+summing them together:
 
 ```mojo :once
-
 fn simd_reduce_kernel(
-    tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
+    in_tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
 ):
-    out_buffer[block_idx.x] = tensor.load[4](block_idx.x, 0).reduce_add()
-
-# Reset the output values first
-ctx.enqueue_memset(out_dev, 0)
+    # The [4] means it loads 4 sequential values before doing the `reduce_add`
+    out_buffer[block_idx.x] = in_tensor.load[4](block_idx.x, 0).reduce_add()
 
 ctx.enqueue_function[simd_reduce_kernel](
-    tensor,
-    out_dev,
+    in_tensor,
+    device_output_buffer,
     grid_dim=blocks,
     block_dim=1, # one thread per block
 )
 
 # Ensure we have the same result
-out_dev.enqueue_copy_to(out_host)
+device_output_buffer.enqueue_copy_to(host_output_buffer)
 ctx.synchronize()
 
-print(out_host)
+print(host_output_buffer)
 ```
 
 ```text
 DeviceBuffer([6, 22, 38, 54])
 ```
 
-This is much cleaner and faster, instead of 4 threads writing to shared memory,
-we're using 1 thread per block to do a single SIMD reduction.  Shared memory has
-many uses, but as you learn more tools you'll be able decipher which is the most
-performant for your particular problem.
+This is cleaner and faster, instead of 4 threads writing to shared memory, we're
+using 1 thread per block and summing them together without the intermediate
+step. However, this can be even faster by launching one thread per value and
+doing a single instruction in parallel using warps.
 
 ## Warps
 
 :::note Warps
 
-Warp level instructions are an advanced concept, this section is just to
-demonstrate that these low-level primitives are available from Mojo. We'll go
-into more depth on warps later, so don't worry if it doesn't make sense yet.
+Warp level instructions are an advanced concept, this section is to demonstrate
+that these low-level primitives are available from Mojo. We'll go into more
+depth on warps later, so don't worry if it doesn't make sense yet.
 
 :::
 
 A _warp_ is a group of threads (32 on NVIDIA GPUs) within a block. Threads
-within the same warp can synchronize their execution, and at a particular step
-perform SIMD instructions using values from the other threads in lockstep. We
-have only 4 threads within each block, well under the 32 limit, if this wasn't
-the case you'd have to do two reductions, one from each warp to shared memory,
-then another from shared memory to the output buffer/tensor.
+within the same warp can synchronize their execution, and take advantage of
+[Single Instruction, Multiple
+Threads](https://en.wikipedia.org/wiki/Single_instruction,_multiple_threads)
+(SIMT). SIMT (GPU-focused) allows multiple threads to execute the same
+instruction on different data with independent control flow and thread states,
+while SIMD (CPU-focused) applies a single instruction to multiple data elements
+simultaneously with no thread independence.
 
-Here is a warp reduction kernel:
+We have only 4 threads within each block, well under the 32 limit, if this
+wasn't the case you'd have to do two reductions, one from each warp to shared
+memory, then another from shared memory to the output buffer or tensor.
+
+Here is a simple warp reduction kernel:
 
 ```mojo :once
 fn warp_reduce_kernel(
-    tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
+    in_tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
 ):
-    var value = tensor.load[1](block_idx.x, thread_idx.x)
+    var value = in_tensor.load[1](block_idx.x, thread_idx.x)
 
     # Each thread gets the value from one thread higher, summing them as they go
     value = warp.sum(value)
@@ -655,27 +664,23 @@ fn warp_reduce_kernel(
     if block_idx.x == 0:
         print("thread:", thread_idx.x, "value:", value)
 
-    barrier()
-
     # Thread 0 has the reduced sum of the values from all the other threads
     if thread_idx.x == 0:
         out_buffer[block_idx.x] = value
 
-ctx.enqueue_memset(out_dev, 0)
-
 ctx.enqueue_function[warp_reduce_kernel](
-    tensor,
-    out_dev,
+    in_tensor,
+    device_output_buffer,
     grid_dim=blocks,
     block_dim=threads,
 )
 ctx.synchronize()
 
 # Ensure we have the same result
-out_dev.enqueue_copy_to(out_host)
+device_output_buffer.enqueue_copy_to(host_output_buffer)
 ctx.synchronize()
 
-print(out_host)
+print(host_output_buffer)
 ```
 
 ```text
@@ -687,32 +692,91 @@ DeviceBuffer([6, 22, 38, 54])
 ```
 
 You can see in the output that the first block had the values [0 1 2 3] and was
-reduced from top to bottom (shuffle down) in this way, where the result of one
-thread is passed to the next thread down:
+reduced from top to bottom (shuffle down) in this way, where the sum result of
+one thread is passed to the next thread down:
 
-```plaintext
-thread 3: value=3   next_value=N/A   result=3
-thread 2: value=2   next_value=3     result=5
-thread 1: value=1   next_value=5     result=6
-thread 0: value=0   next_value=6     result=6
+| Thread | value | next_value | result |
+|--------|-------|------------|--------|
+| 3      | 3     | N/A        | 3      |
+| 2      | 2     | 3          | 5      |
+| 1      | 1     | 5          | 6      |
+| 0      | 0     | 6          | 6      |
+
+## Exercise
+
+Now that we've covered some of the core primitives for GPU programming, here's
+an exercise to solidify your understanding. Feel free to revisit the examples as
+you work through it the first time, then challenge yourself to write the code
+independently. Experimenting with the code and observing the results is also a
+highly valuable way to deepen your skills, don’t hesitate to tweak things and
+see what happens!
+
+1. Create a host buffer for the input of `DType` `Float32`, with 32 elements,
+and initialize the numbers ordered sequentially. Copy the host buffer to the
+device.
+2. Create a in_tensor that wraps the host buffer, with the dimensions (8, 4)
+3. Create an host and device buffer for the output of `DType` `Int64`, with 8
+elements, don't forget to zero the values with `enqueue_memset()`.
+4. Launch a GPU kernel with 8 blocks and 4 threads that reduce sums the values,
+using your preferred method to write to the output buffer.
+5. Copy the device buffer to the host buffer, and print it out on the CPU.
+
+<details>
+  <summary>Click to expand answer.</summary>
+
+```mojo :once
+alias dtype_f32 = DType.float32
+alias elements_f32 = 32
+alias blocks_f32 = 8
+alias threads_f32 = elements_f32 // blocks_f32
+
+# Create buffers
+var in_buffer_host = ctx.enqueue_create_host_buffer[dtype_f32](elements_f32)
+var in_buffer_device = ctx.enqueue_create_buffer[dtype_f32](elements_f32)
+var out_buffer_host = ctx.enqueue_create_host_buffer[dtype_f32](blocks_f32)
+var out_buffer_device = ctx.enqueue_create_buffer[dtype_f32](blocks_f32)
+
+# Zero output buffer values
+ctx.enqueue_memset(out_buffer_device, 0)
+ctx.synchronize()
+
+# Fill in input values sequentially and copy to device
+iota(in_buffer_host.unsafe_ptr(), elements_f32)
+in_buffer_host.enqueue_copy_to(in_buffer_device)
+
+# Create the LayoutTensor
+alias LayoutF32 = Layout.row_major(blocks_f32, threads_f32)
+alias InputTensorF32 = LayoutTensor[dtype_f32, LayoutF32, MutableAnyOrigin]
+var float_tensor = InputTensorF32(in_buffer_device)
+
+fn reduce_sum_f32(in_tensor: InputTensorF32, output_buffer: DeviceBuffer[dtype_f32]):
+    var value = in_tensor.load[1](block_idx.x, thread_idx.x)
+    value = warp.sum(value)
+    if thread_idx.x == 0:
+        output_buffer[block_idx.x] = value
+
+ctx.enqueue_function[reduce_sum_f32](
+    float_tensor,
+    out_buffer_device,
+    grid_dim=8,
+    block_dim=4
+)
+
+out_buffer_device.enqueue_copy_to(out_buffer_host)
+
+ctx.synchronize()
+
+print(out_buffer_host)
 ```
 
-## Exercises
+```text
+DeviceBuffer([6.0, 22.0, 38.0, 54.0, 70.0, 86.0, 102.0, 118.0])
+```
 
-Now that you've learnt some of the core primitives for GPU programming, here are
-some exercise to cement some of the knowledge. Feel free to go back and look at
-the examples.
-
-1. Create a host buffer for the input of `DType` `Int64`, with 32 elements, and
-initialize the numbers ordered sequentially. Copy the host buffer to the device.
-2. Create a tensor that wraps the host buffer, with the dimensions (8, 4)
-3. Create an host and device buffer for the output of `DType` `Int64`, with 8
-elements.
-4. Launch a GPU kernel with 8 blocks and 4 threads that takes every value and
-raises it to the power of 2 using x**2, then does a reduction using your
-preferred method to write to the output buffer.
-5. Copy the device buffer to the host buffer, and print it out on the CPU.
+</details>
 
 The next chapter is coming soon, in the meantime you can check out some more
 advanced [GPU programming examples
-here](https://github.com/modular/max/tree/main/examples/gpu_functions).
+here](https://github.com/modular/max/tree/main/examples/gpu_functions), or learn
+how you can integrate your GPU programming experience into the Python ecosystem
+with [with custom ops](/max/custom-ops/).

@@ -159,8 +159,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
             else []
         )
 
-    # TODO(zheng): These get_kv_params calls in PipelineModel(s) should probably be
-    # a config interface / method.
+    # TODO(zheng): Remove these wrappers once get_kv_params doesn't have to be
+    # called from PipelineModel's infer_optimal_batch_size method.
     @classmethod
     def get_kv_params(
         cls,
@@ -178,7 +178,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
+        return Llama3Config.get_num_layers(huggingface_config)
 
     def execute(
         self,
@@ -318,7 +318,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         available_cache_memory: int,
     ) -> KVCacheManager:
         return load_kv_manager(
-            params=self.get_kv_params(
+            params=Llama3Config.get_kv_params(
                 huggingface_config=self.huggingface_config,
                 n_devices=len(self.devices),
                 kv_cache_config=self.kv_cache_config,
@@ -328,7 +328,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             max_seq_len=self.calculate_max_seq_len(
                 self.pipeline_config, huggingface_config=self.huggingface_config
             ),
-            num_layers=self.get_num_layers(
+            num_layers=Llama3Config.get_num_layers(
                 huggingface_config=self.huggingface_config
             ),
             devices=self.devices,
@@ -349,7 +349,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
-            params=cls.get_kv_params(
+            params=Llama3Config.get_kv_params(
                 huggingface_config=huggingface_config,
                 n_devices=len(devices),
                 kv_cache_config=kv_cache_config,
@@ -360,7 +360,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 pipeline_config,
                 huggingface_config=huggingface_config,
             ),
-            num_layers=cls.get_num_layers(
+            num_layers=Llama3Config.get_num_layers(
                 huggingface_config=huggingface_config,
             ),
             available_cache_memory=available_cache_memory,
@@ -394,7 +394,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[TensorValue]
     ) -> List[tuple[TensorValue, ...]]:
-        kv_params = self.get_kv_params(
+        kv_params = Llama3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
             kv_cache_config=self.kv_cache_config,

@@ -602,11 +602,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             This will allocate a new string that copies the string contents from
             the provided string slice.
         """
-        var length = self.byte_length()
-        var ptr = UnsafePointer[Byte].alloc(length + 1)  # null terminator
-        memcpy(ptr, self.unsafe_ptr(), length)
-        ptr[length] = 0
-        return String(ptr=ptr, length=length + 1)
+        var buffer = String._buffer_type(capacity=self.byte_length() + 1)
+        buffer.extend(self.as_bytes())
+        buffer.append(0)
+        return String(buffer=buffer^)
 
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of this string slice.
@@ -899,7 +898,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         buf.append(0)
         return String(buf^)
 
-    fn __contains__(ref self, substr: StringSlice) -> Bool:
+    fn __contains__(self, substr: StringSlice) -> Bool:
         """Returns True if the substring is contained within the current string.
 
         Args:
@@ -930,11 +929,33 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return atof(self)
 
+    fn __add__(self, rhs: StringSlice) -> String:
+        """Returns a string with this value prefixed on another string.
+
+        Args:
+            rhs: The right side of the result.
+
+        Returns:
+            The result string.
+        """
+        return String(self) + rhs
+
+    fn __radd__(self, lhs: StringSlice) -> String:
+        """Returns a string with this value appended to another string.
+
+        Args:
+            lhs: The left side of the result.
+
+        Returns:
+            The result string.
+        """
+        return String(lhs) + self
+
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.
 
         Args:
-            n : The number of times to concatenate the string.
+            n: The number of times to concatenate the string.
 
         Returns:
             The string concatenated `n` times.
@@ -1623,7 +1644,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return _FormatCurlyEntry.format(self, args)
 
-    fn find(ref self, substr: StringSlice, start: Int = 0) -> Int:
+    fn find(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset in bytes of the first occurrence of `substr`
         starting at `start`. If not found, returns `-1`.
 
@@ -1925,7 +1946,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 return False
         return True
 
-    fn rjust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 
         Args:
@@ -1937,7 +1958,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self._justify(width - len(self), width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
 
         Args:
@@ -1949,7 +1970,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self._justify(0, width, fillchar)
 
-    fn center(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
 
         Args:
@@ -1961,9 +1982,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self._justify(width - len(self) >> 1, width, fillchar)
 
-    fn _justify(
-        self, start: Int, width: Int, fillchar: StringLiteral
-    ) -> String:
+    fn _justify(self, start: Int, width: Int, fillchar: StaticString) -> String:
         if len(self) >= width:
             return String(self)
         debug_assert(

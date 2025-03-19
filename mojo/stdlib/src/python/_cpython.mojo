@@ -18,7 +18,7 @@ Documentation for these functions can be found online at:
 """
 
 from collections import InlineArray, Optional
-from collections.string import StringSlice
+from collections.string import StringSlice, StaticString
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path
@@ -196,7 +196,7 @@ struct PyObjectPtr:
     ](
         owned self,
         # TODO: Make this part of the trait bound
-        expected_type_name: StringLiteral,
+        expected_type_name: StringSlice,
     ) -> Optional[UnsafePointer[T]]:
         var cpython = _get_global_python_itf().cpython()
         var type = cpython.Py_TYPE(self)
@@ -356,8 +356,8 @@ struct PyMethodDef:
     @staticmethod
     fn function[
         func: fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
-        func_name: StringLiteral,
-        docstring: StringLiteral = "",
+        func_name: StaticString,
+        docstring: String = "",
     ]() -> Self:
         """Create a PyMethodDef for a function.
 
@@ -370,8 +370,11 @@ struct PyMethodDef:
         #   Support a way to get the name of the function from its parameter
         #   type, similar to `get_linkage_name()`?
 
+        # FIXME: PyMethodDef is capturing the pointer without an origin.
+        # Immortalize it so we know it is permanent.
+        alias func_name_literal = get_string_literal[func_name]()
         return PyMethodDef(
-            func_name.unsafe_cstr_ptr(),
+            func_name_literal.unsafe_cstr_ptr(),
             func,
             METH_VARARGS,
             docstring.unsafe_cstr_ptr(),
@@ -1852,7 +1855,7 @@ struct CPython:
 
     fn get_error_global(
         mut self,
-        global_name: StringLiteral,
+        global_name: StringSlice,
     ) -> PyObjectPtr:
         """Get a Python read-only reference to the specified global exception
         object.
@@ -1865,7 +1868,7 @@ struct CPython:
         if not ptr:
             abort(
                 "error: unable to get pointer to CPython `"
-                + global_name
+                + String(global_name)
                 + "` global"
             )
 
