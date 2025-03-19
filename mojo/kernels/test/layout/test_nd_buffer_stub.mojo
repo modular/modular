@@ -12,7 +12,7 @@ from buffer.dimlist import Dim, DimList
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout.layout import LayoutList
-from layout.nd_buffer_stub import (
+from layout._ndbuffer_stub import (
     ElementLayout,
     TileMask,
     _copy_layout_tensor_to_nd_buffer,
