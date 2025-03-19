@@ -76,9 +76,17 @@ def dump_results(
     # call this from 'main', click passes us a LazyFile, and if we don't write
     # anything, we won't create the output file, which breaks downstream
     # workflows.
-    to.write("")
-    for pipeline, verdict in verdicts.items():
-        print(f"  {verdict.emoji} {pipeline}", file=to)
+
+    # Warning: The logits verification pipeline parses these results
+    # using grep/awk.
+    # Please verify that this doesn't break before changing the output format
+    to.write("| Status | Pipeline |\n")
+    to.write("|:------:|:---------|\n")
+
+    for pipeline, verdict in sorted(
+        verdicts.items(), key=lambda x: x[0].lower()
+    ):
+        to.write(f"| {verdict.emoji} | {pipeline} |\n")
 
 
 @dataclass
