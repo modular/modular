@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package max.serve.kvcache_agent.v1;
+
+// Service that exposes the KV Cache Agent state
+service KVCacheAgentService {
+  // Allows subscribers to receive real-time cache state updates
+  rpc SubscribeToUpdates(SubscriptionRequest) returns (stream KVCacheStateUpdate) {}
+}
+
+// Request to subscribe to cache state updates
+message SubscriptionRequest {
+}
+
+// Update notification for KV cache state changes
+message KVCacheStateUpdate {
+  // Type of update
+  UpdateType update_type = 1;
+
+  // Memory tier where the cache entries are stored
+  MemoryTier memory_tier = 2;
+  
+  // Cache ids that were updated
+  repeated string cache_ids = 3;
+}
+
+// Types of cache state updates
+enum UpdateType {
+  UPDATE_TYPE_UNSPECIFIED = 0;
+  UPDATE_TYPE_ADDED = 1;
+  UPDATE_TYPE_REMOVED = 2;
+}
+
+// Memory tiers for storing KV cache
+enum MemoryTier {
+  MEMORY_TIER_UNSPECIFIED = 0;
+  MEMORY_TIER_GPU = 1;
+  MEMORY_TIER_CPU = 2;
+  MEMORY_TIER_DISK = 3;
+  MEMORY_TIER_OBJECT_STORE = 4;
+}
