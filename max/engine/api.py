@@ -18,7 +18,6 @@ from typing import (
     List,
     Mapping,
     Optional,
-    Sequence,
     Union,
     cast,
 )
@@ -31,8 +30,8 @@ from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as _Model
 from max._core.engine import MojoValue, PrintStyle
 from max._core.engine import TensorData as _TensorData
-from max._core.engine import TensorSpec as _TensorSpec
-from max._core.engine import TorchInputSpec as _TorchInputSpec
+from max._core.engine import TensorSpec as TensorSpec
+from max._core.engine import TorchInputSpec as TorchInputSpec
 from max._core.profiler import set_gpu_profiling_state
 from max.driver import CPU, Device, DLPackArray, Tensor
 from max.dtype import DType
@@ -396,7 +395,7 @@ class Model:
             for tensor in model.input_metadata:
                 print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
         """
-        return [TensorSpec._init(spec) for spec in self._impl.input_metadata]
+        return self._impl.input_metadata
 
     @property
     def output_metadata(self) -> list[TensorSpec]:
@@ -410,7 +409,7 @@ class Model:
             for tensor in model.output_metadata:
                 print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
         """
-        return [TensorSpec._init(spec) for spec in self._impl.output_metadata]
+        return self._impl.output_metadata
 
     @property
     def signature(self) -> Signature:
@@ -439,140 +438,45 @@ class Model:
         return self._impl.output_devices
 
 
-class TensorSpec:
-    """Defines the properties of a tensor, including its name, shape and
-    data type.
-
-    For usage examples, see :obj:`Model.input_metadata`.
-    """
-
-    _impl: _TensorSpec
-
-    def __init__(
-        self, shape: Optional[Sequence[Optional[int]]], dtype: DType, name: str
-    ):
-        """
-        Args:
-            shape: The tensor shape.
-            dtype: The tensor data type.
-            name: The tensor name.
-        """
-        self._impl = _TensorSpec(shape, dtype, name)
-
-    @classmethod
-    def _init(cls, _core_tensor_spec):
-        tensor_spec = cls([], DType.bool, "")
-        tensor_spec._impl = _core_tensor_spec
-        return tensor_spec
-
-    def __repr__(self) -> str:
-        return f"TensorSpec(shape={self.shape}, dtype={self.dtype}, name={self.name})"
-
-    def __str__(self) -> str:
-        if self.shape is not None:
-            mlir_shape = [
-                str(dim) if dim is not None else "-1" for dim in self.shape
-            ]
-            shape_str = "x".join(mlir_shape)
-            return f"{shape_str}x{self.dtype.name}"
-        else:
-            return f"None x {self.dtype.name}"
-
-    @property
-    def shape(self) -> list[Optional[int]] | None:
-        """The shape of the tensor as a list of integers.
-
-        If a dimension size is unknown/dynamic (such as the batch size), its
-        value is ``None``."""
-        return self._impl.shape
-
-    @property
-    def dtype(self) -> DType:
-        """A tensor data type."""
-        return self._impl.dtype
-
-    @property
-    def name(self) -> str:
-        """A tensor name."""
-        return self._impl.name
+def _TensorSpec_str(self) -> str:
+    if self.shape is not None:
+        mlir_shape = [
+            str(dim) if dim is not None else "-1" for dim in self.shape
+        ]
+        shape_str = "x".join(mlir_shape)
+        return f"{shape_str}x{self.dtype.name}"
+    else:
+        return f"None x {self.dtype.name}"
 
 
-class TorchInputSpec:
-    """Specifies valid input specification for a TorchScript model.
-
-    Before you load a TorchScript model, you must create an instance of this class
-    for each input tensor, and pass them to the `input_specs` argument of
-    :meth:`InferenceSession.load`.ss
-
-    For example code, see :meth:`InferenceSession.load`.
-    """
-
-    _impl: _TorchInputSpec
-
-    def __init__(self, shape: InputShape, dtype: DType, device: str = ""):
-        """
-        Args:
-            shape: The input tensor shape.
-            dtype: The input data type.
-            device: The device on which this tensor should be loaded.
-        """
-        self._impl = _TorchInputSpec(shape, dtype, device)
-
-    @classmethod
-    def _init(cls, _core_torch_load_spec):
-        torch_load_spec = cls([], DType.bool, "")
-        torch_load_spec._impl = _core_torch_load_spec
-        return torch_load_spec
-
-    def __repr__(self) -> str:
-        return f"TorchInputSpec(shape={self.shape}, dtype={self.dtype}, device={self.device!r})"
-
-    def __str__(self) -> str:
-        device_str = "" if len(self.device) == 0 else f" {self.device}"
-        if self.shape is not None:
-            mlir_shape = [
-                str(dim) if isinstance(dim, int) else "-1" for dim in self.shape
-            ]
-            shape_str = "x".join(mlir_shape)
-            return f"{shape_str}x{self.dtype.name}{device_str}"
-        else:
-            return f"None x {self.dtype.name}{device_str}"
-
-    @property
-    def shape(self) -> InputShape:
-        """The shape of the torch input tensor as a list of integers.
-
-        If a dimension size is unknown/dynamic (such as the batch size), the
-        `shape` should be ``None``."""
-        return self._impl.shape
-
-    @property
-    def dtype(self) -> DType:
-        """A torch input tensor data type."""
-        return self._impl.dtype
-
-    @property
-    def device(self) -> str:
-        """A torch device."""
-        return self._impl.device
+def _TensorSpec_repr(self) -> str:
+    return (
+        f"TensorSpec(shape={self.shape}, dtype={self.dtype}, name={self.name})"
+    )
 
 
-def _unwrap_nanobind_objects(value: Any) -> Any:
-    """Unwraps nanobind objects from python class wrappers."""
-    if isinstance(value, list):
-        return [_unwrap_nanobind_objects(v) for v in value]
-    if isinstance(value, dict):
-        return {
-            _unwrap_nanobind_objects(k): _unwrap_nanobind_objects(v)
-            for k, v in value.items()
-        }
-    if isinstance(value, TensorSpec):
-        # Unwrap TensorSpec to _TensorSpec.
-        return value._impl
-    if isinstance(value, TorchInputSpec):
-        # Unwrap TorchInputSpec to _TorchInputSpec.
-        return value._impl
-    return value
+TensorSpec.__str__ = _TensorSpec_str  # type: ignore[method-assign]
+TensorSpec.__repr__ = _TensorSpec_repr  # type: ignore[method-assign]
+
+
+def _TorchInputSpec_str(self) -> str:
+    device_str = "" if len(self.device) == 0 else f" {self.device}"
+    if self.shape is not None:
+        mlir_shape = [
+            str(dim) if isinstance(dim, int) else "-1" for dim in self.shape
+        ]
+        shape_str = "x".join(mlir_shape)
+        return f"{shape_str}x{self.dtype.name}{device_str}"
+    else:
+        return f"None x {self.dtype.name}{device_str}"
+
+
+def _TorchInputSpec_repr(self) -> str:
+    return f"TorchInputSpec(shape={self.shape}, dtype={self.dtype}, device={self.device!r})"
+
+
+TorchInputSpec.__str__ = _TorchInputSpec_str  # type: ignore[method-assign]
+TorchInputSpec.__repr__ = _TorchInputSpec_repr  # type: ignore[method-assign]
 
 
 def _is_torch_tensor(obj: Any) -> bool:
@@ -831,7 +735,7 @@ class InferenceSession:
                 _process_custom_extensions_objects(custom_ops_path)
             )
         if input_specs is not None:
-            options_dict["input_specs"] = _unwrap_nanobind_objects(input_specs)
+            options_dict["input_specs"] = input_specs
 
         if isinstance(model, (str, bytes)):
             model = Path(str(model))

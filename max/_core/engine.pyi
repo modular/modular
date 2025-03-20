@@ -87,33 +87,90 @@ class TensorData:
     ) -> None: ...
 
 class TensorSpec:
+    """
+    Defines the properties of a tensor, including its name, shape and
+    data type.
+
+    For usage examples, see :obj:`Model.input_metadata`.
+    """
+
     def __init__(
         self,
         shape: Sequence[int | None] | None,
         dtype: max._core.dtype.DType,
         name: str,
-    ) -> None: ...
+    ) -> None:
+        """
+        Args:
+            shape: The tensor shape.
+            dtype: The tensor data type.
+            name: The tensor name.
+        """
+
+    @property
+    def dtype(self) -> max._core.dtype.DType:
+        """A tensor data type."""
+
+    @property
+    def name(self) -> str:
+        """A tensor name."""
+
+    @property
+    def shape(self) -> list[int | None] | None:
+        """
+        The shape of the tensor as a list of integers.
+
+        If a dimension size is unknown/dynamic (such as the batch size), its
+        value is ``None``.
+        """
+
     def __getstate__(self) -> tuple: ...
+    def __repr__(self) -> str: ...
     def __setstate__(self, arg: tuple, /) -> None: ...
-    @property
-    def shape(self) -> list[int | None] | None: ...
-    @property
-    def dtype(self) -> max._core.dtype.DType: ...
-    @property
-    def name(self) -> str: ...
+    def __str__(self) -> str: ...
 
 class TorchInputSpec:
+    """
+    Specifies valid input specification for a TorchScript model.
+
+    Before you load a TorchScript model, you must create an instance of this class
+    for each input tensor, and pass them to the `input_specs` argument of
+    :meth:`InferenceSession.load`.ss
+
+    For example code, see :meth:`InferenceSession.load`.
+    """
+
     def __init__(
         self,
         shape: Sequence[int | str | None] | None,
         dtype: max._core.dtype.DType,
         device: str = "",
-    ) -> None: ...
+    ) -> None:
+        """
+        Args:
+            shape: The input tensor shape.
+            dtype: The input data type.
+            device: The device on which this tensor should be loaded.
+        """
+
+    @property
+    def shape(self) -> list[int | str | None] | None:
+        """
+        The shape of the tensor as a list of integers.
+
+        If a dimension size is unknown/dynamic (such as the batch size), its
+        value is ``None``.
+        """
+
+    @property
+    def dtype(self) -> max._core.dtype.DType:
+        """A torch input tensor data type."""
+
+    @property
+    def device(self) -> str:
+        """A torch device."""
+
     def __getstate__(self) -> tuple: ...
+    def __repr__(self) -> str: ...
     def __setstate__(self, arg: tuple, /) -> None: ...
-    @property
-    def shape(self) -> list[int | str | None] | None: ...
-    @property
-    def dtype(self) -> max._core.dtype.DType: ...
-    @property
-    def device(self) -> str: ...
+    def __str__(self) -> str: ...
