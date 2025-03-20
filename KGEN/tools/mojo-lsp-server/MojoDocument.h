@@ -13,6 +13,7 @@
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/tools/mojo-lsp-server/LSPTelemetryContext.h"
 #include "MojoServer.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ReferenceCounted.h"
@@ -263,7 +264,8 @@ protected:
   MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,
                SendDiagnosticsFnRef sendDiagnosticsFn,
                AsyncRT::Runtime &runtime, AsyncRT::AnyAsyncValueRef chain,
-               ArrayRef<std::string> includeDirs);
+               ArrayRef<std::string> includeDirs,
+               LSPTelemetryContext &telemetryCtx);
 
   /// A collection of MLIR and Mojo related entities used to invoke the parser.
   /// Its lifetime is tied to that of the AST objects gotten from the parser.
@@ -274,8 +276,9 @@ protected:
   // Derived Document Hooks
   //===--------------------------------------------------------------------===//
 
-  /// Hook that is invoked to perform the raw document parsing process.
-  virtual void parseDocumentImpl() = 0;
+  /// Hook that is invoked to perform the raw document parsing process. Returns
+  /// the number of bytes parsed by the Mojo parser.
+  virtual size_t parseDocumentImpl() = 0;
 
   /// Hook that returns the URI for the given contained location.
   virtual const mlir::lsp::URIForFile &
@@ -302,7 +305,7 @@ protected:
 
 private:
   /// Parse the document and populate the index based on the current contents.
-  void parseDocument();
+  void parseDocument(LSPTelemetryContext &telemetryCtx);
 
   /// Mark the current document as being finished parsing.
   void markDocumentParsed();
@@ -522,7 +525,8 @@ public:
   MojoTextDocument(const mlir::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
                    AsyncRT::Runtime &runtime, AsyncRT::AnyAsyncValueRef chain,
-                   ArrayRef<std::string> includeDirs);
+                   ArrayRef<std::string> includeDirs,
+                   LSPTelemetryContext &telemetryCtx);
   MojoTextDocument(const MojoDocument &) = delete;
   MojoTextDocument &operator=(const MojoDocument &) = delete;
 
@@ -539,8 +543,9 @@ private:
   // Derived Document Hooks
   //===--------------------------------------------------------------------===//
 
-  /// Hook that is invoked to perform the raw document parsing process.
-  void parseDocumentImpl() override;
+  /// Hook that is invoked to perform the raw document parsing process. Returns
+  /// the number of bytes parsed by the Mojo parser.
+  size_t parseDocumentImpl() override;
 
   /// Hook that returns the URI for the given contained location.
   const mlir::lsp::URIForFile &getURIFromContainedLoc(llvm::SMLoc loc) override;
@@ -634,7 +639,8 @@ public:
                        SendDiagnosticsFnRef sendDiagnosticsFn,
                        AsyncRT::Runtime &runtime,
                        AsyncRT::AnyAsyncValueRef chain,
-                       ArrayRef<std::string> includeDirs);
+                       ArrayRef<std::string> includeDirs,
+                       LSPTelemetryContext &telemetryCtx);
   MojoNotebookDocument(const MojoDocument &) = delete;
   MojoNotebookDocument &operator=(const MojoDocument &) = delete;
 
@@ -651,8 +657,9 @@ private:
   // Derived Document Hooks
   //===--------------------------------------------------------------------===//
 
-  /// Hook that is invoked to perform the raw document parsing process.
-  void parseDocumentImpl() override;
+  /// Hook that is invoked to perform the raw document parsing process. Returns
+  /// the number of bytes parsed by the Mojo parser.
+  size_t parseDocumentImpl() override;
 
   /// Returns true if the document contains the given location.
   bool containsLocation(llvm::SMLoc loc) override;
