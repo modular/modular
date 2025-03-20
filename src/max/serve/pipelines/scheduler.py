@@ -243,6 +243,13 @@ class TokenGenerationScheduler(Scheduler):
         if len(self.active_batch) == 0:
             return True
 
+        # If there are less than 10% free blocks, prioritize TG over CE
+        if (
+            self.paged_manager is not None
+            and self.paged_manager.free_blocks_pct < 0.1
+        ):
+            return False
+
         # If batch timeout is set
         if self.scheduler_config.batch_timeout:
             # If batch timeout is reached then schedule CE
@@ -569,7 +576,7 @@ class TokenGenerationScheduler(Scheduler):
             return
 
         # KVCache specific metrics
-        used_pct = self.paged_manager.used_block_pct
+        used_pct = self.paged_manager.used_blocks_pct
         cache_hit_rate = sch_output.cache_hit_rate
         total_blocks = self.paged_manager.total_num_pages
 
