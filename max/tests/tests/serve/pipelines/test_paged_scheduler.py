@@ -33,6 +33,7 @@ from max.serve.pipelines.scheduler import (
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
 )
+from max.support.math import ceildiv
 
 
 def create_process_control() -> ProcessControl:
@@ -374,14 +375,22 @@ def test_basic_chunked_prefill():
     max_seq_len = 99999  # unbounded length
     target_tokens_per_batch_ce = 1000
     max_forward_steps_tg = 10
+    page_size = 128
+    prompt_len = 9123
+    output_tokens = 43
+    num_blocks = ceildiv(prompt_len + output_tokens, page_size)
     _, scheduler, _, _ = create_paged_scheduler(
         max_seq_len=max_seq_len,
-        num_blocks=9999,  # a lot of blocks
+        num_blocks=num_blocks,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         max_forward_steps_tg=max_forward_steps_tg,
+        page_size=page_size,
+        enable_chunked_prefill=True,
     )
 
-    enqueue_request(scheduler, prompt_len=7777, max_seq_len=7777 + 43)
+    enqueue_request(
+        scheduler, prompt_len=prompt_len, max_seq_len=prompt_len + output_tokens
+    )
 
     expected = [
         # batch_type, batch_size, terminated, num_steps, tokens_to_encode
@@ -393,7 +402,9 @@ def test_basic_chunked_prefill():
         BatchInfo(CE, 1, 1, 1, 1000),
         BatchInfo(CE, 1, 1, 1, 1000),
         BatchInfo(CE, 1, 1, 1, 1000),
-        BatchInfo(CE, 1, 0, 1, 777),
+        BatchInfo(CE, 1, 1, 1, 1000),
+        BatchInfo(CE, 1, 1, 1, 1000),
+        BatchInfo(CE, 1, 0, 1, 123),
         BatchInfo(TG, 1, 0, 10, 1),
         BatchInfo(TG, 1, 0, 10, 1),
         BatchInfo(TG, 1, 0, 10, 1),
