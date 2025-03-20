@@ -222,6 +222,9 @@ class ProcessMonitor:
             return_when=asyncio.FIRST_COMPLETED,
         )
 
+        if completed_task.done():
+            await self.until_dead()
+
         # we have waited a polite amount of time.  Time to close things out.
         completed_task.cancel()
         dead_task.cancel()
