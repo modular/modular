@@ -66,10 +66,29 @@ class SchedulerOutput:
         )
 
     @property
+    def tokens_to_encode(self) -> int:
+        return self.uncached_prompt_tokens
+
+    @property
     def cache_hit_rate(self) -> float:
         if self.prompt_tokens == 0:
             return 0.0
         return self.cached_prompt_tokens / self.prompt_tokens
+
+    @property
+    def num_terminated(self) -> int:
+        # this is the difference between the number of request in the batch before
+        # and after the batch was scheduled.
+        return self.batch_size - len(self.batch_inputs)
+
+    def __repr__(self) -> str:
+        return (
+            f"SchedulerOutput("
+            f"batch_type={self.batch_type.concise_name()}, "
+            f"batch_size={self.batch_size}, "
+            f"tokens_to_encode={self.tokens_to_encode}, "
+            f"cache_hit_rate={self.cache_hit_rate})"
+        )
 
 
 class RequestDeque(MaxQueue):
@@ -488,13 +507,13 @@ class TokenGenerationScheduler(Scheduler):
     def _log_metrics(
         self,
         sch_output: SchedulerOutput,
-        terminated_reqs: int,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
     ) -> None:
         batch_size = sch_output.batch_size
         batch_type = sch_output.batch_type
         assert batch_size > 0
+        terminated_reqs = sch_output.num_terminated
         num_steps = (
             self.scheduler_config.max_forward_steps_ce
             if batch_type == BatchType.ContextEncoding
@@ -595,22 +614,13 @@ class TokenGenerationScheduler(Scheduler):
 
                 # Schedule the batch
                 t0 = time.monotonic()
-                if batch_to_execute.batch_type == BatchType.ContextEncoding:
-                    self._schedule_ce(batch_to_execute)
-                else:
-                    assert (
-                        batch_to_execute.batch_type == BatchType.TokenGeneration
-                    )
-                    self._schedule_tg(batch_to_execute)
+                self._schedule(batch_to_execute)
                 t1 = time.monotonic()
                 batch_execution_time_s = t1 - t0
 
                 # Log batch metrics
-                new_batch_size = len(batch_to_execute.batch_inputs)
-                terminated_reqs = batch_size - new_batch_size
                 self._log_metrics(
                     batch_to_execute,
-                    terminated_reqs,
                     batch_creation_time_s,
                     batch_execution_time_s,
                 )
@@ -751,6 +761,14 @@ class TokenGenerationScheduler(Scheduler):
                 responses[len(response.tokens)][request_id] = STOP_STREAM
 
         self.response_q.put_nowait(responses)
+
+    def _schedule(self, sch_output: SchedulerOutput):
+        assert sch_output.batch_size > 0
+        if sch_output.batch_type == BatchType.ContextEncoding:
+            self._schedule_ce(sch_output)
+        else:
+            assert sch_output.batch_type == BatchType.TokenGeneration
+            self._schedule_tg(sch_output)
 
 
 @dataclass
