@@ -706,11 +706,18 @@ class PagedKVCacheManager(KVCacheManager):
         return self.block_manager.free_blocks
 
     @property
-    def used_block_pct(self) -> float:
+    def used_blocks_pct(self) -> float:
         """Get the percentage of blocks that are in usee."""
         pct = (
             self.total_num_pages - len(self.free_blocks)
         ) / self.total_num_pages
+        assert 0 <= pct <= 1
+        return pct
+
+    @property
+    def free_blocks_pct(self) -> float:
+        """Get the percentage of blocks that are free."""
+        pct = len(self.free_blocks) / self.total_num_pages
         assert 0 <= pct <= 1
         return pct
 
