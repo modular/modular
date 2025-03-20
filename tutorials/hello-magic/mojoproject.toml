@@ -1,0 +1,30 @@
+[project]
+authors = ["Modular <hello@modular.com>"]
+channels = ["pytorch", "conda-forge", "https://conda.modular.com/max-nightly/"]
+description = "Add a short description here"
+name = "hello-magic"
+platforms = ["osx-arm64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+hello = "mojo hello.mojo"
+dev-server = "fastapi dev main.py"
+format = "mojo format ."
+
+[dependencies]
+max = ">=24.4.0,<25"
+python = ">=3.8,<3.12"
+pytorch = ">=2.5.1,<3"
+
+[pypi-dependencies]
+fastapi = ">=0.115.0"
+
+[feature.test.tasks]
+test = "pytest"
+
+[feature.test.pypi-dependencies]
+pytest = ">=8.3.2, <9"
+
+[environments]
+default = { solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }

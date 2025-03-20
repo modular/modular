@@ -1,4 +1,4 @@
-# Code of conduct
+# Code of Conduct
 
 In the interest of fostering an open and welcoming environment, we as
 contributors and maintainers pledge to make participation in our project and
@@ -7,7 +7,7 @@ body size, disability, ethnicity, gender identity and expression, level of
 experience, nationality, personal appearance, race, religion, or sexual
 identity and orientation.
 
-## Our standards
+## Our Standards
 
 All community forums and spaces are meant for professional interactions that
 are friendly, inclusive, helpful, and collaborative. Examples of behavior that
@@ -32,7 +32,7 @@ participants include:
 - Conduct which could reasonably be considered inappropriate for the forum in
   which it occurs.
 
-## Our responsibilities
+## Our Responsibilities
 
 Project maintainers are responsible for clarifying the standards of acceptable
 behavior and are expected to take appropriate and fair corrective action in
@@ -47,14 +47,14 @@ threatening, offensive, or harmful.
 ## Scope
 
 This Code of Conduct applies to all project content and public spaces on the
-Mojo GitHub repo, the rest of Modular’s GitHub organization, and all other
-official Mojo community spaces and communication mediums, whether offline or
+MAX GitHub repo, the rest of Modular’s GitHub organization, and all other
+official MAX community spaces and communication mediums, whether offline or
 online.
 
 ## Enforcement
 
 Instances of abusive, harassment, or otherwise unacceptable behavior should be
-reported to the project team at <mojo+conduct@modular.com>. All complaints will
+reported to the project team at <max+conduct@modular.com>. All complaints will
 be reviewed and investigated and will result in a response that is deemed
 necessary and appropriate to the circumstances. The project team is obligated
 to maintain confidentiality with regard to the reporter of an incident. Further

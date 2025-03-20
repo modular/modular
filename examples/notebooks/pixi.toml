@@ -1,5 +1,5 @@
 [project]
-name = "Mojo notebooks"
+name = "MAX notebooks"
 version = "1.0.0"
 description = "Environment for running JupyterLab"
 authors = ["Modular <hello@modular.com>"]

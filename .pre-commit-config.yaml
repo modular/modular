@@ -1,3 +1,16 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
 repos:
   - repo: local
     hooks:
@@ -5,22 +18,22 @@ repos:
         name: mojo-format
         entry: mojo format
         language: system
-        files: '\.(mojo|🔥|py)$'
+        files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
         stages: [commit]
       - id: check-docstrings
         name: check-docstrings
-        entry: python3 ./stdlib/scripts/check-docstrings.py
+        entry: python3 ./mojo/stdlib/scripts/check-docstrings.py
         language: system
         pass_filenames: false
         stages: [commit]
       - id: check-license
         name: check-license
-        entry: mojo stdlib/scripts/check_licenses.mojo
+        entry: mojo mojo/stdlib/scripts/check_licenses.mojo
         language: system
-        files: '\.(mojo|🔥|py)$'
+        files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
         stages: [commit]
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.40.0
     hooks:
-    - id: markdownlint
-      args: ['--config', 'stdlib/scripts/.markdownlint.yaml', '--fix']
+      - id: markdownlint
+        args: ["--config", "mojo/stdlib/scripts/.markdownlint.yaml", "--fix"]

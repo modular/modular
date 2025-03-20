@@ -1,0 +1,17 @@
+[project]
+name = "max-pipelines-example"
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+description = "MAX Pipelines"
+version = "0.5.0"
+authors = ["Modular Inc <hello@modular.com>"]
+
+[dependencies]
+max-pipelines = "*"
+
+[tasks]
+llama3 = "max-pipelines llama3"
+replit = "max-pipelines replit"
+mistral = "max-pipelines mistral"
+generate = "max-pipelines generate"
+serve = "max-pipelines serve"

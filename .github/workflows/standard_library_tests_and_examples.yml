@@ -52,16 +52,17 @@ jobs:
       - name: Install build tools (Linux)
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
-          ./stdlib/scripts/install-build-tools-linux.sh
+          ./mojo/stdlib/scripts/install-build-tools-linux.sh
 
       - name: Install build tools (macOS)
         if: ${{ matrix.os == 'macos-14' }}
         run: |
-          ./stdlib/scripts/install-build-tools-macos.sh
+          ./mojo/stdlib/scripts/install-build-tools-macos.sh
 
       - name: Run standard library tests and examples
         env:
           MOJO_ENABLE_ASSERTIONS_IN_TESTS: ${{ matrix.mojo-enable-assertions }}
+        working-directory: mojo
         run: |
           magic run --frozen tests
           magic run --frozen examples
