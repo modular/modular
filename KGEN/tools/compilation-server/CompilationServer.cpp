@@ -24,7 +24,8 @@ using namespace M::KGEN::CSP;
 
 namespace {
 struct CompilationServer {
-  CompilationServer(LLVMServer &server) : llvmServer(server) {}
+  CompilationServer(std::unique_ptr<LLVMServer> server)
+      : llvmServer(std::move(server)) {}
 
   //===--------------------------------------------------------------------===//
   // Initialization
@@ -44,7 +45,7 @@ struct CompilationServer {
   // Fields
   //===--------------------------------------------------------------------===//
 
-  LLVMServer &llvmServer;
+  std::unique_ptr<LLVMServer> llvmServer;
 
   /// Used to indicate that the 'shutdown' request was received from the
   /// Compilation Server client.
@@ -75,7 +76,7 @@ void CompilationServer::onShutdown(const NoParams &,
 
 void CompilationServer::onEmitArchive(const EmitArchiveParams &params,
                                       Callback<llvm::json::Value> reply) {
-  std::string result = llvmServer.emitArchive(params);
+  std::string result = llvmServer->emitArchive(params);
 
   ObjectArchive value;
   value.archive = std::move(result);
@@ -84,7 +85,7 @@ void CompilationServer::onEmitArchive(const EmitArchiveParams &params,
 
 void CompilationServer::onEchoMLIR(const MLIRModule &params,
                                    Callback<llvm::json::Value> reply) {
-  std::string result = llvmServer.echoMLIR(params.module);
+  std::string result = llvmServer->echoMLIR(params.module);
   MLIRModule value;
   value.module = std::move(result);
   reply(value);
@@ -98,7 +99,8 @@ mlir::LogicalResult M::KGEN::runCompilationServer(JSONTransport &transport,
                                                   bool singleThreaded) {
   MessageHandler messageHandler(transport);
 
-  ErrorOr<LLVMServer> serverOr = LLVMServer::create(singleThreaded);
+  ErrorOr<std::unique_ptr<LLVMServer>> serverOr =
+      LLVMServer::create(singleThreaded);
   if (serverOr.isError()) {
     auto error = llvm::make_error<llvm::StringError>(
         serverOr.getError(), llvm::inconvertibleErrorCode());
@@ -106,8 +108,7 @@ mlir::LogicalResult M::KGEN::runCompilationServer(JSONTransport &transport,
     llvm::consumeError(std::move(error));
     return failure();
   }
-  LLVMServer llvmServer(serverOr.takeValue());
-  CompilationServer compilationServer(llvmServer);
+  CompilationServer compilationServer(serverOr.takeValue());
 
   // Initialization
   messageHandler.method("initialize", &compilationServer,

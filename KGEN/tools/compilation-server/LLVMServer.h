@@ -18,11 +18,11 @@ namespace M::KGEN::CSP {
 class LLVMServer {
 public:
   LLVMServer(LLVMServer &) = delete;
-  LLVMServer(LLVMServer &&);
+  LLVMServer(LLVMServer &&) = delete;
   ~LLVMServer();
 
   /// Create a new LLVMServer instance.
-  static ErrorOr<LLVMServer> create(bool singleThreaded);
+  static ErrorOr<std::unique_ptr<LLVMServer>> create(bool singleThreaded);
 
   /// Execute ObjectCompiler::emitArchive() and return the resulting
   /// archive.
