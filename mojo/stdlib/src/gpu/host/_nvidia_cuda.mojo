@@ -139,6 +139,10 @@ struct TensorMapSwizzle(Stringable, Writable):
     fn __init__(out self, value: Int32):
         self._value = value
 
+    @always_inline("nodebug")
+    fn __int__(self) -> Int:
+        return Int(self._value)
+
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
