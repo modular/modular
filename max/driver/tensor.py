@@ -66,7 +66,7 @@ class Tensor(DLPackArray):
         dtype: DType,
         device: Optional[Device] = None,
     ) -> None:
-        self._impl = _Tensor(shape, dtype, device or CPU())
+        self._impl = _Tensor(shape, dtype, device)
 
     @classmethod
     def _from_impl(cls: Type[_T], impl: _Tensor) -> _T:
@@ -79,26 +79,19 @@ class Tensor(DLPackArray):
         tensor._impl = impl
         return tensor
 
-    @classmethod
+    @staticmethod
     def zeros(
-        cls, shape: ShapeType, dtype: DType, device: Optional[Device] = None
+        shape: ShapeType, dtype: DType, device: Optional[Device] = None
     ) -> Tensor:
         """Allocates an tensor with all elements initialized to zero."""
-        tensor = cls(shape, dtype, device or CPU())
-        tensor._impl.zeros()
-        return tensor
+        return Tensor._from_impl(_Tensor.zeros(shape, dtype, device))
 
-    @classmethod
+    @staticmethod
     def scalar(
-        cls, value: Any, dtype: DType, device: Optional[Device] = None
+        value: Any, dtype: DType, device: Optional[Device] = None
     ) -> Tensor:
         """Create a scalar value of a given dtype and value."""
-        tensor = cls((), dtype, CPU())
-        tensor[0] = value
-
-        # We can't directly set GPU memory, so we just have to copy
-        # the tensor over.
-        return tensor.to(device or CPU())
+        return Tensor._from_impl(_Tensor.scalar(value, dtype, device))
 
     @property
     def dtype(self) -> DType:
@@ -142,7 +135,7 @@ class Tensor(DLPackArray):
             tensor_copy[idx] = self[idx].item()
         return tensor_copy
 
-    def _aligned(self, alignment: int | None = None) -> int:
+    def _aligned(self, alignment: int | None = None) -> bool:
         """Returns whether the tensor is aligned to the desired alignment."""
         return self._impl._aligned(alignment or self.dtype.align)
 
@@ -151,13 +144,12 @@ class Tensor(DLPackArray):
 
     def __setitem__(self, idx: IndexType, value: Any) -> None:
         """Sets an item in the tensor."""
-        self._impl.set(idx, value)
+        self._impl[idx] = value
 
     def __getitem__(self, idx: IndexType) -> Tensor:
         """Gets a tensor slice. Supports full numpy-style slicing. Invocations
         using only integer-based indexes will return zero-rank tensors."""
-        new_tensor = self._impl.get(idx)
-        return self._from_impl(new_tensor)
+        return self._from_impl(self._impl[idx])
 
     def item(self) -> Any:
         """Returns the scalar value at a given location. Currently
@@ -197,7 +189,7 @@ class Tensor(DLPackArray):
 
             cpu_copy = cpu_tensor.copy()
         """
-        return self._from_impl(self._impl.copy_to(device or self.device))
+        return self._from_impl(self._impl.copy(device))
 
     def to(self, device: Device) -> Tensor:
         """Return a tensor that's guaranteed to be on the given device.
@@ -218,7 +210,7 @@ class Tensor(DLPackArray):
     @property
     def element_size(self) -> int:
         """Return the size of the element type in bytes."""
-        return self.dtype.size_in_bytes
+        return self._impl.element_size
 
     def view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:
         """Return a new tensor with the given type and shape that shares the
@@ -237,10 +229,10 @@ class Tensor(DLPackArray):
                 )
             shape = (*self.shape[:-1], last_axis_size // dtype.size_in_bytes)
 
-        return self._from_impl(self._impl.view(shape, dtype))
+        return self._from_impl(self._impl._view(dtype, shape))
 
-    @classmethod
-    def from_numpy(cls, arr: np.ndarray) -> Tensor:
+    @staticmethod
+    def from_numpy(arr: np.ndarray) -> Tensor:
         """Creates a tensor from a provided numpy array on the host device.
 
         The underlying data is not copied unless the array is noncontiguous. If
@@ -248,7 +240,9 @@ class Tensor(DLPackArray):
 
         # NOTE: np.ascontiguousarray only copies if needed.
         # Skip np.contiguousarray for scalars since it converts them to rank-1.
-        return cls.from_dlpack(np.ascontiguousarray(arr) if arr.shape else arr)
+        return Tensor.from_dlpack(
+            np.ascontiguousarray(arr) if arr.shape else arr
+        )
 
     def to_numpy(self) -> np.ndarray:
         """Converts the tensor to a numpy array.
@@ -273,8 +267,8 @@ class Tensor(DLPackArray):
         """Implements part of the dlpack contract."""
         return self._impl.__dlpack__(stream=stream)
 
-    @classmethod
-    def from_dlpack(cls, arr: Any, *, copy: Optional[bool] = None) -> Tensor:
+    @staticmethod
+    def from_dlpack(arr: Any, *, copy: Optional[bool] = None) -> Tensor:
         """Create a tensor from an object implementing the dlpack protocol.
 
         This usually does not result in a copy, and the producer of the object
@@ -306,7 +300,7 @@ class Tensor(DLPackArray):
                 arr = arr.view(np.uint8)
 
             try:
-                tensor = cls._from_impl(_Tensor.from_dlpack(arr))
+                tensor = Tensor._from_impl(_Tensor._from_dlpack(arr))
             except BufferError as e:
                 msg = str(e)
                 if msg.startswith("Cannot export readonly array"):
@@ -319,7 +313,7 @@ class Tensor(DLPackArray):
             return tensor.view(DType.bool) if is_bool else tensor
 
         # Short circuit if it's our type.
-        if isinstance(arr, cls):
+        if isinstance(arr, Tensor):
             if copy:
                 return arr.copy()
             return arr
@@ -330,7 +324,7 @@ class Tensor(DLPackArray):
                 " array and `Tensor` inputs"
             )
 
-        return cls._from_impl(_Tensor.from_dlpack(arr))
+        return Tensor._from_impl(_Tensor._from_dlpack(arr))
 
 
 class MemMapTensor(Tensor):
