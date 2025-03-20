@@ -368,7 +368,7 @@ def create_paged_manager(
         enable_runtime_checks=True,
     )
 
-    assert len(kv_manager.available_blocks) == num_blocks
+    assert kv_manager.total_num_pages == num_blocks
     return kv_manager
 
 
