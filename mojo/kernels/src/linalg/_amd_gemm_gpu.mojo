@@ -372,10 +372,10 @@ fn gemm_kernel[
             if c_gmem_frag.layout.all_dims_known():
                 dst_idx = dst_static_idx
             else:
-                dst_idx = c_gmem_frag.runtime_layout(i)
+                dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-            var m = Int((thread_offset + dst_idx) // N)
-            var n = Int((thread_offset + dst_idx) % N)
+            var m = (Int(thread_offset) + dst_idx) // N
+            var n = (Int(thread_offset) + dst_idx) % N
 
             if m < M and n < N:
                 var vec = c_reg_frag.ptr.offset(src_idx).load[

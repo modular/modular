@@ -231,7 +231,7 @@ fn multistage_mma[
     ):
         return __type_of(tensor)(
             tensor.ptr,
-            RuntimeLayout(
+            RuntimeLayout[linear_idx_type = tensor.index_type](
                 RuntimeTuple[tensor.layout.shape, unsigned=True](
                     num_rows, tensor.dim(1)
                 ),
@@ -833,10 +833,10 @@ fn multistage_gemm_kernel[
             if c_gmem_frag.layout.all_dims_known():
                 dst_idx = dst_static_idx
             else:
-                dst_idx = c_gmem_frag.runtime_layout(i)
+                dst_idx = Int(c_gmem_frag.runtime_layout(i))
             alias alignment = alignof[SIMD[c_type, src_simd_width_y]]()
-            var m = Int((thread_offset + dst_idx) // N)
-            var n = Int((thread_offset + dst_idx) % N)
+            var m = (Int(thread_offset) + dst_idx) // N
+            var n = (Int(thread_offset) + dst_idx) % N
             if m < M and n < N:
                 var vec = c_reg_frag.ptr.offset(src_idx).load[
                     width=src_simd_width_y,
@@ -918,10 +918,10 @@ fn multistage_gemm_kernel[
                 if c_gmem_frag.layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
-                    dst_idx = c_gmem_frag.runtime_layout(i)
+                    dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = Int((thread_offset + dst_idx) // N)
-                var n = Int((thread_offset + dst_idx) % N)
+                var m = (Int(thread_offset) + dst_idx) // N
+                var n = (Int(thread_offset) + dst_idx) % N
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
                     epilogue[alignment=alignment](
@@ -1092,11 +1092,15 @@ fn multistage_gemm_split_k_kernel[
             serial_reduction=serial_reduction,
         ](c, a_part, b_part, locks)
     else:
-        var work_space_part = LayoutTensor[
+        alias work_space_tensor_type = LayoutTensor[
             work_space_type, c_layout, MutableAnyOrigin
-        ](
+        ]
+
+        var work_space_part = work_space_tensor_type(
             work_space.data + block_idx.z * M * N,
-            RuntimeLayout[c_layout].row_major(IndexList[2](M, N)),
+            RuntimeLayout[
+                c_layout, linear_idx_type = work_space_tensor_type.index_type
+            ].row_major(IndexList[2](M, N)),
         )
         alias k_partition_config = MatmulConfig[
             a_type,

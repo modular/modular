@@ -166,7 +166,7 @@ fn multistage_dual_mma[
     ):
         return __type_of(tensor)(
             tensor.ptr,
-            RuntimeLayout(
+            RuntimeLayout[linear_idx_type = tensor.index_type](
                 RuntimeTuple[tensor.layout.shape, unsigned=True](
                     num_rows, tensor.dim(1)
                 ),
@@ -670,10 +670,10 @@ fn multistage_dual_gemm_kernel[
                 if c_layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
-                    dst_idx = c_gmem_frag.runtime_layout(i)
+                    dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = Int((thread_offset + dst_idx) // N)
-                var n = Int((thread_offset + dst_idx) % N)
+                var m = (Int(thread_offset) + dst_idx) // N
+                var n = (Int(thread_offset) + dst_idx) % N
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
                     epilogue[alignment=alignment](
@@ -715,11 +715,11 @@ fn multistage_dual_gemm_kernel[
                 if c_layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
-                    dst_idx = c_gmem_frag.runtime_layout(i)
+                    dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
                 alias alignment = alignof[SIMD[c_type, 2]]()
-                var m = Int((thread_offset + dst_idx) // N)
-                var n = Int((thread_offset + dst_idx) % N)
+                var m = (Int(thread_offset) + dst_idx) // N
+                var n = (Int(thread_offset) + dst_idx) % N
                 if m < M and n < N:
                     var vec = c_reg_frag.ptr.offset(src_idx).load[
                         width=2, alignment = alignof[SIMD[c_type, 2]]()
