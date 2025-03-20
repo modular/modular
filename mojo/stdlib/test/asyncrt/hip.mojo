@@ -9,15 +9,15 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext, DeviceStream
-from gpu.host._amdgpu_hip import HIP, hipCtx_t
+from gpu.host._amdgpu_hip import HIP, hipDevice_t
 
 
 fn _run_hip_context(ctx: DeviceContext) raises:
     print("-")
     print("_run_hip_context()")
 
-    var hip_ctx: hipCtx_t = HIP(ctx)
-    print("hipCtx_t: " + String(hip_ctx))
+    var hip_ctx: hipDevice_t = HIP(ctx)
+    print("hipDevice_t: " + String(hip_ctx))
 
 
 fn _run_hip_stream(ctx: DeviceContext) raises:
