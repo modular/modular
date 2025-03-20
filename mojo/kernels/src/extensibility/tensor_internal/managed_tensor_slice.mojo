@@ -879,11 +879,16 @@ struct ManagedTensorSlice[
     @always_inline
     fn to_layout_tensor(
         self,
-    ) -> LayoutTensor[type, static_spec.to_layout(), MutableAnyOrigin]:
+        out result: LayoutTensor[
+            type, static_spec.to_layout(), MutableAnyOrigin
+        ],
+    ):
         alias layout = static_spec.to_layout()
         return LayoutTensor[type, layout](
             self.unsafe_ptr(),
-            RuntimeLayout[layout](self.shape(), self.strides()),
+            RuntimeLayout[layout, linear_idx_type = result.index_type](
+                self.shape(), self.strides()
+            ),
         )
 
     fn write_to[W: Writer](self, mut writer: W):
