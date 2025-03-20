@@ -68,30 +68,25 @@ def main():
     print("Checkpoint - successfully enabled peer access")
 
     # Create and initialize device buffers
-    var dst_buf = ctx1.create_buffer_sync[DType.float32](length)
+    var dst_buf = ctx1.create_buffer_sync[DType.float32](length).enqueue_fill(
+        1.0
+    )
     var src_buf = ctx2.create_buffer_sync[DType.float32](length)
 
     # Initialize source data
-    var host_data = UnsafePointer[Float32].alloc(length)
-    for i in range(length):
-        host_data[i] = 1.0
-
-    # Copy initial data to source buffer
-    ctx2.enqueue_copy(src_buf, host_data)
+    with src_buf.map_to_host() as host_data:
+        for i in range(length):
+            host_data[i] = Float32(i * 0.5)
 
     # Launch the P2P copy kernel
     launch_p2p_copy_kernel(ctx1, dst_buf, src_buf, length)
 
-    # Verify the data was copied correctly
-    var host_verify = UnsafePointer[Float32].alloc(length)
-    ctx1.enqueue_copy(host_verify, dst_buf)
+    # Wait for the copy to complete
     ctx1.synchronize()
 
-    for i in range(length):
-        assert_almost_equal(host_verify[i], 1.0)
+    # Verify the data was copied correctly
+    with dst_buf.map_to_host() as host_data:
+        for i in range(length):
+            assert_almost_equal(host_data[i], Float32(i * 0.5))
 
     print("P2P Direct Addressing Copy Test Passed")
-
-    # Cleanup
-    host_data.free()
-    host_verify.free()
