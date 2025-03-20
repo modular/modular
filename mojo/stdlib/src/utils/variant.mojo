@@ -386,8 +386,14 @@ struct Variant[*Ts: CollectionElement](
     fn is_type_supported[T: CollectionElement]() -> Bool:
         """Check if a type can be used by the `Variant`.
 
+        Parameters:
+            T: The type of the value to check support for.
+
+        Returns:
+            `True` if type `T` is supported by the `Variant`.
+
         Example:
-        
+
         ```mojo
         def my_function(mut arg: Variant):
             if arg.is_type_supported[Float64]():
@@ -395,14 +401,11 @@ struct Variant[*Ts: CollectionElement](
 
         def main():
             var x = Variant[Int, Float64](1)
-            MyFunction(x)
+            my_function(x)
             if x.isa[Float64]():
                 print(x[Float64]) # 1.5
         ```
-        Parameters:
-            T: The type of the value to check support for.
 
-        Returns:
-            `True` if type `T` is supported by the `Variant`.
+        For example, the `Variant[Int, Bool]` permits `Int` and `Bool`.
         """
         return Self._check[T]() != Self._sentinel
