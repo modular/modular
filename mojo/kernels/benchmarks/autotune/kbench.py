@@ -132,7 +132,7 @@ class ParamSpace:
         # Try evaluating value as an arithmetic expression:
         try:
             if not isinstance(self.value, list):
-                self.value = list(self.value)
+                self.value = [self.value]
             self.value = [eval(x) for x in self.value]
         except:
             pass
