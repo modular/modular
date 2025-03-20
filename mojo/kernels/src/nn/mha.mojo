@@ -428,7 +428,7 @@ fn flash_attention_dispatch[
                     + String(BK),
                 ]()
                 alias BN = config.block_n()
-                # we add smem use for TMABarrier synchronization
+                # we add smem use for SharedMemBarrier synchronization
                 alias smem_use = config.shared_mem_bytes[False, sm_90=True]()
                 # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
                 alias num_threads = config.num_threads[True]()

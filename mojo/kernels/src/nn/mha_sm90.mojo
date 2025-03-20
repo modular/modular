@@ -43,7 +43,7 @@ from layout.layout_tensor import (
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
-from layout.tma_async import PipelineState, TMABarrier, create_mbarrier_array
+from layout.tma_async import PipelineState, SharedMemBarrier
 from layout.tensor_core import get_fragment_size
 from layout.tensor_core_async import (
     TensorCoreAsync,
@@ -485,24 +485,16 @@ fn _mha_single_batch_sm90_fa3[
     alias mma_thread_layout = Layout.row_major(8, 4)
 
     var barrier_ptr = (v_smem + v_smem_size + BM * depth).bitcast[Int64]()
-    alias MbarPtrType = UnsafePointer[
-        Int64, address_space = AddressSpace.SHARED, alignment=8
-    ]
+
     produced_mbar_k_ptr = barrier_ptr
     consumed_mbar_k_ptr = barrier_ptr + pipeline_stages
     produced_mbar_v_ptr = barrier_ptr + 2 * pipeline_stages
     consumed_mbar_v_ptr = barrier_ptr + 3 * pipeline_stages
 
-    produced_mbar_k = create_mbarrier_array[pipeline_stages](barrier_ptr)
-    consumed_mbar_k = create_mbarrier_array[pipeline_stages](
-        barrier_ptr + pipeline_stages
-    )
-    produced_mbar_v = create_mbarrier_array[pipeline_stages](
-        barrier_ptr + 2 * pipeline_stages
-    )
-    consumed_mbar_v = create_mbarrier_array[pipeline_stages](
-        barrier_ptr + 3 * pipeline_stages
-    )
+    produced_mbar_k = barrier_ptr.bitcast[SharedMemBarrier]()
+    consumed_mbar_k = consumed_mbar_k_ptr.bitcast[SharedMemBarrier]()
+    produced_mbar_v = produced_mbar_v_ptr.bitcast[SharedMemBarrier]()
+    consumed_mbar_v = consumed_mbar_v_ptr.bitcast[SharedMemBarrier]()
 
     if tid == 0:
 
@@ -614,9 +606,8 @@ fn _mha_single_batch_sm90_fa3[
         )
         # copy K_0 to smem
         k_smem_subi = k_smem_iter.next_unsafe(Int(write_idx * num_k_iters_0))
-        TMABarrier(MbarPtrType(consumed_mbar_k_ptr + write_idx)).wait(
-            write_phase
-        )
+
+        consumed_mbar_k[write_idx].wait(write_phase)
 
         @parameter
         @always_inline
@@ -642,7 +633,8 @@ fn _mha_single_batch_sm90_fa3[
 
         # synchronize here since we can overlap q tile and first k tile copy
         async_copy_arrive(produced_mbar_k_ptr + write_idx)
-        _ = TMABarrier(MbarPtrType(produced_mbar_k_ptr + write_idx)).arrive()
+
+        _ = produced_mbar_k[write_idx].arrive()
 
         #
         # not needed with async_copy
@@ -683,9 +675,7 @@ fn _mha_single_batch_sm90_fa3[
                     ),
                 )
 
-                TMABarrier(
-                    MbarPtrType(consumed_mbar_k_ptr + write_idx_next)
-                ).wait(write_phase_next)
+                consumed_mbar_k[write_idx_next].wait(write_phase_next)
 
                 @parameter
                 @always_inline
@@ -720,9 +710,8 @@ fn _mha_single_batch_sm90_fa3[
 
                 # synchronize here since we can overlap q tile and first k tile copy
                 async_copy_arrive(produced_mbar_k_ptr + write_idx_next)
-                _ = TMABarrier(
-                    MbarPtrType(produced_mbar_k_ptr + write_idx_next)
-                ).arrive()
+                _ = produced_mbar_k[write_idx_next].arrive()
+
             else:
                 # unused, but avoid undef warnings
                 # no need to load K
@@ -745,9 +734,7 @@ fn _mha_single_batch_sm90_fa3[
             v_smem_subi = v_smem_iter.next_unsafe(
                 Int(write_idx * num_k_iters_1)
             )
-            TMABarrier(MbarPtrType(consumed_mbar_v_ptr + write_idx)).wait(
-                write_phase
-            )
+            consumed_mbar_v[write_idx].wait(write_phase)
 
             # load V tile into smem
             @parameter
@@ -768,9 +755,7 @@ fn _mha_single_batch_sm90_fa3[
                 v_gmem_iter._incr()
 
             async_copy_arrive(produced_mbar_v_ptr + write_idx)
-            _ = TMABarrier(
-                MbarPtrType(produced_mbar_v_ptr + write_idx)
-            ).arrive()
+            _ = produced_mbar_v[write_idx].arrive()
 
             @parameter
             if not_last_iter:
@@ -806,15 +791,13 @@ fn _mha_single_batch_sm90_fa3[
         warpgroup_reg_alloc[num_consumer_regs]()
 
         # arrive in order that that they're to be fetched.
-        _ = TMABarrier(MbarPtrType(consumed_mbar_k_ptr)).arrive()
+        _ = consumed_mbar_k[0].arrive()
 
         @parameter
         for i in range(1, pipeline_stages):
-            _ = TMABarrier(MbarPtrType(consumed_mbar_k_ptr + i)).arrive()
-            _ = TMABarrier(MbarPtrType(consumed_mbar_v_ptr + (i - 1))).arrive()
-        _ = TMABarrier(
-            MbarPtrType(consumed_mbar_v_ptr + (pipeline_stages - 1))
-        ).arrive()
+            _ = consumed_mbar_k[i].arrive()
+            _ = consumed_mbar_v[i - 1].arrive()
+        _ = consumed_mbar_v[pipeline_stages - 1].arrive()
 
         var local_warp_group_idx: UInt32 = warp_group_idx - 1
 
@@ -900,9 +883,7 @@ fn _mha_single_batch_sm90_fa3[
             var read_idx: UInt32 = read_pipeline_states.index()
             var read_phase: UInt32 = read_pipeline_states.phase()
 
-            TMABarrier(MbarPtrType(produced_mbar_k_ptr + read_idx)).wait(
-                read_phase
-            )
+            produced_mbar_k[read_idx].wait(read_phase)
             k_smem_subi = k_smem_iter.next_unsafe(Int(read_idx * num_k_iters_0))
             _ = p_reg_tile.fill(0)
             wgmma_0.arrive()
@@ -924,9 +905,7 @@ fn _mha_single_batch_sm90_fa3[
                 v_smem_subi = v_smem_iter.next_unsafe(
                     Int(read_idx_prev * num_k_iters_1)
                 )
-                TMABarrier(
-                    MbarPtrType(produced_mbar_v_ptr + read_idx_prev)
-                ).wait(read_phase_prev)
+                produced_mbar_v[read_idx_prev].wait(read_phase_prev)
                 wgmma_1.arrive()
 
                 @parameter
@@ -941,7 +920,7 @@ fn _mha_single_batch_sm90_fa3[
                 wgmma_1.commit_group()
                 wgmma_0.wait_group[1]()
 
-            _ = TMABarrier(MbarPtrType(consumed_mbar_k_ptr + read_idx)).arrive()
+            _ = consumed_mbar_k[read_idx].arrive()
 
             # we can read/modify P
 
@@ -1083,9 +1062,7 @@ fn _mha_single_batch_sm90_fa3[
             @parameter
             if not first_iter:
                 wgmma_1.wait_group()  # allowed to read/write out and p_frag
-                _ = TMABarrier(
-                    MbarPtrType(consumed_mbar_v_ptr + read_idx_prev)
-                ).arrive()
+                _ = consumed_mbar_v[read_idx_prev].arrive()
                 # we are now able to read/modify `output_reg_tile` and modify `p_frag`
                 vout = vectorize_output(output_reg_tile)
 
@@ -1152,7 +1129,7 @@ fn _mha_single_batch_sm90_fa3[
         var read_phase: UInt32 = read_pipeline_states.phase()
 
         v_smem_subi = v_smem_iter.next_unsafe(Int(read_idx * num_k_iters_1))
-        TMABarrier(MbarPtrType(produced_mbar_v_ptr + read_idx)).wait(read_phase)
+        produced_mbar_v[read_idx].wait(read_phase)
         wgmma_1.arrive()
 
         @parameter
