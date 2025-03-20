@@ -55,7 +55,7 @@ def create_paged_manager(
         page_size=page_size,
     )
 
-    assert len(kv_manager.available_blocks) == num_blocks
+    assert kv_manager.total_num_pages == num_blocks
     return kv_manager
 
 
@@ -83,10 +83,9 @@ async def test_cow_strided_memcpy() -> None:
     paged_manager = create_paged_manager(
         num_blocks=10, page_size=128, num_kv_heads=3, head_dim=4, num_layers=5
     )
-    assert paged_manager.prefix_cache is not None
-    assert paged_manager.prefix_cache.cow_strided_memcpy_graph is not None
-    cow_graph = paged_manager.prefix_cache.cow_strided_memcpy_graph
-    blocks = paged_manager.blocks[0]
+    cow_graph = paged_manager.cow_executor.cow_strided_memcpy_model
+    assert cow_graph is not None
+    blocks = paged_manager.tensors[0]
 
     # initialize the blocks with some values
     for (

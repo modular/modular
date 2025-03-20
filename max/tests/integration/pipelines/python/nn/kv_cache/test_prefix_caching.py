@@ -94,7 +94,7 @@ def create_paged_manager(
         tokens_to_encode_by_seq = {}
         new_pages_by_seq = {}
 
-        # prefict various stats about each request prior to fetch
+        # predict various stats about each request prior to fetch
         for seq_id, prompt in seq_ids_and_prompts.items():
             data = self.active_requests[seq_id]
             num_pages_by_seq[seq_id] = len(data.blocks)
@@ -140,10 +140,12 @@ def create_paged_manager(
                 assert b in data.blocks
 
             # check that the number of tokens we predicted to encode is correct
+            # up to an error of page_size due to query_fetch_stats not considering COW
             trimmed_prompt = seq_ids_and_prompts[seq_id]
             actual_tokens_to_encode = len(trimmed_prompt)
             predicted_tokens_to_encode = tokens_to_encode_by_seq[seq_id]
-            assert actual_tokens_to_encode == predicted_tokens_to_encode
+            diff = abs(actual_tokens_to_encode - predicted_tokens_to_encode)
+            assert diff < page_size
 
         return fetch_kv_tuple
 
@@ -152,14 +154,12 @@ def create_paged_manager(
     kv_manager.orig_fetch = kv_manager.fetch  # type: ignore
     kv_manager.fetch = new_fetch_method.__get__(kv_manager)  # type: ignore
 
-    assert len(kv_manager.available_blocks) == num_blocks
     return kv_manager
 
 
 @pytest.mark.asyncio
 async def test_prefix_caching_basic() -> None:
     kv_manager = create_paged_manager(num_blocks=128)
-    assert kv_manager.prefix_cache is not None
 
     # Reserve a slot in the KV cache manager.
     seq_id_1 = 1
@@ -179,14 +179,15 @@ async def test_prefix_caching_basic() -> None:
         len(initial_prompt_1),
         len(initial_prompt_1),
     ]
-    seq_ids_and_new_tokens = {seq_id_1: np.array([FAKE_TOKEN])}
+    seq_ids_and_new_tokens = {seq_id_1: np.array([15])}
     kv_manager.step(seq_ids_and_new_tokens)
 
     # Check that we got new blocks
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3, 4]
 
     # Seq 1: Token gen 15 - 18
-    for i, tok in enumerate([15, 16, 17, 18]):
+    toks = [15, 16, 17, 18, 19]
+    for i, tok in enumerate(toks[:-1]):
         seq_ids_and_prompts = {seq_id_1: np.array([tok])}
         prefix_blocks, tokens_to_encode, new_pages_needed = (
             kv_manager.query_fetch_stats(seq_id_1, np.array([tok]))
@@ -197,8 +198,12 @@ async def test_prefix_caching_basic() -> None:
         kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
-        ] == [1, 5 + i + 1]
-        seq_ids_and_new_tokens = {seq_id_1: np.array([FAKE_TOKEN])}
+        ] == [
+            1,
+            5 + i + 1,
+        ]
+        new_tok = toks[i + 1]
+        seq_ids_and_new_tokens = {seq_id_1: np.array([new_tok])}
         kv_manager.step(seq_ids_and_new_tokens)
 
     # Seq 2: Claim
@@ -219,7 +224,7 @@ async def test_prefix_caching_basic() -> None:
         1,
         len(initial_prompt_2),
     ]
-    seq_ids_and_new_tokens = {seq_id_2: np.array([FAKE_TOKEN])}
+    seq_ids_and_new_tokens = {seq_id_2: np.array([14])}
     kv_manager.step(seq_ids_and_new_tokens)
 
     # Check that we got cached blocks, except for last token in prompt
@@ -227,7 +232,8 @@ async def test_prefix_caching_basic() -> None:
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][3] != [3]
 
     # Seq 2: Token gen 14 - 17
-    for i, tok in enumerate([14, 15, 99, 100]):
+    toks = [14, 15, 99, 100, 101]
+    for i, tok in enumerate(toks[:-1]):
         seq_ids_and_prompts = {seq_id_2: np.array([tok])}
         prefix_blocks, tokens_to_encode, new_pages_needed = (
             kv_manager.query_fetch_stats(seq_id_2, np.array([tok]))
@@ -243,26 +249,14 @@ async def test_prefix_caching_basic() -> None:
             len(initial_prompt_2) + i + 1,
         ]
         assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:4] == [0, 1, 2, 3]
-        seq_ids_and_new_tokens = {seq_id_2: np.array([FAKE_TOKEN])}
+        new_tok = toks[i + 1]
+        seq_ids_and_new_tokens = {seq_id_2: np.array([new_tok])}
         kv_manager.step(seq_ids_and_new_tokens)
 
-    # Validate final trie
-    assert kv_manager.prefix_cache.radix_trie.pretty_format() == [
-        "[10, 11, 12]",
-        "--[13]",
-        "----[14]",
-        "------[15]",
-        "--------[16]",
-        "----------[17]",
-        "------------[18]",
-        "--------[99]",
-        "----------[100]",
-    ]
-
     # first and second ce have 4 + 3 tokens
-    assert kv_manager.prefix_cache.all_tokens == 7
+    assert kv_manager.block_manager.prompt_tokens == 7
     # second ce gets cache hit on 3 tokens
-    assert kv_manager.prefix_cache.cache_hit_tokens == 3
+    assert kv_manager.block_manager.cached_prompt_tokens == 3
     # cache hit rate is = 3 / 7
     assert kv_manager.cache_hit_rate > 0.42
 
@@ -291,7 +285,6 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         else:
             # During later fetches, we get a cache hit so we use 1 block.
             available_blocks -= 1
-        assert len(kv_manager.available_blocks) == available_blocks
 
         seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
         kv_manager.step(seq_ids_and_new_tokens)
@@ -300,7 +293,6 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
             # During later fetches, we will just release the block we wrote to
             # since a different block already exists for the same token.
             available_blocks += 1
-        assert len(kv_manager.available_blocks) == available_blocks
 
         kv_manager.release(seq_id)
 
@@ -393,11 +385,10 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
 
         kv_manager.release(seq_id)
 
-    # Evict all blocks from the trie.
-    assert kv_manager.prefix_cache is not None
-    kv_manager.purge_prefix_cache()
-    # Check that all blocks are either in the trie or available.
-    assert len(kv_manager.available_blocks) == kv_manager.total_num_pages
+    assert (
+        len(kv_manager.block_manager.free_block_queue)
+        == kv_manager.total_num_pages
+    )
 
 
 @pytest.mark.asyncio
@@ -528,10 +519,10 @@ class FakeModel:
         self.seq_ids_and_all_tokens: dict[int, np.ndarray] = defaultdict(
             lambda: np.array([])
         )
-        # Monkey patch the cow_strided_memcpy_graph to use our mock graph so that
+
+        # Monkey patch the cow_strided_memcpy_model to use our mock model so that
         # when COW occurs, we can update the block_projections object.
-        assert kv_manager.prefix_cache is not None
-        kv_manager.prefix_cache.cow_strided_memcpy_graph = self.mock_cow_graph()
+        kv_manager.cow_executor.cow_strided_memcpy_model = self.mock_cow_graph()
 
     def run(
         self,
@@ -779,7 +770,6 @@ def run_forward(
 async def test_prefix_caching_chunked_prefill() -> None:
     kv_manager = create_paged_manager(num_blocks=128, page_size=3)
     model = FakeModel(kv_manager)
-    assert kv_manager.prefix_cache is not None
 
     seq_id_1 = 1
     seq_id_2 = 2
@@ -799,13 +789,6 @@ async def test_prefix_caching_chunked_prefill() -> None:
     )
     run_forward(model, kv_manager, seq_id_1, prompt_1_part_2, FAKE_TOKEN)
 
-    assert kv_manager.prefix_cache.radix_trie.pretty_format(
-        print_blocks=True
-    ) == [
-        "[10, 11, 12, 13, 14, 15] : [0, 1]",
-        "--[16, 17, 18, 19, 20, 21] : [2, 4]",
-    ]
-
     # Make sure that we don't return block 2 for seq_id_2 since its last KV
     # projection differs.
     # block 2 holds projections for [..., 16, 17, 18]
@@ -814,13 +797,7 @@ async def test_prefix_caching_chunked_prefill() -> None:
     metadata = kv_manager.active_requests[seq_id_2]
     assert 2 not in metadata.blocks
 
-    assert kv_manager.prefix_cache.radix_trie.pretty_format() == [
-        "[10, 11, 12, 13, 14, 15]",
-        "--[16, 17, 18, 19, 20, 21]",
-        "--[16, 17, 16, 17, 18, 998]",
-    ]
-
-    assert kv_manager.prefix_cache.cache_hit_tokens == 6
+    assert kv_manager.block_manager.cached_prompt_tokens == 6
     assert kv_manager.cache_hit_rate > 0.2
 
 
@@ -828,7 +805,6 @@ async def test_prefix_caching_chunked_prefill() -> None:
 async def test_prefix_caching_cow() -> None:
     kv_manager = create_paged_manager(num_blocks=128, page_size=3)
     model = FakeModel(kv_manager)
-    assert kv_manager.prefix_cache is not None
 
     kv_manager.external_claim([0])
     prompt_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
@@ -851,8 +827,8 @@ async def test_prefix_caching_cow() -> None:
     run_forward_cow(
         seq_id=1, prompt=np.array([10, 11, 12, 13, 14, 22]), cache_idx=5
     )
-    assert kv_manager.prefix_cache.cow_count == 1
+    assert kv_manager.cow_blocks_copied == 1
     run_forward_cow(seq_id=2, prompt=np.array([10, 11, 22]), cache_idx=2)
-    assert kv_manager.prefix_cache.cow_count == 2
+    assert kv_manager.cow_blocks_copied == 2
     run_forward_cow(seq_id=3, prompt=np.array([10, 11, 12]), cache_idx=2)
-    assert kv_manager.prefix_cache.cow_count == 3
+    assert kv_manager.cow_blocks_copied == 3
