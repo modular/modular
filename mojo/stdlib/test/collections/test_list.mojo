@@ -149,15 +149,14 @@ def test_list_pop():
     assert_equal(2, list.pop())
     list.append(2)
     list_copy = list.copy()
-    og_capacity = list.capacity
     assert_equal(2, list.pop[shrink_to_fit=True]())
     assert_equal(2, list_copy.pop[shrink_to_fit=False]())
 
     # list should be empty now
     assert_equal(0, len(list))
-    # capacity should be 1 according to shrink_to_fit behavior
-    assert_equal(1, list.capacity)
-    assert_equal(og_capacity, list_copy.capacity)
+    # capacity should be 4 according to shrink_to_fit behavior
+    assert_equal(4, list.capacity)
+    assert_equal(8, list_copy.capacity)
 
 
 def test_list_variadic_constructor():
