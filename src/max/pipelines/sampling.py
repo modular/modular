@@ -15,7 +15,7 @@
 
 from max.dtype import DType
 from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
-from max.pipelines import SamplingConfig
+from max.pipelines.max_config import SamplingConfig
 
 
 def _sampling_input_types(sampling_config: SamplingConfig) -> list[TensorType]:

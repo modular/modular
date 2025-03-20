@@ -15,8 +15,9 @@
 You can import these APIs from the `sys` package. For example:
 
 ```mojo
-from sys import is_x86
-```
+from sys import CompilationTarget
+
+print(CompilationTarget.is_x86())
 """
 
 from memory import UnsafePointer
@@ -24,10 +25,63 @@ from collections.string import StaticString
 
 from .ffi import OpaquePointer, _external_call_const, external_call
 
+alias _TargetType = __mlir_type.`!kgen.target`
+
 
 @always_inline("nodebug")
-fn _current_target() -> __mlir_type.`!kgen.target`:
+fn _current_target() -> _TargetType:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
+
+
+@register_passable("trivial")
+struct CompilationTarget[value: _TargetType = _current_target()]:
+    """A struct that provides information about a target architecture.
+
+    This struct encapsulates various methods to query target-specific information
+    such as architecture features, OS details, endianness, and memory characteristics.
+
+    Parameters:
+        value: The target architecture to query. Defaults to the current target.
+    """
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn _has_feature[name: StringLiteral]() -> Bool:
+        """Checks if the target has a specific feature.
+
+        Parameters:
+            name: The name of the feature to check.
+
+        Returns:
+            True if the target has the specified feature, False otherwise.
+        """
+        return __mlir_attr[
+            `#kgen.param.expr<target_has_feature,`,
+            Self.value,
+            `,`,
+            name.value,
+            `> : i1`,
+        ]
+
+    @staticmethod
+    fn has_sse4() -> Bool:
+        """Checks if the target supports SSE4 instructions.
+
+        Returns:
+            True if the target supports SSE4, False otherwise.
+        """
+        return Self._has_feature["sse4"]()
+
+    # Platforms
+
+    @staticmethod
+    fn is_x86() -> Bool:
+        """Checks if the target is an x86 architecture.
+
+        Returns:
+            True if the target is x86, False otherwise.
+        """
+        return Self.has_sse4()
 
 
 @always_inline("nodebug")
@@ -57,28 +111,25 @@ fn _current_arch() -> StringLiteral:
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.is_x86()` instead.")
 fn is_x86() -> Bool:
     """Returns True if the host system architecture is X86 and False otherwise.
 
     Returns:
         True if the host system architecture is X86 and False otherwise.
     """
-    return has_sse4()
+    return CompilationTarget.has_sse4()
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_sse4()` instead.")
 fn has_sse4() -> Bool:
     """Returns True if the host system has sse4, otherwise returns False.
 
     Returns:
         True if the host system has sse4, otherwise returns False.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "sse4.2" : !kgen.string`,
-        `> : i1`,
-    ]
+    return CompilationTarget.has_sse4()
 
 
 @always_inline("nodebug")

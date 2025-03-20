@@ -25,10 +25,12 @@ from max.graph.weights import (
 )
 from transformers import AutoConfig
 
-from .config import HuggingFaceRepo, PipelineConfig, RepoType
+from .config import PipelineConfig
+from .config_enums import RepoType
 from .context import InputContext
 from .hf_utils import download_weight_files
 from .interfaces import TextGenerationResponse, TokenGenerator
+from .max_config import HuggingFaceRepo
 from .pipeline import PipelineModel
 
 T = TypeVar("T", bound=InputContext)

@@ -28,13 +28,8 @@ from max.graph.weights import WeightsAdapter, WeightsFormat, weights_format
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig, AutoTokenizer
 
-from .config import (
-    KVCacheConfig,
-    PipelineConfig,
-    PipelineEngine,
-    RopeType,
-    SupportedEncoding,
-)
+from .config import PipelineConfig
+from .config_enums import PipelineEngine, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
 from .hf_utils import get_architectures_from_huggingface_repo
@@ -45,6 +40,9 @@ from .interfaces import (
     TokenGenerator,
 )
 from .kv_cache import KVCacheStrategy
+from .max_config import (
+    KVCacheConfig,
+)
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer
@@ -98,6 +96,7 @@ class SupportedArchitecture:
         task: PipelineTask,
         tokenizer: Type[Union[TextTokenizer, TextAndVisionTokenizer]],
         default_weights_format: WeightsFormat,
+        multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
     ):
@@ -125,6 +124,7 @@ class SupportedArchitecture:
         self.pipeline_model = pipeline_model
         self.tokenizer = tokenizer
         self.default_weights_format = default_weights_format
+        self.multi_gpu_supported = multi_gpu_supported
         self.rope_type = rope_type
         self.weight_adapters = weight_adapters or {}
         self.task = task
@@ -289,6 +289,15 @@ class PipelineRegistry:
             logger.warning(msg)
             pipeline_config.engine = PipelineEngine.HUGGINGFACE
             return pipeline_config
+
+        if (
+            not arch.multi_gpu_supported
+            and len(model_config.device_specs) > 1
+            and model_config.device_specs[0].device_type == "gpu"
+        ):
+            raise ValueError(
+                f"Multiple GPU inference is currently not supported for {model_config.model_path}."
+            )
 
         # The remainder of this function, assumes we have both a valid model_path,
         # and a SupportedArchitecture. We should then validate the details of the existing architecture
