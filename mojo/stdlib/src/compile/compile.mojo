@@ -19,8 +19,7 @@ Key features:
 - Control compilation options and targets
 
 Example:
-
-    ```mojo
+```mojo
     from compile import compile_info
 
     fn my_func():
@@ -29,7 +28,7 @@ Example:
     # Get assembly for the function
     info = compile_info[my_func]()
     print(info.asm)
-    ```
+```
 """
 
 from os import PathLike
