@@ -687,6 +687,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             The popped value.
         """
 
+        debug_assert(self._len > 0, "called .pop() on an empty List")
         self._len -= 1
         return (self.data + self._len).take_pointee()
 
