@@ -159,7 +159,9 @@ fn flare_mla_decoding[
         else:
             max_prompt_len = Int(k.max_prompt_length())
 
-        var k_operand = KVCacheMHAOperand(k)
+        var k_operand = KVCacheMHAOperand[ragged=ragged](
+            k, valid_lengths=valid_length
+        )
 
         flare_mla_decoding_dispatch[
             kv_num_heads=kv_num_heads,
@@ -216,7 +218,7 @@ fn flare_mla_decoding[
     # Runtime dimensions.
     var num_keys = k.dim[1]()
 
-    var k_operand = NDBufferMHAOperand(k)
+    var k_operand = NDBufferMHAOperand[ragged=False](k)
     var valid_length = NDBuffer[DType.uint32, 1](
         UnsafePointer[UInt32](), Index(0)
     )
@@ -483,7 +485,7 @@ fn mla_decoding[
         seq_len = 1
         q_batch_offset = depth * num_heads * batch_idx
 
-    var num_keys = k.cache_length(batch_idx)
+    var num_keys = Int(k.length(batch_idx))
 
     @parameter
     if not _is_cache_length_accurate:
