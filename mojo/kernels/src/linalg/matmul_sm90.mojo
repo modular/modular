@@ -47,12 +47,12 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import (
     PipelineState,
-    TMABarrier,
+    SharedMemBarrier,
     TMATensorTile,
     create_tma_tile,
-    create_mbarrier_array,
 )
-
+from memory import stack_allocation
+from memory.pointer import _GPUAddressSpace
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 from buffer.buffer import NDBuffer
@@ -237,8 +237,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
     var a_mbars_ptr = smem_poll.bitcast[Int64]()
     var b_mbars_ptr = smem_poll.bitcast[Int64]() + pipeline_stages
-    full = create_mbarrier_array[pipeline_stages](a_mbars_ptr)
-    empty = create_mbarrier_array[pipeline_stages](b_mbars_ptr)
+
+    full = a_mbars_ptr.bitcast[SharedMemBarrier]()
+    empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
     var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
@@ -284,14 +285,12 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             for i in range(num_k_iters):
                 var write_idx = write_pipeline_states.index()
 
-                # empty[write_idx].wait(write_pipeline_states.phase())
-                TMABarrier(b_mbars_ptr + write_idx).wait(
-                    write_pipeline_states.phase()
-                )
+                empty[write_idx].wait(write_pipeline_states.phase())
+
                 var a_smem_tile = a_smem_iter.next(write_idx)[]
                 var b_smem_tile = b_smem_iter.next(write_idx)[]
 
-                TMABarrier(a_mbars_ptr + write_idx).expect_bytes(expected_bytes)
+                full[write_idx].expect_bytes(expected_bytes)
 
                 @parameter
                 if CLUSTER_N > 1:
@@ -307,7 +306,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
                         a_tma_op.async_multicast_load(
                             a_smem_slice,
-                            TMABarrier(a_mbars_ptr + write_idx),
+                            full[write_idx],
                             (UInt(i) * BK, a_gmem_slice_coord),
                             UInt16(multicast_row_mask),
                         )
@@ -316,7 +315,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                         if rank_n == 0:
                             a_tma_op.async_multicast_load(
                                 a_smem_tile,
-                                TMABarrier(a_mbars_ptr + write_idx),
+                                full[write_idx],
                                 (UInt(i) * BK, block_idx.y * BM),
                                 UInt16(multicast_row_mask),
                             )
@@ -324,7 +323,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 else:
                     a_tma_op.async_copy(
                         a_smem_tile,
-                        TMABarrier(a_mbars_ptr + write_idx),
+                        full[write_idx],
                         (UInt(i) * BK, UInt(block_idx_swizzle[1]) * BM),
                     )
 
@@ -342,7 +341,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
                         b_tma_op.async_multicast_load(
                             b_smem_slice,
-                            TMABarrier(a_mbars_ptr + write_idx),
+                            full[write_idx],
                             (UInt(i) * BK, b_gmem_slice_coord),
                             UInt16(multicast_column_mask << rank_n),
                         )
@@ -351,7 +350,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                         if rank_m == 0:
                             b_tma_op.async_multicast_load(
                                 b_smem_tile,
-                                TMABarrier(a_mbars_ptr + write_idx),
+                                full[write_idx],
                                 (UInt(i) * BK, block_idx.x * BN),
                                 UInt16(multicast_column_mask << rank_n),
                             )
@@ -359,7 +358,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 else:
                     b_tma_op.async_copy(
                         b_smem_tile,
-                        TMABarrier(a_mbars_ptr + write_idx),
+                        full[write_idx],
                         # (UInt(i) * BK, block_idx.x * BN),
                         (UInt(i) * BK, UInt(block_idx_swizzle[0]) * BN),
                     )
@@ -402,10 +401,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
         for _ in range(num_k_iters):
             var read_idx = read_pipeline_states.index()
 
-            # full[read_idx].wait(read_pipeline_states.phase())
-            TMABarrier(a_mbars_ptr + read_idx).wait(
-                read_pipeline_states.phase()
-            )
+            full[read_idx].wait(read_pipeline_states.phase())
+
             var a_smem_tile = a_smem_iter.next(read_idx)[]
             var b_smem_tile = b_smem_iter.next(read_idx)[]
 
@@ -422,12 +419,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             @parameter
             if cluster_size[cluster_shape]() > 1:
                 if warp_group_thread_idx < CLUSTER_SIZE:
-                    _ = TMABarrier(b_mbars_ptr + read_idx).arrive_cluster(
-                        warp_group_thread_idx
-                    )
+                    _ = empty[read_idx].arrive_cluster(warp_group_thread_idx)
             else:
                 if warp_group_thread_idx == 0:
-                    _ = TMABarrier(b_mbars_ptr + read_idx).arrive()
+                    _ = empty[read_idx].arrive()
 
             read_pipeline_states.step()
 
@@ -764,8 +759,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
     var a_mbars_ptr = smem_poll.bitcast[Int64]()
     var b_mbars_ptr = smem_poll.bitcast[Int64]() + pipeline_stages
-    full = create_mbarrier_array[pipeline_stages](a_mbars_ptr)
-    empty = create_mbarrier_array[pipeline_stages](b_mbars_ptr)
+
+    full = a_mbars_ptr.bitcast[SharedMemBarrier]()
+    empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
     var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
@@ -815,16 +811,12 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 for i in range(num_k_iters):
                     var write_idx = write_pipeline_states.index()
 
-                    # empty[write_idx].wait(write_pipeline_states.phase())
-                    TMABarrier(b_mbars_ptr + write_idx).wait(
-                        write_pipeline_states.phase()
-                    )
+                    empty[write_idx].wait(write_pipeline_states.phase())
+
                     var a_smem_tile = a_smem_iter.next(write_idx)[]
                     var b_smem_tile = b_smem_iter.next(write_idx)[]
 
-                    TMABarrier(a_mbars_ptr + write_idx).expect_bytes(
-                        expected_bytes
-                    )
+                    full[write_idx].expect_bytes(expected_bytes)
 
                     @parameter
                     if CLUSTER_N > 1:
@@ -840,7 +832,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
                             a_tma_op.async_multicast_load(
                                 a_smem_slice,
-                                TMABarrier(a_mbars_ptr + write_idx),
+                                full[write_idx],
                                 (UInt(i) * BK, a_gmem_slice_coord),
                                 UInt16(multicast_row_mask),
                             )
@@ -849,7 +841,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                             if rank_n == 0:
                                 a_tma_op.async_multicast_load(
                                     a_smem_tile,
-                                    TMABarrier(a_mbars_ptr + write_idx),
+                                    full[write_idx],
                                     (UInt(i) * BK, m_coord),
                                     UInt16(multicast_row_mask),
                                 )
@@ -857,7 +849,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                     else:
                         a_tma_op.async_copy(
                             a_smem_tile,
-                            TMABarrier(a_mbars_ptr + write_idx),
+                            full[write_idx],
                             (UInt(i) * BK, m_coord),
                         )
 
@@ -875,7 +867,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
                             b_tma_op.async_multicast_load(
                                 b_smem_slice,
-                                TMABarrier(a_mbars_ptr + write_idx),
+                                full[write_idx],
                                 (UInt(i) * BK, b_gmem_slice_coord),
                                 UInt16(multicast_column_mask << rank_n),
                             )
@@ -884,7 +876,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                             if rank_m == 0:
                                 b_tma_op.async_multicast_load(
                                     b_smem_tile,
-                                    TMABarrier(a_mbars_ptr + write_idx),
+                                    full[write_idx],
                                     (UInt(i) * BK, n_coord),
                                     UInt16(multicast_column_mask << rank_n),
                                 )
@@ -892,8 +884,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                     else:
                         b_tma_op.async_copy(
                             b_smem_tile,
-                            TMABarrier(a_mbars_ptr + write_idx),
-                            # (UInt(i) * BK, block_idx.x * BN),
+                            full[write_idx],
                             (UInt(i) * BK, n_coord),
                         )
 
@@ -941,10 +932,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
             for i in range(num_k_iters):
                 var read_idx = read_pipeline_states.index()
 
-                # full[read_idx].wait(read_pipeline_states.phase())
-                TMABarrier(a_mbars_ptr + read_idx).wait(
-                    read_pipeline_states.phase()
-                )
+                full[read_idx].wait(read_pipeline_states.phase())
+
                 var a_smem_tile = a_smem_iter.next(read_idx)[]
                 var b_smem_tile = b_smem_iter.next(read_idx)[]
 
@@ -961,12 +950,12 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 @parameter
                 if cluster_size[cluster_shape]() > 1:
                     if warp_group_thread_idx < CLUSTER_SIZE:
-                        _ = TMABarrier(b_mbars_ptr + read_idx).arrive_cluster(
+                        _ = empty[read_idx].arrive_cluster(
                             warp_group_thread_idx
                         )
                 else:
                     if warp_group_thread_idx == 0:
-                        _ = TMABarrier(b_mbars_ptr + read_idx).arrive()
+                        _ = empty[read_idx].arrive()
 
                 read_pipeline_states.step()
 
@@ -1235,31 +1224,37 @@ fn hopper_matmul_tma_wgmma_kernel[
     alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    var mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
+
     var phase = PipelineState[1]()
 
     if thread_idx.x == 0:
-        mbar.init()
+        mbar[0].init()
 
     barrier()
 
     for i in range(num_k_iters):
         if thread_idx.x == 0:
-            mbar.expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(expected_bytes)
             a_tma_op.async_copy(
                 a_smem_tile,
-                mbar,
+                mbar[0],
                 (UInt(i) * BK, block_idx.y * BM),
             )
 
             b_tma_op.async_copy(
                 b_smem_tile,
-                mbar,
+                mbar[0],
                 (UInt(i) * BK, block_idx.x * BN),
             )
         barrier()
 
-        mbar.wait(phase.phase())
+        mbar[0].wait(phase.phase())
         phase.step()
 
         wgmma_op.arrive()
