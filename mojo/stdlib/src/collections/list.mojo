@@ -680,17 +680,6 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
 
         return ret_val^
 
-    fn pop(mut self) -> T:
-        """Pops a value from the end of the list.
-
-        Returns:
-            The popped value.
-        """
-
-        debug_assert(self._len > 0, "called .pop() on an empty List")
-        self._len -= 1
-        return (self.data + self._len).take_pointee()
-
     fn reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
 
