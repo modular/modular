@@ -73,4 +73,7 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 ### ❌ Removed
 
+- The `SIMD.roundeven()` method has been removed from the standard library.
+  This functionality is now handled by the `round()` function.
+
 ### 🛠️ Fixed
