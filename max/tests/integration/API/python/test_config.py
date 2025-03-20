@@ -11,10 +11,8 @@ from pathlib import Path
 import pytest
 from huggingface_hub import snapshot_download
 from max.driver import DeviceSpec
-from max.pipelines.config import (
-    PipelineConfig,
-    SupportedEncoding,
-)
+from max.pipelines.config import PipelineConfig
+from max.pipelines.config_enums import SupportedEncoding
 
 
 def test_config_init__raises_with_no_model_path():

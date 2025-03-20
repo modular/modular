@@ -9,10 +9,8 @@ from pathlib import Path
 import pytest
 from huggingface_hub import snapshot_download
 from max.graph.weights import WeightsFormat
-from max.pipelines.config import (
-    HuggingFaceRepo,
-    SupportedEncoding,
-)
+from max.pipelines.config_enums import SupportedEncoding
+from max.pipelines.max_config import HuggingFaceRepo
 
 
 def test_huggingface_repo__formats_available():
