@@ -1774,16 +1774,14 @@ struct SIMD[type: DType, size: Int](
             ).cast[target]()
 
         @parameter
-        if target is DType.bfloat16 and (
-            is_amd_gpu() or not _has_native_bf16_support()
-        ):
+        if target is DType.bfloat16 and not _has_native_bf16_support():
             return rebind[SIMD[target, size]](
                 _f32_to_bfloat16(self.cast[DType.float32]())
             )
 
-        return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
-            self.value
-        )
+        return __mlir_op.`pop.cast`[
+            _type = SIMD[target, size]._mlir_type, fast = __mlir_attr.unit
+        ](self.value)
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -3432,11 +3430,6 @@ fn _f32_to_bfloat16_scalar(
     if has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
         return _unchecked_zero[DType.bfloat16, 1]()
-
-    elif is_amd_gpu():
-        return __mlir_op.`pop.cast`[
-            _type = __mlir_type.`!pop.scalar<bf16>`, fast = __mlir_attr.unit
-        ](rebind[Scalar[DType.float32]](val).value)
 
     if _isnan(val):
         return _nan[DType.bfloat16]()
