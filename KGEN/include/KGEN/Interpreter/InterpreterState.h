@@ -406,6 +406,9 @@ protected:
   virtual void
   addCustomReplacementsToLiftStore(mlir::AttrTypeReplacer &liftStore) {}
 
+  // TODO: mark const once all dependencies have const versions.
+  void dump();
+
 private:
   /// All interpreter memory tables, containing stack, heap, persistent, and
   /// constant global memory.
