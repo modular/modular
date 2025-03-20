@@ -26,11 +26,13 @@ from memory import AddressSpace, UnsafePointer
 from utils import IndexList
 
 from . import Layout, RuntimeLayout
-from .int_tuple import UNKNOWN_VALUE
+from .int_tuple import UNKNOWN_VALUE, _get_index_type
 
 
 @always_inline
-fn _get_offset[i: Int](runtime_layout: RuntimeLayout) -> Int:
+fn _get_offset[
+    i: Int
+](runtime_layout: RuntimeLayout) -> Scalar[runtime_layout.linear_idx_type]:
     """Returns the offset for a single index into the runtime layout.
 
     Parameters:
@@ -52,7 +54,9 @@ fn _get_offset[i: Int](runtime_layout: RuntimeLayout) -> Int:
 
 
 @always_inline
-fn _get_offset[i: Int, j: Int](runtime_layout: RuntimeLayout) -> Int:
+fn _get_offset[
+    i: Int, j: Int
+](runtime_layout: RuntimeLayout) -> Scalar[runtime_layout.linear_idx_type]:
     """Returns the offset for a 2D index into the runtime layout.
 
     Parameters:
@@ -77,7 +81,10 @@ fn _get_offset[i: Int, j: Int](runtime_layout: RuntimeLayout) -> Int:
 
 
 struct Element[
-    dtype: DType, layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()
+    dtype: DType,
+    layout: Layout,
+    /,
+    index_type: DType = _get_index_type(layout),
 ](Stringable, Writable):
     """A wrapper around SIMD types that provides layout-driven vectorized operations.
 
@@ -89,7 +96,7 @@ struct Element[
     Parameters:
         dtype: The data type of the elements.
         layout: The memory layout describing how elements are organized.
-        bitwidth: The bit width used for runtime layout calculations.
+        index_type: The integer type of the index pointing to each element.
     """
 
     alias element_data_type = SIMD[dtype, size = layout.size()]
@@ -106,7 +113,11 @@ struct Element[
     efficiently using SIMD operations.
     """
 
-    var runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth]
+    var runtime_layout: RuntimeLayout[
+        layout,
+        bitwidth = bitwidthof[UInt32](),
+        linear_idx_type = Self.index_type,
+    ]
     """The runtime layout information for memory access patterns.
 
     This field stores the layout information needed to map between logical tensor
@@ -122,12 +133,16 @@ struct Element[
             element_data: The SIMD data to initialize the element with.
         """
         self.element_data = element_data
-        self.runtime_layout = RuntimeLayout[layout, bitwidth=bitwidth]()
+        self.runtime_layout = __type_of(self.runtime_layout)()
 
     fn __init__(
         mut self,
         element_data: Self.element_data_type,
-        runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth],
+        runtime_layout: RuntimeLayout[
+            layout,
+            bitwidth = bitwidthof[UInt32](),
+            linear_idx_type = Self.index_type,
+        ],
     ):
         """Initializes an Element with the given SIMD data and runtime layout.
 
@@ -143,8 +158,14 @@ struct Element[
     fn load(
         ptr: UnsafePointer[Scalar[dtype], **_],
         runtime_layout: RuntimeLayout[
-            layout, bitwidth=bitwidth
-        ] = RuntimeLayout[layout, bitwidth=bitwidth](),
+            layout,
+            bitwidth = bitwidthof[UInt32](),
+            linear_idx_type = Self.index_type,
+        ] = RuntimeLayout[
+            layout,
+            bitwidth = bitwidthof[UInt32](),
+            linear_idx_type = Self.index_type,
+        ](),
     ) -> Self:
         """Loads data from memory according to the specified layout.
 
@@ -227,8 +248,14 @@ struct Element[
     fn masked_load(
         ptr: UnsafePointer[Scalar[dtype], **_],
         runtime_layout: RuntimeLayout[
-            layout, bitwidth=bitwidth
-        ] = RuntimeLayout[layout, bitwidth=bitwidth](),
+            layout,
+            bitwidth = bitwidthof[UInt32](),
+            linear_idx_type = Self.index_type,
+        ] = RuntimeLayout[
+            layout,
+            bitwidth = bitwidthof[UInt32](),
+            linear_idx_type = Self.index_type,
+        ](),
     ) -> Self:
         """Loads data from memory with masking for partial loads.
 
@@ -513,7 +540,9 @@ struct Element[
                     for j in range(dim_1):
                         if j >= self.runtime_layout.dim(1):
                             break
-                        ptr[] = _get_offset[i, j](self.runtime_layout)
+                        (ptr + _get_offset[i, j](self.runtime_layout)).store(
+                            self.element_data[i + j * dim_0],
+                        )
                 return
 
             @parameter
@@ -606,7 +635,7 @@ struct MemoryElement[
     alignment: Int,
     /,
     *,
-    bitwidth: Int = bitwidthof[Int](),
+    index_type: DType = _get_index_type(layout, address_space),
 ]:
     """Represents data in memory organized according to a specific layout.
 
@@ -623,7 +652,7 @@ struct MemoryElement[
         layout: The memory layout describing how elements are organized.
         address_space: The memory address space where the data is located.
         alignment: The memory alignment requirement for the data.
-        bitwidth: The bit width used for runtime layout calculations.
+        index_type: The integer type of the index pointing to each memory element.
     """
 
     var ptr: UnsafePointer[
@@ -636,7 +665,11 @@ struct MemoryElement[
     of the data structure in memory.
     """
 
-    var runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth]
+    var runtime_layout: RuntimeLayout[
+        layout,
+        bitwidth = bitwidthof[UInt32](),
+        linear_idx_type = Self.index_type,
+    ]
     """Runtime layout information used for memory access calculations.
 
     This field stores the runtime layout information needed to compute memory
@@ -649,7 +682,11 @@ struct MemoryElement[
         ptr: UnsafePointer[
             Scalar[dtype], address_space=address_space, alignment=alignment
         ],
-        runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth],
+        runtime_layout: RuntimeLayout[
+            layout,
+            bitwidth = bitwidthof[UInt32](),
+            linear_idx_type = Self.index_type,
+        ],
     ):
         """Initializes a `MemoryElement` with the given pointer and runtime layout.
 
@@ -661,7 +698,9 @@ struct MemoryElement[
         self.runtime_layout = runtime_layout
 
     @always_inline("nodebug")
-    fn load(self) -> Element[dtype, layout, bitwidth=bitwidth]:
+    fn load(
+        self, out result: Element[dtype, layout, index_type = Self.index_type]
+    ):
         """Loads data from memory according to the specified layout.
 
         This method performs a layout-aware load operation, reading data from memory
@@ -674,10 +713,10 @@ struct MemoryElement[
         Returns:
             An `Element` containing the loaded data organized according to the layout.
         """
-        return Element.load(self.ptr, self.runtime_layout)
+        return __type_of(result).load(self.ptr, self.runtime_layout)
 
     @always_inline("nodebug")
-    fn store(self, src: Element[dtype, layout, bitwidth=bitwidth]):
+    fn store(self, src: Element[dtype, layout, **_]):
         """Stores element data to the memory location of this MemoryElement.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -712,8 +751,10 @@ struct MemoryElement[
         # Load source element and convert to destination dtype if needed
         var src_element = src.load()
         var converted_element = Element[
-            dtype, src.layout, bitwidth = src.bitwidth
+            dtype, src.layout, index_type = src.index_type
         ](src_element.element_data.cast[dtype](), src_element.runtime_layout)
         self.store(
-            rebind[Element[dtype, layout, bitwidth=bitwidth]](converted_element)
+            rebind[Element[dtype, layout, index_type = src_element.index_type]](
+                converted_element
+            )
         )

@@ -6,7 +6,7 @@
 
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from sys import alignof
+from sys import alignof, bitwidthof
 
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._utils import ManagedLayoutTensor
@@ -177,6 +177,7 @@ fn test_element_dynamic_layout() raises:
             var elem = Element[
                 tensor_8x8_v_4_4.dtype,
                 tensor_8x8_v_4_4.element_layout,
+                index_type = tensor_8x8_v_4_4.index_type,
             ].load(
                 tensor_8x8_v_4_4.ptr.offset(offset),
                 tensor_8x8_v_4_4.runtime_element_layout,
@@ -228,9 +229,9 @@ fn test_element_dynamic_layout() raises:
     print(tensor_Ux8_vec4_d1)
 
     alias layout8xU = Layout.row_major(8, UNKNOWN_VALUE)
-    var runtime_layout8xU = RuntimeLayout[layout8xU].row_major(
-        IndexList[2](8, 2)
-    )
+    var runtime_layout8xU = RuntimeLayout[
+        layout8xU, linear_idx_type = DType.index
+    ].row_major(IndexList[2](8, 2))
 
     var tensor_8xU = ManagedLayoutTensor[DType.float32, layout8xU](
         runtime_layout8xU
@@ -272,10 +273,14 @@ fn test_element_masked_load():
     var tensor_1x3_v4 = tensor_1x3.get_immutable().vectorize[1, 4]()
     # CHECK: [0.0, 1.0, 2.0, 0.0]
     print(
-        Element[tensor_1x3_v4.dtype, tensor_1x3_v4.element_layout].masked_load(
+        Element[
+            tensor_1x3_v4.dtype,
+            tensor_1x3_v4.element_layout,
+            index_type = tensor_1x3_v4.index_type,
+        ].masked_load(
             tensor_1x3_v4.ptr,
-            RuntimeLayout[tensor_1x3_v4.element_layout].row_major(
-                IndexList[2](1, 3)
+            __type_of(tensor_1x3_v4.runtime_element_layout).row_major(
+                IndexList[2, element_bitwidth = bitwidthof[UInt32]()](1, 3)
             ),
         )
     )
@@ -288,10 +293,10 @@ fn test_element_masked_load():
     var tensor_3x1_v4 = tensor_3x4.get_immutable().vectorize[4, 1]()
 
     print(
-        Element[tensor_3x1_v4.dtype, tensor_3x1_v4.element_layout].masked_load(
+        Element[index_type = tensor_3x1_v4.index_type].masked_load(
             tensor_3x1_v4.ptr,
-            RuntimeLayout[tensor_3x1_v4.element_layout].row_major(
-                IndexList[2](3, 1)
+            __type_of(tensor_3x1_v4.runtime_element_layout).row_major(
+                IndexList[2, element_bitwidth = bitwidthof[UInt32]()](3, 1)
             ),
         )
     )
@@ -300,12 +305,10 @@ fn test_element_masked_load():
 
     # CHECK: [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 0.0, 0.0, 0.0, 0.0]
     print(
-        Element[
-            tensor_3x4_v4x4.dtype, tensor_3x4_v4x4.element_layout
-        ].masked_load(
+        Element[index_type = tensor_3x4_v4x4.index_type].masked_load(
             tensor_3x4_v4x4.ptr,
-            RuntimeLayout[tensor_3x4_v4x4.element_layout].row_major(
-                IndexList[2](3, 4)
+            __type_of(tensor_3x4_v4x4.runtime_element_layout).row_major(
+                IndexList[2, element_bitwidth = bitwidthof[UInt32]()](3, 4)
             ),
         )
     )
@@ -320,14 +323,12 @@ fn test_element_masked_store():
     ).fill(-1)
 
     var tensor_4x4_vec_1_4 = tensor_4x4.get_immutable().vectorize[1, 4]()
-    var element_v_1_4 = Element[
-        tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout
-    ](
+    var element_v_1_4 = Element[index_type = tensor_4x4_vec_1_4.index_type](
         SIMD[
             tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout.size()
         ](1),
-        RuntimeLayout[tensor_4x4_vec_1_4.element_layout].row_major(
-            IndexList[2](1, 3)
+        __type_of(tensor_4x4_vec_1_4.runtime_element_layout).row_major(
+            IndexList[2, element_bitwidth = bitwidthof[UInt32]()](1, 3)
         ),
     )
     element_v_1_4.masked_store(tensor_4x4_vec_1_4.ptr)
@@ -341,14 +342,12 @@ fn test_element_masked_store():
     _ = tensor_4x4.fill(-1)
 
     var tensor_4x4_vec_4_1 = tensor_4x4.get_immutable().vectorize[4, 1]()
-    var element_v_4_1 = Element[
-        tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout
-    ](
+    var element_v_4_1 = Element[index_type = tensor_4x4_vec_4_1.index_type](
         SIMD[
             tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout.size()
         ](1),
-        RuntimeLayout[tensor_4x4_vec_4_1.element_layout].row_major(
-            IndexList[2](2, 1)
+        __type_of(tensor_4x4_vec_4_1.runtime_element_layout).row_major(
+            IndexList[2, element_bitwidth = bitwidthof[UInt32]()](2, 1)
         ),
     )
     element_v_4_1.masked_store(tensor_4x4_vec_4_1.ptr)
@@ -362,14 +361,12 @@ fn test_element_masked_store():
     _ = tensor_4x4.fill(-1)
 
     var tensor_4x4_vec_4_4 = tensor_4x4.get_immutable().vectorize[4, 4]()
-    var element_v_4_4 = Element[
-        tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout
-    ](
+    var element_v_4_4 = Element[index_type = tensor_4x4_vec_4_4.index_type](
         SIMD[
             tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout.size()
         ](1),
-        RuntimeLayout[tensor_4x4_vec_4_4.element_layout].row_major(
-            IndexList[2](3, 2)
+        __type_of(tensor_4x4_vec_4_4.runtime_element_layout).row_major(
+            IndexList[2, element_bitwidth = bitwidthof[UInt32]()](3, 2)
         ),
     )
     element_v_4_4.masked_store(tensor_4x4_vec_4_4.ptr)

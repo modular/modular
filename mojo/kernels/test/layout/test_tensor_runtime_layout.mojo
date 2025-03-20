@@ -506,7 +506,9 @@ fn test_random_fill():
     print("== test_random_fill")
     alias layout = Layout(8 * 8 * 8 * 8)
 
-    var dynamic_layout = RuntimeLayout[layout](layout.size(), 1)
+    var dynamic_layout = RuntimeLayout[layout, linear_idx_type = DType.int32](
+        layout.size(), 1
+    )
     var src_tensor = LayoutTensor[DType.float32, layout](
         UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
     )
@@ -642,7 +644,9 @@ fn test_split():
     print(tensor_Ux4.split[axis=1](2, 1))
 
     alias layout_4x4 = Layout(IntTuple(4, 4), IntTuple(4, 1))
-    var dynamic_layout_4x4 = RuntimeLayout[layout_4x4](
+    var dynamic_layout_4x4 = RuntimeLayout[
+        layout_4x4, linear_idx_type = DType.int32
+    ](
         RuntimeTuple[layout_4x4.shape, unsigned=True](4, 4),
         RuntimeTuple[layout_4x4.stride, unsigned=True](4, 1),
     )

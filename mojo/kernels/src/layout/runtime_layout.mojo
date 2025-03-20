@@ -32,9 +32,13 @@ from .runtime_tuple import RuntimeTuple, crd2idx, product
 
 
 @register_passable("trivial")
-struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
-    Stringable, Writable
-):
+struct RuntimeLayout[
+    layout: Layout,
+    /,
+    *,
+    bitwidth: Int = bitwidthof[Int](),
+    linear_idx_type: DType = DType.index,
+](Stringable, Writable):
     """A runtime-configurable layout that uses `RuntimeTuple` for storage.
 
     This struct provides a layout implementation that can be modified at runtime,
@@ -46,6 +50,7 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         layout: The static `Layout` type to base this runtime layout on.
         bitwidth: The bit width to use for shape storage, defaults to system
             `Int`.
+        linear_idx_type: The integer type of the linear index into memory returned by `crd2idx`.
 
     The layout must have statically known dimensions at compile time, but the
     actual shape and stride values can be modified during execution.
@@ -110,7 +115,7 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
 
     # FIXME: This should probably better done in the RuntimeTuple constructor
     @always_inline
-    fn __call__(self, idx: Int) -> Int:
+    fn __call__(self, idx: Int) -> Scalar[linear_idx_type]:
         """Convert a single index to a flat linear index.
 
         Args:
@@ -122,7 +127,9 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         return self.__call__(RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx))
 
     @always_inline
-    fn __call__[t: IntTuple](self, idx: RuntimeTuple[t, **_]) -> Int:
+    fn __call__[
+        t: IntTuple
+    ](self, idx: RuntimeTuple[t, **_]) -> Scalar[linear_idx_type]:
         """Convert a multi-dimensional index to a flat linear index.
 
         Parameters:
@@ -134,7 +141,7 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         Returns:
             The corresponding flat linear index in the layout.
         """
-        return crd2idx(idx, self.shape, self.stride)
+        return crd2idx[out_type=linear_idx_type](idx, self.shape, self.stride)
 
     @always_inline
     fn size(self) -> Int:
@@ -165,7 +172,14 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     @always_inline
     fn cast[
         type: DType
-    ](self, out result: RuntimeLayout[layout, bitwidth = bitwidthof[type]()]):
+    ](
+        self,
+        out result: RuntimeLayout[
+            layout,
+            bitwidth = bitwidthof[type](),
+            linear_idx_type=linear_idx_type,
+        ],
+    ):
         """Cast the layout to use a different element bitwidth.
 
         Parameters:
@@ -191,7 +205,11 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         rank: Int, //
     ](
         shape: IndexList[rank, **_],
-        out result: RuntimeLayout[layout, bitwidth = shape.element_bitwidth],
+        out result: RuntimeLayout[
+            layout,
+            bitwidth = shape.element_bitwidth,
+            linear_idx_type=linear_idx_type,
+        ],
     ):
         """Create a row-major layout from the given shape.
 
@@ -224,7 +242,11 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         rank: Int, //
     ](
         shape: IndexList[rank, **_],
-        out result: RuntimeLayout[layout, bitwidth = shape.element_bitwidth],
+        out result: RuntimeLayout[
+            layout,
+            bitwidth = shape.element_bitwidth,
+            linear_idx_type=linear_idx_type,
+        ],
     ):
         """Create a column-major layout from the given shape.
 
@@ -390,12 +412,14 @@ fn coalesce[
 
 
 fn make_layout[
-    l1: Layout, l2: Layout
+    l1: Layout, l2: Layout, /, *, linear_idx_type: DType = DType.uint64
 ](
     a: RuntimeLayout[l1, **_],
     b: RuntimeLayout[l2, **_],
     out result: RuntimeLayout[
-        make_layout_static(l1, l2), bitwidth = b.bitwidth
+        make_layout_static(l1, l2),
+        bitwidth = b.bitwidth,
+        linear_idx_type=linear_idx_type,
     ],
 ):
     """Combine two runtime layouts into a single composite layout.
@@ -406,6 +430,8 @@ fn make_layout[
     Parameters:
         l1: The static layout type of `a`.
         l2: The static layout type of `b`.
+        linear_idx_type: The integer type of the all index calculated by the returned
+                  runtime layout.
 
     Args:
         a: The first `RuntimeLayout` to combine.

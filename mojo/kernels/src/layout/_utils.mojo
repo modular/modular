@@ -24,10 +24,15 @@ struct ManagedLayoutTensor[
     layout: Layout,
     *,
 ]:
-    alias layout_bitwidth = bitwidthof[_get_index_type(AddressSpace.GENERIC)]()
+    alias index_type: DType = _get_index_type(layout, AddressSpace.GENERIC)
+    alias layout_bitwidth = bitwidthof[Self.index_type]()
     var device_data: Optional[DeviceBuffer[dtype]]
     var host_data: DeviceBuffer[dtype]
-    var runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]
+    var runtime_layout: RuntimeLayout[
+        layout,
+        bitwidth = Self.layout_bitwidth,
+        linear_idx_type = Self.index_type,
+    ]
     var ctx: DeviceContext
 
     @always_inline
@@ -43,6 +48,19 @@ struct ManagedLayoutTensor[
     @always_inline
     fn __init__(out self, runtime_layout: RuntimeLayout[layout, **_]) raises:
         self.ctx = DeviceContext(api="cpu")
+
+        constrained[
+            runtime_layout.linear_idx_type == Self.index_type,
+            String(
+                "Mismatch of index type for RuntimeLayout:",
+                runtime_layout.linear_idx_type,
+                "and LayoutTensor:",
+                Self.index_type,
+                ".",
+                sep=" ",
+            ),
+        ]()
+
         self.runtime_layout = rebind[__type_of(self.runtime_layout)](
             runtime_layout
         )
@@ -68,7 +86,32 @@ struct ManagedLayoutTensor[
     fn __init__(
         out self, runtime_layout: RuntimeLayout[layout, **_], ctx: DeviceContext
     ) raises:
+        constrained[
+            runtime_layout.bitwidth == Self.layout_bitwidth,
+            String(
+                "Mismatch of bitwidth for RuntimeLayout:",
+                runtime_layout.bitwidth,
+                "and LayoutTensor:",
+                Self.layout_bitwidth,
+                ".",
+                sep=" ",
+            ),
+        ]()
+
+        constrained[
+            runtime_layout.linear_idx_type == Self.index_type,
+            String(
+                "Mismatch of index type for RuntimeLayout:",
+                runtime_layout.linear_idx_type,
+                "and LayoutTensor:",
+                Self.index_type,
+                ".",
+                sep=" ",
+            ),
+        ]()
+
         self.ctx = ctx
+
         self.runtime_layout = rebind[__type_of(self.runtime_layout)](
             runtime_layout
         )

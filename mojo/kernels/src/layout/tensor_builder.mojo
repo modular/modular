@@ -76,9 +76,12 @@ struct LayoutTensorBuild[
     __layout_init: Bool = False,
     __address_space: AddressSpace = _GPUAddressSpace.GENERIC,
     __layout_bitwidth: Int = bitwidthof[_get_index_type(__address_space)](),
+    __index_type: DType = _get_index_type(__layout, __address_space),
     __circular: Bool = False,
 ]:
-    var runtime_layout: RuntimeLayout[__layout, bitwidth=__layout_bitwidth]
+    var runtime_layout: RuntimeLayout[
+        __layout, bitwidth=__layout_bitwidth, linear_idx_type=__index_type
+    ]
 
     fn __init__(out self):
         self.runtime_layout = __type_of(self.runtime_layout)()

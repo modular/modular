@@ -289,12 +289,15 @@ fn idx2crd[
 
 
 fn crd2idx[
-    crd_t: IntTuple, shape_t: IntTuple, stride_t: IntTuple
+    crd_t: IntTuple,
+    shape_t: IntTuple,
+    stride_t: IntTuple,
+    out_type: DType = DType.uint64,
 ](
     crd: RuntimeTuple[crd_t, **_],
     shape: RuntimeTuple[shape_t, **_],
     stride: RuntimeTuple[stride_t, **_],
-) -> Int:
+) -> Scalar[out_type]:
     @parameter
     if crd_t.is_tuple():
         constrained[
@@ -302,15 +305,15 @@ fn crd2idx[
             and (len(crd_t) == len(shape_t) == len(stride_t)),
             "Inputs should have same rank",
         ]()
-        var r: Int = 0
+        var r: Scalar[out_type] = 0
         alias size = min(min(len(crd_t), len(shape_t)), len(stride_t))
 
         @parameter
         for i in range(size):
-            r += crd2idx(crd[i], shape[i], stride[i])
+            r += crd2idx[out_type=out_type](crd[i], shape[i], stride[i])
         return r
     else:
-        var int_crd: Int = 0 if len(crd) == 0 else Int(crd)
+        var int_crd: Scalar[out_type] = 0 if len(crd) == 0 else Int(crd)
 
         @parameter
         if shape_t.is_tuple():  # "int" tuple tuple
@@ -318,18 +321,20 @@ fn crd2idx[
                 len(shape_t) == len(stride_t),
                 "shape and stride should have same rank",
             ]()
-            var result: Int = 0
+            var result: Scalar[out_type] = 0
 
             alias last_elem_idx = len(shape_t) - 1
 
             @parameter
             for i in range(last_elem_idx):
-                divisor, quotient = divmod(int_crd, product(shape[i]))
-                result += crd2idx[crd_t](quotient, shape[i], stride[i])
+                divisor, quotient = divmod(Int(int_crd), product(shape[i]))
+                result += crd2idx[crd_t, out_type=out_type](
+                    quotient, shape[i], stride[i]
+                )
                 int_crd = divisor
             # FIXME(KERN-640): Replace with [-1], currently not giving correct result.
-            return result + crd2idx[crd_t](
-                int_crd, shape[last_elem_idx], stride[last_elem_idx]
+            return result + crd2idx[crd_t, out_type=out_type](
+                Int(int_crd), shape[last_elem_idx], stride[last_elem_idx]
             )
         else:  # "int" "int" "int"
             return int_crd * Int(stride)
