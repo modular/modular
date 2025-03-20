@@ -286,10 +286,7 @@ class TokenGenerationScheduler(Scheduler):
         tot_new_pages_needed = 0
         free_blocks: set[int] = set()
         if self.paged_manager is not None:
-            free_blocks = self.paged_manager.available_blocks.copy()
-            if self.paged_manager.prefix_cache is not None:
-                stale_blocks = self.paged_manager.prefix_cache.stale_blocks
-                free_blocks |= stale_blocks
+            free_blocks = self.paged_manager.free_blocks.copy()
 
         for _ in range(max_batch_size_to_create):
             if (
@@ -553,16 +550,14 @@ class TokenGenerationScheduler(Scheduler):
             return
 
         # KVCache specific metrics
-        used_blocks = self.paged_manager.get_num_used_blocks()
-        total_blocks = self.paged_manager.total_num_pages
-        used_pct = used_blocks / total_blocks
+        used_pct = self.paged_manager.used_block_pct
         cache_hit_rate = sch_output.cache_hit_rate
+        total_blocks = self.paged_manager.total_num_pages
 
         cow_str = ""
-        if self.paged_manager.prefix_cache is not None:
-            prefix_cache = self.paged_manager.prefix_cache
-            cow_blocks_copied = prefix_cache.cow_blocks_copied
-            prefix_cache.reset_cow_blocks_copied()
+        if self.paged_manager.enable_prefix_caching:
+            cow_blocks_copied = self.paged_manager.cow_blocks_copied
+            self.paged_manager.reset_cow_blocks_copied()
             cow_str = f"COW: {cow_blocks_copied} blocks copied, "
 
         logger.debug(
