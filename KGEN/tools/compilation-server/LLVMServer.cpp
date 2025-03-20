@@ -50,11 +50,9 @@ public:
 //===----------------------------------------------------------------------===//
 
 LLVMServer::LLVMServer(std::unique_ptr<Impl> &&impl) : impl(std::move(impl)) {}
-LLVMServer::LLVMServer(LLVMServer &&) = default;
-
 LLVMServer::~LLVMServer() = default;
 
-ErrorOr<LLVMServer> LLVMServer::create(bool singleThreaded) {
+ErrorOr<std::unique_ptr<LLVMServer>> LLVMServer::create(bool singleThreaded) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "compilation-server",
       Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()
@@ -63,8 +61,7 @@ ErrorOr<LLVMServer> LLVMServer::create(bool singleThreaded) {
   if (ctxOr.isError())
     return ctxOr.takeError();
   auto impl = std::make_unique<Impl>(ctxOr->copy());
-  LLVMServer server(std::move(impl));
-  return server;
+  return std::unique_ptr<LLVMServer>(new LLVMServer(std::move(impl)));
 }
 
 std::string LLVMServer::echoMLIR(mlir::StringRef module) {
