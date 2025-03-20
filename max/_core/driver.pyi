@@ -166,43 +166,158 @@ class Device:
         """Creates a CPU device. The id is ignored currently."""
 
 class Tensor:
+    """
+    Device-resident tensor representation. Allocates memory onto a given device
+    with the provided shape and dtype. Tensors can be sliced to provide strided
+    views of the underlying memory, but any tensors input into model execution
+    must be contiguous. Does not currently support setting items across multiple
+    indices, but does support numpy-style slicing.
+
+    :param dtype: DType of tensor
+    :param shape: Tuple of positive, non-zero integers denoting the tensor shape.
+    :param device: Device to allocate tensor onto.
+    """
+
     @overload
     def __init__(
-        self, shape: Sequence[int], dtype: max._core.dtype.DType, device: Device
+        self,
+        shape: Sequence[int],
+        dtype: max._core.dtype.DType,
+        device: Device | None = None,
     ) -> None: ...
     @overload
     def __init__(
         self, shape: Annotated[ArrayLike, dict(writable=False)], device: Device
     ) -> None: ...
     @property
-    def dtype(self) -> max._core.dtype.DType: ...
+    def device(self) -> Device:
+        """Device on which tensor is resident."""
+
     @property
-    def shape(self) -> tuple: ...
+    def dtype(self) -> max._core.dtype.DType:
+        """DType of constituent elements in tensor."""
+
     @property
-    def rank(self) -> int: ...
+    def element_size(self) -> int:
+        """Return the size of the element type in bytes."""
+
     @property
-    def num_elements(self) -> int: ...
+    def is_contiguous(self) -> bool:
+        """
+        Whether or not tensor is contiguously allocated in memory. Returns
+        false if the tensor is a non-contiguous slice.
+
+        Currently, we consider certain situations that are contiguous as
+        non-contiguous for the purposes of our engine, such as when a tensor
+        has negative steps.
+        """
+
     @property
-    def device(self) -> Device: ...
+    def is_host(self) -> bool:
+        """
+        Whether or not tensor is host-resident. Returns false for GPU tensors,
+        true for CPU tensors.
+
+        .. code-block:: python
+
+            from max import driver
+            from max.dtype import DType
+
+            cpu_tensor = driver.Tensor([2, 3], dtype=DType.bfloat16, device=driver.CPU())
+
+            print(cpu_tensor.is_host)
+        """
+
     @property
-    def is_contiguous(self) -> bool: ...
+    def num_elements(self) -> int:
+        """
+        Returns the number of elements in this tensor.
+
+        Rank-0 tensors have 1 element by convention.
+        """
+
     @property
-    def is_host(self) -> bool: ...
-    def view(
-        self, shape: Sequence[int], dtype: max._core.dtype.DType
-    ) -> Tensor: ...
-    def set(self, index: object, value: object) -> None: ...
-    def get(self, index: object) -> Tensor: ...
-    def item(self) -> object: ...
-    def copy_to(self, device: Device) -> Tensor: ...
-    def zeros(self) -> None: ...
-    def _aligned(self, alignment: int) -> bool: ...
-    def __dlpack_device__(self) -> tuple: ...
+    def rank(self) -> int:
+        """Tensor rank."""
+
+    @property
+    def shape(self) -> tuple:
+        """Shape of tensor."""
+
+    def copy(self, device: Device | None = None) -> Tensor:
+        """
+        Create a deep copy on an optionally given device.
+
+        If a device is None (default), a copy is created on the same device.
+
+        .. code-block:: python
+
+            from max import driver
+            from max.dtype import DType
+
+            cpu_tensor = driver.Tensor([2, 3], dtype=DType.bfloat16, device=driver.CPU())
+
+            cpu_copy = cpu_tensor.copy()
+        """
+
+    def item(self) -> Any:
+        """
+        Returns the scalar value at a given location. Currently
+        implemented only for zero-rank tensors. The return type is
+        converted to a Python built-in type.
+        """
+
+    @staticmethod
+    def scalar(
+        value: Any, dtype: max._core.dtype.DType, device: Device | None = None
+    ) -> Tensor:
+        """
+        Create a scalar value of a given dtype and value.
+
+        If device is None (default), the tensor will be allocated on the CPU.
+        """
+
+    def to(self, device: Device) -> Tensor:
+        """
+        Return a tensor that's guaranteed to be on the given device.
+
+        The tensor is only copied if the input device is different from the
+        device upon which the tensor is already resident.
+        """
+
+    @staticmethod
+    def zeros(
+        shape: Sequence[int],
+        dtype: max._core.dtype.DType,
+        device: Device | None = None,
+    ) -> Tensor:
+        """Allocates a tensor with all elements initialized to zero."""
+
     def __dlpack__(
         self, *, stream: object | None = None, _mmap: object | None = None
-    ) -> typing_extensions.CapsuleType: ...
+    ) -> typing_extensions.CapsuleType:
+        """Implements part of the dlpack contract."""
+
+    def __dlpack_device__(self) -> tuple:
+        """Implements part of the dlpack contract."""
+
+    def __getitem__(self, idx: int | slice | Sequence[int | slice]) -> Tensor:
+        """
+        Gets a tensor slice. Supports full numpy-style slicing. Invocations
+        using only integer-based indexes will return zero-rank tensors.
+        """
+
+    def __setitem__(
+        self, idx: int | slice | Sequence[int | slice], value: Any
+    ) -> None:
+        """Sets an item in the tensor."""
+
+    def _aligned(self, alignment: int | None = None) -> bool: ...
     @staticmethod
-    def from_dlpack(arg: object, /) -> Tensor: ...
+    def _from_dlpack(arg: object, /) -> Tensor: ...
+    def _view(
+        self, dtype: max._core.dtype.DType, shape: Sequence[int]
+    ) -> Tensor: ...
 
 def accelerator_count() -> int:
     """Returns number of accelerator devices available."""
