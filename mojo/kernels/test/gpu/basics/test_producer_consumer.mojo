@@ -13,20 +13,25 @@ from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace, async_copy
 from gpu.sync import async_copy_arrive
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from layout.tma_async import PipelineState, TMABarrier
+from layout.tma_async import PipelineState, SharedMemBarrier
 from memory import UnsafePointer, stack_allocation
 from testing import assert_equal
-
+from memory.pointer import _GPUAddressSpace
 from utils import StaticTuple
 from sys import sizeof
 
 
 fn producer_consumer_kernel[NUM_THREADS: Int]():
     var warp_id = thread_idx.x // WARP_SIZE
-    var mbar = TMABarrier()
+    var mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
-        mbar.init(NUM_THREADS)
+        mbar[0].init(NUM_THREADS)
 
     barrier()
 
@@ -34,9 +39,9 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
         if thread_idx.x == 0:
             print("Producer thread_idx: ", thread_idx.x, "warp_idx: ", warp_id)
 
-        _ = mbar.arrive()
+        _ = mbar[0].arrive()
     else:
-        mbar.wait(mbar.arrive())
+        mbar[0].wait(mbar[0].arrive())
         if thread_idx.x % 8 == 0:
             print("Consumer thread_idx:", thread_idx.x, "warp_idx: ", warp_id)
 
@@ -57,13 +62,21 @@ def test_producer_consumer_kernel(ctx: DeviceContext):
 fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var k_tile_iters = num_iters
 
-    var producer_mbar = StaticTuple[TMABarrier, Q_SIZE]()
-    var consumer_mbar = StaticTuple[TMABarrier, Q_SIZE]()
+    var producer_mbar = stack_allocation[
+        Q_SIZE,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
+    var consumer_mbar = stack_allocation[
+        Q_SIZE,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     @parameter
     for i in range(Q_SIZE):
-        producer_mbar[i] = TMABarrier()
-        consumer_mbar[i] = TMABarrier()
         if thread_idx.x == 0:
             producer_mbar[i].init(1)
             consumer_mbar[i].init(128)
@@ -154,13 +167,21 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 
     barrier()
 
-    var produced_mbar = StaticTuple[TMABarrier, num_stages]()
-    var consumed_mbar = StaticTuple[TMABarrier, num_stages]()
+    var produced_mbar = stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
+    var consumed_mbar = stack_allocation[
+        num_stages,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     @parameter
     for i in range(num_stages):
-        produced_mbar[i] = TMABarrier()
-        consumed_mbar[i] = TMABarrier()
         if thread_idx.x == 0:
             produced_mbar[i].init(128)
             consumed_mbar[i].init(128)
@@ -176,7 +197,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
                 (src + offset).address_space_cast[AddressSpace.GLOBAL](),
                 smem + offset,
             )
-            async_copy_arrive(produced_mbar[i].mbar)
+            async_copy_arrive(produced_mbar[i].unsafe_ptr())
             _ = produced_mbar[i].arrive()
 
     # consumer group, add stage index to buffer and write back.

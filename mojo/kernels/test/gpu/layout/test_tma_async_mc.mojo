@@ -24,10 +24,10 @@ from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
-from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_not_equal
-
+from memory import stack_allocation
 from utils.static_tuple import StaticTuple
 
 
@@ -70,9 +70,14 @@ fn test_tma_mcast_load_kernel[
 
     barrier()
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
     if thread_idx.x == 0:
-        mbar.init()
+        mbar[0].init()
 
     barrier()
 
@@ -81,12 +86,12 @@ fn test_tma_mcast_load_kernel[
     fence_mbarrier_init()
 
     if thread_idx.x == 0:
-        mbar.expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(expected_bytes)
         if rank_n == 0:
             var multicast_mask = tma_multicast_mask << (rank_m * CLUSTER_N)
             tma_tile.async_multicast_load(
                 tile,
-                mbar,
+                mbar[0],
                 (block_idx.x * tileN, block_idx.y * tileM),
                 multicast_mask.cast[DType.uint16](),
             )
@@ -94,7 +99,7 @@ fn test_tma_mcast_load_kernel[
     barrier()
 
     # after this line, the TMA load is finished
-    mbar.wait()
+    mbar[0].wait()
 
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
@@ -197,9 +202,14 @@ fn test_tma_sliced_multicast_load_kernel[
 
     barrier()
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
     if thread_idx.x == 0:
-        mbar.init()
+        mbar[0].init()
 
     barrier()
 
@@ -208,7 +218,7 @@ fn test_tma_sliced_multicast_load_kernel[
     fence_mbarrier_init()
 
     if thread_idx.x == 0:
-        mbar.expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(expected_bytes)
         var slice_cord = Int(
             block_idx.y * tileM
             + Int(block_rank % CLUSTER_N) * tileM // CLUSTER_N
@@ -218,7 +228,7 @@ fn test_tma_sliced_multicast_load_kernel[
             __type_of(tile)(
                 tile.ptr + (block_rank % CLUSTER_N) * tileM * tileN // CLUSTER_N
             ),
-            mbar,
+            mbar[0],
             (UInt(0), UInt(slice_cord)),
             multicast_mask.cast[DType.uint16](),
         )
@@ -226,7 +236,7 @@ fn test_tma_sliced_multicast_load_kernel[
     barrier()
 
     # after this line, the TMA load is finished
-    mbar.wait()
+    mbar[0].wait()
 
     # we use another cluster_sync() to ensure that one of the two CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()

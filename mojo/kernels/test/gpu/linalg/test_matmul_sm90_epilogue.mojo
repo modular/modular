@@ -35,9 +35,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
-    TMABarrier,
     PipelineState,
-    create_mbarrier_array,
 )
 from buffer.dimlist import Dim, DimList, _make_tuple
 from internal_utils._utils import ValOrDim, dynamic, static

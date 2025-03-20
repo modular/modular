@@ -36,12 +36,6 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     wgmma_c_layout,
 )
-from layout.tma_async import (
-    TMABarrier,
-    TMATensorTile,
-    create_tma_tile,
-    _tma_desc_tile_layout,
-)
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple, UNKNOWN_VALUE
 from layout.int_tuple import IntTuple
 from linalg import vendor_blas

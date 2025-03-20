@@ -24,11 +24,12 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
 from math import ceildiv
 from testing import assert_almost_equal
-
+from memory import stack_allocation
+from memory.pointer import _GPUAddressSpace
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
@@ -164,21 +165,26 @@ fn tma_wgmma_kernel[
     alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
     alias expected_bytes = a_expected_bytes + b_expected_bytes
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
     if thread_idx.x == 0:
-        mbar.init()
+        mbar[0].init()
 
     var phase: UInt32 = 0
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar.expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(expected_bytes)
             a_tma_op.async_copy(
-                a_smem_tile, mbar, (UInt(i) * BK, block_idx.y * BM)
+                a_smem_tile, mbar[0], (UInt(i) * BK, block_idx.y * BM)
             )
             b_tma_op.async_copy(
                 b_smem_tile,
-                mbar,
+                mbar[0],
                 (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
                     block_idx.x * BN,
                     UInt(i) * BK,
@@ -188,7 +194,7 @@ fn tma_wgmma_kernel[
         # Ensure all threads sees initialized mbarrier
         barrier()
 
-        mbar.wait(phase)
+        mbar[0].wait(phase)
         phase ^= 1
 
         wgmma_op.arrive()

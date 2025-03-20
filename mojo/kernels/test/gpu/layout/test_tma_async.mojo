@@ -20,10 +20,10 @@ from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
-from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_not_equal
-
+from memory import stack_allocation
 from utils.static_tuple import StaticTuple
 
 
@@ -50,17 +50,22 @@ fn test_tma_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
-        mbar.init()
-        mbar.expect_bytes(expected_bytes)
+        mbar[0].init()
+        mbar[0].expect_bytes(expected_bytes)
         tma_tile.async_copy(
-            tile, mbar, (block_idx.x * tileN, block_idx.y * tileM)
+            tile, mbar[0], (block_idx.x * tileN, block_idx.y * tileM)
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
-    mbar.wait()
+    mbar[0].wait()
 
     dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
@@ -92,21 +97,27 @@ fn test_tma_multiple_loads_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
+
     if thread_idx.x == 0:
-        mbar.init()
+        mbar[0].init()
 
     var phase: UInt32 = 0
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar.expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(expected_bytes)
             tma_tile.async_copy(
-                tile, mbar, (UInt(i) * tileN, block_idx.y * tileM)
+                tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
             )
         # Ensure all threads sees initialized mbarrier
         barrier()
-        mbar.wait(phase)
+        mbar[0].wait(phase)
         phase ^= 1
 
         dst_tile = dst.tile[tileM, tileN](block_idx.y, i)
@@ -485,27 +496,32 @@ fn test_tma_loads_two_buffers_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
-        mbar.init()
+        mbar[0].init()
 
     var phase: UInt32 = 0
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar.expect_bytes(expected_bytes * 2)
+            mbar[0].expect_bytes(expected_bytes * 2)
             a_tma_tile.async_copy(
-                a_tile, mbar, (UInt(i) * tileN, block_idx.y * tileM)
+                a_tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
             )
             b_tma_tile.async_copy(
-                b_tile, mbar, (UInt(i) * tileN, block_idx.y * tileM)
+                b_tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
             )
 
         # Ensure all threads sees initialized mbarrier
         barrier()
 
-        mbar.wait(phase)
+        mbar[0].wait(phase)
         phase ^= 1
 
         a_dst_tile = a_dst.tile[tileM, tileN](block_idx.y, i)
@@ -633,27 +649,32 @@ fn test_tma_loads_and_store_two_buffers_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
-        mbar.init()
+        mbar[0].init()
 
     var phase: UInt32 = 0
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar.expect_bytes(expected_bytes * 2)
+            mbar[0].expect_bytes(expected_bytes * 2)
             a_tma_src_tile.async_copy(
-                a_tile, mbar, (UInt(i) * tileN, block_idx.y * tileM)
+                a_tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
             )
             b_tma_src_tile.async_copy(
-                b_tile, mbar, (UInt(i) * tileN, block_idx.y * tileM)
+                b_tile, mbar[0], (UInt(i) * tileN, block_idx.y * tileM)
             )
 
         # Ensure all threads sees initialized mbarrier
         barrier()
 
-        mbar.wait(phase)
+        mbar[0].wait(phase)
         phase ^= 1
 
         tma_store_fence()

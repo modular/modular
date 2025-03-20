@@ -49,9 +49,7 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import (
     PipelineState,
-    TMABarrier,
     TMATensorTile,
-    create_mbarrier_array,
     create_tma_tile,
 )
 from memory import stack_allocation

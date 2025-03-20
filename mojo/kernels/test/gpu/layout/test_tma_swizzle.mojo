@@ -17,10 +17,11 @@ from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
 from layout.swizzle import make_swizzle
-from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
-
+from memory import stack_allocation
+from memory.pointer import _GPUAddressSpace
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
@@ -48,17 +49,22 @@ fn tma_swizzle_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
-        mbar.init()
-        mbar.expect_bytes(expected_bytes)
+        mbar[0].init()
+        mbar[0].expect_bytes(expected_bytes)
         tma_tile.async_copy(
-            tile, mbar, (block_idx.x * tileN, block_idx.y * tileM)
+            tile, mbar[0], (block_idx.x * tileN, block_idx.y * tileM)
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
-    mbar.wait()
+    mbar[0].wait()
 
     dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
 

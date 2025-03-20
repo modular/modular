@@ -45,12 +45,6 @@ from layout.tensor_core_async import (
     _rhs_descriptor,
     tile_layout_k_major,
 )
-from layout.tma_async import (
-    PipelineState,
-    TMABarrier,
-    TMATensorTile,
-    create_tma_tile,
-)
 from linalg.matmul_sm90 import hopper_matmul_tma_wgmma
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple

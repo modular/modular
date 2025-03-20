@@ -36,11 +36,12 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
 from memory import bitcast
 from testing import assert_almost_equal
-
+from memory import stack_allocation
+from memory.pointer import _GPUAddressSpace
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
@@ -135,9 +136,14 @@ fn multicast_tma_wgmma_kernel[
     var rank_m = block_rank / CLUSTER_N
     var rank_n = block_rank % CLUSTER_N
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
     if thread_idx.x == 0:
-        mbar.init()
+        mbar[0].init()
 
     var phase: UInt32 = 0
 
@@ -146,7 +152,7 @@ fn multicast_tma_wgmma_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar.expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(expected_bytes)
 
             @parameter
             if CLUSTER_N > 1:
@@ -165,7 +171,7 @@ fn multicast_tma_wgmma_kernel[
 
                     a_tma_op.async_multicast_load(
                         a_smem_slice,
-                        mbar,
+                        mbar[0],
                         (UInt(i) * BK, a_gmem_slice_coord),
                         multicast_mask.cast[DType.uint16](),
                     )
@@ -174,14 +180,14 @@ fn multicast_tma_wgmma_kernel[
                     if rank_n == 0:
                         a_tma_op.async_multicast_load(
                             a_smem_tile,
-                            mbar,
+                            mbar[0],
                             (UInt(i) * BK, block_idx.y * BM),
                             multicast_mask.cast[DType.uint16](),
                         )
 
             else:
                 a_tma_op.async_copy(
-                    a_smem_tile, mbar, (UInt(i) * BK, block_idx.y * BM)
+                    a_smem_tile, mbar[0], (UInt(i) * BK, block_idx.y * BM)
                 )
 
             @parameter
@@ -201,7 +207,7 @@ fn multicast_tma_wgmma_kernel[
 
                     b_tma_op.async_multicast_load(
                         b_smem_slice,
-                        mbar,
+                        mbar[0],
                         (UInt(i) * BK, b_gmem_slice_coord) if transpose_b else (
                             block_idx.x * BN,
                             UInt(i) * BK,
@@ -213,7 +219,7 @@ fn multicast_tma_wgmma_kernel[
                     if rank_m == 0:
                         b_tma_op.async_multicast_load(
                             b_smem_tile,
-                            mbar,
+                            mbar[0],
                             (
                                 UInt(i) * BK,
                                 block_idx.x * BN,
@@ -227,7 +233,7 @@ fn multicast_tma_wgmma_kernel[
             else:
                 b_tma_op.async_copy(
                     b_smem_tile,
-                    mbar,
+                    mbar[0],
                     (UInt(i) * BK, block_idx.x * BN) if transpose_b else (
                         block_idx.x * BN,
                         UInt(i) * BK,
@@ -237,7 +243,7 @@ fn multicast_tma_wgmma_kernel[
         # Ensure all threads sees initialized mbarrier
         barrier()
 
-        mbar.wait(phase)
+        mbar[0].wait(phase)
         phase ^= 1
 
         wgmma_op.arrive()

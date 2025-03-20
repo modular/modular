@@ -19,7 +19,7 @@ from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
 from layout.tma_async import (
-    TMABarrier,
+    SharedMemBarrier,
     TMATensorTile,
     create_tma_tile,
     TMATensorTileArray,
@@ -72,18 +72,24 @@ fn test_tma_replace_in_gmem_descriptor_kernel[
         dtype, src_layout
     ](new_src)
     device_tma_tile[block_idx.x][].tensormap_fence_release()
-    mbar = TMABarrier()
+
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
-        mbar.init()
-        mbar.expect_bytes(expected_bytes)
+        mbar[0].init()
+        mbar[0].expect_bytes(expected_bytes)
         device_tma_tile[block_idx.x][].async_copy(
-            tile, mbar, (UInt(0), UInt(0))
+            tile, mbar[0], (UInt(0), UInt(0))
         )
 
     # Ensure all threads sees initialized mbarrier
     barrier()
-    mbar.wait()
+    mbar[0].wait()
 
     dst_tile = dst.tile[M, N](block_idx.x, 0)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
@@ -216,18 +222,23 @@ fn test_tma_replace_in_smem_descriptor_kernel[
     # Entire warp should call this as it's an aligned instruction
     device_tma_tile[block_idx.x][].tensormap_cp_fence_release(smem_desc)
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
-        mbar.init()
-        mbar.expect_bytes(expected_bytes)
+        mbar[0].init()
+        mbar[0].expect_bytes(expected_bytes)
         device_tma_tile[block_idx.x][].async_copy(
-            tile, mbar, (UInt(0), UInt(0))
+            tile, mbar[0], (UInt(0), UInt(0))
         )
 
     # Ensure all threads sees initialized mbarrier
     barrier()
-    mbar.wait()
+    mbar[0].wait()
 
     dst_tile = dst.tile[M, N](0, 0)
     copy_sram_to_dram[thread_layout](dst_tile, tile)

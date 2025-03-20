@@ -20,13 +20,14 @@ from layout import Layout, LayoutTensor, IntTuple
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
-from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_not_equal
 from layout.runtime_layout import RuntimeLayout
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from memory import stack_allocation
 
 
 # Test loading a single 2d tile.
@@ -73,14 +74,19 @@ fn test_tma_3d_load_kernel[
 
     alias expected_bytes = cta_tile_layout.size() * sizeof[dtype]()
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
 
     if thread_idx.x == 0:
-        mbar.init()
-        mbar.expect_bytes(expected_bytes)
+        mbar[0].init()
+        mbar[0].expect_bytes(expected_bytes)
         tma_tile.async_copy_3d(
             smem_tile,
-            mbar,
+            mbar[0],
             (
                 block_idx.x * cta_tile_dim2,
                 block_idx.y * cta_tile_dim1,
@@ -89,7 +95,7 @@ fn test_tma_3d_load_kernel[
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
-    mbar.wait()
+    mbar[0].wait()
 
     alias smem_dim0 = smem_layout.shape[0].value()
     alias smem_dim1 = smem_layout.shape[1].value()

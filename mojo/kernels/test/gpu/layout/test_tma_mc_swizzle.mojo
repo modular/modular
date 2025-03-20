@@ -28,10 +28,10 @@ from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
 from layout.swizzle import make_swizzle
-from layout.tma_async import TMABarrier, TMATensorTile, create_tma_tile
-from memory.pointer import _GPUAddressSpace
+from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from memory import stack_allocation
 from testing import assert_equal
-
+from memory.pointer import _GPUAddressSpace
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
@@ -76,9 +76,14 @@ fn tma_swizzle_multicast_load_kernel[
 
     barrier()
 
-    mbar = TMABarrier()
+    mbar = stack_allocation[
+        1,
+        SharedMemBarrier,
+        address_space = _GPUAddressSpace.SHARED,
+        alignment=8,
+    ]()
     if thread_idx.x == 0:
-        mbar.init()
+        mbar[0].init()
 
     barrier()
 
@@ -87,21 +92,21 @@ fn tma_swizzle_multicast_load_kernel[
     fence_mbarrier_init()
 
     if thread_idx.x == 0:
-        mbar.expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(expected_bytes)
         var slice_cord_y = cluster_idx.y * cluster_tileM + rank_m * subcluster_tileM
         var slice_cord_x = cluster_idx.x * cluster_tileN + rank_n * subcluster_tileN
         var copy_offset = subcluster_tileM * subcluster_tileN * block_rank
 
         tma_tile.async_multicast_load(
             __type_of(tile)(tile.ptr + copy_offset),
-            mbar,
+            mbar[0],
             (slice_cord_x, slice_cord_y),
             tma_multicast_mask,
         )
 
     barrier()
 
-    mbar.wait()
+    mbar[0].wait()
 
     # we use another cluster_sync() to ensure that none of CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
     cluster_sync()
