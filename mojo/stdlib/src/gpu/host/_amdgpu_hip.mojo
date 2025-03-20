@@ -16,7 +16,7 @@ from gpu.host.device_context import (
 from memory import UnsafePointer
 
 
-struct _ihipCtx_t:
+struct _ihipDevice_t:
     pass
 
 
@@ -24,21 +24,22 @@ struct _ihipStream_t:
     pass
 
 
-alias hipCtx_t = UnsafePointer[_ihipCtx_t]
+alias hipDevice_t = UnsafePointer[_ihipDevice_t]
 alias hipStream_t = UnsafePointer[_ihipStream_t]
 
 
-# Accessor function to get access to the underlying hipCtx_t from an abstract DeviceContext.
-# Use `var hip_ctx: hipCtx_t = HIP(ctx)` where ctx is a `DeviceContext` to get access to the underlying hipCtx_t.
+# Accessor function to get access to the underlying hipDevice_t from an abstract DeviceContext.
+# Use `var hip_dev: hipDevice_t = HIP(ctx)` where ctx is a `DeviceContext` to get access to the
+# underlying hipDevice_t.
 @always_inline
-fn HIP(ctx: DeviceContext) raises -> hipCtx_t:
-    var result = hipCtx_t()
-    # const char *AsyncRT_DeviceContext_hip_context(hipCtx_t *result, const DeviceContext *ctx)
+fn HIP(ctx: DeviceContext) raises -> hipDevice_t:
+    var result = hipDevice_t()
+    # const char *AsyncRT_DeviceContext_hip_device(hipDevice_t *result, const DeviceContext *ctx)
     _checked(
         external_call[
-            "AsyncRT_DeviceContext_hip_context",
+            "AsyncRT_DeviceContext_hip_device",
             _CharPtr,
-            UnsafePointer[hipCtx_t],
+            UnsafePointer[hipDevice_t],
             _DeviceContextPtr,
         ](
             UnsafePointer.address_of(result),
