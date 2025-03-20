@@ -15,8 +15,7 @@ from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import assert_with_measure
-from internal_utils._measure import cosine
+from testing import assert_almost_equal
 from memory import UnsafePointer
 from nn.mha import (
     _naive_attention_with_transpose,
@@ -325,7 +324,22 @@ fn test[
     var threshold_multiple_partitions = Float64(1e-2)
     var threshold = threshold_1_partition if num_partitions and num_partitions.value() == 1 else threshold_multiple_partitions
 
-    assert_with_measure[cosine](flash_output, output, threshold=threshold)
+    var rtol_1_partition = Scalar[DType.float64](
+        1e-4
+    ) if use_index_input else Scalar[DType.float64](8e-3)
+    var rtol_multiple_partitions = Scalar[DType.float64](9e-3)
+    var rtol = rtol_1_partition if num_partitions and num_partitions.value() == 1 else rtol_multiple_partitions
+
+    for bs in range(batch_size):
+        for h in range(num_heads):
+            for s in range(seq_len):
+                for d in range(depth):
+                    var actual = flash_output[Index(bs, s, Int(h), Int(d))]
+                    var expect = output[Index(bs, s, Int(h), Int(d))]
+                    if not isclose(actual, expect, atol=1e-3, rtol=rtol):
+                        var rerr = abs((actual - expect) / expect)
+                        print(bs, h, s, d, actual, expect, rerr)
+                    assert_almost_equal(actual, expect, atol=1e-3, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr

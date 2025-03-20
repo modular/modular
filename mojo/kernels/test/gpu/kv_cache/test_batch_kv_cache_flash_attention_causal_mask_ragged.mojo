@@ -300,13 +300,16 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         DType.float32,
         DType.bfloat16,
     )
-    for bs_ref in List[Int](1, 16):
+    alias bs_list = (1, 16)
+
+    @parameter
+    for bs_idx in range(len(bs_list)):
+        alias bs = bs_list[bs_idx]
 
         @parameter
         for type_idx in range(len(types)):
             alias type = types[type_idx]
 
-            bs = bs_ref[]
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()
             tg_cache_sizes = List[Int]()
@@ -316,6 +319,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
                 tg_cache_sizes.append(Int(random_ui64(512, 1024)))
                 ce_seq_lens.append(Int(random_ui64(512, 1024)))
                 ce_cache_sizes.append(0)
+
             print("CE", bs, type)
             execute_ragged_flash_attention[
                 llama_num_q_heads, type, kv_params_llama3

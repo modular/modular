@@ -387,7 +387,6 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 1
         cache_valid_length[0] = 200
         cache_valid_length[1] = 256
-
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
             bs, valid_length, 1, 1024, cache_valid_length, ctx
         )
@@ -397,7 +396,6 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 1
         cache_valid_length[0] = 200
         cache_valid_length[1] = 255
-
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
             bs, valid_length, 1, 1024, cache_valid_length, ctx
         )
