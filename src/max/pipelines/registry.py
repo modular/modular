@@ -28,13 +28,8 @@ from max.graph.weights import WeightsAdapter, WeightsFormat, weights_format
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig, AutoTokenizer
 
-from .config import (
-    KVCacheConfig,
-    PipelineConfig,
-    PipelineEngine,
-    RopeType,
-    SupportedEncoding,
-)
+from .config import PipelineConfig
+from .config_enums import PipelineEngine, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
 from .hf_utils import get_architectures_from_huggingface_repo
@@ -45,6 +40,9 @@ from .interfaces import (
     TokenGenerator,
 )
 from .kv_cache import KVCacheStrategy
+from .max_config import (
+    KVCacheConfig,
+)
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer

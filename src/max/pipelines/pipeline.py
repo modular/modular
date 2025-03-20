@@ -47,7 +47,8 @@ from max.pipelines.kv_cache import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 
-from .config import KVCacheConfig, PipelineConfig, SupportedEncoding
+from .config import PipelineConfig
+from .config_enums import SupportedEncoding
 from .context import InputContext
 from .hf_utils import download_weight_files
 from .interfaces import (
@@ -58,6 +59,7 @@ from .interfaces import (
     TokenGenerator,
 )
 from .kv_cache import KVCacheManager, KVCacheParams
+from .max_config import KVCacheConfig
 from .sampling import token_sampler
 
 try:

@@ -17,11 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.pipelines.config import (
-    KVCacheConfig,
-    MAXModelConfig,
-)
 from max.pipelines.kv_cache import KVCacheParams
+from max.pipelines.max_config import KVCacheConfig, MAXModelConfig
 from transformers import AutoConfig
 
 
