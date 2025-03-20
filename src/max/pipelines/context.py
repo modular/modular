@@ -386,6 +386,15 @@ class TextContext:
     def is_assigned_to_cache(self) -> bool:
         return self._cache_seq_id is not None
 
+    def __repr__(self) -> str:
+        return (
+            f"TextContext("
+            f"cache_seq_id={self._cache_seq_id}, "
+            f"start_idx={self.start_idx}, "
+            f"active_idx={self.active_idx}, "
+            f"end_idx={self.end_idx})"
+        )
+
 
 class TextAndVisionContext(TextContext):
     """A base class for model context, specifically for Vision model variants."""
