@@ -13,44 +13,22 @@ params:
 # This file is facillitate development before GTC and should be combined
 # with other configs in more general way afterwards.
 
-# Prefill chunk size 8K
-- $M: 8192
+- $M: [8192, 4096, 512]
   N: 2560
   K: 8192
   $init_type: [uniform_distribution]
 
-- $M: 8192
+- $M: [8192, 4096, 512]
   N: 8192
   K: 2048
   $init_type: [uniform_distribution]
 
-- $M: 8192
+- $M: [8192, 4096, 512]
   N: 14336
   K: 8192
   $init_type: [uniform_distribution]
 
-- $M: 8192
-  N: 8192
-  K: 7168
-  $init_type: [uniform_distribution]
-
-# Prefill chunk size 4K
-- $M: 4096
-  N: 2560
-  K: 8192
-  $init_type: [uniform_distribution]
-
-- $M: 4096
-  N: 8192
-  K: 2048
-  $init_type: [uniform_distribution]
-
-- $M: 4096
-  N: 14336
-  K: 8192
-  $init_type: [uniform_distribution]
-
-- $M: 4096
+- $M: [8192, 4096, 512]
   N: 8192
   K: 7168
   $init_type: [uniform_distribution]
