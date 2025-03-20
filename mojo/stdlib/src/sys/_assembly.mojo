@@ -13,6 +13,9 @@
 """This module includes the inlined_assembly function."""
 
 from sys.intrinsics import _mlirtype_is_eq
+from collections.string.string_slice import StringSlice
+from builtin.string_literal import get_string_literal_slice
+
 
 # ===-----------------------------------------------------------------------===#
 # 0-arg
@@ -21,14 +24,17 @@ from sys.intrinsics import _mlirtype_is_eq
 
 @always_inline("nodebug")
 fn inlined_assembly[
-    asm: StringLiteral,
+    asm: StringSlice,
     result_type: AnyTrivialRegType,
     *types: AnyType,
-    constraints: StringLiteral,
+    constraints: StringSlice,
     has_side_effect: Bool = True,
 ](*args: *types) -> result_type:
     """Generates assembly via inline assembly."""
     var loaded_pack = args.get_loaded_kgen_pack()
+
+    alias asm_literal = get_string_literal_slice[asm]().value
+    alias constraints_literal = get_string_literal_slice[constraints]().value
 
     @parameter
     if _mlirtype_is_eq[result_type, NoneType]():
@@ -37,15 +43,15 @@ fn inlined_assembly[
         if has_side_effect:
             __mlir_op.`pop.inline_asm`[
                 _type=None,
-                assembly = asm.value,
-                constraints = constraints.value,
+                assembly=asm_literal,
+                constraints=constraints_literal,
                 hasSideEffects = __mlir_attr.unit,
             ](loaded_pack)
         else:
             __mlir_op.`pop.inline_asm`[
                 _type=None,
-                assembly = asm.value,
-                constraints = constraints.value,
+                assembly=asm_literal,
+                constraints=constraints_literal,
             ](loaded_pack)
         return rebind[result_type](None)
     else:
@@ -54,13 +60,13 @@ fn inlined_assembly[
         if has_side_effect:
             return __mlir_op.`pop.inline_asm`[
                 _type=result_type,
-                assembly = asm.value,
-                constraints = constraints.value,
+                assembly=asm_literal,
+                constraints=constraints_literal,
                 hasSideEffects = __mlir_attr.unit,
             ](loaded_pack)
         else:
             return __mlir_op.`pop.inline_asm`[
                 _type=result_type,
-                assembly = asm.value,
-                constraints = constraints.value,
+                assembly=asm_literal,
+                constraints=constraints_literal,
             ](loaded_pack)

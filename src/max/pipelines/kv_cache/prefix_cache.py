@@ -21,12 +21,23 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    SymbolicDim,
+    TensorType,
+    TensorValue,
+    ops,
+)
+from max.profiler import traced
 
 from .paged_cache_metadata import PagedCacheMetadata
 from .radix_trie import RadixTrie, TrieNode
 
 
+@traced
 def construct_cow_strided_memcpy_graph(
     block_shape: list[int | str], dtype: DType, devices: list[Device]
 ) -> Graph:
@@ -35,10 +46,12 @@ def construct_cow_strided_memcpy_graph(
     """
     assert len(block_shape) == 6
     ds = [DeviceRef(device.label, device.id) for device in devices]
+    batch_dim = SymbolicDim("batch")
     blocks_ty = [BufferType(dtype, shape=block_shape, device=d) for d in ds]
-    block_src_idx_ty = TensorType(DType.uint32, shape=[])
-    block_dst_idx_ty = TensorType(DType.uint32, shape=[])
-    num_tokens_ty = TensorType(DType.uint32, shape=[])
+    block_src_idx_ty = TensorType(DType.uint32, shape=[batch_dim])
+    block_dst_idx_ty = TensorType(DType.uint32, shape=[batch_dim])
+    num_tokens_ty = TensorType(DType.uint32, shape=[batch_dim])
+    max_num_tokens_ty = TensorType(DType.uint32, shape=[])
 
     with Graph(
         "mo.kv_collection_cow_strided_memcpy.paged",
@@ -46,15 +59,38 @@ def construct_cow_strided_memcpy_graph(
             block_dst_idx_ty,
             block_src_idx_ty,
             num_tokens_ty,
+            max_num_tokens_ty,
             *blocks_ty,
         ],
         output_types=[],
     ) as graph:
-        block_dst_idx, block_src_idx, num_tokens, *all_blocks = graph.inputs
+        (
+            block_dst_idx_tensor,
+            block_src_idx_tensor,
+            num_tokens_tensor,
+            max_num_tokens_tensor,
+            *all_blocks,
+        ) = graph.inputs
+
+        assert isinstance(block_dst_idx_tensor, TensorValue)
+        assert isinstance(block_src_idx_tensor, TensorValue)
+        assert isinstance(num_tokens_tensor, TensorValue)
+        assert isinstance(max_num_tokens_tensor, TensorValue)
+
         for blocks in all_blocks:
+            assert isinstance(blocks, BufferValue)
+            dev_ref = blocks.device
+            assert dev_ref is not None
+
             ops.inplace_custom(
                 "mo.kv_collection_cow_strided_memcpy.paged",
-                values=[blocks, block_dst_idx, block_src_idx, num_tokens],
+                values=[
+                    blocks,
+                    block_dst_idx_tensor.to(dev_ref),
+                    block_src_idx_tensor.to(dev_ref),
+                    num_tokens_tensor.to(dev_ref),
+                    max_num_tokens_tensor.to(dev_ref),
+                ],
                 out_types=[],
             )
         graph.output()
@@ -79,6 +115,8 @@ class PrefixCache:
         self.tensors = tensors
 
         self.cow_count = 0
+        # List of (block_dst, block_src, num_tokens)
+        self.cow_enqueued_args: list[tuple[int, int, int]] = []
         if self.enable_cow and self.page_size > 1:
             # Load single op graph for performing memory transfers needed for COW
             self.cow_strided_memcpy_graph = session.load(
@@ -222,16 +260,37 @@ class PrefixCache:
 
     def fetch(
         self,
+        seq_ids_and_data: dict[int, PagedCacheMetadata],
+        free_block_fn: Callable[[int], None],
+        alloc_block_fn: Callable[[], int],
+    ) -> dict[int, list[int]]:
+        """Extend the kv cache for given batch of requests with any cached prefixes.
+
+        This will increment the committed_idx and cached_idx if there is a cache
+        hit. The prompt will be trimmed in the event that cached_idx is bumped.
+        """
+        seq_ids_and_prefix_blocks = {}
+        for seq_id, data in seq_ids_and_data.items():
+            # may enqueue COW ops within prefix cache
+            seq_ids_and_prefix_blocks[seq_id] = self._fetch_request(
+                seq_id, data, free_block_fn, alloc_block_fn
+            )
+
+        # Batch execute all of the COW memcpy enqueued during _fetch_request
+        if self.enable_cow:
+            self.batch_execute_enqueued_cow()
+
+        return seq_ids_and_prefix_blocks
+
+    @traced
+    def _fetch_request(
+        self,
         seq_id: int,
         data: PagedCacheMetadata,
         free_block_fn: Callable[[int], None],
         alloc_block_fn: Callable[[], int],
     ) -> list[int]:
-        """Extend the kv cache for given request with any cached prefixes.
-
-        This will increment the committed_idx and cached_idx if there is a cache
-        hit. The prompt will be trimmed in the event that cached_idx is bumped.
-        """
+        """Extend the kv cache for given request with any cached prefixes."""
         node, prefix_blocks = self._fetch_query_cache(seq_id, data)
 
         # Update the cache hit rate metrics.
@@ -308,6 +367,15 @@ class PrefixCache:
             return None, 0
         return partial_match_block, num_cache_hit_tokens
 
+    @property
+    def cow_blocks_copied(self) -> int:
+        """Get the number of cow operations performed."""
+        return self.cow_count
+
+    def reset_cow_blocks_copied(self) -> None:
+        """Reset the number of cow operations performed."""
+        self.cow_count = 0
+
     def _fetch_cow(
         self,
         seq_id: int,
@@ -317,6 +385,10 @@ class PrefixCache:
     ) -> None:
         """Extend the kv cache for given request with any cached prefixes by
         copying a portion of the tokens in a committed block to a fresh block.
+
+        If COW is needed by a request, the blocks to copy to/from will be enqueued
+        into a list. We should call `batch_execute_enqueued_cow` to execute all
+        of the COW memcpy operations at once.
 
         This will keep the committed_idx the same, but increment the cached_idx
         by between [1, page_size) tokens if we do perform a cow operation. The
@@ -349,16 +421,46 @@ class PrefixCache:
         # Copy prefix_len tokens from partial_match_block to new_block.
         new_block = alloc_block_fn()
         self.cow_count += 1
-        self.cow_strided_memcpy_graph.execute(
-            new_block,
-            partial_match_block,
-            num_cache_hit_tokens,
-            *self.tensors,
+        # Enqueue the COW memcpy args for later execution
+        self.cow_enqueued_args.append(
+            (new_block, partial_match_block, num_cache_hit_tokens)
         )
         data.blocks.append(new_block)
         data.cached_idx += num_cache_hit_tokens
-        assert len(data.prompt_tokens) > 0
+        assert data.num_prompt_tokens > 0
         assert data.cached_idx < data.inflight_idx
+
+    @traced
+    def batch_execute_enqueued_cow(self):
+        """Execute all of the COW memcpy operations enqueued during `fetch`.
+
+        This launches 1 kernel even if we need N strided memcpys.
+        """
+
+        if not (self.enable_cow and self.page_size > 1):
+            return
+        assert self.cow_strided_memcpy_graph is not None
+
+        if len(self.cow_enqueued_args) == 0:
+            return
+
+        # Convert the list of (block_dst, block_src, num_tokens) to tensors
+        args = np.array(self.cow_enqueued_args, dtype=np.uint32)
+        # copy is needed to make the tensors contiguous
+        block_dst_idx_tensor = np.ascontiguousarray(args[:, 0])
+        block_src_idx_tensor = np.ascontiguousarray(args[:, 1])
+        num_tokens_tensor = np.ascontiguousarray(args[:, 2])
+        max_num_tokens_scalar = np.max(num_tokens_tensor)
+
+        # Execute the COW operation
+        self.cow_strided_memcpy_graph.execute(
+            block_dst_idx_tensor,
+            block_src_idx_tensor,
+            num_tokens_tensor,
+            max_num_tokens_scalar,
+            *self.tensors,
+        )
+        self.cow_enqueued_args = []
 
     def query_fetch_stats(
         self, seq_id: int, data: PagedCacheMetadata
@@ -371,6 +473,9 @@ class PrefixCache:
             - prefix_blocks: Prefix cache blocks that would be reused for this seq.
             - num_cache_hit_tokens: Number of new cached tokens retrieved from prefix cache.
         """
+        if data.num_prompt_tokens == 1:
+            return set(), 0
+
         node, prefix_blocks = self._fetch_query_cache(seq_id, data)
         num_cache_hit_tokens = len(prefix_blocks) * self.page_size
 
@@ -399,6 +504,7 @@ class PrefixCache:
         assert num_cache_hit_tokens >= 0
         return set(prefix_blocks), num_cache_hit_tokens
 
+    @traced
     def step(
         self,
         seq_id: int,

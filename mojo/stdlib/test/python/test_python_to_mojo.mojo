@@ -57,8 +57,45 @@ fn test_python_to_string() raises:
     assert_true(String(os.environ).startswith("environ({"))
 
 
+fn test_python_to_int() raises:
+    var py_int = PythonObject(1)
+    var mojo_int = Int(1)
+    assert_equal(Int(py_int), mojo_int)
+
+
+fn test_python_to_float() raises:
+    var py_float = PythonObject(1.0)
+    var mojo_float = Float64(1.0)
+    assert_equal(Float64(py_float), mojo_float)
+
+
+fn test_python_to_bool() raises:
+    var py_bool = PythonObject(True)
+    var mojo_bool = Bool(True)
+    assert_equal(Bool(py_bool), mojo_bool)
+
+
+fn test_python_numpy_int_to_mojo_int() raises:
+    var np = Python.import_module("numpy")
+    var py_numpy_int = np.int64(1)
+    var mojo_int = Int(1)
+    assert_equal(Int(py_numpy_int), mojo_int)
+
+
+fn test_python_numpy_float_to_mojo_float() raises:
+    var np = Python.import_module("numpy")
+    var py_numpy_float = np.float64(1.0)
+    var mojo_float = Float64(1.0)
+    assert_equal(Float64(py_numpy_float), mojo_float)
+
+
 def main():
     var python = Python()
     test_string_to_python_to_mojo(python)
     test_range()
     test_python_to_string()
+    test_python_to_int()
+    test_python_to_float()
+    test_python_to_bool()
+    test_python_numpy_int_to_mojo_int()
+    test_python_numpy_float_to_mojo_float()

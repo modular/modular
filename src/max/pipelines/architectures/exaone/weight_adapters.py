@@ -16,8 +16,6 @@ from __future__ import annotations
 from max.graph.weights import WeightData, Weights
 from transformers import LlamaConfig
 
-from ..llama3.weight_adapters import _compute_safetensor_rope_scaling
-
 # Maps Exaone Safetensor to MAX weight names.
 EXAONE_SAFETENSOR_MAPPING = {
     "transformer.wte": "embed_tokens",
@@ -47,10 +45,4 @@ def convert_exaone_safetensor_state_dict(
         for before, after in EXAONE_SAFETENSOR_MAPPING.items():
             max_name = max_name.replace(before, after)
         new_state_dict[max_name] = value.data()
-    # Add rope scaling to the state dict.
-    rope_scaling = _compute_safetensor_rope_scaling(huggingface_config)
-    if rope_scaling is not None:
-        new_state_dict["rope_freqs.weight"] = WeightData.from_numpy(
-            rope_scaling, "rope_freqs.weight"
-        )
     return new_state_dict

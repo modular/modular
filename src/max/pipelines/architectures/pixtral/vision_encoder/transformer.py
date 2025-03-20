@@ -19,11 +19,11 @@ from typing import TYPE_CHECKING
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.pipelines.nn.layer import Layer
+from max.nn.layer import Layer
 
 if TYPE_CHECKING:
-    from max.pipelines.nn.linear import Linear
-    from max.pipelines.nn.norm import RMSNorm
+    from max.nn.linear import Linear
+    from max.nn.norm import RMSNorm
 
     from .attention import Attention
 

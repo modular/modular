@@ -15,7 +15,6 @@
 import functools
 import logging
 import os
-import signal
 
 import click
 from max.entrypoints.cli import (
@@ -158,18 +157,6 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     This command runs text generation using the loaded model, optionally
     accepting image inputs for multimodal models.
     """
-    # Replit model_paths are kinda broken due to transformers
-    # version mismatch. We manually update trust_remote_code to True
-    # because the modularai version does not have the custom Python code needed
-    # Without this, we get:
-    #     ValueError: `attn_type` has to be either `multihead_attention` or
-    #     `multiquery_attention`. Received: grouped_query_attention
-    # Another reason why we override this flag here is because at PipelineConfig
-    # instantiation below, we'll call AutoConfig.from_pretrained, which will
-    # trigger the error above if not set to True.
-    if "replit" in config_kwargs["model_path"]:
-        config_kwargs["trust_remote_code"] = True
-
     if config_kwargs["max_new_tokens"] == -1:
         # Limit generate default max_new_tokens to 100.
         config_kwargs["max_new_tokens"] = 100
@@ -256,19 +243,5 @@ def cli_list(json):
 if __name__ == "__main__":
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
-
-    # Workaround for https://github.com/buildbuddy-io/buildbuddy/issues/8326
-    if (
-        signal.getsignal(signal.SIGINT) == signal.SIG_IGN
-        and signal.getsignal(signal.SIGTERM) == signal.SIG_IGN
-        and signal.getsignal(signal.SIGQUIT) == signal.SIG_IGN
-    ):
-        # For SIGINT, Python remaps SIG_DFL to default_int_handler on startup.
-        # We do the same here to retain the same behavior we would get if we
-        # started normally.  (SIG_DFL terminates the process immediately;
-        # default_int_handler raises KeyboardInterrupt.)
-        signal.signal(signal.SIGINT, signal.default_int_handler)
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
-        signal.signal(signal.SIGQUIT, signal.SIG_DFL)
 
     main()

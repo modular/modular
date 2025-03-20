@@ -16,24 +16,26 @@ from __future__ import annotations
 import logging
 import time
 import warnings
-from typing import List, Sequence, Union, cast
+from typing import List, Optional, Sequence, Union, cast
 
 import numpy as np
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.graph.weights import Weights
+from max.graph.weights import Weights, WeightsAdapter
 from max.pipelines import (
-    LogProbabilities,
+    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    SupportedEncoding,
     TextContext,
     upper_bounded_default,
 )
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
+from max.pipelines.interfaces import LogProbabilities
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -41,9 +43,13 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
+from max.pipelines.log_probabilities import (
+    compute_log_probabilities,
+)
+from transformers import AutoConfig
 
 from .graph import transformer
+from .model_config import Qwen2Config
 
 
 class Qwen2Inputs(ModelInputs):
@@ -77,9 +83,26 @@ class Qwen2Inputs(ModelInputs):
 
 class Qwen2Model(PipelineModel[TextContext]):
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
     ) -> None:
-        super().__init__(pipeline_config, session)
+        super().__init__(
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+        )
         self.model = self.load_model(session)
 
     def execute(
@@ -93,7 +116,7 @@ class Qwen2Model(PipelineModel[TextContext]):
             model_inputs.input_row_offsets_or_attn_mask,
             *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=(
-                not self.pipeline_config.cache_strategy.uses_opaque()
+                not self.kv_cache_config.cache_strategy.uses_opaque()
             ),
         )
 
@@ -128,12 +151,10 @@ class Qwen2Model(PipelineModel[TextContext]):
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
 
         return Qwen2Inputs(
-            tokens=Tensor.from_numpy(tokens).to(
-                self.pipeline_config.devices[0]
-            ),
+            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets_or_attn_mask=Tensor.from_numpy(
                 input_row_offsets
-            ).to(self.pipeline_config.devices[0]),
+            ).to(self.devices[0]),
             kv_cache_inputs=kv_cache_inputs,
         )
 
@@ -155,11 +176,9 @@ class Qwen2Model(PipelineModel[TextContext]):
         )
 
         return Qwen2Inputs(
-            tokens=Tensor.from_numpy(next_tokens_batch).to(
-                self.pipeline_config.devices[0]
-            ),
+            tokens=Tensor.from_numpy(next_tokens_batch).to(self.devices[0]),
             input_row_offsets_or_attn_mask=Tensor.from_numpy(attn_mask).to(
-                self.pipeline_config.devices[0]
+                self.devices[0]
             ),
             kv_cache_inputs=kv_cache_inputs,
         )
@@ -171,7 +190,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> Qwen2Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_initial_token_inputs(
                 context_batch, kv_cache_inputs
             )
@@ -212,11 +231,9 @@ class Qwen2Model(PipelineModel[TextContext]):
             pad_to_multiple_of=self.pipeline_config.pad_to_multiple_of,
         )
         return Qwen2Inputs(
-            tokens=Tensor.from_numpy(next_tokens_batch).to(
-                self.pipeline_config.devices[0]
-            ),
+            tokens=Tensor.from_numpy(next_tokens_batch).to(self.devices[0]),
             input_row_offsets_or_attn_mask=Tensor.from_numpy(attn_mask).to(
-                self.pipeline_config.devices[0]
+                self.devices[0]
             ),
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
@@ -230,7 +247,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         This should avoid any device synchronization or copy operations.
         """
         prev_model_inputs = cast(Qwen2Inputs, prev_model_inputs)
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_next_token_inputs(
                 next_tokens, prev_model_inputs
             )
@@ -240,27 +257,31 @@ class Qwen2Model(PipelineModel[TextContext]):
             )
 
     @classmethod
-    def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
-        return KVCacheParams(
-            dtype=pipeline_config.cache_dtype,
-            n_kv_heads=pipeline_config.huggingface_config.num_key_value_heads,
-            head_dim=pipeline_config.huggingface_config.hidden_size
-            // pipeline_config.huggingface_config.num_attention_heads,
-            page_size=pipeline_config.kv_cache_page_size,
-            cache_strategy=pipeline_config.cache_strategy,
-            n_devices=len(pipeline_config.devices),
-            enable_prefix_caching=pipeline_config.enable_prefix_caching,
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        n_devices: int,
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        return Qwen2Config.get_kv_params(
+            huggingface_config=huggingface_config,
+            n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     @classmethod
-    def get_num_layers(cls, pipeline_config: PipelineConfig) -> int:
-        return pipeline_config.huggingface_config.num_hidden_layers
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        return Qwen2Config.get_num_layers(huggingface_config)
 
     @classmethod
-    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
         try:
             return upper_bounded_default(
-                upper_bound=pipeline_config.huggingface_config.max_position_embeddings,
+                upper_bound=huggingface_config.max_position_embeddings,
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
@@ -268,7 +289,7 @@ class Qwen2Model(PipelineModel[TextContext]):
                 "Unable to infer max_length for Qwen2, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
-                f"({pipeline_config.huggingface_config.max_position_embeddings})."
+                f"({huggingface_config.max_position_embeddings})."
             )
             raise ValueError(msg) from e
 
@@ -278,13 +299,20 @@ class Qwen2Model(PipelineModel[TextContext]):
         available_cache_memory: int,
     ) -> KVCacheManager:
         return load_kv_manager(
-            params=self.get_kv_params(self.pipeline_config),
+            params=self.get_kv_params(
+                huggingface_config=self.huggingface_config,
+                n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
+            ),
             max_batch_size=self.pipeline_config.max_batch_size,
-            max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
-            num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
-            devices=self.pipeline_config.devices,
+            max_seq_len=self.calculate_max_seq_len(
+                self.pipeline_config, huggingface_config=self.huggingface_config
+            ),
+            num_layers=self.huggingface_config.num_hidden_layers,
+            devices=self.devices,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_page_size,
+            page_size=self.kv_cache_config.kv_cache_page_size,
             session=session,
         )
 
@@ -294,13 +322,24 @@ class Qwen2Model(PipelineModel[TextContext]):
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
         devices: List[Device],
+        huggingface_config: AutoConfig,
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         return estimate_kv_cache_size(
-            params=cls.get_kv_params(pipeline_config),
+            params=cls.get_kv_params(
+                huggingface_config=huggingface_config,
+                n_devices=len(devices),
+                kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
+            ),
             max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(pipeline_config),
-            num_layers=pipeline_config.huggingface_config.num_hidden_layers,
+            max_seq_len=cls.calculate_max_seq_len(
+                pipeline_config,
+                huggingface_config=huggingface_config,
+            ),
+            num_layers=huggingface_config.num_hidden_layers,
             available_cache_memory=available_cache_memory,
             devices=devices,
         )
@@ -319,45 +358,28 @@ class Qwen2Model(PipelineModel[TextContext]):
 
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(batch_size, dtype=np.uint32)
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
-        # Read in weights.
-        self._weights = self.pipeline_config.load_weights()
-
-        if serialized_path := self.pipeline_config.serialized_model_path:
-            # Hydrate all weights to be referenced by the serialized path.
-            weights_registry = {}
-            for name, weight in self._weights.items():
-                weights_registry[name] = weight.raw_tensor()
-
-            logging.info("Loading serialized model from %s", serialized_path)
-
-            return session.load(
-                serialized_path, weights_registry=weights_registry
-            )
-
-        else:
-            logging.info("Building model...")
-            graph = self._build_graph(self._weights)
-            logging.info("Compiling...")
-            before = time.perf_counter()
-            model = session.load(
-                graph, weights_registry=self._weights.allocated_weights
-            )
-            after = time.perf_counter()
-            logging.info(f"Compiling model took {after - before:.6f} seconds")
-            if (
-                export_path
-                := self.pipeline_config.save_to_serialized_model_path
-            ):
-                logging.info("Exporting serialized model to %s", export_path)
-                model._export_mef(export_path)
-            return model
+        logging.info("Building model...")
+        graph = self._build_graph(self.weights)
+        logging.info("Compiling...")
+        before = time.perf_counter()
+        model = session.load(
+            graph, weights_registry=self.weights.allocated_weights
+        )
+        after = time.perf_counter()
+        logging.info(f"Compiling model took {after - before:.6f} seconds")
+        return model
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Tensor]
     ) -> List[tuple[Tensor, ...]]:
-        kv_params = self.get_kv_params(self.pipeline_config)
+        kv_params = self.get_kv_params(
+            huggingface_config=self.huggingface_config,
+            n_devices=len(self.devices),
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
+        )
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()
         len_of_kv_tuple_per_dev = len(list(fetch_types[0]))
@@ -378,7 +400,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         return [item for sublist in kv_caches_per_dev for item in sublist]
 
     def _build_opaque_graph(self, weights: Weights) -> Graph:
-        device0 = self.pipeline_config.devices[0]
+        device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -402,7 +424,14 @@ class Qwen2Model(PipelineModel[TextContext]):
                 graph,
                 self.pipeline_config,
                 weights,
-                self.get_kv_params(self.pipeline_config),
+                self.get_kv_params(
+                    huggingface_config=self.huggingface_config,
+                    n_devices=len(self.devices),
+                    kv_cache_config=self.kv_cache_config,
+                    cache_dtype=self.encoding.cache_dtype,
+                ),
+                huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
             )
             tokens, input_row_offsets, *kv_cache = graph.inputs
 
@@ -437,7 +466,7 @@ class Qwen2Model(PipelineModel[TextContext]):
             if model_outputs.logits is None:
                 warnings.warn(
                     "Could not get logprobs with echo because the full logits"
-                    f" were not returned by {self.pipeline_config.model_path}"
+                    f" were not returned by {self.pipeline_config.model_config.model_path}"
                     " model. Please ensure that this model is started with "
                     "`--enable-echo`."
                 )
@@ -454,7 +483,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         assert isinstance(model_inputs, Qwen2Inputs)
         tokens = model_inputs.tokens.to(CPU()).to_numpy()
 
-        if self.pipeline_config.cache_strategy.uses_opaque():
+        if self.kv_cache_config.cache_strategy.uses_opaque():
             # Handle the ragged inputs
             input_row_offsets = model_inputs.input_row_offsets_or_attn_mask.to(
                 CPU()

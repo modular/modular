@@ -28,6 +28,7 @@ def build_max_lengths_tensor(
     for step in range(num_steps):
         max_lengths_np[step, 0] = step_max_seq_length
         max_lengths_np[step, 1] = step_max_cache_length
-        step_max_cache_length += step_max_seq_length
         step_max_seq_length = 1
+        step_max_cache_length += 1
+
     return Tensor.from_numpy(max_lengths_np)

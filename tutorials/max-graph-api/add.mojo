@@ -26,7 +26,7 @@ def main():
     out = graph[0] + graph[1]
     graph.output(out)
     graph.verify()
-    print("finall graph:", graph)
+    print("final graph:", graph)
     # 2. load and compile the graph
     session = engine.InferenceSession()
     model = session.load(graph)

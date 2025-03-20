@@ -23,11 +23,13 @@ f.close()
 ```
 
 """
+from sys import os_is_macos, os_is_linux
 from sys._amdgpu import printf_append_string_n, printf_begin
-from sys.ffi import external_call
-from sys.info import is_amd_gpu, is_nvidia_gpu
+from sys import is_amd_gpu, is_nvidia_gpu, is_compile_time, is_gpu
+from sys.ffi import c_ssize_t, external_call
 
 from builtin.io import _printf
+from os import abort
 from memory import Span, UnsafePointer
 
 
@@ -58,6 +60,26 @@ struct FileDescriptor(Writer):
         self.value = f._get_raw_fd()
 
     @always_inline
+    fn __write_bytes_cpu(mut self, bytes: Span[Byte, _]):
+        """
+        Write a span of bytes to the file.
+
+        Args:
+            bytes: The byte span to write to this file.
+        """
+
+        written = external_call["write", Int32](
+            self.value, bytes.unsafe_ptr(), len(bytes)
+        )
+        debug_assert(
+            written == len(bytes),
+            "expected amount of bytes not written. expected: ",
+            len(bytes),
+            "but got: ",
+            written,
+        )
+
+    @always_inline
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         """
         Write a span of bytes to the file.
@@ -65,25 +87,52 @@ struct FileDescriptor(Writer):
         Args:
             bytes: The byte span to write to this file.
         """
-        var len_bytes = len(bytes)
+
+        if is_compile_time():
+            self.__write_bytes_cpu(bytes)
+        else:
+
+            @parameter
+            if is_nvidia_gpu():
+                _printf["%*s"](len(bytes), bytes.unsafe_ptr())
+            elif is_amd_gpu():
+                var msg = printf_begin()
+                _ = printf_append_string_n(msg, bytes, is_last=True)
+            else:
+                self.__write_bytes_cpu(bytes)
+
+    @always_inline
+    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+        """Read a number of bytes from the file into a buffer.
+
+        Args:
+            buffer: A `Span[Byte]` to read bytes into. Read up to `len(buffer)` number of bytes.
+
+        Returns:
+            Actual number of bytes read.
+
+        Notes:
+            [Reference](https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html).
+        """
+
+        constrained[
+            not is_gpu(), "`read_bytes()` is not yet implemented for GPUs."
+        ]()
 
         @parameter
-        if is_nvidia_gpu():
-            _printf["%*s"](len_bytes, bytes.unsafe_ptr())
-        elif is_amd_gpu():
-            var msg = printf_begin()
-            _ = printf_append_string_n(msg, bytes, is_last=True)
+        if os_is_macos() or os_is_linux():
+            var read = external_call["read", c_ssize_t](
+                self.value, buffer.unsafe_ptr(), len(buffer)
+            )
+            if read < 0:
+                raise Error("Failed to read bytes.")
+            return read
         else:
-            written = external_call["write", Int32](
-                self.value, bytes.unsafe_ptr(), len(bytes)
-            )
-            debug_assert(
-                written == len(bytes),
-                "expected amount of bytes not written. expected: ",
-                len(bytes),
-                "but got: ",
-                written,
-            )
+            constrained[
+                False,
+                "`read_bytes()` is not yet implemented for unknown platform.",
+            ]()
+            return abort[UInt]()
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.

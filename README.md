@@ -2,6 +2,8 @@
 
 # Welcome to MAX
 
+> Note: Mojo is included as a subdirectory in this repository
+
 The Modular Accelerated Xecution ([MAX](https://www.modular.com/max)) platform
 is an integrated suite of AI libraries, tools, and technologies that unifies
 commonly fragmented AI deployment workflows. MAX accelerates time to market
@@ -14,7 +16,8 @@ unlocks full programmability, unparalleled performance, and seamless hardware po
 and when you want to report issues or request features,
 [please create a GitHub issue here](https://github.com/modular/max/issues/new/choose).
 
-The [Discord](https://discord.gg/modular) community is the best place to share
+The [Discord](https://discord.gg/modular) community and
+[our forum](https://forum.modular.com/) is the best place to share
 your experiences and chat with the team and other community members.
 
 In the [examples directory](https://github.com/modular/max/tree/main/examples),
@@ -95,8 +98,9 @@ We also welcome your bug reports.  If you have a bug, please file an issue
 [here](https://github.com/modular/max/issues/new/choose).
 
 If you need support, the [Discord](https://discord.gg/modular)
-community is the best place to share your experiences and chat with
-the team and other community members.
+community and [our forum](https://forum.modular.com/) is the best
+place to share your experiences and chat with the team and other
+community members.
 
 ## License
 

@@ -16,17 +16,11 @@
 from typing import Callable as _Callable
 from typing import Union as _Union
 
-from .config import (
-    PipelineConfig,
-    PipelineEngine,
-    RopeType,
-    SamplingParams,
-    SupportedEncoding,
-    WeightsFormat,
-)
+from .config import PipelineConfig
+from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
 from .context import InputContext, TextAndVisionContext, TextContext
 from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceFile
+from .hf_utils import HuggingFaceFile, download_weight_files
 from .interfaces import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
@@ -41,6 +35,13 @@ from .interfaces import (
     TokenGeneratorRequestMessage,
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
+)
+from .log_probabilities import compute_log_probabilities
+from .max_config import (
+    KVCacheConfig,
+    MAXModelConfig,
+    ProfilingConfig,
+    SamplingConfig,
 )
 from .pipeline import (
     ModelInputs,
@@ -62,12 +63,16 @@ PipelinesFactory = _Callable[[], _Union[TokenGenerator, EmbeddingsGenerator]]
 
 
 __all__ = [
+    "LogProbabilities",
     "HuggingFaceFile",
     "PipelineConfig",
+    "ProfilingConfig",
+    "KVCacheConfig",
+    "MAXModelConfig",
     "PipelineEngine",
     "PipelineTask",
     "PIPELINE_REGISTRY",
-    "SamplingParams",
+    "SamplingConfig",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TokenGenerator",
@@ -87,16 +92,17 @@ __all__ = [
     "TextTokenizer",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
-    "WeightsFormat",
+    "RepoType",
     "RopeType",
     "PipelineModel",
     "ModelInputs",
     "ModelOutputs",
     "TextResponse",
-    "LogProbabilities",
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",
     "EmbeddingsResponse",
     "SpeculativeDecodingTextGenerationPipeline",
+    "compute_log_probabilities",
     "upper_bounded_default",
+    "download_weight_files",
 ]

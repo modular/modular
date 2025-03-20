@@ -106,6 +106,89 @@ fn dup(oldfd: c_int) -> c_int:
     return external_call[name, c_int](oldfd)
 
 
+@always_inline
+fn execvp(
+    file: UnsafePointer[c_char], argv: UnsafePointer[UnsafePointer[c_char]]
+) -> c_int:
+    """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
+    — execute a file.
+
+    Args:
+        file: NULL terminated UnsafePointer[c_char] (C string), containing path to executable.
+        argv: The UnsafePointer[c_char] array must be terminated with a NULL pointer.
+    """
+    return external_call["execvp", c_int](file, argv)
+
+
+@always_inline
+fn vfork() -> c_int:
+    """[`vfork()`](https://pubs.opengroup.org/onlinepubs/009696799/functions/vfork.html).
+    """
+    return external_call["vfork", c_int]()
+
+
+struct SignalCodes:
+    alias HUP = 1  # (hang up)
+    alias INT = 2  # (interrupt)
+    alias QUIT = 3  # (quit)
+    alias ABRT = 6  # (abort)
+    alias KILL = 9  # (non-catchable, non-ignorable kill)
+    alias ALRM = 14  # (alarm clock)
+    alias TERM = 15  # (software termination signal)
+
+
+@always_inline
+fn kill(pid: c_int, sig: c_int) -> c_int:
+    """[`kill()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/kill.html)
+    — send a signal to a process or group of processes."""
+    return external_call["kill", c_int](pid, sig)
+
+
+@always_inline
+fn pipe(fildes: UnsafePointer[c_int]) -> c_int:
+    """[`pipe()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/pipe.html) — create an interprocess channel.
+    """
+    return external_call["pipe", c_int](fildes)
+
+
+@always_inline
+fn close(fd: c_int) -> c_int:
+    """[`close()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/close.html)
+    — close a file descriptor.
+    """
+    return external_call["close", c_int](fd)
+
+
+@always_inline
+fn write(fd: c_int, buf: OpaquePointer, nbyte: c_size_t) -> c_int:
+    """[`write()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/write.html)
+    — write to a file descriptor.
+    """
+    return external_call["write", c_int](fd, buf, nbyte)
+
+
+# ===-----------------------------------------------------------------------===#
+# fcntl.h - Control over file descriptors
+# ===-----------------------------------------------------------------------===#
+
+
+struct FcntlCommands:
+    alias F_GETFD: c_int = 1
+    alias F_SETFD: c_int = 2
+
+
+struct FcntlFDFlags:
+    alias FD_CLOEXEC: c_int = 1
+
+
+@always_inline
+fn fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
+    """[`fcntl()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/fcntl.html)
+    — file control.
+    """
+    return external_call["fcntl", c_int](fd, cmd, args)
+
+
 # ===-----------------------------------------------------------------------===#
 # dlfcn.h — dynamic library operations
 # ===-----------------------------------------------------------------------===#

@@ -19,15 +19,28 @@ from typing import Any, Optional, Protocol, Sequence, Union, runtime_checkable
 
 import numpy as np
 
+from .interfaces import LogProbabilities
+
 CHUNK_SIZE = 128
 
 
 @runtime_checkable
 class InputContext(Protocol):
-    """A base class for model contexts, represent model inputs for TokenGenerators."""
+    """A base class for model contexts, represent model inputs for TokenGenerators.
 
-    @property
-    def cache_seq_id(self) -> int: ...
+    Token array layout:
+    .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
+    . +--------------------+---------------+-----------------+----------------+
+    . |     completed      |  next_tokens  |                 |  preallocated  |
+    . +--------------------+---------------+-----------------+----------------+
+    .            start_idx ^    active_idx ^         end_idx ^
+
+    -    completed: The tokens that have already been processed and encoded.
+    -  next_tokens: The tokens that will be processed in the next iteration.
+                    This may be a subset of the full prompt due to chunked prefill.
+    - preallocated: The token slots that have been preallocated. The token array
+                    resizes to multiples of CHUNK_SIZE to accommodate the new tokens.
+    """
 
     @property
     def active_idx(self) -> int: ...
@@ -79,8 +92,14 @@ class InputContext(Protocol):
     def update(
         self,
         new_token: int,
+        log_probabilities: Optional[LogProbabilities] = None,
+        is_eos: bool = False,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
+        ...
+
+    def jump_ahead(self, new_token: int) -> None:
+        """Updates the token array, while ensuring the new token is returned to the user."""
         ...
 
     def bump_token_indices(
@@ -112,21 +131,54 @@ class InputContext(Protocol):
         needed to be re-encoded in the following CE iteration."""
         ...
 
+    def outstanding_completion_tokens(
+        self,
+    ) -> list[tuple[int, Optional[LogProbabilities]]]:
+        """Return the list of outstanding completion tokens and log probabilities
+        that must be returned to the user."""
+        ...
+
+    def compute_num_available_steps(
+        self,
+        max_seq_len: int,
+    ) -> int:
+        """Compute the max number of steps we can execute for a given context
+        without exceeding the max_seq_len."""
+        ...
+
+    @property
+    def cache_seq_id(self) -> int:
+        """Returns the cache slot assigned to the context, raising an error if not assigned."""
+        ...
+
+    def assign_to_cache(self, cache_seq_id: int) -> None:
+        """Assigns the context to a cache slot."""
+        ...
+
+    def unassign_from_cache(self) -> None:
+        """Unassigns the context from a cache slot."""
+        ...
+
+    @property
+    def is_assigned_to_cache(self) -> bool:
+        """Returns True if input is assigned to a cache slot, False otherwise."""
+        ...
+
 
 class TextContext:
     """A base class for model context, specifically for Text model variants."""
 
     def __init__(
         self,
-        cache_seq_id: int,
         prompt: Union[str, Sequence[int]],
         max_length: int | None,
         tokens: np.ndarray,
+        cache_seq_id: int | None = None,
         log_probabilities: int = 0,
         log_probabilities_echo: bool = False,
         json_schema: str | None = None,
     ) -> None:
-        self.cache_seq_id = cache_seq_id
+        self._cache_seq_id = cache_seq_id
         self.prompt = prompt
         self.max_length = max_length
 
@@ -146,9 +198,12 @@ class TextContext:
         self._active_idx = len(tokens)
         self._start_idx = 0
         self._end_idx = self._active_idx
+        self._completion_start_idx = self._active_idx
+        self._completion_end_idx = self._active_idx
 
         self.log_probabilities = log_probabilities
         self.log_probabilities_echo = log_probabilities_echo
+        self._log_probabilities_data: dict[int, LogProbabilities] = {}
 
         self.matcher = None
         self.json_schema = json_schema
@@ -216,9 +271,16 @@ class TextContext:
     def next_tokens(self) -> np.ndarray:
         return self.tokens[self._start_idx : self._active_idx]
 
+    def _upsize(self) -> None:
+        if self._end_idx >= self.size:
+            self.size += CHUNK_SIZE
+            self.tokens = np.resize(self.tokens, self.size)
+
     def update(
         self,
         new_token: int,
+        log_probabilities: Optional[LogProbabilities] = None,
+        is_eos: bool = False,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         # This is required for chunked prefill.
@@ -230,17 +292,38 @@ class TextContext:
             self._active_idx = self._end_idx
             return
 
-        if self._end_idx >= self.size:
-            self.size += CHUNK_SIZE
-            if self.tokens.flags.owndata:
-                self.tokens.resize(self.size)
-            else:
-                self.tokens = np.resize(self.tokens, self.size)
-
+        # Update tokens and log probabilities data
+        self._upsize()
         self.tokens[self._active_idx] = new_token
+        if log_probabilities:
+            self._log_probabilities_data[self._active_idx] = log_probabilities
+
+        # Bump Indices
         self._start_idx = self._active_idx
         self._active_idx += 1
         self._end_idx += 1
+
+        if not is_eos:
+            self._completion_end_idx += 1
+
+        # Accept the token, and move the FSM for constrained decoding forward.
+        if self.matcher:
+            assert self.matcher.accept_token(new_token)
+
+        self.is_initial_prompt = False
+
+    def jump_ahead(self, new_token: int) -> None:
+        """Updates the token array, while ensuring the new token is returned to the user."""
+
+        self._upsize()
+
+        # Update tokens
+        self.tokens[self._active_idx] = new_token
+
+        # Bump Indices
+        self._active_idx += 1
+        self._end_idx += 1
+        self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
@@ -254,6 +337,55 @@ class TextContext:
 
         self.is_initial_prompt = True
 
+    def outstanding_completion_tokens(
+        self,
+    ) -> list[tuple[int, Optional[LogProbabilities]]]:
+        """Return the list of outstanding completion tokens and log probabilities
+        that must be returned to the user."""
+        res = []
+        for token_idx in range(
+            self._completion_start_idx, self._completion_end_idx
+        ):
+            # We are using a pop here instead of a get, as we should not have
+            # to maintain this data once it is returned. The expectation is that
+            # this method never returns the same tokens more than once.
+            res.append(
+                (
+                    self.tokens[token_idx],
+                    self._log_probabilities_data.pop(token_idx, None),
+                )
+            )
+
+        self._completion_start_idx = self._completion_end_idx
+
+        return res
+
+    def compute_num_available_steps(
+        self,
+        max_seq_len: int,
+    ) -> int:
+        """Compute the max number of steps we can execute for a given context
+        without exceeding the max_seq_len."""
+        return max_seq_len - (self.current_length - self.active_length)
+
+    @property
+    def cache_seq_id(self) -> int:
+        if self._cache_seq_id is None:
+            raise RuntimeError("Context is not yet assigned to a cache slot")
+        return self._cache_seq_id
+
+    def assign_to_cache(self, cache_seq_id: int) -> None:
+        if self._cache_seq_id is not None:
+            raise RuntimeError("Context is already assigned to a cache slot")
+        self._cache_seq_id = cache_seq_id
+
+    def unassign_from_cache(self) -> None:
+        self._cache_seq_id = None
+
+    @property
+    def is_assigned_to_cache(self) -> bool:
+        return self._cache_seq_id is not None
+
 
 class TextAndVisionContext(TextContext):
     """A base class for model context, specifically for Vision model variants."""
@@ -264,7 +396,7 @@ class TextAndVisionContext(TextContext):
         prompt: Union[str, Sequence[int]],
         max_length: int | None,
         tokens: np.ndarray,
-        pixel_values: Union[np.ndarray, list[np.ndarray]],
+        pixel_values: Sequence[np.ndarray],
         extra_model_args: dict[str, Any],
         log_probabilities: int = 0,
         log_probabilities_echo: bool = False,
@@ -285,10 +417,16 @@ class TextAndVisionContext(TextContext):
     def update(
         self,
         new_token: int,
+        log_probabilities: Optional[LogProbabilities] = None,
+        is_eos: bool = False,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
-        super().update(new_token=new_token)
+        super().update(
+            new_token=new_token,
+            log_probabilities=log_probabilities,
+            is_eos=is_eos,
+        )
 
         # Update context not to re-encode the same image in next steps. There are no image tokens
         # expected after context encoding.
-        self.pixel_values = []
+        self.pixel_values = ()

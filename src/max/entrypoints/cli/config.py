@@ -26,7 +26,13 @@ from typing import Any, Union, get_args, get_origin, get_type_hints
 
 import click
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
+from max.pipelines import (
+    KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
+    ProfilingConfig,
+    SamplingConfig,
+)
 
 from .device_options import DevicesOptionType
 
@@ -106,20 +112,26 @@ def is_multiple(field_type: Any) -> bool:
     return get_origin(field_type) is list
 
 
+def get_normalized_flag_name(dataclass_field: Field, field_type: Any) -> str:
+    normalized_name = dataclass_field.name.lower().replace("_", "-")
+
+    if is_flag(field_type):
+        return f"--{normalized_name}/--no-{normalized_name}"
+    else:
+        return f"--{normalized_name}"
+
+
 def create_click_option(
     help_for_fields: dict[str, str],
     dataclass_field: Field,
     field_type: Any,
 ) -> click.option:  # type: ignore
-    # Get name.
-    normalized_name = dataclass_field.name.lower().replace("_", "-")
-
     # Get Help text.
     help_text = help_for_fields.get(dataclass_field.name, None)
 
     # Get help field.
     return click.option(
-        f"--{normalized_name}",
+        get_normalized_flag_name(dataclass_field, field_type),
         show_default=True,
         help=help_text,
         is_flag=is_flag(field_type),
@@ -138,8 +150,11 @@ def config_to_flag(cls):
     field_types = get_type_hints(cls)
     for _field in fields(cls):
         # Skip private config fields.
-        # We also skip device_specs as it should not be used directly via the CLI entrypoint.
-        if _field.name.startswith("_") or _field.name == "device_specs":
+        if _field.name.startswith("_") or _field.name in (
+            "device_specs",
+            "in_dtype",
+            "out_dtype",
+        ):
             continue
 
         new_option = create_click_option(
@@ -156,7 +171,13 @@ def config_to_flag(cls):
 
 
 def pipeline_config_options(func):
+    # The order of these decorators must be preserved - ie. PipelineConfig
+    # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)
+    @config_to_flag(MAXModelConfig)
+    @config_to_flag(KVCacheConfig)
+    @config_to_flag(ProfilingConfig)
+    @config_to_flag(SamplingConfig)
     @click.option(
         "--devices",
         is_flag=False,

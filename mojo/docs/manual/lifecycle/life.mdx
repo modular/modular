@@ -158,7 +158,7 @@ can happen when one of the following occurs:
 - You return a value of one type from a function that specifies a different
   return type.
 
-In both cases, implicit conversion is supported when the target type
+In all cases, implicit conversion is supported when the target type
 defines a constructor that meets the following criteria:
 
 - Is declared with the `@implicit` decorator.
@@ -451,7 +451,7 @@ struct HeapArray:
     fn __init__(out self, size: Int, val: Int):
         self.size = size
         self.cap = size * 2
-        self.data = UnsafePointer[Int].alloc(self.size)
+        self.data = UnsafePointer[Int].alloc(self.cap)
         for i in range(self.size):
             (self.data + i).init_pointee_copy(val)
 

@@ -14,6 +14,7 @@
 
 from ._io import stderr, stdout
 from .arg import argv
+from .compile import is_compile_time
 from .debug import breakpointhook
 from .ffi import DEFAULT_RTLD, RTLD, DLHandle, external_call
 from .info import (
@@ -53,6 +54,7 @@ from .info import (
     simdbytewidth,
     simdwidthof,
     sizeof,
+    CompilationTarget,
 )
 from .intrinsics import (
     PrefetchCache,

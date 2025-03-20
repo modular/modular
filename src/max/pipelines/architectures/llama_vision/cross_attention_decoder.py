@@ -20,19 +20,19 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import TensorValue, Weight, ops
-from max.pipelines.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
-    KVCacheParams,
-)
-from max.pipelines.nn import MLP, RMSNorm
-from max.pipelines.nn.kernels import (
+from max.nn import MLP, RMSNorm
+from max.nn.kernels import (
     MHAMaskVariant,
     cross_attention_ragged,
     matmul_kv_cache_ragged,
     rms_norm_key_cache,
 )
-from max.pipelines.nn.layer import Layer
-from max.pipelines.nn.linear import Linear
+from max.nn.layer import Layer
+from max.nn.linear import Linear
+from max.pipelines.kv_cache import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+)
 
 
 @dataclass

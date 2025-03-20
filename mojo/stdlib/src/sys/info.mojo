@@ -15,23 +15,80 @@
 You can import these APIs from the `sys` package. For example:
 
 ```mojo
-from sys import is_x86
-```
+from sys import CompilationTarget
+
+print(CompilationTarget.is_x86())
 """
 
 from memory import UnsafePointer
+from collections.string import StaticString
 
 from .ffi import OpaquePointer, _external_call_const, external_call
 
+alias _TargetType = __mlir_type.`!kgen.target`
+
 
 @always_inline("nodebug")
-fn _current_target() -> __mlir_type.`!kgen.target`:
+fn _current_target() -> _TargetType:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
 
 
+@register_passable("trivial")
+struct CompilationTarget[value: _TargetType = _current_target()]:
+    """A struct that provides information about a target architecture.
+
+    This struct encapsulates various methods to query target-specific information
+    such as architecture features, OS details, endianness, and memory characteristics.
+
+    Parameters:
+        value: The target architecture to query. Defaults to the current target.
+    """
+
+    @always_inline("nodebug")
+    @staticmethod
+    fn _has_feature[name: StringLiteral]() -> Bool:
+        """Checks if the target has a specific feature.
+
+        Parameters:
+            name: The name of the feature to check.
+
+        Returns:
+            True if the target has the specified feature, False otherwise.
+        """
+        return __mlir_attr[
+            `#kgen.param.expr<target_has_feature,`,
+            Self.value,
+            `,`,
+            name.value,
+            `> : i1`,
+        ]
+
+    @staticmethod
+    fn has_sse4() -> Bool:
+        """Checks if the target supports SSE4 instructions.
+
+        Returns:
+            True if the target supports SSE4, False otherwise.
+        """
+        return Self._has_feature["sse4"]()
+
+    # Platforms
+
+    @staticmethod
+    fn is_x86() -> Bool:
+        """Checks if the target is an x86 architecture.
+
+        Returns:
+            True if the target is x86, False otherwise.
+        """
+        return Self.has_sse4()
+
+
 @always_inline("nodebug")
-fn _accelerator_arch() -> StringLiteral:
-    return __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
+fn _accelerator_arch() -> StaticString:
+    return StringLiteral(
+        __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
+    )
 
 
 fn _get_arch[target: __mlir_type.`!kgen.target`]() -> StringLiteral:
@@ -44,7 +101,7 @@ fn _get_arch[target: __mlir_type.`!kgen.target`]() -> StringLiteral:
 
 
 @always_inline("nodebug")
-fn _current_arch() -> __mlir_type.`!kgen.string`:
+fn _current_arch() -> StringLiteral:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
         _current_target(),
@@ -54,28 +111,25 @@ fn _current_arch() -> __mlir_type.`!kgen.string`:
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.is_x86()` instead.")
 fn is_x86() -> Bool:
     """Returns True if the host system architecture is X86 and False otherwise.
 
     Returns:
         True if the host system architecture is X86 and False otherwise.
     """
-    return has_sse4()
+    return CompilationTarget.has_sse4()
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_sse4()` instead.")
 fn has_sse4() -> Bool:
     """Returns True if the host system has sse4, otherwise returns False.
 
     Returns:
         True if the host system has sse4, otherwise returns False.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "sse4.2" : !kgen.string`,
-        `> : i1`,
-    ]
+    return CompilationTarget.has_sse4()
 
 
 @always_inline("nodebug")
@@ -234,7 +288,7 @@ fn is_apple_m1() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _current_arch(),
+        _current_arch().value,
         `, "apple-m1" : !kgen.string`,
         `> : i1`,
     ]
@@ -251,7 +305,7 @@ fn is_apple_m2() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _current_arch(),
+        _current_arch().value,
         `, "apple-m2" : !kgen.string`,
         `> : i1`,
     ]
@@ -268,7 +322,7 @@ fn is_apple_m3() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _current_arch(),
+        _current_arch().value,
         `, "apple-m3" : !kgen.string`,
         `> : i1`,
     ]
@@ -296,7 +350,7 @@ fn is_neoverse_n1() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _current_arch(),
+        _current_arch().value,
         `, "neoverse-n1" : !kgen.string`,
         `> : i1`,
     ]
@@ -319,7 +373,7 @@ fn has_intel_amx() -> Bool:
 
 
 @always_inline("nodebug")
-fn _os_attr() -> __mlir_type.`!kgen.string`:
+fn _os_attr() -> StringLiteral:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
         _current_target(),
@@ -338,14 +392,14 @@ fn os_is_macos() -> Bool:
     return (
         __mlir_attr[
             `#kgen.param.expr<eq,`,
-            _os_attr(),
+            _os_attr().value,
             `,`,
             `"darwin" : !kgen.string`,
             `> : i1`,
         ]
         or __mlir_attr[
             `#kgen.param.expr<eq,`,
-            _os_attr(),
+            _os_attr().value,
             `,`,
             `"macosx" : !kgen.string`,
             `> : i1`,
@@ -362,7 +416,7 @@ fn os_is_linux() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _os_attr(),
+        _os_attr().value,
         `,`,
         `"linux" : !kgen.string`,
         `> : i1`,
@@ -378,7 +432,7 @@ fn os_is_windows() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _os_attr(),
+        _os_attr().value,
         `,`,
         `"windows" : !kgen.string`,
         `> : i1`,
@@ -388,7 +442,7 @@ fn os_is_windows() -> Bool:
 @always_inline("nodebug")
 fn _triple_attr[
     triple: __mlir_type.`!kgen.target` = _current_target()
-]() -> __mlir_type.`!kgen.string`:
+]() -> StringLiteral:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
         triple,
@@ -413,7 +467,7 @@ fn is_triple[
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _triple_attr[target](),
+        _triple_attr[target]().value,
         `, `,
         name.value,
         `> : i1`,
@@ -456,7 +510,7 @@ fn is_nvidia_gpu[subarch: StringLiteral]() -> Bool:
     Returns:
         True if the triple target is cuda and False otherwise.
     """
-    return is_nvidia_gpu() and StringLiteral(_current_arch()) == subarch
+    return is_nvidia_gpu() and _current_arch() == subarch
 
 
 @always_inline("nodebug")
@@ -886,7 +940,7 @@ fn has_accelerator() -> Bool:
     Returns:
         True if the host system has an accelerator.
     """
-    return _accelerator_arch() != ""
+    return is_gpu() or _accelerator_arch() != ""
 
 
 @always_inline("nodebug")
@@ -896,7 +950,7 @@ fn has_amd_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an AMD GPU.
     """
-    return "amd" in _accelerator_arch()
+    return is_amd_gpu() or "amd" in _accelerator_arch()
 
 
 @always_inline("nodebug")
@@ -906,4 +960,4 @@ fn has_nvidia_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an NVIDIA GPU.
     """
-    return "nvidia" in _accelerator_arch()
+    return is_nvidia_gpu() or "nvidia" in _accelerator_arch()

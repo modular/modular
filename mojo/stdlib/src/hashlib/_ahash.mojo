@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from bit import byte_swap, rotate_bits_left
-from memory import UnsafePointer
+from memory import UnsafePointer, bitcast
 
 from ._hasher import _HashableWithHasher, _Hasher
 
@@ -25,7 +25,6 @@ alias ROT = 23
 @always_inline
 fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
     """A fast function to emulate a folded multiply of two 64 bit uints.
-    Used because we don't have UInt128 type.
 
     Args:
         lhs: 64 bit uint.
@@ -34,16 +33,10 @@ fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
     Returns:
         A value which is similar in its bitpattern to result of a folded multply.
     """
-    l = __mlir_op.`pop.cast`[_type = __mlir_type.`!pop.scalar<ui128>`](
-        lhs.value
-    )
-    r = __mlir_op.`pop.cast`[_type = __mlir_type.`!pop.scalar<ui128>`](
-        rhs.value
-    )
-    m = __mlir_op.`pop.mul`(l, r)
-    res = SIMD[DType.uint64, 2](
-        __mlir_op.`pop.bitcast`[_type = __mlir_type.`!pop.simd<2, ui64>`](m)
-    )
+    # Extend to 128 bits and multiply.
+    m = lhs.cast[DType.uint128]() * rhs.cast[DType.uint128]()
+    # Extract the high and low 64 bits.
+    res = bitcast[DType.uint64, 2](m)
     return res[0] ^ res[1]
 
 

@@ -57,7 +57,7 @@ def test_cast():
         ]()
     )
     assert_equal(s, "(1, 2)")
-    assert_equal(StringLiteral.get[s](), "(1, 2)")
+    assert_equal(get_string_literal[s](), "(1, 2)")
 
 
 def test_index():

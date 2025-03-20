@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Type
 
@@ -38,8 +39,11 @@ from .manager import (
 from .naive_cache import NaiveKVCacheManager
 from .paged_cache import (
     FetchPagedKVCacheCollection,
+    FetchPagedKVCacheCollectionFA3Fallback,
     PagedKVCacheCollection,
+    PagedKVCacheCollectionFA3Fallback,
     PagedKVCacheManager,
+    PagedKVCacheManagerFA3Fallback,
     PagedKVCacheType,
 )
 from .radix_trie import RadixTrie
@@ -48,6 +52,7 @@ CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, Type[KVCacheManager]] = {
     KVCacheStrategy.CONTINUOUS: ContinuousBatchingKVCacheManager,
     KVCacheStrategy.NAIVE: NaiveKVCacheManager,
     KVCacheStrategy.PAGED: PagedKVCacheManager,
+    KVCacheStrategy.PAGED_FA3_FALLBACK: PagedKVCacheManagerFA3Fallback,
 }
 
 
@@ -81,7 +86,16 @@ def load_kv_manager(
             devices=devices,
             session=session,
         )
-    elif params.cache_strategy == KVCacheStrategy.PAGED:
+    elif params.cache_strategy in {
+        KVCacheStrategy.PAGED,
+        KVCacheStrategy.PAGED_FA3_FALLBACK,
+    }:
+        manager_cls: type[
+            PagedKVCacheManager | PagedKVCacheManagerFA3Fallback
+        ] = PagedKVCacheManager
+        if params.cache_strategy == KVCacheStrategy.PAGED_FA3_FALLBACK:
+            manager_cls = PagedKVCacheManagerFA3Fallback
+
         if page_size is None:
             msg = (
                 "Missing required argument page_size for KVCacheStrategy.PAGED"
@@ -97,7 +111,7 @@ def load_kv_manager(
             msg = "Missing required argument available_cache_memory for KVCacheStrategy.PAGED"
             raise ValueError(msg)
 
-        return PagedKVCacheManager(
+        return manager_cls(
             params=params,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,

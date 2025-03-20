@@ -25,6 +25,7 @@ from sys import (
     has_avx512f,
     is_amd_gpu,
     is_nvidia_gpu,
+    is_gpu,
     llvm_intrinsic,
     simdwidthof,
     sizeof,
@@ -37,6 +38,7 @@ from bit import count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer
+from collections.string import StringSlice
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
@@ -130,7 +132,11 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
 # NOTE: this overload is needed because IntLiteral promotes to a runtime type
 # before overload resolution.
 @always_inline("builtin")
-fn ceildiv(numerator: IntLiteral, denominator: IntLiteral) -> IntLiteral:
+fn ceildiv(
+    numerator: IntLiteral,
+    denominator: IntLiteral,
+    out result: __type_of(numerator.__ceildiv__(denominator)),
+):
     """Return the rounded-up result of dividing numerator by denominator.
 
     Args:
@@ -140,7 +146,7 @@ fn ceildiv(numerator: IntLiteral, denominator: IntLiteral) -> IntLiteral:
     Returns:
         The ceiling of dividing numerator by denominator.
     """
-    return numerator.__ceildiv__(denominator)
+    result = __type_of(result)()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -378,7 +384,7 @@ fn exp2[
         if type is DType.float16:
 
             @parameter
-            if String(_current_arch()) == "sm_90a":
+            if _current_arch() == "sm_90a":
                 return _call_ptx_intrinsic[
                     scalar_instruction="ex2.approx.f16",
                     vector2_instruction="ex2.approx.f16x2",
@@ -389,7 +395,7 @@ fn exp2[
                 return _call_ptx_intrinsic[
                     instruction="ex2.approx.f16", constraints="=h,h"
                 ](x)
-        elif type is DType.bfloat16 and String(_current_arch()) == "sm_90a":
+        elif type is DType.bfloat16 and _current_arch() == "sm_90a":
             return _call_ptx_intrinsic[
                 scalar_instruction="ex2.approx.ftz.bf16",
                 vector2_instruction="ex2.approx.ftz.bf16x2",
@@ -400,6 +406,23 @@ fn exp2[
             return _call_ptx_intrinsic[
                 instruction="ex2.approx.ftz.f32", constraints="=f,f"
             ](x)
+
+    @parameter
+    if is_amd_gpu() and type in (DType.float16, DType.float32):
+        alias asm = "llvm.amdgcn.exp2." + (
+            "f16" if type is DType.float16 else "f32"
+        )
+        var res = SIMD[type, simd_width]()
+
+        @parameter
+        for i in range(simd_width):
+            res[i] = llvm_intrinsic[
+                asm,
+                Scalar[type],
+                has_side_effect=False,
+            ](x[i])
+
+        return res
 
     @parameter
     if type not in (DType.float32, DType.float64):
@@ -575,7 +598,7 @@ fn exp[
     alias neg_ln2 = -0.69314718055966295651160180568695068359375
 
     @parameter
-    if is_nvidia_gpu():
+    if is_gpu():
 
         @parameter
         if type in (DType.float16, DType.float32):
@@ -977,8 +1000,8 @@ fn isclose[
     a: SIMD[type, simd_width],
     b: SIMD[type, simd_width],
     *,
-    atol: Scalar[type] = 1e-08,
-    rtol: Scalar[type] = 1e-05,
+    atol: Float64 = 1e-08,
+    rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) -> SIMD[DType.bool, simd_width]:
     """Checks if the two input values are numerically within a tolerance.
@@ -1024,7 +1047,9 @@ fn isclose[
             & isfinite(b)
             & (
                 abs(a - b)
-                <= max(__type_of(a)(atol), rtol * max(abs(a), abs(b)))
+                <= max(
+                    __type_of(a)(atol), __type_of(a)(rtol) * max(abs(a), abs(b))
+                )
             )
         )
 
@@ -2332,7 +2357,7 @@ fn _type_is_libm_supported(type: DType) -> Bool:
 
 
 fn _call_libm[
-    func_name: StringLiteral,
+    func_name: StringSlice,
     arg_type: DType,
     simd_width: Int,
     *,
@@ -2360,13 +2385,15 @@ fn _call_libm[
 
 
 fn _call_libm_impl[
-    func_name: StringLiteral,
+    func_name: StringSlice,
     arg_type: DType,
     simd_width: Int,
     *,
     result_type: DType = arg_type,
 ](arg: SIMD[arg_type, simd_width]) -> SIMD[result_type, simd_width]:
-    alias libm_name = func_name if arg_type is DType.float64 else func_name + "f"
+    alias libm_name = String(
+        func_name
+    ) if arg_type is DType.float64 else func_name + "f"
 
     var res = SIMD[result_type, simd_width]()
 
@@ -2380,8 +2407,8 @@ fn _call_libm_impl[
 fn _call_ptx_intrinsic_scalar[
     type: DType, //,
     *,
-    instruction: StringLiteral,
-    constraints: StringLiteral,
+    instruction: StringSlice,
+    constraints: StringSlice,
 ](arg: Scalar[type]) -> Scalar[type]:
     return inlined_assembly[
         instruction + " $0, $1;",
@@ -2394,8 +2421,8 @@ fn _call_ptx_intrinsic_scalar[
 fn _call_ptx_intrinsic_scalar[
     type: DType, //,
     *,
-    instruction: StringLiteral,
-    constraints: StringLiteral,
+    instruction: StringSlice,
+    constraints: StringSlice,
 ](arg0: Scalar[type], arg1: Scalar[type]) -> Scalar[type]:
     return inlined_assembly[
         instruction + " $0, $1, $2;",
@@ -2409,8 +2436,8 @@ fn _call_ptx_intrinsic[
     type: DType,
     simd_width: Int, //,
     *,
-    instruction: StringLiteral,
-    constraints: StringLiteral,
+    instruction: StringSlice,
+    constraints: StringSlice,
 ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     @parameter
     if simd_width == 1:
@@ -2432,10 +2459,10 @@ fn _call_ptx_intrinsic[
     type: DType,
     simd_width: Int, //,
     *,
-    scalar_instruction: StringLiteral,
-    vector2_instruction: StringLiteral,
-    scalar_constraints: StringLiteral,
-    vector_constraints: StringLiteral,
+    scalar_instruction: StringSlice,
+    vector2_instruction: StringSlice,
+    scalar_constraints: StringSlice,
+    vector_constraints: StringSlice,
 ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     @parameter
     if simd_width == 1:
@@ -2463,10 +2490,10 @@ fn _call_ptx_intrinsic[
     type: DType,
     simd_width: Int, //,
     *,
-    scalar_instruction: StringLiteral,
-    vector2_instruction: StringLiteral,
-    scalar_constraints: StringLiteral,
-    vector_constraints: StringLiteral,
+    scalar_instruction: StringSlice,
+    vector2_instruction: StringSlice,
+    scalar_constraints: StringSlice,
+    vector_constraints: StringSlice,
 ](arg0: SIMD[type, simd_width], arg1: SIMD[type, simd_width]) -> SIMD[
     type, simd_width
 ]:

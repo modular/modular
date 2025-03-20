@@ -10,9 +10,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements SIMD struct.
+"""Implements SIMD primitives and abstractions.
 
-These are Mojo built-ins, so you don't need to import them.
+Provides high-performance SIMD primitives and abstractions for
+vectorized computation in Mojo. It enables efficient data-parallel operations
+by leveraging hardware vector processing units across different architectures.
+
+Key Features:
+1. Architecture-agnostic SIMD abstractions with automatic hardware detection
+2. Optimized vector operations for common numerical computations
+3. Explicit control over vectorization strategies and memory layouts
+4. Zero-cost abstractions that compile to efficient machine code
+5. Support for different vector widths and element types
+
+Primary Components:
+- Vector types: Strongly-typed vector containers with element-wise operations
+- SIMD intrinsics: Low-level access to hardware SIMD instructions
+- Vectorized algorithms: Common algorithms optimized for SIMD execution
+- Memory utilities: Aligned memory allocation and vector load/store operations
+
+Performance Considerations:
+- Vector width selection should match target hardware capabilities
+- Memory alignment affects load/store performance
+- Data layout transformations may be necessary for optimal vectorization
+
+Integration:
+This module is designed to work seamlessly with other Mojo numerical computing
+components, including tensor operations, linear algebra routines, and
+domain-specific libraries for machine learning and scientific computing.
 """
 
 import math
@@ -37,11 +62,11 @@ from sys import (
     is_big_endian,
     is_gpu,
     is_nvidia_gpu,
-    is_x86,
     llvm_intrinsic,
     prefetch,
     simdwidthof,
     sizeof,
+    CompilationTarget,
 )
 from sys._assembly import inlined_assembly
 from sys.info import _current_arch, _is_sm_9x
@@ -95,6 +120,14 @@ alias Int64 = Scalar[DType.int64]
 """Represents a 64-bit signed scalar integer."""
 alias UInt64 = Scalar[DType.uint64]
 """Represents a 64-bit unsigned scalar integer."""
+alias Int128 = Scalar[DType.int128]
+"""Represents a 128-bit signed scalar integer."""
+alias UInt128 = Scalar[DType.uint128]
+"""Represents a 128-bit unsigned scalar integer."""
+alias Int256 = Scalar[DType.int256]
+"""Represents a 256-bit signed scalar integer."""
+alias UInt256 = Scalar[DType.uint256]
+"""Represents a 256-bit unsigned scalar integer."""
 
 alias Float8_e5m2 = Scalar[DType.float8_e5m2]
 """Represents a FP8E5M2 floating point format from the [OFP8
@@ -197,19 +230,13 @@ fn _simd_construction_checks[type: DType, size: Int]():
 
 @always_inline("nodebug")
 fn _unchecked_zero[type: DType, size: Int]() -> SIMD[type, size]:
-    var zero = __mlir_op.`pop.cast`[
-        _type = __mlir_type[`!pop.scalar<`, type.value, `>`]
-    ](
+    var zero = __mlir_op.`pop.cast`[_type = Scalar[type]._mlir_type](
         __mlir_op.`kgen.param.constant`[
             _type = __mlir_type[`!pop.scalar<index>`],
             value = __mlir_attr[`#pop.simd<0> : !pop.scalar<index>`],
         ]()
     )
-    return SIMD[type, size](
-        __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
-        ](zero)
-    )
+    return Scalar[type](zero)
 
 
 @always_inline("nodebug")
@@ -266,8 +293,11 @@ struct SIMD[type: DType, size: Int](
     alias _Mask = SIMD[DType.bool, size]
 
     alias element_type = type
+    alias _mlir_type = __mlir_type[
+        `!pop.simd<`, size.value, `, `, type.value, `>`
+    ]
 
-    var value: __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
+    var value: Self._mlir_type
     """The underlying storage for the vector."""
 
     alias MAX = Self(_max_or_inf[type]())
@@ -390,12 +420,8 @@ struct SIMD[type: DType, size: Int](
         var t0 = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<index>`
         ](value)
-        var casted = __mlir_op.`pop.cast`[
-            _type = __mlir_type[`!pop.simd<1,`, type.value, `>`]
-        ](t0)
-        self.value = __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
-        ](casted)
+        var casted = __mlir_op.`pop.cast`[_type = Scalar[type]._mlir_type](t0)
+        self = Scalar[type](casted)
 
     @always_inline
     fn __init__[T: Floatable](out self: Scalar[DType.float64], value: T):
@@ -439,18 +465,14 @@ struct SIMD[type: DType, size: Int](
         """
         _simd_construction_checks[type, size]()
 
-        var tn1 = __mlir_op.`kgen.int_literal.convert`[
-            _type = __mlir_type.si128
-        ](value.value)
+        var tn1 = __mlir_attr[
+            `#pop<int_literal_convert<`, value.value, `, 0>> : si128`
+        ]
         var t0 = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<si128>`
         ](tn1)
-        var casted = __mlir_op.`pop.cast`[
-            _type = __mlir_type[`!pop.simd<1,`, type.value, `>`]
-        ](t0)
-        self.value = __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
-        ](casted)
+        var casted = __mlir_op.`pop.cast`[_type = Scalar[type]._mlir_type](t0)
+        self = Scalar[type](casted)
 
     @always_inline("nodebug")
     @implicit
@@ -464,18 +486,16 @@ struct SIMD[type: DType, size: Int](
         """
         _simd_construction_checks[type, size]()
 
-        var casted = __mlir_op.`pop.cast`[
-            _type = __mlir_type[`!pop.simd<1, bool>`]
-        ](value._as_scalar_bool())
-        self.value = __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, bool>`]
-        ](casted)
+        var casted = __mlir_op.`pop.cast_from_builtin`[
+            _type = __mlir_type.`!pop.scalar<bool>`
+        ](value.value)
+        self = Scalar[DType.bool](casted)
 
     @always_inline("nodebug")
     @implicit
     fn __init__(
         mut self,
-        value: __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`],
+        value: Self._mlir_type,
     ):
         """Initializes the SIMD vector with the underlying mlir value.
 
@@ -498,9 +518,9 @@ struct SIMD[type: DType, size: Int](
         _simd_construction_checks[type, size]()
 
         # Construct by broadcasting a scalar.
-        self.value = __mlir_op.`pop.simd.splat`[
-            _type = __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`]
-        ](value.value)
+        self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
+            value.value
+        )
 
     @always_inline("nodebug")
     @implicit
@@ -550,153 +570,13 @@ struct SIMD[type: DType, size: Int](
             type.is_floating_point(), "the SIMD type must be floating point"
         ]()
 
-        # TODO (#36686): This introduces unneeded casts here to work around
-        # parameter if issues.
-        @parameter
-        if type is DType.float8_e4m3fn:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
-                ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f8e4m3fn>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f8E4M3FN
-                            ](value.value)
-                        )
-                    )
-                )
-            )
-        elif type is DType.float8_e4m3fnuz:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
-                ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f8E4M3FNUZ
-                            ](value.value)
-                        )
-                    )
-                )
-            )
-        elif type is DType.float8_e5m2:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
-                ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f8e5m2>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f8E5M2
-                            ](value.value)
-                        )
-                    )
-                )
-            )
-        elif type is DType.float8_e5m2fnuz:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
-                ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f8E5M2FNUZ
-                            ](value.value)
-                        )
-                    )
-                )
-            )
-        elif type is DType.float16:
-            self = SIMD[type, size](
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
-                ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f16>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f16
-                            ](value.value)
-                        )
-                    )
-                )
-            )
-        elif type is DType.bfloat16:
-            self = Self(
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
-                ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<bf16>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.bf16
-                            ](value.value)
-                        )
-                    )
-                )
-            )
-        elif type is DType.float32:
-            self = Self(
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
-                ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f32>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f32
-                            ](value.value)
-                        )
-                    )
-                )
-            )
-        else:
-            self = Self(
-                __mlir_op.`pop.simd.splat`[
-                    _type = __mlir_type[
-                        `!pop.simd<`, size.value, `,`, type.value, `>`
-                    ]
-                ](
-                    rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-                        __mlir_op.`pop.cast_from_builtin`[
-                            _type = __mlir_type[`!pop.scalar<f64>`]
-                        ](
-                            __mlir_op.`kgen.float_literal.convert`[
-                                _type = __mlir_type.f64
-                            ](value.value)
-                        )
-                    )
-                )
-            )
+        # float_literal_convert implicitly splats to !pop.simd as needed.
+        return __mlir_attr[
+            `#pop<float_literal_convert<`,
+            value.value,
+            `>> : `,
+            Self._mlir_type,
+        ]
 
     @staticmethod
     fn from_bits[
@@ -1887,7 +1767,7 @@ struct SIMD[type: DType, size: Int](
 
         @parameter
         if type is DType.bfloat16 and (
-            not _has_native_bf16_support() or is_amd_gpu()
+            is_amd_gpu() or not _has_native_bf16_support()
         ):
             return _bfloat16_to_f32(
                 rebind[SIMD[DType.bfloat16, size]](self)
@@ -1895,21 +1775,15 @@ struct SIMD[type: DType, size: Int](
 
         @parameter
         if target is DType.bfloat16 and (
-            not _has_native_bf16_support() or is_amd_gpu()
+            is_amd_gpu() or not _has_native_bf16_support()
         ):
             return rebind[SIMD[target, size]](
                 _f32_to_bfloat16(self.cast[DType.float32]())
             )
 
-        return __mlir_op.`pop.cast`[
-            _type = __mlir_type[
-                `!pop.simd<`,
-                size.value,
-                `, `,
-                target.value,
-                `>`,
-            ]
-        ](self.value)
+        return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
+            self.value
+        )
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -2149,9 +2023,7 @@ struct SIMD[type: DType, size: Int](
         ]()
         return __mlir_op.`pop.simd.shuffle`[
             mask = _convert_variadic_to_pop_array[*mask](),
-            _type = __mlir_type[
-                `!pop.simd<`, output_size.value, `, `, type.value, `>`
-            ],
+            _type = SIMD[type, output_size]._mlir_type,
         ](self.value, other.value)
 
     @always_inline("nodebug")
@@ -2183,9 +2055,7 @@ struct SIMD[type: DType, size: Int](
 
         return __mlir_op.`pop.simd.shuffle`[
             mask = mask.array,
-            _type = __mlir_type[
-                `!pop.simd<`, output_size.value, `, `, type.value, `>`
-            ],
+            _type = SIMD[type, output_size]._mlir_type,
         ](self.value, other.value)
 
     @always_inline("nodebug")
@@ -2298,7 +2168,7 @@ struct SIMD[type: DType, size: Int](
         @parameter
         if (
             # TODO: Allow SSE3 when we have sys.has_sse3()
-            (sys.has_sse4() or sys.has_neon())
+            (CompilationTarget.has_sse4() or sys.has_neon())
             and Self.type == DType.uint8
             and Self.size == 16
         ):
@@ -2586,7 +2456,7 @@ struct SIMD[type: DType, size: Int](
             return self[0]
 
         @parameter
-        if is_x86() or size_out > 1:
+        if CompilationTarget.is_x86() or size_out > 1:
 
             @always_inline
             @parameter
@@ -2644,7 +2514,7 @@ struct SIMD[type: DType, size: Int](
             return self[0]
 
         @parameter
-        if is_x86() or size_out > 1:
+        if CompilationTarget.is_x86() or size_out > 1:
 
             @always_inline
             @parameter
@@ -3051,7 +2921,9 @@ fn _pshuf_or_tbl1(
     lookup_table: SIMD[DType.uint8, 16], indices: SIMD[DType.uint8, 16]
 ) -> SIMD[DType.uint8, 16]:
     @parameter
-    if sys.has_sse4():  # TODO: Allow SSE3 when we have sys.has_sse3()
+    if (
+        CompilationTarget.has_sse4()
+    ):  # TODO: Allow SSE3 when we have sys.has_sse3()
         return _pshuf(lookup_table, indices)
     elif sys.has_neon():
         return _tbl1(lookup_table, indices)
@@ -3204,7 +3076,7 @@ fn _powi(base: Scalar, exp: Int32) -> __type_of(base):
 @always_inline
 fn _convert_float8_to_f32_scaler[
     type: DType,
-](x: Scalar[type]) -> Scalar[DType.float32]:
+](x: Scalar[type]) -> Float32:
     var kF32_NaN: UInt32 = 0x7FFFFFFF
     var FP8_NUM_BITS = 8
     var IS_E4M3 = type is DType.float8_e4m3fn
@@ -3511,8 +3383,8 @@ alias _fp32_bf16_mantissa_diff = FPUtils[
 
 @always_inline
 fn _bfloat16_to_f32_scalar(
-    val: Scalar[DType.bfloat16],
-) -> Scalar[DType.float32]:
+    val: BFloat16,
+) -> Float32:
     @parameter
     if has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
@@ -3523,7 +3395,7 @@ fn _bfloat16_to_f32_scalar(
     if is_nvidia_gpu():
         return inlined_assembly[
             "cvt.f32.bf16 $0, $1;" if _is_sm_9x() else "mov.b32 $0, {0, $1};",
-            Scalar[DType.float32],
+            Float32,
             constraints="=f,h",
             has_side_effect=False,
         ](bitcast[DType.int16](val))
@@ -3546,7 +3418,7 @@ fn _bfloat16_to_f32[
         input_type: DType, result_type: DType
     ](val: Scalar[input_type]) capturing -> Scalar[result_type]:
         return rebind[Scalar[result_type]](
-            _bfloat16_to_f32_scalar(rebind[Scalar[DType.bfloat16]](val))
+            _bfloat16_to_f32_scalar(rebind[BFloat16](val))
         )
 
     return _simd_apply[wrapper_fn, DType.float32, size](val)
@@ -3554,49 +3426,17 @@ fn _bfloat16_to_f32[
 
 @always_inline
 fn _f32_to_bfloat16_scalar(
-    val: Scalar[DType.float32],
-) -> Scalar[DType.bfloat16]:
+    val: Float32,
+) -> BFloat16:
     @parameter
     if has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
         return _unchecked_zero[DType.bfloat16, 1]()
 
     elif is_amd_gpu():
-        alias round_bias = Int32(0x7FFF)
-
-        # Compute the mask of unordered values.
-        var unordered_mask = inlined_assembly[
-            "v_cmp_u_f32 $0, $1, $1",
-            SIMD[DType.uint64, 1],
-            constraints="=s,v",
-            has_side_effect=False,
-        ](val)
-
-        # Compute "rounded_val = val + lsb + round_bias" to round-to-nearest.
-        var lsb = inlined_assembly[
-            "v_bfe_u32 $0, $1, 16, 1",
-            SIMD[DType.uint32, 1],
-            constraints="=v,v",
-            has_side_effect=False,
-        ](val)
-        var rounded_val = inlined_assembly[
-            "v_add3_u32 $0, $1, $2, $3",
-            SIMD[DType.uint32, 1],
-            constraints="=v,v,v,v",
-            has_side_effect=False,
-        ](val, lsb, round_bias)
-
-        # Select the rounded value or NaN based on the unordered mask.
-        var float_bits = inlined_assembly[
-            "v_cndmask_b32 $0, $1, $2, $3",
-            SIMD[DType.uint32, 1],
-            constraints="=v,v,v,s",
-            has_side_effect=False,
-        ](rounded_val, _nan[DType.float32](), unordered_mask)
-
-        return bitcast[DType.bfloat16, 1](
-            UInt16(float_bits >> _fp32_bf16_mantissa_diff)
-        )
+        return __mlir_op.`pop.cast`[
+            _type = __mlir_type.`!pop.scalar<bf16>`, fast = __mlir_attr.unit
+        ](rebind[Scalar[DType.float32]](val).value)
 
     if _isnan(val):
         return _nan[DType.bfloat16]()
@@ -3627,7 +3467,7 @@ fn _f32_to_bfloat16[
         input_type: DType, result_type: DType
     ](val: Scalar[input_type]) capturing -> Scalar[result_type]:
         return rebind[Scalar[result_type]](
-            _f32_to_bfloat16_scalar(rebind[Scalar[DType.float32]](val))
+            _f32_to_bfloat16_scalar(rebind[Float32](val))
         )
 
     return _simd_apply[wrapper_fn, DType.bfloat16, size](val)

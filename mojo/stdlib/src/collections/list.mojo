@@ -580,16 +580,20 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         other._len = 0
 
         var dest_ptr = self.data + len(self)
+        var src_ptr: UnsafePointer[
+            other.T,
+            address_space = __type_of(other.data).address_space,
+            origin = __origin_of(other),  # (to prevent other^.__del__())
+            alignment = __type_of(other.data).alignment,
+        ] = other.data
 
-        for i in range(other_original_size):
-            var src_ptr = other.data + i
-
+        for _ in range(other_original_size):
             # This (TODO: optimistically) moves an element directly from the
             # `other` list into this list using a single `T.__moveinit()__`
             # call, without moving into an intermediate temporary value
             # (avoiding an extra redundant move constructor call).
             src_ptr.move_pointee_into(dest_ptr)
-
+            src_ptr = src_ptr + 1
             dest_ptr = dest_ptr + 1
 
         # Update the size now that all new elements have been moved into this

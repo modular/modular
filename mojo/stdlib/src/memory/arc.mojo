@@ -21,7 +21,7 @@ from memory import ArcPointer
 
 from os.atomic import Atomic
 
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 
 
 struct _ArcPointerInner[T: Movable]:

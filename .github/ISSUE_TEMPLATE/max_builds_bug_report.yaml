@@ -15,7 +15,7 @@ name: MAX Builds model bug report
 description: Report a bug with a model
 title: "[BUG]: "
 labels:
-  - max-builds
+  - "max-builds,max-repo"
 body:
   - type: markdown
     attributes:

@@ -18,8 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.graph import TensorValue, TensorValueLike, ops
-from max.pipelines.nn import LayerNorm
-from max.pipelines.nn.layer import Layer
+from max.nn import LayerNorm
+from max.nn.layer import Layer
 
 from .attention import Attention
 from .mlp import MLP

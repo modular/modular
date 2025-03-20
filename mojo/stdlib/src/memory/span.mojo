@@ -132,7 +132,7 @@ struct Span[
     # Life cycle methods
     # ===------------------------------------------------------------------===#
 
-    @always_inline
+    @always_inline("builtin")
     fn __init__(
         out self,
         *,

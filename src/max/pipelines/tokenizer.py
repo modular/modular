@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import io
 import json
 import logging
@@ -58,7 +59,9 @@ class IdentityPipelineTokenizer(
     def expects_content_wrapping(self) -> bool:
         return False
 
-    async def encode(self, prompt: str) -> str:
+    async def encode(
+        self, prompt: str, add_special_tokens: bool = False
+    ) -> str:
         return prompt
 
     async def decode(
@@ -108,7 +111,9 @@ class PreTrainedPipelineTokenizer(
     def expects_content_wrapping(self) -> bool:
         return False
 
-    async def encode(self, prompt: str) -> np.ndarray:
+    async def encode(
+        self, prompt: str, add_special_tokens: bool = False
+    ) -> np.ndarray:
         return np.array(self.delegate.encode(prompt))
 
     async def decode(
@@ -164,6 +169,14 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
             # from the HuggingFace tokenizer_config.
             model_max_length=max_length,
         )
+        # As we are adding special tokens during chat templating prior to tokenization,
+        # when add_special_tokens=True, we duplicate BOS tokens specifically.
+        self._encode_with_special_tokens = functools.partial(
+            self.delegate.encode, add_special_tokens=True
+        )
+        self._encode_without_special_tokens = functools.partial(
+            self.delegate.encode, add_special_tokens=False
+        )
 
         # configure Llama whitespace fix if needed
         self._enable_llama_whitespace_fix = (
@@ -203,16 +216,24 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
     def expects_content_wrapping(self) -> bool:
         return False
 
-    async def encode(self, prompt: Union[str, Sequence[int]]) -> np.ndarray:
+    async def encode(
+        self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
+    ) -> np.ndarray:
         """Transform the provided prompt into a token array."""
 
         encoded_prompt: np.ndarray
         if isinstance(prompt, str):
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
-            encoded_prompt = await run_with_default_executor(
-                self.delegate.encode, prompt
-            )
+            if add_special_tokens:
+                encoded_prompt = await run_with_default_executor(
+                    self._encode_with_special_tokens, prompt
+                )
+            else:
+                encoded_prompt = await run_with_default_executor(
+                    self._encode_without_special_tokens, prompt
+                )
+
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
                 raise ValueError(
@@ -247,6 +268,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         cache_seq_id and prompt from TokenGeneratorRequest."""
 
         prompt: Union[str, list[int]]
+        add_special_tokens = True
         if request.prompt is not None:
             if isinstance(request.prompt, str):
                 prompt = str(request.prompt)
@@ -254,10 +276,14 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
                 prompt = [int(t) for t in request.prompt]
         elif request.messages is not None:
             prompt = self.apply_chat_template(request.messages, request.tools)
+            # Chat templating already adds special tokens, therefore we step around this here.
+            add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
 
-        encoded_prompt = await self.encode(prompt)
+        encoded_prompt = await self.encode(
+            prompt, add_special_tokens=add_special_tokens
+        )
 
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
@@ -343,6 +369,14 @@ class TextAndVisionTokenizer(
             # from the HuggingFace tokenizer_config.
             model_max_length=max_length,
         )
+        # As we are adding special tokens during chat templating prior to tokenization,
+        # when add_special_tokens=True, we duplicate BOS tokens specifically.
+        self._encode_with_special_tokens = functools.partial(
+            self.delegate.encode, add_special_tokens=True
+        )
+        self._encode_without_special_tokens = functools.partial(
+            self.delegate.encode, add_special_tokens=False
+        )
         self.processor = AutoProcessor.from_pretrained(
             model_path,
             revision=revision,
@@ -404,16 +438,24 @@ class TextAndVisionTokenizer(
     def expects_content_wrapping(self) -> bool:
         return True
 
-    async def encode(self, prompt: Union[str, Sequence[int]]) -> np.ndarray:
+    async def encode(
+        self, prompt: Union[str, Sequence[int]], add_special_tokens: bool = True
+    ) -> np.ndarray:
         """Transform the provided prompt into a token array."""
 
         encoded_prompt: np.ndarray
         if isinstance(prompt, str):
             # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
             # Add a standard (non-async) lock in the executor thread if needed.
-            encoded_prompt = await run_with_default_executor(
-                self.delegate.encode, prompt
-            )
+            if add_special_tokens:
+                encoded_prompt = await run_with_default_executor(
+                    self._encode_with_special_tokens, prompt
+                )
+            else:
+                encoded_prompt = await run_with_default_executor(
+                    self._encode_without_special_tokens, prompt
+                )
+
             max_length = self.max_length or self.delegate.model_max_length
             if max_length and len(encoded_prompt) > max_length:
                 raise ValueError(
@@ -436,10 +478,12 @@ class TextAndVisionTokenizer(
         """Create a new TextAndVisionContext object, leveraging necessary information like
         cache_seq_id and prompt from TokenGeneratorRequest."""
         prompt: Union[str, Sequence[int]]
+        add_special_tokens = True
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages is not None:
             prompt = self.apply_chat_template(request.messages)
+            add_special_tokens = False
         else:
             msg = f"{request} does not provide messages or prompt."
             raise ValueError(msg)
@@ -453,17 +497,18 @@ class TextAndVisionTokenizer(
             if request.images
             else None
         )
-        # PixtralProcessor returns a list of torch tensors.
+        # PixtralProcessor returns a torch tensor or a list of torch tensors.
         # LlamaVision returns a np Array.
-        inputs = self.processor(
+        processed_inputs = self.processor(
             text=prompt,
             images=images,
+            add_special_tokens=add_special_tokens,
         )
 
-        if "input_ids" not in inputs:
+        if "input_ids" not in processed_inputs:
             msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
             raise ValueError(msg)
-        encoded_prompt = np.array(inputs["input_ids"][0])
+        encoded_prompt = np.array(processed_inputs["input_ids"][0])
 
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
@@ -482,21 +527,27 @@ class TextAndVisionTokenizer(
         extra_model_args = dict()
 
         if images is not None:
-            if "pixel_values" not in inputs:
+            if "pixel_values" not in processed_inputs:
                 msg = "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
                 raise ValueError(msg)
-            pixel_values = inputs["pixel_values"][0]
+            pixel_values = processed_inputs["pixel_values"][0]
             if isinstance(pixel_values, list):
-                pixel_values = [
+                pixel_values = tuple(
                     tensor.numpy() if torch.is_tensor(tensor) else tensor
                     for tensor in pixel_values
-                ]
-            if "aspect_ratio_ids" in inputs:
-                extra_model_args["aspect_ratio_ids"] = inputs.aspect_ratio_ids
-            if "aspect_ratio_mask" in inputs:
-                extra_model_args["aspect_ratio_mask"] = inputs.aspect_ratio_mask
+                )
+            elif torch.is_tensor(pixel_values):
+                pixel_values = (pixel_values.numpy(),)
+            if "aspect_ratio_ids" in processed_inputs:
+                extra_model_args["aspect_ratio_ids"] = (
+                    processed_inputs.aspect_ratio_ids
+                )
+            if "aspect_ratio_mask" in processed_inputs:
+                extra_model_args["aspect_ratio_mask"] = (
+                    processed_inputs.aspect_ratio_mask
+                )
         else:
-            pixel_values = []
+            pixel_values = ()
 
         json_schema = (
             json.dumps(request.response_format.get("json_schema", None))

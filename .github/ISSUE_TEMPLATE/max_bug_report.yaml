@@ -15,7 +15,7 @@ name: MAX bug report
 description: Create a bug report to help us improve MAX
 title: "[BUG]: "
 labels:
-  - "bug,max"
+  - "bug,max,max-repo"
 body:
   - type: markdown
     attributes:

@@ -21,11 +21,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.graph.weights import Weights
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    KVCacheParams,
-)
-from max.pipelines.nn import (
+from max.nn import (
     MLP,
     AttentionWithRopeQKV,
     Embedding,
@@ -34,7 +30,11 @@ from max.pipelines.nn import (
     RMSNorm,
     TransformerBlock,
 )
-from max.pipelines.nn.layer import Layer
+from max.nn.layer import Layer
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+)
 
 from .cross_attention_decoder import (
     CrossAttentionDecoderLayer,
@@ -374,13 +374,12 @@ def instantiate_language_model(
 
     # We don't really have a rotary embedding layer within the graph as it's largely
     # folded into the custom kernel, but leaving this here for now.
+    # TODO: this should be Llama3RotaryEmbedding with rope scaling params.
     rotary_embedding = OptimizedRotaryEmbedding(
         dim=hidden_size,
         n_heads=n_heads,
         theta=rope_theta,
         max_seq_len=max_seq_len,
-        # TODO: Figure out how we want to pass this
-        # rope_scaling=params.rope_scaling,
         interleaved=False,
     )
 

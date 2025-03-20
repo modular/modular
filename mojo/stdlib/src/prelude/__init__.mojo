@@ -14,14 +14,14 @@
   that are automatically imported into every Mojo program.
 """
 
-from collections import KeyElement, List
+from collections import KeyElement, List, Optional, InlineArray
 from collections.string import Codepoint, String, ascii, atof, atol, chr, ord
 from hashlib.hash import Hashable, hash
 
 from builtin.anytype import AnyType, UnknownDestructibility
 from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any, bool
 from builtin.breakpoint import breakpoint
-from builtin.builtin_list import (
+from builtin.list_literal import (
     ListLiteral,
     VariadicList,
     VariadicListMem,
@@ -91,15 +91,19 @@ from builtin.simd import (
     Int16,
     Int32,
     Int64,
+    Int128,
+    Int256,
     Scalar,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
+    UInt256,
 )
 from builtin.sort import partition, sort
 from builtin.str import Stringable, StringableRaising, str
-from builtin.string_literal import StringLiteral
+from builtin.string_literal import StringLiteral, get_string_literal
 from builtin.swap import swap
 from builtin.tuple import Tuple
 from builtin.type_aliases import (
@@ -130,7 +134,7 @@ from builtin.value import (
     WritableCollectionElement,
 )
 from documentation import doc_private
-from memory import AddressSpace, Pointer
+from memory import AddressSpace, Pointer, Span
 from memory.span import AsBytes
 
 from utils import Writable, Writer

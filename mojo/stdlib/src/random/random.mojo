@@ -181,18 +181,20 @@ fn rand[
         return
 
 
-fn randn_float64(mean: Float64 = 0.0, variance: Float64 = 1.0) -> Float64:
-    """Returns a random double sampled from a Normal(mean, variance) distribution.
+fn randn_float64(
+    mean: Float64 = 0.0, standard_deviation: Float64 = 1.0
+) -> Float64:
+    """Returns a random double sampled from a Normal(mean, standard_deviation) distribution.
 
     Args:
         mean: Normal distribution mean.
-        variance: Normal distribution variance.
+        standard_deviation: Normal distribution standard deviation.
 
     Returns:
-        A random float64 sampled from Normal(mean, variance).
+        A random float64 sampled from Normal(mean, standard_deviation).
     """
     return external_call["KGEN_CompilerRT_NormalDouble", Float64](
-        mean, variance
+        mean, standard_deviation
     )
 
 
@@ -202,9 +204,9 @@ fn randn[
     ptr: UnsafePointer[Scalar[type]],
     size: Int,
     mean: Float64 = 0.0,
-    variance: Float64 = 1.0,
+    standard_deviation: Float64 = 1.0,
 ):
-    """Fills memory with random values from a Normal(mean, variance) distribution.
+    """Fills memory with random values from a Normal(mean, standard_deviation) distribution.
 
     Constraints:
         The type should be floating point.
@@ -216,11 +218,11 @@ fn randn[
         ptr: The pointer to the memory area to fill.
         size: The number of elements to fill.
         mean: Normal distribution mean.
-        variance: Normal distribution variance.
+        standard_deviation: Normal distribution standard deviation.
     """
 
     for i in range(size):
-        ptr[i] = randn_float64(mean, variance).cast[type]()
+        ptr[i] = randn_float64(mean, standard_deviation).cast[type]()
     return
 
 

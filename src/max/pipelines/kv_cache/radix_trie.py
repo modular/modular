@@ -14,6 +14,7 @@
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
+from max.profiler import traced
 
 from .simple_trie import SimpleTrie
 
@@ -185,6 +186,7 @@ class RadixTrie:
             assert len(node.tokens) % self.page_size == 0
             assert len(node.tokens) // self.page_size == len(node.blocks)
 
+    @traced
     def insert(
         self,
         tokens: Union[np.ndarray, List[TokenId]],
@@ -269,6 +271,7 @@ class RadixTrie:
         blocks = blocks.copy()
         return insert_helper(node, tokens, blocks)
 
+    @traced
     def match_prefix(
         self,
         tokens: Union[np.ndarray, List[TokenId]],
@@ -411,6 +414,7 @@ class RadixTrie:
             assert curr.parent is not None
             curr = curr.parent
 
+    @traced
     def evict_blocks(self, desired_num_evicted: int) -> List[BlockId]:
         """Attempt to evict at most `desired_num_evicted` blocks from trie."""
         evicted_blocks: List[BlockId] = []

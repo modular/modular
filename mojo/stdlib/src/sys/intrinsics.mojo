@@ -20,10 +20,12 @@ from sys import PrefetchLocality
 """
 
 import math
-from sys.info import _is_sm_9x
+from sys.info import is_gpu, _is_sm_9x
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
+from collections.string import StringSlice
+from builtin.string_literal import get_string_literal_slice
 
 from ._assembly import inlined_assembly
 from .info import is_amd_gpu, is_nvidia_gpu, sizeof
@@ -35,7 +37,7 @@ from .info import is_amd_gpu, is_nvidia_gpu, sizeof
 
 @always_inline("nodebug")
 fn llvm_intrinsic[
-    intrin: StringLiteral,
+    intrin: StringSlice,
     type: AnyTrivialRegType,
     *types: AnyType,
     has_side_effect: Bool = True,
@@ -58,19 +60,21 @@ fn llvm_intrinsic[
 
     var loaded_pack = args.get_loaded_kgen_pack()
 
+    alias intrin_literal = get_string_literal_slice[intrin]().value
+
     @parameter
     if _mlirtype_is_eq[type, NoneType]():
 
         @parameter
         if has_side_effect:
             __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin = intrin.value,
+                intrin=intrin_literal,
                 _type=None,
             ](loaded_pack)
             return rebind[type](None)
         else:
             __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin = intrin.value,
+                intrin=intrin_literal,
                 _type=None,
                 hasSideEffects = __mlir_attr.false,
             ](loaded_pack)
@@ -80,12 +84,12 @@ fn llvm_intrinsic[
         @parameter
         if has_side_effect:
             return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin = intrin.value,
+                intrin=intrin_literal,
                 _type=type,
             ](loaded_pack)
         else:
             return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin = intrin.value,
+                intrin=intrin_literal,
                 _type=type,
                 hasSideEffects = __mlir_attr.false,
             ](loaded_pack)
@@ -109,7 +113,7 @@ fn _unsafe_aliasing_address_to_pointer[
 
 @always_inline("nodebug")
 fn gather[
-    type: DType, size: Int, //
+    type: DType, size: Int, //, *, invariant: Bool = False
 ](
     owned base: SIMD[DType.index, size],
     mask: SIMD[DType.bool, size],
@@ -143,6 +147,7 @@ fn gather[
     Parameters:
       type: DType of the return SIMD buffer.
       size: Size of the return SIMD buffer.
+      invariant: Whether the memory is load invariant.
 
     Args:
       base: The vector containing memory addresses that gather will access.
@@ -159,9 +164,21 @@ fn gather[
 
     @parameter
     if size == 1:
-        return _unsafe_aliasing_address_to_pointer[type](
-            base[0]
-        ).load() if mask else passthrough[0]
+        return _unsafe_aliasing_address_to_pointer[type](base[0]).load[
+            invariant=invariant
+        ]() if mask else passthrough[0]
+
+    @parameter
+    if is_gpu() and invariant:
+        var result = SIMD[type, size]()
+
+        @parameter
+        for i in range(size):
+            result[i] = _unsafe_aliasing_address_to_pointer[type](base[i]).load[
+                invariant=invariant
+            ]() if mask[i] else passthrough[i]
+        return result
+
     var result = llvm_intrinsic[
         "llvm.masked.gather",
         __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`],
@@ -636,7 +653,7 @@ fn compressed_store[
 
 @always_inline("nodebug")
 fn strided_load[
-    type: DType, //, simd_width: Int
+    type: DType, //, simd_width: Int, *, invariant: Bool = False
 ](
     addr: UnsafePointer[Scalar[type], **_],
     stride: Int,
@@ -647,6 +664,7 @@ fn strided_load[
     Parameters:
       type: DType of `value`, the value to store.
       simd_width: The width of the SIMD vectors.
+      invariant: Whether the memory is load invariant.
 
     Args:
       addr: The memory location to load data from.
@@ -660,13 +678,13 @@ fn strided_load[
 
     @parameter
     if simd_width == 1:
-        return addr.load() if mask else Scalar[type]()
+        return addr.load[invariant=invariant]() if mask else Scalar[type]()
 
     var offset = Int(addr) + stride * sizeof[type]() * math.iota[
         DType.index, simd_width
     ]()
     var passthrough = SIMD[type, simd_width]()
-    return gather(offset, mask, passthrough)
+    return gather[invariant=invariant](offset, mask, passthrough)
 
 
 # ===-----------------------------------------------------------------------===#

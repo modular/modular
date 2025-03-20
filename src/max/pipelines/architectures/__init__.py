@@ -15,7 +15,7 @@ from max.pipelines import PIPELINE_REGISTRY
 
 
 def register_all_models():
-    """Imports model architectures, thus registering the architecture in the shared PIPELINE_REGISTRY."""
+    """Imports model architectures, thus registering the architecture in the shared :obj:`~max.pipelines.registry.PipelineRegistry`."""
     from .exaone import exaone_arch
     from .granite import granite_arch
     from .llama3 import llama_arch

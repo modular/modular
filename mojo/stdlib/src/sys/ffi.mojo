@@ -15,6 +15,7 @@
 from collections.string import StringSlice
 from os import abort
 from sys._libc import dlclose, dlerror, dlopen, dlsym
+from builtin.string_literal import get_string_literal_slice
 
 from memory import UnsafePointer
 
@@ -294,7 +295,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
     @always_inline
     fn _get_function[
-        func_name: StringLiteral, result_type: AnyTrivialRegType
+        func_name: StringSlice, result_type: AnyTrivialRegType
     ](self) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -306,12 +307,17 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         Returns:
             A handle to the function.
         """
+        # Force the func_name into a StringLiteral so we know that it is
+        # nul-terminated.
+        alias func_name_literal = get_string_literal_slice[func_name]()
 
-        return self._get_function[result_type](func_name.unsafe_cstr_ptr())
+        return self._get_function[result_type](
+            func_name_literal.unsafe_cstr_ptr()
+        )
 
     fn get_symbol[
         result_type: AnyType,
-    ](self, name: StringLiteral) -> UnsafePointer[result_type]:
+    ](self, name: StringSlice) -> UnsafePointer[result_type]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library.
 
@@ -324,7 +330,13 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         Returns:
             A pointer to the symbol.
         """
-        return self.get_symbol[result_type](name.unsafe_cstr_ptr())
+        # TODO(performance): It is unfortunate to copy the name here, but we
+        # don't have a way to pass a StringSlice to the `dlsym` function because
+        # we don't know it is nul-terminated.  It would be nice to have a
+        # StringSliceNulTerminated type.  Such a thing would carry an origin so
+        # it can reference other string data, but would not be subslicable.
+        name_copy = String(name)
+        return self.get_symbol[result_type](name_copy.unsafe_cstr_ptr())
 
     fn get_symbol[
         result_type: AnyType
@@ -387,7 +399,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
     @always_inline
     fn call[
-        name: StringLiteral,
+        name: StringSlice,
         return_type: AnyTrivialRegType = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
@@ -407,7 +419,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         return self.call[name, return_type](args)
 
     fn call[
-        name: StringLiteral, return_type: AnyTrivialRegType = NoneType
+        name: StringSlice, return_type: AnyTrivialRegType = NoneType
     ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
         """Call a function with any amount of arguments.
 
@@ -422,18 +434,22 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
             The result.
         """
 
-        debug_assert(self.check_symbol(name), "symbol not found: " + name)
+        debug_assert(
+            self.check_symbol(String(name)), String("symbol not found: ") + name
+        )
         var v = args.get_loaded_kgen_pack()
-        return self.get_function[fn (__type_of(v)) -> return_type](name)(v)
+        return self.get_function[fn (__type_of(v)) -> return_type](
+            String(name)
+        )(v)
 
 
 @always_inline
 fn _get_dylib_function[
     dylib_global: _Global[_, _OwnedDLHandle, _],
-    func_name: StringLiteral,
+    func_name: StringSlice,
     result_type: AnyTrivialRegType,
 ]() -> result_type:
-    alias func_cache_name = dylib_global.name + "/" + func_name
+    alias func_cache_name = String(dylib_global.name) + "/" + String(func_name)
     var func_ptr = _get_global_or_null[func_cache_name]()
     if func_ptr:
         var result = UnsafePointer.address_of(func_ptr).bitcast[result_type]()[]
@@ -457,7 +473,7 @@ fn _get_dylib_function[
 
 
 struct _Global[
-    name: StringLiteral,
+    name: StringSlice,
     storage_type: Movable,
     init_fn: fn () -> storage_type,
 ]:
@@ -496,12 +512,12 @@ struct _Global[
 
 @always_inline
 fn _get_global[
-    name: StringLiteral,
+    name: StringSlice,
     init_fn: fn (OpaquePointer) -> OpaquePointer,
     destroy_fn: fn (OpaquePointer) -> None,
 ](payload: OpaquePointer = OpaquePointer()) -> OpaquePointer:
     return external_call["KGEN_CompilerRT_GetGlobalOrCreate", OpaquePointer](
-        StringSlice(name),
+        name,
         payload,
         init_fn,
         destroy_fn,
@@ -509,7 +525,7 @@ fn _get_global[
 
 
 @always_inline
-fn _get_global_or_null[name: StringLiteral]() -> OpaquePointer:
+fn _get_global_or_null[name: StringSlice]() -> OpaquePointer:
     return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
         name.unsafe_ptr(), name.byte_length()
     )
@@ -522,7 +538,7 @@ fn _get_global_or_null[name: StringLiteral]() -> OpaquePointer:
 
 @always_inline("nodebug")
 fn external_call[
-    callee: StringLiteral,
+    callee: StringSlice,
     return_type: AnyTrivialRegType,
     *types: AnyType,
 ](*args: *types) -> return_type:
@@ -544,7 +560,7 @@ fn external_call[
 
 @always_inline("nodebug")
 fn external_call[
-    callee: StringLiteral,
+    callee: StringSlice,
     return_type: AnyTrivialRegType,
 ](args: VariadicPack[element_trait=AnyType]) -> return_type:
     """Calls an external function.
@@ -564,16 +580,17 @@ fn external_call[
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
     var loaded_pack = args.get_loaded_kgen_pack()
+    alias callee_literal = get_string_literal_slice[callee]().value
 
     @parameter
     if _mlirtype_is_eq[return_type, NoneType]():
-        __mlir_op.`pop.external_call`[func = callee.value, _type=None](
+        __mlir_op.`pop.external_call`[func=callee_literal, _type=None](
             loaded_pack
         )
         return rebind[return_type](None)
     else:
         return __mlir_op.`pop.external_call`[
-            func = callee.value,
+            func=callee_literal,
             _type=return_type,
         ](loaded_pack)
 
@@ -585,7 +602,7 @@ fn external_call[
 
 @always_inline("nodebug")
 fn _external_call_const[
-    callee: StringLiteral,
+    callee: StringSlice,
     return_type: AnyTrivialRegType,
     *types: AnyType,
 ](*args: *types) -> return_type:
@@ -609,9 +626,10 @@ fn _external_call_const[
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
     var loaded_pack = args.get_loaded_kgen_pack()
+    alias callee_literal = get_string_literal_slice[callee]().value
 
     return __mlir_op.`pop.external_call`[
-        func = callee.value,
+        func=callee_literal,
         resAttrs = __mlir_attr.`[{llvm.noundef}]`,
         funcAttrs = __mlir_attr.`["willreturn"]`,
         memory = __mlir_attr[

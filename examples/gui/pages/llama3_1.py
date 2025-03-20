@@ -58,7 +58,6 @@ def start_llama3(
     use_gpu: bool,
 ) -> Llama3:
     config = PipelineConfig(
-        architecture="LlamaForCausalLM",
         device=Accelerator() if use_gpu else CPU(),
         weight_path=[Path(weight_path)],
         quantization_encoding=quantization,
