@@ -54,11 +54,92 @@ from os import abort
 
 from builtin.range import _StridedRange
 from memory import UnsafePointer, memcpy
+from memory.pointer import AddressSpace, _GPUAddressSpace
+
 from collections import List
 from buffer import DimList
+from utils.numerics import max_finite
 import sys
 
 alias INT_TUPLE_VALIDATION = False
+
+
+fn _get_index_type(address_space: AddressSpace) -> DType:
+    """Determines the appropriate index type based on address space.
+
+    Returns `DType.int32` for shared or constant GPU memory, and `DType.index` otherwise.
+
+    Args:
+        address_space: The address space to determine the index type for.
+
+    Returns:
+        The appropriate `DType` for indexing in the given address space.
+    """
+    if address_space in (
+        _GPUAddressSpace.SHARED,
+        _GPUAddressSpace.CONSTANT,
+    ):
+        return DType.int32
+    else:
+        return DType.index
+
+
+fn _get_index_type(layout: Layout) -> DType:
+    """Determines the appropriate index type based on layout size.
+
+    Returns `DType.int32` for layout size fits within int32 range, and `DType.index` otherwise.
+
+    Args:
+        layout: The layout to determine the index type for.
+
+    Returns:
+        The appropriate `DType` for indexing in the given address space.
+    """
+    if layout.cosize() < Int(max_finite[DType.int32]()):
+        return DType.int32
+
+    return DType.int64
+
+
+fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
+    """Determines the appropriate index type based on layout and address space.
+
+    Uses `DType.int32` if the layout size fits within int32 range, otherwise uses the
+    address space's default index type.
+
+    Args:
+        layout: The layout to determine the index type for.
+        address_space: The address space to determine the index type for.
+
+    Returns:
+        The appropriate `DType` for indexing with the given layout and address space.
+    """
+    if layout.all_dims_known():
+        return _get_index_type(layout)
+    else:
+        return _get_index_type(address_space)
+
+
+fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
+    """Determines the appropriate unsigned index type for a layout and address space.
+
+    Uses `DType.uint32` if the layout size fits within uint32 range or if the index type
+    is int32, otherwise uses the unsigned index type.
+
+    Args:
+        layout: The layout to determine the unsigned type for.
+        address_space: The address space to determine the unsigned type for.
+
+    Returns:
+        The appropriate unsigned DType for the given layout and address space.
+    """
+    if layout.all_dims_known() and layout.cosize() < Int(
+        max_finite[DType.uint32]()
+    ):
+        return DType.uint32
+    else:
+        var dtype = _get_index_type(address_space)
+        return DType.uint32 if dtype is DType.int32 else DType.index
 
 
 @register_passable

@@ -10,12 +10,12 @@ from sys import bitwidthof
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import *
-from layout.layout_tensor import _get_index_type, LayoutTensor
+from layout.layout_tensor import LayoutTensor
 from memory import UnsafePointer
 
 from utils.index import Index
 
-from .int_tuple import product
+from .int_tuple import product, _get_index_type
 from gpu.intrinsics import make_buffer_resource, _buffer_resource
 
 
