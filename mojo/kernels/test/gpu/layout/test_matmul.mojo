@@ -127,10 +127,15 @@ struct test_matmul[
 
         fn create_tensor[
             layout: Layout
-        ](m: Int, n: Int, ptr: UnsafePointer[Scalar[dtype]]) -> LayoutTensor[
-            dtype, layout, ptr.origin
-        ]:
-            var dynamic_layout = RuntimeLayout[layout](
+        ](
+            m: Int,
+            n: Int,
+            ptr: UnsafePointer[Scalar[dtype]],
+            out result: LayoutTensor[dtype, layout, ptr.origin],
+        ):
+            var dynamic_layout = RuntimeLayout[
+                layout, linear_idx_type = result.index_type
+            ](
                 RuntimeTuple[layout.shape, unsigned=True](m, n),
                 RuntimeTuple[layout.stride, unsigned=True](n, 1),
             )

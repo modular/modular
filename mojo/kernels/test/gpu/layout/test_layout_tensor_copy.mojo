@@ -79,9 +79,17 @@ fn test_async_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_async_copy")
 
+    alias managed_layout_tensor_type = ManagedLayoutTensor[
+        DType.float32,
+        layout,
+    ]
+
+    alias bitwidth = managed_layout_tensor_type.layout_bitwidth
+    alias idx_type = managed_layout_tensor_type.index_type
+
     alias runtime_layout = RuntimeLayout[
-        layout, bitwidth = bitwidthof[Int]()
-    ].row_major(IndexList[2](M, N))
+        layout, bitwidth=bitwidth, linear_idx_type=idx_type
+    ].row_major(IndexList[2, element_bitwidth=bitwidth](M, N))
 
     var input = ManagedLayoutTensor[DType.float32, layout](runtime_layout, ctx)
 
@@ -294,10 +302,21 @@ fn test_swizzle_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_swizzle_copy")
 
-    alias a_runtime_layout = RuntimeLayout[layout].row_major(
-        IndexList[2]((M - skew_M), K)
-    )
-    alias b_runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](M, K))
+    alias managed_layout_tensor_type = ManagedLayoutTensor[
+        DType.float32,
+        layout,
+    ]
+
+    alias bitwidth = managed_layout_tensor_type.layout_bitwidth
+    alias idx_type = managed_layout_tensor_type.index_type
+
+    alias a_runtime_layout = RuntimeLayout[
+        layout, bitwidth=bitwidth, linear_idx_type=idx_type
+    ].row_major(IndexList[2, element_bitwidth=bitwidth]((M - skew_M), K))
+
+    alias b_runtime_layout = RuntimeLayout[
+        layout, bitwidth=bitwidth, linear_idx_type=idx_type
+    ].row_major(IndexList[2, element_bitwidth=bitwidth](M, K))
 
     var a_tensor = ManagedLayoutTensor[
         DType.float32,
@@ -420,7 +439,7 @@ fn masked_async_copy_kernel[
 
     var masked_input = LayoutTensor[DType.float32, layout, masked=True](
         input.ptr,
-        RuntimeLayout(
+        RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[layout.shape, unsigned=True](num_rows, input.dim(1)),
             input.runtime_layout.stride,
         ),
@@ -451,7 +470,17 @@ fn test_masked_async_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_masked_async_copy")
 
-    alias runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](M, N))
+    alias managed_layout_tensor_type = ManagedLayoutTensor[
+        DType.float32,
+        layout,
+    ]
+
+    alias bitwidth = managed_layout_tensor_type.layout_bitwidth
+    alias idx_type = managed_layout_tensor_type.index_type
+
+    alias runtime_layout = RuntimeLayout[
+        layout, bitwidth=bitwidth, linear_idx_type=idx_type
+    ].row_major(IndexList[2, element_bitwidth=bitwidth](M, N))
 
     var input = ManagedLayoutTensor[
         DType.float32,
@@ -522,7 +551,7 @@ fn masked_copy_kernel[
 
     var masked_input = LayoutTensor[DType.float32, layout, masked=True](
         input.ptr,
-        RuntimeLayout(
+        RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[layout.shape, unsigned=True](num_rows, input.dim(1)),
             input.runtime_layout.stride,
         ),
@@ -552,7 +581,17 @@ fn test_masked_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_masked_copy")
 
-    alias runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](M, N))
+    alias managed_layout_tensor_type = ManagedLayoutTensor[
+        DType.float32,
+        layout,
+    ]
+
+    alias bitwidth = managed_layout_tensor_type.layout_bitwidth
+    alias idx_type = managed_layout_tensor_type.index_type
+
+    alias runtime_layout = RuntimeLayout[
+        layout, bitwidth=bitwidth, linear_idx_type=idx_type
+    ].row_major(IndexList[2, element_bitwidth=bitwidth](M, N))
 
     var input = ManagedLayoutTensor[
         DType.float32,
@@ -720,14 +759,26 @@ fn test_copy_sram_to_dram[
 ](ctx: DeviceContext) raises:
     print("=== test_copy_sram_to_dram")
 
-    alias runtime_layout = RuntimeLayout[layout].row_major(
-        IndexList[2](M - skew_M, N)
-    )
-
-    var input = ManagedLayoutTensor[
+    alias managed_layout_tensor_type = ManagedLayoutTensor[
         type,
         layout,
-    ](runtime_layout, ctx)
+    ]
+
+    alias bitwidth = managed_layout_tensor_type.layout_bitwidth
+    alias idx_type = managed_layout_tensor_type.index_type
+
+    var runtime_layout = RuntimeLayout[
+        layout,
+        bitwidth=bitwidth,
+        linear_idx_type=idx_type,
+    ].row_major(
+        IndexList[
+            2,
+            element_bitwidth=bitwidth,
+        ](M - skew_M, N)
+    )
+
+    var input = managed_layout_tensor_type(runtime_layout, ctx)
     _ = input.tensor().fill(-1.0)
 
     alias tile_layout = Layout.row_major(M - skew_M, N)

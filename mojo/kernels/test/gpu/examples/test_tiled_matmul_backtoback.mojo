@@ -516,7 +516,7 @@ fn b2b_gemm[
                 if d_layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
-                    dst_idx = d_gmem_frag.runtime_layout(i)
+                    dst_idx = Int(d_gmem_frag.runtime_layout(i))
 
                 var m = Int((thread_offset + dst_idx) // N)
                 var n = Int((thread_offset + dst_idx) % N)
@@ -560,7 +560,7 @@ fn b2b_gemm[
                 if d_layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
-                    dst_idx = d_gmem_frag.runtime_layout(i)
+                    dst_idx = Int(d_gmem_frag.runtime_layout(i))
 
                 var m = Int((thread_offset + dst_idx) // N)
                 var n = Int((thread_offset + dst_idx) % N)

@@ -158,14 +158,12 @@ fn repack_Q4_0_for_sm8x[
     )
     var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout](
         q_packed_weight.ptr.bitcast[UInt32](),
-        RuntimeLayout[repacked_b_layout](),
     )
 
     alias b_scales_layout = Layout.row_major(K_groups, N)
     var b_scales_ptr = q_packed_weight.ptr + N * K // 2
     var repack_scales = LayoutTensor[scales_type, b_scales_layout](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
-        RuntimeLayout[b_scales_layout](),
     )
 
     # We keep 128x2 Q4_0 GGUF blocks in smem
@@ -263,7 +261,7 @@ fn repack_Q4_0_for_sm8x[
                 scales_type
             ](
                 q_warp_tile.vectorize[1, 2]()[
-                    rt_scales_thread_layout(lane_id), 0
+                    Int(rt_scales_thread_layout(lane_id)), 0
                 ]
             )
 
@@ -271,7 +269,7 @@ fn repack_Q4_0_for_sm8x[
                 scales_type
             ](
                 q_warp_tile.vectorize[1, 2]()[
-                    rt_scales_thread_layout(lane_id) + 8, 0
+                    Int(rt_scales_thread_layout(lane_id)) + 8, 0
                 ]
             )
 
@@ -527,25 +525,27 @@ fn test_repack_Q4_0_for_sm8x(
         Int(n.dim) // 64,
         Int(k.dim) * 64 // pack_factor,
     )
+    alias gguf_b_tensor_type = LayoutTensor[DType.uint8, gguf_b_layout]
+    alias repacked_dequan_tensor_type = LayoutTensor[
+        DType.bfloat16,
+        repack_dequan_layout,
+    ]
 
-    var gguf_b_tensor = LayoutTensor[DType.uint8, gguf_b_layout](
+    var gguf_b_tensor = gguf_b_tensor_type(
         gguf_b_device.buffer,
-        RuntimeLayout[gguf_b_layout].row_major(
-            gguf_b_device.tensor.dynamic_shape
-        ),
+        RuntimeLayout[
+            gguf_b_layout, linear_idx_type = gguf_b_tensor_type.index_type
+        ].row_major(gguf_b_device.tensor.dynamic_shape),
     )
     var repacked_b_tensor = LayoutTensor[DType.uint8, repacked_b_layout](
         repacked_b_device.buffer,
-        RuntimeLayout[repacked_b_layout](),
     )
-    var repacked_dequan_tensor = LayoutTensor[
-        DType.bfloat16,
-        repack_dequan_layout,
-    ](
+    var repacked_dequan_tensor = repacked_dequan_tensor_type(
         repacked_dequan_device.buffer.unsafe_ptr(),
-        RuntimeLayout[repack_dequan_layout].row_major(
-            repacked_dequan_device.tensor.dynamic_shape
-        ),
+        RuntimeLayout[
+            repack_dequan_layout,
+            linear_idx_type = repacked_dequan_tensor_type.index_type,
+        ].row_major(repacked_dequan_device.tensor.dynamic_shape),
     )
 
     var smem_usage: Int = BN * 2 * group_bytes
@@ -684,16 +684,20 @@ fn test_quantized[
 
     alias b_layout = Layout.row_major[c_device.rank](b_device.shape)
     alias b_ref_layout = Layout.row_major[b_device_ref.rank](b_device_ref.shape)
+    alias b_tensor_type = LayoutTensor[type, b_layout]
+    alias b_ref_tensor_type = LayoutTensor[a_type, b_ref_layout]
 
-    var b_tensor = LayoutTensor[type, b_layout](
+    var b_tensor = b_tensor_type(
         b_device.buffer,
-        RuntimeLayout[b_layout].row_major(b_device.tensor.dynamic_shape),
+        RuntimeLayout[
+            b_layout, linear_idx_type = b_tensor_type.index_type
+        ].row_major(b_device.tensor.dynamic_shape),
     )
-    var b_ref_tensor = LayoutTensor[a_type, b_ref_layout](
+    var b_ref_tensor = b_ref_tensor_type(
         b_device_ref.buffer,
-        RuntimeLayout[b_ref_layout].row_major(
-            b_device_ref.tensor.dynamic_shape
-        ),
+        RuntimeLayout[
+            b_ref_layout, linear_idx_type = b_ref_tensor_type.index_type
+        ].row_major(b_device_ref.tensor.dynamic_shape),
     )
 
     var c_device_ref = DeviceNDBuffer[a_type, 2, static_c_shape](
