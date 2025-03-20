@@ -1077,6 +1077,7 @@ modular_cc_library(
         "lib/Compiler/ObjectCompiler/*.cpp",
         "lib/Compiler/ObjectCompiler/*.h",
     ]),
+    data = [":ptxas"],
     deps = [
         ":Compiler",
         ":KGENToLLVM",

@@ -32,7 +32,6 @@ lit_tests(
         "//conditions:default": [],
     }),
     tools = [
-        "//KGEN:ptxas",
         "//KGEN/tools/kgen",
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
