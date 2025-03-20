@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from queue import Queue
 from unittest.mock import Mock
+from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -47,15 +48,23 @@ def create_queues() -> dict[str, Queue]:
     return {"REQUEST": Queue(), "RESPONSE": Queue(), "CANCEL": Queue()}
 
 
+def rand(length: int) -> np.ndarray:
+    return np.random.randint(0, 256, size=length)
+
+
 def create_text_context(
-    cache_seq_id: int,
     prompt_len: int,
     max_seq_len: int,
+    shared_prefix: np.ndarray | None = None,
 ) -> TextContext:
-    tokens = np.ones(prompt_len)
+    if shared_prefix is None:
+        tokens = np.ones(prompt_len)
+    else:
+        rem_tokens = prompt_len - len(shared_prefix)
+        assert rem_tokens >= 0
+        tokens = np.concatenate([shared_prefix, rand(rem_tokens)])
 
     return TextContext(
-        cache_seq_id=cache_seq_id,
         prompt=tokens.tolist(),
         max_length=max_seq_len,
         tokens=tokens,
@@ -113,25 +122,17 @@ def create_paged_manager(
 
 def create_paged_scheduler(
     max_seq_len=2048,
-    num_blocks=16,
-    max_batch_size=16,
-    max_batch_size_tg=16,
-    max_batch_size_ce=16,
+    num_blocks=9999,
+    max_batch_size=512,
     page_size=128,
     max_forward_steps_tg=10,
-    max_forward_steps_ce=1,
     target_tokens_per_batch_tg=None,
     target_tokens_per_batch_ce=8192,
     batch_timeout=None,
     enable_prefix_caching=False,
-    enable_in_flight_batching=True,
+    enable_in_flight_batching=False,
     enable_chunked_prefill=True,
-) -> tuple[
-    PagedKVCacheManager,
-    TokenGenerationScheduler,
-    TokenGenerationSchedulerConfig,
-    FakeTokenGeneratorPipeline,
-]:
+) -> TokenGenerationScheduler:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
         num_blocks=num_blocks,
@@ -143,11 +144,11 @@ def create_paged_scheduler(
 
     # Create a scheduler with a paged manager
     scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size_tg=max_batch_size_tg,
+        max_batch_size_tg=max_batch_size,
         max_forward_steps_tg=max_forward_steps_tg,
         target_tokens_per_batch_tg=target_tokens_per_batch_tg,
-        max_batch_size_ce=max_batch_size_ce,
-        max_forward_steps_ce=max_forward_steps_ce,
+        max_batch_size_ce=max_batch_size,
+        max_forward_steps_ce=1,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         batch_timeout=batch_timeout,
         enable_chunked_prefill=enable_chunked_prefill,
@@ -161,7 +162,7 @@ def create_paged_scheduler(
         queues=create_queues(),  # type: ignore
         paged_manager=paged_manager,
     )
-    return paged_manager, scheduler, scheduler_config, token_pipeline
+    return scheduler
 
 
 def trim_prompts(
@@ -185,7 +186,7 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
         self.prev_num_steps: int = 0
 
     def next_token(
-        self, batch: dict[str, TextContext], num_steps=1
+        self, batch: dict[str, TextContext], num_steps: int = 1
     ) -> dict[str, TextGenerationResponse]:
         # Truncate num steps based on the max seq len
         for context in batch.values():
@@ -215,7 +216,7 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
         for req_id, context in batch.items():
             resp = TextGenerationResponse([], TextGenerationStatus.ACTIVE)
             for _ in range(num_steps):
-                context.update(new_token=1)
+                context.update(new_token=rand(1)[0])
 
                 if context.current_length == context.max_length:
                     resp.update_status(TextGenerationStatus.MAXIMUM_LENGTH)
@@ -273,6 +274,16 @@ class BatchInfo:
     def empty(cls) -> BatchInfo:
         return BatchInfo(BatchType.TokenGeneration, 0, 0, 0, 0)
 
+    def __repr__(self) -> str:
+        return (
+            f"BatchInfo("
+            f"{self.batch_type.concise_name()}, "
+            f"{self.batch_size}, "
+            f"{self.terminated}, "
+            f"{self.num_steps}, "
+            f"{self.tokens_to_encode})"
+        )
+
 
 def create_batch_and_execute(
     scheduler: TokenGenerationScheduler,
@@ -302,13 +313,11 @@ def create_batch_and_execute(
 
 
 def run_until_completion(
-    scheduler: TokenGenerationScheduler,
+    scheduler: TokenGenerationScheduler, max_num_iters: int = 20
 ) -> list[BatchInfo]:
-    # prevent infinite loop in case of bug, and excessive prints
-    max_num_steps = 20
     batch_infos = []
 
-    for _ in range(max_num_steps):
+    for _ in range(max_num_iters):
         batch_info = create_batch_and_execute(scheduler)
         batch_infos.append(batch_info)
         if batch_info.batch_size == 0:
@@ -320,14 +329,14 @@ def enqueue_request(
     scheduler: TokenGenerationScheduler,
     prompt_len: int,
     max_seq_len: int,
+    shared_prefix: np.ndarray | None = None,
 ):
-    seq_id = scheduler.available_cache_indices.pop()
     context = create_text_context(
-        cache_seq_id=seq_id,
         prompt_len=prompt_len,
         max_seq_len=max_seq_len,
+        shared_prefix=shared_prefix,
     )
-    req_id = f"req{seq_id}"
+    req_id = f"req{uuid4()}"
     assert context.active_length == prompt_len
     scheduler.request_q.put((req_id, context))
 
@@ -341,7 +350,7 @@ def test_tg_request_exceed_max_seq_len(num_reqs):
     max_seq_len = 2048
     page_size = 128
     num_blocks = max_seq_len / page_size * num_reqs
-    _, scheduler, scheduler_config, _ = create_paged_scheduler(
+    scheduler = create_paged_scheduler(
         max_seq_len=max_seq_len,
         max_batch_size=100,
         num_blocks=num_blocks,
@@ -350,7 +359,7 @@ def test_tg_request_exceed_max_seq_len(num_reqs):
 
     # Check that we would exceed max_seq_len during TG step
     prompt_len = 2040
-    num_steps = scheduler_config.max_forward_steps_tg
+    num_steps = scheduler.scheduler_config.max_forward_steps_tg
     assert num_steps == 10
     assert prompt_len + num_steps > max_seq_len
 
@@ -379,7 +388,7 @@ def test_basic_chunked_prefill():
     prompt_len = 9123
     output_tokens = 43
     num_blocks = ceildiv(prompt_len + output_tokens, page_size)
-    _, scheduler, _, _ = create_paged_scheduler(
+    scheduler = create_paged_scheduler(
         max_seq_len=max_seq_len,
         num_blocks=num_blocks,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
@@ -411,6 +420,113 @@ def test_basic_chunked_prefill():
         BatchInfo(TG, 1, 0, 10, 1),
         BatchInfo(TG, 1, 1, 3, 1),
         BatchInfo.empty(),
+    ]
+    actual = run_until_completion(scheduler)
+    assert actual == expected
+
+
+def test_num_prompts_100_prompt_len_500_output_tokens_16():
+    num_prompts = 100
+    prompt_len = 500
+    output_tokens = 16
+
+    scheduler = create_paged_scheduler(
+        enable_chunked_prefill=True,
+        enable_in_flight_batching=False,
+    )
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+        )
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 18, 1, 1, 8192),
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 18, 1, 1, 8192),
+        BatchInfo(CE, 2, 0, 1, 848),
+        BatchInfo(TG, 100, 0, 10, 100),
+        BatchInfo(TG, 100, 100, 6, 100),
+        BatchInfo(TG, 0, 0, 0, 0),
+    ]
+    actual = run_until_completion(scheduler)
+    assert actual == expected
+
+
+def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_384():
+    num_prompts = 100
+    prompt_len = 500
+    output_tokens = 16
+    prefix_len = 384
+
+    scheduler = create_paged_scheduler(
+        enable_chunked_prefill=True,
+        enable_in_flight_batching=False,
+        enable_prefix_caching=True,
+    )
+
+    # set seed for reproducibility
+    np.random.seed(42)
+    shared_prefix = rand(prefix_len)
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+            shared_prefix=shared_prefix,
+        )
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 71, 1, 1, 8192),
+        BatchInfo(CE, 14, 0, 1, 1552),
+        BatchInfo(TG, 100, 0, 10, 100),
+        BatchInfo(TG, 100, 100, 6, 100),
+        BatchInfo(TG, 0, 0, 0, 0),
+    ]
+    actual = run_until_completion(scheduler)
+    assert actual == expected
+
+
+def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
+    num_prompts = 100
+    prompt_len = 500
+    output_tokens = 16
+
+    scheduler = create_paged_scheduler(
+        enable_chunked_prefill=True,
+        enable_in_flight_batching=True,
+    )
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+        )
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 33, 1, 1, 8192),
+        BatchInfo(CE, 50, 1, 1, 8192),
+        BatchInfo(CE, 66, 1, 1, 8192),
+        BatchInfo(CE, 82, 1, 1, 8192),
+        BatchInfo(CE, 98, 1, 1, 8192),
+        BatchInfo(CE, 100, 0, 1, 1188),
+        BatchInfo(TG, 100, 32, 10, 100),
+        BatchInfo(TG, 68, 33, 2, 68),
+        BatchInfo(TG, 35, 32, 2, 35),
+        BatchInfo(TG, 3, 3, 2, 3),
+        BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
     assert actual == expected
