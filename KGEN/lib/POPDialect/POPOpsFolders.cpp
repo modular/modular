@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/POPDialect/POPEnums.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/MDialect/MAttrs.h"
@@ -443,7 +444,8 @@ LogicalResult LoadOp::canonicalize(LoadOp op, PatternRewriter &b) {
 
   // Canonicalize "store x -> ptr; tmp = load ptr" into "store; tmp = x".
   if (auto store = dyn_cast_if_present<StoreOp>(op->getPrevNode())) {
-    if (store.getPtr() == op.getPtr()) {
+    if ((store.getPtr() == op.getPtr()) &&
+        (store.getOrdering() == AtomicOrdering::NOT_ATOMIC)) {
       b.replaceOp(op, store.getArg());
       return success();
     }
@@ -1152,6 +1154,10 @@ OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
+  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC) {
+    // Don't canonicalize atomic stores.
+    return failure();
+  }
 
   // Storing an unknown to a pointer is a nop as it is legal to assume the
   // memory is already the same value.

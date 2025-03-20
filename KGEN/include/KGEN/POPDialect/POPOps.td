@@ -805,6 +805,11 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     the store. An optional `volatile` attribute can be provided to make the
     store volatile.
 
+    When using atomic ordering (`atomic` keyword), valid orderings are:
+    `unordered`, `monotonic`, `release`, and `sequentially_consistent`.
+    `acquire` and `acquire_release` orderings are invalid for store operations.
+    `volatile` stores cannot be atomic.
+
     Example:
 
     ```mlir
@@ -812,15 +817,20 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     pop.store %1, %ptr1 : !kgen.pointer<simd<4, type>>
     pop.store %1, %ptr1 align 8 : !kgen.pointer<simd<4, type>>
     pop.store volatile %1, %ptr1 align 8: !kgen.pointer<simd<4, type>>
+    pop.store atomic release %1, %ptr1 : !kgen.pointer<simd<4, type>>
     ```
   }];
 
   let arguments = (ins AnyType:$arg,
                        Arg<PointerType, "", [MemWrite]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
-                       UnitAttr:$isVolatile);
+                       UnitAttr:$isVolatile,
+                       DefaultValuedAttr<
+                        POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering);
   let assemblyFormat = [{
-    (`volatile` $isVolatile^)? $arg `,` $ptr
+    (`volatile` $isVolatile^)?
+    (`atomic` $ordering^)?
+    $arg `,` $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)?
     attr-dict `:` qualified(type($ptr))
   }];
@@ -828,10 +838,12 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
   let builders = [
     OpBuilder<(ins "Value":$arg, "Value":$ptr,
                    CArg<"std::optional<unsigned>", "{}">:$alignment,
-                   CArg<"bool", "false">:$isVolatile)>
+                   CArg<"bool", "false">:$isVolatile,
+                   CArg<"AtomicOrdering", "AtomicOrdering::NOT_ATOMIC">:$ordering)>
   ];
 
   let hasCanonicalizeMethod = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -312,6 +312,17 @@ kgen.func @store_with_volatile(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<
   kgen.return
 }
 
+// CHECK-LABEL: @store_with_atomic
+// CHECK-SAME: [[ARG0:%[a-z0-9]*]]:
+// CHECK-SAME: [[ARG1:%[a-z0-9]*]]:
+kgen.func @store_with_atomic(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
+  // CHECK-DAG: [[PTR:%.*]] = builtin.unrealized_conversion_cast [[ARG0]]
+  // CHECK-DAG: [[VAL:%.*]] = builtin.unrealized_conversion_cast [[ARG1]]
+  // CHECK: llvm.store [[VAL]], [[PTR]] atomic release
+  pop.store atomic release %v, %p align<128> : !kgen.pointer<scalar<si32>>
+  kgen.return
+}
+
 // CHECK-LABEL: @offset
 kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: index) -> !kgen.pointer<scalar<f32>> {
   // CHECK: llvm.getelementptr inbounds %{{.*}}[{{.*}}]

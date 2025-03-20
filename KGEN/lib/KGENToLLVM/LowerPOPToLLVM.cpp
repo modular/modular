@@ -1011,7 +1011,9 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
         op, adaptor.getArg(), adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/adaptor.getIsVolatile());
+        /*isVolatile=*/adaptor.getIsVolatile(), /*isNonTemporal=*/false,
+        /*isInvariantGroup=*/false,
+        /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
     return success();
   }
 };
