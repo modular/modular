@@ -111,6 +111,7 @@ modular_py_test(
     srcs = ["test_pipelines_cli_help.py"],
     deps = [
         "//SDK/lib/API/python/max/entrypoints:pipelines",
+        requirement("click"),
     ],
 )
 
