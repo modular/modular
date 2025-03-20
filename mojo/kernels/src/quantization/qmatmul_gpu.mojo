@@ -693,10 +693,10 @@ fn multistage_qgemm_kernel[
             if c_gmem_frag.layout.all_dims_known():
                 dst_idx = dst_static_idx
             else:
-                dst_idx = c_gmem_frag.runtime_layout(i)
+                dst_idx = Int(c_gmem_frag.runtime_layout(i))
             alias alignment = alignof[SIMD[c_type, src_simd_width_y]]()
-            var m = Int((thread_offset + dst_idx) // N)
-            var n = Int((thread_offset + dst_idx) % N)
+            var m = (Int(thread_offset) + dst_idx) // N
+            var n = (Int(thread_offset) + dst_idx) % N
             if m < M and n < N:
                 var vec = c_reg_frag.ptr.offset(src_idx).load[
                     width=src_simd_width_y,
@@ -781,10 +781,10 @@ fn multistage_qgemm_kernel[
                 if c_gmem_frag.layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
-                    dst_idx = c_gmem_frag.runtime_layout(i)
+                    dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m = Int((thread_offset + dst_idx) // N)
-                var n = Int((thread_offset + dst_idx) % N)
+                var m = (Int(thread_offset) + dst_idx) // N
+                var n = (Int(thread_offset) + dst_idx) % N
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
                     epilogue[alignment=alignment](
@@ -1083,7 +1083,7 @@ fn repack_Q4_0_for_sm8x[
                 scales_type
             ](
                 q_warp_tile.vectorize[1, 2]()[
-                    rt_scales_thread_layout(lane_id), 0
+                    Int(rt_scales_thread_layout(lane_id)), 0
                 ]
             )
 
@@ -1091,7 +1091,7 @@ fn repack_Q4_0_for_sm8x[
                 scales_type
             ](
                 q_warp_tile.vectorize[1, 2]()[
-                    rt_scales_thread_layout(lane_id) + 8, 0
+                    Int(rt_scales_thread_layout(lane_id)) + 8, 0
                 ]
             )
 
@@ -1333,11 +1333,15 @@ fn repack_GPTQ_for_sm8x[
 
             scales_warp_tile[0, 2 * lane_id] = convert_bytes_to_bf16[
                 scales_type
-            ](raw_scales_warp_tile[rt_scales_thread_layout(lane_id), 0])
+            ](raw_scales_warp_tile[Int(rt_scales_thread_layout(lane_id)), 0])
 
             scales_warp_tile[0, 2 * lane_id + 1] = convert_bytes_to_bf16[
                 scales_type
-            ](raw_scales_warp_tile[rt_scales_thread_layout(lane_id) + 8, 0])
+            ](
+                raw_scales_warp_tile[
+                    Int(rt_scales_thread_layout(lane_id)) + 8, 0
+                ]
+            )
 
             repacked_scales_gmem_iter._incr()
             raw_scales_gmem_iter._incr()
