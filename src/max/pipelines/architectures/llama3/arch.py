@@ -62,6 +62,7 @@ llama_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,
     default_weights_format=WeightsFormat.safetensors,
+    multi_gpu_supported=True,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,

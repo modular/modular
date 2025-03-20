@@ -98,6 +98,7 @@ class SupportedArchitecture:
         task: PipelineTask,
         tokenizer: Type[Union[TextTokenizer, TextAndVisionTokenizer]],
         default_weights_format: WeightsFormat,
+        multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
     ):
@@ -125,6 +126,7 @@ class SupportedArchitecture:
         self.pipeline_model = pipeline_model
         self.tokenizer = tokenizer
         self.default_weights_format = default_weights_format
+        self.multi_gpu_supported = multi_gpu_supported
         self.rope_type = rope_type
         self.weight_adapters = weight_adapters or {}
         self.task = task
@@ -289,6 +291,15 @@ class PipelineRegistry:
             logger.warning(msg)
             pipeline_config.engine = PipelineEngine.HUGGINGFACE
             return pipeline_config
+
+        if (
+            not arch.multi_gpu_supported
+            and len(model_config.device_specs) > 1
+            and model_config.device_specs[0].device_type == "gpu"
+        ):
+            raise ValueError(
+                f"Multiple GPU inference is currently not supported for {model_config.model_path}."
+            )
 
         # The remainder of this function, assumes we have both a valid model_path,
         # and a SupportedArchitecture. We should then validate the details of the existing architecture
