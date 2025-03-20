@@ -131,7 +131,9 @@ class ParamSpace:
         """Initialize value set from flattened values."""
         # Try evaluating value as an arithmetic expression:
         try:
-            self.value = list(eval(self.value))
+            if not isinstance(self.value, list):
+                self.value = list(self.value)
+            self.value = [eval(x) for x in self.value]
         except:
             pass
         self.value_set = sorted(set(flatten(self.value)))
