@@ -201,20 +201,20 @@ struct InlineArray[
 
         alias unroll_end = math.align_down(size, batch_size)
 
-        for i in range(0, unroll_end, batch_size):
+        var ptr = self.unsafe_ptr()
+
+        for _ in range(0, unroll_end, batch_size):
 
             @parameter
-            for j in range(batch_size):
-                var ptr = UnsafePointer.address_of(
-                    self.unsafe_get(i * batch_size + j)
-                )
+            for _ in range(batch_size):
                 ptr.init_pointee_copy(fill)
+                ptr += 1
 
         # Fill the remainder
         @parameter
-        for i in range(unroll_end, size):
-            var ptr = UnsafePointer.address_of(self.unsafe_get(i))
+        for _ in range(unroll_end, size):
             ptr.init_pointee_copy(fill)
+            ptr += 1
 
     @always_inline
     @implicit
@@ -248,11 +248,13 @@ struct InlineArray[
         _inline_array_construction_checks[size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
+        var ptr = self.unsafe_ptr()
+
         # Move each element into the array storage.
         @parameter
         for i in range(size):
-            var eltptr = UnsafePointer.address_of(self.unsafe_get(i))
-            UnsafePointer.address_of(storage[i]).move_pointee_into(eltptr)
+            UnsafePointer.address_of(storage[i]).move_pointee_into(ptr)
+            ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
         __disable_del storage

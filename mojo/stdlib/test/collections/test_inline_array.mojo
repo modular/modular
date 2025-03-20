@@ -85,6 +85,9 @@ def test_array_int():
 
     var arr4 = InlineArray[UInt8, 1](42)
     assert_equal(arr4[0], 42)
+    var a = InlineArray[UInt8, 1000](10)
+    for i in range(1000):
+        assert_equal(a[i], 10)
 
 
 def test_array_str():
