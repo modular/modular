@@ -17,20 +17,63 @@ import logging
 import os
 
 import click
-from max.entrypoints.cli import (
-    generate_text_for_pipeline,
-    list_pipelines_to_console,
-    list_pipelines_to_json,
-    pipeline_config_options,
-    pipeline_encode,
-    serve_pipeline,
-)
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
-from max.pipelines.architectures import register_all_models
-from max.serve.config import Settings
-from max.serve.telemetry.common import configure_logging, configure_metrics
 
 logger = logging.getLogger(__name__)
+
+
+class WithLazyPipelineOptions(click.Command):
+    """Command wrapper that defers loading pipeline configuration options
+
+    Lazily applies pipeline_config_options to the callback only when
+    command help or execution is actually requested, improving startup time.
+    This is somewhat of a hack,
+    and should be removed when the pipeline_config_options decorator is fast.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self._options_loaded = False
+        super().__init__(*args, **kwargs)
+
+    def _ensure_options_loaded(self):
+        if not self._options_loaded:
+            # Lazily load and apply pipeline_config_options decorator
+            from max.entrypoints.cli import pipeline_config_options
+
+            # In Click, each command has a callback function that's executed when the command runs.
+            # The callback contains the actual implementation of the command.
+            # Here, we're applying the pipeline_config_options decorator to add CLI parameters
+            # to our callback function dynamically, rather than statically at import time.
+            self.callback = pipeline_config_options(self.callback)
+            self._options_loaded = True
+
+            # When Click decorators (like @click.option) are applied to a function,
+            # they attach Parameter objects to the function via a __click_params__ attribute.
+            # We need to extract these parameters and add them to the command's params list
+            # so Click knows about them for argument parsing, help text generation, etc.
+            # Create a copy to avoid modifying the original list
+            self.params = self.params.copy()
+            for param in getattr(self.callback, "__click_params__", []):
+                self.params.append(param)
+
+    def get_help(self, ctx):
+        self._ensure_options_loaded()
+        return super().get_help(ctx)
+
+    def invoke(self, ctx):
+        self._ensure_options_loaded()
+        return super().invoke(ctx)
+
+    def parse_args(self, ctx, args):
+        self._ensure_options_loaded()
+        return super().parse_args(ctx, args)
+
+    def get_params(self, ctx):
+        self._ensure_options_loaded()
+        return super().get_params(ctx)
+
+    def shell_complete(self, ctx, incomplete):
+        self._ensure_options_loaded()
+        return super().shell_complete(ctx, incomplete)
 
 
 class ModelGroup(click.Group):
@@ -47,6 +90,10 @@ class ModelGroup(click.Group):
 
 @click.command(cls=ModelGroup)
 def main():
+    from max.pipelines.architectures import register_all_models
+    from max.serve.config import Settings
+    from max.serve.telemetry.common import configure_logging, configure_metrics
+
     settings = Settings()
     configure_logging(settings)
     configure_metrics(settings)
@@ -93,8 +140,10 @@ def common_server_options(func):
     return wrapper
 
 
-@main.command(name="serve")
-@pipeline_config_options
+@main.command(
+    name="serve",
+    cls=WithLazyPipelineOptions,
+)
 @common_server_options
 def cli_serve(
     profile_serve,
@@ -110,6 +159,9 @@ def cli_serve(
     specified model. The server supports various performance optimization
     options and monitoring capabilities.
     """
+    from max.entrypoints.cli import serve_pipeline
+    from max.pipelines import PipelineConfig
+
     # Initialize config, and serve.
     pipeline_config = PipelineConfig(**config_kwargs)
     failure_percentage = None
@@ -125,8 +177,10 @@ def cli_serve(
     )
 
 
-@main.command(name="generate")
-@pipeline_config_options
+@main.command(
+    name="generate",
+    cls=WithLazyPipelineOptions,
+)
 @click.option(
     "--prompt",
     type=str,
@@ -157,6 +211,9 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     This command runs text generation using the loaded model, optionally
     accepting image inputs for multimodal models.
     """
+    from max.entrypoints.cli import generate_text_for_pipeline
+    from max.pipelines import PipelineConfig
+
     if config_kwargs["max_new_tokens"] == -1:
         # Limit generate default max_new_tokens to 100.
         config_kwargs["max_new_tokens"] = 100
@@ -171,8 +228,10 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     )
 
 
-@main.command(name="encode")
-@pipeline_config_options
+@main.command(
+    name="encode",
+    cls=WithLazyPipelineOptions,
+)
 @click.option(
     "--prompt",
     type=str,
@@ -192,6 +251,9 @@ def encode(prompt, num_warmups, **config_kwargs):
     This command processes the input text through the model's encoder, producing
     embeddings that can be used for various downstream tasks.
     """
+    from max.entrypoints.cli import pipeline_encode
+    from max.pipelines import PipelineConfig
+
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
     pipeline_encode(
@@ -201,8 +263,10 @@ def encode(prompt, num_warmups, **config_kwargs):
     )
 
 
-@main.command(name="warm-cache")
-@pipeline_config_options
+@main.command(
+    name="warm-cache",
+    cls=WithLazyPipelineOptions,
+)
 def cli_warm_cache(**config_kwargs) -> None:
     """Load and compile the model to prepare caches.
 
@@ -216,6 +280,8 @@ def cli_warm_cache(**config_kwargs) -> None:
     effect warm the Hugging Face cache and in some cases, MAX compilation
     caches.
     """
+    from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+
     pipeline_config = PipelineConfig(**config_kwargs)
     _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
 
@@ -234,6 +300,11 @@ def cli_list(json):
     This command displays information about all registered pipelines and their
     configurations. Output can be formatted as human-readable text or JSON.
     """
+    from max.entrypoints.cli import (
+        list_pipelines_to_console,
+        list_pipelines_to_json,
+    )
+
     if json:
         list_pipelines_to_json()
     else:
