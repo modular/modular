@@ -237,6 +237,14 @@ struct DType(
             return DType.int64
         elif str == "uint64":
             return DType.uint64
+        elif str == "int128":
+            return DType.int128
+        elif str == "uint128":
+            return DType.uint128
+        elif str == "int256":
+            return DType.int256
+        elif str == "uint256":
+            return DType.uint256
         elif str == "index":
             return DType.index
         elif str == "float8_e3m4":
@@ -306,6 +314,14 @@ struct DType(
             return writer.write("int64")
         if self == DType.uint64:
             return writer.write("uint64")
+        if self == DType.int128:
+            return writer.write("int128")
+        if self == DType.uint128:
+            return writer.write("uint128")
+        if self == DType.int256:
+            return writer.write("int256")
+        if self == DType.uint256:
+            return writer.write("uint256")
         if self == DType.index:
             return writer.write("index")
         if self == DType.float8_e3m4:
@@ -792,26 +808,38 @@ struct DType(
             return DType.int64
         elif _type_is_eq[T, SIMD[DType.uint64, size]]():
             return DType.uint64
+        elif _type_is_eq[T, SIMD[DType.int128, size]]():
+            return DType.int128
+        elif _type_is_eq[T, SIMD[DType.uint128, size]]():
+            return DType.uint128
+        elif _type_is_eq[T, SIMD[DType.int256, size]]():
+            return DType.int256
+        elif _type_is_eq[T, SIMD[DType.uint256, size]]():
+            return DType.uint256
         elif _type_is_eq[T, SIMD[DType.index, size]]():
             return DType.index
-        elif _type_is_eq[T, SIMD[DType.float8e5m2, size]]():
-            return DType.float8e5m2
-        elif _type_is_eq[T, SIMD[DType.float8e5m2fnuz, size]]():
-            return DType.float8e5m2fnuz
-        elif _type_is_eq[T, SIMD[DType.float8e4m3, size]]():
-            return DType.float8e4m3
-        elif _type_is_eq[T, SIMD[DType.float8e4m3fnuz, size]]():
-            return DType.float8e4m3fnuz
+        elif _type_is_eq[T, SIMD[DType.float8_e3m4, size]]():
+            return DType.float8_e3m4
+        elif _type_is_eq[T, SIMD[DType.float8_e4m3, size]]():
+            return DType.float8_e4m3
+        elif _type_is_eq[T, SIMD[DType.float8_e5m2, size]]():
+            return DType.float8_e5m2
+        elif _type_is_eq[T, SIMD[DType.float8_e5m2fnuz, size]]():
+            return DType.float8_e5m2fnuz
+        elif _type_is_eq[T, SIMD[DType.float8_e4m3fn, size]]():
+            return DType.float8_e4m3fn
+        elif _type_is_eq[T, SIMD[DType.float8_e4m3fnuz, size]]():
+            return DType.float8_e4m3fnuz
         elif _type_is_eq[T, SIMD[DType.bfloat16, size]]():
             return DType.bfloat16
         elif _type_is_eq[T, SIMD[DType.float16, size]]():
             return DType.float16
         elif _type_is_eq[T, SIMD[DType.float32, size]]():
             return DType.float32
-        elif _type_is_eq[T, SIMD[DType.tensor_float32, size]]():
-            return DType.tensor_float32
         elif _type_is_eq[T, SIMD[DType.float64, size]]():
             return DType.float64
+        elif _type_is_eq[T, SIMD[DType.tensor_float32, size]]():
+            return DType.tensor_float32
         else:
             return DType.invalid
 
