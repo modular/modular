@@ -979,14 +979,12 @@ fn repack_Q4_0_for_sm8x[
     )
     var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout](
         q_packed_weight.ptr.bitcast[UInt32](),
-        RuntimeLayout[repacked_b_layout](),
     )
 
     alias b_scales_layout = Layout.row_major(K_groups, N)
     var b_scales_ptr = q_packed_weight.ptr + N * K // 2
     var repack_scales = LayoutTensor[scales_type, b_scales_layout](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
-        RuntimeLayout[b_scales_layout](),
     )
 
     # We keep 128x2 Q4_0 GGUF blocks in smem
@@ -1072,7 +1070,10 @@ fn repack_Q4_0_for_sm8x[
             repacked_gemm_iter._incr()
 
             alias scales_thread_layout = Layout(IntTuple(4, 8), IntTuple(16, 1))
-            var rt_scales_thread_layout = RuntimeLayout[scales_thread_layout]()
+            var rt_scales_thread_layout = RuntimeLayout[
+                scales_thread_layout,
+                linear_idx_type = q_warp_tile.index_type,
+            ]()
 
             # cast scales to bf16 before storing back
             var scales_warp_tile = scales_gmem_iter[].tile[1, 64](
@@ -1156,13 +1157,11 @@ fn repack_GPTQ_for_sm8x[
     alias raw_weights_layout = Layout.row_major(uint_K, N)
     var raw_weights = LayoutTensor[DType.uint32, raw_weights_layout](
         in_tensor.ptr.bitcast[UInt32](),
-        RuntimeLayout[raw_weights_layout](),
     ).transpose()
     alias raw_scales_layout = Layout.row_major(K_groups, N)
     var raw_scales_ptr = in_tensor.ptr + N * K // 2
     var raw_scales = LayoutTensor[raw_scales_type, raw_scales_layout](
         raw_scales_ptr.bitcast[Scalar[raw_scales_type]](),
-        RuntimeLayout[raw_scales_layout](),
     ).transpose()
 
     # Define 4-bit weights and scales for the repacked buffer
@@ -1178,13 +1177,11 @@ fn repack_GPTQ_for_sm8x[
     )
     var repack_weights = LayoutTensor[DType.uint32, repacked_weights_layout](
         out_tensor.ptr.bitcast[UInt32](),
-        RuntimeLayout[repacked_weights_layout](),
     )
     alias repacked_scales_layout = Layout.row_major(K_groups, N)
     var repacked_scales_ptr = out_tensor.ptr + N * K // 2
     var repack_scales = LayoutTensor[scales_type, repacked_scales_layout](
         repacked_scales_ptr.bitcast[Scalar[scales_type]](),
-        RuntimeLayout[repacked_scales_layout](),
     )
 
     # We keep 128x2 GPTQ blocks in smem
@@ -1320,9 +1317,6 @@ fn repack_GPTQ_for_sm8x[
 
             repacked_weights_gmem_iter._incr()
 
-            alias scales_thread_layout = Layout(IntTuple(4, 8), IntTuple(16, 1))
-            var rt_scales_thread_layout = RuntimeLayout[scales_thread_layout]()
-
             # cast scales to bf16 before storing back
             var scales_warp_tile = repacked_scales_gmem_iter[].tile[1, 64](
                 warp_y, warp_x
@@ -1330,6 +1324,12 @@ fn repack_GPTQ_for_sm8x[
             var raw_scales_warp_tile = raw_scales_gmem_iter[].tile[64, 1](
                 warp_x, warp_y
             )
+
+            alias scales_thread_layout = Layout(IntTuple(4, 8), IntTuple(16, 1))
+            var rt_scales_thread_layout = RuntimeLayout[
+                scales_thread_layout,
+                linear_idx_type = scales_warp_tile.index_type,
+            ]()
 
             scales_warp_tile[0, 2 * lane_id] = convert_bytes_to_bf16[
                 scales_type
