@@ -486,9 +486,9 @@ struct SIMD[type: DType, size: Int](
         """
         _simd_construction_checks[type, size]()
 
-        var casted = __mlir_op.`pop.cast`[
-            _type = Scalar[DType.bool]._mlir_type
-        ](value._as_scalar_bool())
+        var casted = __mlir_op.`pop.cast_from_builtin`[
+            _type = __mlir_type.`!pop.scalar<bool>`
+        ](value.value)
         self = Scalar[DType.bool](casted)
 
     @always_inline("nodebug")

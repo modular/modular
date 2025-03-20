@@ -337,6 +337,124 @@ class AttentionWithRopeV2(Module):
         return self.o_proj(attn_out)
 
 
+class LatentAttentionWithRope(AttentionWithRopeV2):
+    """Implementation of Latent Attention with Rope."""
+
+    # TODO: This will be replaced with a generic Yarn Rope implementation for Deepseek-V2-lite.
+    rope: OptimizedRotaryEmbedding
+
+    def __init__(
+        self,
+        *,
+        rope: OptimizedRotaryEmbedding,
+        num_attention_heads: int,
+        num_key_value_heads: int,
+        hidden_size: int,
+        kv_params: KVCacheParams,
+        layer_idx: int,
+        dtype: DType,
+        devices: list[DeviceRef] | None = None,
+        linear_cls: Callable[..., LinearV2] = LinearV2,
+        scale: float | None = None,
+        has_bias: bool = False,
+        clip_qkv: float | None = None,
+    ):
+        """Initializes the attention layer.
+
+        Args:
+            rope: The rope layer to borrow the freq_cis value from.
+            num_attention_heads: The number of attention heads.
+            num_key_value_heads: Number of key/value heads.
+            hidden_size: The dimension of the hidden states.
+            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            layer_idx: The layer number associated with this Attention block.
+            dtype: DType of the weights, should always be uint8.
+            devices: Device to place the weights and run the computation. If
+                multiple are provided, the first device is used. Use
+                `DistributedAttentionWithRope` to use all devices during
+                attention computation.
+            quantization_encoding: Quantization encoding of the weights.
+            linear_cls: Linear class to use for the outputs dense layer.
+            scale: Value used to scale the results of the attention output.
+            has_bias: Whether to use an attention bias.
+            clip_qkv: If provided, the QKV weights are clamped between
+                `[-clip_qkv, clip_qkv]`
+        """
+        # Skip AttentionWithRopeV2.__init__ because the weights are created
+        # differently.
+        Module.__init__(self)
+
+        if dtype != DType.bfloat16:
+            raise ValueError(
+                f"Latent Attention with Rope only supports bfloat16 dtype weights but got {dtype}"
+            )
+
+        if clip_qkv is not None:
+            raise ValueError(
+                "clip_qkv is not supported for Latent Attention with Rope"
+            )
+
+        if has_bias:
+            raise ValueError("Latent Attention with Rope does not support bias")
+
+        if not kv_params.cache_strategy.uses_opaque():
+            raise ValueError(
+                f"{self.kv_params.cache_strategy} cache strategy, not supported"
+                " in Attention layer."
+            )
+
+        self.rope = rope
+        self.n_heads = num_attention_heads
+        self.layer_idx = layer_idx
+        self.kv_params = kv_params
+        self.num_key_value_heads = num_key_value_heads
+        self.hidden_size = hidden_size
+        self.scale = (
+            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+        )
+        self.devices = devices
+
+        self.o_proj = Weight(  # type: ignore
+            name="o_proj.weight",
+            dtype=DType.bfloat16,
+            shape=(2048, 2048),  # Deepseek-V2-lite weight shapes.
+        )
+
+        self.q_proj = Weight(
+            name="q_proj.weight",
+            dtype=DType.bfloat16,
+            shape=(3072, 2048),  # Deepseek-V2-lite weight shapes.
+        )
+        self.kv_a_proj_layernorm = Weight(
+            name="kv_a_layernorm.weight",
+            dtype=DType.bfloat16,
+            shape=(512,),  # Deepseek-V2-lite weight shapes.
+        )
+        self.kv_a_proj_with_mqa = Weight(
+            name="kv_a_proj_with_mqa.weight",
+            dtype=DType.bfloat16,
+            shape=(576, 2048),  # Deepseek-V2-lite weight shapes.
+        )
+
+        self.kv_b_proj = Weight(
+            name="kv_b_proj.weight",
+            dtype=DType.bfloat16,
+            shape=(4096, 512),  # Deepseek-V2-lite weight shapes.
+        )
+
+    def __call__(
+        self,
+        x: TensorValue,
+        kv_collection: Union[
+            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
+        ],
+        **kwargs,
+    ) -> TensorValue:
+        raise NotImplementedError(
+            "LatentAttentionWithRope is not yet implemented."
+        )
+
+
 class GGUFQAttentionWithRope(AttentionWithRopeV2):
     """Implementation of attention with GGUF quantized weights."""
 

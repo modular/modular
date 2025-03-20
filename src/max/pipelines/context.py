@@ -43,9 +43,6 @@ class InputContext(Protocol):
     """
 
     @property
-    def cache_seq_id(self) -> int: ...
-
-    @property
     def active_idx(self) -> int: ...
 
     @property
@@ -149,21 +146,39 @@ class InputContext(Protocol):
         without exceeding the max_seq_len."""
         ...
 
+    @property
+    def cache_seq_id(self) -> int:
+        """Returns the cache slot assigned to the context, raising an error if not assigned."""
+        ...
+
+    def assign_to_cache(self, cache_seq_id: int) -> None:
+        """Assigns the context to a cache slot."""
+        ...
+
+    def unassign_from_cache(self) -> None:
+        """Unassigns the context from a cache slot."""
+        ...
+
+    @property
+    def is_assigned_to_cache(self) -> bool:
+        """Returns True if input is assigned to a cache slot, False otherwise."""
+        ...
+
 
 class TextContext:
     """A base class for model context, specifically for Text model variants."""
 
     def __init__(
         self,
-        cache_seq_id: int,
         prompt: Union[str, Sequence[int]],
         max_length: int | None,
         tokens: np.ndarray,
+        cache_seq_id: int | None = None,
         log_probabilities: int = 0,
         log_probabilities_echo: bool = False,
         json_schema: str | None = None,
     ) -> None:
-        self.cache_seq_id = cache_seq_id
+        self._cache_seq_id = cache_seq_id
         self.prompt = prompt
         self.max_length = max_length
 
@@ -352,6 +367,24 @@ class TextContext:
         """Compute the max number of steps we can execute for a given context
         without exceeding the max_seq_len."""
         return max_seq_len - (self.current_length - self.active_length)
+
+    @property
+    def cache_seq_id(self) -> int:
+        if self._cache_seq_id is None:
+            raise RuntimeError("Context is not yet assigned to a cache slot")
+        return self._cache_seq_id
+
+    def assign_to_cache(self, cache_seq_id: int) -> None:
+        if self._cache_seq_id is not None:
+            raise RuntimeError("Context is already assigned to a cache slot")
+        self._cache_seq_id = cache_seq_id
+
+    def unassign_from_cache(self) -> None:
+        self._cache_seq_id = None
+
+    @property
+    def is_assigned_to_cache(self) -> bool:
+        return self._cache_seq_id is not None
 
 
 class TextAndVisionContext(TextContext):

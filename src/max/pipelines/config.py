@@ -857,14 +857,20 @@ class SamplingConfig(MAXConfig):
     top_k: int = 1
     """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
 
+    in_dtype: DType = DType.float32
+    """The data type of the input tokens."""
+
+    out_dtype: DType = DType.float32
+    """The data type of the output logits."""
+
     enable_structured_output: bool = False
     """Enable structured generation/guided decoding for the server. This allows the user to pass a json
     schema in the response_format field, which the LLM will adhere to."""
 
-    in_dtype: DType = DType.float32
-    """The data type of the input tokens."""
-    out_dtype: DType = DType.float32
-    """The data type of the output logits."""
+    enable_variable_logits: bool = False
+    """Enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with
+    their associated logit_offsets. This is needed to produce additional logits for echo and speculative
+    decoding purposes."""
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -972,6 +978,9 @@ class PipelineConfig(MAXConfig):
 
     draft_model: Optional[str] = None
     """Draft model for use during Speculative Decoding."""
+
+    ignore_eos: bool = False
+    """Ignore EOS and continue generating tokens, even when an EOS variable is hit."""
 
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
@@ -1133,6 +1142,7 @@ class PipelineConfig(MAXConfig):
             "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
             "draft_model": "Draft model for use in speculative decoding.",
+            "ignore_eos": "Ignore EOS and continue generating tokens, even when an EOS variable is hit.",
         }
 
         # Add help text for all MAX config classes

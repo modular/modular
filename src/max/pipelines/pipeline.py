@@ -422,7 +422,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._weight_adapters = weight_adapters
 
         # Expand eos tokens if more are provided in pipeline_config
-        if "eos_token_id" in self.huggingface_config:
+        if self._pipeline_config.ignore_eos:
+            self._eos_token_id = set([])
+        elif "eos_token_id" in self.huggingface_config:
             eos_tokens = self.huggingface_config.eos_token_id
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
