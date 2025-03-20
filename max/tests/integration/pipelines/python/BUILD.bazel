@@ -85,7 +85,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     exec_properties = {
@@ -188,7 +187,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     exec_properties = {

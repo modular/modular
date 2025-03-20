@@ -50,7 +50,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
@@ -88,7 +87,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
@@ -121,7 +119,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
@@ -161,7 +158,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@flash_attn",

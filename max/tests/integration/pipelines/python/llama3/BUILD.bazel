@@ -44,7 +44,6 @@ modular_py_binary(
         data = [
             "//GenericML:MGPRT",
             "//KGEN:CompilerRT",
-            "//KGEN:ptxas",
             "//ModularFramework/tools/mof",
             "//SDK/integration-test/pipelines/python/llama3/testdata",
             "//Support/tools/system-info",
@@ -104,7 +103,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//ModularFramework/tools/mof",
         "//SDK/integration-test/pipelines/python/llama3/testdata",

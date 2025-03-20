@@ -12,7 +12,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     target_compatible_with = select({
@@ -35,7 +34,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "@llvm-project//compiler-rt:orc_rt",
     ],
     exec_properties = {

@@ -54,7 +54,6 @@ lit_tests(
     ],
     tools = [
         "//GenericML/tools/mt",
-        "//KGEN:ptxas",
         "//KGEN/tools/mojo",
         "//SDK/tools/modular-api-executor",
     ],
@@ -80,8 +79,5 @@ lit_tests(
         "//open-source/mojo/stdlib/stdlib",
     ],
     tags = ["gpu"],
-    tools = [
-        "//KGEN:ptxas",
-        "//KGEN/tools/mojo",
-    ],
+    tools = ["//KGEN/tools/mojo"],
 )

@@ -43,7 +43,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:ATenRT",
@@ -85,7 +84,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:ATenRT",

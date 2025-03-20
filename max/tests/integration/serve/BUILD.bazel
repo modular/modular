@@ -42,7 +42,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "@llvm-project//compiler-rt:orc_rt",

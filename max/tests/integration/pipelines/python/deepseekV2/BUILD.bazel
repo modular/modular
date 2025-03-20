@@ -32,7 +32,6 @@ modular_py_test(
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
         "//ModularFramework/tools/mof",
         "//SDK/integration-test/pipelines/python/deepseekV2/testdata",
         "@llvm-project//compiler-rt:orc_rt",
