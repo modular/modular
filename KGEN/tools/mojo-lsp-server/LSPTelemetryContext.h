@@ -42,6 +42,11 @@ public:
   /// Flushes the underlying telemetry context.
   void flush();
 
+  /// Record parse time, size in bytes, and whether the document is a notebook
+  /// or not.
+  void recordParseTime(std::chrono::microseconds duration, size_t byteSize,
+                       bool notebook);
+
 private:
   Telemetry::Histogram<uint64_t> responseTimeHistogram;
   Telemetry::Counter<uint64_t> outdatedRequestCounter;

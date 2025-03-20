@@ -65,3 +65,15 @@ void LSPTelemetryContext::flush() {
   ctx.flush();
 #endif // MODULAR_ENABLE_TELEMETRY
 }
+
+void LSPTelemetryContext::recordParseTime(std::chrono::microseconds duration,
+                                          size_t byteSize, bool notebook) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+  ctx.getLogger("mojo")->emitL1Event(
+      "lsp.parse", {
+                       {"duration", duration.count()},
+                       {"size", byteSize},
+                       {"documentType", notebook ? "notebook" : "text"},
+                   });
+#endif // MODULAR_ENABLE_TELEMETRY
+}
