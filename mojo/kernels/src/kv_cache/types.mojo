@@ -52,6 +52,10 @@ trait KVCacheT(CollectionElement):
         """Returns the length of the cache for a given batch index."""
         ...
 
+    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1]:
+        """Returns the cache lengths as a NDBuffer."""
+        ...
+
     fn load[
         width: Int
     ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
@@ -206,6 +210,9 @@ struct ContiguousKVCache[
         )
         return Int(self.cache_lengths[batch_idx])
 
+    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1]:
+        return self.cache_lengths
+
     @always_inline
     fn load[
         width: Int
@@ -355,6 +362,9 @@ struct ContinuousBatchingKVCache[
         )
         return Int(self.cache_lengths[batch_idx][0])
 
+    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1]:
+        return self.cache_lengths
+
     @always_inline
     fn load[
         width: Int
@@ -501,6 +511,9 @@ struct PagedKVCache[
     fn cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
         return Int(self.cache_lengths[batch_idx])
+
+    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1]:
+        return self.cache_lengths
 
     @always_inline
     fn _get_idx(
@@ -682,6 +695,9 @@ struct PagedKVCacheFA3Fallback[
     fn cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
         return Int(self.cache_lengths[batch_idx])
+
+    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1]:
+        return rebind[NDBuffer[DType.uint32, 1]](self.cache_lengths)
 
     @always_inline
     fn _get_idx(
