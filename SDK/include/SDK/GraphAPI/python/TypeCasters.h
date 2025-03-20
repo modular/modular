@@ -8,16 +8,12 @@
 #define SDK_GRAPHAPI_PYTHON_TYPECASTERS_H
 
 #include "Support/ML/DType.h"
-#include "mlir-c/BuiltinAttributes.h"
 #include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
-#include "mlir/IR/BuiltinDialect.h"
-#include "nanobind/make_iterator.h"
 #include "nanobind/nanobind.h"
+#include <SDK/GraphAPI/python/Bindings.h>
 #include <Support/AssertStream.h>
-#include <exception>
-#include <type_traits>
-#include <vector>
+#include <nanobind/stl/unique_ptr.h>
 
 namespace nb = nanobind;
 
@@ -42,6 +38,44 @@ public:
 namespace NB_NAMESPACE {
 namespace detail {
 
+namespace {
+template <std::size_t N>
+struct StringLiteral {
+  char data[N + 1];
+  constexpr StringLiteral(const llvm::StringRef str) {
+    for (size_t i = 0; i < N; ++i)
+      data[i] = str.data()[i];
+    data[N] = '\0';
+  }
+};
+
+template <typename T>
+constexpr auto type_name() {
+  constexpr auto name = llvm::getTypeName<T>();
+  return nb::detail::const_name(StringLiteral<name.size()>(name).data);
+}
+
+template <typename T>
+struct is_attribute_interface_base {
+private:
+  template <typename C, typename Concrete, typename... Traits>
+  static std::true_type
+  test(const mlir::AttributeInterface<Concrete, Traits...> *);
+
+  template <typename C>
+  static std::false_type test(...);
+
+public:
+  using type = decltype(test<T>(std::declval<T *>()));
+  static constexpr bool value = type::value;
+};
+
+template <typename T>
+constexpr bool is_attribute_interface() {
+  return is_attribute_interface_base<T>::value;
+}
+} // namespace
+
 /// Casts object <-> MLIRContext.
 template <>
 struct type_caster<::mlir::MLIRContext> {
@@ -58,35 +92,31 @@ public:
   operator ::mlir::MLIRContext *&() { return value; }
 
   bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
-    if (src.is_none()) {
-      src = nb::module_::import_(MAKE_MLIR_PYTHON_QUALNAME("ir"))
-                .attr("Context")
-                .attr("current");
+    nb::object capsule;
+    try {
+      capsule = mlirApiObjectToCapsule(src);
+    } catch (nb::builtin_exception) {
+      return false;
     }
-    nb::object capsule = mlirApiObjectToCapsule(src);
     value = unwrap(mlirPythonCapsuleToContext(capsule.ptr()));
     return !mlirContextIsNull(wrap(value));
   }
 };
 
-/// Casts object <-> MlirType.
+/// Casts object <-> DType.
 template <>
-struct type_caster<::mlir::Type> {
-  NB_TYPE_CASTER(::mlir::Type, const_name("Type"))
-  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) {
-    nb::object capsule = mlirApiObjectToCapsule(src);
-    value = unwrap(mlirPythonCapsuleToType(capsule.ptr()));
-    return !mlirTypeIsNull(wrap(value));
+struct type_caster<::llvm::StringRef> {
+  NB_TYPE_CASTER(::llvm::StringRef, const_name("str"))
+
+  bool from_python(handle_t<nb::str> src, uint8_t flags,
+                   cleanup_list *cleanup) noexcept {
+    value = nb::str(src).c_str();
+    return true;
   }
-  static handle from_cpp(::mlir::Type t, rv_policy policy,
-                         cleanup_list *cleanup) {
-    nb::object capsule =
-        nb::steal<nb::object>(mlirPythonTypeToCapsule(wrap(t)));
-    return nb::module_::import_(MAKE_MLIR_PYTHON_QUALNAME("ir"))
-        .attr("Type")
-        .attr(MLIR_PYTHON_CAPI_FACTORY_ATTR)(capsule)
-        .attr(MLIR_PYTHON_MAYBE_DOWNCAST_ATTR)()
-        .release();
+
+  static handle from_cpp(::llvm::StringRef t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return nb::str(t.data(), t.size());
   }
 };
 
@@ -108,6 +138,57 @@ struct type_caster<::M::DType> {
                          cleanup_list *cleanup) noexcept {
     return DTypeCaster::from_cpp(static_cast<M::DType::Cases>(t.getValue()),
                                  policy, cleanup);
+  }
+};
+
+/// Casts AttributeInterface <-> python.
+template <typename AttributeInterface>
+struct type_caster<
+    AttributeInterface,
+    std::enable_if_t<is_attribute_interface<AttributeInterface>(), int>> {
+  NB_TYPE_CASTER(AttributeInterface, const_name("\"") +
+                                         type_name<AttributeInterface>() +
+                                         const_name("\""))
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    ::mlir::Attribute attr;
+    try {
+      attr = nb::cast<::mlir::Attribute>(src);
+    } catch (nb::cast_error) {
+      return false;
+    }
+    if (!::mlir::isa<AttributeInterface>(attr))
+      return false;
+    value = ::mlir::dyn_cast<AttributeInterface>(attr);
+    return true;
+  }
+
+  static handle from_cpp(AttributeInterface ar, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return make_caster<std::unique_ptr<::mlir::Attribute>>::from_cpp(
+        std::make_unique<::mlir::Attribute>(ar), policy, cleanup);
+  }
+};
+
+template <>
+struct type_hook<::mlir::Attribute> {
+  static const std::type_info *get(::mlir::Attribute *attr) {
+    if (attr) {
+      if (auto info = M::Graph::Python::lookupTypeID(attr->getTypeID()))
+        return info;
+    }
+    return &typeid(::mlir::Attribute);
+  }
+};
+
+template <>
+struct type_hook<::mlir::Type> {
+  static const std::type_info *get(::mlir::Type *attr) {
+    if (attr) {
+      if (auto info = M::Graph::Python::lookupTypeID(attr->getTypeID()))
+        return info;
+    }
+    return &typeid(::mlir::Type);
   }
 };
 
