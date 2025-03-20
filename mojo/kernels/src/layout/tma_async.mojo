@@ -15,7 +15,7 @@ Key Components:
 - `TMATensorTile`: Core struct that encapsulates a TMA descriptor for efficient data transfers
   between global and shared memory with various access patterns and optimizations.
 
-- `TMABarrier`: Synchronization primitive for coordinating asynchronous TMA operations,
+- `SharedMemBarrier`: Synchronization primitive for coordinating asynchronous TMA operations,
   ensuring data transfers complete before dependent operations begin.
 
 - `PipelineState`: Helper struct for managing multi-stage pipeline execution with circular
@@ -132,60 +132,17 @@ fn _tma_desc_tile_layout[
 
 @value
 @register_passable("trivial")
-struct TMABarrier(CollectionElement):
-    """A memory barrier for synchronizing Tensor Memory Accelerator (TMA) operations.
+struct SharedMemBarrier(CollectionElement):
+    var mbar: Int64
+    """Shared memory location used for the barrier state.
 
-    TMABarrier provides a mechanism for coordinating asynchronous memory operations
-    between threads in a CUDA context. It implements a memory barrier that can be used
-    to ensure all TMA operations have completed before proceeding.
-
-    This struct wraps NVIDIA's memory barrier primitives, providing a higher-level
-    interface for common synchronization patterns in GPU tensor operations.
-    """
-
-    var mbar: UnsafePointer[Int64, address_space = AddressSpace.SHARED]
-    """Pointer to shared memory location used for the barrier state.
-
-    This field stores a pointer to an 8-byte aligned shared memory location that
-    maintains the state of the TMA barrier. The memory must be in shared address
+    This field stores a an 8-byte aligned shared memory location that
+    maintains the state of the barrier. The memory must be in shared address
     space to be accessible by all threads in a block.
     """
 
     @always_inline
-    fn __init__(out self):
-        """Initialize a `TMABarrier` with a new stack-allocated barrier.
-
-        Allocates an 8-byte aligned memory location in shared memory for
-        the barrier state, following NVIDIA's PTX documentation requirements.
-        """
-        # We follow 8B suggested by the ptx doc.
-        # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=fence%2520proxy%2520async%2520shared%25203A%25203Acta#size-and-alignment-of-mbarrier-object
-        self.mbar = stack_allocation[
-            1,
-            Int64,
-            address_space = AddressSpace.SHARED,
-            alignment=8,
-        ]()
-
-    @always_inline
-    fn __init__(
-        out self,
-        addr: UnsafePointer[
-            Int64,
-            address_space = AddressSpace.SHARED,
-            alignment=8,
-        ],
-    ):
-        """Initialize a `TMABarrier` with an existing shared memory location.
-
-        Args:
-            addr: Pointer to an 8-byte aligned shared memory location to use
-                 for the barrier state.
-        """
-        self.mbar = addr
-
-    @always_inline
-    fn init(self, num_threads: Int32 = 1):
+    fn init(ref [AddressSpace.SHARED]self, num_threads: Int32 = 1):
         """Initialize the barrier state with the expected number of threads.
 
         Sets up the barrier to expect arrivals from the specified number of threads
@@ -195,10 +152,10 @@ struct TMABarrier(CollectionElement):
             num_threads: Number of threads that must arrive at the barrier
                          before it is satisfied. Defaults to 1.
         """
-        mbarrier_init(self.mbar, num_threads)
+        mbarrier_init(self.unsafe_ptr(), num_threads)
 
     @always_inline
-    fn expect_bytes(self, bytes: Int32):
+    fn expect_bytes(ref [AddressSpace.SHARED]self, bytes: Int32):
         """Configure the barrier to expect a specific number of bytes to be transferred.
 
         Used with TMA operations to indicate the expected size of data transfer.
@@ -208,10 +165,10 @@ struct TMABarrier(CollectionElement):
         Args:
             bytes: Number of bytes expected to be transferred.
         """
-        mbarrier_arrive_expect_tx_shared(self.mbar, bytes)
+        mbarrier_arrive_expect_tx_shared(self.unsafe_ptr(), bytes)
 
     @always_inline
-    fn wait(self, phase: UInt32 = 0):
+    fn wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied.
 
         Blocks the calling thread until the barrier is satisfied, either by
@@ -226,6 +183,7 @@ struct TMABarrier(CollectionElement):
         """
         # Based on cutlass
         # https://github.com/NVIDIA/cutlass/blob/b78588d1630aa6643bf021613717bafb705df4ef/include/cute/arch/copy_sm90_desc.hpp#L92-L110
+
         alias asm = """{
             .reg .pred P1;
             LAB_WAIT:
@@ -235,11 +193,26 @@ struct TMABarrier(CollectionElement):
             DONE:
         }"""
         inlined_assembly[asm, NoneType, constraints="r,r"](
-            Int32(Int(self.mbar)), phase
+            Int32(Int(self.unsafe_ptr())), phase
         )
 
     @always_inline
-    fn arrive_cluster(self, cta_id: UInt32, count: UInt32 = 1):
+    fn unsafe_ptr(
+        ref [AddressSpace.SHARED]self,
+        out result: UnsafePointer[
+            Int64,
+            address_space = AddressSpace.SHARED,
+            alignment=8,
+            mut = Origin(__origin_of(self)).is_mutable,
+            origin = __origin_of(self),
+        ],
+    ):
+        return __type_of(result)(UnsafePointer.address_of(self.mbar))
+
+    @always_inline
+    fn arrive_cluster(
+        ref [AddressSpace.SHARED]self, cta_id: UInt32, count: UInt32 = 1
+    ):
         """Signal arrival at the barrier from a specific CTA (Cooperative Thread Array) in a cluster.
 
         This method is used in multi-CTA scenarios to coordinate barrier arrivals
@@ -255,11 +228,11 @@ struct TMABarrier(CollectionElement):
             mbarrier.arrive.shared::cluster.b64  _, [remAddr32], $2;
         }"""
         inlined_assembly[asm, NoneType, constraints="r,r,r"](
-            Int32(Int(self.mbar)), cta_id, count
+            Int32(Int(self.unsafe_ptr())), cta_id, count
         )
 
     @always_inline("nodebug")
-    fn arrive(self) -> Int:
+    fn arrive(ref [AddressSpace.SHARED]self) -> Int:
         """Signal arrival at the barrier and return the arrival count.
 
         This method increments the arrival count at the barrier and returns
@@ -268,42 +241,7 @@ struct TMABarrier(CollectionElement):
         Returns:
             The updated arrival count after this thread's arrival.
         """
-        return mbarrier_arrive(self.mbar)
-
-
-@always_inline
-fn create_mbarrier_array[
-    num: Int
-](
-    addr: UnsafePointer[
-        Int64,
-        address_space = AddressSpace.SHARED,
-        alignment=8,
-    ]
-) -> StaticTuple[TMABarrier, num]:
-    """Create an array of `TMABarrier` objects from a shared memory region.
-
-    This function initializes multiple `TMABarrier` objects using consecutive
-    memory locations starting from the provided address. Each barrier is
-    placed at an 8-byte offset from the previous one.
-
-    Parameters:
-        num: The number of `TMABarrier` objects to create.
-
-    Args:
-        addr: Pointer to the start of the shared memory region to use.
-              Must be 8-byte aligned.
-
-    Returns:
-        A `StaticTuple` containing 'num' TMABarrier objects.
-    """
-    mbars = StaticTuple[TMABarrier, num]()
-
-    @parameter
-    for i in range(num):
-        mbars[i] = TMABarrier(addr + i)
-
-    return mbars
+        return mbarrier_arrive(self.unsafe_ptr())
 
 
 @value
@@ -497,7 +435,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             dtype, _, address_space = AddressSpace.SHARED, *_, **_
         ],
-        mem_barrier: TMABarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
         """
@@ -551,7 +489,7 @@ struct TMATensorTile[
                     UnsafePointer.address_of(self.descriptor).bitcast[
                         NoneType
                     ](),
-                    mem_barrier.mbar,
+                    mem_barrier.unsafe_ptr(),
                     Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
                 )
 
@@ -561,7 +499,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             dtype, _, address_space = AddressSpace.SHARED, *_, **_
         ],
-        mem_barrier: TMABarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt],
     ):
         """
@@ -622,7 +560,7 @@ struct TMATensorTile[
                         UnsafePointer.address_of(self.descriptor).bitcast[
                             NoneType
                         ](),
-                        mem_barrier.mbar,
+                        mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + j * copy_dim2,
                             coords[1] + i * copy_dim1,
@@ -636,7 +574,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             dtype, _, address_space = AddressSpace.SHARED, *_, **_
         ],
-        mem_barrier: TMABarrier,
+        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
         multicast_mask: UInt16,
     ):
@@ -651,7 +589,7 @@ struct TMATensorTile[
             dst: LayoutTensor
                 The destination tensor in shared memory where data will be copied.
                 Must be 128-byte aligned.
-            mem_barrier: TMABarrier
+            mem_barrier: SharedMemBarrierArray
                 The memory barrier used to track and synchronize the asynchronous transfer.
             coords: Tuple[UInt, UInt]
                 The 2D coordinates in the source tensor from which to copy data.
@@ -685,7 +623,7 @@ struct TMATensorTile[
                     UnsafePointer.address_of(self.descriptor).bitcast[
                         NoneType
                     ](),
-                    mem_barrier.mbar,
+                    mem_barrier.unsafe_ptr(),
                     Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
                     multicast_mask,
                 )
