@@ -13,6 +13,10 @@
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
 
+#include <iomanip>
+#include <sstream>
+#include <string>
+
 using namespace M;
 
 //===----------------------------------------------------------------------===//
@@ -583,7 +587,6 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
                                target.getDataLayout().getPointerSize());
       }
     }
-
     return interned.try_emplace(space, std::move(map)).first->second;
   };
 
@@ -834,4 +837,115 @@ Operation *IRInterpreter::getOrigin(size_t depth) {
   if (depth >= stack.size())
     return nullptr;
   return stack[stack.size() - 1 - depth].origin;
+}
+
+void InterpreterState::dump() {
+  // index memory blobs for pointers can be mapped. TODO: Maybe just print
+  // interpreter address to avoid enumerating at a snapshot in time?
+  DenseMap<const MemoryBlob *, int64_t> blobIndices;
+  int64_t blobIndex = 0;
+  for (const MemoryTable &table : memory) {
+    for (const MemoryBlob &blob : table.blobs) {
+      // Don't extern freed blobs.
+      if (blob.isFreed())
+        continue;
+      blobIndices.try_emplace(&blob, blobIndex++);
+    }
+  }
+
+  auto memoryToString = [](const void *memory, size_t size) -> std::string {
+    const char *data = static_cast<const char *>(memory);
+    std::stringstream ss;
+    for (size_t i = 0; i < size; ++i) {
+      if (i > 0 && i % 16 == 0)
+        ss << "\n     ";
+      ss << std::setfill('0') << std::setw(2) << std::hex
+         << static_cast<int>(static_cast<unsigned char>(data[i])) << " ";
+    }
+    return ss.str();
+  };
+  auto ptrRegionAtIndex = [&](MemoryBlob &blob, int index) -> PointerRegion {
+    APInt addrInt(target.getDataLayout().getPointerBitWidth(), 0);
+    llvm::LoadIntFromMemory(addrInt, (uint8_t *)blob.getOwned() + index,
+                            target.getDataLayout().getPointerSize());
+    ErrorOr<std::pair<MemoryBlob &, int64_t>> mem =
+        getMemory(addrInt.getSExtValue(), 0);
+    if (mem.isError())
+      return PointerRegion{index, -1, -1};
+    auto [memBlob, offset] = mem.takeValue();
+    return PointerRegion{index, blobIndices.at(&memBlob), offset};
+  };
+  auto printBlob = [&](MemoryKind kind) {
+    switch (kind) {
+    case MemoryKind::Heap:
+      llvm::dbgs() << "HEAP:\n";
+      break;
+    case MemoryKind::Stack:
+      llvm::dbgs() << "STACK:\n";
+      break;
+    case MemoryKind::ConstGlobal:
+      llvm::dbgs() << "CONST GLOBAL:\n";
+      break;
+    case MemoryKind::Persistent:
+      llvm::dbgs() << "PERSISTENT:\n";
+      break;
+    }
+
+    for (auto blob : getTable(kind).blobs) {
+      std::string data = memoryToString(blob.getMemory(), blob.size);
+      // TODO: Support reading other values. This just illustrates printing an
+      // index if the first field in the blob is an index. If you want to pretty
+      // print all the values in a blob you will need to know the types (and
+      // therefore sizes) of all fields in a blob.
+      ErrorOr<TypedAttr> valueOrError =
+          readAttributeFromMemory(blob.baseAddr, IndexType::get(ctx));
+      TypedAttr value;
+      if (valueOrError.isError()) {
+        value = IntegerAttr::get(IndexType::get(ctx), 0);
+      } else {
+        value = valueOrError.takeValue();
+      }
+
+      std::string str;
+      llvm::raw_string_ostream os(str);
+      os << value;
+      llvm::dbgs() << "blob:\n";
+      llvm::dbgs() << "\tbase address:" << blob.baseAddr
+                   << "\n\tsize: " << blob.size << "\n\talign: " << blob.align
+                   << "\n\tcontents at physical address: " << data.c_str()
+                   << "\n\tvalue as index (fixme): " << os.str().c_str()
+                   << "\n";
+
+      // TODO: Print interpreter addresses instead of PointerRegions to avoid
+      // dependence on number of blobs per table?
+      if (blob.pointerRegions) {
+        llvm::dbgs() << "\tpointer regions: ";
+        llvm::BitVector bits = *blob.pointerRegions;
+        for (size_t i = 0; i < bits.size(); ++i) {
+          if (bits[i] == 1) {
+            PointerRegion ptrRegion = ptrRegionAtIndex(blob, i);
+            llvm::dbgs() << "(" << ptrRegion.offset << ", "
+                         << ptrRegion.blobIndex << ", " << ptrRegion.blobOffset
+                         << "), ";
+          }
+        }
+        llvm::dbgs() << "\n";
+      }
+      // TODO: map PointerAttrs to PointerRegions in SymbolAttr
+      if (blob.symbolRegions) {
+        llvm::dbgs() << "\tsymbol regions: ";
+        llvm::BitVector bits = *blob.symbolRegions;
+        for (size_t i = 0; i < bits.size(); ++i) {
+          if (bits[i] == 1)
+            llvm::errs() << symbols[i] << ", ";
+        }
+        llvm::dbgs() << "\n";
+      }
+    }
+    llvm::dbgs() << "\n";
+  };
+  printBlob(MemoryKind::Heap);
+  printBlob(MemoryKind::Stack);
+  printBlob(MemoryKind::ConstGlobal);
+  printBlob(MemoryKind::Persistent);
 }
