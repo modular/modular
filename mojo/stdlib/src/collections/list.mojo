@@ -658,7 +658,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         memcpy(self._unsafe_next_uninit_ptr(), value.unsafe_ptr(), len(value))
         self._len += len(value)
 
-    fn pop(mut self, i: Int) -> T:
+    fn pop(mut self, i: Int = -1) -> T:
         """Pops a value from the list at the given index.
 
         Args:
