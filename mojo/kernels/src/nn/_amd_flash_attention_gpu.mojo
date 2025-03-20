@@ -362,7 +362,7 @@ fn mha_single_batch[
         + num_heads * q_tile_idx * BM
     )
 
-    var q_gmem_runtime_layout = RuntimeLayout(
+    var q_gmem_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
         RuntimeTuple[q_gmem_layout.shape, unsigned=True](
             Int(q_tile_num_rows), depth
         ),
@@ -463,7 +463,7 @@ fn mha_single_batch[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout(
+        var kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
                 kv_tile_num_rows, depth
             ),

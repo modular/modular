@@ -1176,7 +1176,7 @@ fn mha_single_batch[
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
         q_ptr + Int(q_offset),
-        RuntimeLayout(
+        RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](
                 Int(q_tile_num_rows), depth
             ),
@@ -1319,7 +1319,7 @@ fn mha_single_batch[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout(
+        var kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
                 kv_tile_num_rows, depth
             ),
@@ -1362,7 +1362,7 @@ fn mha_single_batch[
         ):
             return __type_of(tensor)(
                 tensor.ptr,
-                RuntimeLayout(
+                RuntimeLayout[linear_idx_type = tensor.index_type](
                     RuntimeTuple[tensor.layout.shape, unsigned=True](
                         num_rows, tensor.dim(1)
                     ),
@@ -1725,7 +1725,7 @@ fn mha_single_batch[
         output_type, output_gmem_layout, masked=True
     ](
         output_ptr + Int(q_offset),
-        RuntimeLayout(
+        RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[output_gmem_layout.shape, unsigned=True](
                 Int(q_tile_num_rows), depth
             ),
@@ -1903,7 +1903,7 @@ fn mha_single_batch_pipelined[
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
         q_ptr + Int(q_offset),
-        RuntimeLayout(
+        RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](
                 Int(q_tile_num_rows), depth
             ),
@@ -2024,7 +2024,7 @@ fn mha_single_batch_pipelined[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout(
+        var kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
                 kv_tile_num_rows, depth
             ),
@@ -2494,7 +2494,7 @@ fn mha_single_batch_pipelined[
         output_type, output_gmem_layout, masked=True
     ](
         output_ptr + Int(q_offset),
-        RuntimeLayout(
+        RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[output_gmem_layout.shape, unsigned=True](
                 Int(q_tile_num_rows), depth
             ),
@@ -3335,7 +3335,7 @@ fn mha_decoding_single_batch[
     alias q_gmem_layout = Layout.row_major(BM, depth)
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
         q_ptr + Int(q_offset),
-        RuntimeLayout(
+        RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](group, depth),
             RuntimeTuple[q_gmem_layout.stride, unsigned=True](depth, 1),
         ),
@@ -3363,7 +3363,7 @@ fn mha_decoding_single_batch[
     ):
         return __type_of(tensor)(
             tensor.ptr,
-            RuntimeLayout(
+            RuntimeLayout[linear_idx_type = tensor.index_type](
                 RuntimeTuple[tensor.layout.shape, unsigned=True](
                     num_rows, tensor.dim(1)
                 ),
@@ -3723,7 +3723,9 @@ fn mha_decoding_single_batch[
     barrier()
 
     alias output_gmem_layout = Layout.row_major(BM, depth)
-    var output_gmem_runtime_layout = RuntimeLayout(
+    var output_gmem_runtime_layout = RuntimeLayout[
+        linear_idx_type = DType.int32
+    ](
         RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
         RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
     )
@@ -3929,7 +3931,7 @@ fn mha_decoding_single_batch_pipelined[
     alias q_gmem_layout = Layout.row_major(BM, depth)
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
         q_ptr + Int(q_offset),
-        RuntimeLayout(
+        RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](group, depth),
             RuntimeTuple[q_gmem_layout.stride, unsigned=True](depth, 1),
         ),
@@ -4180,7 +4182,9 @@ fn mha_decoding_single_batch_pipelined[
         barrier()
 
         alias output_gmem_layout = Layout.row_major(BM, depth)
-        var output_gmem_runtime_layout = RuntimeLayout(
+        var output_gmem_runtime_layout = RuntimeLayout[
+            linear_idx_type = DType.int32
+        ](
             RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
             RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
         )
@@ -4210,7 +4214,9 @@ fn mha_decoding_single_batch_pipelined[
         barrier()
 
         alias output_gmem_layout = Layout.row_major(BM, depth)
-        var output_gmem_runtime_layout = RuntimeLayout(
+        var output_gmem_runtime_layout = RuntimeLayout[
+            linear_idx_type = DType.int32
+        ](
             RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
             RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
         )
