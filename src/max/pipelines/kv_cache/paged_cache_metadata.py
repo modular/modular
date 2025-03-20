@@ -16,12 +16,7 @@
 from __future__ import annotations
 
 import numpy as np
-
-
-def ceildiv(n: int, d: int) -> int:
-    """Compute ceil(n/d) using strictly integer arithmetic."""
-    q, r = divmod(n, d)
-    return q + bool(r)
+from max.support.math import ceildiv
 
 
 class PagedCacheMetadata:

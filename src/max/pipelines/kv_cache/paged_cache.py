@@ -20,7 +20,7 @@ import math
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, List, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -37,21 +37,21 @@ from max.graph import (
 )
 from max.profiler import traced
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.support.math import ceildiv
 
 from ._utils import build_max_lengths_tensor
+from .block_manager import BlockManager
 from .cache_params import KVCacheParams
+from .cow import CowExecutor
 from .manager import (
     KVCacheInputs,
     KVCacheInputSymbols,
     KVCacheManager,
     RaggedKVCacheInputs,
 )
-from .paged_cache_metadata import PagedCacheMetadata, ceildiv
-from .prefix_cache import PrefixCache
+from .paged_cache_metadata import PagedCacheMetadata
 
 logger = logging.getLogger("max.pipelines")
-
-PERCENTAGE_BLOCKS_TO_EVICT = 0.05
 
 
 @dataclass
@@ -269,10 +269,10 @@ class PagedKVCacheManager(KVCacheManager):
             session: The inference session to load ops from.
             cache_memory: The total amount of memory available for caching.
                 This is aggregated across all devices.
-            page_size: The number of tokens that will be stored in a single page.
+            page_size: The number of tokens that will be stored in a single block.
             enable_runtime_checks: Whether to enable runtime correctness checks.
         """
-        # The number of tokens in a single page.
+        # The number of tokens in a single block.
         self.page_size = page_size
 
         # The number of bytes that a single page will occupy.
@@ -288,11 +288,12 @@ class PagedKVCacheManager(KVCacheManager):
         # Normalize cache_memory across all devices.
         cache_memory_per_device = cache_memory // len(devices)
 
-        # The total number of pages we'll have per-device.
+        # The total number of blocks we'll have per-device.
         self.total_num_pages = int(
             cache_memory_per_device // single_page_size_bytes
         )
 
+        # Validate that we are allocating enough blocks.
         single_page_size_bytes_str = to_human_readable_bytes(
             single_page_size_bytes
         )
@@ -335,13 +336,10 @@ class PagedKVCacheManager(KVCacheManager):
             is_ragged=True,
         )
 
-        # Initialize the set of available blocks.
-        self.available_blocks = set(range(self.total_num_pages))
-
-        # Initialize the blocks for each device.
-        self.blocks: list[Tensor] = []
+        # Initialize the block buffers for each device.
+        self.tensors: list[Tensor] = []
         for device in self.devices:
-            self.blocks.append(
+            self.tensors.append(
                 Tensor.zeros(
                     self.block_shape(),  # type: ignore
                     self.params.dtype,
@@ -349,77 +347,34 @@ class PagedKVCacheManager(KVCacheManager):
                 )
             )
 
-        self.active_requests: Dict[int, PagedCacheMetadata] = {}
+        # Initialize block manager
+        self.block_manager = BlockManager(
+            total_num_blocks=self.total_num_pages,
+            block_size=self.page_size,
+            enable_prefix_caching=self.params.enable_prefix_caching,
+            enable_runtime_checks=enable_runtime_checks,
+        )
 
-        self.prefix_cache: Optional[PrefixCache] = None
-        if params.enable_prefix_caching:
-            self.prefix_cache = PrefixCache(
-                session=session,
-                page_size=self.page_size,
-                block_shape=self.block_shape(is_parameterized=True),
-                dtype=self.params.dtype,
-                devices=devices,
-                tensors=self.blocks,
-            )
+        # Whether prefix caching is enabled.
+        self.enable_prefix_caching = self.params.enable_prefix_caching
+
+        # Create cow executor
+        self.cow_executor = CowExecutor(
+            session=self.session,
+            block_shape=self.block_shape(),
+            dtype=self.params.dtype,
+            devices=self.devices,
+            tensors=self.tensors,
+            page_size=self.page_size,
+            enable_prefix_caching=self.enable_prefix_caching,
+        )
+
+        # Mapping from seq ID to blocks to track request state.
+        self.active_requests: dict[int, PagedCacheMetadata] = {}
 
         # Preallocate a PagedCacheMetadata to use for sequences not in the cache.
         # This is to reduce the number of allocations. This is NOT thread safe.
         self.tmp_data = PagedCacheMetadata(self.page_size, self.max_seq_len)
-
-        # Whether to enable runtime correctness checks. These correctness checks
-        # are expensive and should only be used in tests.
-        self.enable_runtime_checks = enable_runtime_checks
-
-    def _runtime_check(self) -> None:
-        if not self.enable_runtime_checks:
-            return
-        assert self._count_all_pages() == self.total_num_pages
-        if self.prefix_cache is None:
-            return
-        for seq_id, data in self.active_requests.items():
-            self.prefix_cache.validate_req_state_valid(
-                seq_id,
-                data.committed_tokens,
-                data.committed_blocks,
-            )
-
-    @property
-    def cache_hit_rate(self) -> float:
-        if self.prefix_cache is None:
-            return 0.0
-        return self.prefix_cache.cache_hit_rate
-
-    def alloc_block(self) -> int:
-        if len(self.available_blocks) == 0 and self.prefix_cache is not None:
-            blocks_to_evict = self.total_num_pages * PERCENTAGE_BLOCKS_TO_EVICT
-            blocks_to_evict = int(max(1, blocks_to_evict))
-            evicted = self.prefix_cache.evict_blocks(blocks_to_evict)
-            for block in evicted:
-                self.available_blocks.add(block)
-
-        if len(self.available_blocks) == 0:
-            raise RuntimeError(
-                f"All {self.total_num_pages} KVCache pages have been exhausted! "
-                "You must restart your process and set a smaller batch size or max seq len."
-            )
-
-        block = self.available_blocks.pop()
-        return block
-
-    def release_block(self, block: int) -> None:
-        """We can release a block if prefix caching is disabled or if it is not committed.
-
-        If it is committed, it may be in the radix tree and in use by other sequences.
-        This means it can't be safely released without further checks.
-        """
-        if self.prefix_cache is None:
-            self.available_blocks.add(block)
-            return
-
-        # We can only add the block to the available set if it is not committed
-        # to the prefix cache.
-        if block not in self.prefix_cache:
-            self.available_blocks.add(block)
 
     @classmethod
     def _block_size_per_token(
@@ -511,14 +466,6 @@ class PagedKVCacheManager(KVCacheManager):
             params.head_dim,
         ]
 
-    def get_num_free_blocks(self) -> int:
-        if self.prefix_cache is None:
-            return len(self.available_blocks)
-        return len(self.available_blocks) + len(self.prefix_cache.stale_blocks)
-
-    def get_num_used_blocks(self) -> int:
-        return self.total_num_pages - self.get_num_free_blocks()
-
     @traced
     def can_fetch(
         self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
@@ -539,15 +486,7 @@ class PagedKVCacheManager(KVCacheManager):
             tot_new_pages_needed += new_pages_needed
             all_cache_hit_blocks.update(prefix_blocks)
 
-        num_stale_blocks = 0
-        if self.prefix_cache is not None:
-            # the blocks in the prefix cache that will be used by sequences in
-            # this batch are no longer eligible for eviction / allocation.
-            num_stale_blocks = len(
-                self.prefix_cache.stale_blocks - all_cache_hit_blocks
-            )
-
-        num_free_blocks = len(self.available_blocks) + num_stale_blocks
+        num_free_blocks = len(self.free_blocks - all_cache_hit_blocks)
 
         return tot_new_pages_needed <= num_free_blocks
 
@@ -561,7 +500,7 @@ class PagedKVCacheManager(KVCacheManager):
         This method does not modify the state of the paged cache.
 
         Returns:
-            - prefix_blocks: Prefix cache blocks that would be reused for this seq.
+            - prefix_cache_blocks: Prefix cache blocks that would be reused for this seq.
             - tokens_to_encode: Number of tokens in prompt we need to encode when running the fetch.
             - new_pages_needed: Number of new pages we need to allocate when running the fetch.
         """
@@ -572,25 +511,12 @@ class PagedKVCacheManager(KVCacheManager):
             reusing_tmp_data = True
             data = self.tmp_data
 
+        # write the prompt into the token array
         data.fetch(prompt, num_steps)
-        prefix_blocks: set[int] = set()
-        cache_hit_tokens = 0
-        if self.prefix_cache is not None:
-            # copy on write does not impact the number of new blocks needed
-            prefix_blocks, cache_hit_tokens = (
-                self.prefix_cache.query_fetch_stats(seq_id, data)
-            )
-        assert cache_hit_tokens >= 0
 
-        tokens_to_encode = len(data.prompt_tokens) - cache_hit_tokens
-        assert tokens_to_encode >= 1
-        # recall that if we have any full cache hits, we will need to release our
-        # partial block as it is replaced with a full block
-        num_existing_pages = len(data.blocks)
-        num_existing_pages += len(prefix_blocks)
-        total_pages_needed = ceildiv(data.seq_len, self.page_size)
-        new_pages_needed = total_pages_needed - num_existing_pages
-        assert new_pages_needed >= 0
+        prefix_cache_blocks, tokens_to_encode, new_pages_needed = (
+            self.block_manager.query_fetch_stats(seq_id, data)
+        )
 
         # reverse the fetch operation so that this method does not mutate state
         data.undo_fetch(prompt, num_steps)
@@ -598,7 +524,7 @@ class PagedKVCacheManager(KVCacheManager):
         if reusing_tmp_data:
             self.tmp_data.clear()
 
-        return prefix_blocks, tokens_to_encode, new_pages_needed
+        return prefix_cache_blocks, tokens_to_encode, new_pages_needed
 
     @traced
     def _fetch(
@@ -614,132 +540,69 @@ class PagedKVCacheManager(KVCacheManager):
         input `seq_ids_and_prompts` will be modified. Each prompt will be shortened to only include the tokens
         for which we do not have a cached KV entry. Note that we will never return a empty prompt.
         """
-        self._runtime_check()
 
-        max_seq_len_in_batch = -1
-        # before we start making any changes, validate that we won't over-write the cache
+        max_seq_len = -1
         for batch_idx, (seq_id, prompt) in enumerate(
             seq_ids_and_prompts.items()
         ):
             # Validate there aren't other inflight requests for this sequence.
             assert seq_id not in self.fetch_metadata
 
-            # Add prompt and inflight tokens to the token array
-            if seq_id not in self.active_requests:
-                raise ValueError(
-                    f"Called fetch on seq_id {seq_id} without claiming it"
-                )
             data = self.active_requests[seq_id]
             data.fetch(prompt, num_steps)
 
             # Compute the total sequence length
-            if data.seq_len > max_seq_len_in_batch:
-                max_seq_len_in_batch = data.seq_len
-
-            assert data.seq_len <= self.max_seq_len, (
-                f"seq_id: {seq_id} would overrun the max cache length of {self.max_seq_len} "
-                f"with {len(prompt)} new tokens. Existing length: {data.cached_idx}"
-            )
-
-        max_num_pages = ceildiv(max_seq_len_in_batch, self.page_size)
+            assert data.seq_len <= self.max_seq_len
+            max_seq_len = max(max_seq_len, data.seq_len)
 
         # Allocate the buffers containing metadata about the batch.
         # [0, total_num_pages) are the valid block ids and total_num_pages
         # denotes an unassigned block.
+        max_num_pages = ceildiv(max_seq_len, self.page_size)
         batch_size = len(seq_ids_and_prompts)
         lut_table_np = np.full(
             (batch_size, max_num_pages), self.total_num_pages, dtype=np.uint32
         )
         cache_lengths_np = np.zeros((batch_size,), dtype=np.uint32)
 
-        # Execute all of the COW ops enqueued during prefix_cache.fetch
-        all_cache_hit_blocks = set()
-        if self.prefix_cache is not None:
-            seq_ids_and_data = {
-                seq_id: self.active_requests[seq_id]
-                for seq_id in seq_ids_and_prompts
-            }
-            seq_ids_and_prefix_blocks = self.prefix_cache.fetch(
-                seq_ids_and_data,
-                free_block_fn=self.release_block,
-                alloc_block_fn=self.alloc_block,
-            )
-            for prefix_blocks in seq_ids_and_prefix_blocks.values():
-                all_cache_hit_blocks.update(prefix_blocks)
-
-            for seq_id in seq_ids_and_prompts:
-                data = seq_ids_and_data[seq_id]
-                seq_ids_and_prompts[seq_id] = data.prompt_tokens
-
-        # Determine the number of pages required for each sequence.
-        max_seq_length = 0
-        max_context_length = 0
-        total_sequence_length = 0
-        total_blocks_to_allocate = 0
-        blocks_to_allocate_by_seq = {}
+        # Update cache_lengths and max_lengths.
+        max_prompt_len = 0
+        max_cached_len = 0
         for batch_idx, (seq_id, prompt) in enumerate(
             seq_ids_and_prompts.items()
         ):
+            # Query prefix cache and allocate new blocks.
             data = self.active_requests[seq_id]
+            blocks, cow_args = self.block_manager.fetch(seq_id, data)
+            if cow_args is not None:
+                self.cow_executor.enqueue_cow(*cow_args)
+
+            # We trim the prompt in place in the event of cache hits.
+            prompt = data.prompt_tokens
+            seq_ids_and_prompts[seq_id] = prompt
+
+            # Populate the lookup table with the new pages.
+            for i, block_idx in enumerate(blocks):
+                lut_table_np[batch_idx, i] = block_idx
 
             # Get the existing cache length for this sequence.
             cache_length = data.cached_idx
             cache_lengths_np[batch_idx] = cache_length
 
             # Update the maximum lengths seen so far.
-            max_seq_length = max(max_seq_length, len(prompt))
-            max_context_length = max(
-                max_context_length, cache_length + len(prompt)
-            )
+            max_prompt_len = max(max_prompt_len, len(prompt))
+            max_cached_len = max(max_cached_len, cache_length + len(prompt))
 
-            # Compute the total sequence length and the number of pages required to store it.
-            total_sequence_length += data.seq_len
-            num_pages_required = ceildiv(data.seq_len, self.page_size)
-
-            # Compute the number of *new* pages we need to allocate.
-            num_new_pages = num_pages_required - len(data.blocks)
-            assert num_new_pages >= 0
-            blocks_to_allocate_by_seq[seq_id] = num_new_pages
-            total_blocks_to_allocate += num_new_pages
-
-        # Check if we have enough free blocks to service all requests.
-        num_evictable_blocks = 0
-        if self.prefix_cache is not None:
-            # the blocks in the prefix cache that will be used by sequences in
-            # this batch are no longer eligible for eviction / allocation.
-            num_evictable_blocks = len(
-                self.prefix_cache.stale_blocks - all_cache_hit_blocks
-            )
-        num_free_blocks = len(self.available_blocks) + num_evictable_blocks
-        if total_blocks_to_allocate > num_free_blocks:
-            raise RuntimeError(
-                f"Not enough free blocks to service all {len(seq_ids_and_prompts)} requests.\n"
-                f"Need an additional {total_blocks_to_allocate} blocks to store KV projections for all {total_sequence_length} tokens.\n"
-                f"But only {num_free_blocks} out of {self.total_num_pages} cache blocks are available to be allocated.\n"
-                f"You must restart your process and set a smaller batch size or max sequence length.\n"
-            )
-
-        # Allocate additional pages for each request in the batch
-        for batch_idx, (seq_id, num_new_pages) in enumerate(
-            blocks_to_allocate_by_seq.items()
-        ):
-            data = self.active_requests[seq_id]
-
-            # Assign some new pages to this request.
-            for _ in range(num_new_pages):
-                next_block = self.alloc_block()
-                data.blocks.append(next_block)
-
-            # Populate the lookup table with the new pages.
-            for i, block_idx in enumerate(data.blocks):
-                lut_table_np[batch_idx, i] = block_idx
+        # Execute all COW memcpy operations.
+        self.cow_executor.batch_async_execute()
 
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row.
         max_lengths_host = build_max_lengths_tensor(
-            num_steps, max_seq_length, max_context_length
+            num_steps, max_prompt_len, max_cached_len
         )
 
+        # Convert from numpy to host tensors.
         lut_table_host = Tensor.from_numpy(lut_table_np)
         cache_lengths_host = Tensor.from_numpy(cache_lengths_np)
 
@@ -747,14 +610,12 @@ class PagedKVCacheManager(KVCacheManager):
         for i, device in enumerate(self.devices):
             ret_list.append(
                 RaggedKVCacheInputs(
-                    blocks=self.blocks[i],
+                    blocks=self.tensors[i],
                     cache_lengths=cache_lengths_host.to(device=device),
                     lookup_table=lut_table_host.to(device=device),
                     max_lengths=max_lengths_host,
                 )
             )
-
-        self._runtime_check()
 
         return cast(List[KVCacheInputs], ret_list)
 
@@ -798,9 +659,6 @@ class PagedKVCacheManager(KVCacheManager):
             self.active_requests[seq_id] = PagedCacheMetadata(
                 self.page_size, self.max_seq_len
             )
-        if self.prefix_cache is not None:
-            for seq_id in seq_ids:
-                self.prefix_cache.external_claim(seq_id)
         return seq_ids
 
     def external_claim(self, seq_ids: list[int]) -> None:
@@ -810,28 +668,6 @@ class PagedKVCacheManager(KVCacheManager):
             self.active_requests[seq_id] = PagedCacheMetadata(
                 self.page_size, self.max_seq_len
             )
-        if self.prefix_cache is not None:
-            for seq_id in seq_ids:
-                self.prefix_cache.external_claim(seq_id)
-
-    def _count_all_pages(self) -> int:
-        available_blocks = self.available_blocks
-        prefix_cache_blocks = set()
-        if self.prefix_cache is not None:
-            prefix_cache_blocks = self.prefix_cache.blocks
-        uncommitted_blocks = set()
-        for seq_id in self.active_requests:
-            uncommitted_blocks.update(
-                self.active_requests[seq_id].uncommitted_blocks
-            )
-        return len(available_blocks | prefix_cache_blocks | uncommitted_blocks)
-
-    def purge_prefix_cache(self) -> None:
-        if self.prefix_cache is None:
-            return
-        evicted = self.prefix_cache.evict_blocks()
-        for block in evicted:
-            self.available_blocks.add(block)
 
     def release(self, seq_id: int) -> None:
         """Release `seq_id` provided, marking this sequence as complete.
@@ -839,13 +675,7 @@ class PagedKVCacheManager(KVCacheManager):
         allowing it to be reused when a new sequence is claimed.
         """
         super().release(seq_id)
-        data = self.active_requests[seq_id]
-
-        if self.prefix_cache is not None:
-            self.prefix_cache.release(seq_id)
-
-        for block in data.blocks:
-            self.release_block(block)
+        self.block_manager.release(seq_id)
         del self.active_requests[seq_id]
 
     @traced
@@ -859,8 +689,6 @@ class PagedKVCacheManager(KVCacheManager):
         downstream in `fetch` to track what section of memory should
         be used in the kernels.
         """
-        self._runtime_check()
-
         for seq_id, new_tokens in seq_ids_and_new_tokens.items():
             if seq_id not in self.active_requests:
                 raise ValueError(f"seq_id: {seq_id} not in active requests.")
@@ -869,22 +697,41 @@ class PagedKVCacheManager(KVCacheManager):
             data = self.active_requests[seq_id]
             data.step(new_tokens)
 
-            if self.prefix_cache is not None:
-                # Bump the committed_idx
-                self.prefix_cache.step(
-                    seq_id,
-                    data,
-                    free_block_fn=self.release_block,
-                )
+            # We possible commit new blocks into the prefix cache.
+            self.block_manager.step(seq_id, data)
 
-            expected_num_pages = ceildiv(data.seq_len, self.page_size)
-            actual_num_pages = len(data.blocks)
-            if expected_num_pages != actual_num_pages:
-                raise ValueError(
-                    f"Mismatch between expected and actual number of pages for seq_id: {seq_id}. Expected: {expected_num_pages}, Actual: {actual_num_pages}"
-                )
+    @property
+    def free_blocks(self) -> set[int]:
+        """Get the set of free blocks."""
+        return self.block_manager.free_blocks
 
-        self._runtime_check()
+    @property
+    def used_block_pct(self) -> float:
+        """Get the percentage of blocks that are in usee."""
+        pct = (
+            self.total_num_pages - len(self.free_blocks)
+        ) / self.total_num_pages
+        assert 0 <= pct <= 1
+        return pct
+
+    @property
+    def cache_hit_rate(self) -> float:
+        """Get the percentage of prompt tokens that were retrieved from the cache."""
+        pct = self.block_manager.cache_hit_rate
+        assert 0 <= pct <= 1
+        return pct
+
+    @property
+    def cow_blocks_copied(self) -> int:
+        """The number of blocks that have been copied due to COW."""
+        # TODO E2EOPT-115: Re-enable COW for paged_cache v2
+        if self.cow_executor is None:
+            return 0
+        return self.cow_executor.cow_blocks_copied
+
+    def reset_cow_blocks_copied(self) -> None:
+        """Reset the number of cow operations performed."""
+        self.cow_executor.reset_cow_blocks_copied()
 
 
 class PagedKVCacheManagerFA3Fallback(PagedKVCacheManager):
