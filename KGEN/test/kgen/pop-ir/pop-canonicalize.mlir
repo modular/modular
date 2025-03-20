@@ -1327,6 +1327,27 @@ kgen.func @load_of_store(%arg0: !kgen.pointer<index>, %arg1: index) -> index {
   kgen.return %1 : index
 }
 
+// CHECK-LABEL: @load_of_store_atomic
+// CHECK-SAME: [[PTR:%[a-z0-9]*]]:
+// CHECK-SAME: [[VAL:%[a-z0-9]*]]:
+kgen.func @load_of_store_atomic(%arg0: !kgen.pointer<index>, %arg1: index) -> index {
+  // CHECK-NEXT: pop.store atomic release [[VAL]], [[PTR]]
+  pop.store atomic release %arg1, %arg0 : !kgen.pointer<index>
+  // CHECK-NEXT: pop.load atomic acquire [[PTR]]
+  %1 = pop.load atomic acquire %arg0 : !kgen.pointer<index>
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: @atomic_store_not_canonicalized
+// CHECK-SAME: [[PTR:%[a-z0-9]*]]:
+// CHECK-SAME: [[VAL:%[a-z0-9]*]]:
+kgen.func @atomic_store_not_canonicalized(%p: !kgen.pointer<scalar<f32>>, %v: !pop.scalar<f32>) {
+  // CHECK: pop.store atomic release [[VAL]], [[PTR]]
+  pop.store atomic release %v, %p : !kgen.pointer<scalar<f32>>
+  // CHECK: pop.store atomic release [[VAL]], [[PTR]]
+  pop.store atomic release %v, %p : !kgen.pointer<scalar<f32>>
+  kgen.return
+}
 
 // CHECK-LABEL: @store_unknown
 kgen.func @store_unknown(%ptr : !kgen.pointer<array<4, index>>) {

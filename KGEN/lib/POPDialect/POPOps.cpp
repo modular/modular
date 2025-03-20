@@ -26,6 +26,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -211,13 +212,14 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
 
 LogicalResult LoadOp::verify() {
   AtomicOrdering ordering = getOrdering();
-  if ((getIsVolatile() || getIsInvariant()) &&
-      (ordering != AtomicOrdering::NOT_ATOMIC))
+  if ((ordering != AtomicOrdering::NOT_ATOMIC) &&
+      (getIsVolatile() || getIsInvariant()))
     return emitOpError(
         "invalid combination of volatile or invariant with atomic load");
 
-  if (ordering == AtomicOrdering::RELEASE ||
-      ordering == AtomicOrdering::ACQUIRE_RELEASE) {
+  if (llvm::is_contained(
+          {AtomicOrdering::RELEASE, AtomicOrdering::ACQUIRE_RELEASE},
+          ordering)) {
     return emitOpError("invalid atomic ordering '")
            << stringifyAtomicOrdering(ordering)
            << "' for load operation. Valid orderings are: unordered, "
@@ -232,9 +234,28 @@ LogicalResult LoadOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
-                    std::optional<unsigned> alignment, bool isVolatile) {
+                    std::optional<unsigned> alignment, bool isVolatile,
+                    AtomicOrdering ordering) {
   build(b, state, arg, ptr,
-        alignment ? b.getIndexAttr(*alignment) : TypedAttr(), isVolatile);
+        alignment ? b.getIndexAttr(*alignment) : TypedAttr(), isVolatile,
+        ordering);
+}
+
+LogicalResult StoreOp::verify() {
+  AtomicOrdering ordering = getOrdering();
+  if ((ordering != AtomicOrdering::NOT_ATOMIC) && getIsVolatile())
+    return emitOpError("volatile stores cannot be atomic");
+
+  if (llvm::is_contained(
+          {AtomicOrdering::ACQUIRE, AtomicOrdering::ACQUIRE_RELEASE},
+          ordering)) {
+    return emitOpError("invalid atomic ordering '")
+           << stringifyAtomicOrdering(ordering)
+           << "' for store operation. Valid orderings are: unordered, "
+              "monotonic, release, seq_cst";
+  }
+
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
