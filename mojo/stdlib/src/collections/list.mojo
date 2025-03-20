@@ -658,13 +658,13 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         memcpy(self._unsafe_next_uninit_ptr(), value.unsafe_ptr(), len(value))
         self._len += len(value)
 
-    fn pop[*, realloc: Bool = True](mut self, i: Int) -> T:
+    fn pop[*, shrink_to_fit: Bool = False](mut self, i: Int) -> T:
         """Pops a value from the list at the given index.
 
         Parameters:
-            realloc: Whether to reallocate the buffer when
+            shrink_to_fit: Whether to shrink to fit the buffer when
                 `len(self) * 4 < self.capacity and self.capacity > 1`. Defaults
-                to `True`.
+                to `False`.
 
         Args:
             i: The index of the value to pop.
@@ -684,18 +684,18 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self._len -= 1
 
         @parameter
-        if realloc:
+        if shrink_to_fit:
             if self._len * 4 < self.capacity and self.capacity > 1:
                 self._realloc(self.capacity // 2)
         return ret_val^
 
-    fn pop[*, realloc: Bool = True](mut self) -> T:
+    fn pop[*, shrink_to_fit: Bool = False](mut self) -> T:
         """Pops a value from the end of the list.
 
         Parameters:
-            realloc: Whether to reallocate the buffer when
+            shrink_to_fit: Whether to shrink to fit the buffer when
                 `len(self) * 4 < self.capacity and self.capacity > 1`. Defaults
-                to `True`.
+                to `False`.
 
         Returns:
             The popped value.
@@ -705,7 +705,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self._len -= 1
 
         @parameter
-        if realloc:
+        if shrink_to_fit:
             if self._len * 4 < self.capacity and self.capacity > 1:
                 self._realloc(self.capacity // 2)
         return ret_val^

@@ -1021,8 +1021,7 @@ struct String(
             return
         self._buffer.reserve(self.byte_length() + o_len + 1)
         if len(self._buffer) > 0:
-            # there is no wish here to reallocate the previously reserved buffer
-            _ = self._buffer.pop[realloc=False]()
+            _ = self._buffer.pop()
         self._buffer.extend(other)
         self._buffer.append(0)
 
