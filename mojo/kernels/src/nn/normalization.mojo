@@ -728,12 +728,13 @@ fn rms_norm_gpu_warp_tiling[
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
-    var tid: UInt = thread_idx.x
-    var row: UInt = block_idx.x
+    var eps_accum = epsilon.cast[accum_type]()  # Precompute epsilon conversion
 
-    var vec_data = SIMD[accum_type, simd_width]()
+    var vec_data = SIMD[accum_type, simd_width](0)
 
-    var idx: UInt = tid * simd_width
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var idx = tid * simd_width
     var thread_m2 = Scalar[accum_type](0)
 
     wait_on_dependent_grids()
@@ -746,13 +747,16 @@ fn rms_norm_gpu_warp_tiling[
     var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
         thread_m2
     )
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
+    var norm_factor = isqrt((row_m2 / num_cols) + eps_accum)
 
     if idx < num_cols:
         var gamma_val = gamma.load[width=simd_width, alignment=align](
             Index(idx)
         )
-        var norm_val = vec_data * norm_factor * gamma_val.cast[accum_type]()
+        var gamma_accum = gamma_val.cast[
+            accum_type
+        ]()  # Store gamma conversion in temporary variable
+        var norm_val = vec_data * norm_factor * gamma_accum
         output_fn(row, idx, norm_val.cast[type]())
 
     launch_dependent_grids()
@@ -772,9 +776,10 @@ fn rms_norm_gpu_block[
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
-    var tid: UInt = thread_idx.x
-    var row: UInt = block_idx.x
+    var tid = thread_idx.x
+    var row = block_idx.x
     var thread_m2 = Scalar[accum_type](0)
+    var eps_accum = epsilon.cast[accum_type]()  # Precompute epsilon conversion
 
     wait_on_dependent_grids()
 
@@ -788,7 +793,7 @@ fn rms_norm_gpu_block[
     var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
         thread_m2
     )
-    var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
+    var norm_factor = isqrt((row_m2 / num_cols) + eps_accum)
 
     # need a pass again to perform in place normalization
     for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
@@ -798,11 +803,11 @@ fn rms_norm_gpu_block[
             var gamma_val = gamma.load[width=simd_width, alignment=align](
                 Index(offset)
             )
-
+            var gamma_accum = gamma_val.cast[
+                accum_type
+            ]()  # Store gamma conversion in temporary variable
             var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
-            var norm_val = (
-                vec_data * norm_factor * gamma_val.cast[accum_type]()
-            )
+            var norm_val = vec_data * norm_factor * gamma_accum
             output_fn(row, offset, norm_val.cast[type]())
 
     launch_dependent_grids()
