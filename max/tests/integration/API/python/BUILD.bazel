@@ -126,12 +126,6 @@ modular_run_binary_test(
         "--max-length=512",
     ],
     binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "//KGEN:ptxas",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
     exec_properties = {
         # 2 here means *at least* 2 GPUs, in practice CI will have 4
         "resources:gpu-count": "2",
