@@ -558,7 +558,33 @@ struct DeviceBuffer[
         The mapping operation may involve copying data from device to host memory.
 
         Returns:
-            A host-mapped buffer that provides CPU access to the device buffer's contents.
+            A host-mapped buffer that provides CPU access to the device buffer's
+            contents inside a with-statement.
+
+        Raises:
+            If there's an error during buffer creation or data transfer.
+
+        Note:
+            Values modified inside the `with` statement are updated on the
+            device when the `with` statement exits.
+
+        Example:
+
+            ```mojo
+            from gpu.host import DeviceContext
+
+            var ctx = DeviceContext()
+            var length = 1024
+            var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
+            var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+
+            # Initialize the input and output with known values.
+            with in_dev.map_to_host() as in_host, out_dev.map_to_host() as out_host:
+                for i in range(length):
+                    in_host[i] = i
+                    out_host[i] = 255
+            ```
+            .
         """
         return Self._HostMappedBufferType(self.context(), self)
 
@@ -3448,6 +3474,7 @@ struct DeviceContext:
             )
         )
 
+    @deprecated("Use DeviceBuffer.map_to_host()")
     fn map_to_host[
         type: DType  # The data type of the buffer elements
     ](self, buf: DeviceBuffer[type]) raises -> _HostMappedBuffer[type]:
