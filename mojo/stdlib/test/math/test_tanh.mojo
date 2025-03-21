@@ -28,7 +28,7 @@ def test_tanh_tfvals_fp32():
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
     var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var x = NDBuffer[dtype, 1, _, 4](x_stack.unsafe_ptr())
+    var x = NDBuffer[dtype, 1, _, 4](x_stack)
     x.store[width=4](
         0,
         SIMD[dtype, 4](
@@ -40,7 +40,7 @@ def test_tanh_tfvals_fp32():
     )
 
     var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var y = NDBuffer[dtype, 1, _, 4](y_stack.unsafe_ptr())
+    var y = NDBuffer[dtype, 1, _, 4](y_stack)
     for i in range(4):
         y[i] = tanh(x[i])
 
@@ -48,7 +48,7 @@ def test_tanh_tfvals_fp32():
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float32(x)))`
     var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var tfvals_fp32 = NDBuffer[dtype, 1, _, 4](tfvals_stack.unsafe_ptr())
+    var tfvals_fp32 = NDBuffer[dtype, 1, _, 4](tfvals_stack)
     tfvals_fp32.store[width=4](
         0, SIMD[dtype, 4](-0.850603521, -1, -1, -0.612388909)
     )
@@ -69,7 +69,7 @@ def test_tanh_tfvals_fp64():
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
     var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var x = NDBuffer[dtype, 1, _, 4](x_stack.unsafe_ptr())
+    var x = NDBuffer[dtype, 1, _, 4](x_stack)
     x.store[width=4](
         0,
         SIMD[dtype, 4](
@@ -81,7 +81,7 @@ def test_tanh_tfvals_fp64():
     )
 
     var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var y = NDBuffer[dtype, 1, _, 4](y_stack.unsafe_ptr())
+    var y = NDBuffer[dtype, 1, _, 4](y_stack)
     for i in range(4):
         y[i] = tanh(x[i])
 
@@ -89,7 +89,7 @@ def test_tanh_tfvals_fp64():
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float64(x)))`
     var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var tfvals_fp64 = NDBuffer[dtype, 1, _, 4](tfvals_stack.unsafe_ptr())
+    var tfvals_fp64 = NDBuffer[dtype, 1, _, 4](tfvals_stack)
     tfvals_fp64.store[width=4](
         0,
         SIMD[dtype, 4](
