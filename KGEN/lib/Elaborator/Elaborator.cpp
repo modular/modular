@@ -296,10 +296,20 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
 static ErrorTreeOr<DictionaryAttr>
 concretizeLLVMMetadataArrays(Location loc, ArrayAttr array) {
   NamedAttrList llvmMetadata;
+  DenseSet<StringAttr> seenMetadataNames;
   for (int i = 0, e = array.size(); i < e; i += 2) {
     auto name = dyn_cast<StringAttr>(array[i]);
     if (!name)
       return ErrorTree(loc, "cannot concretize name in 'llvm_metadata'");
+    if (seenMetadataNames.contains(name)) {
+      // NOTE: @llvm_metadata are processed and added in reverse order by the
+      // parser.
+      InFlightDiagnostic diag =
+          mlir::emitWarning(loc, "duplicate LLVM metadata attribute for ")
+          << name << ". Value of the last occurrence will be used.";
+      continue;
+    }
+    seenMetadataNames.insert(name);
     llvmMetadata.append(name, array[i + 1]);
   }
   return llvmMetadata.getDictionary(array.getContext());
