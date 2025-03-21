@@ -18,8 +18,8 @@ fn allgather[
     rank: Int,
     ngpus: Int, //,
 ](
-    input_buffers: InlineArray[NDBuffer[type, rank], ngpus],
-    output_buffers: InlineArray[NDBuffer[type, rank], ngpus],
+    input_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
+    output_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
     ctxs: List[DeviceContext],
 ) raises:
     """

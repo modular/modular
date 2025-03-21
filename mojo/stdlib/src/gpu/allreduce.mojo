@@ -182,7 +182,7 @@ fn _naive_reduce_kernel_with_lambda[
     alignment: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    dst_buf: NDBuffer[type, rank],
+    dst_buf: NDBuffer[type, rank, MutableAnyOrigin],
     src_buf: UnsafePointer[Scalar[type]],
     num_elements: Int,
 ):
@@ -208,8 +208,10 @@ fn _allreduce_naive[
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
-    list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    list_of_in_bufs: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
+    list_of_out_bufs: InlineArray[
+        NDBuffer[type, rank, MutableAnyOrigin], ngpus
+    ],
     max_num_blocks: Int,
     ctxs: List[DeviceContext],
 ) raises:
@@ -449,7 +451,7 @@ fn _allreduce_2stage_kernel[
     BLOCK_SIZE: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    result: NDBuffer[type, rank],
+    result: NDBuffer[type, rank, MutableAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
@@ -606,7 +608,7 @@ fn _allreduce_1stage_kernel[
     BLOCK_SIZE: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    result: NDBuffer[type, rank],
+    result: NDBuffer[type, rank, MutableAnyOrigin],
     src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
@@ -693,8 +695,10 @@ fn _allreduce_p2p[
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
-    list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
+    list_of_in_bufs: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
+    list_of_out_bufs: InlineArray[
+        NDBuffer[type, rank, MutableAnyOrigin], ngpus
+    ],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     max_num_blocks: Int,
     ctxs: List[DeviceContext],
@@ -817,8 +821,8 @@ fn allreduce[
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    input_buffers: InlineArray[NDBuffer[type, rank], ngpus],
-    output_buffers: InlineArray[NDBuffer[type, rank], ngpus],
+    input_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
+    output_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctxs: List[DeviceContext],
     _max_num_blocks: Optional[Int] = None,
