@@ -255,11 +255,12 @@ fn create_tma_descriptor[
         global_strides_arg[i] = global_strides[rank - i - 1] * sizeof[dtype]()
 
     debug_assert(
-        global_strides_arg[0] == 1,
-        String(
-            "GMEM should be in c-order (row-major) and therefore global stride"
-            " at dimension 0 should always be 1"
-        ),
+        global_strides_arg[0] == sizeof[dtype](),
+        "TMA GMEM should be row-major, global stride",
+        " at dim 0 should be sizeof[dtype](): ",
+        sizeof[dtype](),
+        " but is: ",
+        global_strides_arg[0],
     )
     # const char *AsyncRT_cuda_tensorMapEncodeTiled(
     #     void *tensorMap, int32_t tensorDataType, uint32_t tensorRank,
@@ -289,7 +290,8 @@ fn create_tma_descriptor[
             rank,
             global_buf._handle,
             global_dim_arg,
-            global_strides_arg + 1,  # global_strides_arg[0] implicitly is 1
+            # global_strides_arg[0] is implicitly sizeof[dtype]()
+            global_strides_arg + 1,
             box_dim_arg,
             element_stride_arg,
             TensorMapInterleave.INTERLEAVE_NONE._value,
