@@ -19,13 +19,13 @@ fn main() raises:
     var in_buf = ctx.enqueue_create_buffer[DType.int64](length)
     var out_buf = ctx.enqueue_create_buffer[DType.int64](length)
 
-    with ctx.map_to_host(in_buf) as in_map:
+    with in_buf.map_to_host() as in_map:
         for i in range(length):
             in_map[i] = i
 
     in_buf.enqueue_copy_to(out_buf)
 
-    with ctx.map_to_host(out_buf) as out_map:
+    with out_buf.map_to_host() as out_map:
         for i in range(length):
             expect_eq(out_map[i], i)
 

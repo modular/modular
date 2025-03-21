@@ -130,7 +130,7 @@ $L__BB0_2:
         block_dim=Dim(BLOCK_DIM),
     )
 
-    with ctx.map_to_host(out) as out:
+    with out.map_to_host() as out:
         for i in range(LEN):
             if i < 2:
                 print("out[", i, "]: ", out[i])
