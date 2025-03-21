@@ -222,7 +222,7 @@ class PipelineConfig(MAXConfig):
         if self.max_num_steps < 0:
             if (
                 self.sampling_config.enable_structured_output
-                or self._model_config.device_specs[0] == DeviceSpec.cpu()
+                or self.model_config.device_specs[0] == DeviceSpec.cpu()
             ):
                 self.max_num_steps = 1
             else:
@@ -237,7 +237,7 @@ class PipelineConfig(MAXConfig):
             )
 
         if self.sampling_config.enable_structured_output:
-            if self._model_config.device_specs[0] == DeviceSpec.cpu():
+            if self.model_config.device_specs[0] == DeviceSpec.cpu():
                 raise ValueError(
                     "enable_structured_output is not currently supported on CPU."
                 )
@@ -256,9 +256,10 @@ class PipelineConfig(MAXConfig):
             self._validate_pipeline_config_for_speculative_decoding()
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
-        # When `draft_model` is not provided, speculative decoding is disabled.
-        if not self.draft_model:
-            return None
+        """
+        Validate the pipeline configs when used in speculative decoding mode.
+        """
+        assert self.draft_model is not None, "draft_model must be provided"
 
         # Assume `draft_model` is provided, and thus speculative decoding is enabled.
         # We don't support running speculative decoding with the HuggingFace backend.
