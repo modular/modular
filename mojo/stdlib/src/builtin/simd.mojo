@@ -3189,32 +3189,9 @@ fn _convert_f32_to_float8[
 ](val: SIMD[type, size],) -> SIMD[target, size]:
     @parameter
     if is_nvidia_gpu() and _is_sm_9x():
-        alias asm_prefix = "cvt.rn.satfinite.e4m3x2.f32" if target is DType.float8_e4m3fn else "cvt.rn.satfinite.e5m2x2.f32"
-
-        @parameter
-        if size > 1:
-            var res = SIMD[target, size]()
-
-            @parameter
-            for i in range(0, size, 2):
-                var f8x2_f32x2 = inlined_assembly[
-                    asm_prefix + " $0, $1, $2;",
-                    Scalar[DType.uint16],
-                    constraints="=h,f,f",
-                    has_side_effect=False,
-                ](val[i + 1], val[i])
-                var ui8x2 = bitcast[target, 2](f8x2_f32x2)
-                res = res.insert[offset=i](ui8x2)
-            return res
-        else:
-            var f8x2_f32x2 = inlined_assembly[
-                asm_prefix + " $0, $1, $2;",
-                Scalar[DType.uint16],
-                constraints="=h,f,f",
-                has_side_effect=False,
-            ](Float32(0.0), val[0])
-            var ui8x2 = bitcast[target, 2](f8x2_f32x2)
-            return ui8x2[0]
+        return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
+            val.value
+        )
     else:
 
         @always_inline
