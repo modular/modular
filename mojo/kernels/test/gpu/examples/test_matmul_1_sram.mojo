@@ -131,11 +131,11 @@ fn run_matmul(ctx: DeviceContext) raises:
     alias K = 511
 
     var a_host_ptr = UnsafePointer[Float32].alloc(M * K)
-    var a_host = NDBuffer[DType.float32, 2, DimList(M, K)](a_host_ptr)
+    var a_host = NDBuffer[DType.float32, 2, _, DimList(M, K)](a_host_ptr)
     var b_host_ptr = UnsafePointer[Float32].alloc(K * N)
-    var b_host = NDBuffer[DType.float32, 2, DimList(K, N)](b_host_ptr)
+    var b_host = NDBuffer[DType.float32, 2, _, DimList(K, N)](b_host_ptr)
     var c_host_ptr = UnsafePointer[Float32].alloc(M * N)
-    var c_host = NDBuffer[DType.float32, 2, DimList(M, N)](c_host_ptr)
+    var c_host = NDBuffer[DType.float32, 2, _, DimList(M, N)](c_host_ptr)
 
     for i in range(M):
         for j in range(K):

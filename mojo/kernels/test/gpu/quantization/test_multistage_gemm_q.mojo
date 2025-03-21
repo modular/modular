@@ -655,7 +655,7 @@ fn test_quantized[
         Scalar[a_type]
     ]()
     var b_scales_view = NDBuffer[
-        a_type, 2, DimList(k.dim // group_size, n.dim)
+        a_type, 2, _, DimList(k.dim // group_size, n.dim)
     ](b_scales_ptr)
     # elements of b matrix is between [-1, 1]
     random(b_scales_view, 0, 0.125)

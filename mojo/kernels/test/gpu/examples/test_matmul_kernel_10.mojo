@@ -67,9 +67,9 @@ fn sgemm_warp_tiling_kernel[
     NUM_THREADS: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    mat_c: NDBuffer[c_type, 2, c_shape],
-    mat_a: NDBuffer[a_type, 2, a_shape],
-    mat_b: NDBuffer[b_type, 2, b_shape],
+    mat_c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    mat_a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    mat_b: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
 ):
@@ -101,12 +101,14 @@ fn sgemm_warp_tiling_kernel[
     var a_sram = NDBuffer[
         a_type,
         1,
+        MutableAnyOrigin,
         DimList(Int(BK * BM_padded)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
     var b_sram = NDBuffer[
         b_type,
         1,
+        MutableAnyOrigin,
         DimList(Int(BK * BN)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
@@ -133,18 +135,19 @@ fn sgemm_warp_tiling_kernel[
     var thread_results = NDBuffer[
         c_type,
         4,
+        MutableAnyOrigin,
         DimList(Int(WMITER), Int(WNITER), Int(TM), Int(TN)),
     ]().stack_allocation()
     thread_results.zero()
 
     # We cache into registers on the warptile level.
     var reg_m = NDBuffer[
-        a_type, 2, DimList(Int(WMITER), Int(TM))
+        a_type, 2, MutableAnyOrigin, DimList(Int(WMITER), Int(TM))
     ]().stack_allocation()
     reg_m.zero()
 
     var reg_n = NDBuffer[
-        b_type, 2, DimList(Int(WNITER), Int(TN))
+        b_type, 2, MutableAnyOrigin, DimList(Int(WNITER), Int(TN))
     ]().stack_allocation()
     reg_n.zero()
 
@@ -425,13 +428,13 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](
+    var c_buffer = NDBuffer[DType.float32, 2, _, DimList(M, N)](
         c_device.unsafe_ptr()
     )
-    var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](
+    var a_buffer = NDBuffer[DType.float32, 2, _, DimList(M, K)](
         a_device.unsafe_ptr()
     )
-    var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](
+    var b_buffer = NDBuffer[DType.float32, 2, _, DimList(K, N)](
         b_device.unsafe_ptr()
     )
 

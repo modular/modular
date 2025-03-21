@@ -117,8 +117,6 @@ fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
     _ = c_host
     _ = c_host_ref
 
-    _ = func_naive^
-
 
 fn main() raises:
     with DeviceContext() as ctx:

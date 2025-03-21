@@ -231,13 +231,13 @@ fn test_conv_gpu[
     var filter_dev = ctx.enqueue_create_buffer[type](filter_dim_flattened)
     var output_dev = ctx.enqueue_create_buffer[type](output_dim_flattened)
 
-    var input_buf = NDBuffer[type, 4, input_dim](
+    var input_buf = NDBuffer[type, 4, _, input_dim](
         input_dev.unsafe_ptr(), input_dim
     )
-    var filter_buf = NDBuffer[type, 4, filter_dim](
+    var filter_buf = NDBuffer[type, 4, _, filter_dim](
         filter_dev.unsafe_ptr(), filter_dim
     )
-    var output_buf = NDBuffer[type, 4, output_dim](
+    var output_buf = NDBuffer[type, 4, _, output_dim](
         output_dev.unsafe_ptr(), output_dim
     )
 
@@ -268,6 +268,9 @@ fn test_conv_gpu[
         4,
         4,
         4,
+        _,
+        _,
+        _,
         DimList.create_unknown[4](),
         DimList.create_unknown[4](),
         DimList.create_unknown[4](),

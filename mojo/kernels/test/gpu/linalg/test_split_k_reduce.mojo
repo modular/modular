@@ -31,12 +31,12 @@ fn _size[rank: Int](dims: IndexList[rank]) -> Int:
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
-    DeviceBuffer[dtype], NDBuffer[dtype, rank, shape]
+    DeviceBuffer[dtype], NDBuffer[dtype, rank, MutableAnyOrigin, shape]
 ]:
     var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
         storage,
-        NDBuffer[dtype, rank, shape](
+        NDBuffer[dtype, rank, _, shape](
             storage.unsafe_ptr(), dynamic_shape=dynamic_shape
         ),
     )
@@ -44,9 +44,11 @@ fn _create_device_buffer[
 
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
-](dynamic_shape: IndexList[rank]) raises -> NDBuffer[dtype, rank, shape]:
+](dynamic_shape: IndexList[rank]) raises -> NDBuffer[
+    dtype, rank, MutableAnyOrigin, shape
+]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
-    return NDBuffer[dtype, rank, shape](
+    return NDBuffer[dtype, rank, _, shape](
         storage_ptr, dynamic_shape=dynamic_shape
     )
 
@@ -62,8 +64,8 @@ fn _get_test_name[
 fn _split_k_reduce_verify[
     type: DType, a_shape: DimList, b_shape: DimList
 ](
-    mut A: NDBuffer[type, 2, a_shape],
-    B: NDBuffer[type, 2, b_shape],
+    mut A: NDBuffer[mut=True, type, 2, _, a_shape],
+    B: NDBuffer[type, 2, _, b_shape],
     num_partition: UInt,
 ):
     var M = A.dim[0]()

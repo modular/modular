@@ -70,6 +70,7 @@ fn stencil2d_smem(
     var a_shared = NDBuffer[
         DType.float32,
         2,
+        MutableAnyOrigin,
         DimList(BLOCK_DIM + 2, BLOCK_DIM + 2),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()

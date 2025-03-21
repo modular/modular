@@ -25,7 +25,7 @@ alias load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
 
 fn fill_buffer[
     dtype: DType, rank: Int, shape: DimList
-](buf: NDBuffer[dtype, rank, shape]):
+](buf: NDBuffer[mut=True, dtype, rank, _, shape]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)
@@ -37,8 +37,8 @@ fn fill_buffer[
 fn assert_allclose[
     dtype: DType, rank: Int, shape: DimList
 ](
-    h_output_ref: NDBuffer[dtype, rank, shape],
-    h_output_gpu: NDBuffer[dtype, rank, shape],
+    h_output_ref: NDBuffer[dtype, rank, _, shape],
+    h_output_gpu: NDBuffer[dtype, rank, _, shape],
 ) raises:
     var shape_ = h_output_ref.get_shape()
     for i in range(shape_.flattened_length()):
@@ -65,9 +65,15 @@ fn test_stencil_avg_pool(ctx: DeviceContext) raises:
     alias output_width = input_width - pool_window_w + 1
     alias output_shape = DimList(1, output_height, output_width, 1)
 
-    var h_input = NDBuffer[dtype, rank, input_shape].stack_allocation()
-    var h_output = NDBuffer[dtype, rank, output_shape].stack_allocation()
-    var h_output_ref = NDBuffer[dtype, rank, output_shape].stack_allocation()
+    var h_input = NDBuffer[
+        dtype, rank, MutableAnyOrigin, input_shape
+    ].stack_allocation()
+    var h_output = NDBuffer[
+        dtype, rank, MutableAnyOrigin, output_shape
+    ].stack_allocation()
+    var h_output_ref = NDBuffer[
+        dtype, rank, MutableAnyOrigin, output_shape
+    ].stack_allocation()
 
     fill_buffer(h_input)
     h_output.fill(0)
@@ -228,9 +234,15 @@ fn test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
     alias output_width = input_width - pool_window_w + pad_w * 2 + 1
     alias output_shape = DimList(1, output_height, output_width, 1)
 
-    var h_input = NDBuffer[dtype, rank, input_shape].stack_allocation()
-    var h_output = NDBuffer[dtype, rank, output_shape].stack_allocation()
-    var h_output_ref = NDBuffer[dtype, rank, output_shape].stack_allocation()
+    var h_input = NDBuffer[
+        dtype, rank, MutableAnyOrigin, input_shape
+    ].stack_allocation()
+    var h_output = NDBuffer[
+        dtype, rank, MutableAnyOrigin, output_shape
+    ].stack_allocation()
+    var h_output_ref = NDBuffer[
+        dtype, rank, MutableAnyOrigin, output_shape
+    ].stack_allocation()
     h_output_ref.fill(0)
 
     fill_buffer(h_input)
@@ -392,9 +404,15 @@ fn test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
     alias output_width = (input_width - pool_window_w) // stride + 1
     alias output_shape = DimList(1, output_height, output_width, 1)
 
-    var h_input = NDBuffer[dtype, rank, input_shape].stack_allocation()
-    var h_output = NDBuffer[dtype, rank, output_shape].stack_allocation()
-    var h_output_ref = NDBuffer[dtype, rank, output_shape].stack_allocation()
+    var h_input = NDBuffer[
+        dtype, rank, MutableAnyOrigin, input_shape
+    ].stack_allocation()
+    var h_output = NDBuffer[
+        dtype, rank, MutableAnyOrigin, output_shape
+    ].stack_allocation()
+    var h_output_ref = NDBuffer[
+        dtype, rank, MutableAnyOrigin, output_shape
+    ].stack_allocation()
     h_output_ref.fill(0)
 
     fill_buffer(h_input)
@@ -565,9 +583,15 @@ fn test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
 
     var pad_value = 0
 
-    var h_input = NDBuffer[dtype, rank, input_shape].stack_allocation()
-    var h_output = NDBuffer[dtype, rank, output_shape].stack_allocation()
-    var h_output_ref = NDBuffer[dtype, rank, output_shape].stack_allocation()
+    var h_input = NDBuffer[
+        dtype, rank, MutableAnyOrigin, input_shape
+    ].stack_allocation()
+    var h_output = NDBuffer[
+        dtype, rank, MutableAnyOrigin, output_shape
+    ].stack_allocation()
+    var h_output_ref = NDBuffer[
+        dtype, rank, MutableAnyOrigin, output_shape
+    ].stack_allocation()
     h_output_ref.fill(0)
 
     fill_buffer(h_input)

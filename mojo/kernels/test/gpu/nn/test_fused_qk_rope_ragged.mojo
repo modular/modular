@@ -32,7 +32,9 @@ def _init_device_ndbuffer_from_goldens[
 
     # Copy tensor to device.
     device_tensor = DeviceNDBuffer[
-        host_tensor.type, host_tensor.rank, shape = host_tensor.shape
+        host_tensor.type,
+        host_tensor.rank,
+        shape = host_tensor.shape,
     ](ctx=ctx)
     ctx.enqueue_copy(device_tensor.buffer, host_tensor.tensor.data)
     ctx.synchronize()
@@ -246,7 +248,12 @@ def execute_fused_qk_rope_ragged(
     # "true CE" execution
     print("true")
     var freqs_cis = rebind[
-        NDBuffer[type, 2, shape = freqs_cis_table_dev.shape]
+        NDBuffer[
+            type,
+            2,
+            MutableAnyOrigin,
+            shape = freqs_cis_table_dev.shape,
+        ]
     ](freqs_cis_table_dev.tensor)
     fused_qk_rope_ragged[
         mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
@@ -553,7 +560,12 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
 
     # execute the kernel
     var freqs_cis = rebind[
-        NDBuffer[type, 2, shape = DimList(max_seq_len, rope_dim)]
+        NDBuffer[
+            type,
+            2,
+            __type_of(freqs_cis_device.tensor).origin,
+            shape = DimList(max_seq_len, rope_dim),
+        ]
     ](freqs_cis_device.tensor)
     fused_qk_rope_ragged[
         k_cache_collection.CacheType, interleaved=True, target="gpu"

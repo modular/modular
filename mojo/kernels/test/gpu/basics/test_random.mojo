@@ -24,8 +24,12 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
     alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
 
-    var in_host = NDBuffer[type, 1, DimList(length)].stack_allocation()
-    var out_host = NDBuffer[type, 1, DimList(length)].stack_allocation()
+    var in_host = NDBuffer[
+        type, 1, MutableAnyOrigin, DimList(length)
+    ].stack_allocation()
+    var out_host = NDBuffer[
+        type, 1, MutableAnyOrigin, DimList(length)
+    ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
     for i in range(length):

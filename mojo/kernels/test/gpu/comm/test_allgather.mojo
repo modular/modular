@@ -68,11 +68,11 @@ fn all_gather_test[
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[type, rank], ngpus](
-        NDBuffer[type, rank]()
+    var in_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
+        NDBuffer[type, rank, MutableAnyOrigin]()
     )
-    var out_bufs = InlineArray[NDBuffer[type, rank], ngpus](
-        NDBuffer[type, rank]()
+    var out_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
+        NDBuffer[type, rank, MutableAnyOrigin]()
     )
 
     @parameter

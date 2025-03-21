@@ -72,7 +72,9 @@ fn call_int4tobf16[
 
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
-    var out_host = NDBuffer[DType.bfloat16, 1, 8].stack_allocation()
+    var out_host = NDBuffer[
+        DType.bfloat16, 1, MutableAnyOrigin, 8
+    ].stack_allocation()
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
     ctx.enqueue_function[call_int4tobf16[no_lop]](

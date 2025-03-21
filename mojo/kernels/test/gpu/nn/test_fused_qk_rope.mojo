@@ -61,13 +61,17 @@ def _fused_qk_rope[
 ) -> None:
     """Wrapper that takes DeviceNDBuffer, to ensure lifetimes of data."""
     fused_qk_rope[kv_collection.CacheType, interleaved=True, target="gpu"](
-        q_proj=rebind[NDBuffer[type, 4, shape=q_shape]](q_proj.tensor),
-        kv_collection=kv_collection,
-        freqs_cis=rebind[NDBuffer[type, 2, shape=freqs_shape]](
-            freqs_cis.tensor
+        q_proj=rebind[NDBuffer[type, 4, q_proj.tensor.origin, shape=q_shape]](
+            q_proj.tensor
         ),
+        kv_collection=kv_collection,
+        freqs_cis=rebind[
+            NDBuffer[type, 2, freqs_cis.tensor.origin, shape=freqs_shape]
+        ](freqs_cis.tensor),
         layer_idx=layer_idx,
-        output=rebind[NDBuffer[type, 4, shape=q_shape]](output.tensor),
+        output=rebind[NDBuffer[type, 4, output.tensor.origin, shape=q_shape]](
+            output.tensor
+        ),
         context=context,
     )
 
@@ -155,7 +159,9 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
         value_cache=NDBuffer[type, 5](
             UnsafePointer[Scalar[type]](), block_shape
         ),  # passing as a dummy val, this isn't used.
-        cache_lengths=rebind[NDBuffer[DType.uint32, 1]](cache_lengths.tensor),
+        cache_lengths=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+            cache_lengths.tensor
+        ),
         is_context_encoding=False,
         num_layers=num_layers,
         batch_size=batch_size,

@@ -92,10 +92,10 @@ fn scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: NDBuffer[type, data_rank, _],
-    indices: NDBuffer[indices_type, indices_rank, _],
-    updates: NDBuffer[type, updates_rank, _],
-    output: NDBuffer[type, data_rank, _],
+    data: NDBuffer[type, data_rank, *_],
+    indices: NDBuffer[indices_type, indices_rank, *_],
+    updates: NDBuffer[type, updates_rank, *_],
+    output: NDBuffer[type, data_rank, *_],
     ctx: DeviceContext,
 ) raises:
     """
@@ -185,7 +185,7 @@ fn scatter_nd[
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
     var input_strides = NDBuffer[
-        DType.int64, 1, DimList(data_rank)
+        DType.int64, 1, MutableAnyOrigin, DimList(data_rank)
     ]().stack_allocation()
     for i in range(data_rank):
         var total_stride = 1
@@ -247,8 +247,6 @@ fn scatter_nd[
 
     ptr.free()
 
-    _ = func^
-
 
 fn linear_fill[
     type: DType
@@ -271,14 +269,22 @@ fn test_case[
     indices_vals: VariadicList[Int64],
     updates_vals: VariadicList[Scalar[type]],
     output_ref_vals: VariadicList[Scalar[type]],
-):
-    var data = NDBuffer[type, 3, input_shape].stack_allocation()
+) raises:
+    var data = NDBuffer[
+        type, 3, MutableAnyOrigin, input_shape
+    ].stack_allocation()
     linear_fill(data, data_vals)
-    var indices = NDBuffer[DType.int64, 2, indices_shape].stack_allocation()
+    var indices = NDBuffer[
+        DType.int64, 2, MutableAnyOrigin, indices_shape
+    ].stack_allocation()
     linear_fill(indices, indices_vals)
-    var updates = NDBuffer[type, 3, updates_shape].stack_allocation()
+    var updates = NDBuffer[
+        type, 3, MutableAnyOrigin, updates_shape
+    ].stack_allocation()
     linear_fill(updates, updates_vals)
-    var output = NDBuffer[type, 3, input_shape].stack_allocation()
+    var output = NDBuffer[
+        type, 3, MutableAnyOrigin, input_shape
+    ].stack_allocation()
 
     # Note: This is for the specific set of examples
     #      (due to _to_ndbuffer[] parameters).
@@ -289,7 +295,9 @@ fn test_case[
     _ = indices
     _ = updates
 
-    var output_ref = NDBuffer[type, 3, input_shape].stack_allocation()
+    var output_ref = NDBuffer[
+        type, 3, MutableAnyOrigin, input_shape
+    ].stack_allocation()
     linear_fill(output_ref, output_ref_vals)
 
     for i in range(output.size()):

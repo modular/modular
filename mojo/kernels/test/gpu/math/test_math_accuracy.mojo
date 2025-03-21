@@ -22,10 +22,15 @@ alias length = 8192
 
 def run_elementwise[
     type: DType, math_fn: fn (x: SIMD) -> __type_of(x)
-](ctx: DeviceContext, in_host: NDBuffer[type, 1, DimList(length)]):
+](
+    ctx: DeviceContext,
+    in_host: NDBuffer[type, 1, MutableAnyOrigin, DimList(length)],
+):
     alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
 
-    var out_host = NDBuffer[type, 1, DimList(length)].stack_allocation()
+    var out_host = NDBuffer[
+        type, 1, MutableAnyOrigin, DimList(length)
+    ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
 
@@ -69,7 +74,9 @@ def run_elementwise[
 
 
 def test_exp[type: DType](ctx: DeviceContext):
-    var input = NDBuffer[type, 1, DimList(length)].stack_allocation()
+    var input = NDBuffer[
+        type, 1, MutableAnyOrigin, DimList(length)
+    ].stack_allocation()
     alias epsilon = 0.001
     for i in range(length):
         input[i] = log(Scalar[type](i) + epsilon)
@@ -77,7 +84,9 @@ def test_exp[type: DType](ctx: DeviceContext):
 
 
 def test_exp2[type: DType](ctx: DeviceContext):
-    var input = NDBuffer[type, 1, DimList(length)].stack_allocation()
+    var input = NDBuffer[
+        type, 1, MutableAnyOrigin, DimList(length)
+    ].stack_allocation()
     alias epsilon = 0.001
     for i in range(length):
         input[i] = log(Scalar[type](i) + epsilon)

@@ -156,11 +156,11 @@ fn test[
             qkv_type == mask_type, "expect qkv and mask have same type for CPU."
         ]()
         _naive_attention_with_transpose[qkv_type](
-            rebind[NDBuffer[qkv_type, 4]](output),
-            rebind[NDBuffer[qkv_type, 4]](q),
-            rebind[NDBuffer[qkv_type, 4]](k),
-            rebind[NDBuffer[qkv_type, 4]](k),
-            rebind[NDBuffer[qkv_type, 2]](mask),
+            rebind[NDBuffer[qkv_type, 4, output.origin]](output),
+            rebind[NDBuffer[qkv_type, 4, q.origin]](q),
+            rebind[NDBuffer[qkv_type, 4, k.origin]](k),
+            rebind[NDBuffer[qkv_type, 4, k.origin]](k),
+            rebind[NDBuffer[qkv_type, 2, mask.origin]](mask),
             scale,
         )
 
@@ -177,26 +177,26 @@ fn test[
 
     # Contruct device buffers.
     var q_device = NDBuffer[
-        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](
         q_device_ptr.unsafe_ptr(),
         Index(batch_size, seq_len, num_heads, depth),
     )
     var k_device = NDBuffer[
-        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
+        qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
     ](
         k_device_ptr.unsafe_ptr(),
         Index(batch_size, num_keys, kv_num_heads, depth),
     )
-    var mask3d = NDBuffer[mask_type, 3, DimList.create_unknown[3]()](
+    var mask3d = NDBuffer[mask_type, 3, _, DimList.create_unknown[3]()](
         mask_device_ptr.unsafe_ptr(), Index(batch_size, seq_len, num_keys)
     )
-    var mask4d = NDBuffer[mask_type, 4, DimList.create_unknown[4]()](
+    var mask4d = NDBuffer[mask_type, 4, _, DimList.create_unknown[4]()](
         mask_device_ptr.unsafe_ptr(),
         Index(batch_size, num_heads, seq_len, num_keys),
     )
     var output_device = NDBuffer[
-        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](
         output_device_ptr.unsafe_ptr(),
         Index(batch_size, seq_len, num_heads, depth),
@@ -271,7 +271,7 @@ fn test[
     if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         var output_ref_device = NDBuffer[
-            qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+            qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
         ](
             output_ref_device_ptr.unsafe_ptr(),
             Index(batch_size, seq_len, num_heads, depth),

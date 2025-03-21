@@ -45,7 +45,7 @@ from utils.index import Index
 from utils.numerics import FPUtils
 from sys import has_nvidia_gpu_accelerator
 
-alias init_fn_type = fn (buff: NDBuffer) capturing -> None
+alias init_fn_type = fn (buff: NDBuffer[mut=True, *_]) capturing -> None
 
 alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
     IndexList[2], IndexList[2], SIMD[type, width]

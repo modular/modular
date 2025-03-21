@@ -295,13 +295,13 @@ fn test(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](
+    var c_buffer = NDBuffer[DType.float32, 2, _, DimList(M, N)](
         c_device.unsafe_ptr()
     )
-    var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](
+    var a_buffer = NDBuffer[DType.float32, 2, _, DimList(M, K)](
         a_device.unsafe_ptr()
     )
-    var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](
+    var b_buffer = NDBuffer[DType.float32, 2, _, DimList(K, N)](
         b_device.unsafe_ptr()
     )
 
@@ -365,7 +365,7 @@ fn test(ctx: DeviceContext) raises:
     alias gemm_naive = matmul_kernel_naive[
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
-    var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](
+    var c_buffer_ref = NDBuffer[DType.float32, 2, _, DimList(M, N)](
         c_device_ref.unsafe_ptr()
     )
     ctx.enqueue_function[gemm_naive](

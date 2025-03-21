@@ -24,13 +24,13 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
     alias k = 4
 
     var lhs_host = NDBuffer[
-        DType.float32, 3, DimList(b, m, k)
+        DType.float32, 3, MutableAnyOrigin, DimList(b, m, k)
     ].stack_allocation()
     var rhs_host = NDBuffer[
-        DType.float32, 3, DimList(b, k, n)
+        DType.float32, 3, MutableAnyOrigin, DimList(b, k, n)
     ].stack_allocation()
     var dst_host = NDBuffer[
-        DType.float32, 3, DimList(b, m, n)
+        DType.float32, 3, MutableAnyOrigin, DimList(b, m, n)
     ].stack_allocation()
 
     var csum: Float32 = 0.0

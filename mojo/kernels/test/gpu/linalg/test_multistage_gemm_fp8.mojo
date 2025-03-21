@@ -205,8 +205,6 @@ fn test_fp8_multistage_gemm[
     _ = b_tensor
     _ = c_tensor
 
-    _ = multistage_gemm_kernel_compiled^
-
 
 def main():
     with DeviceContext() as ctx:

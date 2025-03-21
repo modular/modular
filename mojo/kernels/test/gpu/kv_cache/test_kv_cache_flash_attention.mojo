@@ -237,12 +237,12 @@ def execute_flash_attention[
     for bs in range(batch_size):
         for s in range(prompt_len):
             for h in range(num_q_heads):
-                var ref_view = NDBuffer[type, 1, DimList(kv_params.head_size)](
-                    ref_out._offset((bs, s, h, 0))
-                )
-                var test_view = NDBuffer[type, 1, DimList(kv_params.head_size)](
-                    test_out._offset((bs, s, h, 0))
-                )
+                var ref_view = NDBuffer[
+                    type, 1, _, DimList(kv_params.head_size)
+                ](ref_out._offset((bs, s, h, 0)))
+                var test_view = NDBuffer[
+                    type, 1, _, DimList(kv_params.head_size)
+                ](test_out._offset((bs, s, h, 0)))
                 assert_with_measure[cosine](ref_view, test_view, threshold=1e-5)
 
     _ = q_device^

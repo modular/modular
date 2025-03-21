@@ -31,12 +31,12 @@ fn _size[rank: Int](dims: IndexList[rank, **_]) -> Int:
 fn _create_device_buffer[
     dtype: DType, rank: Int, shape: DimList
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
-    DeviceBuffer[dtype], NDBuffer[dtype, rank, shape]
+    DeviceBuffer[dtype], NDBuffer[dtype, rank, MutableAnyOrigin, shape]
 ]:
     var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
         storage,
-        NDBuffer[dtype, rank, shape](
+        NDBuffer[dtype, rank, _, shape](
             storage.unsafe_ptr(), dynamic_shape=dynamic_shape
         ),
     )
@@ -44,23 +44,27 @@ fn _create_device_buffer[
 
 fn _create_host_buffer[
     dtype: DType, rank: Int, shape: DimList
-](dynamic_shape: IndexList[rank, **_]) raises -> NDBuffer[dtype, rank, shape]:
+](dynamic_shape: IndexList[rank, **_]) raises -> NDBuffer[
+    dtype, rank, MutableAnyOrigin, shape
+]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
-    return NDBuffer[dtype, rank, shape](
+    return NDBuffer[dtype, rank, _, shape](
         storage_ptr, dynamic_shape=dynamic_shape
     )
 
 
 fn _linspace_fill[
     dtype: DType, rank: Int, shape: DimList
-](mut buff: NDBuffer[dtype, rank, shape]):
+](mut buff: NDBuffer[mut=True, dtype, rank, _, shape]):
     for i in range(buff.size()):
         buff.data[i] = i
 
 
 fn _create_host_buffer_like[
     dtype: DType, rank: Int, shape: DimList
-](buff: NDBuffer[dtype, rank, shape]) raises -> NDBuffer[dtype, rank, shape]:
+](buff: NDBuffer[dtype, rank, _, shape]) raises -> NDBuffer[
+    dtype, rank, MutableAnyOrigin, shape
+]:
     return _create_host_buffer[dtype, rank, shape](buff.dynamic_shape)
 
 

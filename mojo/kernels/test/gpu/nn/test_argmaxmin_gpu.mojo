@@ -19,9 +19,9 @@ from testing import assert_equal
 fn test_argmaxmin_gpu[
     type: DType,
     output_type: DType,
-    fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
-        _
-    ] -> None,
+    fill_fn: fn[rank: Int, type: DType] (
+        mut NDBuffer[mut=True, type, rank]
+    ) capturing [_] -> None,
     largest: Bool = True,
     rank: Int = 2,
 ](
@@ -85,9 +85,9 @@ fn test_argmaxmin_gpu[
 
 fn _test_argmaxmin_gpu_helper_2[
     idx_type: DType,
-    fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
-        _
-    ] -> None,
+    fill_fn: fn[rank: Int, type: DType] (
+        mut NDBuffer[mut=True, type, rank]
+    ) capturing [_] -> None,
     largest: Bool,
 ](ctx: DeviceContext) raises:
     test_argmaxmin_gpu[
@@ -103,9 +103,9 @@ fn _test_argmaxmin_gpu_helper_2[
 
 fn test_argmaxmin_gpu_helper[
     idx_type: DType,
-    fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
-        _
-    ] -> None,
+    fill_fn: fn[rank: Int, type: DType] (
+        mut NDBuffer[mut=True, type, rank]
+    ) capturing [_] -> None,
 ](ctx: DeviceContext) raises:
     # argmax
     _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=True](ctx)
@@ -116,7 +116,9 @@ fn test_argmaxmin_gpu_helper[
 
 def main():
     @parameter
-    fn fill_random[rank: Int, dtype: DType](mut buffer: NDBuffer[dtype, rank]):
+    fn fill_random[
+        rank: Int, dtype: DType
+    ](mut buffer: NDBuffer[mut=True, dtype, rank]):
         alias min_val = -1e9
         alias max_val = 1e9
         var total_elements = buffer.num_elements()

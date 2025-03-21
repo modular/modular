@@ -143,9 +143,9 @@ fn winograd_conv2d_gpu_nhwc[
     output_type: DType,
     block_size: Int,
 ](
-    input: NDBuffer[input_type, 4, input_dim],
-    filter: NDBuffer[filter_type, 4, filter_dim],
-    output: NDBuffer[output_type, 4, output_dim],
+    input: NDBuffer[input_type, 4, MutableAnyOrigin, input_dim],
+    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, filter_dim],
+    output: NDBuffer[mut=True, output_type, 4, MutableAnyOrigin, output_dim],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -267,9 +267,11 @@ fn winograd_conv2d_gpu_launcher[
     filter_type: DType,
     output_type: DType,
 ](
-    input: NDBuffer[input_type, input_rank, input_dim],
-    filter: NDBuffer[filter_type, filter_rank, filter_dim],
-    output: NDBuffer[output_type, input_rank, output_dim],
+    input: NDBuffer[input_type, input_rank, MutableAnyOrigin, input_dim],
+    filter: NDBuffer[filter_type, filter_rank, MutableAnyOrigin, filter_dim],
+    output: NDBuffer[
+        mut=True, output_type, input_rank, MutableAnyOrigin, output_dim
+    ],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],

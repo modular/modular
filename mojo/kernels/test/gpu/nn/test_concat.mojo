@@ -24,21 +24,23 @@ from utils import IndexList, StaticTuple
 
 fn _create_buffer_host[
     rank: Int, dtype: DType
-](dims: DimList) -> NDBuffer[dtype, rank]:
+](dims: DimList) -> NDBuffer[dtype, rank, MutableAnyOrigin]:
     var total_size: Int = dims.product[rank]().get()
     var mem_ptr = UnsafePointer[Scalar[dtype]].alloc(total_size)
     var buffer = NDBuffer[dtype, rank](mem_ptr, dims)
     return buffer
 
 
-fn _fill_buffer[rank: Int, dtype: DType](buffer: NDBuffer[dtype, rank]):
+fn _fill_buffer[
+    rank: Int, dtype: DType
+](buffer: NDBuffer[mut=True, dtype, rank]):
     for i in range(buffer.num_elements()):
         buffer.flatten()[i] = i
 
 
 fn _fill_buffer[
     rank: Int, dtype: DType
-](buffer: NDBuffer[dtype, rank], val: Scalar[dtype]):
+](buffer: NDBuffer[mut=True, dtype, rank], val: Scalar[dtype]):
     for i in range(buffer.num_elements()):
         buffer.flatten()[i] = val
 
@@ -133,7 +135,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     fn run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             output_device_ref,
-            StaticTuple[NDBuffer[dtype, rank], 4](
+            StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 4](
                 input_0_device_ref,
                 input_1_device_ref,
                 input_2_device_ref,
@@ -207,7 +209,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         ](
             output_device_ref,
             4,
-            StaticTuple[NDBuffer[dtype, rank], 4](
+            StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 4](
                 input_0_device_ref,
                 input_1_device_ref,
                 input_2_device_ref,

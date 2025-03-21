@@ -50,9 +50,9 @@ fn time_kernel[
 
 fn test_case_batched[
     type: DType,
-    fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
-        _
-    ] -> None,
+    fill_fn: fn[rank: Int, type: DType] (
+        mut NDBuffer[mut=True, type, rank]
+    ) capturing [_] -> None,
     out_idx_type: DType = DType.index,
     rank: Int = 2,
 ](ctx: DeviceContext, test_case: TestCase) raises:
@@ -216,9 +216,9 @@ fn test_case_batched[
 
 fn test_case_multi_rank[
     type: DType,
-    fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
-        _
-    ] -> None,
+    fill_fn: fn[rank: Int, type: DType] (
+        mut NDBuffer[mut=True, type, rank]
+    ) capturing [_] -> None,
     rank: Int,
     out_idx_type: DType = DType.index,
 ](ctx: DeviceContext, test_case: TestCaseMultiRank[rank=rank, *_]) raises:
@@ -298,7 +298,9 @@ fn test_case_multi_rank[
 
 
 @parameter
-fn fill_random[rank: Int, dtype: DType](mut buffer: NDBuffer[dtype, rank]):
+fn fill_random[
+    rank: Int, dtype: DType
+](mut buffer: NDBuffer[mut=True, dtype, rank]):
     alias min_val = -1e9
     alias max_val = 1e9
     var total_elements = buffer.num_elements()
@@ -308,7 +310,7 @@ fn fill_random[rank: Int, dtype: DType](mut buffer: NDBuffer[dtype, rank]):
 
 
 @parameter
-fn fill_iota[rank: Int, type: DType](mut buf: NDBuffer[type, rank]):
+fn fill_iota[rank: Int, type: DType](mut buf: NDBuffer[mut=True, type, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 

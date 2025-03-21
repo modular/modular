@@ -67,7 +67,7 @@ def execute_fused_qkv_matmul[
         type, 3, DimList(Dim(), Dim(), hidden_size)
     ](IndexList[3](batch_size, prompt_len, hidden_size), ctx=ctx)
     ctx.enqueue_copy(hidden_state_device.buffer, hidden_state_host.tensor.data)
-    hidden_state_device_2d = NDBuffer[type, 2, DimList(Dim(), hidden_size)](
+    hidden_state_device_2d = NDBuffer[type, 2, _, DimList(Dim(), hidden_size)](
         hidden_state_device.buffer.unsafe_ptr(),
         IndexList[2](batch_size * prompt_len, hidden_size),
     )
