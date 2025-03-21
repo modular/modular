@@ -38,7 +38,7 @@ fn slice_dim_as_view[
     type: DType, rank: Int, dim: Int
 ](
     tensor: NDBuffer[type, rank, *_, **_], start: Int, end: Int, step: Int
-) -> NDBuffer[type, rank]:
+) -> NDBuffer[type, rank, tensor.origin]:
     var new_shape = tensor.get_shape()
     var new_stride = tensor.get_strides()
 
@@ -86,7 +86,7 @@ fn slice_as_view[
     starts: NDBuffer[start_type, 1, *_, **_],
     ends: NDBuffer[end_type, 1, *_, **_],
     steps: NDBuffer[step_type, 1, *_, **_],
-) -> NDBuffer[type, rank]:
+) -> NDBuffer[type, rank, tensor.origin]:
     var new_shape = IndexList[rank]()
     var new_stride = IndexList[rank]()
 
@@ -137,7 +137,7 @@ fn copy_to_slice[
     in_rank: Int,
     target: StaticString = "cpu",
 ](
-    buffer: NDBuffer[type, in_rank],
+    buffer: NDBuffer[mut=True, type, in_rank],
     in_slice: NDBuffer[type, in_rank],
     start: NDBuffer[start_type, 1],
     end: NDBuffer[end_type, 1],
@@ -180,7 +180,7 @@ fn copy_to_slice[
 fn slice_as_copy[
     type: DType, index_type: DType, in_rank: Int
 ](
-    output: NDBuffer[type, in_rank],
+    output: NDBuffer[mut=True, type, in_rank],
     tensor: NDBuffer[type, in_rank],
     start: NDBuffer[index_type, 1],
     end: NDBuffer[index_type, 1],

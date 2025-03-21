@@ -44,9 +44,7 @@ def test_slice[
 
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = NDBuffer[
-        dtype,
-        outer_rank,
-        rebind[DimList](static_shape),
+        dtype, outer_rank, _, rebind[DimList](static_shape)
     ](memory1.unsafe_ptr(), dims)
 
     print("In shape:", in_tensor.get_shape())
@@ -83,7 +81,7 @@ def test_slice[
 
     # Perform the slice even if we are testing the copy so we get the target size.
     var sliced = slice_as_view(
-        rebind[NDBuffer[dtype, outer_rank]](in_tensor),
+        rebind[NDBuffer[dtype, outer_rank, in_tensor.origin]](in_tensor),
         start_tensor,
         end_tensor,
         step_tensor,
@@ -95,9 +93,7 @@ def test_slice[
         print("As copy")
 
         var output_buffer = NDBuffer[
-            dtype,
-            outer_rank,
-            rebind[DimList](static_shape),
+            dtype, outer_rank, _, rebind[DimList](static_shape)
         ](
             output_mem.unsafe_ptr(),
             rebind[IndexList[outer_rank]](sliced.get_shape()),
@@ -106,12 +102,18 @@ def test_slice[
         slice_as_copy[dtype, DType.index, outer_rank](
             rebind[
                 NDBuffer[
-                    dtype, outer_rank, DimList.create_unknown[outer_rank]()
+                    dtype,
+                    outer_rank,
+                    MutableAnyOrigin,
+                    DimList.create_unknown[outer_rank](),
                 ]
             ](output_buffer),
             rebind[
                 NDBuffer[
-                    dtype, outer_rank, DimList.create_unknown[outer_rank]()
+                    dtype,
+                    outer_rank,
+                    MutableAnyOrigin,
+                    DimList.create_unknown[outer_rank](),
                 ]
             ](in_tensor),
             start_tensor,
@@ -122,7 +124,10 @@ def test_slice[
         print_elements[dtype, outer_rank](
             rebind[
                 NDBuffer[
-                    dtype, outer_rank, DimList.create_unknown[outer_rank]()
+                    dtype,
+                    outer_rank,
+                    MutableAnyOrigin,
+                    DimList.create_unknown[outer_rank](),
                 ]
             ](output_buffer)
         )

@@ -238,7 +238,7 @@ struct _Matmul[
         alias tile_sizes = VariadicList[Int](transpose_width, 1)
 
         var transpose_buffer = NDBuffer[
-            type, 2, DimList(transpose_width, transpose_width)
+            type, 2, MutableAnyOrigin, DimList(transpose_width, transpose_width)
         ].stack_allocation()
 
         @parameter
@@ -680,10 +680,10 @@ struct _FlashAttention[
                 alignment = alignof[SIMD[type, simd_width]](),
             ]()
             var max_vals = NDBuffer[
-                type, 1, Dim(Self._config.block_m)
+                type, 1, MutableAnyOrigin, Dim(Self._config.block_m)
             ]().stack_allocation()
             var sum_vals = NDBuffer[
-                type, 1, Dim(Self._config.block_m)
+                type, 1, MutableAnyOrigin, Dim(Self._config.block_m)
             ]().stack_allocation()
 
             var packed_ptr = UnsafePointer[
@@ -871,7 +871,7 @@ fn _flash_attention[
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: NDBuffer[type, rank, *_],
+    output: NDBuffer[mut=True, type, rank, *_],
     scale: Float32,
 ):
     var num_batches = output.dim[0]()
@@ -949,7 +949,7 @@ fn flash_attention[
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: NDBuffer[type, rank, *_],
+    output: NDBuffer[mut=True, type, rank, *_],
     scale: Float32,
 ):
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
@@ -989,7 +989,7 @@ fn flash_attention_split_kv[
     k_cache_shape: IndexList[rank + 1],
     v_cache_shape: IndexList[rank + 1],
     mask_shape: IndexList[mask_rank],
-    output: NDBuffer[type, rank, *_],
+    output: NDBuffer[mut=True, type, rank, *_],
     scale: Float32,
 ):
     """Variant of flash attention that takes the previous KV cache
@@ -1117,7 +1117,7 @@ fn _flash_attention_kv_cache[
     k: cache_t,
     v: cache_t,
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
 ):
     alias kv_params = cache_t.kv_params
 
@@ -1236,7 +1236,7 @@ fn flash_attention_kv_cache[
     v: cache_t,
     mask: NDBuffer[type, *_],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
 ):
     @always_inline
     @parameter
@@ -1262,7 +1262,7 @@ fn flash_attention_kv_cache[
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
 ):
     @always_inline
     @parameter
@@ -1294,7 +1294,7 @@ fn flash_attention_kv_cache[
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
 ):
     """Entrypoint for ragged tensors."""
 

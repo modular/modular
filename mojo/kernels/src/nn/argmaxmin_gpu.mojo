@@ -20,7 +20,7 @@ fn argmaxmin_gpu[
 ](
     ctx: DeviceContext,
     input: NDBuffer[type, rank],
-    output: NDBuffer[output_type, rank],
+    output: NDBuffer[mut=True, output_type, rank],
 ) raises:
     """
     Wraps the Top-K GPU kernel with K=1 to perform argmax on the inner-most
@@ -64,7 +64,7 @@ fn argmax_gpu[
 ](
     ctx: DeviceContext,
     input: NDBuffer[type, rank],
-    output: NDBuffer[output_type, rank],
+    output: NDBuffer[mut=True, output_type, rank],
 ) raises:
     argmaxmin_gpu[largest=True](ctx, input, output)
 
@@ -74,6 +74,6 @@ fn argmin_gpu[
 ](
     ctx: DeviceContext,
     input: NDBuffer[type, rank],
-    output: NDBuffer[output_type, rank],
+    output: NDBuffer[mut=True, output_type, rank],
 ) raises:
     argmaxmin_gpu[largest=False](ctx, input, output)

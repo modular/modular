@@ -26,6 +26,7 @@ fn test_tile_eg1() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -43,6 +44,7 @@ fn test_tile_eg1() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(2),
     ](repeats_stack.unsafe_ptr())
 
@@ -55,6 +57,7 @@ fn test_tile_eg1() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(4, 4),
     ](output_stack.unsafe_ptr())
 
@@ -88,6 +91,7 @@ fn test_tile_eg2() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -105,6 +109,7 @@ fn test_tile_eg2() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(2),
     ](repeats_stack.unsafe_ptr())
 
@@ -117,6 +122,7 @@ fn test_tile_eg2() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(6, 4),
     ](output_stack.unsafe_ptr())
 
@@ -148,6 +154,7 @@ fn test_tile_eg3() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -165,6 +172,7 @@ fn test_tile_eg3() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(2),
     ](repeats_stack.unsafe_ptr())
 
@@ -177,6 +185,7 @@ fn test_tile_eg3() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(4, 6),
     ](output_stack.unsafe_ptr())
 
@@ -212,6 +221,7 @@ fn test_tile_eg4() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -234,6 +244,7 @@ fn test_tile_eg4() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(3),
     ](repeats_stack.unsafe_ptr())
 
@@ -247,6 +258,7 @@ fn test_tile_eg4() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(4, 2, 2),
     ](output_stack.unsafe_ptr())
 
@@ -284,6 +296,7 @@ fn test_tile_eg5() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -306,6 +319,7 @@ fn test_tile_eg5() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(3),
     ](repeats_stack.unsafe_ptr())
 
@@ -319,6 +333,7 @@ fn test_tile_eg5() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(4, 2, 4),
     ](output_stack.unsafe_ptr())
 
@@ -351,6 +366,7 @@ fn test_tile_eg6() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -368,6 +384,7 @@ fn test_tile_eg6() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(2),
     ](repeats_stack.unsafe_ptr())
 
@@ -380,6 +397,7 @@ fn test_tile_eg6() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 4),
     ](output_stack.unsafe_ptr())
 
@@ -411,6 +429,7 @@ fn test_tile_eg7() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -428,6 +447,7 @@ fn test_tile_eg7() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(2),
     ](repeats_stack.unsafe_ptr())
 
@@ -440,6 +460,7 @@ fn test_tile_eg7() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(4, 2),
     ](output_stack.unsafe_ptr())
 
@@ -471,6 +492,7 @@ fn test_tile_eg8() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(1, 4),
     ](input_stack.unsafe_ptr())
 
@@ -488,6 +510,7 @@ fn test_tile_eg8() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(2),
     ](repeats_stack.unsafe_ptr())
 
@@ -500,6 +523,7 @@ fn test_tile_eg8() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(4, 4),
     ](output_stack.unsafe_ptr())
 
@@ -547,6 +571,7 @@ fn test_tile_eg9() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -569,6 +594,7 @@ fn test_tile_eg9() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(3),
     ](repeats_stack.unsafe_ptr())
 
@@ -582,6 +608,7 @@ fn test_tile_eg9() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(4, 4, 2),
     ](output_stack.unsafe_ptr())
 
@@ -640,6 +667,7 @@ fn test_tile_eg10() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -662,6 +690,7 @@ fn test_tile_eg10() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(3),
     ](repeats_stack.unsafe_ptr())
 
@@ -675,6 +704,7 @@ fn test_tile_eg10() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(6, 4, 6),
     ](output_stack.unsafe_ptr())
 
@@ -740,6 +770,7 @@ fn test_tile_eg11() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(3, 2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -767,6 +798,7 @@ fn test_tile_eg11() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(3),
     ](repeats_stack.unsafe_ptr())
 
@@ -780,6 +812,7 @@ fn test_tile_eg11() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(6, 6, 2),
     ](output_stack.unsafe_ptr())
 
@@ -818,6 +851,7 @@ fn test_tile_eg12() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(1, 1, 2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -835,6 +869,7 @@ fn test_tile_eg12() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(4),
     ](repeats_stack.unsafe_ptr())
 
@@ -849,6 +884,7 @@ fn test_tile_eg12() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(1, 1, 4, 6),
     ](output_stack.unsafe_ptr())
 
@@ -904,6 +940,7 @@ fn test_tile_eg13() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2, 2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -936,6 +973,7 @@ fn test_tile_eg13() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(4),
     ](repeats_stack.unsafe_ptr())
 
@@ -952,6 +990,7 @@ fn test_tile_eg13() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 4, 4, 6),
     ](output_stack.unsafe_ptr())
 
@@ -1023,6 +1062,7 @@ fn test_tile_eg14() raises:
     var input = NDBuffer[
         type,
         rank,
+        _,
         DimList(2, 2, 2, 2),
     ](input_stack.unsafe_ptr())
 
@@ -1055,6 +1095,7 @@ fn test_tile_eg14() raises:
     var repeats = NDBuffer[
         type_repeats,
         rank_repeats,
+        _,
         DimList(4),
     ](repeats_stack.unsafe_ptr())
 
@@ -1071,6 +1112,7 @@ fn test_tile_eg14() raises:
     var output = NDBuffer[
         type,
         rank,
+        _,
         DimList(4, 4, 4, 6),
     ](output_stack.unsafe_ptr())
 

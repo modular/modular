@@ -107,8 +107,8 @@ fn top_k[
     input: NDBuffer[type, rank],
     k: Int,
     axis: Int,
-    out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[out_idx_type, rank],
+    out_vals: NDBuffer[mut=True, type, rank],
+    out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     sorted: Bool,
     ctx: DeviceContextPtr,
 ) raises:
@@ -174,8 +174,8 @@ fn _top_k_cpu[
     input: NDBuffer[type, rank],
     k: Int,
     axis: Int,
-    out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[out_idx_type, rank],
+    out_vals: NDBuffer[mut=True, type, rank],
+    out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
 ):
@@ -269,7 +269,7 @@ fn top_k_fused_sampling_cpu[
 ](
     k: Int,
     input: NDBuffer[type, rank],
-    out_idxs: NDBuffer[out_idx_type, rank],
+    out_idxs: NDBuffer[mut=True, out_idx_type, rank],
 ) raises:
     """
     Generalized implementation of the Top K algorithm with sampling.
@@ -299,7 +299,7 @@ fn top_k_fused_sampling_cpu[
         k,
         input,
         out_vals,
-        rebind[NDBuffer[DType.int64, rank]](out_idxs),
+        rebind[NDBuffer[DType.int64, rank, out_idxs.origin]](out_idxs),
     )
 
     out_vals.data.free()
@@ -311,8 +311,8 @@ fn _top_k_sampling[
 ](
     k: Int,
     input: NDBuffer[type, rank],
-    out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[DType.int64, rank],
+    out_vals: NDBuffer[mut=True, type, rank],
+    out_idxs: NDBuffer[mut=True, DType.int64, rank],
 ) raises:
     """
     Generalized implementation of the Top K algorithm with sampling.
@@ -823,8 +823,8 @@ fn _topk_gpu[
     input_buf: NDBuffer[type, rank],
     device_local_topk_vals: NDBuffer[type, rank],
     device_local_topk_idxs: NDBuffer[out_idx_type, rank],
-    out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[out_idx_type, rank],
+    out_vals: NDBuffer[mut=True, type, rank],
+    out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     block_size: Int = 256,
     num_blocks_per_input: OptionalReg[Int] = None,
 ) raises:
@@ -949,8 +949,8 @@ fn topk_gpu[
     ctx: DeviceContext,
     K: Int,  # num top elements to keep
     input: NDBuffer[type, rank],
-    out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[out_idx_type, rank],
+    out_vals: NDBuffer[mut=True, type, rank],
+    out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
 ) raises:
@@ -1002,9 +1002,11 @@ fn topk_gpu[
     # This section handles different input ranks by reshaping to a 2D tensor
     var internal_bs: Int  # Internal batch size
     alias internal_rank = 2  # We always reshape to 2D for internal processing
-    var internal_input: NDBuffer[type, internal_rank]
-    var internal_out_idxs: NDBuffer[out_idx_type, internal_rank]
-    var internal_out_vals: NDBuffer[type, internal_rank]
+    var internal_input: NDBuffer[type, internal_rank, MutableAnyOrigin]
+    var internal_out_idxs: NDBuffer[
+        out_idx_type, internal_rank, MutableAnyOrigin
+    ]
+    var internal_out_vals: NDBuffer[type, internal_rank, MutableAnyOrigin]
 
     @parameter
     if rank == 1:
@@ -1021,11 +1023,15 @@ fn topk_gpu[
     elif rank == internal_rank:
         # Input is already 2D, no reshaping needed
         internal_bs = orig_in_shape[0]
-        internal_input = rebind[NDBuffer[type, internal_rank]](input)
-        internal_out_idxs = rebind[NDBuffer[out_idx_type, internal_rank]](
-            out_idxs
+        internal_input = rebind[NDBuffer[type, internal_rank, input.origin]](
+            input
         )
-        internal_out_vals = rebind[NDBuffer[type, internal_rank]](out_vals)
+        internal_out_idxs = rebind[
+            NDBuffer[out_idx_type, internal_rank, out_idxs.origin]
+        ](out_idxs)
+        internal_out_vals = rebind[
+            NDBuffer[type, internal_rank, out_vals.origin]
+        ](out_vals)
     else:  # rank > 2
         # Handle higher dimensional inputs by flattening all but the last dimension
         var _last_dim = orig_in_shape[rank - 1]
@@ -1091,7 +1097,7 @@ fn topk_fused_sampling_gpu[
     ctx: DeviceContext,
     K: Int,  # num top elements to keep
     input: NDBuffer[type, rank],
-    out_idxs: NDBuffer[out_idx_type, rank],
+    out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
 ) raises:

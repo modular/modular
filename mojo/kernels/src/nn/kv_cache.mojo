@@ -48,11 +48,11 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     type: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, _],
-    weight: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 3, _, _],
+    weight: NDBuffer[type, 2, _, _],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, _],
+    output: NDBuffer[mut=True, type, 3, _, _],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -102,11 +102,11 @@ fn _fused_qkv_matmul_kv_cache[
     *,
     target: StaticString,
 ](
-    hidden_state: NDBuffer[type, 3, _],
-    weight: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 3, _, _],
+    weight: NDBuffer[type, 2, _, _],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, _],
+    output: NDBuffer[mut=True, type, 3, _, _],
     context: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -151,11 +151,11 @@ fn _fused_qkv_matmul_kv_cache_impl[
     q_embed_fn: OptionalReg[embed_fn_type] = None,
     k_embed_fn: OptionalReg[embed_fn_type] = None,
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _, hidden_state_shape],
+    weight: NDBuffer[type, 2, _, weight_shape],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[mut=True, type, 3, _, output_shape],
     context: Optional[DeviceContext],
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -245,8 +245,8 @@ fn _matmul_common[
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    hidden_state: NDBuffer[type, 3, _],
-    weight: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 3, _, _],
+    weight: NDBuffer[type, 2, _, _],
     context: Optional[DeviceContext],
 ) raises:
     var BS = hidden_state.dim[0]()
@@ -255,24 +255,24 @@ fn _matmul_common[
     alias K = weight.shape.get[1]()
 
     var hidden_state_2d = NDBuffer[
-        type, 2, DimList(Dim(), hidden_state.shape.get[2]())
+        type, 2, MutableAnyOrigin, DimList(Dim(), hidden_state.shape.get[2]())
     ](
         hidden_state.data,
         IndexList[2](BS * SEQ_LEN, K),
     )
 
-    var c_nd: NDBuffer[type, 2, DimList(Dim(), N)]
+    var c_nd: NDBuffer[type, 2, MutableAnyOrigin, DimList(Dim(), N)]
 
     @parameter
     if is_cpu[target]():
         var c_ptr = UnsafePointer[Scalar[type]].alloc(BS * SEQ_LEN * N)
 
-        c_nd = NDBuffer[type, 2, DimList(Dim(), N)](
+        c_nd = NDBuffer[type, 2, MutableAnyOrigin, DimList(Dim(), N)](
             c_ptr,
             IndexList[2](BS * SEQ_LEN, N),
         )
     else:
-        c_nd = NDBuffer[type, 2, DimList(Dim(), N)](
+        c_nd = NDBuffer[type, 2, MutableAnyOrigin, DimList(Dim(), N)](
             UnsafePointer[Scalar[type]](),
             IndexList[2](BS * SEQ_LEN, N),
         )
@@ -304,7 +304,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Performs a fused RoPE projection for Q and K projections.
@@ -370,7 +370,7 @@ fn generic_flash_attention_kv_cache_continuous_batch[
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -420,7 +420,7 @@ fn _flash_attention_kv_cache[
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types.
@@ -467,7 +467,7 @@ fn _flash_attention_kv_cache_impl[
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: Optional[DeviceContext],
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom custom types.
@@ -506,7 +506,7 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch[
     layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -545,7 +545,7 @@ fn _flash_attention_kv_cache_causal_mask[
     layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types, with the causal mask materialized inside the kernel.
@@ -583,7 +583,7 @@ fn _flash_attention_kv_cache_causal_mask_impl[
     layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: Optional[DeviceContext],
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types, with the causal mask materialized inside the kernel.
@@ -626,12 +626,12 @@ fn _flash_attention_kv_cache_causal_mask_gpu[
     v: cache_t,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContext,
 ) raises:
-    var mask_nd = NDBuffer[type, 4, DimList.create_unknown[4]()](
-        UnsafePointer[Scalar[type]](), IndexList[4]()
-    )
+    var mask_nd = NDBuffer[
+        type, 4, MutableAnyOrigin, DimList.create_unknown[4]()
+    ](UnsafePointer[Scalar[type]](), IndexList[4]())
 
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this and instead pass in explicit KVCache lengths to the GPU kernel.
@@ -660,13 +660,14 @@ fn _flash_attention_kv_cache_gpu[
     mask: NDBuffer[type, *_],
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContext,
 ) raises:
     alias wrapped_mask_rank = mask.rank if mask.rank == 4 else 3
     var mask_nd: NDBuffer[
         type,
         wrapped_mask_rank,
+        MutableAnyOrigin,
         DimList.create_unknown[wrapped_mask_rank](),
     ]
 
@@ -675,6 +676,7 @@ fn _flash_attention_kv_cache_gpu[
         mask_nd = NDBuffer[
             type,
             wrapped_mask_rank,
+            MutableAnyOrigin,
             DimList.create_unknown[wrapped_mask_rank](),
         ](
             mask.data,
@@ -687,6 +689,7 @@ fn _flash_attention_kv_cache_gpu[
             NDBuffer[
                 type,
                 wrapped_mask_rank,
+                MutableAnyOrigin,
                 DimList.create_unknown[wrapped_mask_rank](),
             ]
         ](mask)
@@ -717,7 +720,7 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[
     layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -756,7 +759,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask[
     layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT
@@ -795,7 +798,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_impl[
     layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: Optional[DeviceContext],
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT
@@ -839,12 +842,12 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
     v: cache_t,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContext,
 ) raises:
-    var mask_nd = NDBuffer[type, 4, DimList.create_unknown[4]()](
-        UnsafePointer[Scalar[type]](), IndexList[4]()
-    )
+    var mask_nd = NDBuffer[
+        type, 4, MutableAnyOrigin, DimList.create_unknown[4]()
+    ](UnsafePointer[Scalar[type]](), IndexList[4]())
 
     # This assumes that, the q tensor is static in the 1 dim.
     alias num_q_heads = Int(q.shape.at[1]())

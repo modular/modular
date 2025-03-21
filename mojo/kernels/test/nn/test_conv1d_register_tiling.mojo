@@ -100,15 +100,15 @@ fn test_conv1d_register_tiling() raises:
     var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, 3, output_shape](output_stack.unsafe_ptr())
+    var output = NDBuffer[type, 3, _, output_shape](output_stack.unsafe_ptr())
     var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[type, 3, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[type, 3, _, input_shape](input_stack.unsafe_ptr())
     var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
         uninitialized=True
     )
-    var filter = NDBuffer[type, 4, filter_shape](filter_stack.unsafe_ptr())
+    var filter = NDBuffer[type, 4, _, filter_shape](filter_stack.unsafe_ptr())
 
     output.fill(0.0)
     input.fill(1.0)

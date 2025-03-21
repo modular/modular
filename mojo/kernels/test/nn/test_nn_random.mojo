@@ -17,7 +17,7 @@ fn test_random_normal():
 
     alias out_shape = DimList(2, 2)
     var output_stack = InlineArray[Float32, 4](uninitialized=True)
-    var output = NDBuffer[DType.float32, 2, out_shape](
+    var output = NDBuffer[DType.float32, 2, _, out_shape](
         output_stack.unsafe_ptr()
     )
     output.fill(0)

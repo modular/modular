@@ -52,15 +52,16 @@ struct ImageData[
     shape: DimList,
     type: DType,
     static_layout: Image2DLayout,
+    origin: MutableOrigin,
 ]:
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""
 
-    var data: NDBuffer[type, 4, shape]
+    var data: NDBuffer[type, 4, origin, shape]
     var dynamic_layout: Image2DLayout
 
     fn __init__(
-        mut self, data: NDBuffer[type, 4, shape], layout: Image2DLayout
+        mut self, data: NDBuffer[type, 4, origin, shape], layout: Image2DLayout
     ):
         """Construct of an image data instance with dynamic layout param.
 
@@ -73,14 +74,14 @@ struct ImageData[
         self.dynamic_layout = layout
 
     @implicit
-    fn __init__(out self, data: NDBuffer[type, 4, shape]):
+    fn __init__(out self, data: NDBuffer[type, 4, origin, shape]):
         constrained[static_layout != Image2DLayout.UNKNOWN]()
         self.data = data
         self.dynamic_layout = static_layout
 
     fn to_static_layout[
         new_static_layout: Image2DLayout
-    ](self) -> ImageData[shape, type, new_static_layout]:
+    ](self) -> ImageData[shape, type, new_static_layout, origin]:
         """Conversion utility from a fully dynamic data structure, e.g. from c
         shim to one with compile-time known data layout.
 

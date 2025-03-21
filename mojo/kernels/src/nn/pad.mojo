@@ -117,8 +117,8 @@ fn pad_constant[
     paddings_type: DType,
     constant_type: DType,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: SIMD[constant_type, 1],
 ):
@@ -181,8 +181,8 @@ fn pad_reflect[
     type: DType,
     paddings_type: DType,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     """
@@ -291,12 +291,16 @@ fn _do_pad[
         UnsafePointer[Scalar[DType.index]],
     ) capturing [_] -> None,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
-    var input_strides_buf = NDBuffer[DType.index, 1, rank].stack_allocation()
-    var output_strides_buf = NDBuffer[DType.index, 1, rank].stack_allocation()
+    var input_strides_buf = NDBuffer[
+        DType.index, 1, MutableAnyOrigin, rank
+    ].stack_allocation()
+    var output_strides_buf = NDBuffer[
+        DType.index, 1, MutableAnyOrigin, rank
+    ].stack_allocation()
     _fill_strides(input, input_strides_buf)
     _fill_strides(output, output_strides_buf)
 
@@ -745,8 +749,8 @@ fn pad_repeat[
     type: DType,
     paddings_type: DType,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     """
@@ -778,7 +782,9 @@ fn pad_repeat[
                   [3, 3, 4],
                   [3, 3, 4]]
     """
-    var padding_ndbuf = NDBuffer[paddings_type, 2, DimList(rank, 2)](paddings)
+    var padding_ndbuf = NDBuffer[paddings_type, 2, _, DimList(rank, 2)](
+        paddings
+    )
 
     var pre_pads = IndexList[rank]()
     var post_pads = IndexList[rank]()

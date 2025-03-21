@@ -22,7 +22,7 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
     of NDBuffers."""
 
     alias stack_capacity = 20
-    alias BufferType = NDBuffer[type, rank]
+    alias BufferType = NDBuffer[type, rank, MutableAnyOrigin]
     alias StorageType = List[Self.BufferType]
     var storage: Self.StorageType
 
@@ -43,7 +43,9 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
             self.storage.append(input_list[i])
 
     @implicit
-    fn __init__(out self, inputs: StaticTuple[NDBuffer[type, rank]]):
+    fn __init__(
+        out self, inputs: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin]]
+    ):
         self.storage = Self.StorageType(capacity=inputs.size)
 
         @parameter
@@ -51,7 +53,7 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
             self.storage.append(inputs[i])
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> NDBuffer[type, rank]:
+    fn __getitem__(self, idx: Int) -> NDBuffer[type, rank, MutableAnyOrigin]:
         return self.storage[idx]
 
     @always_inline

@@ -24,8 +24,8 @@ fn top_p_sampling[
     _test_sort: Bool = False,
 ](
     top_ps: NDBuffer[type, 1],
-    input_logits: NDBuffer[type, rank],
-    out_token_ids: NDBuffer[out_idx_type, rank],
+    input_logits: NDBuffer[mut=True, type, rank],
+    out_token_ids: NDBuffer[mut=True, out_idx_type, rank],
     temperature: Scalar[type] = 1,
 ) raises:
     """
@@ -48,8 +48,8 @@ fn min_p_sampling[
     _test_sort: Bool = False,
 ](
     min_ps: NDBuffer[type, 1],
-    input_logits: NDBuffer[type, rank],
-    out_token_ids: NDBuffer[out_idx_type, rank],
+    input_logits: NDBuffer[mut=True, type, rank],
+    out_token_ids: NDBuffer[mut=True, out_idx_type, rank],
     temperature: Scalar[type] = 1,
 ) raises:
     """
@@ -71,8 +71,8 @@ fn _topp_minp_sampling[
     _test_sort: Bool = False,
 ](
     p_thresholds: NDBuffer[type, 1],
-    input_logits: NDBuffer[type, rank],
-    out_token_ids: NDBuffer[out_idx_type, rank],
+    input_logits: NDBuffer[mut=True, type, rank],
+    out_token_ids: NDBuffer[mut=True, out_idx_type, rank],
     temperature: Scalar[type] = 1,
 ) raises:
     """
@@ -193,8 +193,8 @@ fn sort_buf_descending[
     out_idx_type: DType,
     rank: Int, //,
 ](
-    mut buf_keys: NDBuffer[type, rank],
-    mut buf_ids: NDBuffer[out_idx_type, rank],
+    mut buf_keys: NDBuffer[mut=True, type, rank],
+    mut buf_ids: NDBuffer[mut=True, out_idx_type, rank],
     vocab_size: Int,
 ):
     """Sort each batch separately in descending order using parallel merge sort.
@@ -211,8 +211,8 @@ fn sort_buf_descending[
 fn merge_sort_recursive[
     type: DType, out_idx_type: DType, rank: Int
 ](
-    mut buf_keys: NDBuffer[type, rank],
-    mut buf_ids: NDBuffer[out_idx_type, rank],
+    mut buf_keys: NDBuffer[mut=True, type, rank],
+    mut buf_ids: NDBuffer[mut=True, out_idx_type, rank],
     start: Int,
     end: Int,
 ):
@@ -228,8 +228,8 @@ fn merge_sort_recursive[
 fn merge[
     type: DType, out_idx_type: DType, rank: Int
 ](
-    mut buf_keys: NDBuffer[type, rank],
-    mut buf_ids: NDBuffer[out_idx_type, rank],
+    mut buf_keys: NDBuffer[mut=True, type, rank],
+    mut buf_ids: NDBuffer[mut=True, out_idx_type, rank],
     start: Int,
     mid: Int,
     end: Int,

@@ -83,9 +83,12 @@ struct NDBufferMHAOperand[
     """An implementation for NDBuffer arguments to MHA kernels."""
 
     alias type = type_
-    var buffer: NDBuffer[Self.type, rank, shape, stride]
+    var buffer: NDBuffer[Self.type, rank, MutableAnyOrigin, shape, stride]
 
-    fn __init__(out self, buffer: NDBuffer[Self.type, rank, shape, stride]):
+    fn __init__(
+        out self,
+        buffer: NDBuffer[Self.type, rank, MutableAnyOrigin, shape, stride],
+    ):
         self.buffer = buffer
 
     @always_inline

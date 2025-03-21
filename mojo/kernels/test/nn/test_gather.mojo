@@ -33,6 +33,7 @@ fn test_gather() raises:
         var input = NDBuffer[
             DType.float32,
             2,
+            MutableAnyOrigin,
             DimList(num_rows, row_size),
         ].stack_allocation[alignment=64]()
 
@@ -45,6 +46,7 @@ fn test_gather() raises:
         var indices = NDBuffer[
             indices_type,
             1,
+            MutableAnyOrigin,
             DimList(num_indices),
         ].stack_allocation[alignment=64]()
 
@@ -57,6 +59,7 @@ fn test_gather() raises:
         var output = NDBuffer[
             DType.float32,
             2,
+            MutableAnyOrigin,
             DimList(num_indices, row_size),
         ].stack_allocation[alignment=64]()
 
@@ -101,6 +104,7 @@ fn test_gather_3d() raises:
         var input = NDBuffer[
             DType.float32,
             3,
+            MutableAnyOrigin,
             DimList(num_rows, row_size, 1),
         ].stack_allocation[alignment=64]()
 
@@ -113,6 +117,7 @@ fn test_gather_3d() raises:
         var indices = NDBuffer[
             indices_type,
             2,
+            MutableAnyOrigin,
             DimList(num_indices, 1),
         ].stack_allocation[alignment=64]()
 
@@ -123,6 +128,7 @@ fn test_gather_3d() raises:
         var output = NDBuffer[
             DType.float32,
             4,
+            MutableAnyOrigin,
             DimList(num_indices, 1, row_size, 1),
         ].stack_allocation[alignment=64]()
 
@@ -173,6 +179,7 @@ fn test_gather_empty_indices() raises:
         var input = NDBuffer[
             DType.float32,
             2,
+            MutableAnyOrigin,
             DimList(num_rows, row_size),
         ](input_stack.unsafe_ptr())
 
@@ -186,7 +193,7 @@ fn test_gather_empty_indices() raises:
         var indices_stack = InlineArray[Scalar[indices_type], 1](
             uninitialized=True
         )
-        var indices = NDBuffer[indices_type, 1, DimList(num_indices)](
+        var indices = NDBuffer[indices_type, 1, _, DimList(num_indices)](
             indices_stack.unsafe_ptr()
         )
 
@@ -197,9 +204,9 @@ fn test_gather_empty_indices() raises:
         var output_stack = InlineArray[Float32, num_rows * row_size](
             uninitialized=True
         )
-        var output = NDBuffer[DType.float32, 2, DimList(num_indices, row_size)](
-            output_stack.unsafe_ptr()
-        )
+        var output = NDBuffer[
+            DType.float32, 2, _, DimList(num_indices, row_size)
+        ](output_stack.unsafe_ptr())
 
         # Test gather
         alias simd_width = simdwidthof[DType.float32]()

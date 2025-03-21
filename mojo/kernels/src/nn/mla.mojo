@@ -96,7 +96,7 @@ fn flare_mla_decoding[
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, q_shape, *_],
+    q: NDBuffer[type, rank, _, q_shape, *_],
     k: cache_t,
     mask: NDBuffer,
     mask_functor: mask_t,
@@ -198,7 +198,7 @@ fn flare_mla_decoding[
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, q_shape, *_],
+    q: NDBuffer[type, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     mask: NDBuffer,
     mask_functor: mask_t,
@@ -273,7 +273,7 @@ fn flare_mla_decoding_dispatch[
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, q_shape, *_],
+    q: NDBuffer[type, rank, _, q_shape, *_],
     k: k_t,
     mask: NDBuffer,
     mask_functor: mask_t,
@@ -442,7 +442,9 @@ fn mla_decoding[
     batch_size: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
-    valid_length: NDBuffer[DType.uint32, 1],  # valid length per batch
+    valid_length: NDBuffer[
+        DType.uint32, 1, MutableAnyOrigin
+    ],  # valid length per batch
     mask: mask_t,
     score_mod: score_mod_t,
 ):

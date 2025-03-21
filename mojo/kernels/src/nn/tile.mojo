@@ -25,7 +25,7 @@ fn tile[
 ](
     input: NDBuffer[type, rank],
     repeats: NDBuffer[type_repeats, rank_repeats],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
 ) raises:
     """
     Implements the `Tile` operator from the ONNX spec. This behaves like Numpy

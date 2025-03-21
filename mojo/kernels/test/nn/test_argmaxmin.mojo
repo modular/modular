@@ -25,28 +25,30 @@ fn test_argn() raises:
     alias size = 93
 
     var vector_stack = InlineArray[Int32, size](uninitialized=True)
-    var vector = NDBuffer[DType.int32, 1, DimList(size)](
+    var vector = NDBuffer[DType.int32, 1, _, DimList(size)](
         vector_stack.unsafe_ptr()
     )
     var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
-    var output = NDBuffer[DType.index, 1, DimList(1)](output_stack.unsafe_ptr())
+    var output = NDBuffer[DType.index, 1, _, DimList(1)](
+        output_stack.unsafe_ptr()
+    )
 
     for i in range(size):
         vector[i] = i
 
     argmax(
-        rebind[NDBuffer[DType.int32, 1]](vector),
+        rebind[NDBuffer[DType.int32, 1, vector.origin]](vector),
         0,
-        rebind[NDBuffer[DType.index, 1]](output),
+        rebind[NDBuffer[DType.index, 1, output.origin]](output),
     )
 
     # CHECK: argmax = 92
     print("argmax = ", output[0])
 
     argmin(
-        rebind[NDBuffer[DType.int32, 1]](vector),
+        rebind[NDBuffer[DType.int32, 1, vector.origin]](vector),
         0,
-        rebind[NDBuffer[DType.index, 1]](output),
+        rebind[NDBuffer[DType.index, 1, output.origin]](output),
     )
 
     # CHECK: argmin = 0
@@ -63,13 +65,13 @@ fn test_argn_2() raises:
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.float32, 2, DimList(batch_size, size)](
+    var vector = NDBuffer[DType.float32, 2, _, DimList(batch_size, size)](
         vector_stack.unsafe_ptr()
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
         output_stack.unsafe_ptr()
     )
 
@@ -78,9 +80,9 @@ fn test_argn_2() raises:
             vector[Index(i, j)] = j
 
     argmax(
-        rebind[NDBuffer[DType.float32, 2]](vector),
+        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmax = 90
@@ -91,9 +93,9 @@ fn test_argn_2() raises:
         print("argmax = ", output[Index(i, 0)])
 
     argmin(
-        rebind[NDBuffer[DType.float32, 2]](vector),
+        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmin = 0
@@ -114,13 +116,13 @@ fn test_argn_2_test_2() raises:
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.float32, 2, DimList(batch_size, size)](
+    var vector = NDBuffer[DType.float32, 2, _, DimList(batch_size, size)](
         vector_stack.unsafe_ptr()
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
         output_stack.unsafe_ptr()
     )
 
@@ -131,9 +133,9 @@ fn test_argn_2_test_2() raises:
                 vector[Index(i, j)] *= -1
 
     argmax(
-        rebind[NDBuffer[DType.float32, 2]](vector),
+        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmax = 2
@@ -142,9 +144,9 @@ fn test_argn_2_test_2() raises:
         print("argmax = ", output[Index(i, 0)])
 
     argmin(
-        rebind[NDBuffer[DType.float32, 2]](vector),
+        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmin = 0
@@ -163,13 +165,13 @@ fn test_argn_2_neg_axis() raises:
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.float32, 2, DimList(batch_size, size)](
+    var vector = NDBuffer[DType.float32, 2, _, DimList(batch_size, size)](
         vector_stack.unsafe_ptr()
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
         output_stack.unsafe_ptr()
     )
 
@@ -180,9 +182,9 @@ fn test_argn_2_neg_axis() raises:
                 vector[Index(i, j)] *= -1
 
     argmax(
-        rebind[NDBuffer[DType.float32, 2]](vector),
+        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
         -1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmax = 2
@@ -191,9 +193,9 @@ fn test_argn_2_neg_axis() raises:
         print("argmax = ", output[Index(i, 0)])
 
     argmin(
-        rebind[NDBuffer[DType.float32, 2]](vector),
+        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
         -1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmin = 0
@@ -212,13 +214,13 @@ fn test_argn_test_zeros() raises:
     var vector_stack = InlineArray[Float32, batch_size * size](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.float32, 2, DimList(batch_size, size)](
+    var vector = NDBuffer[DType.float32, 2, _, DimList(batch_size, size)](
         vector_stack.unsafe_ptr()
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
         output_stack.unsafe_ptr()
     )
 
@@ -227,9 +229,9 @@ fn test_argn_test_zeros() raises:
             vector[Index(i, j)] = 0
 
     argmax(
-        rebind[NDBuffer[DType.float32, 2]](vector),
+        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmax = 0
@@ -237,9 +239,9 @@ fn test_argn_test_zeros() raises:
         print("argmax = ", output[Index(i, 0)])
 
     argmin(
-        rebind[NDBuffer[DType.float32, 2]](vector),
+        rebind[NDBuffer[DType.float32, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmin = 0
@@ -255,13 +257,13 @@ fn test_argn_test_identity() raises:
     alias size = 5
 
     var vector_stack = InlineArray[Int64, batch_size * size](uninitialized=True)
-    var vector = NDBuffer[DType.int64, 2, DimList(batch_size, size)](
+    var vector = NDBuffer[DType.int64, 2, _, DimList(batch_size, size)](
         vector_stack.unsafe_ptr()
     )
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
         output_stack.unsafe_ptr()
     )
 
@@ -274,9 +276,9 @@ fn test_argn_test_identity() raises:
     vector[Index(2, 4)] = 1
 
     argmax(
-        rebind[NDBuffer[DType.int64, 2]](vector),
+        rebind[NDBuffer[DType.int64, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmax = 0
@@ -287,9 +289,9 @@ fn test_argn_test_identity() raises:
     print("argmax = ", output[Index(2, 0)])
 
     argmin(
-        rebind[NDBuffer[DType.int64, 2]](vector),
+        rebind[NDBuffer[DType.int64, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmin = 0
@@ -311,7 +313,7 @@ fn test_argn_3d_identity() raises:
     var vector_stack = InlineArray[Int64, Int(vector_shape.product())](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.int64, 3, vector_shape](
+    var vector = NDBuffer[DType.int64, 3, _, vector_shape](
         vector_stack.unsafe_ptr()
     )
     vector.fill(0)
@@ -319,7 +321,7 @@ fn test_argn_3d_identity() raises:
     var output_stack = InlineArray[Scalar[DType.index], batch_size * seq_len](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 3, DimList(batch_size, seq_len, 1)](
+    var output = NDBuffer[DType.index, 3, _, DimList(batch_size, seq_len, 1)](
         output_stack.unsafe_ptr()
     )
     output.fill(0)
@@ -330,9 +332,9 @@ fn test_argn_3d_identity() raises:
     vector[Index(1, 1, 3)] = 1
 
     argmax(
-        rebind[NDBuffer[DType.int64, 3]](vector),
+        rebind[NDBuffer[DType.int64, 3, vector.origin]](vector),
         2,
-        rebind[NDBuffer[DType.index, 3]](output),
+        rebind[NDBuffer[DType.index, 3, output.origin]](output),
     )
 
     # CHECK: argmax = 0
@@ -345,9 +347,9 @@ fn test_argn_3d_identity() raises:
     print("argmax = ", output[Index(1, 1, 0)])
 
     argmin(
-        rebind[NDBuffer[DType.int64, 3]](vector),
+        rebind[NDBuffer[DType.int64, 3, vector.origin]](vector),
         2,
-        rebind[NDBuffer[DType.index, 3]](output),
+        rebind[NDBuffer[DType.index, 3, output.origin]](output),
     )
 
     # CHECK: argmin = 0
@@ -368,7 +370,7 @@ fn test_argn_less_than_simd() raises:
     var vector_stack = InlineArray[Int64, batch_size * hidden_dim](
         uninitialized=True
     )
-    var vector = NDBuffer[DType.int64, 2, DimList(batch_size, hidden_dim)](
+    var vector = NDBuffer[DType.int64, 2, _, DimList(batch_size, hidden_dim)](
         vector_stack.unsafe_ptr()
     )
     vector.fill(0)
@@ -376,7 +378,7 @@ fn test_argn_less_than_simd() raises:
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
         output_stack.unsafe_ptr()
     )
     output.fill(0)
@@ -389,9 +391,9 @@ fn test_argn_less_than_simd() raises:
     vector[Index(1, 2)] = 3
 
     argmax(
-        rebind[NDBuffer[DType.int64, 2]](vector),
+        rebind[NDBuffer[DType.int64, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmax = 2
@@ -400,9 +402,9 @@ fn test_argn_less_than_simd() raises:
     print("argmax = ", output[Index(1, 0)])
 
     argmin(
-        rebind[NDBuffer[DType.int64, 2]](vector),
+        rebind[NDBuffer[DType.int64, 2, vector.origin]](vector),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmin = 0
@@ -425,12 +427,14 @@ fn test_argn_simd_index_order() raises:
     alias size = 17
 
     var vector_stack = InlineArray[Int32, size](uninitialized=True)
-    var vector = NDBuffer[DType.int32, 1, DimList(size)](
+    var vector = NDBuffer[DType.int32, 1, _, DimList(size)](
         vector_stack.unsafe_ptr()
     )
     vector.fill(0)
     var output_stack = InlineArray[Scalar[DType.index], 1](uninitialized=True)
-    var output = NDBuffer[DType.index, 1, DimList(1)](output_stack.unsafe_ptr())
+    var output = NDBuffer[DType.index, 1, _, DimList(1)](
+        output_stack.unsafe_ptr()
+    )
 
     vector[5] = 1
     vector[4] = -1
@@ -438,18 +442,18 @@ fn test_argn_simd_index_order() raises:
     vector[9] = 1
 
     argmax(
-        rebind[NDBuffer[DType.int32, 1]](vector),
+        rebind[NDBuffer[DType.int32, 1, vector.origin]](vector),
         0,
-        rebind[NDBuffer[DType.index, 1]](output),
+        rebind[NDBuffer[DType.index, 1, output.origin]](output),
     )
 
     # CHECK: argmax = 5
     print("argmax = ", output[0])
 
     argmin(
-        rebind[NDBuffer[DType.int32, 1]](vector),
+        rebind[NDBuffer[DType.int32, 1, vector.origin]](vector),
         0,
-        rebind[NDBuffer[DType.index, 1]](output),
+        rebind[NDBuffer[DType.index, 1, output.origin]](output),
     )
 
     # CHECK: argmin = 4
@@ -465,7 +469,7 @@ fn test_argn_parallelize() raises:
     alias hidden_dim = 16384
 
     var input_ptr = UnsafePointer[Float32].alloc(batch_size * hidden_dim)
-    var input = NDBuffer[DType.float32, 2, DimList(batch_size, hidden_dim)](
+    var input = NDBuffer[DType.float32, 2, _, DimList(batch_size, hidden_dim)](
         input_ptr
     )
     input.fill(0)
@@ -473,7 +477,7 @@ fn test_argn_parallelize() raises:
     var output_stack = InlineArray[Scalar[DType.index], batch_size](
         uninitialized=True
     )
-    var output = NDBuffer[DType.index, 2, DimList(batch_size, 1)](
+    var output = NDBuffer[DType.index, 2, _, DimList(batch_size, 1)](
         output_stack.unsafe_ptr()
     )
 
@@ -495,9 +499,9 @@ fn test_argn_parallelize() raises:
     input[Index(7, 400)] = 100
 
     argmax(
-        rebind[NDBuffer[DType.float32, 2]](input),
+        rebind[NDBuffer[DType.float32, 2, input.origin]](input),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmax = 10
@@ -518,9 +522,9 @@ fn test_argn_parallelize() raises:
     print("argmax = ", output[Index(7, 0)])
 
     argmin(
-        rebind[NDBuffer[DType.float32, 2]](input),
+        rebind[NDBuffer[DType.float32, 2, input.origin]](input),
         1,
-        rebind[NDBuffer[DType.index, 2]](output),
+        rebind[NDBuffer[DType.index, 2, output.origin]](output),
     )
 
     # CHECK: argmin = 100

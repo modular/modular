@@ -61,9 +61,9 @@ from .conv_utils import (
 fn conv_transpose_naive[
     type: DType,
 ](
-    output: NDBuffer[type, 5],
-    input: NDBuffer[type, 5],
-    filter: NDBuffer[type, 5],
+    output: NDBuffer[type, 5, MutableAnyOrigin],
+    input: NDBuffer[type, 5, MutableAnyOrigin],
+    filter: NDBuffer[type, 5, MutableAnyOrigin],
     stride: IndexList[3],
     dilation: IndexList[3],
     pad_d: IndexList[2],
@@ -349,9 +349,14 @@ fn get_partition(
 
 @value
 struct ConvTransposedPacked[
+    input_mut: Bool,
+    filter_mut: Bool, //,
     input_rank: Int,
     filter_rank: Int,
     output_rank: Int,
+    input_origin: Origin[input_mut],
+    filter_origin: Origin[filter_mut],
+    output_origin: MutableOrigin,
     input_shape: DimList,
     filter_shape: DimList,
     output_shape: DimList,
@@ -361,9 +366,9 @@ struct ConvTransposedPacked[
     conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ]:
-    var output: NDBuffer[output_type, output_rank, output_shape]
-    var input: NDBuffer[input_type, input_rank, input_shape]
-    var filter: NDBuffer[filter_type, filter_rank, filter_shape]
+    var output: NDBuffer[output_type, output_rank, output_origin, output_shape]
+    var input: NDBuffer[input_type, input_rank, input_origin, input_shape]
+    var filter: NDBuffer[filter_type, filter_rank, filter_origin, filter_shape]
 
     var conv_shape: ConvShape[input_rank - 2]
 
@@ -376,9 +381,9 @@ struct ConvTransposedPacked[
 
     @staticmethod
     fn run(
-        output: NDBuffer[output_type, output_rank, output_shape],
-        input: NDBuffer[input_type, input_rank, input_shape],
-        filter: NDBuffer[filter_type, filter_rank, filter_shape],
+        output: NDBuffer[output_type, output_rank, output_origin, output_shape],
+        input: NDBuffer[input_type, input_rank, input_origin, input_shape],
+        filter: NDBuffer[filter_type, filter_rank, filter_origin, filter_shape],
         conv_shape: ConvShape[input_rank - 2],
     ) raises:
         alias simd_size = simdwidthof[output_type]()
@@ -435,6 +440,9 @@ struct ConvTransposedPacked[
                 input_rank,
                 filter_rank,
                 output_rank,
+                input_origin,
+                filter_origin,
+                output_origin,
                 input_shape,
                 filter_shape,
                 output_shape,
@@ -1289,9 +1297,9 @@ fn conv_transposed[
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    output: NDBuffer[output_type, input_rank, output_shape],
-    input: NDBuffer[input_type, input_rank, input_shape],
-    filter: NDBuffer[filter_type, filter_rank, filter_shape],
+    output: NDBuffer[mut=True, output_type, input_rank, _, output_shape],
+    input: NDBuffer[input_type, input_rank, _, input_shape],
+    filter: NDBuffer[filter_type, filter_rank, _, filter_shape],
     stride: IndexList[input_rank - 2],
     dilation: IndexList[input_rank - 2],
     pad_d: IndexList[2],
@@ -1384,6 +1392,9 @@ fn conv_transposed[
             input_rank,
             packed_filter_rank,
             input_rank,
+            input.origin,
+            packed_filter.origin,
+            output.origin,
             input_shape,
             DimList.create_unknown[packed_filter_rank](),
             output_shape,

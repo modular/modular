@@ -48,12 +48,12 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
     type: DType, //,
     target: StaticString = "cpu",
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, _, _],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    output: NDBuffer[type, 2, _],
+    output: NDBuffer[mut=True, type, 2, _, _],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -112,12 +112,12 @@ fn generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged[
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[weight_type, 2, _],
+    weight: NDBuffer[weight_type, 2, _, _],
     kv_collection: PagedKVCacheCollectionFA3Fallback,
     layer_idx: UInt32,
-    output: NDBuffer[type, 2, _],
+    output: NDBuffer[mut=True, type, 2, _, _],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -181,12 +181,12 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[weight_type, 2, _],
+    weight: NDBuffer[weight_type, 2, _, _],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
-    output: NDBuffer[type, 2, _],
+    output: NDBuffer[mut=True, type, 2, _, _],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -248,12 +248,12 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[weight_type, 2, _],
+    weight: NDBuffer[weight_type, 2, _, _],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
-    output: NDBuffer[type, 2, _],
+    output: NDBuffer[mut=True, type, 2, _, _],
     bias: NDBuffer[type, 1],
     ctx: DeviceContextPtr,
 ) raises:
@@ -321,12 +321,12 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[weight_type, 2, _],
+    weight: NDBuffer[weight_type, 2, _, _],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    output: NDBuffer[type, 2, _],
+    output: NDBuffer[mut=True, type, 2, _, _],
     context: DeviceContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -378,12 +378,12 @@ fn _fused_qkv_matmul_kv_cache_ragged_bias[
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[weight_type, 2, _],
+    weight: NDBuffer[weight_type, 2, _, _],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    output: NDBuffer[type, 2, _],
+    output: NDBuffer[mut=True, type, 2, _, _],
     bias: NDBuffer[type, 1],
     context: DeviceContextPtr,
 ) raises:
@@ -437,12 +437,12 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[weight_type, 2, _],
+    weight: NDBuffer[weight_type, 2, _, _],
     k_cache: cache_t,
     v_cache: cache_t,
-    output: NDBuffer[type, 2, *_],
+    output: NDBuffer[mut=True, type, 2, *_],
     context: Optional[DeviceContext],
 ) raises:
     """Performs a fused QKV matmul on ragged tensors. Q outputs are written to the output argument
@@ -527,7 +527,13 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             "Expect GPTQ weights in an uint8 tensor.",
         ]()
         var new_weight = rebind[
-            NDBuffer[DType.uint8, weight.rank, weight.shape, weight.strides]
+            NDBuffer[
+                DType.uint8,
+                weight.rank,
+                weight.origin,
+                weight.shape,
+                weight.strides,
+            ]
         ](weight)
 
         _qmatmul_common[
@@ -542,7 +548,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             "Mismatch in type between weight and QKV tensors",
         ]()
         var new_weight = rebind[
-            NDBuffer[type, weight.rank, weight.shape, weight.strides]
+            NDBuffer[
+                type, weight.rank, weight.origin, weight.shape, weight.strides
+            ]
         ](weight)
 
         _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
@@ -560,12 +568,12 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     group_size: OptionalReg[Int] = None,
     has_zp: OptionalReg[Bool] = None,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[weight_type, 2, _],
+    weight: NDBuffer[weight_type, 2, _, _],
     k_cache: cache_t,
     v_cache: cache_t,
-    output: NDBuffer[type, 2, *_],
+    output: NDBuffer[mut=True, type, 2, *_],
     bias: NDBuffer[type, 1],
     context: Optional[DeviceContext],
 ) raises:
@@ -654,7 +662,13 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             "Expect GPTQ weights to be a 'uint8' tensor.",
         ]()
         var new_weight = rebind[
-            NDBuffer[DType.uint8, weight.rank, weight.shape, weight.strides]
+            NDBuffer[
+                DType.uint8,
+                weight.rank,
+                weight.origin,
+                weight.shape,
+                weight.strides,
+            ]
         ](weight)
 
         _qmatmul_common[
@@ -669,7 +683,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             "Mismatch in type between weight and QKV tensors",
         ]()
         var new_weight = rebind[
-            NDBuffer[type, weight.rank, weight.shape, weight.strides]
+            NDBuffer[
+                type, weight.rank, weight.origin, weight.shape, weight.strides
+            ]
         ](weight)
 
         _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
@@ -684,14 +700,14 @@ fn _matmul_common[
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    hidden_state: NDBuffer[type, 2, _],
-    weight: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
+    weight: NDBuffer[type, 2, _, _],
     context: Optional[DeviceContext],
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = weight.shape.get[0]()
     alias K = weight.shape.get[1]()
-    var c_nd: NDBuffer[type, 2, DimList(Dim(), N)]
+    var c_nd: NDBuffer[type, 2, MutableAnyOrigin, DimList(Dim(), N)]
 
     @parameter
     if is_cpu[target]():
@@ -729,15 +745,15 @@ fn _qmatmul_common[
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    hidden_state: NDBuffer[type, 2, _],
-    weight: NDBuffer[DType.uint8, 2, _],
+    hidden_state: NDBuffer[type, 2, *_],
+    weight: NDBuffer[DType.uint8, 2, _, _],
     context: Optional[DeviceContext],
 ) raises:
     constrained[is_gpu[target](), "GPTQ quantization only works on GPU."]()
 
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = weight.shape.get[0]()
-    var c_nd: NDBuffer[type, 2, DimList(Dim(), N)]
+    var c_nd: NDBuffer[type, 2, MutableAnyOrigin, DimList(Dim(), N)]
 
     c_nd = __type_of(c_nd)(
         UnsafePointer[Scalar[type]](),
@@ -759,9 +775,9 @@ fn _qmatmul_common[
 fn kv_matmul_ragged_continuous_batching[
     type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, _, _],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -816,9 +832,9 @@ fn _matmul_kv_cache_ragged[
     *,
     target: StaticString,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, _, _],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     context: DeviceContextPtr,
@@ -862,9 +878,9 @@ fn _matmul_kv_cache_ragged_impl[
     *,
     target: StaticString,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, _, _],
     k_cache: cache_t,
     v_cache: cache_t,
     ctx: Optional[DeviceContext],
@@ -969,9 +985,9 @@ fn k_matmul_ragged_paged[
     page_size: Int, //,
     target: StaticString,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, *_],
     kv_collection: PagedKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
@@ -1025,9 +1041,9 @@ fn _matmul_k_cache_ragged[
     *,
     target: StaticString,
 ](
-    hidden_state: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, _, _],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     context: DeviceContextPtr,
@@ -1069,9 +1085,9 @@ fn _matmul_k_cache_ragged_impl[
     *,
     target: StaticString,
 ](
-    hidden_state: NDBuffer[type, 2, _],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    weight: NDBuffer[type, 2, _],
+    hidden_state: NDBuffer[type, 2, _, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, _, _],
+    weight: NDBuffer[type, 2, _, _],
     k_cache: cache_t,
     ctx: Optional[DeviceContext],
 ) raises:
@@ -1147,17 +1163,17 @@ fn unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized[
     quantization_encoding_k: StaticString,
     quantization_encoding_v: StaticString,
 ](
-    hidden_state: NDBuffer[DType.float32, 2, _],
+    hidden_state: NDBuffer[DType.float32, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    q_weight: NDBuffer[DType.uint8, 2, _],
-    k_weight: NDBuffer[DType.uint8, 2, _],
-    v_weight: NDBuffer[DType.uint8, 2, _],
+    q_weight: NDBuffer[DType.uint8, 2, _, _],
+    k_weight: NDBuffer[DType.uint8, 2, _, _],
+    v_weight: NDBuffer[DType.uint8, 2, _, _],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     ],
     layer_idx: UInt32,
-    output: NDBuffer[DType.float32, 2, _],
+    output: NDBuffer[mut=True, DType.float32, 2, _, _],
     ctx: DeviceContextPtr,
 ) raises:
     """Performs a quantized matmul, writing the output into a mutable ContinuousBatchingKVCacheCollection object.
@@ -1237,14 +1253,14 @@ fn _unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized_impl[
     quantization_encoding_k: StaticString,
     quantization_encoding_v: StaticString,
 ](
-    hidden_state: NDBuffer[DType.float32, 2, _],
+    hidden_state: NDBuffer[DType.float32, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    q_weight: NDBuffer[DType.uint8, 2, _],
-    k_weight: NDBuffer[DType.uint8, 2, _],
-    v_weight: NDBuffer[DType.uint8, 2, _],
+    q_weight: NDBuffer[DType.uint8, 2, _, _],
+    k_weight: NDBuffer[DType.uint8, 2, _, _],
+    v_weight: NDBuffer[DType.uint8, 2, _, _],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    output: NDBuffer[DType.float32, 2, _],
+    output: NDBuffer[mut=True, DType.float32, 2, _, _],
     context: DeviceContextPtr,
 ) raises:
     layer_idx_cast = Int(layer_idx)
@@ -1281,14 +1297,14 @@ fn _matmul_kv_cache_ragged_gguf_quantized_impl[
     quantization_encoding_k: StaticString,
     quantization_encoding_v: StaticString,
 ](
-    hidden_state: NDBuffer[DType.float32, 2, _],
+    hidden_state: NDBuffer[DType.float32, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
-    q_weight: NDBuffer[DType.uint8, 2, _],
-    k_weight: NDBuffer[DType.uint8, 2, _],
-    v_weight: NDBuffer[DType.uint8, 2, _],
+    q_weight: NDBuffer[DType.uint8, 2, _, _],
+    k_weight: NDBuffer[DType.uint8, 2, _, _],
+    v_weight: NDBuffer[DType.uint8, 2, _, _],
     k_cache: cache_t,
     v_cache: cache_t,
-    output: NDBuffer[DType.float32, 2, _],
+    output: NDBuffer[mut=True, DType.float32, 2, _, _],
 ) raises:
     """Helper for performing quantized matmul with custom KVCacheT types.
 
@@ -1329,9 +1345,9 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     cache_t: KVCacheT,
     quantization_encoding: StaticString,
 ](
-    hidden_state: NDBuffer[DType.float32, 2, _],
-    input_row_offsets: NDBuffer[DType.uint32, 1, _],
-    k_or_v_weight: NDBuffer[DType.uint8, 2, _],
+    hidden_state: NDBuffer[DType.float32, 2, _, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, _, _],
+    k_or_v_weight: NDBuffer[DType.uint8, 2, _, _],
     k_or_v_cache: cache_t,
 ) raises:
     alias kv_params = cache_t.kv_params
@@ -1394,13 +1410,13 @@ fn _qmatmul_gguf_quantized_alloc_output[
     quantization_encoding: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    hidden_state: NDBuffer[DType.float32, 2, _],
-    weight: NDBuffer[DType.uint8, 2, _],
+    hidden_state: NDBuffer[DType.float32, 2, _, _],
+    weight: NDBuffer[DType.uint8, 2, _, _],
 ) raises:
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     alias N = weight.shape.get[0]()
     alias K = weight.shape.get[1]()
-    var c_nd: NDBuffer[DType.float32, 2, DimList(Dim(), N)]
+    var c_nd: NDBuffer[DType.float32, 2, MutableAnyOrigin, DimList(Dim(), N)]
 
     # The CPU matmul codepath uses the C buffer as a workspace
     # even if an epilogue is provided, here we just allocate
@@ -1424,9 +1440,9 @@ fn _qmatmul_gguf_quantized_common[
     quantization_encoding: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    hidden_state: NDBuffer[DType.float32, 2, _],
-    weight: NDBuffer[DType.uint8, 2, _],
-    output: NDBuffer[DType.float32, 2, _],
+    hidden_state: NDBuffer[DType.float32, 2, _, _],
+    weight: NDBuffer[DType.uint8, 2, _, _],
+    output: NDBuffer[mut=True, DType.float32, 2, _, _],
 ) raises:
     @parameter
     if quantization_encoding == "q4_0":
@@ -1476,7 +1492,7 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -1529,7 +1545,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     kv_collection: PagedKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Performs a fused RoPE projection for Q and K projections.
@@ -1596,7 +1612,7 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -1642,7 +1658,7 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -1688,7 +1704,7 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -1732,7 +1748,7 @@ fn generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -1782,7 +1798,7 @@ fn _flash_attention_kv_cache_ragged[
     layer_idx: UInt32,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types.
@@ -1828,7 +1844,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged[
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types.
@@ -1874,7 +1890,7 @@ fn _flash_attention_kv_cache_ragged_impl[
     layer_idx: UInt32,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: Optional[DeviceContext],
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types.
@@ -1918,7 +1934,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: Optional[DeviceContext],
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom types.
@@ -1972,12 +1988,13 @@ fn _flash_attention_kv_cache_ragged_gpu[
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContext,
 ) raises:
     var dummy_mask = NDBuffer[
         type,
         4,
+        MutableAnyOrigin,
         DimList.create_unknown[4](),
     ]()
 
@@ -2004,12 +2021,13 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_gpu[
     k: cache_t,
     v: cache_t,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContext,
 ) raises:
     var dummy_mask = NDBuffer[
         type,
         4,
+        MutableAnyOrigin,
         DimList.create_unknown[4](),
     ]()
 
@@ -2044,14 +2062,14 @@ fn _cross_attention_kv_cache_ragged[
     target: StaticString,
 ](
     q: NDBuffer[type, 3, *_],
-    q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q_input_row_offsets: NDBuffer[mut=True, DType.uint32, 1, *_],
     q_max_seq_len: UInt32,
     kv_input_row_offsets: NDBuffer[DType.uint32, 1],
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
     """Performs cross attention using k and v caches from KVCacheT custom types.
@@ -2087,9 +2105,9 @@ fn _cross_attention_kv_cache_ragged[
             output,
         )
     else:
-        var dummy_mask = NDBuffer[type, 4, DimList.create_unknown[4]()](
-            UnsafePointer[Scalar[type]](), Index(0, 0, 0, 0)
-        )
+        var dummy_mask = NDBuffer[
+            type, 4, MutableAnyOrigin, DimList.create_unknown[4]()
+        ](UnsafePointer[Scalar[type]](), Index(0, 0, 0, 0))
         gpu_flash_attention[add_attn_mask=False, ragged=True](
             output,
             q,
@@ -2102,7 +2120,9 @@ fn _cross_attention_kv_cache_ragged[
             scale,
             context.get_device_context(),
             Int(q_max_seq_len),
-            kv_input_row_offsets,
+            OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
+                kv_input_row_offsets
+            ),
             None,
         )
 
@@ -2111,14 +2131,14 @@ fn _cross_attention_kv_cache_ragged[
 fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[
     type: DType, //, target: StaticString
 ](
-    q: NDBuffer[type, 3, *_],
-    q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q: NDBuffer[mut=True, type, 3, *_],
+    q_input_row_offsets: NDBuffer[mut=True, DType.uint32, 1, *_],
     q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
     kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     scale: Float32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContextPtr,
 ) raises:
     @always_inline

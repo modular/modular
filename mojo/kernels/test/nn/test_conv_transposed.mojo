@@ -265,6 +265,9 @@ fn test_conv_transposed[
         rank + 2,  # input rank
         rank + 3,  # filter rank
         rank + 2,  # output rank
+        _,  # input origin
+        _,  # filter origin,
+        _,  # output origin,
         DimList.create_unknown[rank + 2](),  # input shape
         DimList.create_unknown[rank + 3](),  # filter shape
         DimList.create_unknown[rank + 2](),  # output shape

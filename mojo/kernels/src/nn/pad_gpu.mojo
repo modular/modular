@@ -37,7 +37,10 @@ fn _copy_gpu_kernel[
 
 fn _fill_strides_indexlist[
     rank: Int,
-](input_shape: IndexList[rank], strides: NDBuffer[DType.index, 1, rank]):
+](
+    input_shape: IndexList[rank],
+    strides: NDBuffer[mut=True, DType.index, 1, _, rank],
+):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.
@@ -352,8 +355,12 @@ fn pad_constant[
             ctx,
         )
 
-    var input_strides_buf = NDBuffer[DType.index, 1, rank].stack_allocation()
-    var output_strides_buf = NDBuffer[DType.index, 1, rank].stack_allocation()
+    var input_strides_buf = NDBuffer[
+        DType.index, 1, MutableAnyOrigin, rank
+    ].stack_allocation()
+    var output_strides_buf = NDBuffer[
+        DType.index, 1, MutableAnyOrigin, rank
+    ].stack_allocation()
     _fill_strides_indexlist[rank](input_shape, input_strides_buf)
     _fill_strides_indexlist[rank](output_shape, output_strides_buf)
 
@@ -371,7 +378,8 @@ fn pad_constant[
 fn get_padding_output_shape[
     rank: Int
 ](
-    input_shape: IndexList[rank], paddings: NDBuffer[DType.index, 1, 2 * rank]
+    input_shape: IndexList[rank],
+    paddings: NDBuffer[DType.index, 1, _, 2 * rank],
 ) -> IndexList[rank]:
     var output_shape = IndexList[rank]()
     for i in range(rank):

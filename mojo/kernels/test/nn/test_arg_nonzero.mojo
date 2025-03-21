@@ -21,7 +21,7 @@ def test_where_size():
     var values_stack = InlineArray[Float32, Int(values_shape.product())](
         uninitialized=True
     )
-    var values = NDBuffer[DType.float32, rank, values_shape](
+    var values = NDBuffer[DType.float32, rank, _, values_shape](
         values_stack.unsafe_ptr()
     )
 
@@ -48,7 +48,7 @@ def test_where_size_bool():
     var values_stack = InlineArray[
         Scalar[DType.bool], Int(values_shape.product())
     ](uninitialized=True)
-    var values = NDBuffer[DType.bool, rank, values_shape](
+    var values = NDBuffer[DType.bool, rank, _, values_shape](
         values_stack.unsafe_ptr()
     )
 
@@ -75,7 +75,7 @@ def test_where():
     var values_stack = InlineArray[Float32, Int(values_shape.product())](
         uninitialized=True
     )
-    var values = NDBuffer[DType.float32, rank, values_shape](
+    var values = NDBuffer[DType.float32, rank, _, values_shape](
         values_stack.unsafe_ptr()
     )
 
@@ -86,17 +86,16 @@ def test_where():
     values[IndexList[rank](2, 0, 0)] = 0.0
     values[IndexList[rank](2, 1, 0)] = -3.0
 
-    alias computed_stack = InlineArray[Scalar[DType.index], 9](
-        uninitialized=True
-    )
-    var computed_outputs = NDBuffer[DType.index, 2, DimList(3, 3)](
+    var computed_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var computed_outputs = NDBuffer[DType.index, 2, _, DimList(3, 3)](
         computed_stack.unsafe_ptr()
     )
 
-    alias golden_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
+    var golden_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
     var golden_outputs = NDBuffer[
         DType.index,
         2,
+        _,
         DimList(3, 3),
     ](golden_stack.unsafe_ptr())
 
@@ -129,6 +128,7 @@ def test_where_1d():
     var values = NDBuffer[
         DType.float32,
         1,
+        _,
         DimList(num_elements),
     ](values_stack.unsafe_ptr())
 
@@ -151,6 +151,7 @@ def test_where_1d():
     var computed_outputs = NDBuffer[
         DType.index,
         2,
+        _,
         DimList(num_indices, 1),
     ](computed_stack.unsafe_ptr())
 
@@ -160,6 +161,7 @@ def test_where_1d():
     var golden_outputs = NDBuffer[
         DType.index,
         1,
+        _,
         DimList(num_indices),
     ](golden_stack.unsafe_ptr())
 
@@ -186,7 +188,7 @@ def test_where_bool():
     var values_stack = InlineArray[
         Scalar[DType.bool], Int(values_shape.product())
     ](uninitialized=True)
-    var values = NDBuffer[DType.bool, rank, values_shape](
+    var values = NDBuffer[DType.bool, rank, _, values_shape](
         values_stack.unsafe_ptr()
     )
 
@@ -198,12 +200,12 @@ def test_where_bool():
     values[IndexList[rank](2, 1, 0)] = True
 
     var computed_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
-    var computed_outputs = NDBuffer[DType.index, 2, DimList(3, 3)](
+    var computed_outputs = NDBuffer[DType.index, 2, _, DimList(3, 3)](
         computed_stack.unsafe_ptr()
     )
 
     var golden_stack = InlineArray[Scalar[DType.index], 9](uninitialized=True)
-    var golden_outputs = NDBuffer[DType.index, 2, DimList(3, 3)](
+    var golden_outputs = NDBuffer[DType.index, 2, _, DimList(3, 3)](
         golden_stack.unsafe_ptr()
     )
 

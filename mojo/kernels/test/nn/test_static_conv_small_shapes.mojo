@@ -60,11 +60,12 @@ alias num_micro_tile = ceildiv(F, micro_kernel_f_size)
 
 @export(ABI="C")
 fn static_conv(
-    output: NDBuffer[value_type, 4, DimList(N, HO, WO, F)],
-    input: NDBuffer[value_type, 4, DimList(N, H, W, C)],
+    output: NDBuffer[mut=True, value_type, 4, _, DimList(N, HO, WO, F)],
+    input: NDBuffer[value_type, 4, _, DimList(N, H, W, C)],
     filter: NDBuffer[
         value_type,
         5,
+        _,
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
     ],
 ):
@@ -97,6 +98,9 @@ fn static_conv(
             4,
             5,
             4,
+            _,
+            _,
+            _,
             DimList(N, H, W, C),
             DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
             DimList(N, HO, WO, F),
@@ -117,13 +121,13 @@ def test_static_conv():
     var output_stack = InlineArray[Scalar[value_type], N * HO * WO * F](
         uninitialized=True
     )
-    var output = NDBuffer[value_type, 4, DimList(N, HO, WO, F)](
+    var output = NDBuffer[value_type, 4, _, DimList(N, HO, WO, F)](
         output_stack.unsafe_ptr()
     )
     var input_stack = InlineArray[Scalar[value_type], N * H * W * C](
         uninitialized=True
     )
-    var input = NDBuffer[value_type, 4, DimList(N, H, W, C)](
+    var input = NDBuffer[value_type, 4, _, DimList(N, H, W, C)](
         input_stack.unsafe_ptr()
     )
     var filter_stack = InlineArray[
@@ -132,6 +136,7 @@ def test_static_conv():
     var filter = NDBuffer[
         value_type,
         5,
+        _,
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
     ](filter_stack.unsafe_ptr())
 

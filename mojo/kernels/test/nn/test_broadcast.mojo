@@ -24,18 +24,16 @@ fn test_broadcast_empty_shape():
     var input_stack = InlineArray[
         Scalar[DType.index], Int(input_shape.product())
     ](uninitialized=True)
-    var input = NDBuffer[
-        DType.index,
-        1,
-        input_shape,
-    ](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 1, _, input_shape](
+        input_stack.unsafe_ptr()
+    )
     input[0] = 1
 
     # Create a 1D tensor of shape (0)
     var output_stack = InlineArray[
         Scalar[DType.index], Int(output_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 1, output_shape](
+    var output = NDBuffer[DType.index, 1, _, output_shape](
         output_stack.unsafe_ptr()
     )
 
@@ -62,11 +60,9 @@ fn test_broadcast_same_shape():
     var input_stack = InlineArray[
         Scalar[DType.index], Int(input_shape.product())
     ](uninitialized=True)
-    var input = NDBuffer[
-        DType.index,
-        3,
-        input_shape,
-    ](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 3, _, input_shape](
+        input_stack.unsafe_ptr()
+    )
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 1, 0)] = 2
 
@@ -74,7 +70,7 @@ fn test_broadcast_same_shape():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(output_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 3, output_shape](
+    var output = NDBuffer[DType.index, 3, _, output_shape](
         output_stack.unsafe_ptr()
     )
     output.fill(0)
@@ -107,11 +103,9 @@ fn test_broadcast_single_axis():
     var input_stack = InlineArray[
         Scalar[DType.index], Int(input_shape.product())
     ](uninitialized=True)
-    var input = NDBuffer[
-        DType.index,
-        2,
-        input_shape,
-    ](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 2, _, input_shape](
+        input_stack.unsafe_ptr()
+    )
 
     input[IndexList[2](0, 0)] = 1
     input[IndexList[2](0, 1)] = 2
@@ -120,7 +114,7 @@ fn test_broadcast_single_axis():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(output_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 2, output_shape](
+    var output = NDBuffer[DType.index, 2, _, output_shape](
         output_stack.unsafe_ptr()
     )
     output.fill(0)
@@ -161,11 +155,9 @@ fn test_broadcast_multi_axes():
     var input_stack = InlineArray[
         Scalar[DType.index], Int(input_shape.product())
     ](uninitialized=True)
-    var input = NDBuffer[
-        DType.index,
-        3,
-        input_shape,
-    ](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 3, _, input_shape](
+        input_stack.unsafe_ptr()
+    )
 
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 1, 0)] = 2
@@ -174,7 +166,7 @@ fn test_broadcast_multi_axes():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(output_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 3, output_shape](
+    var output = NDBuffer[DType.index, 3, _, output_shape](
         output_stack.unsafe_ptr()
     )
     output.fill(0)
@@ -225,11 +217,9 @@ fn test_broadcast_multi_axes_nested():
     var input_stack = InlineArray[
         Scalar[DType.index], Int(input_shape.product())
     ](uninitialized=True)
-    var input = NDBuffer[
-        DType.index,
-        5,
-        input_shape,
-    ](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 5, _, input_shape](
+        input_stack.unsafe_ptr()
+    )
 
     input[IndexList[5](0, 0, 0, 0, 0)] = 1
     input[IndexList[5](0, 0, 0, 0, 1)] = 2
@@ -244,7 +234,7 @@ fn test_broadcast_multi_axes_nested():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(output_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 5, output_shape](
+    var output = NDBuffer[DType.index, 5, _, output_shape](
         output_stack.unsafe_ptr()
     )
     output.fill(0)

@@ -30,8 +30,8 @@ fn pad_constant_dispatch[
     constant_type: DType,
     recursive: Int = 0,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: SIMD[constant_type, 1],
 ):
@@ -193,8 +193,8 @@ fn pad_reflect_dispatch[
     paddings_type: DType,
     recursive: Int = 0,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     """
@@ -504,7 +504,7 @@ fn test_pad_constant_nd[
     var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
         uninitialized=True
     )
-    var paddings = NDBuffer[DType.index, 1, 2 * rank](
+    var paddings = NDBuffer[DType.index, 1, _, 2 * rank](
         paddings_stack.unsafe_ptr()
     )
 
@@ -515,7 +515,9 @@ fn test_pad_constant_nd[
 
     # Create an output matrix and fill with 0
     var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-    var output = NDBuffer[DType.index, rank, out_shape](output_ptr, out_shape)
+    var output = NDBuffer[DType.index, rank, _, out_shape](
+        output_ptr, out_shape
+    )
     output.fill(0)
 
     # constant padding value = 7
@@ -528,7 +530,7 @@ fn test_pad_constant_nd[
 
     if verify:
         var output_rec_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-        var output_rec = NDBuffer[DType.index, rank, out_shape](
+        var output_rec = NDBuffer[DType.index, rank, _, out_shape](
             output_rec_ptr, out_shape
         )
         output_rec.fill(0)
@@ -586,7 +588,7 @@ fn test_pad_reflect_nd[
     var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
         uninitialized=True
     )
-    var paddings = NDBuffer[DType.index, 1, 2 * rank](
+    var paddings = NDBuffer[DType.index, 1, _, 2 * rank](
         paddings_stack.unsafe_ptr()
     )
 
@@ -597,7 +599,9 @@ fn test_pad_reflect_nd[
 
     # Create an output matrix and fill with 0
     var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-    var output = NDBuffer[DType.index, rank, out_shape](output_ptr, out_shape)
+    var output = NDBuffer[DType.index, rank, _, out_shape](
+        output_ptr, out_shape
+    )
     output.fill(0)
 
     # pad
@@ -605,7 +609,7 @@ fn test_pad_reflect_nd[
 
     if verify:
         var output_rec_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-        var output_rec = NDBuffer[DType.index, rank, out_shape](
+        var output_rec = NDBuffer[DType.index, rank, _, out_shape](
             output_rec_ptr, out_shape
         )
         output_rec.fill(0)

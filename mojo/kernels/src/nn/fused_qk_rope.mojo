@@ -51,7 +51,7 @@ fn rope_q_proj[
     type: DType, rank: Int, width: Int, //, *, interleaved: Bool
 ](
     q_proj: NDBuffer[type, rank, *_],
-    output: NDBuffer[type, rank, *_],
+    output: NDBuffer[mut=True, type, rank, *_],
     idx: IndexList[rank],
     freq_val: SIMD[type, width],
     head_size: Int,
@@ -161,7 +161,7 @@ fn fused_qk_rope[
     kv_collection: collection_t,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    output: NDBuffer[type, 4, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
     context: Optional[DeviceContext],
 ) raises:
     alias kv_params = cache_t.kv_params
@@ -252,7 +252,7 @@ fn fused_qk_rope_ragged[
     kv_collection: collection_t,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, *_],
+    output: NDBuffer[mut=True, type, 3, *_],
     context: Optional[DeviceContext],
 ) raises:
     """Applies RoPE (Rotary Position Embedding) to query and key tensors.

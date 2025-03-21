@@ -18,7 +18,11 @@ from utils.index import Index, IndexList
 @always_inline
 fn matmul[
     type: DType, //, N: Int, K: Int, M: Int, transpose_b: Bool
-](C: NDBuffer[type, 2, _], A: NDBuffer[type, 2, _], B: NDBuffer[type, 2, _]):
+](
+    C: NDBuffer[mut=True, type, 2, _, _],
+    A: NDBuffer[type, 2, _, _],
+    B: NDBuffer[type, 2, _, _],
+):
     # TODO: Add constrained[]?
     @parameter
     if transpose_b:
@@ -45,39 +49,41 @@ fn matmul[
 fn winograd_2d_convolution_3x3[
     type: DType
 ](
-    signal: NDBuffer[type, 2, _],
+    signal: NDBuffer[type, 2, _, _],
     kernel: NDBuffer[
-        type, 2, _
+        type, 2, _, _
     ],  # must be 3x3, let's constrained[]() somehow. Or parameter
-    output: NDBuffer[type, 2, _],
+    output: NDBuffer[mut=True, type, 2, _, _],
 ):
     # Winograd transformation matrices as stack-allocated NDBuffers
     # fmt: off
     var b_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var B = NDBuffer[type, 2, DimList((4, 4))](b_stack.unsafe_ptr())
+    var B = NDBuffer[type, 2,_, DimList((4, 4))](b_stack.unsafe_ptr())
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
     B[1,0] = 0.0; B[1,1] =  1.0; B[1,2] =  1.0; B[1,3] =  0.0
     B[2,0] = 0.0; B[2,1] = -1.0; B[2,2] =  1.0; B[2,3] =  0.0
     B[3,0] = 0.0; B[3,1] =  1.0; B[3,2] =  0.0; B[3,3] = -1.0
 
     var g_stack = InlineArray[Scalar[type], 12](uninitialized=True)
-    var G = NDBuffer[type, 2, DimList((4, 3))](g_stack.unsafe_ptr())
+    var G = NDBuffer[type, 2, _,DimList((4, 3))](g_stack.unsafe_ptr())
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
     G[1,0] = 0.5; G[1,1] =  0.5; G[1,2] = 0.5
     G[2,0] = 0.5; G[2,1] = -0.5; G[2,2] = 0.5
     G[3,0] = 0.0; G[3,1] =  0.0; G[3,2] = 1.0
 
     var a_stack = InlineArray[Scalar[type], 8](uninitialized=True)
-    var A = NDBuffer[type, 2, DimList((2, 4))](a_stack.unsafe_ptr())
+    var A = NDBuffer[type, 2,_, DimList((2, 4))](a_stack.unsafe_ptr())
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
     A[1,0] = 0.0; A[1,1] = 1.0; A[1,2] = -1.0; A[1,3] = -1.0
     # fmt: on
 
     # Temporary buffers for intermediate results
     var scratch_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var scratch = NDBuffer[type, 2, DimList((4, 4))](scratch_stack.unsafe_ptr())
+    var scratch = NDBuffer[type, 2, _, DimList((4, 4))](
+        scratch_stack.unsafe_ptr()
+    )
     var g_t_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var g_transformed = NDBuffer[type, 2, DimList((4, 4))](
+    var g_transformed = NDBuffer[type, 2, _, DimList((4, 4))](
         g_t_stack.unsafe_ptr()
     )
 
@@ -93,11 +99,11 @@ fn winograd_2d_convolution_3x3[
 
     # Additional temporary buffers
     var d_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var d = NDBuffer[type, 2, DimList((4, 4))](d_stack.unsafe_ptr())
+    var d = NDBuffer[type, 2, _, DimList((4, 4))](d_stack.unsafe_ptr())
     var m_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var m = NDBuffer[type, 2, DimList((4, 4))](m_stack.unsafe_ptr())
+    var m = NDBuffer[type, 2, _, DimList((4, 4))](m_stack.unsafe_ptr())
     var y_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var y = NDBuffer[type, 2, DimList((2, 2))](y_stack.unsafe_ptr())
+    var y = NDBuffer[type, 2, _, DimList((2, 2))](y_stack.unsafe_ptr())
 
     for i in range(0, Oh, 2):
         for j in range(0, Ow, 2):
@@ -138,8 +144,8 @@ fn winograd_2d_convolution_3x3[
 fn outputs_are_close[
     type: DType
 ](
-    output_naive: NDBuffer[type, 2, _],
-    output_winograd: NDBuffer[type, 2, _],
+    output_naive: NDBuffer[type, 2, _, _],
+    output_winograd: NDBuffer[type, 2, _, _],
     Oh: Int,
     Ow: Int,
 ) -> Bool:
@@ -176,12 +182,12 @@ fn test[type: DType, H: Int, W: Int]():  # Input Height/Width
     var output_ptr_naive = UnsafePointer[Scalar[type]].alloc(Oh * Ow)
 
     # Create NDBuffers
-    var input = NDBuffer[type, 2, DimList((H, W))](input_ptr)
-    var filter = NDBuffer[type, 2, DimList((Kh, Kw))](filter_ptr)
-    var output_winograd = NDBuffer[type, 2, DimList((Oh, Ow))](
+    var input = NDBuffer[type, 2, _, DimList((H, W))](input_ptr)
+    var filter = NDBuffer[type, 2, _, DimList((Kh, Kw))](filter_ptr)
+    var output_winograd = NDBuffer[type, 2, _, DimList((Oh, Ow))](
         output_ptr_winograd
     )
-    var output_naive = NDBuffer[type, 2, DimList((Oh, Ow))](output_ptr_naive)
+    var output_naive = NDBuffer[type, 2, _, DimList((Oh, Ow))](output_ptr_naive)
 
     # Initialize with random values
     rand[type](input_ptr, H * W)

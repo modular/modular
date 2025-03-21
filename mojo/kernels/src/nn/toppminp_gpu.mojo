@@ -327,7 +327,7 @@ fn radix_sort_pairs_kernel[
 
     # Initialize counts[NUM_BUCKETS]
     var counts_buf = NDBuffer[
-        DType.int32, 1, DimList(NUM_BUCKETS)
+        DType.int32, 1, MutableAnyOrigin, DimList(NUM_BUCKETS)
     ].stack_allocation()
     var counts = counts_buf.data
     counts_buf.fill(0)
@@ -417,7 +417,7 @@ fn radix_sort_pairs_kernel[
 
     # Each thread initializes local_offsets[NUM_BUCKETS] = 0
     var local_offsets_buf = NDBuffer[
-        DType.int32, 1, DimList(NUM_BUCKETS)
+        DType.int32, 1, MutableAnyOrigin, DimList(NUM_BUCKETS)
     ].stack_allocation()
     local_offsets_buf.fill(0)
     var local_offsets = local_offsets_buf.data
@@ -467,10 +467,14 @@ fn run_radix_sort_pairs_gpu[
     NUM_BITS_PER_PASS: Int = 4,
 ](
     ctx: DeviceContext,
-    mut input_keys: NDBuffer[type, rank],  # modifies input
-    mut output_keys: NDBuffer[type, rank],  # modifies output
-    mut input_key_ids: NDBuffer[out_idx_type, rank],  # modifies input
-    mut output_key_ids: NDBuffer[out_idx_type, rank],  # modifies output
+    mut input_keys: NDBuffer[type, rank, MutableAnyOrigin],  # modifies input
+    mut output_keys: NDBuffer[type, rank, MutableAnyOrigin],  # modifies output
+    mut input_key_ids: NDBuffer[
+        out_idx_type, rank, MutableAnyOrigin
+    ],  # modifies input
+    mut output_key_ids: NDBuffer[
+        out_idx_type, rank, MutableAnyOrigin
+    ],  # modifies output
     skip_sort: NDBuffer[DType.bool, rank],
 ) raises:
     var in_shape = input_keys.get_shape()

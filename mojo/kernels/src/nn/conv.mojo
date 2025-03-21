@@ -342,9 +342,14 @@ fn _reduce_output[
 
 @value
 struct ConvDirectNHWC[
+    input_mut: Bool,
+    filter_mut: Bool, //,
     input_rank: Int,
     filter_rank: Int,
     output_rank: Int,
+    input_origin: Origin[input_mut],
+    filter_origin: Origin[filter_mut],
+    output_origin: MutableOrigin,
     input_shape: DimList,
     filter_shape: DimList,
     output_shape: DimList,
@@ -366,9 +371,9 @@ struct ConvDirectNHWC[
     Assume F is divisible at least by simd_size.
     """
 
-    var output: NDBuffer[output_type, output_rank, output_shape]
-    var input: NDBuffer[input_type, input_rank, input_shape]
-    var filter: NDBuffer[filter_type, filter_rank, filter_shape]
+    var output: NDBuffer[output_type, output_rank, output_origin, output_shape]
+    var input: NDBuffer[input_type, input_rank, input_origin, input_shape]
+    var filter: NDBuffer[filter_type, filter_rank, filter_origin, filter_shape]
 
     var conv_shape: ConvShape[input_rank - 2]
 
@@ -390,9 +395,9 @@ struct ConvDirectNHWC[
 
     @staticmethod
     fn run(
-        output: NDBuffer[output_type, output_rank, output_shape],
-        input: NDBuffer[input_type, input_rank, input_shape],
-        filter: NDBuffer[filter_type, filter_rank, filter_shape],
+        output: NDBuffer[output_type, output_rank, output_origin, output_shape],
+        input: NDBuffer[input_type, input_rank, input_origin, input_shape],
+        filter: NDBuffer[filter_type, filter_rank, filter_origin, filter_shape],
         conv_shape: ConvShape[input_rank - 2],
     ) raises:
         alias simd_size = simdwidthof[output_type]()
@@ -472,7 +477,9 @@ struct ConvDirectNHWC[
 
             # TODO: Need to have a more robust way to compute task_id_c
             var task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
-            var task_output = NDBuffer[output_type, output_rank, output_shape](
+            var task_output = NDBuffer[
+                output_type, output_rank, output_origin, output_shape
+            ](
                 output_scratch.data.offset(task_id_c * output_size),
                 output.get_shape(),
             )
@@ -481,6 +488,9 @@ struct ConvDirectNHWC[
                 input_rank,
                 filter_rank,
                 output_rank,
+                input_origin,
+                filter_origin,
+                output_origin,
                 input_shape,
                 filter_shape,
                 output_shape,
@@ -716,7 +726,7 @@ struct ConvDirectNHWC[
 
         # Base input offsets.
         var input_base_offsets = NDBuffer[
-            DType.int32, 1, micro_kernel_height
+            DType.int32, 1, MutableAnyOrigin, micro_kernel_height
         ].stack_allocation()
 
         @parameter
@@ -859,8 +869,10 @@ struct ConvDirectNHWC[
     ](
         self,
         output_micro_tile: NDBuffer[
+            mut=True,
             output_type,
             2,
+            _,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
         ],
     ):
@@ -891,8 +903,10 @@ struct ConvDirectNHWC[
         self,
         output_base: UnsafePointer[Scalar[output_type]],
         output_micro_tile: NDBuffer[
+            mut=True,
             output_type,
             2,
+            _,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
         ],
     ):
@@ -948,8 +962,10 @@ struct ConvDirectNHWC[
     ](
         self,
         output_micro_tile: NDBuffer[
+            mut=True,
             output_type,
             2,
+            _,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
         ],
         output_base: UnsafePointer[Scalar[output_type]],
@@ -1004,7 +1020,7 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: NDBuffer[DType.int32, 1, micro_kernel_height],
+        input_base_offsets: NDBuffer[DType.int32, 1, _, micro_kernel_height],
         input_offset: Int,
         c_tile_size: Int,
         input: UnsafePointer[Scalar[input_type]],
@@ -1764,6 +1780,7 @@ struct ConvDirectNHWC[
         var output_micro_tile = NDBuffer[
             output_type,
             2,
+            MutableAnyOrigin,
             DimList(micro_kernel_height, micro_kernel_width * simd_size),
         ].stack_allocation()
 
@@ -2884,9 +2901,9 @@ fn conv_nhwc_direct[
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
 ](
-    input: NDBuffer[input_type, input_rank, input_shape],
-    filter: NDBuffer[filter_type, filter_rank, filter_shape],
-    output: NDBuffer[output_type, input_rank, output_shape],
+    input: NDBuffer[input_type, input_rank, _, input_shape],
+    filter: NDBuffer[filter_type, filter_rank, _, filter_shape],
+    output: NDBuffer[mut=True, output_type, input_rank, _, output_shape],
     stride: IndexList[input_rank - 2],
     dilation: IndexList[input_rank - 2],
     pad_d: IndexList[2],
@@ -2957,6 +2974,9 @@ fn conv_nhwc_direct[
             input_rank,
             filter_rank,
             input_rank,
+            input.origin,
+            filter.origin,
+            output.origin,
             input_shape,
             filter_shape,
             output_shape,
@@ -2990,9 +3010,9 @@ fn conv2d_gpu_naive_nhwc_rscf[
     output_type: DType,
     block_size: Int,
 ](
-    input: NDBuffer[input_type, 4, input_dim],
-    filter: NDBuffer[filter_type, 4, filter_dim],
-    output: NDBuffer[output_type, 4, output_dim],
+    input: NDBuffer[input_type, 4, MutableAnyOrigin, input_dim],
+    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, filter_dim],
+    output: NDBuffer[output_type, 4, MutableAnyOrigin, output_dim],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -3170,9 +3190,11 @@ fn conv_gpu[
     filter_type: DType,
     output_type: DType,
 ](
-    input: NDBuffer[input_type, input_rank, input_dim],
-    filter: NDBuffer[filter_type, filter_rank, filter_dim],
-    output: NDBuffer[output_type, input_rank, output_dim],
+    input: NDBuffer[input_type, input_rank, MutableAnyOrigin, input_dim],
+    filter: NDBuffer[filter_type, filter_rank, MutableAnyOrigin, filter_dim],
+    output: NDBuffer[
+        mut=True, output_type, input_rank, MutableAnyOrigin, output_dim
+    ],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],

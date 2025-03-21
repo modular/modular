@@ -182,7 +182,7 @@ fn max_pool[
     strides: NDBuffer[int_type, 1],
     dilations: NDBuffer[int_type, 1],
     paddings: NDBuffer[int_type, 1],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ceil_mode: Bool = False,
 ):
     """Computes fp32 pooling.
@@ -339,7 +339,7 @@ fn max_pool_gpu[
     strides: NDBuffer[int_type, 1],
     dilations: NDBuffer[int_type, 1],
     paddings: NDBuffer[int_type, 1],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ceil_mode: Bool = False,
 ) raises:
     """Computes max pooling on GPU.
@@ -489,7 +489,7 @@ fn avg_pool[
     strides: NDBuffer[int_type, 1],
     dilations: NDBuffer[int_type, 1],
     paddings: NDBuffer[int_type, 1],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ceil_mode: Bool = False,
 ):
     """Computes the average pool.
@@ -735,7 +735,7 @@ fn avg_pool_gpu[
     strides: NDBuffer[int_type, 1],
     dilations: NDBuffer[int_type, 1],
     paddings: NDBuffer[int_type, 1],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ceil_mode: Bool = False,
 ) raises:
     """Computes the average pool on GPU.

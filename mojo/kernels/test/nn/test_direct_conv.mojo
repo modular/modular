@@ -100,7 +100,7 @@ fn test[
     var packed_filter_ptr = UnsafePointer[Scalar[type]].alloc(
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[type, 5, DimList.create_unknown[5]()](
+    var packed_filter = NDBuffer[type, 5, _, DimList.create_unknown[5]()](
         packed_filter_ptr,
         packed_filter_shape,
     )
@@ -140,6 +140,9 @@ fn test[
             4,
             5,
             4,
+            _,
+            _,
+            _,
             DimList.create_unknown[4](),
             DimList.create_unknown[5](),
             DimList.create_unknown[4](),
@@ -159,6 +162,9 @@ fn test[
             4,
             4,
             4,
+            _,
+            _,
+            _,
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),

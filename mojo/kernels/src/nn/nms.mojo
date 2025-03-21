@@ -71,7 +71,7 @@ fn non_max_suppression[
 ](
     boxes: NDBuffer[type, 3],
     scores: NDBuffer[type, 3],
-    output: NDBuffer[DType.int64, 2],
+    output: NDBuffer[mut=True, DType.int64, 2],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,

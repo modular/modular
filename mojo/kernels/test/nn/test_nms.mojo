@@ -38,7 +38,7 @@ struct BoxCoords[type: DType]:
 fn fill_boxes[
     type: DType
 ](batch_size: Int, box_list: VariadicList[BoxCoords[type]]) -> NDBuffer[
-    type, 3
+    type, 3, MutableAnyOrigin
 ]:
     var num_boxes = len(box_list) // batch_size
     var shape = IndexList[3](batch_size, num_boxes, 4)
@@ -72,7 +72,7 @@ fn fill_scores[
     type: DType
 ](
     batch_size: Int, num_classes: Int, scores_list: VariadicList[Scalar[type]]
-) -> NDBuffer[type, 3]:
+) -> NDBuffer[type, 3, MutableAnyOrigin]:
     var num_boxes = len(scores_list) // batch_size // num_classes
 
     var shape = IndexList[3](batch_size, num_classes, num_boxes)

@@ -131,7 +131,7 @@ fn resize_nearest_neighbor[
     round_mode: RoundMode,
     rank: Int,
     type: DType,
-](input: NDBuffer[type, rank], output: NDBuffer[type, rank]) raises:
+](input: NDBuffer[type, rank], output: NDBuffer[mut=True, type, rank]) raises:
     var scales = StaticTuple[Float32, rank]()
     for i in range(rank):
         scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
@@ -212,7 +212,7 @@ fn interpolate_point_1d[
     out_coords: IndexList[rank],
     scale: Float32,
     input: NDBuffer[type, rank],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
 ):
     var center = coord_transform[coordinate_transformation_mode](
         out_coords[dim], input.dim(dim), output.dim(dim), scale
@@ -242,7 +242,7 @@ fn resize_linear[
     antialias: Bool,
     rank: Int,
     type: DType,
-](input: NDBuffer[type, rank], output: NDBuffer[type, rank]):
+](input: NDBuffer[type, rank], output: NDBuffer[mut=True, type, rank]):
     """Resizes input to output shape using linear interpolation.
 
     Does not use anti-aliasing filter for downsampling (coming soon).
@@ -271,7 +271,7 @@ fn _resize[
     antialias: Bool,
     rank: Int,
     type: DType,
-](input: NDBuffer[type, rank], output: NDBuffer[type, rank]):
+](input: NDBuffer[type, rank], output: NDBuffer[mut=True, type, rank]):
     if input.get_shape() == output.get_shape():
         return memcpy(output.data, input.data, input.size())
     var scales = StaticTuple[Float32, rank]()

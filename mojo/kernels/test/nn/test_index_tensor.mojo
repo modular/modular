@@ -48,7 +48,7 @@ fn test_index_tensor_DLRM() raises:
     var input_stack = InlineArray[
         Scalar[input_type], Int(input_shape.product())
     ](uninitialized=True)
-    var input = NDBuffer[input_type, input_rank, input_shape](
+    var input = NDBuffer[input_type, input_rank, _, input_shape](
         input_stack.unsafe_ptr()
     )
     # Initialize with sequential data for test purposes.
@@ -59,7 +59,7 @@ fn test_index_tensor_DLRM() raises:
 
     # index_len-element input tensor.
     var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_a = NDBuffer[DType.uint64, 1, DimList(index_len)](
+    var index_a = NDBuffer[DType.uint64, 1, _, DimList(index_len)](
         a_stack.unsafe_ptr()
     )
     # Initialize with random values within [0-dim_1) since it points do dim_1 of
@@ -69,7 +69,7 @@ fn test_index_tensor_DLRM() raises:
 
     # index_len-element input tensor.
     var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_b = NDBuffer[DType.uint64, 1, DimList(index_len)](
+    var index_b = NDBuffer[DType.uint64, 1, _, DimList(index_len)](
         b_stack.unsafe_ptr()
     )
     # Initialize with random values within [0-dim_2) since it points do dim_2 of
@@ -87,7 +87,7 @@ fn test_index_tensor_DLRM() raises:
     var ref_stack = InlineArray[Scalar[input_type], Int(ref_shape.product())](
         uninitialized=True
     )
-    var ref_output = NDBuffer[input_type, output_rank, ref_shape](
+    var ref_output = NDBuffer[input_type, output_rank, _, ref_shape](
         ref_stack.unsafe_ptr()
     )
     for i in range(input.dim(0)):
@@ -102,9 +102,9 @@ fn test_index_tensor_DLRM() raises:
     # 2D index_len x 2 indices NDBuffer.
     # TODO: This needs to be part of the OP itself.
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
-    var indices = NDBuffer[DType.uint64, indices_rank, DimList(index_len, 2)](
-        indices_stack.unsafe_ptr()
-    )
+    var indices = NDBuffer[
+        DType.uint64, indices_rank, _, DimList(index_len, 2)
+    ](indices_stack.unsafe_ptr())
     for i in range(index_len):
         indices[IndexList[indices_rank](i, 0)] = index_a[i]
         indices[IndexList[indices_rank](i, 1)] = index_b[i]
@@ -171,6 +171,7 @@ fn test_index_tensor_DLRM_batch() raises:
     var input = NDBuffer[
         input_type,
         input_rank,
+        _,
         DimList(dim_0, dim_1, dim_3, dim_4),
     ](input_stack.unsafe_ptr())
     # Initialize with sequential data for test purposes.
@@ -181,7 +182,7 @@ fn test_index_tensor_DLRM_batch() raises:
 
     # index_len-element input tensor.
     var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_a = NDBuffer[DType.uint64, 1, DimList(index_len)](
+    var index_a = NDBuffer[DType.uint64, 1, _, DimList(index_len)](
         a_stack.unsafe_ptr()
     )
     # Initialize with random values within [0-dim_3)
@@ -190,7 +191,7 @@ fn test_index_tensor_DLRM_batch() raises:
 
     # index_len-element input tensor.
     var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_b = NDBuffer[DType.uint64, 1, DimList(index_len)](
+    var index_b = NDBuffer[DType.uint64, 1, _, DimList(index_len)](
         b_stack.unsafe_ptr()
     )
     # Initialize with random values within [0-dim_4)
@@ -208,7 +209,7 @@ fn test_index_tensor_DLRM_batch() raises:
     var ref_stack = InlineArray[Scalar[input_type], Int(ref_shape.product())](
         uninitialized=True
     )
-    var ref_output = NDBuffer[input_type, output_rank, ref_shape](
+    var ref_output = NDBuffer[input_type, output_rank, _, ref_shape](
         ref_stack.unsafe_ptr()
     )
     for i in range(input.dim(0)):
@@ -223,9 +224,9 @@ fn test_index_tensor_DLRM_batch() raises:
     # Convert index_a, index_b (each of 1D size index_len) to a 2D index_len x 2
     # indices NDBuffer.
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
-    var indices = NDBuffer[DType.uint64, indices_rank, DimList(index_len, 2)](
-        indices_stack.unsafe_ptr()
-    )
+    var indices = NDBuffer[
+        DType.uint64, indices_rank, _, DimList(index_len, 2)
+    ](indices_stack.unsafe_ptr())
     for i in range(index_len):
         indices[IndexList[indices_rank](i, 0)] = index_a[i]
         indices[IndexList[indices_rank](i, 1)] = index_b[i]
@@ -288,7 +289,7 @@ fn test_index_tensor_CLIPVIT() raises:
     var input_stack = InlineArray[
         Scalar[input_type], Int(input_shape.product())
     ](uninitialized=True)
-    var input = NDBuffer[input_type, input_rank, input_shape](
+    var input = NDBuffer[input_type, input_rank, _, input_shape](
         input_stack.unsafe_ptr()
     )
     # Initialize with sequential data for test purposes.
@@ -299,7 +300,7 @@ fn test_index_tensor_CLIPVIT() raises:
 
     # 1-element input tensor.
     var a_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_a = NDBuffer[DType.uint64, 1, DimList(index_len)](
+    var index_a = NDBuffer[DType.uint64, 1, _, DimList(index_len)](
         a_stack.unsafe_ptr()
     )
     # Initialize with [0,1]
@@ -308,7 +309,7 @@ fn test_index_tensor_CLIPVIT() raises:
 
     # 1-element input tensor.
     var b_stack = InlineArray[UInt64, index_len](uninitialized=True)
-    var index_b = NDBuffer[DType.uint64, 1, DimList(index_len)](
+    var index_b = NDBuffer[DType.uint64, 1, _, DimList(index_len)](
         b_stack.unsafe_ptr()
     )
     # Initialize with [1,0]
@@ -321,7 +322,7 @@ fn test_index_tensor_CLIPVIT() raises:
     var ref_stack = InlineArray[Scalar[input_type], Int(ref_shape.product())](
         uninitialized=True
     )
-    var ref_output = NDBuffer[input_type, output_rank, ref_shape](
+    var ref_output = NDBuffer[input_type, output_rank, _, ref_shape](
         ref_stack.unsafe_ptr()
     )
 
@@ -342,9 +343,9 @@ fn test_index_tensor_CLIPVIT() raises:
 
     # Convert index_a, index_b (each of 1D size 2) to a 2D indices_len x 2 indices NDBuffer
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
-    var indices = NDBuffer[DType.uint64, indices_rank, DimList(index_len, 2)](
-        indices_stack.unsafe_ptr()
-    )
+    var indices = NDBuffer[
+        DType.uint64, indices_rank, _, DimList(index_len, 2)
+    ](indices_stack.unsafe_ptr())
     indices[IndexList[indices_rank](0, 0)] = index_a[0]
     indices[IndexList[indices_rank](0, 1)] = index_b[0]
     indices[IndexList[indices_rank](1, 0)] = index_a[1]
@@ -418,7 +419,7 @@ fn test_index_tensor_llama2_mistral() raises:
     var input_stack = InlineArray[
         Scalar[input_type], Int(input_shape.product())
     ](uninitialized=True)
-    var input = NDBuffer[input_type, input_rank, input_shape](
+    var input = NDBuffer[input_type, input_rank, _, input_shape](
         input_stack.unsafe_ptr()
     )
     # Initialize with sequential data for test purposes.
@@ -432,7 +433,7 @@ fn test_index_tensor_llama2_mistral() raises:
     var a_stack = InlineArray[UInt64, Int(index_shape.product())](
         uninitialized=True
     )
-    var index_a = NDBuffer[index_type, index_rank, index_shape](
+    var index_a = NDBuffer[index_type, index_rank, _, index_shape](
         a_stack.unsafe_ptr()
     )
     # Initialize with one.
@@ -447,7 +448,7 @@ fn test_index_tensor_llama2_mistral() raises:
     var ref_stack = InlineArray[Scalar[input_type], Int(ref_shape.product())](
         uninitialized=True
     )
-    var ref_output = NDBuffer[input_type, output_rank, ref_shape](
+    var ref_output = NDBuffer[input_type, output_rank, _, ref_shape](
         ref_stack.unsafe_ptr()
     )
     for i in range(index_dim_0):
@@ -560,7 +561,9 @@ fn test_advanced_indexing_getitem() raises:
         trace_description="test_advanced_indexing_getitem",
     ](
         input_buffer,
-        StaticTuple[NDBuffer[index_type, index_rank], 2](index_a, index_b),
+        StaticTuple[NDBuffer[index_type, index_rank, MutableAnyOrigin], 2](
+            index_a, index_b
+        ),
         output_data_buffer,
         DeviceContextPtr(),
     )
@@ -650,7 +653,9 @@ fn test_advanced_indexing_setitem_inplace() raises:
     ](
         input_buffer,
         updates,
-        StaticTuple[NDBuffer[index_type, index_rank], 2](index_a, index_b),
+        StaticTuple[NDBuffer[index_type, index_rank, MutableAnyOrigin], 2](
+            index_a, index_b
+        ),
         DeviceContextPtr(),
     )
 

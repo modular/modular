@@ -35,7 +35,7 @@ struct TestTensor[rank: Int, type: DType]:
 
     fn to_ndbuffer(
         self,
-    ) -> NDBuffer[type, rank]:
+    ) -> NDBuffer[type, rank, MutableAnyOrigin]:
         return NDBuffer[type, rank](
             rebind[UnsafePointer[Scalar[type]]](self.storage.data), self.shape
         )
@@ -44,9 +44,9 @@ struct TestTensor[rank: Int, type: DType]:
 fn test_case_sampling[
     rank: Int,
     type: DType,
-    fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
-        _
-    ] -> None,
+    fill_fn: fn[rank: Int, type: DType] (
+        NDBuffer[mut=True, type, rank]
+    ) capturing [_] -> None,
 ](K: Int, axis: Int, input_shape: DimList,) raises:
     var input_ptr = UnsafePointer[Scalar[type]].alloc(
         Int(input_shape.product())
@@ -103,9 +103,9 @@ fn test_case_sampling[
 fn test_case[
     rank: Int,
     type: DType,
-    fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
-        _
-    ] -> None,
+    fill_fn: fn[rank: Int, type: DType] (
+        NDBuffer[mut=True, type, rank]
+    ) capturing [_] -> None,
     largest: Bool = True,
 ](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True):
     var input = TestTensor[rank, type](input_shape)
@@ -144,7 +144,7 @@ fn main() raises:
     seed(1)
 
     @parameter
-    fn fill_iota[rank: Int, type: DType](mut buf: NDBuffer[type, rank]):
+    fn fill_iota[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
         iota(buf.data, buf.get_shape().flattened_length())
 
     fn test_1d_sorted():
@@ -212,7 +212,9 @@ fn main() raises:
     test_axis_0()
 
     @parameter
-    fn fill_identical[rank: Int, type: DType](mut buf: NDBuffer[type, rank]):
+    fn fill_identical[
+        rank: Int, type: DType
+    ](buf: NDBuffer[mut=True, type, rank]):
         buf.fill(1)
 
     fn test_identical():
@@ -243,7 +245,7 @@ fn main() raises:
     test_max_k()
 
     @parameter
-    fn fill_custom[rank: Int, type: DType](mut buf: NDBuffer[type, rank]):
+    fn fill_custom[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
         var flat_buf = buf.flatten()
         for i in range(len(flat_buf)):
             flat_buf[i] = len(flat_buf) - i - 1

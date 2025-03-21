@@ -25,7 +25,10 @@ fn arg_nonzero[
     type: DType,
     output_type: DType,
     rank: Int,
-](input_buffer: NDBuffer[type, rank], output_buffer: NDBuffer[output_type, 2]):
+](
+    input_buffer: NDBuffer[type, rank],
+    output_buffer: NDBuffer[mut=True, output_type, 2],
+):
     """Gather the indices of all non-zero elements in input buffer storing
     the indices in the output_buffer.
 

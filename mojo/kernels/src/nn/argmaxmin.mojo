@@ -21,7 +21,9 @@ from builtin.math import min as _min
 from utils.index import IndexList
 
 
-fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
+fn _argn[
+    is_max: Bool
+](input: NDBuffer, axis: Int, output: NDBuffer[mut=True, *_]) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
 
@@ -183,7 +185,7 @@ fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
 fn argmax(
     input: NDBuffer,
     axis: Int,
-    output: NDBuffer,
+    output: NDBuffer[mut=True, *_],
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -200,7 +202,7 @@ fn argmax(
 fn argmax(
     input: NDBuffer,
     axis_buf: NDBuffer,
-    output: NDBuffer,
+    output: NDBuffer[mut=True, *_],
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -222,7 +224,7 @@ fn argmax(
 fn argmin(
     input: NDBuffer,
     axis: Int,
-    output: NDBuffer,
+    output: NDBuffer[mut=True, *_],
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
@@ -239,7 +241,7 @@ fn argmin(
 fn argmin(
     input: NDBuffer,
     axis_buf: NDBuffer,
-    output: NDBuffer,
+    output: NDBuffer[mut=True, *_],
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.

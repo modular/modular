@@ -157,7 +157,7 @@ fn index_tensor[
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[type, output_rank],
+    output: NDBuffer[mut=True, type, output_rank],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -215,7 +215,7 @@ fn _index_tensor_1d[
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[type, output_rank],
+    output: NDBuffer[mut=True, type, output_rank],
     ctx: Optional[DeviceContext] = None,
 ):
     constrained[
@@ -299,7 +299,7 @@ fn _index_tensor_impl[
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[type, output_rank],
+    output: NDBuffer[mut=True, type, output_rank],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     constrained[
@@ -415,9 +415,11 @@ fn advanced_indexing_getitem[
     trace_description: StringLiteral,
 ](
     input_tensor: NDBuffer[input_type, input_rank],
-    indices: StaticTuple[NDBuffer[index_type, index_rank], num_index_tensors],
+    indices: StaticTuple[
+        NDBuffer[index_type, index_rank, MutableAnyOrigin], num_index_tensors
+    ],
     out_tensor: NDBuffer[
-        input_type, input_rank + index_rank - num_index_tensors
+        mut=True, input_type, input_rank + index_rank - num_index_tensors
     ],
     ctx: DeviceContextPtr,
 ) raises:
@@ -575,9 +577,11 @@ fn advanced_indexing_setitem_inplace[
     single_thread_blocking_override: Bool,
     trace_description: StringLiteral,
 ](
-    input_tensor: NDBuffer[type=input_type, rank=input_rank],
+    input_tensor: NDBuffer[mut=True, type=input_type, rank=input_rank],
     updates: NDBuffer[type=input_type, rank=updates_rank],
-    indices: StaticTuple[NDBuffer[index_type, index_rank], num_index_tensors],
+    indices: StaticTuple[
+        NDBuffer[index_type, index_rank, MutableAnyOrigin], num_index_tensors
+    ],
     ctx: DeviceContextPtr,
 ) raises:
     """Implement basic numpy-style advanced indexing with assignment.

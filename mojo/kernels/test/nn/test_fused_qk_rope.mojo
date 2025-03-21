@@ -117,7 +117,7 @@ def test_fused_qk_rope[type: DType]() -> None:
 
     # Create query tensor as a view of the query buffer.
     q = NDBuffer[
-        type, rank=4, shape = DimList(batch_size, seq_len, num_heads, head_dim)
+        type, 4, _, shape = DimList(batch_size, seq_len, num_heads, head_dim)
     ](q_buffer.data)
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
@@ -127,7 +127,7 @@ def test_fused_qk_rope[type: DType]() -> None:
         "invalid freqs_cis_table init",
     )
     freqs_cis_table = NDBuffer[
-        type, rank=2, shape = DimList(max_seq_len, head_dim)
+        type, 2, _, shape = DimList(max_seq_len, head_dim)
     ](freqs_cis_table_buffer.data)
 
     # Create and initialize golden outputs.

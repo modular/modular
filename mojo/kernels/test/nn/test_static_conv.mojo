@@ -69,9 +69,9 @@ fn test[
     rand[type](input_ptr, N * H * W * C)
     rand[type](filter_ptr, R * S * C * F)
 
-    var input = NDBuffer[type, 4, DimList(N, H, W, C)](input_ptr)
+    var input = NDBuffer[type, 4, _, DimList(N, H, W, C)](input_ptr)
     var filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C, F))
-    var output_static = NDBuffer[type, 4, DimList(N, HO, WO, F)](
+    var output_static = NDBuffer[type, 4, _, DimList(N, HO, WO, F)](
         output_ptr_static
     )
     var output_dynamic = NDBuffer[type, 4](
@@ -107,6 +107,9 @@ fn test[
         4,
         5,
         4,
+        _,
+        _,
+        _,
         DimList.create_unknown[4](),  # input shape
         DimList.create_unknown[5](),  # filter shape
         DimList.create_unknown[4](),  # output shape
@@ -117,7 +120,7 @@ fn test[
         conv_attr_dynamic,
     ].run(
         output_dynamic,
-        rebind[NDBuffer[type, 4]](input),
+        rebind[NDBuffer[type, 4, input.origin]](input),
         packed_filter_dynamic,
         conv_shape,
     )
@@ -141,15 +144,20 @@ fn test[
     var packed_filter_ptr_static = UnsafePointer[Scalar[type]].alloc(
         R * S * C * rounded_F_static
     )
-    var packed_filter_static = NDBuffer[type, 5, packed_filter_shape](
+    var packed_filter_static = NDBuffer[type, 5, _, packed_filter_shape](
         packed_filter_ptr_static
     )
 
     pack_filter[simd_size, micro_kernel_f_size](
         filter,
-        rebind[NDBuffer[type, 5, DimList.create_unknown[5]()]](
-            packed_filter_static
-        ),
+        rebind[
+            NDBuffer[
+                type,
+                5,
+                packed_filter_static.origin,
+                DimList.create_unknown[5](),
+            ]
+        ](packed_filter_static),
         num_groups,
     )
 
@@ -157,6 +165,9 @@ fn test[
         4,
         5,
         4,
+        _,
+        _,
+        _,
         DimList(N, H, W, C),
         packed_filter_shape,
         DimList(N, HO, WO, F),

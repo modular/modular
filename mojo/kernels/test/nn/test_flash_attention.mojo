@@ -25,16 +25,18 @@ def reference_attention_bshd[
     k_nd: NDBuffer[type, rank],
     v_nd: NDBuffer[type, rank],
     mask_nd: NDBuffer[type, rank],
-    output_nd: NDBuffer[type, rank],
+    output_nd: NDBuffer[mut=True, type, rank],
     scale: Float32,
 ):
-    fn reshape_4d(buf: NDBuffer[type, rank]) -> NDBuffer[type, 4]:
+    fn reshape_4d(buf: NDBuffer[type, rank]) -> NDBuffer[type, 4, buf.origin]:
         var shape = buf.get_shape()
         var num_heads = shape[rank - 2] if rank == 4 else 1
         var shape_4d = Index(shape[0], shape[1], num_heads, shape[rank - 1])
         return NDBuffer[type, 4](buf.data, shape_4d)
 
-    fn reshape_mask_4d(buf: NDBuffer[type, rank]) -> NDBuffer[type, 4]:
+    fn reshape_mask_4d(
+        buf: NDBuffer[type, rank]
+    ) -> NDBuffer[type, 4, buf.origin]:
         var shape = buf.get_shape()
         var num_heads = shape[1] if rank == 4 else 1
         var shape_4d = Index(
@@ -253,10 +255,12 @@ def build_ndbuffer[
     rank: Int,
     *,
     static_shape: DimList = DimList.create_unknown[rank](),
-](shape: IndexList[rank]) -> NDBuffer[type, rank, static_shape]:
+](shape: IndexList[rank]) -> NDBuffer[
+    type, rank, MutableAnyOrigin, static_shape
+]:
     var ptr = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
     rand(ptr, shape.flattened_length())
-    return NDBuffer[type, rank, static_shape](ptr, shape)
+    return NDBuffer[type, rank, _, static_shape](ptr, shape)
 
 
 def test_case[

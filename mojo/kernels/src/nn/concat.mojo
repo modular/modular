@@ -77,7 +77,7 @@ fn memcpy_or_fuse[
         fn epilogue_wrapper[
             simd_width: Int, _rank: Int
         ](index: IndexList[_rank]):
-            var load = rebind[NDBuffer[type, _rank]](input).load[
+            var load = rebind[NDBuffer[type, _rank, input.origin]](input).load[
                 width=simd_width
             ](index)
 
@@ -141,7 +141,7 @@ fn _canonical_reshape_output[
 ](
     out_buf: NDBuffer[type, rank],
     axis: Int,
-    inputs: List[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank, MutableAnyOrigin]],
 ) -> _CanonicallyReshapedBuffer:
     var input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
@@ -160,9 +160,9 @@ fn _concat_parallel[
     type: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     axis: Int,
-    inputs: List[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank, MutableAnyOrigin]],
 ) raises:
     var output_canon = _canonical_reshape_output(output, axis, inputs)
 
@@ -292,9 +292,9 @@ fn _concat[
     type: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     axis: Int,
-    inputs: List[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank, MutableAnyOrigin]],
 ) raises:
     """Concatenate inputs along axis and store in output.
 
@@ -341,7 +341,10 @@ fn _concat_inner[
     rank: Int,
     type: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
-](output: NDBuffer[type, rank], inputs: List[NDBuffer[type, rank]],) raises:
+](
+    output: NDBuffer[mut=True, type, rank],
+    inputs: List[NDBuffer[type, rank, MutableAnyOrigin]],
+) raises:
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
         var buffer_len = inputs[i].size()
@@ -358,7 +361,7 @@ fn _concat_inner[
 @always_inline
 fn _check_input_consistency[
     rank: Int, type: DType
-](axis: Int, inputs: List[NDBuffer[type, rank]]):
+](axis: Int, inputs: List[NDBuffer[type, rank, MutableAnyOrigin]]):
     @parameter
     if not is_debug_build():
         return
@@ -384,9 +387,9 @@ fn _concat_serial[
     type: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     axis: Int,
-    inputs: List[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank, MutableAnyOrigin]],
 ) raises:
     _check_input_consistency[rank, type](axis, inputs)
 
@@ -411,9 +414,9 @@ fn _concat_small[
     type: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     axis: Int,
-    inputs: List[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank, MutableAnyOrigin]],
 ) raises:
     alias single_thread_blocking_override = True
     alias simd_width = simdwidthof[type]()
@@ -438,16 +441,16 @@ fn _concat_small[
             if target_dim < input.dynamic_shape[axis]:
                 var in_index = out_index
                 in_index[axis] = target_dim
-                var load = rebind[NDBuffer[type, rank]](input).load[
-                    width=simd_width
-                ](in_index)
+                var load = rebind[NDBuffer[type, rank, input.origin]](
+                    input
+                ).load[width=simd_width](in_index)
 
                 @parameter
                 if epilogue_fn:
                     alias func = epilogue_fn.value()
                     func[type, rank, simd_width](out_index, load)
                 else:
-                    rebind[NDBuffer[type, rank]](output).store[
+                    rebind[NDBuffer[type, rank, output.origin]](output).store[
                         width=simd_width
                     ](out_index, load)
                 return
@@ -484,9 +487,9 @@ fn _concat_cpu[
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
 ](
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     axis: Int,
-    inputs: List[NDBuffer[type, rank]],
+    inputs: List[NDBuffer[type, rank, MutableAnyOrigin]],
 ) raises:
     @parameter
     if single_thread_blocking_override:
@@ -518,7 +521,7 @@ fn concat_shape[
     input_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_bufs: List[NDBuffer[input_type, input_rank]],
+    input_bufs: List[NDBuffer[input_type, input_rank, MutableAnyOrigin]],
     axis: Int,
 ) raises -> IndexList[input_rank]:
     """
@@ -577,9 +580,9 @@ fn concat[
     target: StaticString = "cpu",
     epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     axis: Int,
-    inputs: StaticTuple[NDBuffer[type, rank], *_],
+    inputs: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], *_],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_valid_target[target](), "not a valid target"]()
@@ -588,7 +591,9 @@ fn concat[
 
         @parameter
         if is_cpu[target]():
-            var inputVec = List[NDBuffer[type, rank]](capacity=len(inputs))
+            var inputVec = List[NDBuffer[type, rank, MutableAnyOrigin]](
+                capacity=len(inputs)
+            )
 
             @parameter
             for i in range(inputs.size):
@@ -617,8 +622,8 @@ fn _concat_inner_most_single_dim[
     block_size: Int,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: NDBuffer[type, rank],
-    inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
+    output: NDBuffer[mut=True, type, rank],
+    inputs: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], num_inputs],
 ):
     var idx = block_idx.x * block_size + thread_idx.x
     var index = _get_start_indices_of_nth_subvolume_uint[1](
@@ -648,9 +653,9 @@ fn _concat_gpu_elementwise[
     num_inputs: Int,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     axis: Int,
-    inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
+    inputs: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], num_inputs],
     ctx: DeviceContext,
 ) raises:
     # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
@@ -670,8 +675,8 @@ fn _concat_gpu_elementwise[
     num_inputs: Int,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: NDBuffer[type, rank],
-    inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
+    output: NDBuffer[mut=True, type, rank],
+    inputs: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], num_inputs],
     ctx: DeviceContext,
 ) raises:
     @parameter
@@ -694,7 +699,9 @@ fn _concat_gpu_elementwise[
                     alias func = epilogue_fn.value()
                     func[type, _rank, simd_width](
                         out_index,
-                        rebind[NDBuffer[type, _rank]](input)[in_index],
+                        rebind[NDBuffer[type, _rank, input.origin]](input)[
+                            in_index
+                        ],
                     )
                 else:
                     output[rebind[IndexList[rank]](out_index)] = input[
@@ -718,9 +725,9 @@ fn _concat_gpu[
     type: DType,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     axis: Int,
-    inputs: StaticTuple[NDBuffer[type, rank], *_],
+    inputs: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], *_],
     ctx: DeviceContext,
 ) raises:
     alias num_inputs = inputs.size
@@ -802,7 +809,7 @@ fn _fused_concat_cpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ctx: DeviceContextPtr,
 ) raises:
     var offset = 0
@@ -845,7 +852,7 @@ fn _fused_concat_inner_most_single_dim[
     size: Int,
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
 ):
     alias num_inputs = input_shapes.size
 
@@ -880,7 +887,7 @@ fn _fused_concat_gpu_elementwise[
     size: Int,
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ctx: DeviceContext,
 ) raises:
     alias num_inputs = input_shapes.size
@@ -926,7 +933,7 @@ fn _fused_concat_gpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ctx: DeviceContext,
 ) raises:
     alias num_inputs = input_shapes.size
@@ -991,7 +998,7 @@ fn fused_concat[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ctx: DeviceContextPtr,
 ) raises:
     constrained[is_valid_target[target](), "not a valid target"]()

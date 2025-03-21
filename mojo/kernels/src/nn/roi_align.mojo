@@ -107,9 +107,9 @@ fn roi_align_nhwc[
     aligned: Bool,
     mode: StaticString = "AVG",
 ](
-    output: NDBuffer[type, 4, *_],
-    input: NDBuffer[type, 4, input_shape, *_],
-    rois: NDBuffer[type, 2, roi_shape, *_],
+    output: NDBuffer[mut=True, type, 4, *_],
+    input: NDBuffer[type, 4, _, input_shape, *_],
+    rois: NDBuffer[type, 2, _, roi_shape, *_],
     output_height: Int,
     output_width: Int,
     in_spatial_scale: Scalar,

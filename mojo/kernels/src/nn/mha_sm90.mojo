@@ -101,7 +101,9 @@ fn mha_sm90[
     seq_len_arg: Int,
     num_keys_arg: Int,
     valid_length: NDBuffer[DType.uint32, 1],
-    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]],
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ],
     mask: mask_t,
     score_mod: score_mod_t,
 ):

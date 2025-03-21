@@ -123,11 +123,12 @@ fn gather_reduce[
     indices_rank: Int,
     indices_shape: DimList,
 ](
-    output: NDBuffer[type, output_rank, output_shape],
-    input: NDBuffer[type, input_rank, input_shape],
+    output: NDBuffer[mut=True, type, output_rank, _, output_shape],
+    input: NDBuffer[type, input_rank, _, input_shape],
     indices: NDBuffer[
         DType.int32,
         indices_rank,
+        _,
         indices_shape,
     ],
     reduce_init: Scalar[type],
@@ -174,9 +175,9 @@ fn gather_reduce[
         output_2d_dims[1] = output.dim[2]()
 
     var output_bind = NDBuffer[type, 2](output.data, output_2d_dims)
-    var input_bind = rebind[NDBuffer[type, 2]](input)
+    var input_bind = rebind[NDBuffer[type, 2, input.origin]](input)
     var indices_bind = rebind[
-        NDBuffer[DType.int32, indices_rank, indices_shape]
+        NDBuffer[DType.int32, indices_rank, indices.origin, indices_shape]
     ](indices)
 
     var gather_axis_size = input.get_shape()[gather_axis]
@@ -283,7 +284,7 @@ fn gather[
     axis: Int,
     target: StaticString = "cpu",
 ](
-    output: NDBuffer[type, *_],
+    output: NDBuffer[mut=True, type, *_],
     input: NDBuffer[type, *_],
     indices: NDBuffer[indices_type, *_],
     *,
@@ -382,7 +383,7 @@ fn gather[
     axis: Int,
     target: StaticString = "cpu",
 ](
-    output: NDBuffer[type, *_],
+    output: NDBuffer[mut=True, type, *_],
     input: NDBuffer[type, *_],
     indices: NDBuffer[indices_type, *_],
     *,
@@ -777,7 +778,7 @@ fn scatter_nd_generator[
     data: NDBuffer[output_type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
     updates: NDBuffer[output_type, updates_rank],
-    output: NDBuffer[output_type, data_rank],
+    output: NDBuffer[mut=True, output_type, data_rank],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """
@@ -983,7 +984,7 @@ fn scatter_nd[
     data: NDBuffer[output_type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
     updates: NDBuffer[output_type, updates_rank],
-    output: NDBuffer[output_type, data_rank],
+    output: NDBuffer[mut=True, output_type, data_rank],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Scatter_nd operation without any reduction."""
@@ -1274,7 +1275,7 @@ fn gather_elements[
     input: NDBuffer[input_type, rank],
     indices: NDBuffer[indices_type, rank],
     _axis: Int,
-    output: NDBuffer[input_type, rank],
+    output: NDBuffer[mut=True, input_type, rank],
 ) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
@@ -1407,7 +1408,7 @@ fn gather_nd[
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[type, output_rank],
+    output: NDBuffer[mut=True, type, output_rank],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -1463,7 +1464,7 @@ fn _gather_nd_impl[
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[type, output_rank],
+    output: NDBuffer[mut=True, type, output_rank],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     constrained[

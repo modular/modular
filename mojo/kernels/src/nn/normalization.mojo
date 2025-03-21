@@ -261,7 +261,11 @@ fn layer_norm_gpu_warp_tiling[
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         type, width
     ],
-](output: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type]):
+](
+    output: NDBuffer[type, 2, MutableAnyOrigin],
+    beta: NDBuffer[type, 1, MutableAnyOrigin],
+    epsilon: Scalar[type],
+):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -320,7 +324,11 @@ fn layer_norm_gpu_block[
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         type, width
     ],
-](output: NDBuffer[type, 2], beta: NDBuffer[type, 1], epsilon: Scalar[type]):
+](
+    output: NDBuffer[type, 2, MutableAnyOrigin],
+    beta: NDBuffer[type, 1, MutableAnyOrigin],
+    epsilon: Scalar[type],
+):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -387,7 +395,7 @@ fn layer_norm_reshape[
 ](
     shape: IndexList[rank, **_],
     buf: NDBuffer[type, rank, *_],
-    out result: NDBuffer[type, output_rank],
+    out result: NDBuffer[type, output_rank, buf.origin],
 ):
     @parameter
     if rank == output_rank:
@@ -413,7 +421,7 @@ fn layer_norm_gpu[
     shape: IndexList[rank, **_],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    output: NDBuffer[type, rank, *_],
+    output: NDBuffer[mut=True, type, rank, *_],
     *,
     ctx: DeviceContext,
 ) raises:
@@ -501,7 +509,7 @@ fn layer_norm_cpu[
         type, width
     ],
 ](
-    out_buf: NDBuffer[type, 2, _],
+    out_buf: NDBuffer[mut=True, type, 2, _, _],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
 ) raises:
@@ -527,7 +535,7 @@ fn layer_norm_cpu[
     var num_cols = out_buf.dim[1]()
 
     for row in range(num_rows):
-        var out_slice = NDBuffer[type, 1, out_buf.shape.at[1]()](
+        var out_slice = NDBuffer[type, 1, _, out_buf.shape.at[1]()](
             out_buf._offset(Index(row, 0)), num_cols
         )
 
@@ -580,7 +588,7 @@ fn layer_norm_cpu[
     shape: IndexList[rank, **_],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    output: NDBuffer[type, rank, *_],
+    output: NDBuffer[mut=True, type, rank, *_],
 ):
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
@@ -642,7 +650,7 @@ fn layer_norm[
     gamma_shape: IndexList[1],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    output: NDBuffer[type, rank, *_],
+    output: NDBuffer[mut=True, type, rank, *_],
     ctx: DeviceContextPtr,
 ) raises:
     # Note: we only support reduction along the last dimension
@@ -689,8 +697,8 @@ fn layer_norm_shape[
     single_thread_blocking_override: Bool,
 ](
     input: NDBuffer[type, rank],
-    gamma: NDBuffer[type, 1, DimList(1)],
-    beta: NDBuffer[type, 1, DimList(1)],
+    gamma: NDBuffer[type, 1, _, DimList(1)],
+    beta: NDBuffer[type, 1, _, DimList(1)],
     epsilon: Scalar[type],
 ) -> IndexList[rank]:
     """
@@ -724,7 +732,11 @@ fn rms_norm_gpu_warp_tiling[
     output_fn: fn[width: Int] (
         row: Int, col: Int, val: SIMD[type, width]
     ) capturing -> None,
-](gamma: NDBuffer[type, 1], epsilon: Scalar[type], num_cols: Int):
+](
+    gamma: NDBuffer[type, 1, MutableAnyOrigin],
+    epsilon: Scalar[type],
+    num_cols: Int,
+):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -772,7 +784,11 @@ fn rms_norm_gpu_block[
     output_fn: fn[width: Int] (
         row: Int, col: Int, val: SIMD[type, width]
     ) capturing -> None,
-](gamma: NDBuffer[type, 1], epsilon: Scalar[type], num_cols: Int):
+](
+    gamma: NDBuffer[type, 1, MutableAnyOrigin],
+    epsilon: Scalar[type],
+    num_cols: Int,
+):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
@@ -1062,7 +1078,7 @@ fn rms_norm[
     shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ctx: DeviceContextPtr,
 ) raises:
     if output.dynamic_shape.canonicalize() != shape.canonicalize():

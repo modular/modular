@@ -23,8 +23,12 @@ from utils import IndexList, StaticTuple
 fn _tuple_to_list[
     type: DType,
     rank: Int,
-](elems: StaticTuple[NDBuffer[type, rank], *_]) -> List[NDBuffer[type, rank]]:
-    var output = List[NDBuffer[type, rank]](capacity=len(elems))
+](elems: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], *_]) -> List[
+    NDBuffer[type, rank, MutableAnyOrigin]
+]:
+    var output = List[NDBuffer[type, rank, MutableAnyOrigin]](
+        capacity=len(elems)
+    )
     for i in range(len(elems)):
         output.append(elems[i])
     return output^
@@ -44,15 +48,15 @@ def test_concat():
     var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
         uninitialized=True
     )
-    var x1 = NDBuffer[type, rank, s1](x1_stack.unsafe_ptr())
+    var x1 = NDBuffer[type, rank, _, s1](x1_stack.unsafe_ptr())
     var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
         uninitialized=True
     )
-    var x2 = NDBuffer[type, rank, s2](x2_stack.unsafe_ptr())
+    var x2 = NDBuffer[type, rank, _, s2](x2_stack.unsafe_ptr())
     var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
         uninitialized=True
     )
-    var x3 = NDBuffer[type, rank, s3](x3_stack.unsafe_ptr())
+    var x3 = NDBuffer[type, rank, _, s3](x3_stack.unsafe_ptr())
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
@@ -64,11 +68,11 @@ def test_concat():
     var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, rank, out_shape](out_stack.unsafe_ptr())
+    var output = NDBuffer[type, rank, _, out_shape](out_stack.unsafe_ptr())
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
-    var input_tuple = StaticTuple[NDBuffer[type, rank], 3](
+    var input_tuple = StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], 3](
         x1_dyn, x2_dyn, x3_dyn
     )
 
@@ -114,15 +118,15 @@ def test_concat_parallel():
     var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
         uninitialized=True
     )
-    var x1 = NDBuffer[type, rank, s1](x1_stack.unsafe_ptr())
+    var x1 = NDBuffer[type, rank, _, s1](x1_stack.unsafe_ptr())
     var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
         uninitialized=True
     )
-    var x2 = NDBuffer[type, rank, s2](x2_stack.unsafe_ptr())
+    var x2 = NDBuffer[type, rank, _, s2](x2_stack.unsafe_ptr())
     var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
         uninitialized=True
     )
-    var x3 = NDBuffer[type, rank, s3](x3_stack.unsafe_ptr())
+    var x3 = NDBuffer[type, rank, _, s3](x3_stack.unsafe_ptr())
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
@@ -134,11 +138,11 @@ def test_concat_parallel():
     var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, rank, out_shape](out_stack.unsafe_ptr())
+    var output = NDBuffer[type, rank, _, out_shape](out_stack.unsafe_ptr())
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
-    var input_tuple = StaticTuple[NDBuffer[type, rank], 3](
+    var input_tuple = StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], 3](
         x1_dyn, x2_dyn, x3_dyn
     )
 
@@ -186,15 +190,15 @@ def test_concat_inner():
     var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
         uninitialized=True
     )
-    var x1 = NDBuffer[type, rank, s1](x1_stack.unsafe_ptr())
+    var x1 = NDBuffer[type, rank, _, s1](x1_stack.unsafe_ptr())
     var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
         uninitialized=True
     )
-    var x2 = NDBuffer[type, rank, s2](x2_stack.unsafe_ptr())
+    var x2 = NDBuffer[type, rank, _, s2](x2_stack.unsafe_ptr())
     var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
         uninitialized=True
     )
-    var x3 = NDBuffer[type, rank, s3](x3_stack.unsafe_ptr())
+    var x3 = NDBuffer[type, rank, _, s3](x3_stack.unsafe_ptr())
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
@@ -206,11 +210,11 @@ def test_concat_inner():
     var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, rank, out_shape](out_stack.unsafe_ptr())
+    var output = NDBuffer[type, rank, _, out_shape](out_stack.unsafe_ptr())
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
-    var input_list = StaticTuple[NDBuffer[type, rank], 3](
+    var input_list = StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], 3](
         x1_dyn, x2_dyn, x3_dyn
     )
 

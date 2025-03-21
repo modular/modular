@@ -21,8 +21,8 @@ fn _get_rightmost_broadcast_axis[
     input_shape: DimList,
     type: DType,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
 ) -> Int:
     """
     Return the rightmost position (largest axis) at which the dimensions of
@@ -53,8 +53,8 @@ fn broadcast[
     input_shape: DimList,
     type: DType,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
 ):
     """
     For each axis of `input`, if the dimension is 1, duplicate the data at
@@ -104,8 +104,8 @@ fn broadcast_impl[
     type: DType,
 ](
     axis: Int,
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
     # dim[axis+1](), which requires more `constrained` to keep in bound
     input_prev_axis_stride: Int,

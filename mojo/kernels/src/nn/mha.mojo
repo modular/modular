@@ -106,8 +106,8 @@ fn flash_attention[
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
-    output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, q_shape, *_],
+    output: NDBuffer[mut=True, _, rank, *_],
+    q: NDBuffer[type, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
     mask: NDBuffer,
@@ -197,8 +197,8 @@ fn flash_attention[
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
-    output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, q_shape, *_],
+    output: NDBuffer[mut=True, _, rank, *_],
+    q: NDBuffer[type, rank, _, q_shape, *_],
     k: cache_t,
     v: cache_t,
     mask: NDBuffer,
@@ -208,7 +208,9 @@ fn flash_attention[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]] = None,
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     """Flash attention 2 algorithm.
@@ -361,7 +363,7 @@ fn flash_attention_dispatch[
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, q_shape, *_],
+    q: NDBuffer[type, rank, _, q_shape, *_],
     k: k_t,
     v: v_t,
     mask: NDBuffer,
@@ -373,7 +375,9 @@ fn flash_attention_dispatch[
     scale: Float32,
     is_token_generation: Bool,
     ctx: DeviceContext,
-    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]] = None,
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     alias num_heads = config.num_heads
@@ -787,8 +791,8 @@ fn flash_attention[
     decoding_warp_split_k: Bool = False,
     naive_kernel: Bool = False,
 ](
-    output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, q_shape, *_],
+    output: NDBuffer[mut=True, _, rank, *_],
+    q: NDBuffer[type, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
     mask: NDBuffer,
@@ -896,8 +900,10 @@ fn mha[
     batch_size: Int,
     seq_len_arg: Int,
     num_keys_arg: Int,
-    valid_length: NDBuffer[DType.uint32, 1],
-    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]],
+    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ],
     mask: mask_t,
     score_mod: score_mod_t,
 ):
@@ -2626,7 +2632,9 @@ fn mha_decoding[
     batch_size: Int,
     num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
-    valid_length: NDBuffer[DType.uint32, 1],  # valid length per batch
+    valid_length: NDBuffer[
+        DType.uint32, 1, MutableAnyOrigin
+    ],  # valid length per batch
     mask: mask_t,
     score_mod: score_mod_t,
 ):
@@ -4475,7 +4483,7 @@ fn _bmm0_bs[
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     mask_ptr: UnsafePointer[Scalar[mask_type]],
-    valid_length: NDBuffer[DType.uint32, 1],
+    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -4615,7 +4623,7 @@ fn _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type]],
     p_ptr: UnsafePointer[Scalar[p_type]],
     v: v_t,
-    valid_length: NDBuffer[DType.uint32, 1],
+    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     max_prompt_len: Int,
     max_cache_size: Int,
     num_heads: Int,
@@ -4698,7 +4706,7 @@ fn mha_gpu_naive[
     k: NDBuffer[k_type, rank, *_],
     v: NDBuffer[v_type, rank, *_],
     mask: NDBuffer[mask_type, mask_rank, *_, **_],
-    output: NDBuffer[output_type, rank, *_],
+    output: NDBuffer[mut=True, output_type, rank, *_],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
@@ -4749,8 +4757,8 @@ fn mha_gpu_naive[
     v: cache_t,
     mask: NDBuffer[mask_type, mask_rank, *_, **_],
     mask_functor: mask_t,
-    output: NDBuffer[output_type, rank, *_],
-    valid_length: NDBuffer[DType.uint32, 1],
+    output: NDBuffer[mut=True, output_type, rank, *_],
+    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -4795,7 +4803,7 @@ fn _naive_attention_with_transpose[
     type: DType,
     transpose_k: Bool = False,
 ](
-    output: NDBuffer[type, 4],
+    output: NDBuffer[mut=True, type, 4],
     q: NDBuffer[type, 4],
     k: NDBuffer[type, 4],
     v: NDBuffer[type, 4],
@@ -4844,21 +4852,27 @@ fn _naive_attention_with_transpose[
     )
 
     # BSHD -> BHSD
-    var q_perm = NDBuffer[DType.index, 1, 4].stack_allocation()
+    var q_perm = NDBuffer[
+        DType.index, 1, MutableAnyOrigin, 4
+    ].stack_allocation()
     q_perm[0] = 0
     q_perm[1] = 2
     q_perm[2] = 1
     q_perm[3] = 3
 
     # BSHD -> BHDS
-    var k_perm = NDBuffer[DType.index, 1, 4].stack_allocation()
+    var k_perm = NDBuffer[
+        DType.index, 1, MutableAnyOrigin, 4
+    ].stack_allocation()
     k_perm[0] = 0
     k_perm[1] = 2
     k_perm[2] = 3
     k_perm[3] = 1
 
     # BHSD -> BSHD
-    var o_perm = NDBuffer[DType.index, 1, 4].stack_allocation()
+    var o_perm = NDBuffer[
+        DType.index, 1, MutableAnyOrigin, 4
+    ].stack_allocation()
     o_perm[0] = 0
     o_perm[1] = 2
     o_perm[2] = 1
@@ -4883,7 +4897,7 @@ fn _naive_attention[
     type: DType,
     transpose_k: Bool = False,
 ](
-    output: NDBuffer[type, 4],
+    output: NDBuffer[mut=True, type, 4],
     q: NDBuffer[type, 4],
     k: NDBuffer[type, 4],
     v: NDBuffer[type, 4],
