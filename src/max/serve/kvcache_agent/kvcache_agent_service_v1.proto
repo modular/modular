@@ -1,6 +1,16 @@
+// IMPORTANT: File synchronization notice
+// Source of truth: SDK/lib/API/python/max/serve/kvcache_agent/kvcache_agent_service_v1.proto (monorepo)
+// Client copy: api/v1/kvcache_agent_service_v1.proto (MAX Cluster repo)
+//
+// When making changes, please update both locations to maintain consistency.
+// In the future, this will be consolidated into a single published package
+// once the KV Cache Agent Service moves beyond the prototype stage.
+
 syntax = "proto3";
 
 package max.serve.kvcache_agent.v1;
+
+option go_package = "github.com/modularml/max-cluster/pkg/api/v1";
 
 // Service that exposes the KV Cache Agent state
 service KVCacheAgentService {
@@ -19,7 +29,7 @@ message KVCacheStateUpdate {
 
   // Memory tier where the cache entries are stored
   MemoryTier memory_tier = 2;
-  
+
   // Cache ids that were updated
   repeated string cache_ids = 3;
 }
