@@ -254,7 +254,9 @@ fn test_construction_from_managed_tensor_slice() raises:
     alias row_stride = 1
     alias col_stride = 2
 
-    var static_buffer = NDBuffer[dtype, rank, (rows, cols)]().stack_allocation()
+    var static_buffer = NDBuffer[
+        dtype, rank, MutableAnyOrigin, (rows, cols)
+    ]().stack_allocation()
     var static_tensor_slice = ManagedTensorSlice[
         IOUnknown,
         static_spec = StaticTensorSpec[dtype, rank]

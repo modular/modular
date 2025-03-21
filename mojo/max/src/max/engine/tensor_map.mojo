@@ -262,7 +262,9 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         var val = self.get_value(key)
         return val._take_mojo_value[T]()
 
-    fn buffer[type: DType](self, key: String) raises -> NDBuffer[type, 1]:
+    fn buffer[
+        type: DType
+    ](self, key: String) raises -> NDBuffer[type, 1, MutableAnyOrigin]:
         """Gets a buffer to the tensor pointed by the key.
 
         Parameters:

@@ -100,10 +100,10 @@ struct EngineTensor(Sized):
             self.lib, self.session
         ).get_as_tensor_spec()
 
-    fn buffer[type: DType](self) raises -> NDBuffer[type, 1]:
+    fn buffer[type: DType](self) raises -> NDBuffer[type, 1, MutableAnyOrigin]:
         return NDBuffer[type, 1](self.data[type](), len(self))
 
-    fn buffer(self) -> NDBuffer[DType.invalid, 1]:
+    fn buffer(self) -> NDBuffer[DType.invalid, 1, MutableAnyOrigin]:
         return NDBuffer[DType.invalid, 1](
             rebind[UnsafePointer[Scalar[DType.invalid]]](self.unsafe_ptr()),
             len(self) * self.dtype().sizeof(),
