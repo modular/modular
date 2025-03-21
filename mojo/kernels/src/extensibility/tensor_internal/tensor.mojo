@@ -802,7 +802,7 @@ struct Tensor[type: DType](
         return result
 
     @always_inline
-    fn _to_ndbuffer[rank: Int](self) -> NDBuffer[type, rank]:
+    fn _to_ndbuffer[rank: Int](self) -> NDBuffer[type, rank, __origin_of(self)]:
         debug_assert(
             rank == self.rank(), "to_ndbuffer rank must match Tensor rank"
         )
@@ -815,7 +815,7 @@ struct Tensor[type: DType](
         return NDBuffer[type, rank](self._ptr, shape)
 
     @always_inline
-    fn _to_buffer(self) -> NDBuffer[type, 1]:
+    fn _to_buffer(ref self) -> NDBuffer[type, 1, __origin_of(self)]:
         return NDBuffer[type, 1](self._ptr, self.num_elements())
 
     @always_inline
