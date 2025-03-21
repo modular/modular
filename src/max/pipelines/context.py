@@ -43,6 +43,9 @@ class InputContext(Protocol):
     """
 
     @property
+    def ignore_eos(self) -> bool: ...
+
+    @property
     def active_idx(self) -> int: ...
 
     @property
@@ -177,6 +180,7 @@ class TextContext:
         log_probabilities: int = 0,
         log_probabilities_echo: bool = False,
         json_schema: str | None = None,
+        ignore_eos: bool = False,
     ) -> None:
         self._cache_seq_id = cache_seq_id
         self.prompt = prompt
@@ -208,6 +212,7 @@ class TextContext:
         self.matcher = None
         self.json_schema = json_schema
         self.is_initial_prompt = True
+        self.ignore_eos = ignore_eos
 
     @property
     def start_idx(self) -> int:
@@ -410,6 +415,7 @@ class TextAndVisionContext(TextContext):
         log_probabilities: int = 0,
         log_probabilities_echo: bool = False,
         json_schema: str | None = None,
+        ignore_eos: bool = False,
     ) -> None:
         super().__init__(
             cache_seq_id=cache_seq_id,
@@ -419,6 +425,7 @@ class TextAndVisionContext(TextContext):
             log_probabilities=log_probabilities,
             log_probabilities_echo=log_probabilities_echo,
             json_schema=json_schema,
+            ignore_eos=ignore_eos,
         )
         self.pixel_values = pixel_values
         self.extra_model_args = extra_model_args

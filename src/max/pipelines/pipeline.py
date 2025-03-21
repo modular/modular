@@ -832,7 +832,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     log_probs = log_probs_for_step[batch_index]
 
                 # Identify completion criteria.
-                is_eos = next_token in self._eos_token_id
+                if context.ignore_eos:
+                    is_eos = False
+                else:
+                    is_eos = next_token in self._eos_token_id
 
                 # Write this token into our pre-allocated tokens array.
                 context.update(
