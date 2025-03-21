@@ -18,6 +18,7 @@ You can import these APIs from the `sys` package. For example:
 from sys import CompilationTarget
 
 print(CompilationTarget.is_x86())
+```
 """
 
 from memory import UnsafePointer
