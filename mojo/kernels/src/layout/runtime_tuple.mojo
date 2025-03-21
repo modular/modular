@@ -3,6 +3,24 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""
+Provides the `RuntimeTuple` data structure and related utility functions
+for handling tuple-like data with both compile-time and runtime elements.
+`RuntimeTuple` is designed for high-performance tensor operations, supporting
+efficient manipulation of multi-dimensional data structures like shapes, indices,
+and coordinates.
+
+Key features:
+- Hybrid compile-time/runtime value handling
+- Optimized for parallel execution and hardware acceleration
+- Support for nested tuple structures
+- Efficient conversion between linear indices and multi-dimensional coordinates
+- Specialized operations for tensor shape calculations
+
+The module includes functions for tuple manipulation (concatenation, flattening),
+coordinate transformations (`idx2crd`, `crd2idx`), and specialized tensor operations
+like shape division and prefix products.
+"""
 
 from collections import InlineArray
 from os import abort
@@ -18,6 +36,19 @@ from utils import IndexList
 
 
 fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
+    """Concatenates two `IntTuple` instances into a single `IntTuple`.
+
+    This function appends all elements from the right-hand side tuple to the
+    left-hand side tuple, creating a new combined tuple. The operation preserves
+    the hierarchical structure of both tuples.
+
+    Args:
+        lhs: The left-hand side `IntTuple` that will be modified (owned parameter).
+        rhs: The right-hand side `IntTuple` whose elements will be appended.
+
+    Returns:
+        A new `IntTuple` containing all elements from both tuples in sequence.
+    """
     for i in range(len(rhs)):
         lhs.append(rhs[i])
     return lhs.owned_copy()
@@ -39,15 +70,37 @@ struct RuntimeTuple[
     element_bitwidth: Int = bitwidthof[Int](),
     unsigned: Bool = False,
 ](Stringable, Sized):
+    """A struct representing tuple-like data with compile-time and runtime elements.
+
+    RuntimeTuple combines static (compile-time) and dynamic (runtime) handling of
+    tuple-like data structures, typically used for tensor shapes, indices, and coordinates
+    in high-performance computing contexts.
+
+    This struct is optimized for parallel execution and hardware acceleration, allowing
+    efficient manipulation of multi-dimensional data. It supports both known compile-time
+    values and runtime-determined values.
+
+    Parameters:
+        origin: The origin corresponding to the `IntTuple`.
+        S: `IntTuple` with compile-time known values (or `UNKNOWN_VALUE` for runtime values).
+        element_bitwidth: Bit width for the underlying numeric type (default: bitwidth of Int).
+        unsigned: Whether to use unsigned integer types (default: False).
+    """
+
     alias int_type: DType = _get_returned_type[element_bitwidth, unsigned]()
+    """The numeric data type used for elements in this RuntimeTuple, based on element_bitwidth and unsigned parameters."""
+
     alias scalar_length = len(flatten(S))
+    """The total number of scalar elements in this RuntimeTuple after flattening nested tuples."""
+
     var value: IndexList[
         Self.scalar_length, element_bitwidth=element_bitwidth, unsigned=unsigned
     ]
+    """Storage for the actual tuple values, implemented as an IndexList with the appropriate size and element type."""
 
     @always_inline
     fn __init__(out self):
-        """Initialize a RuntimeTuple with default values.
+        """Initialize a `RuntimeTuple` with default values.
 
         For dimensions with known compile-time values in S, uses those values.
         For unknown dimensions, initializes them to UNKNOWN_VALUE.
@@ -69,7 +122,7 @@ struct RuntimeTuple[
     @always_inline
     @implicit
     fn __init__(out self, *values: Int):
-        """Initialize a RuntimeTuple with the provided values.
+        """Initialize a `RuntimeTuple` with the provided values.
 
         Args:
             values: Variadic number of integer values to initialize the tuple with.
@@ -79,10 +132,14 @@ struct RuntimeTuple[
     @always_inline
     @implicit
     fn __init__[l: Int](mut self, values: IndexList[l, **_]):
-        """Initialize a RuntimeTuple from an IndexList.
+        """Initialize a `RuntimeTuple` from an `IndexList`.
+
+        Parameters:
+            l: Compile-time length of the input `IndexList`.
 
         Args:
-            values: IndexList to initialize from. Must have same length as the RuntimeTuple.
+            values: `IndexList` to initialize from. Must have same length as the `RuntimeTuple`.
+                    The values will be cast to the appropriate element type if needed.
         """
         constrained[Self.scalar_length == l, "Must use same tuple length"]()
         self.value = rebind[__type_of(self.value)](
@@ -95,6 +152,18 @@ struct RuntimeTuple[
     @staticmethod
     @always_inline
     fn offset_until[i: Int]() -> Int:
+        """Calculates the offset in the flattened value array for a given tuple index.
+
+        This method computes the sum of lengths of all flattened subtuple elements
+        that come before the specified index, which is used for indexing into the
+        internal storage.
+
+        Parameters:
+            i: The tuple index to calculate the offset for.
+
+        Returns:
+            The offset in the flattened array where the i-th element begins.
+        """
         var result = 0
 
         @parameter
@@ -104,6 +173,15 @@ struct RuntimeTuple[
 
     @always_inline
     fn get_int(self) -> Scalar[Self.int_type]:
+        """Returns the integer value of this RuntimeTuple.
+
+        For tuples with a known compile-time value, returns that value.
+        For tuples with a runtime value, returns the first element of the
+        internal storage array.
+
+        Returns:
+            The integer value of this RuntimeTuple.
+        """
         alias comptime_value: Scalar[Self.int_type] = S.value()
 
         @parameter
@@ -118,6 +196,18 @@ struct RuntimeTuple[
     ](self) -> RuntimeTuple[
         S[i], element_bitwidth=element_bitwidth, unsigned=unsigned
     ]:
+        """Retrieves the element at the specified index in the tuple.
+
+        This method provides array-like indexing for RuntimeTuple, allowing access
+        to individual elements or sub-tuples. It handles the internal offset calculation
+        to access the correct elements in the flattened storage array.
+
+        Parameters:
+            i: The index of the element to retrieve.
+
+        Returns:
+            A new `RuntimeTuple` containing the element or sub-tuple at the specified index.
+        """
         var res = RuntimeTuple[
             S[i], element_bitwidth=element_bitwidth, unsigned=unsigned
         ]()
@@ -130,11 +220,31 @@ struct RuntimeTuple[
 
     @always_inline
     fn __setitem__[i: Int](mut self, val: Scalar[Self.int_type]):
+        """Sets the value of the element at the specified index in the tuple.
+
+        This method enables array-like assignment for RuntimeTuple elements,
+        handling the internal offset calculation to modify the correct element
+        in the flattened storage array.
+
+        Parameters:
+            i: The index of the element to modify.
+
+        Args:
+            val: The new value to assign to the element.
+        """
         alias offset = Self.offset_until[i]()
         self.value[offset] = Int(val)
 
     @no_inline
     fn __str__(self) -> String:
+        """Converts the RuntimeTuple to its string representation.
+
+        This method provides a human-readable string representation of the tuple,
+        which is useful for debugging and logging.
+
+        Returns:
+            A string representation of the `RuntimeTuple`.
+        """
         return String.write(self)
 
     @always_inline
@@ -149,6 +259,21 @@ struct RuntimeTuple[
             concat(S, R), element_bitwidth=element_bitwidth, unsigned=unsigned
         ],
     ):
+        """Concatenates two `RuntimeTuple`s together.
+
+        This method combines the current `RuntimeTuple` with another one, preserving
+        both compile-time and runtime values. It handles the complexity of merging
+        the underlying storage arrays while maintaining the proper semantic structure.
+
+        Parameters:
+            R: The `IntTuple` type parameter of the right-hand side RuntimeTuple.
+
+        Args:
+            rhs: The `RuntimeTuple` to concatenate to the end of this one.
+
+        Returns:
+            A new `RuntimeTuple` containing all elements from both tuples in sequence.
+        """
         var out = __type_of(result)()
 
         alias S_flat = flatten(S)
@@ -178,9 +303,31 @@ struct RuntimeTuple[
             flatten(S), element_bitwidth=element_bitwidth, unsigned=unsigned
         ],
     ):
+        """Flattens a potentially nested `RuntimeTuple` into a single-level tuple.
+
+        This method converts a hierarchical structure of tuples into a flat representation,
+        preserving all values but removing the nested structure. This is useful for
+        operations that need to treat all elements uniformly.
+
+        Returns:
+            A new `RuntimeTuple` containing all elements in a flat (non-nested) structure.
+        """
         return __type_of(result)(self.value)
 
     fn write_to[W: Writer](self, mut writer: W):
+        """Writes the RuntimeTuple to a Writer object.
+
+        This method is used by the string conversion system to generate a string
+        representation of the RuntimeTuple. It handles both scalar values and
+        nested tuple structures, producing a properly formatted output.
+
+        Parameters:
+            W: The Writer type to use for output.
+
+        Args:
+            writer: The Writer object to write the string representation to.
+        """
+
         @parameter
         if S.is_value():
             writer.write(self.value[0])
@@ -200,6 +347,16 @@ struct RuntimeTuple[
 
     @always_inline
     fn __len__(self) -> Int:
+        """Returns the length (number of top-level elements) of the `RuntimeTuple`.
+
+        This method provides the standard Python-like len() functionality,
+        giving the number of elements at the top level of the tuple structure.
+        For nested tuples, this returns the number of first-level entries,
+        not the total number of scalar values.
+
+        Returns:
+            The number of top-level elements in the tuple.
+        """
         alias l = len(S)
         return l
 
@@ -212,19 +369,67 @@ struct RuntimeTuple[
             S, element_bitwidth = bitwidthof[type](), unsigned=unsigned
         ],
     ):
+        """Casts the RuntimeTuple to use a different numeric type.
+
+        This method creates a new RuntimeTuple with the same structure and values
+        but using a different underlying numeric type for storage. This is useful
+        for changing precision or signedness of the data.
+
+        Parameters:
+            type: The target DType to cast the elements to.
+
+        Returns:
+            A new `RuntimeTuple` with elements cast to the specified type.
+        """
         return __type_of(result)(self.value.cast[type]())
 
     @always_inline
     fn __int__(self) -> Int:
+        """Converts the RuntimeTuple to an integer value.
+
+        This method enables implicit conversion of a RuntimeTuple to an integer,
+        but is constrained to only work on scalar tuples (those that contain a single value).
+
+        Returns:
+            The integer value of the tuple.
+        """
         constrained[S.is_value(), "tuple must be a single int value"]()
         return self.value[0]
 
 
 fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
+    """Determines if a `RuntimeTuple` represents a tuple rather than a scalar value.
+
+    This function checks the structure of the underlying IntTuple to determine
+    if it represents a tuple with multiple elements or a single scalar value.
+
+    Parameters:
+        t: The IntTuple type parameter of the RuntimeTuple.
+
+    Args:
+        tuple: The `RuntimeTuple` to check.
+
+    Returns:
+        True if the `RuntimeTuple` represents a tuple, False if it represents a scalar.
+    """
     return t.is_tuple()
 
 
 fn is_int[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
+    """Determines if a `RuntimeTuple` represents a scalar integer value.
+
+    This function checks if the `RuntimeTuple` holds a single scalar value
+    rather than a tuple structure with multiple elements.
+
+    Parameters:
+        t: The IntTuple type parameter of the RuntimeTuple.
+
+    Args:
+        tuple: The `RuntimeTuple` to check.
+
+    Returns:
+        True if the `RuntimeTuple` represents a scalar integer, False otherwise.
+    """
     return t.is_value()
 
 
@@ -232,6 +437,21 @@ fn is_int[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
 fn prefix_product[
     t: IntTuple
 ](tuple: RuntimeTuple[t, **_]) -> RuntimeTuple[prefix_product_int_tuple(t)]:
+    """Computes the prefix products of elements in the `RuntimeTuple`.
+
+    This function calculates the running product of elements, where each
+    output element is the product of all previous elements in the input.
+    This is commonly used in tensor computations to calculate stride values.
+
+    Parameters:
+        t: The IntTuple type parameter of the input RuntimeTuple.
+
+    Args:
+        tuple: The input `RuntimeTuple`.
+
+    Returns:
+        A new `RuntimeTuple` containing the prefix products of the input elements.
+    """
     var res = RuntimeTuple[prefix_product_int_tuple(t)]()
     var prefix_res = 1
     for i in range(tuple.scalar_length):
@@ -242,6 +462,21 @@ fn prefix_product[
 
 @always_inline
 fn product[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Int:
+    """Computes the product of all elements in the `RuntimeTuple`.
+
+    This function multiplies all scalar values in the tuple, including
+    those in nested tuples after flattening. This is commonly used to
+    calculate the total size of a tensor from its shape.
+
+    Parameters:
+        t: The IntTuple type parameter of the input RuntimeTuple.
+
+    Args:
+        tuple: The input `RuntimeTuple`.
+
+    Returns:
+        The product of all scalar elements in the tuple.
+    """
     var res: Int = 1
 
     @parameter
@@ -265,6 +500,28 @@ fn idx2crd[
         unsigned = shape.unsigned,
     ],
 ):
+    """Converts a linear index to multi-dimensional coordinates.
+
+    This function transforms a flat index into coordinate values based on
+    the provided shape and stride information. This is essential for
+    mapping linear memory accesses to multi-dimensional tensor elements.
+
+    Parameters:
+        idx_t: IntTuple type of the index.
+        shape_t: IntTuple type of the shape.
+        stride_t: IntTuple type of the stride.
+
+    Args:
+        idx: The linear index to convert.
+        shape: The shape of the multi-dimensional array.
+        stride: The stride values for each dimension.
+
+    Returns:
+        A `RuntimeTuple` containing the multi-dimensional coordinates.
+
+    Constraints:
+        The index must be a scalar value (not a tuple).
+    """
     var res = __type_of(result)()
     constrained[idx_t.is_value(), "Only scalar index is supported"]()
     for i in range(res.scalar_length):
@@ -285,6 +542,24 @@ fn idx2crd[
     element_bitwidth = shape.element_bitwidth,
     unsigned = shape.unsigned,
 ]:
+    """Converts a linear index to multi-dimensional coordinates using shape-derived strides.
+
+    This is a convenience overload of `idx2crd` that automatically calculates the stride
+    values from the shape using `prefix_product`. This is the common case for row-major
+    storage order tensors.
+
+    Parameters:
+        idx_t: IntTuple type of the index.
+        shape_t: IntTuple type of the shape.
+
+    Args:
+        idx: The linear index to convert.
+        shape: The shape of the multi-dimensional array.
+
+    Returns:
+        A `RuntimeTuple` containing the multi-dimensional coordinates calculated using
+        automatically derived strides from the shape.
+    """
     return idx2crd(idx, shape, prefix_product(shape))
 
 
@@ -298,6 +573,27 @@ fn crd2idx[
     shape: RuntimeTuple[shape_t, **_],
     stride: RuntimeTuple[stride_t, **_],
 ) -> Scalar[out_type]:
+    """Converts multi-dimensional coordinates to a linear index.
+
+    This function is the inverse of idx2crd, transforming a set of coordinates
+    into a flat index based on the provided shape and stride information.
+    This is essential for mapping multi-dimensional tensor elements to linear memory.
+
+    Parameters:
+        crd_t: Type of the coordinates.
+        shape_t: Type of the shape.
+        stride_t: Type of the stride.
+        out_type: The output data type for the index (default: uint64).
+
+    Args:
+        crd: The coordinates to convert.
+        shape: The shape of the multi-dimensional array.
+        stride: The stride values for each dimension.
+
+    Returns:
+        A scalar value representing the linear index corresponding to the given coordinates.
+    """
+
     @parameter
     if crd_t.is_tuple():
         constrained[
@@ -345,6 +641,17 @@ fn crd2idx[
 # shape_div.
 @always_inline
 fn signum(a: Int) -> Int:
+    """Returns the sign of an integer value.
+
+    This helper function determines whether a number is positive, negative, or zero,
+    returning 1 for positive, -1 for negative, and 0 for zero.
+
+    Args:
+        a: The integer value to determine the sign of.
+
+    Returns:
+        1 if a > 0, -1 if a < 0, 0 if a == 0.
+    """
     return 1 if (a > 0) else (-1 if (a < 0) else 0)
 
 
@@ -353,6 +660,30 @@ fn shape_div[
 ](a: RuntimeTuple[a_t, **_], b: RuntimeTuple[b_t, **_]) -> RuntimeTuple[
     shape_div_int_tuple(a_t, b_t)
 ]:
+    """Performs specialized shape division between `RuntimeTuple`s.
+
+    This function implements a special division operation specifically designed for
+    tensor shape calculations. Unlike standard division, it handles special cases:
+
+    1. If shapes are directly divisible (a % b == 0), returns a standard division (a // b)
+    2. If shapes are inversely divisible (b % a == 0), returns the signed reciprocal
+    3. If shapes are incompatible, aborts with an error
+
+    This operation is essential for transformations between tensor layouts and computing
+    broadcasting semantics.
+
+    Parameters:
+        a_t: Type of the first operand.
+        b_t: Type of the second operand.
+
+    Args:
+        a: The dividend `RuntimeTuple`.
+        b: The divisor `RuntimeTuple`.
+
+    Returns:
+        A new `RuntimeTuple` containing the result of the shape division.
+    """
+
     @parameter
     if a_t.is_tuple():
 
