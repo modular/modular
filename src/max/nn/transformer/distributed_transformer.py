@@ -28,8 +28,8 @@ from max.pipelines.kv_cache import (
 
 from ..embedding import VocabParallelEmbedding
 from ..layer import LayerList, Module
-from ..linear import LinearV2
-from ..norm import DistributedRMSNorm, LayerNormV2, RMSNormV2
+from ..linear import ColumnParallelLinear
+from ..norm import DistributedRMSNorm
 
 
 # TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
@@ -85,8 +85,8 @@ class DistributedTransformer(Module):
         dim: int,
         n_heads: int,
         layers: list[DistributedTransformerBlock],
-        norm: RMSNormV2 | LayerNormV2,
-        output: LinearV2,
+        norm: DistributedRMSNorm,
+        output: ColumnParallelLinear,
         embedding: VocabParallelEmbedding,
         kv_params: KVCacheParams,
         kv_collection_constructor: (
@@ -140,17 +140,21 @@ class DistributedTransformer(Module):
                 **kwargs,
             )
 
-        h0 = h[0]  # All the outputs are the same here.
         if self.all_logits:
-            logits = ops.cast(self.lm_head(self.norm(h0)), DType.float32)
+            logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
             last_token_indices = input_row_offsets[1:] - 1
             last_token_logits = ops.gather(logits, last_token_indices, axis=0)
             return (last_token_logits, logits)
         else:
+            h0 = h[0]  # All the outputs are the same here.
             last_token_indices = input_row_offsets[1:] - 1
             last_token = ops.gather(h0, last_token_indices, axis=0)
 
             # Always return float32 logits, no matter the activation type
+            last_token_distributed = distribute_value(last_token, self.devices)
             return (
-                ops.cast(self.lm_head(self.norm(last_token)), DType.float32),
+                ops.cast(
+                    self.lm_head(self.norm(last_token_distributed))[0],
+                    DType.float32,
+                ),
             )

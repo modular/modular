@@ -22,6 +22,7 @@ from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
 from max.nn import (
     AttentionWithRopeV2,
+    ColumnParallelLinear,
     DistributedAttentionWithRope,
     DistributedMLP,
     DistributedRMSNorm,
@@ -32,7 +33,6 @@ from max.nn import (
     LinearV2,
     Llama3RotaryEmbedding,
     Module,
-    RMSNormV2,
     VocabParallelEmbedding,
 )
 from max.pipelines.kv_cache import (
@@ -72,11 +72,6 @@ class DistributedLlama3(DistributedTransformer):
             dim=config.hidden_size,
             eps=config.rms_norm_eps,
             devices=config.devices,
-        )
-        create_norm = functools.partial(
-            RMSNormV2,
-            dim=config.hidden_size,
-            eps=config.rms_norm_eps,
         )
 
         # Select linear layer class.
@@ -163,12 +158,11 @@ class DistributedLlama3(DistributedTransformer):
             config.devices,
             quantization_encoding=embedding_output_quantization,
         )
-        # TODO: Shard the output layer.
-        output = LinearV2(
+        output = ColumnParallelLinear(
             config.hidden_size,
             config.vocab_size,
             embedding_output_dtype,
-            config.devices[0],
+            devices=config.devices,
             quantization_encoding=embedding_output_quantization,
         )
 
@@ -199,7 +193,7 @@ class DistributedLlama3(DistributedTransformer):
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             layers=layers,
-            norm=create_norm(),
+            norm=create_distributed_norm(),
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
