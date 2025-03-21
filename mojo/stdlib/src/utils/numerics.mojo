@@ -19,7 +19,7 @@ from utils.numerics import FPUtils
 ```
 """
 
-from sys import bitwidthof, has_neon, has_sse4, llvm_intrinsic
+from sys import bitwidthof, has_neon, llvm_intrinsic, CompilationTarget
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 
@@ -66,20 +66,7 @@ struct FPUtils[
             The mantissa width.
         """
 
-        @parameter
-        if type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-            return 3
-        elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz):
-            return 2
-        elif type is DType.float16:
-            return 10
-        elif type is DType.bfloat16:
-            return 7
-        elif type is DType.float32:
-            return 23
-        else:
-            constrained[type is DType.float64, "unsupported float type"]()
-            return 52
+        return bitwidthof[type]() - Self.exponent_width() - 1
 
     @staticmethod
     @always_inline("nodebug")
@@ -94,7 +81,9 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if type in (DType.float8_e4m3, DType.float8_e4m3fnuz):
+            return 7
+        elif type is DType.float8_e4m3fn:
             return 8
         elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 16
@@ -114,7 +103,11 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if type in (
+            DType.float8_e4m3,
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+        ):
             return 4
         elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 5
@@ -419,7 +412,9 @@ struct FlushDenormals:
     @always_inline
     fn _set_flush(self, enable: Bool, force: Bool = False):
         @parameter
-        if not has_sse4() and not has_neon():  # not supported, so skip
+        if (
+            not CompilationTarget.has_sse4() and not has_neon()
+        ):  # not supported, so skip
             return
         # Unless we forced to restore the prior state, we check if the flag
         # has already been enabled to avoid calling the intrinsic which can
@@ -432,7 +427,7 @@ struct FlushDenormals:
         # the prior value.
 
         @parameter
-        if has_sse4():
+        if CompilationTarget.has_sse4():
             var mxcsr = self.state
             if enable:
                 mxcsr |= 0x8000  # flush to zero
@@ -458,7 +453,7 @@ struct FlushDenormals:
     @always_inline
     fn _is_set(self, state: Int32) -> Bool:
         @parameter
-        if has_sse4():
+        if CompilationTarget.has_sse4():
             return (state & 0x8000) != 0 and (state & 0x40) != 0
 
         alias ARM_FPCR_FZ = Int32(1) << 24
@@ -470,11 +465,13 @@ struct FlushDenormals:
         """Gets the current denormal state."""
 
         @parameter
-        if not has_sse4() and not has_neon():  # not supported, so skip
+        if (
+            not CompilationTarget.has_sse4() and not has_neon()
+        ):  # not supported, so skip
             return 0
 
         @parameter
-        if has_sse4():
+        if CompilationTarget.has_sse4():
             var mxcsr = Int32()
             llvm_intrinsic["llvm.x86.sse.stmxcsr", NoneType](
                 UnsafePointer[Int32].address_of(mxcsr)

@@ -127,8 +127,8 @@ def test_assert_almost_equal():
         lhs: SIMD[type, size],
         rhs: SIMD[type, size],
         *,
-        atol: Scalar[type] = 0,
-        rtol: Scalar[type] = 0,
+        atol: Float64 = 0,
+        rtol: Float64 = 0,
         equal_nan: Bool = False,
     ):
         var msg = "`test_assert_almost_equal` should have succeeded"
@@ -164,8 +164,8 @@ def test_assert_almost_equal():
         lhs: SIMD[type, size],
         rhs: SIMD[type, size],
         *,
-        atol: Scalar[type] = 0,
-        rtol: Scalar[type] = 0,
+        atol: Float64 = 0,
+        rtol: Float64 = 0,
         equal_nan: Bool = False,
     ):
         var msg = "`test_assert_almost_equal` should have failed"

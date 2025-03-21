@@ -43,7 +43,7 @@ For additional information, the FAQ page is your go-to resource.
 
 ## Code of conduct
 
-[Code of conduct](../CODE_OF_CONDUCT.md)
+[Code of conduct](../../CODE_OF_CONDUCT.md)
 
 ## License
 

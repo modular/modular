@@ -28,12 +28,14 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
     DeviceRef,
+    Dim,
     TensorType,
     TensorValue,
     _OpaqueType,
     _OpaqueValue,
     ops,
 )
+from max.profiler import traced
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 from ._utils import build_max_lengths_tensor
@@ -86,12 +88,107 @@ class PagedKVCache(_OpaqueValue):
     """PagedAttention Mojo KV cache graph value."""
 
 
+class PagedKVCacheCollectionFA3Fallback(_OpaqueValue):
+    """The graph value for a view of the KV cache."""
+
+
 class PagedKVCacheCollection(_OpaqueValue):
     """The graph value for a view of the KV cache."""
 
 
+class FetchPagedKVCacheCollectionFA3Fallback:
+    def __init__(self, kv_params: KVCacheParams, num_layers: int) -> None:
+        self.kv_params = kv_params
+        self.num_layers = num_layers
+
+    def __call__(
+        self,
+        blocks: TensorValue,
+        cache_lengths: TensorValue,
+        lookup_table: TensorValue,
+        is_cache_empty: TensorValue,
+    ) -> PagedKVCacheCollectionFA3Fallback:
+        """Constructs a PagedKVCacheCollection for use downstream.
+
+        This constructs a KVCache for use with the DaoLabds FA3 backend.
+        """
+
+        # Explicit validation.
+        if blocks.dtype != self.kv_params.dtype:
+            msg = (
+                f"expected blocks to be dtype: {self.kv_params.dtype}, got"
+                f" {blocks.dtype}"
+            )
+            raise ValueError(msg)
+
+        if blocks.rank != 5:
+            msg = f"expected blocks to be of rank 6, got {blocks.rank}"
+            raise ValueError(msg)
+
+        # For all tensors other than the blocks tensor, the length should be equivalent
+        # to batch size, which is unknown within the graph at this stage.
+        if cache_lengths.dtype != DType.uint32:
+            msg = f"expected cache lengths to be dtype: uint32, got {cache_lengths.dtype}"
+            raise ValueError(msg)
+
+        if cache_lengths.rank != 1:
+            msg = f"expected cache lengths to be of rank 1, got {cache_lengths.rank}"
+            raise ValueError(msg)
+
+        if lookup_table.dtype != DType.uint32:
+            msg = f"expected lookup_table to be dtype: uint32, got {lookup_table.dtype}"
+            raise ValueError(msg)
+
+        if lookup_table.rank != 2:
+            msg = f"expected lookup_table to be of rank 2, got {lookup_table.rank}"
+            raise ValueError(msg)
+
+        # expand our lookup table to fit to num_blocks
+        # we need a different lookup table for each layer
+        # TODO(austin) move this to a unified location, right now it's split across the codebase.
+        num_layers = ops.constant(self.num_layers, DType.uint32)
+        start_constant = ops.constant(0, DType.uint32)
+        step_constant = ops.constant(1, DType.uint32)
+        layers_arange = ops.range(
+            start_constant,
+            num_layers,
+            step_constant,
+            out_dim=Dim(self.num_layers),
+        )
+        if blocks.device is not None:
+            layers_arange = layers_arange.to(blocks.device)
+        layers_arange = ops.reshape(layers_arange, shape=[-1, 1, 1])
+        lookup_table = ops.reshape(
+            lookup_table,
+            shape=[1, lookup_table.shape[0], lookup_table.shape[1]],
+        )
+
+        lookup_table = ops.tile(lookup_table, repeats=[self.num_layers, 1, 1])
+        lookup_table = lookup_table * self.num_layers + layers_arange
+        cache_lengths_cast = cache_lengths.cast(DType.int32)
+        lookup_table_cast = lookup_table.cast(DType.int32)
+
+        return PagedKVCacheCollectionFA3Fallback(
+            ops.custom(
+                "mo.kv_collection_ctor.paged_fa3_fallback",
+                values=[
+                    blocks,
+                    cache_lengths_cast,
+                    lookup_table_cast,
+                    is_cache_empty,
+                ],
+                out_types=[PagedKVCacheCollectionType()],
+                parameters={
+                    "num_heads": self.kv_params.n_kv_heads_per_device,
+                    "head_dim": self.kv_params.head_dim,
+                    "page_size": int(blocks.shape[2]),
+                },
+            )[0].opaque
+        )
+
+
 class FetchPagedKVCacheCollection:
-    def __init__(self, kv_params: KVCacheParams) -> None:
+    def __init__(self, kv_params: KVCacheParams, **kwargs: Any) -> None:
         self.kv_params = kv_params
 
     def __call__(
@@ -148,6 +245,7 @@ class FetchPagedKVCacheCollection:
 
 
 class PagedKVCacheManager(KVCacheManager):
+    @traced
     def __init__(
         self,
         params: KVCacheParams,
@@ -210,7 +308,7 @@ class PagedKVCacheManager(KVCacheManager):
         if max_batch_size > self.total_num_pages:
             logger.warning(
                 f"Insufficient cache memory to support a batch containing {max_batch_size} requests with one token per request. "
-                f"Need to allocate at least {max_batch_size} blocks, but only have enough memory for {self.total_num_pages} blocks. "
+                f"Need to allocate at least {max_batch_size} pages, but only have enough memory for {self.total_num_pages} pages. "
                 f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
             )
 
@@ -218,9 +316,13 @@ class PagedKVCacheManager(KVCacheManager):
         if blocks_needed_for_max_seq_len > self.total_num_pages:
             logger.warning(
                 f"Insufficient cache memory to support a batch containing one request at the max sequence length of {max_seq_len} tokens. "
-                f"Need to allocate at least {blocks_needed_for_max_seq_len} blocks, but only have enough memory for {self.total_num_pages} blocks. "
-                f"One page requires {single_page_size_bytes} but only {cache_memory_per_device} are available."
+                f"Need to allocate at least {blocks_needed_for_max_seq_len} pages, but only have enough memory for {self.total_num_pages} pages. "
+                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
             )
+
+        logger.info(
+            f"Paged KVCache Manager allocated {self.total_num_pages} pages using {single_page_size_bytes_str} per page"
+        )
 
         # call our base class constructor
         super().__init__(
@@ -401,9 +503,9 @@ class PagedKVCacheManager(KVCacheManager):
         # 1 = value
         kv_dim = 2
         return [
-            num_layers,
-            kv_dim,
             "total_num_pages" if is_parameterized else total_num_pages,
+            kv_dim,
+            num_layers,
             page_size,
             params.n_kv_heads_per_device,
             params.head_dim,
@@ -417,6 +519,7 @@ class PagedKVCacheManager(KVCacheManager):
     def get_num_used_blocks(self) -> int:
         return self.total_num_pages - self.get_num_free_blocks()
 
+    @traced
     def can_fetch(
         self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
     ) -> bool:
@@ -448,6 +551,7 @@ class PagedKVCacheManager(KVCacheManager):
 
         return tot_new_pages_needed <= num_free_blocks
 
+    @traced
     def query_fetch_stats(
         self, seq_id: int, prompt: np.ndarray, num_steps: int = 1
     ) -> tuple[set[int], int, int]:
@@ -496,6 +600,7 @@ class PagedKVCacheManager(KVCacheManager):
 
         return prefix_blocks, tokens_to_encode, new_pages_needed
 
+    @traced
     def _fetch(
         self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
     ) -> List[KVCacheInputs]:
@@ -520,6 +625,10 @@ class PagedKVCacheManager(KVCacheManager):
             assert seq_id not in self.fetch_metadata
 
             # Add prompt and inflight tokens to the token array
+            if seq_id not in self.active_requests:
+                raise ValueError(
+                    f"Called fetch on seq_id {seq_id} without claiming it"
+                )
             data = self.active_requests[seq_id]
             data.fetch(prompt, num_steps)
 
@@ -543,31 +652,28 @@ class PagedKVCacheManager(KVCacheManager):
         )
         cache_lengths_np = np.zeros((batch_size,), dtype=np.uint32)
 
-        # Iterate over requests and query prefix cache
-        all_cache_hit_blocks: set[int] = set()
-        for batch_idx, (seq_id, prompt) in enumerate(
-            seq_ids_and_prompts.items()
-        ):
-            # Ensure we've called claim for this sequence id.
-            if seq_id not in self.active_requests:
-                raise ValueError(f"seq_id: {seq_id} not in active requests.")
-
-            if self.prefix_cache is not None:
-                data = self.active_requests[seq_id]
-                # bump the committed_idx, and possibly the cached_idx
-                prefix_blocks = self.prefix_cache.fetch(
-                    seq_id,
-                    data,
-                    free_block_fn=self.release_block,
-                    alloc_block_fn=self.alloc_block,
-                )
+        # Execute all of the COW ops enqueued during prefix_cache.fetch
+        all_cache_hit_blocks = set()
+        if self.prefix_cache is not None:
+            seq_ids_and_data = {
+                seq_id: self.active_requests[seq_id]
+                for seq_id in seq_ids_and_prompts
+            }
+            seq_ids_and_prefix_blocks = self.prefix_cache.fetch(
+                seq_ids_and_data,
+                free_block_fn=self.release_block,
+                alloc_block_fn=self.alloc_block,
+            )
+            for prefix_blocks in seq_ids_and_prefix_blocks.values():
                 all_cache_hit_blocks.update(prefix_blocks)
-                # Possibly trim the input prompt.
+
+            for seq_id in seq_ids_and_prompts:
+                data = seq_ids_and_data[seq_id]
                 seq_ids_and_prompts[seq_id] = data.prompt_tokens
 
         # Determine the number of pages required for each sequence.
         max_seq_length = 0
-        max_cache_length = 0
+        max_context_length = 0
         total_sequence_length = 0
         total_blocks_to_allocate = 0
         blocks_to_allocate_by_seq = {}
@@ -582,7 +688,9 @@ class PagedKVCacheManager(KVCacheManager):
 
             # Update the maximum lengths seen so far.
             max_seq_length = max(max_seq_length, len(prompt))
-            max_cache_length = max(max_cache_length, cache_length)
+            max_context_length = max(
+                max_context_length, cache_length + len(prompt)
+            )
 
             # Compute the total sequence length and the number of pages required to store it.
             total_sequence_length += data.seq_len
@@ -629,7 +737,7 @@ class PagedKVCacheManager(KVCacheManager):
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row.
         max_lengths_host = build_max_lengths_tensor(
-            num_steps, max_seq_length, max_cache_length
+            num_steps, max_seq_length, max_context_length
         )
 
         lut_table_host = Tensor.from_numpy(lut_table_np)
@@ -740,6 +848,7 @@ class PagedKVCacheManager(KVCacheManager):
             self.release_block(block)
         del self.active_requests[seq_id]
 
+    @traced
     def _step(
         self,
         seq_ids_and_new_tokens: dict[int, np.ndarray],
@@ -776,3 +885,65 @@ class PagedKVCacheManager(KVCacheManager):
                 )
 
         self._runtime_check()
+
+
+class PagedKVCacheManagerFA3Fallback(PagedKVCacheManager):
+    def input_symbols(self) -> list[PagedCacheInputSymbols]:
+        return [
+            PagedCacheInputSymbols(
+                kv_blocks=TensorType(
+                    self.params.dtype,
+                    shape=self.block_shape(is_parameterized=True),
+                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
+                ),
+                cache_lengths=TensorType(
+                    DType.uint32,
+                    shape=["batch_size"],
+                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
+                ),
+                lookup_table=TensorType(
+                    DType.uint32,
+                    shape=["batch_size", "max_num_pages"],
+                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
+                ),
+                max_lengths=TensorType(
+                    DType.uint32, shape=["steps_remaining", 2]
+                ),
+            )
+            for i in range(len(self.devices))
+        ]
+
+    def block_shape(
+        self,
+        is_parameterized: bool = False,
+    ) -> list[int | str]:
+        return self._block_shape(
+            self.params,
+            self.total_num_pages,
+            self.page_size,
+            self.num_layers,
+            is_parameterized,
+        )
+
+    @classmethod
+    def _block_shape(
+        cls,
+        params: KVCacheParams,
+        total_num_pages: int,
+        page_size: int,
+        num_layers: int,
+        is_parameterized: bool = False,
+    ) -> list[int | str]:
+        # split k and v caches across a single dim
+        # 0 = key
+        # 1 = value
+        kv_dim = 2
+        return [
+            kv_dim,
+            "total_num_pages"
+            if is_parameterized
+            else (total_num_pages * num_layers),
+            page_size,
+            params.n_kv_heads_per_device,
+            params.head_dim,
+        ]

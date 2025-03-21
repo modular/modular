@@ -17,15 +17,8 @@ from typing import Union
 
 from max.dtype import DType
 from max.graph import Graph, ops
-from max.graph.weights import SafetensorWeights
-from max.pipelines import PipelineConfig
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    FetchPagedKVCacheCollection,
-    KVCacheParams,
-    KVCacheStrategy,
-)
-from max.pipelines.nn import (
+from max.graph.weights import Weights
+from max.nn import (
     MLP,
     AttentionWithRope,
     Embedding,
@@ -34,6 +27,14 @@ from max.pipelines.nn import (
     RMSNorm,
     TransformerBlock,
 )
+from max.pipelines import PipelineConfig
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    KVCacheParams,
+    KVCacheStrategy,
+)
+from transformers import AutoConfig
 
 from ..llava.llava_decoder import Transformer
 
@@ -42,7 +43,7 @@ def feed_forward(
     dtype: DType,
     hidden_dim: int,
     feed_forward_length: int,
-    weights: SafetensorWeights,
+    weights: Weights,
 ):
     return MLP(
         linear(
@@ -70,14 +71,14 @@ def linear(
     dtype: DType,
     in_features: int,
     out_features: int,
-    weights: SafetensorWeights,
+    weights: Weights,
 ) -> Linear:
     return Linear(
         weights.weight.allocate(dtype, [in_features, out_features], None)
     )
 
 
-def rms_norm(dims: int, eps: float, weights: SafetensorWeights) -> RMSNorm:
+def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
     return RMSNorm(weights.weight.allocate(DType.bfloat16, [dims]), eps)
 
 
@@ -85,11 +86,12 @@ def embedding(
     params: PipelineConfig,
     vocab_size: int,
     hidden_dim: int,
-    weights: SafetensorWeights,
+    weights: Weights,
+    dtype: DType,
 ):
     return Embedding(
         weights.weight.allocate(
-            params.dtype,
+            dtype,
             [vocab_size, hidden_dim],
         )
     )
@@ -99,41 +101,43 @@ def _attention_opaque(
     kv_params: KVCacheParams,
     params: PipelineConfig,
     rope: OptimizedRotaryEmbedding,
-    weights: SafetensorWeights,
+    weights: Weights,
     layer_idx: int,
+    huggingface_config: AutoConfig,
+    dtype: DType,
 ):
     kv_weight_dim = (
-        params.huggingface_config.text_config.head_dim
-        * params.huggingface_config.text_config.num_key_value_heads
+        huggingface_config.text_config.head_dim
+        * huggingface_config.text_config.num_key_value_heads
     )
 
     wq = weights.self_attn.q_proj.weight.allocate(
-        params.dtype,
+        dtype,
         [
-            params.huggingface_config.text_config.num_attention_heads
-            * params.huggingface_config.text_config.head_dim,
-            params.huggingface_config.text_config.hidden_size,
+            huggingface_config.text_config.num_attention_heads
+            * huggingface_config.text_config.head_dim,
+            huggingface_config.text_config.hidden_size,
         ],
     )
     wk = weights.self_attn.k_proj.weight.allocate(
-        params.dtype,
-        [kv_weight_dim, params.huggingface_config.text_config.hidden_size],
+        dtype,
+        [kv_weight_dim, huggingface_config.text_config.hidden_size],
     )
     wv = weights.self_attn.v_proj.weight.allocate(
-        params.dtype,
-        [kv_weight_dim, params.huggingface_config.text_config.hidden_size],
+        dtype,
+        [kv_weight_dim, huggingface_config.text_config.hidden_size],
     )
     wqkv = ops.concat((wq, wk, wv))
 
     return AttentionWithRope(
-        n_heads=params.huggingface_config.text_config.num_attention_heads,
+        n_heads=huggingface_config.text_config.num_attention_heads,
         kv_params=kv_params,
         wqkv=wqkv,
         wo=linear(
-            params.dtype,
-            params.huggingface_config.text_config.hidden_size,
-            params.huggingface_config.text_config.num_attention_heads
-            * params.huggingface_config.text_config.head_dim,
+            dtype,
+            huggingface_config.text_config.hidden_size,
+            huggingface_config.text_config.num_attention_heads
+            * huggingface_config.text_config.head_dim,
             weights.self_attn.o_proj,
         ),
         rope=rope,
@@ -145,18 +149,19 @@ def _attention_opaque(
 def _transformer(
     graph: Graph,
     params: PipelineConfig,
-    weights: SafetensorWeights,
+    weights: Weights,
     max_seq_len: int,
     kv_params: KVCacheParams,
+    huggingface_config: AutoConfig,
+    dtype: DType,
 ):
     with graph:
         rope = OptimizedRotaryEmbedding(
-            dim=params.huggingface_config.text_config.num_attention_heads
-            * params.huggingface_config.text_config.head_dim,
-            n_heads=params.huggingface_config.text_config.num_attention_heads,
-            theta=params.huggingface_config.text_config.rope_theta,
+            dim=huggingface_config.text_config.num_attention_heads
+            * huggingface_config.text_config.head_dim,
+            n_heads=huggingface_config.text_config.num_attention_heads,
+            theta=huggingface_config.text_config.rope_theta,
             max_seq_len=max_seq_len,
-            rope_scaling=None,
             interleaved=False,
         )
 
@@ -168,42 +173,43 @@ def _transformer(
                     rope,
                     weights.language_model.model.layers[i],
                     layer_idx=i,
+                    huggingface_config=huggingface_config,
+                    dtype=dtype,
                 ),
                 mlp=feed_forward(
-                    params.dtype,
-                    params.huggingface_config.text_config.hidden_size,
-                    params.huggingface_config.text_config.intermediate_size,
+                    dtype,
+                    huggingface_config.text_config.hidden_size,
+                    huggingface_config.text_config.intermediate_size,
                     weights.language_model.model.layers[i],
                 ),
                 attention_norm=rms_norm(
-                    params.huggingface_config.text_config.hidden_size,
-                    params.huggingface_config.text_config.rms_norm_eps,
+                    huggingface_config.text_config.hidden_size,
+                    huggingface_config.text_config.rms_norm_eps,
                     weights.language_model.model.layers[i].input_layernorm,
                 ),
                 mlp_norm=rms_norm(
-                    params.huggingface_config.text_config.hidden_size,
-                    params.huggingface_config.text_config.rms_norm_eps,
+                    huggingface_config.text_config.hidden_size,
+                    huggingface_config.text_config.rms_norm_eps,
                     weights.language_model.model.layers[
                         i
                     ].post_attention_layernorm,
                 ),
             )
-            for i in range(
-                params.huggingface_config.text_config.num_hidden_layers
-            )
+            for i in range(huggingface_config.text_config.num_hidden_layers)
         ]
 
         embedding_layer = embedding(
             params,
-            params.huggingface_config.text_config.vocab_size,
-            params.huggingface_config.text_config.hidden_size,
+            huggingface_config.text_config.vocab_size,
+            huggingface_config.text_config.hidden_size,
             weights.language_model.model.embed_tokens,
+            dtype=dtype,
         )
 
         output = linear(
-            params.dtype,
-            params.huggingface_config.text_config.vocab_size,
-            params.huggingface_config.text_config.hidden_size,
+            dtype,
+            huggingface_config.text_config.vocab_size,
+            huggingface_config.text_config.hidden_size,
             weights.language_model.lm_head,
         )
 
@@ -221,12 +227,12 @@ def _transformer(
             )
 
         return Transformer(
-            dim=params.huggingface_config.text_config.hidden_size,
-            n_heads=params.huggingface_config.text_config.num_attention_heads,
+            dim=huggingface_config.text_config.hidden_size,
+            n_heads=huggingface_config.text_config.num_attention_heads,
             layers=layers,
             norm=rms_norm(
-                params.huggingface_config.text_config.hidden_size,
-                params.huggingface_config.text_config.rms_norm_eps,
+                huggingface_config.text_config.hidden_size,
+                huggingface_config.text_config.rms_norm_eps,
                 weights.language_model.model.norm,
             ),
             output=output,

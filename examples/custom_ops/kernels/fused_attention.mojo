@@ -59,15 +59,16 @@ from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.tensor_core import TensorCore
 from layout.math import exp, sum, max
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu.id import block_idx
 from gpu.sync import barrier
 from gpu.memory import AddressSpace
+from runtime.asyncrt import DeviceContextPtr
 from utils import Index
 
-from tensor import ManagedTensorSlice
+from tensor import OutputTensor, InputTensor
 
 
-@register("fused_attention_custom", num_dps_outputs=1)
+@register("fused_attention_custom")
 struct FusedAttention:
     """Registers the `fused_attention_custom` op, allowing python to use it from the `max`
     package.
@@ -84,10 +85,10 @@ struct FusedAttention:
         BD: Int,  # Dimension of blocks to split K, V into
         target: StringLiteral,  # "cpu" or "gpu"
     ](
-        output: ManagedTensorSlice[type=dtype, rank=rank],
-        key: ManagedTensorSlice[type=dtype, rank=rank],
-        query: ManagedTensorSlice[type=dtype, rank=rank],
-        value: ManagedTensorSlice[type=dtype, rank=rank],
+        output: OutputTensor[type=dtype, rank=rank],
+        key: InputTensor[type=dtype, rank=rank],
+        query: InputTensor[type=dtype, rank=rank],
+        value: InputTensor[type=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[rank == 2, "rank must be 2"]()
@@ -116,7 +117,9 @@ fn matmul_b_transpose(
     lhs: LayoutTensor,
     rhs: LayoutTensor,
     out res: LayoutTensor[
-        lhs.dtype, Layout.row_major(lhs.shape[0](), rhs.shape[0]())
+        lhs.dtype,
+        Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
+        MutableAnyOrigin,
     ],
 ):
     res = __type_of(res).stack_allocation()
@@ -169,19 +172,21 @@ fn fused_attention_cpu[
         @parameter
         for tile_d in range(D // BD):
             m_1 = (
-                LayoutTensor[Q_tile.dtype, Layout(BN, 1)]
+                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutableAnyOrigin]
                 .stack_allocation()
                 .fill(Scalar[Q_tile.dtype].MIN)
             )
 
             l_1 = (
-                LayoutTensor[Q_tile.dtype, Layout(BN, 1)]
+                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutableAnyOrigin]
                 .stack_allocation()
                 .fill(0)
             )
 
             O_i = (
-                LayoutTensor[Q_tile.dtype, Layout.row_major(BN, BD)]
+                LayoutTensor[
+                    Q_tile.dtype, Layout.row_major(BN, BD), MutableAnyOrigin
+                ]
                 .stack_allocation()
                 .fill(0)
             )
@@ -215,6 +220,7 @@ fn matmul[
     out res: LayoutTensor[
         lhs.dtype,
         Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
+        MutableAnyOrigin,
         address_space = lhs.address_space,
         element_layout = lhs.element_layout,
         layout_bitwidth = lhs.layout_bitwidth,
@@ -245,6 +251,7 @@ fn matmul[
         out_sram = LayoutTensor[
             res.dtype,
             Layout.row_major(M, N),
+            MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
         ].stack_allocation()
 
@@ -278,7 +285,7 @@ fn matmul[
         res.copy_from(out_sram)
 
 
-fn fused_attention_kenel[
+fn fused_attention_kernel[
     q_dtype: DType,
     q_layout: Layout,
     k_dtype: DType,
@@ -290,10 +297,10 @@ fn fused_attention_kenel[
     BN: Int,
     BD: Int,
 ](
-    Q: LayoutTensor[q_dtype, q_layout],
-    K: LayoutTensor[k_dtype, k_layout],
-    V: LayoutTensor[v_dtype, v_layout],
-    O: LayoutTensor[o_dtype, o_layout],
+    Q: LayoutTensor[q_dtype, q_layout, MutableAnyOrigin],
+    K: LayoutTensor[k_dtype, k_layout, MutableAnyOrigin],
+    V: LayoutTensor[v_dtype, v_layout, MutableAnyOrigin],
+    O: LayoutTensor[o_dtype, o_layout, MutableAnyOrigin],
 ):
     alias N = Q.shape[0]()
     alias D = Q.shape[1]()
@@ -301,13 +308,17 @@ fn fused_attention_kenel[
     Q_tile = Q.tile[BN, D](block_idx.y, 0)
 
     m_1 = (
-        LayoutTensor[q_dtype, Layout(BN, 1)]
+        LayoutTensor[q_dtype, Layout(BN, 1), MutableAnyOrigin]
         .stack_allocation()
         .fill(Scalar[q_dtype].MIN)
     )
-    l_1 = LayoutTensor[q_dtype, Layout(BN, 1)].stack_allocation().fill(0)
+    l_1 = (
+        LayoutTensor[q_dtype, Layout(BN, 1), MutableAnyOrigin]
+        .stack_allocation()
+        .fill(0)
+    )
     O_i = (
-        LayoutTensor[q_dtype, Layout.row_major(BN, BD)]
+        LayoutTensor[q_dtype, Layout.row_major(BN, BD), MutableAnyOrigin]
         .stack_allocation()
         .fill(0)
     )
@@ -338,7 +349,7 @@ def fused_attention_gpu[
     V: LayoutTensor,
     mut O: LayoutTensor,
 ):
-    alias kernel_func = fused_attention_kenel[
+    alias kernel_func = fused_attention_kernel[
         Q.dtype,
         Q.layout,
         K.dtype,

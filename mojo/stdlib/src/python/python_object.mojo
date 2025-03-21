@@ -1456,7 +1456,8 @@ struct PythonObject(
             An integral value that represents this object.
         """
         cpython = _get_global_python_itf().cpython()
-        return cpython.PyLong_AsSsize_t(self.py_object)
+        var py_long = cpython.PyNumber_Long(self.py_object)
+        return cpython.PyLong_AsSsize_t(py_long)
 
     fn __as_int__(self) -> Int:
         """Implicitly convert to an Int.

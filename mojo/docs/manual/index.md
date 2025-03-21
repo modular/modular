@@ -62,6 +62,10 @@ feedback](https://www.modular.com/community).
   - [Intro to pointers](/mojo/manual/pointers/)
   - [Unsafe pointers](/mojo/manual/pointers/unsafe-pointers)
 
+- **GPU programming**
+
+  - [GPU basics](/mojo/manual/gpu/basics)
+
 - **Python**
 
   - [Python integration](/mojo/manual/python/)
@@ -70,6 +74,7 @@ feedback](https://www.modular.com/community).
 - **Tools**
 
   - [Debugging](/mojo/tools/debugging)
+  - [GPU debugging](/mojo/tools/debugging)
   - [Testing](/mojo/tools/testing)
 
 - **Project information**

@@ -36,20 +36,6 @@ def test_add():
     assert_equal("fivesix", StringLiteral.__add__("five", "six"))
 
 
-fn add_literal(
-    owned original: StringLiteral, add: StringLiteral, n: Int
-) -> StringLiteral:
-    for _ in range(n):
-        original += add
-    return original
-
-
-def test_iadd():
-    alias original = "mojo"
-    alias concat = add_literal(original, "!", 4)
-    assert_equal("mojo!!!!", concat)
-
-
 def test_mul():
     alias `3`: Int = 3
     alias `u3`: UInt = 3
@@ -523,11 +509,11 @@ def test_float_conversion():
 
 
 def test_string_literal_from_stringable():
-    assert_equal(StringLiteral.get["hello"](), "hello")
-    assert_equal(StringLiteral.get[String("hello")](), "hello")
-    assert_equal(StringLiteral.get[42](), "42")
+    assert_equal(get_string_literal["hello"](), "hello")
+    assert_equal(get_string_literal[String("hello")](), "hello")
+    assert_equal(get_string_literal[42](), "42")
     assert_equal(
-        StringLiteral.get[SIMD[DType.int64, 4](1, 2, 3, 4)](), "[1, 2, 3, 4]"
+        get_string_literal[SIMD[DType.int64, 4](1, 2, 3, 4)](), "[1, 2, 3, 4]"
     )
 
 
@@ -551,7 +537,6 @@ def test_compress_decompress():
 
 def main():
     test_add()
-    test_iadd()
     test_mul()
     test_equality()
     test_len()

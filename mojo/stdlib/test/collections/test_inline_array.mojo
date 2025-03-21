@@ -18,6 +18,7 @@ from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import DelRecorder
 from testing import assert_equal, assert_false, assert_true
+from sys.info import sizeof
 
 
 def test_array_unsafe_get():
@@ -154,7 +155,7 @@ def test_array_int_pointer():
 def test_array_unsafe_assume_initialized_constructor_string():
     var maybe_uninitialized_arr = InlineArray[
         UnsafeMaybeUninitialized[String], 3
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     maybe_uninitialized_arr[0].write("hello")
     maybe_uninitialized_arr[1].write("mojo")
     maybe_uninitialized_arr[2].write("world")
@@ -225,6 +226,20 @@ fn test_unsafe_ptr() raises:
         assert_equal(arr[i], ptr[i])
 
 
+def test_sizeof_array[current_type: CollectionElement, capacity: Int]():
+    """Testing if `sizeof` the array equals capacity * `sizeof` current_type.
+
+    Parameters:
+        current_type: The type of the elements of the `InlineList`.
+        capacity: The capacity of the `InlineList`.
+    """
+    alias size_of_current_type = sizeof[current_type]()
+    assert_equal(
+        sizeof[InlineArray[current_type, capacity]](),
+        capacity * size_of_current_type,
+    )
+
+
 def main():
     test_array_unsafe_get()
     test_array_int()
@@ -234,3 +249,4 @@ def main():
     test_array_contains()
     test_inline_array_runs_destructors()
     test_unsafe_ptr()
+    test_sizeof_array[Int, capacity=32]()

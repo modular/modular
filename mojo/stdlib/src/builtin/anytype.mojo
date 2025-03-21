@@ -10,9 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines the `AnyType` trait.
+"""Defines the core traits for object lifetime management in Mojo.
 
-These are Mojo built-ins, so you don't need to import them.
+This module provides the foundational traits that define how objects are created,
+managed and destroyed in Mojo:
+
+- `UnknownDestructibility`: The most basic trait that all types extend by default.
+   Types with this trait have no destructor and no lifetime management.
+
+- `AnyType`: The base trait for types that require lifetime management through
+   destructors. Any type that needs cleanup when it goes out of scope should
+   implement this trait.
+
+- `ImplicitlyDestructible`: An alias for `AnyType` to help with the transition
+   to linear types. Use this when you want to be explicit about a type having
+   a destructor.
+
+These traits are built into Mojo and do not need to be imported.
 """
 
 # ===----------------------------------------------------------------------=== #
@@ -24,59 +38,72 @@ These are Mojo built-ins, so you don't need to import them.
 #     preferably one that mentions a link the user can go to to learn about
 #     linear types.
 trait UnknownDestructibility:
-    """The UnknownDestructibility trait is the most basic trait, that all other
-    types extend.
+    """The most basic trait that all Mojo types extend by default.
 
-    This has no __del__ method. For types that should have the __del__ method,
-    use ImplicitlyDestructible instead.
+    This trait indicates that a type has no destructor and therefore no lifetime
+    management. It is the default for all types unless they explicitly implement
+    `AnyType` or `ImplicitlyDestructible`.
+
+    Types with this trait:
+    - Have no `__del__` method
+    - Do not perform any cleanup when they go out of scope
+    - Are suitable for simple value types that don't own resources
+
+    For types that need cleanup when they are destroyed, use `ImplicitlyDestructible`
+    or `AnyType` instead.
     """
 
     pass
 
 
 trait AnyType:
-    """The AnyType trait describes a type that has a destructor.
+    """A trait for types that require lifetime management through destructors.
 
-    In Mojo, a type that provide a destructor indicates to the language that it
-    is an object with a lifetime whose destructor needs to be called whenever
-    an instance of the object reaches the end of its lifetime. Hence, only
-    non-trivial types may have destructors.
+        The `AnyType` trait is fundamental to Mojo's memory management system. It indicates
+        that a type has a destructor that needs to be called when instances go out of scope.
+        This is essential for types that own resources like memory, file handles, or other
+        system resources that need proper cleanup.
 
-    Any composition of types that have origins is also an object with a
-    lifetime, and the resultant type receives a destructor regardless of whether
-    the user explicitly defines one.
+        Key aspects:
+        - Any type with a destructor must implement this trait
+        - The destructor (`__del__`) is called automatically when an instance's lifetime ends
+        - Composition of types with destructors automatically gets a destructor
+        - All Mojo structs and traits inherit from `AnyType` by default unless they specify
+          `@explicit_destroy`
 
-    Unless they specify @explicit_destroy, all Mojo structs and traits are
-    considered to inherit from AnyType, providing a default no-op destructor
-    implementation for types that may need them.
-
-    Example implementing the `AnyType` trait on `Foo` that frees the
-    allocated memory:
-
+        Example:
     ```mojo
-    @value
-    struct Foo(AnyType):
-        var p: UnsafePointer[Int]
-        var size: Int
+        @value
+        struct ResourceOwner(AnyType):
+            var ptr: UnsafePointer[Int]
 
-        @implicit
-        fn __init__(out self, size: Int):
-            self.p = UnsafePointer[Int].alloc(size)
-            self.size = size
+            fn __init__(out self, size: Int):
+                self.ptr = UnsafePointer[Int].alloc(size)
 
-        fn __del__(owned self):
-            print("--freeing allocated memory--")
-            self.p.free()
+            fn __del__(owned self):
+                # Clean up owned resources
+                self.ptr.free()
     ```
+
+        Best practices:
+        - Implement this trait when your type owns resources that need cleanup
+        - Ensure the destructor properly frees all owned resources
+        - Consider using `@explicit_destroy` for types that should never have destructors
+        - Use composition to automatically handle nested resource cleanup
     """
 
     fn __del__(owned self, /):
-        """Destroy the contained value.
+        """Destroys the instance and cleans up any owned resources.
 
-        The destructor receives an owned value and is expected to perform any
-        actions needed to end the lifetime of the object. In the simplest case,
-        this is nothing, and the language treats the object as being dead at the
-        end of this function.
+        This method is called automatically when an instance's lifetime ends. It receives
+        an owned value and should perform all necessary cleanup operations like:
+        - Freeing allocated memory
+        - Closing file handles
+        - Releasing system resources
+        - Cleaning up any other owned resources
+
+        The instance is considered dead after this method completes, regardless of
+        whether any explicit cleanup was performed.
         """
         ...
 

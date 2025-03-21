@@ -18,13 +18,7 @@ from max.dtype import DType
 from max.graph import Graph, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import GGUFWeights
-from max.pipelines import PipelineConfig
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    KVCacheManager,
-    KVCacheParams,
-)
-from max.pipelines.nn import (
+from max.nn import (
     AttentionImpl,
     AttentionWithoutMask,
     Embedding,
@@ -35,6 +29,13 @@ from max.pipelines.nn import (
     Transformer,
     TransformerBlock,
 )
+from max.pipelines import PipelineConfig
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheManager,
+    KVCacheParams,
+)
+from transformers import AutoConfig
 
 
 def _feed_forward(
@@ -51,7 +52,7 @@ def _feed_forward(
                     dtype, [hidden_dim, input_dim], quantization_encoding
                 )
             ),
-            ops.gelu,
+            ops.gelu,  # type: ignore
             Linear(
                 weights.ffn_down.weight.allocate(
                     dtype, [input_dim, hidden_dim], quantization_encoding
@@ -73,33 +74,37 @@ def _attention(
     weights: GGUFWeights,
     kv_params: KVCacheParams,
     layer_index: int,
+    huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> AttentionImpl:
     k_in_dim = kv_params.n_kv_heads * kv_params.head_dim
     v_in_dim = kv_params.n_kv_heads * kv_params.head_dim
-    q_in_dim = pipeline_config.huggingface_config.d_model
+    q_in_dim = huggingface_config.d_model
+
+    assert pipeline_config.model_config.quantization_encoding is not None
     wqkv = TensorValue(
         weights.attn_qkv.weight.allocate(
-            pipeline_config.dtype,
+            dtype,
             [
                 k_in_dim + v_in_dim + q_in_dim,
-                pipeline_config.huggingface_config.d_model,
+                huggingface_config.d_model,
             ],
-            pipeline_config.quantization_encoding.quantization_encoding,  # type: ignore
+            pipeline_config.model_config.quantization_encoding.quantization_encoding,
         )
     )
 
     return AttentionWithoutMask(
-        n_heads=pipeline_config.huggingface_config.n_heads,
+        n_heads=huggingface_config.n_heads,
         kv_params=kv_params,
         wqkv=wqkv,
         wo=Linear(
             weights.attn_output.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [
-                    pipeline_config.huggingface_config.d_model,
-                    pipeline_config.huggingface_config.d_model,
+                    huggingface_config.d_model,
+                    huggingface_config.d_model,
                 ],
-                pipeline_config.quantization_encoding.quantization_encoding,  # type: ignore
+                pipeline_config.model_config.quantization_encoding.quantization_encoding,
             )
         ),
         layer_idx=ops.constant(layer_index, dtype=DType.uint32),
@@ -113,51 +118,59 @@ def _transformer(
     pipeline_config: PipelineConfig,
     weights: GGUFWeights,
     kv_params: KVCacheParams,
+    huggingface_config: AutoConfig,
+    dtype: DType,
 ):
+    assert pipeline_config.model_config.quantization_encoding is not None
     with graph:
         # Initialize Attention.
         layers = [
             TransformerBlock(
                 attention=_attention(
-                    pipeline_config, weights.blk[i], kv_params, i
+                    pipeline_config,
+                    weights.blk[i],
+                    kv_params,
+                    i,
+                    huggingface_config,
+                    dtype=dtype,
                 ),
                 mlp=_feed_forward(
-                    pipeline_config.dtype,
-                    pipeline_config.quantization_encoding.quantization_encoding,  # type: ignore
-                    pipeline_config.huggingface_config.d_model,
+                    dtype,
+                    pipeline_config.model_config.quantization_encoding.quantization_encoding,
+                    huggingface_config.d_model,
                     12288,
                     weights.blk[i],
                 ),
                 attention_norm=_layer_norm(
-                    pipeline_config.huggingface_config.d_model,
+                    huggingface_config.d_model,
                     1e-5,
                     weights.blk[i].attn_norm,
                 ),
                 mlp_norm=_layer_norm(
-                    pipeline_config.huggingface_config.d_model,
+                    huggingface_config.d_model,
                     1e-5,
                     weights.blk[i].ffn_norm,
                 ),
             )
-            for i in range(pipeline_config.huggingface_config.n_layers)
+            for i in range(huggingface_config.n_layers)
         ]
 
         # Initialize Shared Embedding Weights.
         shared_embedding_weight = weights.token_embd.weight.allocate(
-            pipeline_config.dtype,
+            dtype,
             [
-                pipeline_config.huggingface_config.vocab_size,
-                pipeline_config.huggingface_config.d_model,
+                huggingface_config.vocab_size,
+                huggingface_config.d_model,
             ],
-            pipeline_config.quantization_encoding.quantization_encoding,  # type: ignore
+            pipeline_config.model_config.quantization_encoding.quantization_encoding,
         )
 
         return Transformer(
-            dim=pipeline_config.huggingface_config.d_model,
-            n_heads=pipeline_config.huggingface_config.n_heads,
+            dim=huggingface_config.d_model,
+            n_heads=huggingface_config.n_heads,
             layers=layers,
             norm=_layer_norm(
-                pipeline_config.huggingface_config.d_model,
+                huggingface_config.d_model,
                 1e-5,
                 weights.output_norm,
             ),
@@ -176,6 +189,8 @@ def _build_graph(
     weights: GGUFWeights,
     kv_params: KVCacheParams,
     kv_manager: KVCacheManager,
+    huggingface_config: AutoConfig,
+    dtype: DType,
 ) -> Graph:
     # Graph input types.
     tokens_type = TensorType(DType.int64, shape=["total_seq_len"])
@@ -193,7 +208,14 @@ def _build_graph(
             *kv_cache_types,
         ],
     ) as graph:
-        model = _transformer(graph, pipeline_config, weights, kv_params)
+        model = _transformer(
+            graph,
+            pipeline_config,
+            weights,
+            kv_params,
+            huggingface_config,
+            dtype,
+        )
         tokens, input_row_offsets, *kv_cache_inputs = graph.inputs
         outputs = model(
             tokens=tokens,

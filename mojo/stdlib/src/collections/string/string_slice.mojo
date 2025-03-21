@@ -32,10 +32,11 @@ from collections.string._unicode import (
 )
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, abort
-from sys import bitwidthof, simdwidthof
+from sys import bitwidthof, simdwidthof, is_compile_time
 from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
+from math import align_down
 from bit import count_leading_zeros, count_trailing_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
@@ -460,8 +461,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #   Ensure StringLiteral _actually_ always uses UTF-8 encoding.
         self = StaticString(unsafe_from_utf8=lit.as_bytes())
 
-    @always_inline
-    fn __init__(out self, *, owned unsafe_from_utf8: Span[Byte, origin]):
+    @always_inline("builtin")
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, origin]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Args:
@@ -519,7 +520,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var ptr = unsafe_from_utf8_cstr_ptr.bitcast[Byte]()
         self = Self(unsafe_from_utf8_ptr=ptr)
 
-    @always_inline
+    @always_inline("builtin")
     fn __init__(out self, *, ptr: UnsafePointer[Byte], length: UInt):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
         encoded bytes and a length.
@@ -601,11 +602,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             This will allocate a new string that copies the string contents from
             the provided string slice.
         """
-        var length = self.byte_length()
-        var ptr = UnsafePointer[Byte].alloc(length + 1)  # null terminator
-        memcpy(ptr, self.unsafe_ptr(), length)
-        ptr[length] = 0
-        return String(ptr=ptr, length=length + 1)
+        var buffer = String._buffer_type(capacity=self.byte_length() + 1)
+        buffer.extend(self.as_bytes())
+        buffer.append(0)
+        return String(buffer=buffer^)
 
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of this string slice.
@@ -897,7 +897,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         buf.append(0)
         return String(buf^)
 
-    fn __contains__(ref self, substr: StringSlice) -> Bool:
+    fn __contains__(self, substr: StringSlice) -> Bool:
         """Returns True if the substring is contained within the current string.
 
         Args:
@@ -928,11 +928,45 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return atof(self)
 
+    fn __add__(self, rhs: StringSlice) -> String:
+        """Returns a string with this value prefixed on another string.
+
+        Args:
+            rhs: The right side of the result.
+
+        Returns:
+            The result string.
+        """
+        var res = List[Byte](
+            capacity=self.byte_length() + rhs.byte_length() + 1
+        )
+        res.extend(self.as_bytes())
+        res.extend(rhs.as_bytes())
+        res.append(0)
+        return String(buffer=res^)
+
+    fn __radd__(self, lhs: StringSlice) -> String:
+        """Returns a string with this value appended to another string.
+
+        Args:
+            lhs: The left side of the result.
+
+        Returns:
+            The result string.
+        """
+        var res = List[Byte](
+            capacity=self.byte_length() + lhs.byte_length() + 1
+        )
+        res.extend(lhs.as_bytes())
+        res.extend(self.as_bytes())
+        res.append(0)
+        return String(buffer=res^)
+
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.
 
         Args:
-            n : The number of times to concatenate the string.
+            n: The number of times to concatenate the string.
 
         Returns:
             The string concatenated `n` times.
@@ -1611,7 +1645,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return _FormatCurlyEntry.format(self, args)
 
-    fn find(ref self, substr: StringSlice, start: Int = 0) -> Int:
+    fn find(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset in bytes of the first occurrence of `substr`
         starting at `start`. If not found, returns `-1`.
 
@@ -1913,7 +1947,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 return False
         return True
 
-    fn rjust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 
         Args:
@@ -1925,7 +1959,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self._justify(width - len(self), width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
 
         Args:
@@ -1937,7 +1971,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self._justify(0, width, fillchar)
 
-    fn center(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
 
         Args:
@@ -1949,9 +1983,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self._justify(width - len(self) >> 1, width, fillchar)
 
-    fn _justify(
-        self, start: Int, width: Int, fillchar: StringLiteral
-    ) -> String:
+    fn _justify(self, start: Int, width: Int, fillchar: StaticString) -> String:
         if len(self) >= width:
             return String(self)
         debug_assert(
@@ -2099,13 +2131,32 @@ fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
 
 
 @always_inline
-fn _align_down(value: Int, alignment: Int) -> Int:
-    return value._positive_div(alignment) * alignment
+fn _memchr[
+    type: DType, //
+](
+    source: UnsafePointer[Scalar[type]], char: Scalar[type], len: Int
+) -> UnsafePointer[Scalar[type]]:
+    if is_compile_time() or len < simdwidthof[type]():
+        return _memchr_simple(source, char, len)
+    else:
+        return _memchr_impl(source, char, len)
 
 
 @always_inline
-fn _memchr[
-    type: DType
+fn _memchr_simple[
+    type: DType, //
+](
+    source: UnsafePointer[Scalar[type]], char: Scalar[type], len: Int
+) -> UnsafePointer[Scalar[type]]:
+    for i in range(len):
+        if source[i] == char:
+            return source + i
+    return UnsafePointer[Scalar[type]]()
+
+
+@always_inline
+fn _memchr_impl[
+    type: DType, //
 ](
     source: UnsafePointer[Scalar[type]], char: Scalar[type], len: Int
 ) -> UnsafePointer[Scalar[type]]:
@@ -2113,7 +2164,7 @@ fn _memchr[
         return UnsafePointer[Scalar[type]]()
     alias bool_mask_width = simdwidthof[DType.bool]()
     var first_needle = SIMD[type, bool_mask_width](char)
-    var vectorized_end = _align_down(len, bool_mask_width)
+    var vectorized_end = align_down(len, bool_mask_width)
 
     for i in range(0, vectorized_end, bool_mask_width):
         var bool_mask = source.load[width=bool_mask_width](i) == first_needle
@@ -2129,7 +2180,7 @@ fn _memchr[
 
 @always_inline
 fn _memmem[
-    type: DType
+    type: DType, //
 ](
     haystack: UnsafePointer[Scalar[type]],
     haystack_len: Int,
@@ -2141,10 +2192,44 @@ fn _memmem[
     if needle_len > haystack_len:
         return UnsafePointer[Scalar[type]]()
     if needle_len == 1:
-        return _memchr[type](haystack, needle[0], haystack_len)
+        return _memchr(haystack, needle[0], haystack_len)
 
+    if is_compile_time() or haystack_len < simdwidthof[type]():
+        return _memmem_impl_simple(haystack, haystack_len, needle, needle_len)
+    else:
+        return _memmem_impl(haystack, haystack_len, needle, needle_len)
+
+
+@always_inline
+fn _memmem_impl_simple[
+    type: DType, //
+](
+    haystack: UnsafePointer[Scalar[type]],
+    haystack_len: Int,
+    needle: UnsafePointer[Scalar[type]],
+    needle_len: Int,
+) -> UnsafePointer[Scalar[type]]:
+    for i in range(haystack_len - needle_len + 1):
+        if haystack[i] != needle[0]:
+            continue
+
+        if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
+            return haystack + i
+
+    return UnsafePointer[Scalar[type]]()
+
+
+@always_inline
+fn _memmem_impl[
+    type: DType, //
+](
+    haystack: UnsafePointer[Scalar[type]],
+    haystack_len: Int,
+    needle: UnsafePointer[Scalar[type]],
+    needle_len: Int,
+) -> UnsafePointer[Scalar[type]]:
     alias bool_mask_width = simdwidthof[DType.bool]()
-    var vectorized_end = _align_down(
+    var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
     )
 

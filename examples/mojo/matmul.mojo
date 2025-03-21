@@ -217,7 +217,7 @@ fn matmul_unrolled[mode: Int](mut C: Matrix, A: Matrix, B: Matrix):
 # Perform 2D tiling on the iteration space defined by end_m and end_n, parallelizing over m.
 fn tile_parallel[
     tiled_fn: Tile2DFunc, tile_m: Int, tile_n: Int
-](end_m: Int, end_n: Int,):
+](end_m: Int, end_n: Int):
     # Note: this assumes that ends are multiples of the tiles.
     @parameter
     fn row(mo: Int):
