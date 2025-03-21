@@ -150,10 +150,6 @@ def serve(
                 exit(-1)
 
             pipeline_config.max_batch_size = max_batch_size
-            # Retrieve tokenizer and pipeline.
-            pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(
-                pipeline_config
-            )
             _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
                 pipeline_config
             )
