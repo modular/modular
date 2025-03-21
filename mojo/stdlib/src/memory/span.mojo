@@ -298,7 +298,15 @@ struct Span[
 
     fn __contains__[
         type: DType, //
-    ](self: Span[Scalar[type]], value: Scalar[type]) -> Bool:
+    ](
+        self: Span[
+            Scalar[type],
+            origin,
+            address_space=address_space,
+            alignment=alignment,
+        ],
+        value: Scalar[type],
+    ) -> Bool:
         """Verify if a given value is present in the Span.
 
         Parameters:
@@ -366,13 +374,17 @@ struct Span[
 
     @always_inline
     fn copy_from[
-        origin: MutableOrigin, //
-    ](self: Span[T, origin], other: Span[T, _]):
+        origin: MutableOrigin, other_alignment: Int, //
+    ](
+        self: Span[T, origin, alignment=alignment],
+        other: Span[T, _, alignment=other_alignment],
+    ):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
 
         Parameters:
             origin: The inferred mutable origin of the data within the Span.
+            other_alignment: The inferred alignment of the data within the Span.
 
         Args:
             other: The `Span` to copy all elements from.
@@ -395,13 +407,17 @@ struct Span[
     # accesses to the origin.
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__[
-        T: EqualityComparableCollectionElement, //
-    ](self: Span[T, origin], rhs: Span[T]) -> Bool:
+        T: EqualityComparableCollectionElement, rhs_alignment: Int, //
+    ](
+        self: Span[T, origin, alignment=alignment],
+        rhs: Span[T, _, alignment=rhs_alignment],
+    ) -> Bool:
         """Verify if span is equal to another span.
 
         Parameters:
             T: The type of the elements in the span. Must implement the
               traits `EqualityComparable` and `CollectionElement`.
+            rhs_alignment: The inferred alignment of the rhs span.
 
         Args:
             rhs: The span to compare against.
@@ -425,7 +441,7 @@ struct Span[
     @always_inline
     fn __ne__[
         T: EqualityComparableCollectionElement, //
-    ](self: Span[T, origin], rhs: Span[T]) -> Bool:
+    ](self: Span[T, origin, alignment=alignment], rhs: Span[T]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
@@ -440,7 +456,9 @@ struct Span[
         """
         return not self == rhs
 
-    fn fill[origin: MutableOrigin, //](self: Span[T, origin], value: T):
+    fn fill[
+        origin: MutableOrigin, //
+    ](self: Span[T, origin, alignment=alignment], value: T):
         """
         Fill the memory that a span references with a given value.
 
