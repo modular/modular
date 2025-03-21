@@ -316,6 +316,17 @@ private:
     return dtype.getSizeInBytes();
   }
 
+  /// Return true if target is NVPTX and `arch` is in `allowedGPUs`.
+  bool isNVPTX(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) const {
+    return target.getTriple().isNVPTX() &&
+           llvm::is_contained(allowedGPUs, target.getArch());
+  }
+
+  // Return true if target is NVPTX and arch is sm_90 or sm_90a
+  bool isNVPTX_SM90(TargetInfoAttr target) const {
+    return isNVPTX(target, {"sm_90", "sm_90a"});
+  }
+
   LLVM::InlineAsmOp createInlineAsm(ConversionPatternRewriter &rewriter,
                                     Location loc, StringRef asmStr,
                                     StringRef asmConstraints, Type resultType,
@@ -331,6 +342,20 @@ private:
         /*operand_attrs=*/mlir::ArrayAttr());
   }
 
+  /// Helper function to create a 32-bit signless constant.
+  template <typename intType>
+  Value createConstant(ConversionPatternRewriter &rewriter, Location loc,
+                       uint64_t value) const {
+    return rewriter.create<LLVM::ConstantOp>(
+        loc, rewriter.getIntegerType(sizeof(intType) * 8), value);
+  }
+
+  Value createConstant(ConversionPatternRewriter &rewriter, Location loc,
+                       APFloat value) const {
+    assert(value.isIEEE() && "Unsupported float type");
+    return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), value);
+  }
+
   /// Fast conversion of f32 to bf16 on AMDGPU that is not supported by LLVM and
   /// has different handling of NaNs.
   /// The generated sequence has been moved from stdlib (see reference
@@ -344,6 +369,8 @@ private:
                            APFloat::Semantics toFloatSemantics) const {
     assert(getTypeConverter()->getTarget().getTriple().isAMDGPU() &&
            "fast lowering of f32 to bf16 only supported on AMDGPU");
+    assert(cast.getFastAttr() &&
+           "`fast` attribute must be set on a `pop.cast`");
 
     Location loc = cast.getLoc();
 
@@ -352,8 +379,8 @@ private:
     // https://github.com/cgmillette/composable_kernel/commit/b8addae29
     // It uses less VGPR and less number of instructions compared to the
     // previous implementation
-    Value roundedBias = rewriter.create<LLVM::ConstantOp>(
-        loc, rewriter.getIntegerType(32), 0x7FFF);
+    Value roundedBias = createConstant<uint32_t>(
+        rewriter, loc, std::numeric_limits<int16_t>::max());
     Type vecI64 = convertType(
         SIMDType::get(rewriter.getContext(), /*size=*/1, KGENDType::ui64));
     Value unorderedMask =
@@ -372,8 +399,8 @@ private:
                         vecI32, {value, lsb, roundedBias})
             .getResult(0);
 
-    Value nan = rewriter.create<LLVM::ConstantOp>(
-        loc, value.getType(),
+    Value nan = createConstant(
+        rewriter, loc,
         APFloat::getNaN(APFloat::EnumToSemantics(fromFloatSemantics)));
 
     Value floatBits =
@@ -381,8 +408,8 @@ private:
                         "=v,v,v,s", vecI32, {roundedVal, nan, unorderedMask})
             .getResult(0);
 
-    Value mantissaDiff = rewriter.create<LLVM::ConstantOp>(
-        loc, rewriter.getIntegerType(32),
+    Value mantissaDiff = createConstant<uint32_t>(
+        rewriter, loc,
         APFloat::semanticsPrecision(
             APFloat::EnumToSemantics(fromFloatSemantics)) -
             APFloat::semanticsPrecision(
@@ -397,16 +424,59 @@ private:
     return success();
   }
 
+  /// Convert vector of FP32 type to vector of FP8 (F8E4M3FN or F8E5M2) on NVPTX
+  /// The conversion relies on NVPTX-specific instructions to perform the
+  /// conversion, therefore no need to rely on `fast` attribute on a `pop.cast`.
+  LogicalResult
+  convertF32ToF8OnNVPTX(ConversionPatternRewriter &rewriter, CastOp op,
+                        Value value, APFloat::Semantics fromFloatSemantics,
+                        APFloat::Semantics toFloatSemantics) const {
+    assert(
+        isNVPTX(getTypeConverter()->getTarget(), {"sm_90", "sm_90a"}) &&
+        "fast lowering of f32 to bf16 only supported on 'sm_90' and 'sm_90a'");
+    Location loc = op.getLoc();
+    auto simd = cast<SIMDType>(op.getInput().getType());
+    const uint64_t size = *simd.getResolvedSize();
+
+    Type f32Type =
+        *getMLIRTypeForDType(rewriter.getContext(), *simd.getResolvedDType(),
+                             getTypeConverter()->getIndexTypeBitwidth());
+    Type f8Type = cast<VectorType>(convertType(op.getType())).getElementType();
+    StringRef asmStr =
+        toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN
+            ? "cvt.rn.satfinite.e4m3x2.f32"
+            : "cvt.rn.satfinite.e5m2x2.f32";
+
+    auto extractElement = [&](unsigned index) {
+      return rewriter.create<LLVM::ExtractElementOp>(
+          loc, f32Type, value, createConstant<uint32_t>(rewriter, loc, index));
+    };
+    assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
+    Value res = rewriter.create<LLVM::UndefOp>(
+        op.getLoc(), VectorType::get(size / 2, rewriter.getIntegerType(16)));
+    for (uint64_t i = 0; i < size; i += 2) {
+      Value firstFp = size > 1 ? extractElement(i + 1)
+                               : createConstant(rewriter, loc, APFloat(0.0f));
+      Value secondFp = extractElement(i);
+      Value converted =
+          createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2", "=h,f,f",
+                          rewriter.getIntegerType(16), {firstFp, secondFp})
+              .getResult(0);
+      res = rewriter.create<LLVM::InsertElementOp>(
+          loc, res, converted, createConstant<uint32_t>(rewriter, loc, i / 2));
+    }
+
+    rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(
+        op, VectorType::get(size, f8Type), res);
+    return success();
+  }
+
   /// Convert a `pop.cast` into optimized sequence of asm instructions that are
   /// known to be more efficient for a target than general LLVM's conversion.
   LogicalResult convertToTargetSpecificCast(ConversionPatternRewriter &rewriter,
                                             CastOp cast, Value value) const {
     TargetInfoAttr target = getTypeConverter()->getTarget();
-    if (!target || !target.getTriple().isAMDGPU() || !cast.getFastAttr())
-      return failure();
-
-    if (auto simd = dyn_cast<SIMDType>(cast.getInput().getType());
-        simd && !simd.isScalar())
+    if (!target)
       return failure();
 
     KGENDType fromDType = *cast.getInput().getType().getResolvedDType();
@@ -422,11 +492,32 @@ private:
     APFloat::Semantics fromFloatSemantics = getFltSemantics(fromDType);
     APFloat::Semantics toFloatSemantics = getFltSemantics(toDType);
 
+    auto simd = dyn_cast<SIMDType>(cast.getInput().getType());
+
     // Convert F32 to BF16
     if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
         toFloatSemantics == llvm::APFloat::Semantics::S_BFloat) {
-      return convertF32ToBF16OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
-                                      toFloatSemantics);
+      if (target.getTriple().isAMDGPU() && cast.getFastAttr() &&
+          (!simd || simd.isScalar())) {
+        return convertF32ToBF16OnAMDGPU(rewriter, cast, value,
+                                        fromFloatSemantics, toFloatSemantics);
+      }
+      return failure();
+    }
+
+    // Convert F32 to F8 (either e4m3fn or e5m2)
+    if (fromFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle &&
+        (toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
+         toFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2)) {
+      // This might not be ideal to check the targeted GPU by the name, but it's
+      // what stdlib does for now. Might be better to use approach similar to
+      // NVPTX backend of getting SM version and expecting targeted GPU has at
+      // least that version.
+      if (simd && isNVPTX_SM90(target)) {
+        return convertF32ToF8OnNVPTX(rewriter, cast, value, fromFloatSemantics,
+                                     toFloatSemantics);
+      }
+      return failure();
     }
     return failure();
   }
