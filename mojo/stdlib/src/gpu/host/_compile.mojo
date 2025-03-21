@@ -115,12 +115,7 @@ fn _to_sass[
 # ===-----------------------------------------------------------------------===#
 
 
-@no_inline
-fn _ptxas_compile[
-    target: __mlir_type.`!kgen.target` = _get_gpu_target()
-](
-    asm: String, *, options: String = "", output_file: Optional[Path] = None
-) raises -> String:
+fn _ptx_compiler_path() raises -> Path:
     # Try to find the ptxas binary in the modular config file. This should
     # always be present in the modular build.
     var ptxas_path_str_ptr = external_call[
@@ -134,10 +129,23 @@ fn _ptxas_compile[
         )
 
     # Convert the ptxas path to a Path object and check if it exists.
-    var ptxas_path = Path(String._from_bytes(ptxas_path_str_ptr))
-    if not ptxas_path.exists():
-        raise String("the `ptxas` binary does not exist in '", ptxas_path, "'")
+    var path = Path(String._from_bytes(ptxas_path_str_ptr))
 
+    # This should always be present in the modular build, but report an error
+    # just in case it's not.
+    if not path.exists():
+        raise String("the `ptxas` binary does not exist in '", path, "'")
+
+    return path
+
+
+@no_inline
+fn _ptxas_compile[
+    target: __mlir_type.`!kgen.target` = _get_gpu_target()
+](
+    asm: String, *, options: String = "", output_file: Optional[Path] = None
+) raises -> String:
+    var ptxas_path = _ptx_compiler_path()
     # Compile the PTX code to an ELF file. Here we care about the diagnostics.
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         var ptx_file = Path(tmpdir) / "output.ptx"
