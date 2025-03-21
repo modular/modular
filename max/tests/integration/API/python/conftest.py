@@ -111,3 +111,10 @@ def session() -> InferenceSession:
 @pytest.fixture(scope="module")
 def gpu_session() -> InferenceSession:
     return InferenceSession(devices=[md.Accelerator()])
+
+
+def pytest_collection_modifyitems(items):
+    # Prevent pytest from trying to collect Click commands and dataclasses as tests
+    for item in items:
+        if item.name.startswith("Test"):
+            item.add_marker(pytest.mark.skip)

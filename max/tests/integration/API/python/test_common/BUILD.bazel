@@ -1,0 +1,30 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "test_common",
+    srcs = ["__init__.py"],
+    imports = ["."],
+    deps = [
+        ":pipeline_cli_utils",
+        ":pipeline_model",
+    ],
+)
+
+modular_py_library(
+    name = "pipeline_cli_utils",
+    srcs = ["pipeline_cli_utils.py"],
+    imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max/driver",
+    ],
+)
+
+modular_py_library(
+    name = "pipeline_model",
+    srcs = ["pipeline_model.py"],
+    imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max",
+        requirement("transformers"),
+    ],
+)
