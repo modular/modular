@@ -26,6 +26,7 @@ modular_py_test(
         "//PyTorch/tools/torch:mtorch",
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:counter_ops",
+        "//SDK/integration-test:kernel_verification_ops",
         "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
@@ -33,6 +34,7 @@ modular_py_test(
     ],
     env = {
         "MODULAR_COUNTER_OPS_PATH": "$(rootpath //SDK/integration-test:counter_ops)",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //SDK/integration-test:kernel_verification_ops)",
         "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //SDK/integration-test:compile_config_ops)",
         "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
         "MODULAR_PATH": ".",

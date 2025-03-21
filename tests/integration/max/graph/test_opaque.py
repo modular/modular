@@ -23,6 +23,7 @@ def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     counter_type = _OpaqueType("Counter")
     maker_graph = Graph("maker", input_types=[], output_types=[counter_type])
     with maker_graph:
+        maker_graph.import_kernels(counter_ops_path)
         maker_graph.output(
             ops.custom(
                 "make_counter",
