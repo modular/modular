@@ -135,10 +135,12 @@ struct ContiguousKVCache[
         Self._internal_block_shape.get[2](),
         Self._internal_block_shape.get[3](),
     )
-    alias BlockType = NDBuffer[Self.type, 4, Self._internal_block_shape]
+    alias BlockType = NDBuffer[
+        Self.type, 4, MutableAnyOrigin, Self._internal_block_shape
+    ]
     var _block: Self.BlockType
     var is_cache_empty: Bool
-    var cache_lengths: NDBuffer[DType.uint32, 1]
+    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var batch_size: Int
     var max_seq_length: UInt32
     var max_cache_length: UInt32
@@ -279,10 +281,10 @@ struct ContinuousBatchingKVCache[
     # shape is
     # - BSHD: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
     # - BHSD: [num_blocks, 2, num_layers, num_heads, max_seq_len, head_size]
-    alias BlocksType = NDBuffer[Self.type, 6]
+    alias BlocksType = NDBuffer[Self.type, 6, MutableAnyOrigin]
     var blocks: Self.BlocksType
-    var cache_lengths: NDBuffer[DType.uint32, 1]
-    var lookup_table: NDBuffer[DType.uint32, 1]
+    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    var lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
 
     # The length of the longest sequence in the current request.
     # This length only considers tokens not in the KVCache.
@@ -450,9 +452,9 @@ struct PagedKVCache[
     """The entire region of memory for KVCache blocks with shape:
     [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
     """
-    var blocks: NDBuffer[Self.type, 6]
-    var cache_lengths: NDBuffer[DType.uint32, 1]
-    var lookup_table: NDBuffer[DType.uint32, 2]
+    var blocks: NDBuffer[Self.type, 6, MutableAnyOrigin]
+    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    var lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin]
 
     # The length of the longest sequence in the current request.
     # This length only considers tokens not in the KVCache.
@@ -624,8 +626,8 @@ struct PagedKVCacheFA3Fallback[
     """The entire region of memory for KVCache blocks with shape:
     [2, total_num_blocks, page_size, num_heads, head_size].
     """
-    var blocks: NDBuffer[Self.type, 5]
-    var cache_lengths: NDBuffer[DType.int32, 1]
+    var blocks: NDBuffer[Self.type, 5, MutableAnyOrigin]
+    var cache_lengths: NDBuffer[DType.int32, 1, MutableAnyOrigin]
 
     """The lookup table with shape:
     [num_layers, batch_size, max_num_blocks_in_batch].
@@ -633,7 +635,7 @@ struct PagedKVCacheFA3Fallback[
     This is to conform to the expected layout in the DaoLabs FA3 kernel.
     We have a different lookup table for each layer.
     """
-    var lookup_table: NDBuffer[DType.int32, 3]
+    var lookup_table: NDBuffer[DType.int32, 3, MutableAnyOrigin]
 
     # The length of the longest sequence in the current request.
     # This length only considers tokens not in the KVCache.
@@ -819,9 +821,9 @@ struct ContiguousKVCacheCollection[
     alias kv_params = kv_params_
     alias CacheType = ContiguousKVCache[Self.type, Self.kv_params]
 
-    var key_cache: NDBuffer[Self.type, 5]
-    var value_cache: NDBuffer[Self.type, 5]
-    var cache_lengths: NDBuffer[DType.uint32, 1]
+    var key_cache: NDBuffer[Self.type, 5, MutableAnyOrigin]
+    var value_cache: NDBuffer[Self.type, 5, MutableAnyOrigin]
+    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var is_context_encoding: Bool
     var num_layers: Int
     var batch_size: Int
@@ -970,8 +972,8 @@ struct ContinuousBatchingKVCacheCollection[
     alias kv_params = kv_params_
     alias CacheType = ContinuousBatchingKVCache[Self.type, Self.kv_params]
 
-    var cache_lengths: NDBuffer[DType.uint32, 1]
-    var lookup_table: NDBuffer[DType.uint32, 1]
+    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    var lookup_table: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     var blocks: Self.CacheType.BlocksType
     var max_seq_length: UInt32
     var max_cache_length: UInt32
@@ -1075,9 +1077,9 @@ struct PagedKVCacheCollection[
     alias kv_params = kv_params_
     alias CacheType = PagedKVCache[Self.type, Self.kv_params, page_size]
 
-    var blocks: NDBuffer[Self.type, 6]
-    var cache_lengths: NDBuffer[DType.uint32, 1]
-    var lookup_table: NDBuffer[DType.uint32, 2]
+    var blocks: NDBuffer[Self.type, 6, MutableAnyOrigin]
+    var cache_lengths: NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    var lookup_table: NDBuffer[DType.uint32, 2, MutableAnyOrigin]
     var max_seq_length: UInt32
     var max_cache_length: UInt32
 
@@ -1159,9 +1161,9 @@ struct PagedKVCacheCollectionFA3Fallback[
         Self.type, Self.kv_params, page_size
     ]
 
-    var blocks: NDBuffer[Self.type, 5]
-    var cache_lengths: NDBuffer[DType.int32, 1]
-    var lookup_table: NDBuffer[DType.int32, 3]
+    var blocks: NDBuffer[Self.type, 5, MutableAnyOrigin]
+    var cache_lengths: NDBuffer[DType.int32, 1, MutableAnyOrigin]
+    var lookup_table: NDBuffer[DType.int32, 3, MutableAnyOrigin]
     var max_seq_length: UInt32
     var max_cache_length: UInt32
 
