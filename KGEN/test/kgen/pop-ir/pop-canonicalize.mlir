@@ -46,6 +46,40 @@ kgen.func @mul() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   kgen.return %2, %3 : !pop.scalar<si8>, !pop.scalar<f32>
 }
 
+// CHECK-LABEL: @mul_zero_one
+kgen.func @mul_zero_one(
+    %si32: !pop.scalar<si32>,
+    %vsi32 : !pop.simd<2, si32>) -> (!pop.scalar<si32>, !pop.scalar<si32>,
+                                     !pop.scalar<si32>, !pop.scalar<si32>,
+                                     !pop.simd<2, si32>, !pop.simd<2, si32>,
+                                     !pop.simd<2, si32>, !pop.simd<2, si32>) {
+  %zero = kgen.param.constant: scalar<si32> = <<0>>
+  %one = kgen.param.constant: scalar<si32> = <<1>>
+  %0 = pop.mul %si32, %zero : !pop.scalar<si32>
+  %1 = pop.mul %zero, %si32 : !pop.scalar<si32>
+
+  %2 = pop.mul %si32, %one : !pop.scalar<si32>
+  %3 = pop.mul %one, %si32 : !pop.scalar<si32>
+
+  %vzero = kgen.param.constant: simd<2, si32> = <<0, 0>>
+  %vone = kgen.param.constant: simd<2, si32> = <<1, 1>>
+
+  %4 = pop.mul %vsi32, %vzero : !pop.simd<2, si32>
+  %5 = pop.mul %vzero, %vsi32 : !pop.simd<2, si32>
+
+  %6 = pop.mul %vsi32, %vone : !pop.simd<2, si32>
+  %7 = pop.mul %vone, %vsi32 : !pop.simd<2, si32>
+
+  // CHECK-DAG: %[[SIMD_ZERO:.*]] = kgen.param.constant: simd<2, si32> = <0>
+  // CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant: scalar<si32> = <0>
+  // CHECK: kgen.return %[[ZERO]], %[[ZERO]], %arg0, %arg0, %[[SIMD_ZERO]], %[[SIMD_ZERO]], %arg1, %arg1
+  kgen.return %0, %1, %2, %3,
+              %4, %5, %6, %7 : !pop.scalar<si32>, !pop.scalar<si32>,
+                               !pop.scalar<si32>, !pop.scalar<si32>,
+                               !pop.simd<2, si32>, !pop.simd<2, si32>,
+                               !pop.simd<2, si32>, !pop.simd<2, si32>
+}
+
 // CHECK-LABEL: @div
 kgen.func @div() -> (!pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>) {
   // CHECK-DAG: <si4> = <-3

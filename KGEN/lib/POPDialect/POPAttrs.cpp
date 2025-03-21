@@ -76,7 +76,7 @@ DTypeValue::DTypeValue(int64_t value, KGENDType dtype)
     : DTypeValue(APInt(64, value), dtype) {}
 
 APSInt DTypeValue::getIntVal() const {
-  assert(dtype.isInt());
+  assert(dtype.isIntLike());
   return APSInt(data, /*isUnsigned=*/dtype.isUInt());
 }
 
