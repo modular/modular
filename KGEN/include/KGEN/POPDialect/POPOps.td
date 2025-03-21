@@ -164,6 +164,7 @@ def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect,
     %c = pop.div %a, %b : !pop.simd<size, type>
     ```
   }];
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//

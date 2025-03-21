@@ -325,6 +325,51 @@ OpFoldResult MulOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
+LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
+  std::optional<KGEN::KGENDType> dtype = op.getType().getResolvedDType();
+  if (!dtype)
+    return b.notifyMatchFailure(op, "result type isn't resolved");
+
+  if (!dtype->isIntLike())
+    return b.notifyMatchFailure(op, "result type isn't int-like");
+
+  std::optional<size_t> size = op.getType().getResolvedSize();
+  if (!size)
+    return b.notifyMatchFailure(op, "result type size isn't resolved");
+
+  // Canonicalize "x / 2^n" into "x >> n"
+  SIMDAttr rhsAttr;
+  if (!mlir::matchPattern(op.getRhs(), mlir::m_Constant(&rhsAttr)))
+    return b.notifyMatchFailure(op, "rhs is not a constant");
+
+  const APSInt &rhsIntVal = rhsAttr.getValues().front().getIntVal();
+  if (!llvm::all_of(rhsAttr.getValues(), [&](const DTypeValue &val) {
+        APInt intVal = val.getIntVal();
+        return intVal == rhsIntVal && intVal.isStrictlyPositive() &&
+               intVal.isPowerOf2();
+      })) {
+    return b.notifyMatchFailure(
+        op, "rhs is not a uniform constant that is positive power of 2");
+  }
+
+  ssize_t intWidth = dtype->getWidthInBits();
+  if (dtype->isIndex()) {
+    TargetInfoAttr target = lookupTargetInfo(op);
+    intWidth = target ? target.resolveIndexBitWidth() : 64;
+  }
+  assert(intWidth > 0 && "Could not determine size of an integer");
+
+  SmallVector<DTypeValue> values(
+      *size, DTypeValue(APInt(intWidth, rhsIntVal.logBase2(), dtype->isSInt()),
+                        *dtype));
+  b.replaceOpWithNewOp<ShrOp>(
+      op, op.getType(), op.getLhs(),
+      b.create<ParamConstantOp>(op.getLoc(),
+                                SIMDAttr::get(values, op.getType())));
+
+  return success();
+}
+
 OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
   return foldSIMDOp(
       adaptor.getOperands(),

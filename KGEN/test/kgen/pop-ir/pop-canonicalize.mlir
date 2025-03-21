@@ -81,10 +81,27 @@ kgen.func @mul_zero_one(
 }
 
 // CHECK-LABEL: @div
-kgen.func @div() -> (!pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>) {
+kgen.func @div(%arg0: !pop.scalar<si64>, %arg1: !pop.simd<2, si32>) -> (
+    !pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>,
+    !pop.scalar<si64>, !pop.simd<2, si32>, !pop.scalar<ui32>,
+    !pop.simd<2, ui32>, !pop.scalar<index>
+  ) {
   // CHECK-DAG: <si4> = <-3
   // CHECK-DAG: <ui4> = <0>
   // CHECK-DAG: <"1.25">
+  // CHECK-DAG: %[[ONE_INDEX:.*]] = kgen.param.constant: scalar<index> = <1>
+  // CHECK-DAG: %[[ONE_U32:.*]] = kgen.param.constant: scalar<ui32> = <1>
+  // CHECK-DAG: %[[TWO_FOUR:.*]] = kgen.param.constant: simd<2, ui32> = <<2, 4>>
+  // CHECK-DAG: %[[ONE:.*]] = kgen.param.constant: scalar<si64> = <1>
+  // CHECK-DAG: pop.shr %arg0, %[[ONE]] : !pop.scalar<si64>
+  // CHECK-DAG: %[[TWO:.*]] = kgen.param.constant: simd<2, si32> = <2>
+  // CHECK-DAG: pop.shr %arg1, %[[TWO]] : !pop.simd<2, si32>
+  // CHECK-DAG: %[[U32:.*]] = pop.cast %{{.*}} : !pop.scalar<si64> to !pop.scalar<ui32>
+  // CHECK-DAG: pop.shr %[[U32]], %[[ONE_U32]] : !pop.scalar<ui32>
+  // CHECK-DAG: %[[SIMD_U32:.*]] = pop.cast %{{.*}} : !pop.simd<2, si32> to !pop.simd<2, ui32>
+  // CHECK-DAG: pop.div %[[SIMD_U32]], %[[TWO_FOUR]] : !pop.simd<2, ui32>
+  // CHECK-DAG: %[[INDEX:.*]] = pop.cast %{{.*}} : !pop.scalar<si64> to !pop.scalar<index>
+  // CHECK-DAG: pop.shr %[[INDEX]], %[[ONE_INDEX]] : !pop.scalar<index>
   %0 = kgen.param.constant: scalar<si4> = <7>
   %1 = kgen.param.constant: scalar<si4> = <-2>
   %2 = kgen.param.constant: scalar<ui4> = <7>
@@ -94,7 +111,24 @@ kgen.func @div() -> (!pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>) {
   %6 = pop.div %0, %1 : !pop.scalar<si4>
   %7 = pop.div %2, %3 : !pop.scalar<ui4>
   %8 = pop.div %4, %5 : !pop.scalar<f32>
-  kgen.return %6, %7, %8 : !pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>
+  // Check the canonicalization of x / 2^n into x >> n
+  %two_int = kgen.param.constant: scalar<si64> = <2>
+  %9 = pop.div %arg0, %two_int : !pop.scalar<si64>
+  %four_simd = kgen.param.constant: simd<2, si32> = <<4, 4>>
+  %10 = pop.div %arg1, %four_simd : !pop.simd<2, si32>
+  %two_uint = kgen.param.constant: scalar<ui32> = <2>
+  %uarg0 = pop.cast %arg0 : !pop.scalar<si64> to !pop.scalar<ui32>
+  %11 = pop.div %uarg0, %two_uint : !pop.scalar<ui32>
+  %uarg1 = pop.cast %arg1 : !pop.simd<2, si32> to !pop.simd<2, ui32>
+  %two_four_simd = kgen.param.constant: simd<2, ui32> = <<2, 4>>
+  %12 = pop.div %uarg1, %two_four_simd : !pop.simd<2, ui32>
+  %two_index = kgen.param.constant: scalar<index> = <2>
+  %iarg0 = pop.cast %arg0 : !pop.scalar<si64> to !pop.scalar<index>
+  %13 = pop.div %iarg0, %two_index : !pop.scalar<index>
+  kgen.return %6, %7, %8, %9, %10, %11, %12, %13 : !pop.scalar<si4>, !pop.scalar<ui4>,
+                                                   !pop.scalar<f32>, !pop.scalar<si64>,
+                                                   !pop.simd<2, si32>, !pop.scalar<ui32>,
+                                                   !pop.simd<2, ui32>, !pop.scalar<index>
 }
 
 // CHECK-LABEL: @div_zero
@@ -194,15 +228,16 @@ kgen.func @fma() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   kgen.return %2, %3 : !pop.scalar<si8>, !pop.scalar<f32>
 }
 
+
 // CHECK-LABEL: @index_folds
 kgen.func @index_folds() -> (!pop.scalar<index>, !pop.scalar<index>) {
   // COM: Index folds go through the same path as integer folds. We just need to
   // check that ops can fold for index dtypes and do not fold when the results
   // differ between 64-bit and 32-bit arithmetic.
   // CHECK-DAG: %[[DNF_LHS:.*]] = kgen{{.*}}<4294967298>
-  // CHECK-DAG: %[[DNF_RHS:.*]] = kgen{{.*}}<2>
+  // CHECK-DAG: %[[DNF_RHS:.*]] = kgen{{.*}}<1>
   // CHECK-DAG: %[[FOLDED:.*]] = kgen{{.*}}<4294967297>
-  // CHECK: %[[R2:.*]] = pop.div %[[DNF_LHS]], %[[DNF_RHS]]
+  // CHECK: %[[R2:.*]] = pop.shr %[[DNF_LHS]], %[[DNF_RHS]]
   // CHECK-NEXT: return %[[FOLDED]], %[[R2]]
   %0 = kgen.param.constant: scalar<index> = <8589934594>
   %1 = kgen.param.constant: scalar<index> = <4294967298>
