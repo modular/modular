@@ -73,4 +73,7 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 ### ❌ Removed
 
+- `String` and `StringSlice` `.codepoint_slices()` was removed. This is now the
+  default behavior of their `__iter__()` methods.
+
 ### 🛠️ Fixed

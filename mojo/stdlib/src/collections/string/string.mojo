@@ -1034,22 +1034,23 @@ struct String(
         """
         self._iadd(other.as_bytes())
 
-    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[__origin_of(self)]:
-        """Iterate over the string, returning immutable references.
+        """Iterate over the string unicode characters.
 
         Returns:
-            An iterator of references to the string elements.
+            An iterator of references to the string unicode characters.
         """
-        return self.codepoint_slices()
+        return CodepointSliceIter[__origin_of(self)](self.as_string_slice())
 
     fn __reversed__(self) -> CodepointSliceIter[__origin_of(self), False]:
-        """Iterate backwards over the string, returning immutable references.
+        """Iterate backwards over the string unicode characters.
 
         Returns:
-            A reversed iterator of references to the string elements.
+            A reversed iterator of references to the string unicode characters.
         """
-        return CodepointSliceIter[__origin_of(self), forward=False](self)
+        return CodepointSliceIter[__origin_of(self), forward=False](
+            self.as_string_slice()
+        )
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -1243,33 +1244,6 @@ struct String(
         .
         """
         return self.as_string_slice().codepoints()
-
-    fn codepoint_slices(self) -> CodepointSliceIter[__origin_of(self)]:
-        """Returns an iterator over single-character slices of this string.
-
-        Each returned slice points to a single Unicode codepoint encoded in the
-        underlying UTF-8 representation of this string.
-
-        Returns:
-            An iterator of references to the string elements.
-
-        # Examples
-
-        Iterate over the character slices in a string:
-
-        ```mojo
-        from testing import assert_equal, assert_true
-
-        var s = String("abc")
-        var iter = s.codepoint_slices()
-        assert_true(iter.__next__() == "a")
-        assert_true(iter.__next__() == "b")
-        assert_true(iter.__next__() == "c")
-        assert_equal(iter.__has_next__(), False)
-        ```
-        .
-        """
-        return self.as_string_slice().codepoint_slices()
 
     fn unsafe_ptr(
         ref self,

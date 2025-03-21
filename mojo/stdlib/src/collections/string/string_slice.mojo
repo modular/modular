@@ -616,7 +616,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var result = String()
         var use_dquote = False
-        for s in self.codepoint_slices():
+        for s in self:
             use_dquote = use_dquote or (s == "'")
 
             if s == "\\":
@@ -863,20 +863,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
 
-    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[origin]:
-        """Iterate over the string, returning immutable references.
+        """Iterate over the string unicode characters.
 
         Returns:
-            An iterator of references to the string elements.
+            An iterator of references to the string unicode characters.
         """
-        return self.codepoint_slices()
+        return CodepointSliceIter[origin](self)
 
     fn __reversed__(self) -> CodepointSliceIter[origin, False]:
-        """Iterate backwards over the string, returning immutable references.
+        """Iterate backwards over the string unicode characters.
 
         Returns:
-            A reversed iterator of references to the string elements.
+            A reversed iterator of references to the string unicode characters.
         """
         return CodepointSliceIter[origin, forward=False](self)
 
@@ -1100,7 +1099,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             try:
                 # Python adds all "whitespace chars" as one separator
                 # if no separator was specified
-                for s in self[lhs:].codepoint_slices():
+                for s in self[lhs:]:
                     if not s.isspace():
                         break
                     lhs += s.byte_length()
@@ -1114,9 +1113,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                     output.append(self[str_byte_len:])
                     break
                 rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
-                for s in self[
-                    lhs + num_bytes(self.unsafe_ptr()[lhs]) :
-                ].codepoint_slices():
+                for s in self[lhs + num_bytes(self.unsafe_ptr()[lhs]) :]:
                     if s.isspace():
                         break
                     rhs += s.byte_length()
@@ -1324,14 +1321,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         .
         """
         return CodepointsIter(self)
-
-    fn codepoint_slices(self) -> CodepointSliceIter[origin]:
-        """Iterate over the string, returning immutable references.
-
-        Returns:
-            An iterator of references to the string elements.
-        """
-        return CodepointSliceIter[origin](self)
 
     @always_inline
     fn as_bytes(self) -> Span[Byte, origin]:
@@ -1793,7 +1782,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             )
         else:
             var offset = 0
-            for s in self.codepoint_slices():
+            for s in self:
                 var b_len = s.byte_length()
                 if not _is_newline_char(ptr, offset, ptr[offset], b_len):
                     return False

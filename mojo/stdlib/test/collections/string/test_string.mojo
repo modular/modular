@@ -1102,7 +1102,7 @@ def test_string_codepoints_iter():
 
 def test_string_char_slices_iter():
     var s0 = String("abc")
-    var s0_iter = s0.codepoint_slices()
+    var s0_iter = s0.__iter__()
     assert_true(s0_iter.__next__() == "a")
     assert_true(s0_iter.__next__() == "b")
     assert_true(s0_iter.__next__() == "c")
@@ -1113,7 +1113,7 @@ def test_string_char_slices_iter():
     # Borrow immutably
     fn conc(vs: String) -> String:
         var c = String("")
-        for v in vs.codepoint_slices():
+        for v in vs:
             c += v
         return c
 
@@ -1124,18 +1124,18 @@ def test_string_char_slices_iter():
         concat += v
     assert_equal(321, atol(concat))
 
-    for v in vs.codepoint_slices():
+    for v in vs:
         v.unsafe_ptr().origin_cast[mut=True]()[] = ord("1")
 
     # Borrow immutably
-    for v in vs.codepoint_slices():
+    for v in vs:
         concat += v
 
     assert_equal(321111, atol(concat))
 
     var idx = -1
     vs = String("mojo🔥")
-    var iterator = vs.codepoint_slices()
+    var iterator = vs.__iter__()
     assert_equal(5, len(iterator))
     var item = iterator.__next__()
     assert_equal(String("m"), String(item))
@@ -1185,7 +1185,7 @@ def test_string_char_slices_iter():
         var ptr = item.unsafe_ptr()
         var amnt_characters = 0
         var byte_idx = 0
-        for v in item.codepoint_slices():
+        for v in item:
             var byte_len = v.byte_length()
             for i in range(byte_len):
                 assert_equal(ptr[byte_idx + i], v.unsafe_ptr()[i])
