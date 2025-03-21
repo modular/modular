@@ -280,22 +280,25 @@ fn test[
 
         @parameter
         if use_causal_mask:
-            var k_operand = NDBufferMHAOperand[ragged=False](k_device)
-            var output_operand = NDBufferMHAOperand[ragged=False](
-                output_ref_device
-            )
-            var q_operand = NDBufferMHAOperand[ragged=False](q_device)
+            var k_operand = NDBufferMHAOperand(k_device)
             var null_valid_length = NDBuffer[DType.uint32, 1](
                 UnsafePointer[UInt32](), Index(0)
             )
-            mha_gpu_naive[use_mask_tensor=False,](
-                q_operand,
+            mha_gpu_naive[
+                _is_cache_length_accurate=True,
+                use_mask_tensor=False,
+            ](
+                q_device,
                 k_operand,
                 k_operand,
                 mask3d,
                 CausalMask(),
-                output_operand,
+                output_ref_device,
+                null_valid_length,
                 scale,
+                batch_size,
+                seq_len,
+                num_keys,
                 num_heads,
                 depth,
                 group,
