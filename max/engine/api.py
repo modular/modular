@@ -740,9 +740,8 @@ class InferenceSession:
         if isinstance(model, (str, bytes)):
             model = Path(str(model))
 
-        if isinstance(model, Path) or isinstance(model, str):
-            model_path = Path(str(model))
-            _model = self._impl.compile_from_path(model_path, options_dict)
+        if isinstance(model, Path):
+            _model = self._impl.compile_from_path(model, options_dict)
         elif _is_max_graph(model):
             options_dict["pipeline_name"] = model.name
             _model = self._impl.compile_from_object(
