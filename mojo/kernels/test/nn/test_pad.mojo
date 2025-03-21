@@ -25,21 +25,19 @@ fn test_pad_1d():
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
         1, 2, 3
     )
-    var input = NDBuffer[DType.index, 1, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 1, _, in_shape](input_stack)
 
     # Create a padding array of the form
     # [1, 2]
     var paddings_stack = InlineArray[Scalar[DType.index], 2](1, 2)
-    var paddings = NDBuffer[DType.index, 1, _, 2](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 2](paddings_stack)
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 1, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 1, _, out_shape](output_stack)
     output.fill(0)
 
     var constant = Scalar[DType.index](5)
@@ -76,22 +74,20 @@ fn test_pad_reflect_1d():
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
         1, 2, 3
     )
-    var input = NDBuffer[DType.index, 1, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 1, _, in_shape](input_stack)
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0, 0, 0]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 1, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 1, _, out_shape](output_stack)
     output.fill(0)
 
     # Create a padding array of the form
     # [3, 2]
     var paddings_stack = InlineArray[Scalar[DType.index], 2](3, 2)
-    var paddings = NDBuffer[DType.index, 1, _, 2](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 2](paddings_stack)
 
     # pad
     pad_reflect(output, input, paddings.data)
@@ -129,22 +125,20 @@ fn test_pad_repeat_1d():
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
         1, 2, 3
     )
-    var input = NDBuffer[DType.index, 1, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 1, _, in_shape](input_stack)
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0, 0, 0]
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 1, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 1, _, out_shape](output_stack)
     output.fill(0)
 
     # Create a padding array of the form
     # [3, 2]
     var paddings_stack = InlineArray[Scalar[DType.index], 2](3, 2)
-    var paddings = NDBuffer[DType.index, 1, _, 2](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 2](paddings_stack)
 
     # pad
     pad_repeat(output, input, paddings.data)
@@ -183,7 +177,7 @@ fn test_pad_2d():
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[DType.index, 2, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 2, _, in_shape](input_stack)
     input[IndexList[2](0, 0)] = 1
     input[IndexList[2](0, 1)] = 2
     input[IndexList[2](1, 0)] = 3
@@ -192,7 +186,7 @@ fn test_pad_2d():
     # Create a padding array of the form
     # [1, 0, 1, 1]
     var paddings_stack = InlineArray[Scalar[DType.index], 4](1, 0, 1, 1)
-    var paddings = NDBuffer[DType.index, 1, _, 4](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 4](paddings_stack)
 
     # Create an output matrix of the form
     # [[0, 0, 0, 0]
@@ -201,9 +195,7 @@ fn test_pad_2d():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 2, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 2, _, out_shape](output_stack)
     output.fill(0)
 
     var constant = Scalar[DType.index](6)
@@ -255,7 +247,7 @@ fn test_pad_reflect_2d():
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[DType.index, 2, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 2, _, in_shape](input_stack)
     input[IndexList[2](0, 0)] = 1
     input[IndexList[2](0, 1)] = 2
     input[IndexList[2](1, 0)] = 3
@@ -264,7 +256,7 @@ fn test_pad_reflect_2d():
     # Create a padding array of the form
     # [2, 2, 1, 0]
     var paddings_stack = InlineArray[Scalar[DType.index], 4](2, 2, 1, 0)
-    var paddings = NDBuffer[DType.index, 1, _, 4](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 4](paddings_stack)
 
     # Create an output matrix of the form
     # [[0 0 0]
@@ -276,9 +268,7 @@ fn test_pad_reflect_2d():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 2, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 2, _, out_shape](output_stack)
     output.fill(0)
 
     # pad
@@ -343,7 +333,7 @@ fn test_pad_repeat_2d():
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[DType.index, 2, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 2, _, in_shape](input_stack)
     input[IndexList[2](0, 0)] = 1
     input[IndexList[2](0, 1)] = 2
     input[IndexList[2](1, 0)] = 3
@@ -352,7 +342,7 @@ fn test_pad_repeat_2d():
     # Create a padding array of the form
     # [2, 2, 1, 0]
     var paddings_stack = InlineArray[Scalar[DType.index], 4](2, 2, 1, 0)
-    var paddings = NDBuffer[DType.index, 1, _, 4](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 4](paddings_stack)
 
     # Create an output matrix of the form
     # [[0 0 0]
@@ -364,9 +354,7 @@ fn test_pad_repeat_2d():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 2, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 2, _, out_shape](output_stack)
     output.fill(0)
 
     # pad
@@ -431,7 +419,7 @@ fn test_pad_3d():
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[DType.index, 3, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 3, _, in_shape](input_stack)
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 0, 1)] = 2
     input[IndexList[3](0, 1, 0)] = 3
@@ -440,7 +428,7 @@ fn test_pad_3d():
     # Create a padding array of the form
     # [1, 0, 0, 1, 1, 0]
     var paddings_stack = InlineArray[Scalar[DType.index], 6](1, 0, 0, 1, 1, 0)
-    var paddings = NDBuffer[DType.index, 1, _, 6](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 6](paddings_stack)
 
     # Create an output matrix of the form
     # [[[0, 0, 0]
@@ -452,9 +440,7 @@ fn test_pad_3d():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 3, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 3, _, out_shape](output_stack)
     output.fill(0)
 
     var constant = Scalar[DType.index](7)
@@ -523,7 +509,7 @@ fn test_pad_reflect_3d():
         uninitialized=True
     )
 
-    var input = NDBuffer[DType.index, 3, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 3, _, in_shape](input_stack)
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 0, 1)] = 2
     input[IndexList[3](0, 1, 0)] = 3
@@ -536,7 +522,7 @@ fn test_pad_reflect_3d():
     # Create a padding array of the form
     # [1, 1, 0, 1, 1, 0]
     var paddings_stack = InlineArray[Scalar[DType.index], 6](1, 1, 0, 1, 1, 0)
-    var paddings = NDBuffer[DType.index, 1, _, 6](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 6](paddings_stack)
 
     # Create an output matrix of the form
     # [[[0 0 0]
@@ -554,9 +540,7 @@ fn test_pad_reflect_3d():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 3, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 3, _, out_shape](output_stack)
     output.fill(0)
 
     # pad
@@ -661,14 +645,14 @@ fn test_pad_reflect_3d_singleton():
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[DType.index, 3, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 3, _, in_shape](input_stack)
     input[IndexList[3](0, 0, 0)] = 1
 
     # Create a padding array of the form
     # [1, 0, 0, 1, 2, 2]
     var paddings_stack = InlineArray[Scalar[DType.index], 6](1, 0, 0, 1, 2, 2)
     var paddings = NDBuffer[DType.index, 1, _, paddings_stack.size](
-        paddings_stack.unsafe_ptr()
+        paddings_stack
     )
 
     # Create an output matrix of the form
@@ -679,9 +663,7 @@ fn test_pad_reflect_3d_singleton():
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 3, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 3, _, out_shape](output_stack)
     output.fill(0)
 
     # pad
@@ -754,7 +736,7 @@ fn test_pad_reflect_4d_big_input():
     var paddings_stack = InlineArray[Scalar[DType.index], 8](
         1, 0, 1, 1, 256, 256, 256, 256
     )
-    var paddings = NDBuffer[DType.index, 1, _, 8](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 8](paddings_stack)
 
     # create an even bigger output matrix and fill it with zeros
     var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
@@ -785,7 +767,7 @@ fn test_pad_repeat_3d():
     var input_stack = InlineArray[Scalar[DType.index], Int(in_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[DType.index, 3, _, in_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[DType.index, 3, _, in_shape](input_stack)
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 0, 1)] = 2
     input[IndexList[3](0, 1, 0)] = 3
@@ -798,15 +780,13 @@ fn test_pad_repeat_3d():
     # Create a padding array of the form
     # [1, 1, 0, 1, 1, 0]
     var paddings_stack = InlineArray[Scalar[DType.index], 6](1, 2, 0, 2, 0, 1)
-    var paddings = NDBuffer[DType.index, 1, _, 6](paddings_stack.unsafe_ptr())
+    var paddings = NDBuffer[DType.index, 1, _, 6](paddings_stack)
 
     # Create an output array equivalent to np.zeros((5, 4, 3))
     var output_stack = InlineArray[
         Scalar[DType.index], Int(out_shape.product())
     ](uninitialized=True)
-    var output = NDBuffer[DType.index, 3, _, out_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[DType.index, 3, _, out_shape](output_stack)
     output.fill(0)
 
     # pad

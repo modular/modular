@@ -58,34 +58,30 @@ fn winograd_2d_convolution_3x3[
     # Winograd transformation matrices as stack-allocated NDBuffers
     # fmt: off
     var b_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var B = NDBuffer[type, 2,_, DimList((4, 4))](b_stack.unsafe_ptr())
+    var B = NDBuffer[type, 2,_, DimList((4, 4))](b_stack)
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
     B[1,0] = 0.0; B[1,1] =  1.0; B[1,2] =  1.0; B[1,3] =  0.0
     B[2,0] = 0.0; B[2,1] = -1.0; B[2,2] =  1.0; B[2,3] =  0.0
     B[3,0] = 0.0; B[3,1] =  1.0; B[3,2] =  0.0; B[3,3] = -1.0
 
     var g_stack = InlineArray[Scalar[type], 12](uninitialized=True)
-    var G = NDBuffer[type, 2, _,DimList((4, 3))](g_stack.unsafe_ptr())
+    var G = NDBuffer[type, 2, _,DimList((4, 3))](g_stack)
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
     G[1,0] = 0.5; G[1,1] =  0.5; G[1,2] = 0.5
     G[2,0] = 0.5; G[2,1] = -0.5; G[2,2] = 0.5
     G[3,0] = 0.0; G[3,1] =  0.0; G[3,2] = 1.0
 
     var a_stack = InlineArray[Scalar[type], 8](uninitialized=True)
-    var A = NDBuffer[type, 2,_, DimList((2, 4))](a_stack.unsafe_ptr())
+    var A = NDBuffer[type, 2,_, DimList((2, 4))](a_stack)
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
     A[1,0] = 0.0; A[1,1] = 1.0; A[1,2] = -1.0; A[1,3] = -1.0
     # fmt: on
 
     # Temporary buffers for intermediate results
     var scratch_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var scratch = NDBuffer[type, 2, _, DimList((4, 4))](
-        scratch_stack.unsafe_ptr()
-    )
+    var scratch = NDBuffer[type, 2, _, DimList((4, 4))](scratch_stack)
     var g_t_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var g_transformed = NDBuffer[type, 2, _, DimList((4, 4))](
-        g_t_stack.unsafe_ptr()
-    )
+    var g_transformed = NDBuffer[type, 2, _, DimList((4, 4))](g_t_stack)
 
     # Transform kernel: G @ kernel @ G^T
     matmul[4, 3, 3, False](scratch, G, kernel)
@@ -99,11 +95,11 @@ fn winograd_2d_convolution_3x3[
 
     # Additional temporary buffers
     var d_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var d = NDBuffer[type, 2, _, DimList((4, 4))](d_stack.unsafe_ptr())
+    var d = NDBuffer[type, 2, _, DimList((4, 4))](d_stack)
     var m_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var m = NDBuffer[type, 2, _, DimList((4, 4))](m_stack.unsafe_ptr())
+    var m = NDBuffer[type, 2, _, DimList((4, 4))](m_stack)
     var y_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var y = NDBuffer[type, 2, _, DimList((2, 2))](y_stack.unsafe_ptr())
+    var y = NDBuffer[type, 2, _, DimList((2, 2))](y_stack)
 
     for i in range(0, Oh, 2):
         for j in range(0, Ow, 2):

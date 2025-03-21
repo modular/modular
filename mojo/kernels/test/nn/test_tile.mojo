@@ -28,7 +28,7 @@ fn test_tile_eg1() raises:
         rank,
         _,
         DimList(2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0)] = 0
     input[IndexList[rank](0, 1)] = 1
@@ -46,7 +46,7 @@ fn test_tile_eg1() raises:
         rank_repeats,
         _,
         DimList(2),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 2
@@ -59,7 +59,7 @@ fn test_tile_eg1() raises:
         rank,
         _,
         DimList(4, 4),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -93,7 +93,7 @@ fn test_tile_eg2() raises:
         rank,
         _,
         DimList(2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0)] = 0
     input[IndexList[rank](0, 1)] = 1
@@ -111,7 +111,7 @@ fn test_tile_eg2() raises:
         rank_repeats,
         _,
         DimList(2),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 3
     repeats[IndexList[rank_repeats](1)] = 2
@@ -124,7 +124,7 @@ fn test_tile_eg2() raises:
         rank,
         _,
         DimList(6, 4),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -156,7 +156,7 @@ fn test_tile_eg3() raises:
         rank,
         _,
         DimList(2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0)] = 0
     input[IndexList[rank](0, 1)] = 1
@@ -174,7 +174,7 @@ fn test_tile_eg3() raises:
         rank_repeats,
         _,
         DimList(2),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 3
@@ -187,7 +187,7 @@ fn test_tile_eg3() raises:
         rank,
         _,
         DimList(4, 6),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -223,7 +223,7 @@ fn test_tile_eg4() raises:
         rank,
         _,
         DimList(2, 2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -246,7 +246,7 @@ fn test_tile_eg4() raises:
         rank_repeats,
         _,
         DimList(3),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 1
@@ -260,7 +260,7 @@ fn test_tile_eg4() raises:
         rank,
         _,
         DimList(4, 2, 2),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -298,7 +298,7 @@ fn test_tile_eg5() raises:
         rank,
         _,
         DimList(2, 2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -321,7 +321,7 @@ fn test_tile_eg5() raises:
         rank_repeats,
         _,
         DimList(3),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 1
@@ -335,7 +335,7 @@ fn test_tile_eg5() raises:
         rank,
         _,
         DimList(4, 2, 4),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -368,7 +368,7 @@ fn test_tile_eg6() raises:
         rank,
         _,
         DimList(2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0)] = 1
     input[IndexList[rank](0, 1)] = 2
@@ -386,7 +386,7 @@ fn test_tile_eg6() raises:
         rank_repeats,
         _,
         DimList(2),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 1
     repeats[IndexList[rank_repeats](1)] = 2
@@ -399,7 +399,7 @@ fn test_tile_eg6() raises:
         rank,
         _,
         DimList(2, 4),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -431,7 +431,7 @@ fn test_tile_eg7() raises:
         rank,
         _,
         DimList(2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0)] = 1
     input[IndexList[rank](0, 1)] = 2
@@ -449,7 +449,7 @@ fn test_tile_eg7() raises:
         rank_repeats,
         _,
         DimList(2),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 1
@@ -462,7 +462,7 @@ fn test_tile_eg7() raises:
         rank,
         _,
         DimList(4, 2),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -494,7 +494,7 @@ fn test_tile_eg8() raises:
         rank,
         _,
         DimList(1, 4),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0)] = 1
     input[IndexList[rank](0, 1)] = 2
@@ -512,7 +512,7 @@ fn test_tile_eg8() raises:
         rank_repeats,
         _,
         DimList(2),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 4
     repeats[IndexList[rank_repeats](1)] = 1
@@ -525,7 +525,7 @@ fn test_tile_eg8() raises:
         rank,
         _,
         DimList(4, 4),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     for i in range(4):
         for j in range(4):
@@ -573,7 +573,7 @@ fn test_tile_eg9() raises:
         rank,
         _,
         DimList(2, 2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -596,7 +596,7 @@ fn test_tile_eg9() raises:
         rank_repeats,
         _,
         DimList(3),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 2
@@ -610,7 +610,7 @@ fn test_tile_eg9() raises:
         rank,
         _,
         DimList(4, 4, 2),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     for i in range(4):
         for j in range(4):
@@ -669,7 +669,7 @@ fn test_tile_eg10() raises:
         rank,
         _,
         DimList(2, 2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -692,7 +692,7 @@ fn test_tile_eg10() raises:
         rank_repeats,
         _,
         DimList(3),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 3
     repeats[IndexList[rank_repeats](1)] = 2
@@ -706,7 +706,7 @@ fn test_tile_eg10() raises:
         rank,
         _,
         DimList(6, 4, 6),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     tile[rank, type, rank_repeats, type_repeats](
         input.make_dims_unknown(),
@@ -772,7 +772,7 @@ fn test_tile_eg11() raises:
         rank,
         _,
         DimList(3, 2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 1)] = 1
@@ -800,7 +800,7 @@ fn test_tile_eg11() raises:
         rank_repeats,
         _,
         DimList(3),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 3
@@ -814,7 +814,7 @@ fn test_tile_eg11() raises:
         rank,
         _,
         DimList(6, 6, 2),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     for i in range(6):
         for j in range(6):
@@ -853,7 +853,7 @@ fn test_tile_eg12() raises:
         rank,
         _,
         DimList(1, 1, 2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 0, 1)] = 1
@@ -871,7 +871,7 @@ fn test_tile_eg12() raises:
         rank_repeats,
         _,
         DimList(4),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 1
     repeats[IndexList[rank_repeats](1)] = 1
@@ -886,7 +886,7 @@ fn test_tile_eg12() raises:
         rank,
         _,
         DimList(1, 1, 4, 6),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     for i in range(1):
         for j in range(1):
@@ -942,7 +942,7 @@ fn test_tile_eg13() raises:
         rank,
         _,
         DimList(2, 2, 2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 0, 1)] = 1
@@ -975,7 +975,7 @@ fn test_tile_eg13() raises:
         rank_repeats,
         _,
         DimList(4),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 1
     repeats[IndexList[rank_repeats](1)] = 2
@@ -992,7 +992,7 @@ fn test_tile_eg13() raises:
         rank,
         _,
         DimList(2, 4, 4, 6),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     for i in range(2):
         for j in range(4):
@@ -1064,7 +1064,7 @@ fn test_tile_eg14() raises:
         rank,
         _,
         DimList(2, 2, 2, 2),
-    ](input_stack.unsafe_ptr())
+    ](input_stack)
 
     input[IndexList[rank](0, 0, 0, 0)] = 0
     input[IndexList[rank](0, 0, 0, 1)] = 1
@@ -1097,7 +1097,7 @@ fn test_tile_eg14() raises:
         rank_repeats,
         _,
         DimList(4),
-    ](repeats_stack.unsafe_ptr())
+    ](repeats_stack)
 
     repeats[IndexList[rank_repeats](0)] = 2
     repeats[IndexList[rank_repeats](1)] = 2
@@ -1114,7 +1114,7 @@ fn test_tile_eg14() raises:
         rank,
         _,
         DimList(4, 4, 4, 6),
-    ](output_stack.unsafe_ptr())
+    ](output_stack)
 
     for i in range(4):
         for j in range(4):

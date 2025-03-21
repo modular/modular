@@ -179,9 +179,9 @@ fn test_gather_empty_indices() raises:
         var input = NDBuffer[
             DType.float32,
             2,
-            MutableAnyOrigin,
+            _,
             DimList(num_rows, row_size),
-        ](input_stack.unsafe_ptr())
+        ](input_stack)
 
         for i in range(num_rows):
             for j in range(row_size):
@@ -194,7 +194,7 @@ fn test_gather_empty_indices() raises:
             uninitialized=True
         )
         var indices = NDBuffer[indices_type, 1, _, DimList(num_indices)](
-            indices_stack.unsafe_ptr()
+            indices_stack
         )
 
         for i in range(num_indices):
@@ -206,7 +206,7 @@ fn test_gather_empty_indices() raises:
         )
         var output = NDBuffer[
             DType.float32, 2, _, DimList(num_indices, row_size)
-        ](output_stack.unsafe_ptr())
+        ](output_stack)
 
         # Test gather
         alias simd_width = simdwidthof[DType.float32]()

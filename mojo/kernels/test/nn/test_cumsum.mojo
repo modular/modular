@@ -30,9 +30,7 @@ fn test_cumsum_1d():
     iota(matrix_data, 5, 1)
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
-    var cumsum_matrix = NDBuffer[DType.float64, 1, _, DimList(5)](
-        cumsum_stack.unsafe_ptr()
-    )
+    var cumsum_matrix = NDBuffer[DType.float64, 1, _, DimList(5)](cumsum_stack)
 
     cumsum[1, DType.float64, exclusive, reverse](
         cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
@@ -70,11 +68,11 @@ fn test_cumsum_1d_precision():
 
     var cumsum_f32_stack = InlineArray[Float32, size](uninitialized=True)
     var cumsum_f32 = NDBuffer[DType.float32, 1, _, DimList(size)](
-        cumsum_f32_stack.unsafe_ptr()
+        cumsum_f32_stack
     )
     var cumsum_f64_stack = InlineArray[Float64, size](uninitialized=True)
     var cumsum_f64 = NDBuffer[DType.float64, 1, _, DimList(size)](
-        cumsum_f64_stack.unsafe_ptr()
+        cumsum_f64_stack
     )
 
     cumsum[1, DType.float32, exclusive, reverse](
@@ -113,9 +111,7 @@ fn test_cumsum_1d_exclusive():
     iota(matrix_data, 5, 1)
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
-    var cumsum_matrix = NDBuffer[DType.float64, 1, _, DimList(5)](
-        cumsum_stack.unsafe_ptr()
-    )
+    var cumsum_matrix = NDBuffer[DType.float64, 1, _, DimList(5)](cumsum_stack)
 
     cumsum[1, DType.float64, exclusive, reverse](
         cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
@@ -144,9 +140,7 @@ fn test_cumsum_1d_reverse():
     iota(matrix_data, 5, 1)
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
-    var cumsum_matrix = NDBuffer[DType.float64, 1, _, DimList(5)](
-        cumsum_stack.unsafe_ptr()
-    )
+    var cumsum_matrix = NDBuffer[DType.float64, 1, _, DimList(5)](cumsum_stack)
 
     cumsum[1, DType.float64, exclusive, reverse](
         cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
@@ -175,9 +169,7 @@ fn test_cumsum_1d_reverse_exclusive():
     iota(matrix_data, 5, 1)
 
     var cumsum_stack = InlineArray[Float64, 5](uninitialized=True)
-    var cumsum_matrix = NDBuffer[DType.float64, 1, _, DimList(5)](
-        cumsum_stack.unsafe_ptr()
-    )
+    var cumsum_matrix = NDBuffer[DType.float64, 1, _, DimList(5)](cumsum_stack)
 
     cumsum[1, DType.float64, exclusive, reverse](
         cumsum_matrix.make_dims_unknown(), matrix.make_dims_unknown(), axis
@@ -207,7 +199,7 @@ fn test_cumsum_2d_axis_0():
 
     var cumsum_stack = InlineArray[Float64, 6](uninitialized=True)
     var cumsum_matrix = NDBuffer[DType.float64, 2, _, DimList(2, 3)](
-        cumsum_stack.unsafe_ptr()
+        cumsum_stack
     )
 
     cumsum[2, DType.float64, exclusive, reverse](
@@ -239,7 +231,7 @@ fn test_cumsum_2d_axis_1():
 
     var cumsum_stack = InlineArray[Float64, 6](uninitialized=True)
     var cumsum_matrix = NDBuffer[DType.float64, 2, _, DimList(2, 3)](
-        cumsum_stack.unsafe_ptr()
+        cumsum_stack
     )
 
     cumsum[2, DType.float64, exclusive, reverse](
@@ -271,7 +263,7 @@ fn test_cumsum_2d_negative_axis():
 
     var cumsum_stack = InlineArray[Float64, 6](uninitialized=True)
     var cumsum_matrix = NDBuffer[DType.float64, 2, _, DimList(2, 3)](
-        cumsum_stack.unsafe_ptr()
+        cumsum_stack
     )
 
     cumsum[2, DType.float64, exclusive, reverse](

@@ -48,15 +48,15 @@ def test_concat():
     var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
         uninitialized=True
     )
-    var x1 = NDBuffer[type, rank, _, s1](x1_stack.unsafe_ptr())
+    var x1 = NDBuffer[type, rank, _, s1](x1_stack)
     var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
         uninitialized=True
     )
-    var x2 = NDBuffer[type, rank, _, s2](x2_stack.unsafe_ptr())
+    var x2 = NDBuffer[type, rank, _, s2](x2_stack)
     var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
         uninitialized=True
     )
-    var x3 = NDBuffer[type, rank, _, s3](x3_stack.unsafe_ptr())
+    var x3 = NDBuffer[type, rank, _, s3](x3_stack)
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
@@ -68,7 +68,7 @@ def test_concat():
     var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, rank, _, out_shape](out_stack.unsafe_ptr())
+    var output = NDBuffer[type, rank, _, out_shape](out_stack)
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
@@ -118,15 +118,15 @@ def test_concat_parallel():
     var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
         uninitialized=True
     )
-    var x1 = NDBuffer[type, rank, _, s1](x1_stack.unsafe_ptr())
+    var x1 = NDBuffer[type, rank, _, s1](x1_stack)
     var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
         uninitialized=True
     )
-    var x2 = NDBuffer[type, rank, _, s2](x2_stack.unsafe_ptr())
+    var x2 = NDBuffer[type, rank, _, s2](x2_stack)
     var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
         uninitialized=True
     )
-    var x3 = NDBuffer[type, rank, _, s3](x3_stack.unsafe_ptr())
+    var x3 = NDBuffer[type, rank, _, s3](x3_stack)
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
@@ -138,7 +138,7 @@ def test_concat_parallel():
     var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, rank, _, out_shape](out_stack.unsafe_ptr())
+    var output = NDBuffer[type, rank, _, out_shape](out_stack)
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 
@@ -190,15 +190,15 @@ def test_concat_inner():
     var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
         uninitialized=True
     )
-    var x1 = NDBuffer[type, rank, _, s1](x1_stack.unsafe_ptr())
+    var x1 = NDBuffer[type, rank, _, s1](x1_stack)
     var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
         uninitialized=True
     )
-    var x2 = NDBuffer[type, rank, _, s2](x2_stack.unsafe_ptr())
+    var x2 = NDBuffer[type, rank, _, s2](x2_stack)
     var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
         uninitialized=True
     )
-    var x3 = NDBuffer[type, rank, _, s3](x3_stack.unsafe_ptr())
+    var x3 = NDBuffer[type, rank, _, s3](x3_stack)
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
@@ -210,7 +210,7 @@ def test_concat_inner():
     var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, rank, _, out_shape](out_stack.unsafe_ptr())
+    var output = NDBuffer[type, rank, _, out_shape](out_stack)
     output.fill(-1)
     var output_dyn = NDBuffer[type, rank](output.data, out_shape)
 

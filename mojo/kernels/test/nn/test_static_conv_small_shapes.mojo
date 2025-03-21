@@ -121,15 +121,11 @@ def test_static_conv():
     var output_stack = InlineArray[Scalar[value_type], N * HO * WO * F](
         uninitialized=True
     )
-    var output = NDBuffer[value_type, 4, _, DimList(N, HO, WO, F)](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[value_type, 4, _, DimList(N, HO, WO, F)](output_stack)
     var input_stack = InlineArray[Scalar[value_type], N * H * W * C](
         uninitialized=True
     )
-    var input = NDBuffer[value_type, 4, _, DimList(N, H, W, C)](
-        input_stack.unsafe_ptr()
-    )
+    var input = NDBuffer[value_type, 4, _, DimList(N, H, W, C)](input_stack)
     var filter_stack = InlineArray[
         Scalar[value_type], num_micro_tile * R * S * C * micro_kernel_f_size
     ](uninitialized=True)
@@ -138,7 +134,7 @@ def test_static_conv():
         5,
         _,
         DimList(num_micro_tile, R, S, C, micro_kernel_f_size),
-    ](filter_stack.unsafe_ptr())
+    ](filter_stack)
 
     output.fill(0.0)
     input.fill(1.0)
