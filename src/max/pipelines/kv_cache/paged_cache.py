@@ -740,6 +740,10 @@ class PagedKVCacheManager(KVCacheManager):
         """Reset the number of cow operations performed."""
         self.cow_executor.reset_cow_blocks_copied()
 
+    def get_req_blocks(self, seq_id: int) -> list[int]:
+        """Get the block ids for a request."""
+        return self.block_manager.get_req_blocks(seq_id)
+
 
 class PagedKVCacheManagerFA3Fallback(PagedKVCacheManager):
     def input_symbols(self) -> list[PagedCacheInputSymbols]:
