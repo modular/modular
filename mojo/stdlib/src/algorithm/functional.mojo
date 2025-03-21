@@ -18,7 +18,6 @@ from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
 from collections.string import StaticString
 
 from bit import is_power_of_two
-from buffer import NDBuffer
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_dim,

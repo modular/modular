@@ -116,7 +116,9 @@ fn map_reduce[
     reduce_vec_to_scalar_fn: fn[type: DType, width: Int] (
         SIMD[type, width]
     ) -> Scalar[type],
-](dst: NDBuffer[type, 1, size], init: Scalar[acc_type]) -> Scalar[acc_type]:
+](dst: NDBuffer[mut=True, type, 1, _, size], init: Scalar[acc_type]) -> Scalar[
+    acc_type
+]:
     """Stores the result of calling input_gen_fn in dst and simultaneously
     reduce the result using a custom reduction function.
 
@@ -287,7 +289,7 @@ fn _reduce_3D[
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing [_] -> SIMD[acc_type, width],
     reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> Scalar[type],
-](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]) raises:
+](src: NDBuffer, dst: NDBuffer[mut=True, **_], init: Scalar[dst.type]) raises:
     """Performs a reduction across axis 1 of a 3D input buffer."""
 
     alias simd_width = simdwidthof[dst.type]()
@@ -308,7 +310,11 @@ fn _reduce_3D[
             for i in range(h):
                 var offset = src._offset(IndexList[src.rank](i, 0, 0))
                 var input = NDBuffer[
-                    src.type, 1, sz, address_space = src.address_space
+                    src.type,
+                    1,
+                    offset.origin,
+                    sz,
+                    address_space = src.address_space,
                 ](offset, w)
                 var val = reduce[map_fn](input, init)
                 dst[IndexList[dst.rank](i, 0)] = val
@@ -354,7 +360,7 @@ fn reduce[
     ) capturing [_] -> SIMD[acc_type, width],
     reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> Scalar[type],
     reduce_axis: Int,
-](src: NDBuffer, dst: NDBuffer, init: Scalar[dst.type]) raises:
+](src: NDBuffer, dst: NDBuffer[mut=True, **_], init: Scalar[dst.type]) raises:
     """Performs a reduction across reduce_axis of an NDBuffer (src) and stores
     the result in an NDBuffer (dst).
 
@@ -398,7 +404,7 @@ fn reduce[
         address_space = src.address_space,
     ](src.data, Index(h_dynamic, w_dynamic, c_dynamic))
     var output_2d = NDBuffer[
-        dst.type, 2, output_2d_shape, address_space = dst.address_space
+        dst.type, 2, _, output_2d_shape, address_space = dst.address_space
     ](
         dst.data,
         Index(h_dynamic, c_dynamic),
@@ -1096,7 +1102,7 @@ fn max(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
 fn max[
     reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
+](src: NDBuffer, dst: NDBuffer[mut=True, src.type, src.rank, _, _]) raises:
     """Computes the max across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1221,7 +1227,7 @@ fn min(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
 fn min[
     reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
+](src: NDBuffer, dst: NDBuffer[mut=True, src.type, src.rank, _, _]) raises:
     """Computes the min across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1346,7 +1352,7 @@ fn sum(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
 fn sum[
     reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
+](src: NDBuffer, dst: NDBuffer[mut=True, src.type, src.rank, _, _]) raises:
     """Computes the sum across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1471,7 +1477,7 @@ fn product(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
 fn product[
     reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
+](src: NDBuffer, dst: NDBuffer[mut=True, src.type, src.rank, _, _]) raises:
     """Computes the product across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1584,7 +1590,7 @@ fn mean(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
 fn mean[
     reduce_axis: Int
-](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]) raises:
+](src: NDBuffer, dst: NDBuffer[mut=True, src.type, src.rank, _, _]) raises:
     """Computes the mean across reduce_axis of an NDBuffer.
 
     Parameters:
@@ -1948,13 +1954,15 @@ fn none_true(src: NDBuffer[rank=1]) -> Bool:
 
 
 @always_inline
-fn _cumsum_small(dst: NDBuffer[rank=1], src: NDBuffer[dst.type, 1, *_]):
+fn _cumsum_small(
+    dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]
+):
     dst[0] = src[0]
     for i in range(1, len(dst)):
         dst[i] = src[i] + dst[i - 1]
 
 
-fn cumsum(dst: NDBuffer[rank=1], src: NDBuffer[dst.type, 1, *_]):
+fn cumsum(dst: NDBuffer[mut=True, rank=1], src: NDBuffer[dst.type, 1, *_]):
     """Computes the cumulative sum of all elements in a buffer.
        dst[i] = src[i] + src[i-1] + ... + src[0].
 

@@ -24,7 +24,7 @@ alias load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
 
 fn fill_buffer[
     dtype: DType, rank: Int, shape: DimList
-](buf: NDBuffer[dtype, rank, shape]):
+](buf: NDBuffer[mut=True, dtype, rank, _, shape]):
     var s: Int = 1
     for i in range(buf.get_rank()):
         s *= buf.dim(i)
@@ -62,11 +62,13 @@ fn test_stencil_avg_pool():
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, output_shape](output_stack.unsafe_ptr())
+    var output = NDBuffer[dtype, rank, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
 
     fill_buffer(input)
     output.fill(0)
@@ -178,11 +180,13 @@ fn test_stencil_avg_pool_padded():
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, output_shape](output_stack.unsafe_ptr())
+    var output = NDBuffer[dtype, rank, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
 
     fill_buffer(input)
     output.fill(0)
@@ -296,11 +300,13 @@ fn test_stencil_avg_pool_stride_2():
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, output_shape](output_stack.unsafe_ptr())
+    var output = NDBuffer[dtype, rank, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
 
     fill_buffer(input)
     output.fill(0)
@@ -417,11 +423,13 @@ fn test_stencil_max_pool_dilation_2():
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, output_shape](output_stack.unsafe_ptr())
+    var output = NDBuffer[dtype, rank, _, output_shape](
+        output_stack.unsafe_ptr()
+    )
 
     fill_buffer(input)
     output.fill(0)

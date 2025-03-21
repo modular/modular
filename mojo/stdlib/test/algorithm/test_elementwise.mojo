@@ -61,7 +61,7 @@ def test_elementwise[
 def test_elementwise_implicit_runtime():
     print("== test_elementwise_implicit_runtime")
     var vector_stack = InlineArray[Scalar[DType.index], 20](uninitialized=True)
-    var vector = NDBuffer[DType.index, 1, 20](vector_stack.unsafe_ptr())
+    var vector = NDBuffer[DType.index, 1, _, 20](vector_stack.unsafe_ptr())
 
     for i in range(len(vector)):
         vector[i] = i

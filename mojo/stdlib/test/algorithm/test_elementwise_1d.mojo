@@ -24,7 +24,7 @@ def test_elementwise_1d():
     alias num_elements = 64
     var ptr = UnsafePointer[Float32].alloc(num_elements)
 
-    var vector = NDBuffer[DType.float32, 1, num_elements](ptr)
+    var vector = NDBuffer[DType.float32, 1, _, num_elements](ptr)
 
     for i in range(len(vector)):
         vector[i] = i
