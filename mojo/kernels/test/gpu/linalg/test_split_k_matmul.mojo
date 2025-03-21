@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: asan
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 from random import rand
 

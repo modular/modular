@@ -3,8 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug-no-assert --target-accelerator=nvidia:80 %s | FileCheck --check-prefix=CHECK-NV80 %s
-# RUN: %mojo-no-debug-no-assert --target-accelerator=nvidia:90 %s | FileCheck --check-prefix=CHECK-NV90 %s
+# RUN: %mojo-no-debug --target-accelerator=nvidia:80 %s | FileCheck --check-prefix=CHECK-NV80 %s
+# RUN: %mojo-no-debug --target-accelerator=nvidia:90 %s | FileCheck --check-prefix=CHECK-NV90 %s
 
 from sys.info import _accelerator_arch, _is_sm_9x
 

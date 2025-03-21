@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: L4-GPU || H100-GPU
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.simd import *
 from gpu.host import DeviceContext

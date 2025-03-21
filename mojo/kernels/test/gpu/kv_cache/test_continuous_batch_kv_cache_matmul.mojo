@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # TODO: MSTDL-1147 understand why this test fails with asserts turned on.
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 from collections import Set
 from random import random_ui64, seed

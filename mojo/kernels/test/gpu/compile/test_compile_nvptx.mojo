@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from pathlib import Path
 from sys._assembly import inlined_assembly

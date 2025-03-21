@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1377
 # UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 from collections import OptionalReg
 from math import exp2

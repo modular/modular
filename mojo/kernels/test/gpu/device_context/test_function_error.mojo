@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: not --crash %mojo-no-debug-no-assert %s
+# RUN: not --crash %mojo-no-debug %s
 
 from gpu.host import DeviceContext
 from memory import UnsafePointer

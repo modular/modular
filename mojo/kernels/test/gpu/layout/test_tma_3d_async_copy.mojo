@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: H100-GPU
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 from math import align_up, ceildiv
 from sys import sizeof

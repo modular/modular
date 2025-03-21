@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: AMD-GPU
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.io import _printf
 from gpu import WARP_SIZE, barrier, lane_id

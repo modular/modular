@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 from algorithm._gpu.reduction import reduce_launch
 from buffer import NDBuffer

@@ -6,7 +6,7 @@
 
 # FIXME: MSTDL-1155
 # UNSUPPORTED: asan
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 import time
 from sys import has_nvidia_gpu_accelerator

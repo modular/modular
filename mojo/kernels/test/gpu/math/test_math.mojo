@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # COM: We only care if this file compiles or not
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 from math import *
 from pathlib import Path

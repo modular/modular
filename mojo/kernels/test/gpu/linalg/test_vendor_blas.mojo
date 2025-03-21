@@ -6,7 +6,7 @@
 # TODO(#31429): Restore `--debug-level full` here
 # REQUIRES: NVIDIA-GPU
 # UNSUPPORTED: asan
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 from math import ceildiv
 from random import random_float64

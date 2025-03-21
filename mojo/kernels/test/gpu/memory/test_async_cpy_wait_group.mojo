@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 from sys import sizeof
 

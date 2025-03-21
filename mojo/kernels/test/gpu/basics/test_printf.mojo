@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1377
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections.string.inline_string import _FixedString
 

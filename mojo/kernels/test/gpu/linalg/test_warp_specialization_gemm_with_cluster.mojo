@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# FIXME(KERN-1691): Enable debug assert and fix error
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug-no-assert %s
 

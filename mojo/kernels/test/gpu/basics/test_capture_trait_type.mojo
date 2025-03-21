@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # FIXME: KERN-1489
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 from buffer import NDBuffer
 from gpu import thread_idx
 from gpu.host import DeviceContext

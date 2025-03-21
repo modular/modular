@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: A100-GPU
-# RUN: %mojo-no-debug-no-assert --target-accelerator=nvidia:80 %s | FileCheck %s
+# RUN: %mojo-no-debug --target-accelerator=nvidia:80 %s | FileCheck %s
 
 from gpu.host import DeviceContext
 from linalg.utils_gpu import select_config

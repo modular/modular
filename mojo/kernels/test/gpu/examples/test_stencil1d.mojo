@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # TODO(#31429): Restore `--debug-level full` here
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv
 

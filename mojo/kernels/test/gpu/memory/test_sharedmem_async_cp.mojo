@@ -7,7 +7,7 @@
 # REQUIRES: DISABLED
 # Hangs with debug mode Issue #24921
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 import time
 
 import builtin

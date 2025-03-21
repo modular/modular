@@ -6,7 +6,7 @@
 # FIXME: KERN-1377
 # UNSUPPORTED: AMD-GPU
 # REQUIRES: AMD-GPU
-# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from gpu.host import DeviceContext
 from memory import UnsafePointer

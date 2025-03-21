@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug-no-assert -D DUMP_GPU_ASM=True %s | FileCheck %s
+# RUN: %mojo-no-debug -D DUMP_GPU_ASM=True %s | FileCheck %s
 # RUN: rm -fr %tmp-dir/test_compile_via_param/
 # RUN: mkdir -p %tmp-dir/test_compile_via_param/
-# RUN: %mojo-no-debug-no-assert -D DUMP_GPU_ASM=%tmp-dir/test_compile_via_param/test_compile_via_param.ptx %s
+# RUN: %mojo-no-debug -D DUMP_GPU_ASM=%tmp-dir/test_compile_via_param/test_compile_via_param.ptx %s
 # RUN: cat %tmp-dir/test_compile_via_param/test_compile_via_param.ptx | FileCheck %s
 # RUN: rm -fr %tmp-dir/test_compile_via_param/
 

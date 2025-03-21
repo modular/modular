@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # TODO (#33518): -t flag is required right now because the kernel assumes C is zeroed
-# RUN: %mojo-no-debug-no-assert %s -t | FileCheck %s
+# RUN: %mojo-no-debug %s -t | FileCheck %s
 
 from collections import OptionalReg
 from math import ceildiv
