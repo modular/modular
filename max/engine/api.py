@@ -24,7 +24,6 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max._core.driver import Tensor as _Tensor
 from max._core.engine import FrameworkFormat as _FrameworkFormat
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as _Model
@@ -211,7 +210,7 @@ class Model:
               :obj:`max.driver.Tensor`.
         """
         tracer = Tracer()
-        input_impls: list[Union[_Tensor, MojoValue]] = []
+        input_impls: list[Union[Tensor, MojoValue]] = []
 
         input_idx = 0
         for idx, arg in enumerate(args):
@@ -248,24 +247,23 @@ class Model:
                 tensor = tensor.to(input_devices[input_idx])
                 input_idx = input_idx + 1
                 tracer.pop()
-            input_impls.append(tensor._impl)
+            input_impls.append(tensor)
         results = self._impl.execute_device_tensors(input_impls)
 
         processed_results: list[Tensor | MojoValue] = []
         for idx, result in enumerate(results):
             tracer.push(f"process_result_{idx}")
             # If the output is a MojoValue, we return it directly.
-            if not isinstance(result, _Tensor):
+            if not isinstance(result, Tensor):
                 processed_results.append(result)
                 tracer.pop()
                 continue
-            wrapped_tensor = Tensor._from_impl(result)
             # If an output device is provided and it is different from the
             # device the tensor is already present on, we should copy to
             # that device.
-            if output_device and output_device != self.output_devices[idx]:
-                wrapped_tensor = wrapped_tensor.copy(output_device)
-            processed_results.append(wrapped_tensor)
+            if output_device:
+                result = result.to(output_device)
+            processed_results.append(result)
             tracer.pop()
         return processed_results
 

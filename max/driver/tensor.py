@@ -15,18 +15,15 @@ from typing import (
     Optional,
     Protocol,
     Sequence,
-    Tuple,
-    Type,
-    TypeVar,
     Union,
     runtime_checkable,
 )
 
 import numpy as np
-from max._core.driver import Tensor as _Tensor
+from max._core.driver import Tensor as Tensor
 from max.dtype import DType
 
-from .driver import CPU, Device
+from .driver import CPU
 
 _IdxElType = Union[int, slice]
 IndexType = Union[Sequence[_IdxElType], _IdxElType]
@@ -40,291 +37,138 @@ class DLPackArray(Protocol):
     def __dlpack_device__(self) -> Any: ...
 
 
-_T = TypeVar("_T", bound="Tensor")
+def _iterate_indices(self) -> Generator[ShapeType]:
+    yield from product(*map(range, self.shape))
 
 
-class Tensor(DLPackArray):
+def _contiguous(self) -> Tensor:
+    """Creates a contiguous copy of the parent tensor."""
+    tensor_copy = Tensor(self.shape, self.dtype)
+    for idx in self._iterate_indices():
+        tensor_copy[idx] = self[idx].item()
+    return tensor_copy
+
+
+def _aligned(self, alignment: int | None = None) -> bool:
+    """Returns whether the tensor is aligned to the desired alignment."""
+    return self.__aligned(alignment or self.dtype.align)
+
+
+def _repr(self) -> str:
+    return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.device.api}[{self.device.id}])"
+
+
+def _view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:
+    """Return a new tensor with the given type and shape that shares the
+    underlying memory.
+
+    If the shape is not given, it will be deduced if possible, or a
+    ValueError is raised.
     """
-    Device-resident tensor representation. Allocates memory onto a given device
-    with the provided shape and dtype. Tensors can be sliced to provide strided
-    views of the underlying memory, but any tensors input into model execution
-    must be contiguous. Does not currently support setting items across multiple
-    indices, but does support numpy-style slicing.
-
-    :param dtype: DType of tensor
-    :param shape: Tuple of positive, non-zero integers denoting the tensor shape.
-    :param device: Device to allocate tensor onto.
-    """
-
-    # We're storing the dtype explicitly to retain the int-name mapping
-    # defined in `types.py`.
-    _impl: _Tensor
-
-    def __init__(
-        self,
-        shape: ShapeType,
-        dtype: DType,
-        device: Optional[Device] = None,
-    ) -> None:
-        self._impl = _Tensor(shape, dtype, device)
-
-    @classmethod
-    def _from_impl(cls: Type[_T], impl: _Tensor) -> _T:
-        # TODO: use typing.Self instead of TypeVar when we are on Python 3.11+.
-        # The error messages are confusing if accidentally passing an incorrect
-        # type, so we assert.
-        assert isinstance(impl, _Tensor)
-        # The dtype and shape arguments are ignored.
-        tensor = cls.__new__(cls)
-        tensor._impl = impl
-        return tensor
-
-    @staticmethod
-    def zeros(
-        shape: ShapeType, dtype: DType, device: Optional[Device] = None
-    ) -> Tensor:
-        """Allocates an tensor with all elements initialized to zero."""
-        return Tensor._from_impl(_Tensor.zeros(shape, dtype, device))
-
-    @staticmethod
-    def scalar(
-        value: Any, dtype: DType, device: Optional[Device] = None
-    ) -> Tensor:
-        """Create a scalar value of a given dtype and value."""
-        return Tensor._from_impl(_Tensor.scalar(value, dtype, device))
-
-    @property
-    def dtype(self) -> DType:
-        """DType of constituent elements in tensor."""
-        return self._impl.dtype
-
-    @property
-    def shape(self) -> tuple:
-        """Shape of tensor."""
-        return self._impl.shape
-
-    @property
-    def rank(self) -> int:
-        """Tensor rank."""
-        return self._impl.rank
-
-    @property
-    def device(self) -> Device:
-        """Device on which tensor is resident."""
-        return self._impl.device
-
-    @property
-    def is_contiguous(self) -> bool:
-        """Whether or not tensor is contiguously allocated in memory. Returns
-        false if the tensor is a non-contiguous slice.
-
-        Currently, we consider certain situations that are contiguous as
-        non-contiguous for the purposes of our engine, such as when a tensor
-        has negative steps."""
-        return self._impl.is_contiguous
-
-    def _iterate_indices(self) -> Generator[ShapeType]:
-        index_gen = [range(x) for x in self.shape]
-        for idx in product(*index_gen):
-            yield idx
-
-    def contiguous(self) -> Tensor:
-        """Creates a contiguous copy of the parent tensor."""
-        tensor_copy = Tensor(self.shape, self.dtype)
-        for idx in self._iterate_indices():
-            tensor_copy[idx] = self[idx].item()
-        return tensor_copy
-
-    def _aligned(self, alignment: int | None = None) -> bool:
-        """Returns whether the tensor is aligned to the desired alignment."""
-        return self._impl._aligned(alignment or self.dtype.align)
-
-    def __repr__(self) -> str:
-        return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.device.api}[{self.device.id}])"
-
-    def __setitem__(self, idx: IndexType, value: Any) -> None:
-        """Sets an item in the tensor."""
-        self._impl[idx] = value
-
-    def __getitem__(self, idx: IndexType) -> Tensor:
-        """Gets a tensor slice. Supports full numpy-style slicing. Invocations
-        using only integer-based indexes will return zero-rank tensors."""
-        return self._from_impl(self._impl[idx])
-
-    def item(self) -> Any:
-        """Returns the scalar value at a given location. Currently
-        implemented only for zero-rank tensors. The return type is
-        converted to a Python built-in type.
-        """
-        return self._impl.item()
-
-    @property
-    def is_host(self) -> bool:
-        """
-        Whether or not tensor is host-resident. Returns false for GPU tensors,
-        true for CPU tensors.
-
-        .. code-block:: python
-
-            from max import driver
-            from max.dtype import DType
-
-            cpu_tensor = driver.Tensor([2, 3], dtype=DType.bfloat16, device=driver.CPU())
-
-            print(cpu_tensor.is_host)
-        """
-        return self._impl.is_host
-
-    def copy(self, device: Optional[Device] = None) -> Tensor:
-        """Create a deep copy on an optionally given device.
-
-        If a device is None (default), a copy is created on the same device.
-
-        .. code-block:: python
-
-            from max import driver
-            from max.dtype import DType
-
-            cpu_tensor = driver.Tensor([2, 3], dtype=DType.bfloat16, device=driver.CPU())
-
-            cpu_copy = cpu_tensor.copy()
-        """
-        return self._from_impl(self._impl.copy(device))
-
-    def to(self, device: Device) -> Tensor:
-        """Return a tensor that's guaranteed to be on the given device.
-
-        The tensor is only copied if the input device is different from the
-        device upon which the tensor is already resident.
-        """
-        return self if self.device == device else self.copy(device)
-
-    @property
-    def num_elements(self) -> int:
-        """Returns the number of elements in this tensor.
-
-        Rank-0 tensors have 1 element by convention.
-        """
-        return self._impl.num_elements
-
-    @property
-    def element_size(self) -> int:
-        """Return the size of the element type in bytes."""
-        return self._impl.element_size
-
-    def view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:
-        """Return a new tensor with the given type and shape that shares the
-        underlying memory.
-
-        If the shape is not given, it will be deduced if possible, or a
-        ValueError is raised.
-        """
-        if shape is None:
-            last_axis_size = self.element_size * self.shape[-1]
-            if last_axis_size % dtype.size_in_bytes:
-                raise ValueError(
-                    "When changing to a larger dtype, its size must be a"
-                    " divisor of the total size in bytes of the last axis of"
-                    " the array."
-                )
-            shape = (*self.shape[:-1], last_axis_size // dtype.size_in_bytes)
-
-        return self._from_impl(self._impl._view(dtype, shape))
-
-    @staticmethod
-    def from_numpy(arr: np.ndarray) -> Tensor:
-        """Creates a tensor from a provided numpy array on the host device.
-
-        The underlying data is not copied unless the array is noncontiguous. If
-        it is, a contiguous copy will be returned."""
-
-        # NOTE: np.ascontiguousarray only copies if needed.
-        # Skip np.contiguousarray for scalars since it converts them to rank-1.
-        return Tensor.from_dlpack(
-            np.ascontiguousarray(arr) if arr.shape else arr
-        )
-
-    def to_numpy(self) -> np.ndarray:
-        """Converts the tensor to a numpy array.
-
-        If the tensor is not on the host, an exception is raised.
-        """
-        try:
-            return np.from_dlpack(self.to(CPU()))
-        except RuntimeError as e:
-            if str(e).startswith("Unsupported device in DLTensor"):
-                raise RuntimeError(
-                    f"Cannot convert tensor on {self.device} to numpy; move to"
-                    " the host using `Tensor.to`"
-                ) from e
-            raise
-
-    def __dlpack_device__(self) -> Tuple[int, int]:
-        """Implements part of the dlpack contract."""
-        return self._impl.__dlpack_device__()
-
-    def __dlpack__(self, *, stream=None) -> Any:
-        """Implements part of the dlpack contract."""
-        return self._impl.__dlpack__(stream=stream)
-
-    @staticmethod
-    def from_dlpack(arr: Any, *, copy: Optional[bool] = None) -> Tensor:
-        """Create a tensor from an object implementing the dlpack protocol.
-
-        This usually does not result in a copy, and the producer of the object
-        retains ownership of the underlying memory."""
-        if isinstance(arr, np.memmap):
-            # TODO(MSDK-976): since `np.memmap`s are often read-only, we just
-            # use our own memmap implementation here, but it would be better to
-            # always delegate to from_dlpack.
-            return MemMapTensor._from_numpy_memmap(arr)
-        if isinstance(arr, np.ndarray):
-            if not arr.flags.c_contiguous:
-                msg = (
-                    "driver tensor's from_dlpack only accepts contiguous arrays. "
-                    "First call np.ascontiguousarray(arr)"
-                )
-                raise ValueError(msg)
-
-            # TODO(MSDK-976): Older version of numpy don't support exporting
-            # read-only arrays, so we copy if we can, and leave a hint if not.
-            if copy is None and not arr.flags.writeable:
-                copy = True
-            if copy:
-                arr = arr.copy()
-
-            # Numpy's dlpack implementation cannot handle its own bool types, so
-            # we trick it into thinking it is uint8.
-            is_bool = arr.dtype == bool
-            if is_bool:
-                arr = arr.view(np.uint8)
-
-            try:
-                tensor = Tensor._from_impl(_Tensor._from_dlpack(arr))
-            except BufferError as e:
-                msg = str(e)
-                if msg.startswith("Cannot export readonly array"):
-                    raise type(e)(
-                        msg
-                        + " Consider passing `copy = True` to `Tensor.from_dlpack`."
-                    )
-                raise e
-
-            return tensor.view(DType.bool) if is_bool else tensor
-
-        # Short circuit if it's our type.
-        if isinstance(arr, Tensor):
-            if copy:
-                return arr.copy()
-            return arr
-
-        if copy is not None:
+    if shape is None:
+        last_axis_size = self.element_size * self.shape[-1]
+        if last_axis_size % dtype.size_in_bytes:
             raise ValueError(
-                "`Tensor.from_dlpack` supports the `copy` flag only for numpy"
-                " array and `Tensor` inputs"
+                "When changing to a larger dtype, its size must be a"
+                " divisor of the total size in bytes of the last axis of"
+                " the array."
+            )
+        shape = (*self.shape[:-1], last_axis_size // dtype.size_in_bytes)
+
+    return self._view(dtype, shape)
+
+
+def _from_numpy(arr: np.ndarray) -> Tensor:
+    """Creates a tensor from a provided numpy array on the host device.
+
+    The underlying data is not copied unless the array is noncontiguous. If
+    it is, a contiguous copy will be returned."""
+
+    # NOTE: np.ascontiguousarray only copies if needed.
+    # Skip np.contiguousarray for scalars since it converts them to rank-1.
+    return Tensor.from_dlpack(np.ascontiguousarray(arr) if arr.shape else arr)
+
+
+def _to_numpy(self) -> np.ndarray:
+    """Converts the tensor to a numpy array.
+
+    If the tensor is not on the host, an exception is raised.
+    """
+    try:
+        return np.from_dlpack(self.to(CPU()))
+    except RuntimeError as e:
+        if str(e).startswith("Unsupported device in DLTensor"):
+            raise RuntimeError(
+                f"Cannot convert tensor on {self.device} to numpy; move to"
+                " the host using `Tensor.to`"
+            ) from e
+        raise
+
+
+def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
+    """Create a tensor from an object implementing the dlpack protocol.
+
+    This usually does not result in a copy, and the producer of the object
+    retains ownership of the underlying memory."""
+    if isinstance(array, np.memmap):
+        # TODO(MSDK-976): since `np.memmap`s are often read-only, we just
+        # use our own memmap implementation here, but it would be better to
+        # always delegate to from_dlpack.
+        return MemMapTensor._from_numpy_memmap(array)
+    if isinstance(array, np.ndarray):
+        if not array.flags.c_contiguous:
+            raise ValueError(
+                "driver tensor's from_dlpack only accepts contiguous arrays. "
+                "First call np.ascontiguousarray(array)"
             )
 
-        return Tensor._from_impl(_Tensor._from_dlpack(arr))
+        # TODO(MSDK-976): Older version of numpy don't support exporting
+        # read-only arrays, so we copy if we can, and leave a hint if not.
+        if copy is None and not array.flags.writeable:
+            copy = True
+        if copy:
+            array = array.copy()
+
+        # Numpy's dlpack implementation cannot handle its own bool types, so
+        # we trick it into thinking it is uint8.
+        is_bool = array.dtype == bool
+        if is_bool:
+            array = array.view(np.uint8)
+
+        try:
+            tensor = Tensor._from_dlpack(array)
+        except BufferError as e:
+            msg = str(e)
+            if msg.startswith("Cannot export readonly array"):
+                raise type(e)(
+                    msg
+                    + " Consider passing `copy = True` to `Tensor.from_dlpack`."
+                )
+            raise e
+
+        return tensor.view(DType.bool) if is_bool else tensor
+
+    # Short circuit if it's our type.
+    if isinstance(array, Tensor):
+        return array.copy() if copy else array
+
+    if copy is not None:
+        raise ValueError(
+            "`Tensor.from_dlpack` supports the `copy` flag only for numpy"
+            " array and `Tensor` inputs"
+        )
+
+    return Tensor._from_dlpack(array)
+
+
+Tensor._iterate_indices = _iterate_indices  # type: ignore[method-assign]
+Tensor.contiguous = _contiguous  # type: ignore[method-assign]
+Tensor._aligned = _aligned  # type: ignore[method-assign]
+Tensor.__repr__ = _repr  # type: ignore[method-assign]
+Tensor.view = _view  # type: ignore[method-assign]
+Tensor.from_numpy = _from_numpy  # type: ignore[method-assign]
+Tensor.to_numpy = _to_numpy  # type: ignore[method-assign]
+Tensor.from_dlpack = _from_dlpack  # type: ignore[method-assign]
 
 
 class MemMapTensor(Tensor):
@@ -338,10 +182,10 @@ class MemMapTensor(Tensor):
 
     def __init__(
         self,
-        filename: PathLike,
+        filename: PathLike | str,
         dtype: DType,
         shape: ShapeType | int,
-        mode="r+",
+        mode: np._MemMapModeKind = "r+",
         offset=0,
     ) -> None:
         # Instead of implementing all the mmap-related logic, we just delegate
@@ -362,7 +206,7 @@ class MemMapTensor(Tensor):
         # TODO(MSDK-976): Ideally, we could just use DLPack to borrow the
         # underlying memory from numpy. But our numpy version doesn't allow
         # dlpack to be used on read-only arrays (common for memmaped weights).
-        self._impl = _Tensor(arr, CPU())
+        super().__init__(arr, CPU())
 
         # numpy does not attempt to free/close the mmap object it uses, so we
         # copy a reference to it, which should keep it alive as long as needed.
@@ -370,16 +214,21 @@ class MemMapTensor(Tensor):
 
         self._read_only = not arr.flags.writeable
 
+    def _init_from_tensor(self, tensor: Tensor, mm: mmap, ro: bool) -> None:
+        super().__init__(tensor)
+        self._mmap = mm
+        self._read_only = ro
+
     @classmethod
     def _from_numpy_memmap(cls, arr: np.memmap) -> MemMapTensor:
         tensor = cls.__new__(cls)
         tensor._init_from_numpy_memmap(arr)
         return tensor
 
-    def __dlpack__(self, *, stream=None) -> Any:
+    def __dlpack__(self, *, stream=None) -> Any:  # type: ignore[override]
         """Implements part of the dlpack contract."""
         # We must ensure that the underlying mmap doesn't get closed.
-        return self._impl.__dlpack__(stream=stream, _mmap=self._mmap)
+        return super().__dlpack__(stream=stream, _mmap=self._mmap)
 
     @property
     def read_only(self) -> bool:
@@ -413,14 +262,9 @@ class MemMapTensor(Tensor):
             TypeError: For undefined byte interpretations.
         """
         viewed = super().view(dtype, shape)
-        # Create new MemMapTensor with shared memory mapping.
-        memmap_view = MemMapTensor.__new__(MemMapTensor)
-
-        # Set the _impl here to preserve the MemMapTensor class and fields.
-        memmap_view._impl = viewed._impl
-        memmap_view._mmap = self._mmap
-        memmap_view._read_only = self._read_only
-        return memmap_view
+        result = MemMapTensor.__new__(MemMapTensor)
+        result._init_from_tensor(viewed, self._mmap, self._read_only)
+        return result
 
     def __setitem__(self, idx: IndexType, value: Any) -> None:
         """Sets an item in the tensor."""
