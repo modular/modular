@@ -35,20 +35,34 @@ CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 
 
 class KernelLibrary:
-    def __init__(self, context: mlir.Context, path: Path):
-        self._analysis = _graph.Analysis(context, [path])
-        self._kernels = set(self._analysis.symbol_names)
+    _analysis: _graph.Analysis
+
+    def __init__(self, context: mlir.Context, paths: list[Path] = []):
+        self._analysis = _graph.Analysis(context, paths)
+
+    def library_paths(self) -> list[Path]:
+        return self._analysis.library_paths
+
+    # TODO(GEX-1965): Remove this function.
+    def is_empty(self) -> bool:
+        return len(self._analysis.library_paths) == 0
+
+    def add_path(self, path: Path):
+        self._analysis.add_path(path)
 
     def __getitem__(self, kernel: str):
-        if kernel not in self._kernels:
+        if kernel not in self._analysis.symbol_names:
             raise KeyError(kernel)
         return self._analysis.kernel(kernel)
 
     def __contains__(self, kernel: str):
-        return kernel in self._kernels
+        return kernel in self._analysis.symbol_names
 
     def __iter__(self):
-        yield from sorted(self._kernels)
+        yield from sorted(self._analysis.symbol_names)
+
+    def verify_custom_op(self, custom_op: mlir.Operation):
+        self._analysis.verify_custom_op(custom_op)
 
 
 # From https://stackoverflow.com/a/76301341
@@ -134,6 +148,10 @@ class Graph:
     _current_chain: _ChainValue
     _current_block: mlir.Block
 
+    _kernel_library: KernelLibrary
+
+    _kernel_library_paths_attr_name = "_kernel_library_paths"
+
     def __init__(
         self,
         name: str,
@@ -191,6 +209,8 @@ class Graph:
         initial_chain = self._add_op(mo.chain_create, [])[0]
         assert isinstance(initial_chain, _ChainValue)
         self._current_chain = initial_chain
+
+        self._kernel_library = KernelLibrary(self._context)
 
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
@@ -485,6 +505,16 @@ class Graph:
                     # module body block.
                     self._mlir_op = self._module.body.operations[0]
 
+        # Initialize the Kernel Library
+        kernels_paths = []
+        if Graph._kernel_library_paths_attr_name in self._mlir_op.attributes:
+            paths_attr = self._mlir_op.attributes[
+                Graph._kernel_library_paths_attr_name
+            ]
+            if isinstance(paths_attr, mlir.ArrayAttr):
+                kernels_paths = [Path(str(x)) for x in paths_attr]
+        self._kernel_library = KernelLibrary(self._context, kernels_paths)
+
     def add_weight(
         self, weight: Weight, device: DeviceRef | None = None
     ) -> TensorValue:
@@ -576,5 +606,15 @@ class Graph:
 
         return _graph.frame_loc(mlir.Context.current, tb)
 
-    def import_kernels(self, path: Path) -> KernelLibrary:
-        return KernelLibrary(self._context, path)
+    def import_kernels(self, path: Path):
+        self._kernel_library.add_path(path)
+
+        # Update the graph attribute for the library paths.
+        self._mlir_op.attributes[Graph._kernel_library_paths_attr_name] = (
+            mlir.ArrayAttr.get(
+                [
+                    mlir.StringAttr.get(str(path), self._context)
+                    for path in self._kernel_library.library_paths()
+                ]
+            )
+        )
