@@ -321,6 +321,16 @@ def test_scalar_inputs(
     assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
 
 
+def test_numpy_aliasing() -> None:
+    # dlpack expects that we alias in this situation
+    # https://dmlc.github.io/dlpack/latest/python_spec.html#semantics
+    tensor = Tensor.zeros((5,), DType.int32, device=CPU())
+    tensor_numpy = tensor.to_numpy()
+
+    tensor[0] = 5
+    assert tensor_numpy[0] == 5
+
+
 def test_aliasing_output(
     session: InferenceSession, aliasing_outputs_path: Path
 ) -> None:
@@ -331,21 +341,21 @@ def test_aliasing_output(
     input_tensor = Tensor.from_numpy(arr)
     outputs = model.execute(input_tensor)
     assert len(outputs) == 2
+    x_tensor, y_tensor = outputs
 
-    tensor_output0 = outputs[0]
-    assert isinstance(tensor_output0, Tensor)
-    array_output0 = tensor_output0.to_numpy()
     expected = np.arange(0, 10, 2, dtype=np.int32)
-    assert np.array_equal(array_output0, expected)
 
-    tensor_output1 = outputs[1]
-    assert isinstance(tensor_output1, Tensor)
-    array_output1 = tensor_output1.to_numpy()
-    assert np.array_equal(array_output1, expected)
+    assert isinstance(x_tensor, Tensor)
+    x_numpy = x_tensor.to_numpy()
+    assert np.array_equal(x_numpy, expected)
+
+    assert isinstance(y_tensor, Tensor)
+    y_numpy = y_tensor.to_numpy()
+    assert np.array_equal(y_numpy, expected)
 
     # Check if the outputs really alias.
-    tensor_output0[0] = 7
-    assert array_output1[0] == 7
+    x_tensor[0] = 7
+    assert y_tensor[0].item() == 7
 
 
 # TODO(#36814): Debug segfault after PT 2.2.2 bump.
