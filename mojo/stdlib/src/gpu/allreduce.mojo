@@ -208,10 +208,10 @@ fn _allreduce_naive[
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    ctxs: List[DeviceContext],
     list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
     list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
     max_num_blocks: Int,
+    ctxs: List[DeviceContext],
 ) raises:
     """Performs allreduce across GPUs without using peer-to-peer access.
 
@@ -259,10 +259,10 @@ fn _allreduce_naive[
         outputs_lambda: An elementwise output lambda function.
 
     Args:
-        ctxs: List of device contexts for participating GPUs.
         list_of_in_bufs: Input buffers from each GPU.
         list_of_out_bufs: Output buffers for each GPU.
         max_num_blocks: Maximum number of thread blocks to launch.
+        ctxs: List of device contexts for participating GPUs.
 
     This implementation copies all data to each GPU and performs local reduction.
     Used as fallback when P2P access is not available.
@@ -693,11 +693,11 @@ fn _allreduce_p2p[
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    ctxs: List[DeviceContext],
     list_of_in_bufs: InlineArray[NDBuffer[type, rank], ngpus],
     list_of_out_bufs: InlineArray[NDBuffer[type, rank], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     max_num_blocks: Int,
+    ctxs: List[DeviceContext],
 ) raises:
     """
     Performs allreduce using peer-to-peer access between GPUs.
@@ -709,11 +709,11 @@ fn _allreduce_p2p[
         outputs_lambda: An output elementwise lambda.
 
     Args:
-        ctxs: List of device contexts for participating GPUs
         list_of_in_bufs: Input buffers from each GPU
         list_of_out_bufs: Output buffers for each GPU
         rank_sigs: Signal pointers for synchronization
         max_num_blocks: Maximum number of thread blocks to launch.
+        ctxs: List of device contexts for participating GPUs
 
     Launches P2P reduction kernel on each GPU to perform direct reduction.
     """
@@ -817,10 +817,10 @@ fn allreduce[
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    ctxs: List[DeviceContext],
     input_buffers: InlineArray[NDBuffer[type, rank], ngpus],
     output_buffers: InlineArray[NDBuffer[type, rank], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    ctxs: List[DeviceContext],
     _max_num_blocks: Optional[Int] = None,
 ) raises:
     """Performs an allreduce operation across multiple GPUs.
@@ -840,10 +840,10 @@ fn allreduce[
         outputs_lambda: An output elementwise lambda.
 
     Args:
-        ctxs: List of device contexts for each participating GPU.
         input_buffers: Array of input tensors from each GPU, one per GPU.
         output_buffers: Array of output tensors for each GPU to store results.
         rank_sigs: Array of Signal pointers used for cross-GPU synchronization.
+        ctxs: List of device contexts for each participating GPU.
         _max_num_blocks: Optional maximum number of blocks used to compute grid
             configuration.
             If not passed a dispatch table sets the grid configuration.
@@ -868,9 +868,9 @@ fn allreduce[
 
     if not can_p2p:
         return _allreduce_naive[outputs_lambda=outputs_lambda](
-            ctxs, input_buffers, output_buffers, max_num_blocks
+            input_buffers, output_buffers, max_num_blocks, ctxs
         )
     else:
         return _allreduce_p2p[outputs_lambda=outputs_lambda](
-            ctxs, input_buffers, output_buffers, rank_sigs, max_num_blocks
+            input_buffers, output_buffers, rank_sigs, max_num_blocks, ctxs
         )

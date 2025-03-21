@@ -18,9 +18,9 @@ fn allgather[
     rank: Int,
     ngpus: Int, //,
 ](
-    ctxs: List[DeviceContext],
     input_buffers: InlineArray[NDBuffer[type, rank], ngpus],
     output_buffers: InlineArray[NDBuffer[type, rank], ngpus],
+    ctxs: List[DeviceContext],
 ) raises:
     """
     Performs all-gather across GPUs.
@@ -31,9 +31,9 @@ fn allgather[
         ngpus: Int - Number of GPUs participating in all-gather.
 
     Args:
-        ctxs: List of device contexts for participating GPUs.
         input_buffers: Input buffers from each GPU.
         output_buffers: Output buffers for each GPU.
+        ctxs: List of device contexts for participating GPUs.
     """
 
     var device_buffers = List[DeviceBuffer[type]](capacity=ngpus)
