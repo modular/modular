@@ -530,3 +530,56 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
     ]
     actual = run_until_completion(scheduler)
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "num_prompts, input_tokens, output_tokens, max_forward_steps_tg, target_tokens_per_batch_ce, enable_chunked_prefill, enable_prefix_caching",
+    [
+        (1, 1, 1, 10, 1, True, True),
+        (1, 60, 95, 100, 30, True, False),
+        (2, 511, 1, 10, 500, False, True),
+        (2, 512, 1, 10, 1000, False, False),
+        (30, 256, 16, 5, 33, False, True),
+        (30, 256, 16, 100, 33, True, True),
+        (100, 256, 1024, 1000, 8192, True, False),
+    ],
+)
+def test_misc_sch_configs(
+    num_prompts,
+    input_tokens,
+    output_tokens,
+    max_forward_steps_tg,
+    target_tokens_per_batch_ce,
+    enable_chunked_prefill,
+    enable_prefix_caching,
+):
+    max_seq_len = input_tokens + output_tokens
+    page_size = 128
+    num_blocks = ceildiv(max_seq_len, page_size) * max(16, num_prompts)
+    max_batch_size = ceildiv(num_prompts, 3)
+    scheduler = create_paged_scheduler(
+        max_seq_len=max_seq_len,
+        page_size=page_size,
+        max_batch_size=max_batch_size,
+        num_blocks=num_blocks,
+        max_forward_steps_tg=max_forward_steps_tg,
+        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+        enable_chunked_prefill=enable_chunked_prefill,
+        enable_prefix_caching=enable_prefix_caching,
+    )
+
+    prefix_len = ceildiv(input_tokens, 2)
+    np.random.seed(42)
+    shared_prefix = rand(prefix_len)
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            input_tokens,
+            max_seq_len,
+            shared_prefix=shared_prefix,
+        )
+
+    # make sure that we terminated within 100 iterations
+    actual = run_until_completion(scheduler, max_num_iters=1000)
+    assert actual[-1] == BatchInfo.empty()
