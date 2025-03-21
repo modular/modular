@@ -11,7 +11,6 @@ from sys._assembly import inlined_assembly
 
 from gpu.host import DeviceContext
 
-alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
 alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
 
 
@@ -27,5 +26,5 @@ def test__dump_sass():
 
 
 def main():
-    if ptxas_path.exists() and nvdisasm_path.exists():
+    if nvdisasm_path.exists():
         test__dump_sass()
