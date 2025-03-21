@@ -27,6 +27,7 @@ fn test_ndbuffer_indexing():
     var fillBufferView = NDBuffer[
         DType.index,
         1,
+        _,
         total_buffer_size,
     ](_data.unsafe_ptr())
 
@@ -40,6 +41,7 @@ fn test_ndbuffer_indexing():
     var bufferView1D = NDBuffer[
         DType.index,
         1,
+        _,
         DimList(6),
     ](_data.unsafe_ptr())
 
@@ -54,6 +56,7 @@ fn test_ndbuffer_indexing():
     var bufferView2D = NDBuffer[
         DType.index,
         2,
+        _,
         DimList(5, 6),
     ](_data.unsafe_ptr())
 
@@ -69,6 +72,7 @@ fn test_ndbuffer_indexing():
     var bufferView3D = NDBuffer[
         DType.index,
         3,
+        _,
         DimList(4, 5, 6),
     ](_data.unsafe_ptr())
 
@@ -84,6 +88,7 @@ fn test_ndbuffer_indexing():
     var bufferView4D = NDBuffer[
         DType.index,
         4,
+        _,
         DimList(3, 4, 5, 6),
     ](_data.unsafe_ptr())
 
@@ -99,6 +104,7 @@ fn test_ndbuffer_indexing():
     var bufferView5D = NDBuffer[
         DType.index,
         5,
+        _,
         DimList(2, 3, 4, 5, 6),
     ](_data.unsafe_ptr())
 

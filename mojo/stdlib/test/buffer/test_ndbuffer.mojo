@@ -32,6 +32,7 @@ fn test_ndbuffer():
     var matrix = NDBuffer[
         DType.index,
         2,
+        _,
         DimList(4, 4),
     ](matrix_stack.unsafe_ptr())
 
@@ -121,7 +122,7 @@ fn test_fill():
     print("== test_fill")
 
     var buf_stack = InlineArray[Scalar[DType.index], 3 * 3](uninitialized=True)
-    var buf = NDBuffer[DType.index, 2, DimList(3, 3)](buf_stack.unsafe_ptr())
+    var buf = NDBuffer[DType.index, 2, _, DimList(3, 3)](buf_stack.unsafe_ptr())
     buf[IndexList[2](0, 0)] = 1
     buf[IndexList[2](0, 1)] = 1
     buf[IndexList[2](0, 2)] = 1
@@ -135,7 +136,7 @@ fn test_fill():
     var filled_stack = InlineArray[Scalar[DType.index], 3 * 3](
         uninitialized=True
     )
-    var filled = NDBuffer[DType.index, 2, DimList(3, 3)](
+    var filled = NDBuffer[DType.index, 2, _, DimList(3, 3)](
         filled_stack.unsafe_ptr()
     )
     filled.fill(1)
@@ -166,7 +167,7 @@ fn test_ndbuffer_prefetch():
     var matrix_stack = InlineArray[Scalar[DType.index], 2 * 3](
         uninitialized=True
     )
-    var matrix = NDBuffer[DType.index, 2, DimList(2, 3)](
+    var matrix = NDBuffer[DType.index, 2, _, DimList(2, 3)](
         matrix_stack.unsafe_ptr()
     )
 
@@ -214,6 +215,7 @@ fn test_aligned_load_store():
     var matrix = NDBuffer[
         DType.index,
         2,
+        MutableAnyOrigin,
         DimList(4, 4),
     ].stack_allocation[alignment=128]()
 
@@ -238,14 +240,14 @@ fn test_get_nd_index():
     var matrix0_stack = InlineArray[Scalar[DType.index], 2 * 3](
         uninitialized=True
     )
-    var matrix0 = NDBuffer[DType.index, 2, DimList(2, 3)](
+    var matrix0 = NDBuffer[DType.index, 2, _, DimList(2, 3)](
         matrix0_stack.unsafe_ptr()
     )
 
     var matrix1_stack = InlineArray[Scalar[DType.index], 3 * 5 * 7](
         uninitialized=True
     )
-    var matrix1 = NDBuffer[DType.index, 3, DimList(3, 5, 7)](
+    var matrix1 = NDBuffer[DType.index, 3, _, DimList(3, 5, 7)](
         matrix1_stack.unsafe_ptr()
     )
 
@@ -272,7 +274,7 @@ def test_print():
     var buf_stack = InlineArray[Scalar[DType.index], 2 * 2 * 3](
         uninitialized=True
     )
-    var buffer = NDBuffer[DType.index, 3, DimList(2, 2, 3)](
+    var buffer = NDBuffer[DType.index, 3, _, DimList(2, 2, 3)](
         buf_stack.unsafe_ptr()
     )
     for i in range(2):
@@ -295,14 +297,16 @@ def test_print():
 def test_ndbuffer_tofile():
     print("== test_ndbuffer")
     var buf_stack = InlineArray[Float32, 2 * 2](uninitialized=True)
-    var buf = NDBuffer[DType.float32, 2, DimList(2, 2)](buf_stack.unsafe_ptr())
+    var buf = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
+        buf_stack.unsafe_ptr()
+    )
     buf.fill(2.0)
     with NamedTemporaryFile(name=String("test_ndbuffer")) as TEMP_FILE:
         buf.tofile(TEMP_FILE.name)
 
         with open(TEMP_FILE.name, "r") as f:
             var str = f.read()
-            var buf_read = NDBuffer[DType.float32, 2, DimList(2, 2)](
+            var buf_read = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
                 str.unsafe_ptr().bitcast[Float32]()
             )
             for i in range(2):
@@ -325,9 +329,11 @@ def test_ndbuffer_tile():
     alias n1_tile_size = 2
 
     var buf_stack = InlineArray[Float32, M * N](uninitialized=True)
-    var buff = NDBuffer[DType.float32, 2, DimList(M, N)](buf_stack.unsafe_ptr())
+    var buff = NDBuffer[DType.float32, 2, _, DimList(M, N)](
+        buf_stack.unsafe_ptr()
+    )
 
-    fn linspace(buffer: NDBuffer):
+    fn linspace(buffer: NDBuffer[mut=True, *_]):
         for i in range(buffer.dim[0]()):
             for j in range(buffer.dim[1]()):
                 buffer[i, j] = i * buffer.dim[1]() + j

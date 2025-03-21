@@ -25,6 +25,7 @@ fn test_sub_matrix():
     var matrix = NDBuffer[
         DType.float32,
         2,
+        _,
         DimList(num_row, num_col),
     ](matrix_stack.unsafe_ptr())
     for i in range(num_row):
@@ -32,7 +33,7 @@ fn test_sub_matrix():
             matrix[Index(i, j)] = Float32(i * num_col + j)
 
     # Extract a sub-matrix 2x2 at (1,1).
-    var sub_matrix0 = NDBuffer[DType.float32, 2, DimList(2, 2)](
+    var sub_matrix0 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
         matrix.data.offset(5),
         DimList(2, 2),
         Index(4, 1),
@@ -51,7 +52,7 @@ fn test_sub_matrix():
 
     # Extract a sub-matrix 2x2 at (1,1) with discontiguous last dim.
     # It includes (1,1) (1,3) (3,1) (3,3) of the original matrix.
-    var sub_matrix1 = NDBuffer[DType.float32, 2, DimList(2, 2)](
+    var sub_matrix1 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
         matrix.data.offset(1),
         DimList(2, 2),
         Index(8, 2),
@@ -64,7 +65,7 @@ fn test_sub_matrix():
 
     # Extract a contiguous 2x2 buffer starting at (1,1).
     # It includes (1,1) (1,2) (1,3) (2,1) of the original matrix.
-    var sub_matrix2 = NDBuffer[DType.float32, 2, DimList(2, 2)](
+    var sub_matrix2 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
         matrix.data.offset(5),
         DimList(2, 2),
         Index(2, 1),
@@ -82,7 +83,7 @@ fn test_broadcast():
 
     # Create a buffer holding a single value with zero stride.
     var arr = InlineArray[Float32, 1](uninitialized=True)
-    var stride_buf = NDBuffer[DType.float32, 1, DimList(100)](
+    var stride_buf = NDBuffer[DType.float32, 1, _, DimList(100)](
         arr.unsafe_ptr(),
         DimList(100),
         Index(0),

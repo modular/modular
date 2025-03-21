@@ -31,6 +31,7 @@ fn test_ndbuffer_dynamic_shape():
     var matrix2 = NDBuffer[
         DType.index,
         2,
+        _,
         DimList(42, Dim()),
     ](buffer.unsafe_ptr(), DimList(42, 1))
 

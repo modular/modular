@@ -69,9 +69,9 @@ from utils.index import IndexList
 fn test_my_naive_matmul[
     shape: DimList, type: DType
 ](
-    c: NDBuffer[type, 2, shape],
-    a: NDBuffer[type, 2, shape],
-    b: NDBuffer[type, 2, shape],
+    c: NDBuffer[mut=True, type, 2, _, shape],
+    a: NDBuffer[type, 2, _, shape],
+    b: NDBuffer[type, 2, _, shape],
 ):
     """Computes matrix multiplication with a naive algorithm.
 
@@ -88,7 +88,9 @@ fn test_my_naive_matmul[
             c[IndexList[2](m, n)] = c_val
 
 
-fn fill_a[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
+fn fill_a[
+    size: Int
+](buf: NDBuffer[mut=True, DType.float32, 2, _, DimList(size, size)]):
     """Fills the matrix with the values `row + 2*col`."""
 
     for i in range(size):
@@ -97,7 +99,9 @@ fn fill_a[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
             buf[IndexList[2](i, j)] = val
 
 
-fn fill_b[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
+fn fill_b[
+    size: Int
+](buf: NDBuffer[mut=True, DType.float32, 2, _, DimList(size, size)]):
     """Fills the matrix with the values `row/(col + 1) + col`."""
 
     for i in range(size):
@@ -108,7 +112,7 @@ fn fill_b[size: Int](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
 
 fn print_matrix[
     size: Int
-](buf: NDBuffer[DType.float32, 2, DimList(size, size)]):
+](buf: NDBuffer[DType.float32, 2, _, DimList(size, size)]):
     """Prints each element of the input matrix, element-wise."""
     for i in range(size):
         for j in range(size):
@@ -122,6 +126,7 @@ fn test_naive_matmul[size: Int]():
     var c = NDBuffer[
         DType.float32,
         2,
+        _,
         DimList(size, size),
     ](c_stack.unsafe_ptr())
     c.fill(0)
@@ -130,6 +135,7 @@ fn test_naive_matmul[size: Int]():
     var b = NDBuffer[
         DType.float32,
         2,
+        _,
         DimList(size, size),
     ](b_stack.unsafe_ptr())
     fill_b[size](b)
@@ -138,6 +144,7 @@ fn test_naive_matmul[size: Int]():
     var a = NDBuffer[
         DType.float32,
         2,
+        _,
         DimList(size, size),
     ](a_stack.unsafe_ptr())
     fill_a[size](a)
