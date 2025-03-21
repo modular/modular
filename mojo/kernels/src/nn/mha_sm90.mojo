@@ -78,11 +78,11 @@ from utils.static_tuple import StaticTuple
 )
 fn mha_sm90[
     mask_rank: Int,
-    q_t: MHAOperand,
+    q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
     mask_type: DType,
-    output_t: MHAOperand,
+    output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     config: MHAConfig,
@@ -90,24 +90,93 @@ fn mha_sm90[
     use_score_mod: Bool = False,
     ragged: Bool = False,
     is_shared_kv: Bool = False,
+    _is_cache_length_accurate: Bool = False,
 ](
-    q: q_t,
+    q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
-    output: output_t,
+    output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
+    batch_size: Int,
+    seq_len_arg: Int,
+    num_keys_arg: Int,
+    valid_length: NDBuffer[DType.uint32, 1],
+    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]],
     mask: mask_t,
     score_mod: score_mod_t,
 ):
     alias depth = config.depth
     alias num_heads = config.num_heads
     var batch_idx = block_idx.z
-    var seq_len = Int(q.length(batch_idx))
-
-    if seq_len < block_idx.x * config.block_m():
-        return
 
     # mha inputs
+    var seq_len: Int
+    var max_seq_len: Int
+    var num_keys: Int
+    var mask_tensor_col: Int
+    var mask_batch_offset: Int
+    var start_pos: UInt32 = 0
+
+    @parameter
+    if ragged:
+        # treat valid_lengths as a input_row_offsets
+        start_of_seq = Int(valid_length[batch_idx])
+        end_of_seq = Int(valid_length[batch_idx + 1])
+        seq_len = end_of_seq - start_of_seq
+
+        if seq_len < block_idx.x * config.block_m():
+            return
+
+        @parameter
+        if not _is_cache_length_accurate:
+            var cache_length = k.cache_length(batch_idx)
+            start_pos = cache_length
+
+        # this is used for cross attention where we get the num_keys
+        # from kv_input_row_offsets. This is when num_keys != seq_len
+        if kv_input_row_offsets:
+            var kv_row_offsets = kv_input_row_offsets.value()
+            kv_seq_start = Int(kv_row_offsets[batch_idx])
+            kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
+            cur_kv_len = kv_seq_end - kv_seq_start
+            num_keys = cur_kv_len + k.cache_length(batch_idx)
+        else:
+            num_keys = seq_len + k.cache_length(batch_idx)
+
+        max_seq_len = seq_len_arg
+        mask_tensor_col = seq_len_arg
+        q_batch_offset = start_of_seq * config.depth * config.num_heads
+        mask_batch_offset = (
+            batch_idx
+            * max_seq_len
+            * max_seq_len
+            * (config.num_heads if mask_rank == 4 else 1)
+        )
+    # NDBuffer inputs, homogeneous batching.
+    else:
+        seq_len = seq_len_arg
+
+        if seq_len < block_idx.x * config.block_m():
+            return
+
+        max_seq_len = seq_len_arg
+        num_keys = num_keys_arg
+
+        # When cache length (num_keys) is greater, we assume it has
+        # prefix preceding the input seq_len.
+        start_pos = num_keys - seq_len
+
+        mask_tensor_col = num_keys_arg
+        q_batch_offset = (
+            config.depth * config.num_heads * max_seq_len * batch_idx
+        )
+        mask_batch_offset = (
+            batch_idx
+            * max_seq_len
+            * num_keys
+            * (config.num_heads if mask_rank == 4 else 1)
+        )
+
     @parameter
     if config.algorithm == FlashAttentionAlgorithm(3):
         _mha_single_batch_sm90_fa3[
@@ -116,11 +185,16 @@ fn mha_sm90[
             group=group,
             use_score_mod=use_score_mod,
         ](
-            q,
+            q_ptr.offset(q_batch_offset),
             k,
             v,
-            output,
+            output_ptr.offset(q_batch_offset),
             scale,
+            seq_len,
+            max_seq_len,
+            start_pos,
+            num_keys,
+            mask_tensor_col,
             mask,
             score_mod,
             batch_idx,
@@ -133,11 +207,16 @@ fn mha_sm90[
             group=group,
             use_score_mod=use_score_mod,
         ](
-            q,
+            q_ptr.offset(q_batch_offset),
             k,
             v,
-            output,
+            output_ptr.offset(q_batch_offset),
             scale,
+            seq_len,
+            max_seq_len,
+            start_pos,
+            num_keys,
+            mask_tensor_col,
             mask,
             score_mod,
             batch_idx,
@@ -147,10 +226,10 @@ fn mha_sm90[
 @always_inline
 fn _mha_single_batch_sm90_fa3[
     mask_rank: Int,
-    q_t: MHAOperand,
+    q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
-    output_t: MHAOperand,
+    output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     *,
@@ -158,11 +237,16 @@ fn _mha_single_batch_sm90_fa3[
     group: Int = 1,
     use_score_mod: Bool = False,
 ](
-    q: q_t,
+    q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
-    output: output_t,
+    output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
+    seq_len: Int,  # valid sequence length i.e. w/o padding.
+    max_seq_len: Int,  # sequence length after padding.
+    start_pos: UInt32,
+    num_keys: Int,
+    mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
     score_mod: score_mod_t,
     batch_idx: Int,
@@ -178,13 +262,9 @@ fn _mha_single_batch_sm90_fa3[
       TODO: use more optimized kernels for them
 
     """
-    alias q_type = q_t.type
     alias k_type = k_t.type
     alias v_type = v_t.type
-    alias output_type = output_t.type
-    constrained[
-        q_type == k_type and k_type == v_type and q_type == output_type
-    ]()
+    constrained[q_type == k_type and k_type == v_type]()
 
     alias simd_size = simdwidthof[q_type]()
 
@@ -209,11 +289,6 @@ fn _mha_single_batch_sm90_fa3[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var seq_len = Int(q.length(batch_idx))
-    var num_keys = Int(k.length(batch_idx))
-    var mask_tensor_col = Int(k.max_length())
-    var start_pos: UInt32 = q.start_pos(batch_idx)
-    var max_seq_len = Int(q.max_length())
     var warp_id: UInt32 = warp.broadcast((tid - 128) // WARP_SIZE)
     var lane: UInt32 = lane_id()
 
@@ -479,7 +554,7 @@ fn _mha_single_batch_sm90_fa3[
             IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
         )
         q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True,](
-            q.block_paged_ptr[BM](batch_idx, q_tile_idx * BM, head_idx, 0),
+            q_ptr + Int(q_offset),
             RuntimeLayout[linear_idx_type = DType.int32](
                 RuntimeTuple[q_gmem_layout.shape, unsigned=True](
                     Int(q_tile_num_rows), depth
@@ -1084,7 +1159,7 @@ fn _mha_single_batch_sm90_fa3[
         output_gmem_tile = LayoutTensor[
             output_type, output_gmem_layout, masked=True
         ](
-            output.block_paged_ptr[BM](batch_idx, q_tile_idx * BM, head_idx, 0),
+            output_ptr + Int(q_offset),
             RuntimeLayout[linear_idx_type = DType.int32](
                 RuntimeTuple[output_gmem_layout.shape, unsigned=True](
                     Int(q_tile_num_rows), depth
@@ -1138,10 +1213,10 @@ fn _mha_single_batch_sm90_fa3[
 @always_inline
 fn _mha_single_batch_sm90_fa2[
     mask_rank: Int,
-    q_t: MHAOperand,
+    q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
-    output_t: MHAOperand,
+    output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     *,
@@ -1149,11 +1224,16 @@ fn _mha_single_batch_sm90_fa2[
     group: Int = 1,
     use_score_mod: Bool = False,
 ](
-    q: q_t,
+    q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
-    output: output_t,
+    output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
+    seq_len: Int,  # valid sequence length i.e. w/o padding.
+    max_seq_len: Int,  # sequence length after padding.
+    start_pos: UInt32,
+    num_keys: Int,
+    mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
     score_mod: score_mod_t,
     batch_idx: Int,
@@ -1169,13 +1249,9 @@ fn _mha_single_batch_sm90_fa2[
       TODO: use more optimized kernels for them
 
     """
-    alias q_type = q_t.type
     alias k_type = k_t.type
     alias v_type = v_t.type
-    alias output_type = output_t.type
-    constrained[
-        q_type == k_type and k_type == v_type and v_type == output_type
-    ]()
+    constrained[q_type == k_type and k_type == v_type]()
 
     alias simd_size = simdwidthof[q_type]()
 
@@ -1202,10 +1278,6 @@ fn _mha_single_batch_sm90_fa2[
         tid // 128
     ) if num_consumer > 1 else 0
     var lane: UInt32 = lane_id()
-    var seq_len = Int(q.length(batch_idx))
-    var max_seq_len = Int(q.max_length())
-    var num_keys = Int(k.length(batch_idx))
-    var start_pos: UInt32 = q.start_pos(batch_idx)
 
     # Coordinates of the current warp.
     warp_y = warp_id // num_warps_n
@@ -1281,9 +1353,10 @@ fn _mha_single_batch_sm90_fa2[
     alias q_gmem_layout = Layout(
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
     )
-    var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True,](
-        q.block_paged_ptr[BM](batch_idx, q_tile_idx * BM, head_idx, 0),
+    q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
+    q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
+    q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True,](
+        q_ptr + Int(q_offset),
         RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[q_gmem_layout.shape, unsigned=True](
                 Int(q_tile_num_rows), depth
@@ -1805,7 +1878,7 @@ fn _mha_single_batch_sm90_fa2[
     output_gmem_tile = LayoutTensor[
         output_type, output_gmem_layout, masked=True
     ](
-        output.block_paged_ptr[BM](batch_idx, q_tile_idx * BM, head_idx, 0),
+        output_ptr + Int(q_offset),
         RuntimeLayout[linear_idx_type = DType.int32](
             RuntimeTuple[output_gmem_layout.shape, unsigned=True](
                 Int(q_tile_num_rows), depth

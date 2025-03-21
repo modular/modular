@@ -297,8 +297,8 @@ fn apply_softmax_denominator[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
 )
 fn mha_single_batch[
-    output_t: MHAOperand,
-    q_t: MHAOperand,
+    output_type: DType,
+    q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
     mask_t: MHAMask,
@@ -306,12 +306,15 @@ fn mha_single_batch[
     config: MHAConfig,
     token_gen: Bool = False,
 ](
-    output: output_t,
-    q: q_t,
+    output: UnsafePointer[Scalar[output_type],],
+    q: UnsafePointer[Scalar[q_type],],
     k: k_t,
     v: v_t,
+    seq_len: Int,
+    num_keys: Int,
     scale: Float32,
     batch_idx: Int,
+    start_pos: Int,
     mask: mask_t,
 ):
     alias BM = config.block_m()
@@ -319,8 +322,6 @@ fn mha_single_batch[
     alias depth = config.depth
     alias num_heads = config.num_heads
     alias kv_num_heads = num_heads // group
-    alias q_type = q_t.type
-    alias output_type = output_t.type
 
     constrained[BN == depth, "BN must be equal to depth"]()
     alias simd_width = simdwidthof[q_type]()
@@ -346,9 +347,6 @@ fn mha_single_batch[
     var kv_head_idx = block_idx.y if token_gen else block_idx.y // group
 
     var q_tile_idx: UInt32 = block_idx.x
-    var seq_len = Int(q.length(batch_idx))
-    var num_keys = Int(k.length(batch_idx))
-    var start_pos = Int(q.start_pos(batch_idx))
 
     # Query global memory iterator
     alias q_gmem_layout = Layout(
@@ -373,15 +371,13 @@ fn mha_single_batch[
         ),
     )
 
-    var head_idx = kv_head_idx * group if token_gen else block_idx.y
-
     var q_tile = LayoutTensor[q_type, q_gmem_layout, masked=True](
-        q.block_paged_ptr[BM](batch_idx, q_tile_idx * BM, head_idx, 0),
+        q + Int(q_offset),
         q_gmem_runtime_layout,
     )
 
     var output_tile = LayoutTensor[output_type, q_gmem_layout, masked=True,](
-        output.block_paged_ptr[BM](batch_idx, q_tile_idx * BM, head_idx, 0),
+        output + Int(q_offset),
         q_gmem_runtime_layout,
     )
 
