@@ -373,7 +373,7 @@ fn alias_parametric_fn() -> String:
     if True:
         return "nvvm.maxntid"
     else:
-        return "amdgpu-flat-work-group-size"
+        return "rocdl.flat_work_group_size"
 
 
 alias mname1 = get_string_literal[alias_parametric_fn()]().value

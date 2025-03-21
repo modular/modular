@@ -441,6 +441,9 @@ private:
   /// list with the same length as the total number of function arguments on
   /// first use.
   SmallVector<Attribute> llvmArgMetadata;
+
+  /// The working vector of the LLVMMetadata.
+  SmallVector<Attribute> llvmMetadata;
 };
 } // namespace
 
@@ -763,7 +766,8 @@ void FnSigDecorators::applyLLVMMetadata(const CallNode &node) {
   // Ignore empty metadata list.
   if (node.operands.empty())
     return;
-  funcOp.setLLVMMetadataArrayAttr(getLLVMMetadataArray(node.operands));
+  ArrayAttr metadata = getLLVMMetadataArray(node.operands);
+  llvmMetadata.append(metadata.begin(), metadata.end());
 }
 
 void FnSigDecorators::registerLLVMArgMetadata(const CallNode &node) {
@@ -810,10 +814,14 @@ void FnSigDecorators::registerLLVMArgMetadata(const CallNode &node) {
 }
 
 void FnSigDecorators::finalize() {
-  if (llvmArgMetadata.empty())
-    return;
-  funcOp.setLLVMArgMetadataArrayAttr(
-      ArrayAttr::get(getContext(), llvmArgMetadata));
+  if (!llvmArgMetadata.empty())
+    funcOp.setLLVMArgMetadataArrayAttr(
+        ArrayAttr::get(getContext(), llvmArgMetadata));
+
+  if (!llvmMetadata.empty()) {
+    // NOTE: @llvm_metadata are processed and added in reverse order
+    funcOp.setLLVMMetadataArrayAttr(ArrayAttr::get(getContext(), llvmMetadata));
+  }
 }
 
 static void processFunctionConformances(FnOp func, SharedState &shared,
