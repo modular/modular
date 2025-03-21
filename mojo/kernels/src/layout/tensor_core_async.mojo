@@ -3,8 +3,29 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module provides abstractions for using Async Tensor Cores to perform asynchronous
-matrix multiplication operations.
+"""Tensor Core Async Module
+
+This module provides high-performance abstractions for utilizing NVIDIA's Tensor Cores
+to perform asynchronous matrix multiplication operations. It implements optimized memory
+layouts and access patterns for efficient tensor core computations.
+
+Key components:
+- Layout creation functions for K-major and MN-major memory arrangements
+- Swizzling support for improved memory access patterns
+- WGMMA (Warp Group Matrix Multiply-Accumulate) descriptor generation
+- TensorCoreAsync struct with methods for asynchronous matrix multiplication
+
+The module supports various data types, matrix dimensions, and memory configurations,
+enabling efficient implementation of deep learning primitives and other tensor operations
+that can leverage hardware acceleration.
+
+Performance features:
+- Asynchronous execution model to overlap computation and memory access
+- Support for different swizzling modes to optimize memory bandwidth
+- Efficient register and shared memory utilization
+- Support for multi-warp group execution
+
+This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
 from sys import sizeof
 
@@ -163,6 +184,19 @@ fn select_k_atom[
     type: DType,
     swizzle_mode: TensorMapSwizzle,
 ]() -> Layout:
+    """Creates a core matrix layout for tensor core operations.
+
+    Constructs the fundamental atomic layout for tensor core operations based on the
+    specified data type and swizzle mode. This layout represents the minimal dense
+    matrix structure that can be efficiently processed by tensor cores.
+
+    Parameters:
+        type: Element data type of the tensor.
+        swizzle_mode: Memory access pattern swizzling mode.
+
+    Returns:
+        `Layout` - A core matrix layout optimized for tensor core operations.
+    """
     alias a = _select_k_atom_bits[swizzle_mode]()
     return upcast(a, sizeof[type]() * 8)
 
@@ -194,6 +228,20 @@ fn tile_layout_k_major[
     BK: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ]() -> Layout:
+    """Creates a K-major layout for tensor core operations.
+
+    Constructs a layout optimized for K-major access patterns in tensor core operations,
+    with optional swizzling for improved memory access patterns.
+
+    Parameters:
+        type: Element data type of the tensor.
+        BM: Size of the M dimension in the tile.
+        BK: Size of the K dimension in the tile.
+        swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+
+    Returns:
+        `Layout` - A K-major layout configured for the specified dimensions and swizzle mode.
+    """
     alias atom = select_k_atom[type, swizzle_mode]()
     alias new_shape = _checked_tile_shape[type, swizzle_mode, BM, BK]()
     return tile_to_shape(atom, new_shape)
@@ -204,6 +252,20 @@ fn tile_to_descriptor[
     layout: Layout,
     is_k_major: Bool = True,
 ]() -> Layout:
+    """Transforms a layout into a WGMMA descriptor-compatible layout.
+
+    Converts a standard layout into a form that can be used with WGMMA descriptors,
+    handling both K-major and MN-major layouts differently.
+
+    Parameters:
+        type: Element data type of the tensor.
+        layout: Input layout to transform.
+        is_k_major: Whether the layout is K-major (True) or MN-major (False).
+
+    Returns:
+        `Layout - A transformed layout compatible with WGMMA descriptors.
+    """
+
     @parameter
     if is_k_major:
         # Tile a layout to ((8,m),(T,2)) shape to match the K-major wgmma descriptor
@@ -221,10 +283,23 @@ fn tile_layout_mn_major[
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ]() -> Layout:
-    """Return the shared memory layout for mn-major input.
+    """Creates an MN-major layout for tensor core operations.
 
-    This is the "unit" layout, the actual shared memory layout can be multiple
-    of this unit.
+    Constructs a unit layout optimized for MN-major access patterns in shared memory,
+    with optional swizzling for improved memory access patterns.
+
+    Parameters:
+        type: Element data type of the tensor.
+        mn_dim: Size of the MN dimension.
+        k_dim: Size of the K dimension.
+        swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+
+    Returns:
+        `Layout` - An MN-major layout configured for the specified dimensions and swizzle mode.
+
+    Note:
+        This returns the "unit" layout; the actual shared memory layout can be a multiple of this unit.
+        Currently only supports SWIZZLE_NONE and SWIZZLE_128B modes.
     """
     constrained[
         swizzle_mode
@@ -263,7 +338,17 @@ fn tile_layout_mn_major[
 
 
 fn wgmma_c_thread_layout[C: Layout]() -> Layout:
-    """Returns the first mode of `wgmma_c_layout`."""
+    """Returns the thread layout component for WGMMA C matrix.
+
+    Generates the first mode of the WGMMA C layout, which maps thread coordinates
+    to linearized indices in the output matrix.
+
+    Parameters:
+        C: The layout of the C matrix.
+
+    Returns:
+        `Layout` - A layout mapping thread coordinates to linearized indices.
+    """
     return Layout(
         IntTuple(4, 8, 4),
         IntTuple(C(IntTuple(0, 2)), C(IntTuple(1, 0)), C(IntTuple(16, 0))),
@@ -271,7 +356,18 @@ fn wgmma_c_thread_layout[C: Layout]() -> Layout:
 
 
 fn wgmma_output_layout[mma_n: Int, C: Layout]() -> Layout:
-    """Returns the second mode of `wgmma_c_layout`."""
+    """Returns the output layout component for WGMMA C matrix.
+
+    Generates the second mode of the WGMMA C layout, which maps output vector
+    coordinates to linearized indices in the output matrix.
+
+    Parameters:
+        mma_n: The N dimension of the WGMMA instruction.
+        C: The layout of the C matrix.
+
+    Returns:
+        `Layout` - A layout mapping output vector coordinates to linearized indices.
+    """
     return Layout(
         IntTuple(2, 2, mma_n // 8),
         IntTuple(C(IntTuple(0, 1)), C(IntTuple(8, 0)), C(IntTuple(0, 8))),
@@ -279,15 +375,34 @@ fn wgmma_output_layout[mma_n: Int, C: Layout]() -> Layout:
 
 
 fn wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
-    """Generates three layouts based on the WGMMA instruction dimensions and the C matrix layout.
+    """Generates three layouts for mapping WGMMA C matrix coordinates.
 
-    The function takes `mma_m` and `mma_n` (the dimensions of a single WGMMA instruction) and `C: Layout` (the layout of the C matrix within a thread block) to generate three layouts:
+    This function creates three layout mappings that are essential for working with WGMMA
+    (Warp Group Matrix Multiply-Accumulate) operations:
 
-    1. `idx -> i`
-    2. `idx -> j`
-    3. `(TV_to_idx, (num_m_mma, num_n_mma)) -> idx
+    1. A projection layout that maps linearized indices to row coordinates (i)
+    2. A projection layout that maps linearized indices to column coordinates (j)
+    3. A composite layout that maps thread and vector coordinates to linearized indices
+       across multiple MMA tiles
 
-    Here, `idx` represents the linearized coordinate of C, while `idx -> {i, j}` are the projection functions that map the linearized coordinate into the Cartesian components `i` and `j`. This function is particularly useful for mapping register values into the coordinate system of C, such as in attention masking and the matmul epilogue.
+    These layouts are particularly useful for operations like attention masking and
+    matrix multiplication epilogues, where register values need to be mapped to the
+    coordinate system of the C matrix.
+
+    Parameters:
+        mma_m: The M dimension (rows) of a single WGMMA instruction, must be 64.
+        mma_n: The N dimension (columns) of a single WGMMA instruction, must be multiple of 8.
+        C: The layout of the C matrix within a thread block.
+
+    Returns:
+        `List[Layout]` - A list containing three layouts:
+            1. proj_i: Maps linearized indices to row coordinates
+            2. proj_j: Maps linearized indices to column coordinates
+            3. TV_tile_to_idx: Maps thread/vector/tile coordinates to linearized indices
+
+    Note:
+        This function enforces constraints on the WGMMA dimensions and ensures the C matrix
+        dimensions are compatible with the WGMMA instruction size.
     """
     alias err = "C = " + String(C) + ", mma_m = " + String(
         mma_m
@@ -463,8 +578,31 @@ struct TensorCoreAsync[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = False,
 ]:
+    """High-performance asynchronous tensor core operations for matrix multiplication.
+
+    This struct provides methods for utilizing NVIDIA's Tensor Cores for asynchronous
+    matrix multiplication operations, with support for various data types and swizzling
+    configurations.
+
+    Parameters:
+        c_type: Data type of the output matrix C.
+        a_type: Data type of the input matrix A.
+        b_type: Data type of the input matrix B.
+        mma_shape: Dimensions for the matrix multiply-accumulate (MMA) operation as [M, N, K].
+        a_swizzle: Swizzling mode for matrix A (default: SWIZZLE_NONE).
+        b_swizzle: Swizzling mode for matrix B (default: SWIZZLE_NONE).
+        transpose_b: Whether to transpose matrix B (default: False).
+    """
+
     @always_inline
     fn __init__(out self):
+        """Initialize the `TensorCoreAsync` instance.
+
+        Ensures that the provided MMA shape is supported.
+
+        Note:
+            Fails to compile if `mma_shape` is not supported.
+        """
         constrained[
             mma_shape in supported_mma_shape,
             String(
@@ -488,6 +626,19 @@ struct TensorCoreAsync[
         ],
         wg_idx: Int = 0,
     ):
+        """Perform asynchronous matrix multiplication using warp group matrix multiply-accumulate (WGMMA).
+
+        This method handles the case where both A and B matrices are in shared memory.
+
+        Parameters:
+            num_warp_groups: Number of warp groups to distribute work across (default: 1).
+
+        Args:
+            a_smem_tile: Matrix A in shared memory.
+            b_smem_tile: Matrix B in shared memory.
+            c_reg_tile: Output matrix C in register memory.
+            wg_idx: Warp group index for multi-warp group scenarios (default: 0).
+        """
         alias a_smem_layout = a_smem_tile.layout
         alias b_smem_layout = b_smem_tile.layout
 
@@ -621,6 +772,16 @@ struct TensorCoreAsync[
             c_type, _, address_space = AddressSpace.LOCAL, *_, **_
         ],
     ):
+        """Perform asynchronous matrix multiplication using warp group matrix multiply-accumulate (WGMMA).
+
+        This overloaded method handles the case where matrix A is in register memory and matrix B
+        is in shared memory.
+
+        Args:
+            a_frag: Matrix A in register memory.
+            b_smem_tile: Matrix B in shared memory.
+            c_reg_tile: Output matrix C in register memory.
+        """
         # alias a_smem_layout = a_smem_tile.layout
         alias b_smem_layout = tile_to_descriptor[
             b_type, b_smem_tile.layout, transpose_b
@@ -705,14 +866,31 @@ struct TensorCoreAsync[
     @staticmethod
     @always_inline
     fn arrive():
+        """Ensures memory consistency by creating a fence for WGMMA operations.
+
+        This method should be called before committing a group to ensure all
+        shared memory accesses are properly aligned and visible.
+        """
         wgmma_fence_aligned()
 
     @staticmethod
     @always_inline
     fn commit_group():
+        """Commits the current warp group for execution.
+
+        This synchronizes the warp group and commits all pending WGMMA operations
+        that have been previously issued.
+        """
         wgmma_commit_group_sync()
 
     @staticmethod
     @always_inline
     fn wait_group[group: Int = 0]():
+        """Waits for the completion of a specific warp group's operations.
+
+        This method blocks until all WGMMA operations from the specified group are complete.
+
+        Parameters:
+            group: The group ID to wait for (default: 0).
+        """
         wgmma_wait_group_sync[group]()
