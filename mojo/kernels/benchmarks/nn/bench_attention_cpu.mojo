@@ -98,7 +98,9 @@ def bench_attention[type: DType](mut m: Bench, spec: AttentionSpec):
                 k.get_shape(),
                 v.get_shape(),
                 mask.get_shape(),
-                rebind[NDBuffer[type, 3, output_static_shape]](output),
+                rebind[NDBuffer[type, 3, output.origin, output_static_shape]](
+                    output
+                ),
                 scale=scale,
             )
 

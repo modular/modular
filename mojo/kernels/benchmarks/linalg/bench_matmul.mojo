@@ -21,7 +21,7 @@ from utils import IndexList
 from utils.index import Index
 
 
-fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer):
+fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, *_]):
     var m = c.get_shape()[0]
     var n = c.get_shape()[1]
     var k = a.get_shape()[1]

@@ -31,8 +31,12 @@ fn bench_concat[
     alias type = DType.float32
     if num_inputs != len(shapes):
         raise Error("num_inputs does not match number of shapes provided")
-    var inputs = StaticTuple[NDBuffer[type, rank], num_inputs]()
-    var inputs_host = StaticTuple[NDBuffer[type, rank], num_inputs]()
+    var inputs = StaticTuple[
+        NDBuffer[type, rank, MutableAnyOrigin], num_inputs
+    ]()
+    var inputs_host = StaticTuple[
+        NDBuffer[type, rank, MutableAnyOrigin], num_inputs
+    ]()
     var out_axis = 0
     var name = String("")
 

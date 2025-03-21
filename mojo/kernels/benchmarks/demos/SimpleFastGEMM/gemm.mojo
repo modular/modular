@@ -71,9 +71,9 @@ fn kernel(
     var b = NDBuffer[dtype, 1](b_ptr, k * NR)
     var c = NDBuffer[dtype, 1](c_ptr, MR * n)
 
-    var c_local = NDBuffer[dtype, 1, MR * NR]().stack_allocation[
-        alignment=alignment
-    ]()
+    var c_local = NDBuffer[
+        dtype, 1, MutableAnyOrigin, MR * NR
+    ]().stack_allocation[alignment=alignment]()
 
     alias NR2 = NR // simd_size
 

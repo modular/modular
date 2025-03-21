@@ -153,13 +153,13 @@ fn bench_matmul[
                 offset_a = (iteration * stride_a) % cache_a
                 offset_b = (iteration * stride_b) % cache_b
                 offset_c = (iteration * stride_c) % cache_c
-            var tensor_a = NDBuffer[dtype, 2, shape_a](
+            var tensor_a = NDBuffer[dtype, 2, MutableAnyOrigin, shape_a](
                 buffer_a.unsafe_ptr() + offset_a, shape_a_dim
             )
-            var tensor_b = NDBuffer[dtype, 2, shape_b](
+            var tensor_b = NDBuffer[dtype, 2, MutableAnyOrigin, shape_b](
                 buffer_b.unsafe_ptr() + offset_b, shape_b_dim
             )
-            var tensor_c = NDBuffer[dtype, 2, shape_c](
+            var tensor_c = NDBuffer[dtype, 2, MutableAnyOrigin, shape_c](
                 buffer_c.unsafe_ptr() + offset_c, shape_c_dim
             )
 

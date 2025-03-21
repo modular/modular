@@ -31,7 +31,7 @@ from memory import UnsafePointer, bitcast
 fn apply[
     func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
     type: DType,
-](input: NDBuffer[type, 1], output: NDBuffer[type, 1]):
+](input: NDBuffer[type, 1], output: NDBuffer[mut=True, type, 1]):
     @parameter
     fn _func[width: Int](idx: Int):
         output.store(idx, func(input.load[width=width](idx)))
@@ -384,7 +384,9 @@ def accuracy_test():
     alias delta_max = 15
     alias delta_range = delta_max - delta_min + 1
 
-    var deltas = NDBuffer[DType.int32, 1, delta_range].stack_allocation()
+    var deltas = NDBuffer[
+        DType.int32, 1, MutableAnyOrigin, delta_range
+    ].stack_allocation()
     deltas.zero()
 
     for i in range(0x3000_0000, 0x42B0_0000, 1):

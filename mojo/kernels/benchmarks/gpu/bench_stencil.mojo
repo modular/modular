@@ -22,8 +22,8 @@ from utils.numerics import min_or_neg_inf
 fn assert_allclose[
     dtype: DType, rank: Int, shape: DimList
 ](
-    h_output_ref: NDBuffer[dtype, rank, shape],
-    h_output_gpu: NDBuffer[dtype, rank, shape],
+    h_output_ref: NDBuffer[dtype, rank, _, shape],
+    h_output_gpu: NDBuffer[dtype, rank, _, shape],
 ) raises:
     var shape_ = h_output_ref.get_shape()
     for i in range(shape_.flattened_length()):
@@ -53,15 +53,15 @@ fn bench_stencil_avg_pool[
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(input_shape.product())
     )
-    var h_input = NDBuffer[dtype, rank, input_shape](h_input_ptr)
+    var h_input = NDBuffer[dtype, rank, _, input_shape](h_input_ptr)
     var h_output_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(output_shape.product())
     )
-    var h_output = NDBuffer[dtype, rank, output_shape](h_output_ptr)
+    var h_output = NDBuffer[dtype, rank, _, output_shape](h_output_ptr)
     var h_output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(output_shape.product())
     )
-    var h_output_ref = NDBuffer[dtype, rank, output_shape](h_output_ref_ptr)
+    var h_output_ref = NDBuffer[dtype, rank, _, output_shape](h_output_ref_ptr)
 
     # Initialize input data
     for i in range(h_input.num_elements()):
@@ -270,15 +270,15 @@ fn bench_stencil_max_pool[
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(input_shape.product())
     )
-    var h_input = NDBuffer[dtype, rank, input_shape](h_input_ptr)
+    var h_input = NDBuffer[dtype, rank, _, input_shape](h_input_ptr)
     var h_output_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(output_shape.product())
     )
-    var h_output = NDBuffer[dtype, rank, output_shape](h_output_ptr)
+    var h_output = NDBuffer[dtype, rank, _, output_shape](h_output_ptr)
     var h_output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(output_shape.product())
     )
-    var h_output_ref = NDBuffer[dtype, rank, output_shape](h_output_ref_ptr)
+    var h_output_ref = NDBuffer[dtype, rank, _, output_shape](h_output_ref_ptr)
 
     # Initialize input data
     for i in range(h_input.num_elements()):
@@ -483,15 +483,15 @@ fn bench_stencil_avg_pool_padded[
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(input_shape.product())
     )
-    var h_input = NDBuffer[dtype, rank, input_shape](h_input_ptr)
+    var h_input = NDBuffer[dtype, rank, _, input_shape](h_input_ptr)
     var h_output_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(output_shape.product())
     )
-    var h_output = NDBuffer[dtype, rank, output_shape](h_output_ptr)
+    var h_output = NDBuffer[dtype, rank, _, output_shape](h_output_ptr)
     var h_output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(output_shape.product())
     )
-    var h_output_ref = NDBuffer[dtype, rank, output_shape](h_output_ref_ptr)
+    var h_output_ref = NDBuffer[dtype, rank, _, output_shape](h_output_ref_ptr)
 
     # Initialize input data
     for i in range(h_input.num_elements()):
