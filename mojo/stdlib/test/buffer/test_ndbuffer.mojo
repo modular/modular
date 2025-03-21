@@ -136,9 +136,7 @@ fn test_fill():
     var filled_stack = InlineArray[Scalar[DType.index], 3 * 3](
         uninitialized=True
     )
-    var filled = NDBuffer[DType.index, 2, _, DimList(3, 3)](
-        filled_stack.unsafe_ptr()
-    )
+    var filled = NDBuffer[DType.index, 2, _, DimList(3, 3)](filled_stack)
     filled.fill(1)
 
     var err = memcmp(buf.data, filled.data, filled.num_elements())
