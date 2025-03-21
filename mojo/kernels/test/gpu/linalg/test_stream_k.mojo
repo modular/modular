@@ -268,7 +268,7 @@ fn full_tiles_kernel[
        |T0,K0 |T0,K1|    |T0,K2 |T1,K0|     |T1,K1 |T1,K2|    |T2,K0 |T2,K1| ...
         partial  partial  partial  partial  partial  partial  partial  partial
 
-    - The tile T0 is computed in 3 partial K-chunks by Blocks 0,1,...  
+    - The tile T0 is computed in 3 partial K-chunks by Blocks 0,1,...
     - The tile T1 is also subdivided, etc.
     - M <-> tile dimension,  N <-> tile dimension,  K <-> subdivided dimension
     - Atomic merges & locks coordinate partial sums.
@@ -298,9 +298,9 @@ fn matmul_stream_k[
     *,
     total_programs_streamk: Int,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[c_type, 2, _, c_shape],
+    a: NDBuffer[a_type, 2, _, a_shape],
+    b: NDBuffer[b_type, 2, _, b_shape],
     M: Int,
     N: Int,
     K: Int,
@@ -457,9 +457,15 @@ fn run_matmul_stream_k[
     var a_device = ctx.enqueue_create_buffer[type](M * K)
     var b_device = ctx.enqueue_create_buffer[type](K * N)
     var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var a_buf = NDBuffer[type, 2, a_shape](a_device.unsafe_ptr(), Index(M, K))
-    var b_buf = NDBuffer[type, 2, b_shape](b_device.unsafe_ptr(), Index(K, N))
-    var c_buf = NDBuffer[type, 2, c_shape](c_device.unsafe_ptr(), Index(M, N))
+    var a_buf = NDBuffer[type, 2, _, a_shape](
+        a_device.unsafe_ptr(), Index(M, K)
+    )
+    var b_buf = NDBuffer[type, 2, _, b_shape](
+        b_device.unsafe_ptr(), Index(K, N)
+    )
+    var c_buf = NDBuffer[type, 2, _, c_shape](
+        c_device.unsafe_ptr(), Index(M, N)
+    )
 
     var a_device_n = ctx.enqueue_create_buffer[type](M * K)
     var b_device_n = ctx.enqueue_create_buffer[type](K * N)
@@ -471,9 +477,9 @@ fn run_matmul_stream_k[
     alias sm_count = ctx.device_info.sm_count
 
     matmul_stream_k[total_programs_streamk=sm_count](
-        rebind[NDBuffer[type, 2, c_shape]](c_buf),
-        rebind[NDBuffer[type, 2, a_shape]](a_buf),
-        rebind[NDBuffer[type, 2, b_shape]](b_buf),
+        rebind[NDBuffer[type, 2, c_buf.origin, c_shape]](c_buf),
+        rebind[NDBuffer[type, 2, a_buf.origin, a_shape]](a_buf),
+        rebind[NDBuffer[type, 2, b_buf.origin, b_shape]](b_buf),
         M,
         N,
         K,
