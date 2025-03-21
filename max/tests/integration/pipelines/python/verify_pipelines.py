@@ -7,17 +7,22 @@
 from __future__ import annotations
 
 import enum
+import functools
+import multiprocessing
 import os
-import shlex
-import subprocess
 import sys
 import time
 import traceback
+from concurrent.futures import ProcessPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence, TextIO, Union
+from typing import Callable, Mapping, Optional, Sequence, TextIO, TypeVar, Union
 
 import click
+from generate_llm_logits import Flake, generate_llm_logits
+from llama3.verify import verify
+from max.entrypoints.cli import DevicesOptionType
+from model.utils.exceptions import AccuracyError
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -49,13 +54,6 @@ _VERDICT_EMOJI = {
     VerificationVerdict.ERROR: "❌",
     VerificationVerdict.FLAKE: "❄️",
 }
-
-
-class Flake(Exception):
-    """A failure has occurred that appears to be of a temporary nature.
-
-    It is likely that retrying the operation would succeed.
-    """
 
 
 def resolve_rlocation(rloc: str) -> Path:
@@ -136,6 +134,38 @@ class TagFilterParamType(click.ParamType):
         return TagFilter(must_have=required, must_not_have=forbidden)
 
 
+ReturnT = TypeVar("ReturnT")
+
+
+def run_in_isolated_process(
+    func: Callable[[], ReturnT], timeout: int = 600
+) -> ReturnT:
+    """
+    Execute a function in an isolated process with timeout handling.
+
+    Args:
+        func: The function to execute (with arguments already bound)
+        timeout: Timeout in seconds (default: 10 minutes)
+
+    Returns:
+        The return value from the function, with the same type as func's return type
+    """
+    # Needed for multiprocessing to work nicely with CUDA.
+    ctx = multiprocessing.get_context("spawn")
+
+    # Use that context for the ProcessPoolExecutor
+    with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as executor:
+        future = executor.submit(func)
+
+        try:
+            return future.result(timeout=timeout)
+        except TimeoutError:
+            print(f"Process timed out after {timeout} seconds", file=sys.stderr)
+            executor.shutdown(wait=False, cancel_futures=True)
+
+            raise
+
+
 def generate_llm_logits_nonretrying(
     *,
     framework: str,
@@ -148,22 +178,24 @@ def generate_llm_logits_nonretrying(
 
     Do not retry on flake.
     """
-    proc = subprocess.run(
-        [
-            os.environ["GENERATE_LLM_LOGITS_BIN"],
-            f"--framework={framework}",
-            f"--device={device}",
-            f"--pipeline={pipeline}",
-            f"--encoding={encoding}",
-            f"--output={output_path}",
-        ]
+    parsed_device = DevicesOptionType.parse_from_str(device)
+    device_specs = DevicesOptionType.device_specs(parsed_device)
+
+    run_in_isolated_process(
+        functools.partial(
+            generate_llm_logits,
+            framework_name=framework,
+            device_specs=device_specs,
+            pipeline_name=pipeline,
+            encoding_name=encoding,
+            output_path=output_path,
+            print_output=False,
+        ),
+        timeout=600,
     )
-    if proc.returncode == EX_TEMPFAIL:
-        raise Flake
-    proc.check_returncode()
 
 
-def generate_llm_logits(
+def generate_llm_logits_with_retry(
     *,
     framework: str,
     device: str,
@@ -171,7 +203,12 @@ def generate_llm_logits(
     encoding: str,
     output_path: Path,
 ) -> None:
-    """Run :generate_llm_logits to generate logits for a model."""
+    """Generate logits with retry capability.
+
+    This function calls generate_llm_logits_nonretrying and implements
+    a simple retry mechanism that will attempt the operation again after
+    a 60-second delay if a Flake exception occurs.
+    """
 
     def attempt() -> None:
         generate_llm_logits_nonretrying(
@@ -186,7 +223,8 @@ def generate_llm_logits(
         attempt()
     except Flake:
         print(
-            "generate_llm_logits flaked... waiting a minute and trying again.",
+            "Generating LLM logits flaked.... waiting a minute and "
+            "trying again.",
             file=sys.stderr,
         )
         time.sleep(60)
@@ -223,17 +261,18 @@ def run_llm_verification(
     max_golden_path = Path(
         f"/tmp/goldens_max_{device_type.value}_{pipeline}_{encoding}.json"
     )
-    generate_llm_logits(
+    generate_llm_logits_with_retry(
         framework="max",
         device=devices,
         pipeline=pipeline,
         encoding=encoding,
         output_path=max_golden_path,
     )
+
     if pregenerated_torch_goldens_rlocation is not None:
-        # This workflow runs on an A10.  The Torch reference runs out of memory
+        # This workflow runs on an A10. The Torch reference runs out of memory
         # on an A10, so it was run manually on an A100 and the result goldens
-        # uploaded.  Use these pre-generated goldens in this case.
+        # uploaded. Use these pre-generated goldens in this case.
         torch_golden_path = resolve_rlocation(
             pregenerated_torch_goldens_rlocation
         )
@@ -241,7 +280,7 @@ def run_llm_verification(
         torch_golden_path = Path(
             f"/tmp/goldens_torch_{device_type.value}_{pipeline}_{encoding}.json"
         )
-        generate_llm_logits(
+        generate_llm_logits_with_retry(
             framework="torch",
             device=devices,
             pipeline=pipeline,
@@ -250,37 +289,35 @@ def run_llm_verification(
         )
 
     eval_metrics = []
-    threshold_flags = []
     if absolute_tolerance is not None and relative_tolerance is not None:
         eval_metrics.append("tol")
-        threshold_flags.append(f"--absolute-tolerance={absolute_tolerance}")
-        threshold_flags.append(f"--relative-tolerance={relative_tolerance}")
     if cos_dist_threshold is not None:
         eval_metrics.append("cos")
-        threshold_flags.append(f"--cos-dist-threshold={cos_dist_threshold}")
     if kl_div_threshold is not None:
         eval_metrics.append("kl")
-        threshold_flags.append(f"--kl-div-threshold={kl_div_threshold}")
-    if print_suggested_tolerances:
-        threshold_flags.append("--print-suggested-tolerances")
+
     if not eval_metrics:
         raise ValueError(
             "Please provide absolute, relative, cos, or kldiv error thresholds."
             " Otherwise no metrics will be computed."
         )
+
     try:
-        subprocess.run(
-            [
-                os.environ["LLAMA3_VERIFY_BIN"],
-                str(max_golden_path),
-                str(torch_golden_path),
-                "--eval-metric=" + ",".join(eval_metrics),
-            ]
-            + threshold_flags,
-            check=True,
+        verify(
+            pipeline_outputs=max_golden_path,
+            torch_outputs=torch_golden_path,
+            eval_metric=eval_metrics,
+            relative_tolerance=relative_tolerance,
+            absolute_tolerance=absolute_tolerance,
+            cos_dist_threshold=cos_dist_threshold,
+            kl_div_threshold=kl_div_threshold,
+            print_suggested_tolerances=print_suggested_tolerances,
         )
-    except subprocess.CalledProcessError:
+    except AccuracyError:
         return VerificationVerdict.INVALID
+    except Exception:
+        traceback.print_exc()
+        return VerificationVerdict.ERROR
     return VerificationVerdict.OK
 
 
@@ -309,16 +346,6 @@ class PipelineDef:
             return self.run(device_type, devices, print_suggested_tolerances)
         except Flake:
             return VerificationVerdict.FLAKE
-        except subprocess.CalledProcessError as exc:
-            # These errors are fairly well-defined and do not usually need a
-            # whole traceback printed.  Printing just the status code and
-            # command line is usually easier to interpret.
-            print(
-                f"Subprocess call failed with exit code {exc.returncode}.",
-                file=sys.stderr,
-            )
-            print(f"Command line was: {shlex.join(exc.cmd)}", file=sys.stderr)
-            return VerificationVerdict.ERROR
         except Exception:
             traceback.print_exc()
             return VerificationVerdict.ERROR

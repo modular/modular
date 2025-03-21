@@ -21,7 +21,7 @@ ENCODING=float32
 """
 
 from pathlib import Path
-from typing import List, Optional, Sequence, TypedDict
+from typing import List, Optional, Sequence, TypedDict, TypeVar
 
 import click
 import numpy as np
@@ -57,13 +57,23 @@ class ModelOutput(TypedDict):
     """Outputs from a text embedding model."""
 
 
+# Shared defaults between CLI and verify function
+DEFAULT_EVAL_METRIC = ["tol"]
+DEFAULT_RELATIVE_TOLERANCE = 1e-03
+DEFAULT_ABSOLUTE_TOLERANCE = 1e-04
+DEFAULT_COS_DIST_THRESHOLD = 1e-3
+DEFAULT_KL_DIV_THRESHOLD = 1e-3
+DEFAULT_DIFF_COUNT = 4
+DEFAULT_PRINT_SUGGESTED_TOLERANCES = False
+
+
 @click.command()
 @click.argument("pipeline_outputs", type=Path)
 @click.argument("torch_outputs", type=Path)
 @click.option(
     "--eval-metric",
     type=CommaSeparatedList,
-    default="tol",
+    default=DEFAULT_EVAL_METRIC,
     show_default=True,
     help=(
         "The metric(s) that should be used to verify model output correctness."
@@ -75,21 +85,21 @@ class ModelOutput(TypedDict):
 @click.option(
     "--relative-tolerance",
     type=float,
-    default=1e-03,
+    default=DEFAULT_RELATIVE_TOLERANCE,
     help="The relative tolerance used for result verification.",
     show_default=True,
 )
 @click.option(
     "--absolute-tolerance",
     type=float,
-    default=1e-04,
+    default=DEFAULT_ABSOLUTE_TOLERANCE,
     help="The absolute tolerance used for result verification.",
     show_default=True,
 )
 @click.option(
     "--cos-dist-threshold",
     type=float,
-    default=1e-3,
+    default=DEFAULT_COS_DIST_THRESHOLD,
     help=(
         "The threshold for cosine similarity across the last axis of the model"
         " output."
@@ -99,9 +109,9 @@ class ModelOutput(TypedDict):
 @click.option(
     "--kl-div-threshold",
     type=float,
-    default=1e-3,
+    default=DEFAULT_KL_DIV_THRESHOLD,
     help=(
-        "The threshold for cosine similarity across the last axis of the model"
+        "The threshold for KL divergence across the last axis of the model"
         " output."
     ),
     show_default=True,
@@ -109,14 +119,14 @@ class ModelOutput(TypedDict):
 @click.option(
     "--diff-count",
     type=int,
-    default=4,
+    default=DEFAULT_DIFF_COUNT,
     help="Print the first N entries where the results do not match.",
     show_default=True,
 )
 @click.option(
     "--print-suggested-tolerances",
     is_flag=True,
-    default=False,
+    default=DEFAULT_PRINT_SUGGESTED_TOLERANCES,
     help=(
         "On failure, prints a set of potential tolerances based on the pareto"
         " frontier of passing absolute and relative tolerance combinations."
@@ -132,7 +142,69 @@ def main(
     kl_div_threshold: float,
     diff_count: int,
     print_suggested_tolerances: bool,
+) -> None:
+    """Click command entry point that delegates to the implementation function.
+
+    This wrapper exists because Click command functions aren't easily picklable,
+    which causes issues when called from multiprocessing.
+    """
+
+    verify(
+        pipeline_outputs=pipeline_outputs,
+        torch_outputs=torch_outputs,
+        eval_metric=eval_metric,
+        relative_tolerance=relative_tolerance,
+        absolute_tolerance=absolute_tolerance,
+        cos_dist_threshold=cos_dist_threshold,
+        kl_div_threshold=kl_div_threshold,
+        diff_count=diff_count,
+        print_suggested_tolerances=print_suggested_tolerances,
+    )
+
+
+def verify(
+    pipeline_outputs: Path,
+    torch_outputs: Path,
+    eval_metric: Optional[Sequence[str]] = None,
+    relative_tolerance: Optional[float] = None,
+    absolute_tolerance: Optional[float] = None,
+    cos_dist_threshold: Optional[float] = None,
+    kl_div_threshold: Optional[float] = None,
+    diff_count: Optional[int] = None,
+    print_suggested_tolerances: Optional[bool] = None,
 ):
+    """Verify that pipeline outputs match torch outputs within specified tolerances.
+
+    Args:
+        pipeline_outputs: Path to the pipeline outputs JSON file
+        torch_outputs: Path to the torch outputs JSON file
+        eval_metric: Metrics to use for evaluation (e.g., ["tol", "cos", "kl"])
+        relative_tolerance: Relative tolerance for numerical comparison
+        absolute_tolerance: Absolute tolerance for numerical comparison
+        cos_dist_threshold: Threshold for cosine similarity
+        kl_div_threshold: Threshold for KL divergence
+        diff_count: Number of differences to show in error output
+        print_suggested_tolerances: Whether to print suggested tolerances on failure
+    """
+
+    # MyPy needs the TypeVar in order to infer the type of the return value
+    T = TypeVar("T")
+
+    def val_or(value: Optional[T], default: T) -> T:
+        return value if value is not None else default
+
+    # Note: These default value shenanigans are here to simplify the logic
+    # of the caller in generate_llm_logits.py.
+    eval_metric = val_or(eval_metric, DEFAULT_EVAL_METRIC)
+    relative_tolerance = val_or(relative_tolerance, DEFAULT_RELATIVE_TOLERANCE)
+    absolute_tolerance = val_or(absolute_tolerance, DEFAULT_ABSOLUTE_TOLERANCE)
+    cos_dist_threshold = val_or(cos_dist_threshold, DEFAULT_COS_DIST_THRESHOLD)
+    kl_div_threshold = val_or(kl_div_threshold, DEFAULT_KL_DIV_THRESHOLD)
+    diff_count = val_or(diff_count, DEFAULT_DIFF_COUNT)
+    print_suggested_tolerances = val_or(
+        print_suggested_tolerances, DEFAULT_PRINT_SUGGESTED_TOLERANCES
+    )
+
     first_framework = "Pipeline"
     other_framework = "Torch"
     validator = construct_validator(

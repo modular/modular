@@ -25,7 +25,6 @@ modular_py_binary(
     name = "verify_pipelines",
     srcs = ["verify_pipelines.py"],
     data = [
-        ":generate_llm_logits",
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//KGEN:ptxas",
@@ -41,8 +40,6 @@ modular_py_binary(
         "@torch_replit_golden",
     ],
     env = {
-        "GENERATE_LLM_LOGITS_BIN": "$(execpath :generate_llm_logits)",
-        "LLAMA3_VERIFY_BIN": "$(execpath //SDK/integration-test/pipelines/python/llama3:verify)",
         # MODULAR_CUDA_QUERY_PATH is required by the Llama3 scripts.
         "MODULAR_CUDA_QUERY_PATH": "$(execpath //Kernels/tools/gpu-query)",
         # PIPELINES_TESTDATA is required by the Llama3 scripts.
@@ -53,6 +50,8 @@ modular_py_binary(
     ignore_collisions = True,
     visibility = ["//visibility:public"],
     deps = [
+        ":generate_llm_logits",
+        "//SDK/integration-test/pipelines/python/llama3:verify",
         requirement("click"),
         "@rules_python//python/runfiles",
     ],

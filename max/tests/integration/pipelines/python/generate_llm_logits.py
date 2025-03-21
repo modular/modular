@@ -43,6 +43,13 @@ from test_common import (
 )
 from typing_extensions import ParamSpec
 
+# This is far from a universal standard, but this is the closest to a standard
+# that I could find: BSD-derived programs sometimes use exit codes from
+# "sysexits.h", which defines this exit code as "temp failure; user is invited
+# to retry".  generate_llm_logits will emit this if it detects a failure is
+# likely caused by a network flake and could be resolved by a retry.
+EX_TEMPFAIL = 75
+
 
 @dataclass
 class MaxPipelineAndTokenizer:
@@ -659,11 +666,12 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
 }
 
 
-# This is far from a universal standard, but this is the closest to a standard
-# that I could find: BSD-derived programs sometimes use exit codes from
-# "sysexits.h", which defines this exit code as "temp failure; user is invited
-# to retry".
-EX_TEMPFAIL = 75
+class Flake(Exception):
+    """A failure has occurred that appears to be of a temporary nature.
+
+    It is likely that retrying the operation would succeed.
+    """
+
 
 _ParamsT = ParamSpec("_ParamsT")
 _ReturnT = TypeVar("_ReturnT")
@@ -702,7 +710,7 @@ def _detect_hf_flakes(
                 print(
                     "-- End of Hugging Face flake traceback --", file=sys.stderr
                 )
-                sys.exit(EX_TEMPFAIL)
+                raise Flake("Hugging Face API flake detected") from exc
             else:
                 raise
 
@@ -752,9 +760,36 @@ def _detect_hf_flakes(
     default=False,
     help="Dump goldens in non-JSON format to stdout",
 )
-@_detect_hf_flakes
 def main(
-    device_type: str,
+    device_type: str | list[int],
+    framework_name: str,
+    pipeline_name: str,
+    encoding_name: str,
+    output_path: Path,
+    print_output: bool,
+) -> None:
+    """Click command entry point that delegates to the implementation function.
+
+    This wrapper exists because Click command functions aren't easily picklable,
+    which causes issues when called from multiprocessing.
+    """
+
+    try:
+        generate_llm_logits(
+            device_specs=DevicesOptionType.device_specs(device_type),
+            framework_name=framework_name,
+            pipeline_name=pipeline_name,
+            encoding_name=encoding_name,
+            output_path=output_path,
+            print_output=print_output,
+        )
+    except Flake:
+        sys.exit(EX_TEMPFAIL)
+
+
+@_detect_hf_flakes
+def generate_llm_logits(
+    device_specs: list[driver.DeviceSpec],
     framework_name: str,
     pipeline_name: str,
     encoding_name: str,
@@ -766,6 +801,7 @@ def main(
     The resulting logit golden files for two different frameworks can be used
     with //SDK/integration-test/pipelines/python/llama3/verify to check their
     similarity.
+
     """
 
     # Register all models.
@@ -776,7 +812,6 @@ def main(
 
     pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
 
-    device_specs = DevicesOptionType.device_specs(device_type)
     for device_spec in device_specs:
         if not pipeline_oracle.is_supported(
             encoding=encoding_name,
@@ -824,9 +859,9 @@ def main(
             )
     elif framework_name == "torch":
         torch_device: torch.device
-        if device_type == "cpu":
+        if device_specs[0].device_type == "cpu":
             torch_device = torch.device("cpu")
-        elif device_type == "gpu" or isinstance(device_type, list):
+        elif device_specs[0].device_type == "gpu":
             # Set device to device 0 even for multi-GPU: model parallelism is
             # handled at model construction time in `create_torch_pipeline`.
             torch_device = torch.device("cuda:0")
@@ -865,10 +900,10 @@ def main(
         )
 
     if print_output:
-        print(f"Framework: {framework_name}")
-        print(f"Pipeline:  {pipeline_name}")
-        print(f"Encoding:  {encoding_name}")
-        print(f"Device:    {device_type}")
+        print(f"Framework:    {framework_name}")
+        print(f"Pipeline:     {pipeline_name}")
+        print(f"Encoding:     {encoding_name}")
+        print(f"Device specs: {device_specs}")
         print("Results:")
         print(results)
     with open(output_path, "w") as f:
