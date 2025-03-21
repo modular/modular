@@ -3474,54 +3474,6 @@ struct DeviceContext:
             )
         )
 
-    @deprecated("Use DeviceBuffer.map_to_host()")
-    fn map_to_host[
-        type: DType  # The data type of the buffer elements
-    ](self, buf: DeviceBuffer[type]) raises -> _HostMappedBuffer[type]:
-        """Allows for temporary access to the device buffer by the host
-        from within a `with` statement.
-
-        This method creates a temporary host buffer, copies data from the device buffer
-        to the host buffer, and provides access to the host buffer within a `with` statement.
-        When the `with` statement exits, any modifications to the host buffer are copied
-        back to the device buffer.
-
-        Parameters:
-            type: The data type of the buffer elements.
-
-        Args:
-            buf: The device buffer to map to host memory.
-
-        Returns:
-            A _HostMappedBuffer object that manages the mapping between host and device memory.
-
-        Raises:
-            If there's an error during buffer creation or data transfer.
-
-        Note:
-            Values modified inside the `with` statement are updated on the
-            device when the `with` statement exits.
-
-        Example:
-
-            ```mojo
-            from gpu.host import DeviceContext
-
-            var ctx = DeviceContext()
-            var length = 1024
-            var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
-            var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
-
-            # Initialize the input and output with known values.
-            with ctx.map_to_host(in_dev) as in_host, ctx.map_to_host(out_dev) as out_host:
-                for i in range(length):
-                    in_host[i] = i
-                    out_host[i] = 255
-            ```
-            .
-        """
-        return _HostMappedBuffer[type](self, buf)
-
 
 struct _HostMappedBuffer[
     type: DType,
