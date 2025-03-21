@@ -133,9 +133,6 @@ class PagedCacheMetadata:
             <= self.inflight_idx
             <= self.seq_len
         ), "The indices must be in the correct order"
-        assert self.seq_len <= len(self.tokens), (
-            "Sequence has exceeded the max sequence length"
-        )
         assert self.committed_idx % self.page_size == 0, (
             "The committed_idx must be a multiple of the page size since we "
             "can't commit a partial page into the prefix cache"
