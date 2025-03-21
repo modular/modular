@@ -53,7 +53,7 @@ struct HostNDBuffer[
     /,
     shape: DimList = DimList.create_unknown[rank](),
 ]:
-    var tensor: NDBuffer[type, rank, shape]
+    var tensor: NDBuffer[type, rank, MutableAnyOrigin, shape]
 
     @always_inline
     fn __init__(
@@ -66,13 +66,13 @@ struct HostNDBuffer[
                 " all shapes are statically known"
             ),
         ]()
-        self.tensor = NDBuffer[type, rank, shape](
+        self.tensor = NDBuffer[type, rank, MutableAnyOrigin, shape](
             UnsafePointer[Scalar[type]].alloc(shape.product().get()),
         )
 
     @always_inline
     @implicit
-    fn __init__(out self, tensor: NDBuffer[type, rank, shape]):
+    fn __init__(out self, tensor: NDBuffer[type, rank, _, shape]):
         self.tensor = tensor
 
     @always_inline
@@ -81,7 +81,7 @@ struct HostNDBuffer[
         mut self,
         dynamic_shape: IndexList[rank, **_],
     ):
-        self.tensor = NDBuffer[type, rank, shape](
+        self.tensor = NDBuffer[type, rank, _, shape](
             UnsafePointer[Scalar[type]].alloc(product(dynamic_shape, rank)),
             dynamic_shape,
         )
@@ -119,6 +119,7 @@ struct DeviceNDBuffer[
     var tensor: NDBuffer[
         type,
         rank,
+        MutableAnyOrigin,
         shape,
     ]
 
@@ -137,7 +138,7 @@ struct DeviceNDBuffer[
         ]()
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
         self.buffer = ctx.enqueue_create_buffer[type](shape.product().get())
-        self.tensor = NDBuffer[type, rank, shape](
+        self.tensor = NDBuffer[type, rank, MutableAnyOrigin, shape](
             self.buffer.unsafe_ptr(),
         )
 
@@ -152,7 +153,7 @@ struct DeviceNDBuffer[
         self.buffer = ctx.enqueue_create_buffer[type](
             product(dynamic_shape, rank)
         )
-        self.tensor = NDBuffer[type, rank, shape](
+        self.tensor = NDBuffer[type, rank, MutableAnyOrigin, shape](
             self.buffer.unsafe_ptr(), dynamic_shape
         )
 
@@ -177,7 +178,7 @@ struct DeviceNDBuffer[
         self.buffer = ctx.enqueue_create_buffer[type](
             product(dynamic_shape, rank)
         )
-        self.tensor = NDBuffer[type, rank, shape](
+        self.tensor = NDBuffer[type, rank, MutableAnyOrigin, shape](
             self.buffer.unsafe_ptr(), dynamic_shape, stride
         )
 
@@ -202,7 +203,7 @@ struct DeviceNDBuffer[
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
 @value
 struct TestTensor[type: DType, rank: Int]:
-    var ndbuffer: NDBuffer[type, rank]
+    var ndbuffer: NDBuffer[type, rank, MutableAnyOrigin]
     var shape: DimList
     var num_elements: Int
 
@@ -272,7 +273,9 @@ struct InitializationType:
             raise Error("Invalid initialization type")
 
 
-fn initialize(buffer: NDBuffer, init_type: InitializationType) raises:
+fn initialize(
+    buffer: NDBuffer[mut=True, **_], init_type: InitializationType
+) raises:
     if init_type == InitializationType.zero:
         buffer.zero()
     elif init_type == InitializationType.one:
@@ -287,7 +290,7 @@ fn initialize(buffer: NDBuffer, init_type: InitializationType) raises:
 
 @parameter
 @always_inline
-fn arange(buffer: NDBuffer):
+fn arange(buffer: NDBuffer[mut=True, *_]):
     @parameter
     if buffer.rank == 2:
         for i in range(buffer.dim[0]()):
@@ -306,7 +309,7 @@ fn zero(buffer: NDBuffer):
     buffer.zero()
 
 
-fn fill(buffer: NDBuffer, val: Scalar):
+fn fill(buffer: NDBuffer[mut=True, *_], val: Scalar):
     buffer.fill(val.cast[buffer.type]())
 
 
