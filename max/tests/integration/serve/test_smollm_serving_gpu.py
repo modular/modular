@@ -41,7 +41,6 @@ MAX_READ_SIZE = 10 * 1024
             quantization_encoding=SupportedEncoding.bfloat16,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             max_batch_size=16,
-            engine=PipelineEngine.MAX,
         )
     ],
     indirect=True,

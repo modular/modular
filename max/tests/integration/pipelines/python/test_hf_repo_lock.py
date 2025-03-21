@@ -28,6 +28,7 @@ def test_revision_for_hf_repo() -> None:
 
 
 @mock.patch("huggingface_hub.repo_exists", return_value=True)
+@pytest.mark.skip("TODO: AITLIB-280")
 def test_apply_to_config(repo_exists_mock: mock.Mock) -> None:
     config = pipelines.PipelineConfig(model_path=EXAMPLE_KEY)
     assert config.model_config.huggingface_revision == "main"

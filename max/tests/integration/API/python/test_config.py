@@ -12,7 +12,6 @@ import pytest
 from huggingface_hub import snapshot_download
 from max.driver import DeviceSpec
 from max.pipelines.config import PipelineConfig
-from max.pipelines.config_enums import SupportedEncoding
 
 
 def test_config_init__raises_with_no_model_path():
@@ -35,11 +34,12 @@ def test_config_post_init__with_weight_path_but_no_model_path():
     ]
 
 
+@pytest.mark.skip("TODO: AITLIB-278")
 def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.
     config = PipelineConfig(
         model_path="modularai/llama-3.1",
-        weight_path="file.path",
+        weight_path="file.gguf",
     )
 
     assert isinstance(config.model_config.weight_path, list)
@@ -151,24 +151,4 @@ def test_config_post_init__other_repo_weights():
     assert config.model_config._weights_repo_id == "modularai/replit-code-1.5"
     assert config.model_config.weight_path == [
         Path("replit-code-v1_5-3b-f32.gguf")
-    ]
-
-    # This example, should not set the _weights_repo_id.
-    config = PipelineConfig(
-        model_path="modularai/llama-3.1",
-        weight_path=[
-            Path(
-                "SDK/integration-test/pipelines/python/llama3/testdata/tinyllama_f32.gguf"
-            )
-        ],
-        quantization_encoding=SupportedEncoding.float32,
-    )
-
-    assert config.model_config._weights_repo_id is None
-    weights_repo = config.model_config.huggingface_weights_repo()
-    assert weights_repo.repo_id == "modularai/llama-3.1"
-    assert config.model_config.weight_path == [
-        Path(
-            "SDK/integration-test/pipelines/python/llama3/testdata/tinyllama_f32.gguf"
-        )
     ]

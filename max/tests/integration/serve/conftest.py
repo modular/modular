@@ -68,10 +68,6 @@ def app(pipeline_config):
     if not PIPELINE_REGISTRY.architectures:
         register_all_models()
 
-    pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(
-        pipeline_config
-    )
-
     pipeline_task = PipelineTask.TEXT_GENERATION
     if (
         pipeline_config.model_config.model_path

@@ -24,13 +24,11 @@ def pipeline_config() -> PipelineConfig:
     if not PIPELINE_REGISTRY.architectures:
         register_all_models()
 
-    config = PipelineConfig(
+    return PipelineConfig(
         model_path="HuggingFaceTB/SmolLM-135M",
         quantization_encoding=SupportedEncoding.float32,
         max_cache_batch_size=4,
     )
-
-    return PIPELINE_REGISTRY.validate_pipeline_config(config)
 
 
 @pytest.fixture(scope="session")
