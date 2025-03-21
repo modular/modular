@@ -96,19 +96,19 @@ def create_paged_manager(
 
         # predict various stats about each request prior to fetch
         for seq_id, prompt in seq_ids_and_prompts.items():
-            data = self.active_requests[seq_id]
-            num_pages_by_seq[seq_id] = len(data.blocks)
+            blocks = self.get_req_blocks(seq_id)
+            num_pages_by_seq[seq_id] = len(blocks)
             prefix_blocks, tokens_to_encode, new_pages_needed = (
                 self.query_fetch_stats(seq_id, prompt, num_steps=num_steps)
             )
             data = self.active_requests[seq_id]
-            num_pages = len(data.blocks)
+            num_pages = len(blocks)
             assert num_pages == num_pages_by_seq[seq_id], (
                 "Querying should not mutate the state of the cache"
             )
             # blocks reused from prefix cache should not already be assigned to seq
             for b in prefix_blocks:
-                assert b not in data.blocks
+                assert b not in blocks
 
             tokens_to_encode_by_seq[seq_id] = tokens_to_encode
             new_pages_by_seq[seq_id] = new_pages_needed
@@ -125,7 +125,8 @@ def create_paged_manager(
             prev_num_pages = num_pages_by_seq[seq_id]
             prefix_blocks = prefix_blocks_by_seq[seq_id]
             data = self.active_requests[seq_id]
-            curr_num_pages = len(data.blocks)
+            blocks = self.get_req_blocks(seq_id)
+            curr_num_pages = len(blocks)
             num_new_pages_needed = new_pages_by_seq[seq_id]
             # check that we correctly predicted the number of pages we needed to
             # allocate
@@ -137,7 +138,7 @@ def create_paged_manager(
             # check that the blocks we retrieved from prefix cache were assigned
             # the the sequence
             for b in prefix_blocks_by_seq[seq_id]:
-                assert b in data.blocks
+                assert b in blocks
 
             # check that the number of tokens we predicted to encode is correct
             # up to an error of page_size due to query_fetch_stats not considering COW
@@ -794,8 +795,8 @@ async def test_prefix_caching_chunked_prefill() -> None:
     # block 2 holds projections for [..., 16, 17, 18]
     # seq_id_2 needs projections for [..., 16, 17, 16]
     run_forward(model, kv_manager, seq_id_2, prompt_2_part_2, FAKE_TOKEN)
-    metadata = kv_manager.active_requests[seq_id_2]
-    assert 2 not in metadata.blocks
+    blocks = kv_manager.get_req_blocks(seq_id_2)
+    assert 2 not in blocks
 
     assert kv_manager.block_manager.cached_prompt_tokens == 6
     assert kv_manager.cache_hit_rate > 0.2
