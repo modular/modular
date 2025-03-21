@@ -270,9 +270,9 @@ fn matmul[
 ](
     ctx: DeviceContext,
     handle: Handle,
-    c: NDBuffer[_, 2, _],
-    a: NDBuffer[_, 2, _],
-    b: NDBuffer[_, 2, _],
+    c: NDBuffer[_, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -341,9 +341,9 @@ fn _cublas_matmul[
 ](
     ctx: DeviceContext,
     handle: UnsafePointer[cublasContext],
-    c: NDBuffer[_, 2, _],
-    a: NDBuffer[_, 2, _],
-    b: NDBuffer[_, 2, _],
+    c: NDBuffer[_, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -449,9 +449,9 @@ fn _rocblas_matmul[
 ](
     ctx: DeviceContext,
     handle: _rocblas.Handle,
-    c: NDBuffer[_, 2, _],
-    a: NDBuffer[_, 2, _],
-    b: NDBuffer[_, 2, _],
+    c: NDBuffer[_, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -560,9 +560,9 @@ fn _rocblas_matmul[
 fn _cublasLt_matmul(
     ctx: DeviceContext,
     handle: UnsafePointer[Context],
-    d: NDBuffer[_, 2, _],
-    a: NDBuffer[_, 2, _],
-    b: NDBuffer[_, 2, _],
+    d: NDBuffer[_, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
     *,
     c_row_major: Bool = True,
     transpose_a: Bool = False,
@@ -804,9 +804,9 @@ fn _cublasLt_matmul(
 fn _hipblasLt_matmul(
     ctx: DeviceContext,
     handle: hipblasLtHandle_t,
-    d: NDBuffer[_, 2, _],
-    a: NDBuffer[_, 2, _],
-    b: NDBuffer[_, 2, _],
+    d: NDBuffer[_, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
     *,
     c_row_major: Bool = True,
     transpose_a: Bool = False,
@@ -826,7 +826,7 @@ fn _hipblasLt_matmul(
     @always_inline
     @parameter
     fn create_matrix_layout(
-        buf: NDBuffer[_, 2, _]
+        buf: NDBuffer[_, 2, _, _]
     ) raises -> hipblasLtMatrixLayout_t:
         var _desc = hipblasLtMatrixLayout_t()
         _check_hipblas_error(

@@ -41,20 +41,22 @@ struct _Accumulator[
     alias tile_columns = num_cols * simd_width
 
     # The output buffer, should have num_rows x num_cols x simd_width.
-    var _storage: NDBuffer[type, 1, num_rows * num_cols * simd_width]
+    var _storage: NDBuffer[
+        type, 1, MutableAnyOrigin, num_rows * num_cols * simd_width
+    ]
 
     @always_inline
     fn __init__(out self):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
         alias alignment = alignof[SIMD[type, simd_width]]()
         self._storage = NDBuffer[
-            type, 1, num_rows * num_cols * simd_width
+            type, 1, MutableAnyOrigin, num_rows * num_cols * simd_width
         ].stack_allocation[alignment=alignment]()
 
     @always_inline
     fn __init__(
         mut self,
-        other_storage: NDBuffer[type, 1, num_rows * num_cols * simd_width],
+        other_storage: NDBuffer[type, 1, _, num_rows * num_cols * simd_width],
     ):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
         self._storage = other_storage
@@ -523,7 +525,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
-        a_base_offsets: NDBuffer[DType.int32, 1, num_rows],
+        a_base_offsets: NDBuffer[DType.int32, 1, _, num_rows],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,
@@ -698,7 +700,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
-        a_base_offsets: NDBuffer[DType.int32, 1, num_rows],
+        a_base_offsets: NDBuffer[DType.int32, 1, _, num_rows],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,
@@ -860,7 +862,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
-        a_base_offsets: NDBuffer[DType.int32, 1, num_rows],
+        a_base_offsets: NDBuffer[DType.int32, 1, _, num_rows],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,

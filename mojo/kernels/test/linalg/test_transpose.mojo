@@ -30,6 +30,7 @@ fn test_transpose_4x4():
     var matrix = NDBuffer[
         DType.index,
         2,
+        MutableAnyOrigin,
         DimList(4, 4),
     ].stack_allocation()
 
@@ -111,6 +112,7 @@ fn test_transpose_8x8():
     var matrix = NDBuffer[
         DType.index,
         2,
+        MutableAnyOrigin,
         DimList(num_rows, num_cols),
     ].stack_allocation()
 
@@ -140,6 +142,7 @@ fn test_transpose_16x16():
     var matrix = NDBuffer[
         DType.index,
         2,
+        MutableAnyOrigin,
         DimList(num_rows, num_cols),
     ].stack_allocation()
 
@@ -168,7 +171,9 @@ fn test_transpose_2d_identity() raises:
     # [[1, 2, 3],
     #  [4, 5, 6],
     #  [7, 8, 9]]
-    var input = NDBuffer[DType.index, 2, in_shape].stack_allocation()
+    var input = NDBuffer[
+        DType.index, 2, MutableAnyOrigin, in_shape
+    ].stack_allocation()
     input[IndexList[2](0, 0)] = 1
     input[IndexList[2](0, 1)] = 2
     input[IndexList[2](0, 2)] = 3
@@ -181,7 +186,7 @@ fn test_transpose_2d_identity() raises:
 
     # Create an identity permutation array of the form
     # [0, 1]
-    var perm = NDBuffer[DType.index, 1, 2].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, MutableAnyOrigin, 2].stack_allocation()
     perm[0] = 0
     perm[1] = 1
 
@@ -190,7 +195,9 @@ fn test_transpose_2d_identity() raises:
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
     alias out_shape = DimList(3, 3)
-    var output = NDBuffer[DType.index, 2, out_shape].stack_allocation()
+    var output = NDBuffer[
+        DType.index, 2, MutableAnyOrigin, out_shape
+    ].stack_allocation()
     output.fill(0)
 
     # transpose
@@ -230,7 +237,9 @@ fn test_transpose_2d() raises:
     # [[1, 2, 3],
     #  [4, 5, 6],
     #  [7, 8, 9]]
-    var input = NDBuffer[DType.index, 2, in_shape].stack_allocation()
+    var input = NDBuffer[
+        DType.index, 2, MutableAnyOrigin, in_shape
+    ].stack_allocation()
     input[IndexList[2](0, 0)] = 1
     input[IndexList[2](0, 1)] = 2
     input[IndexList[2](0, 2)] = 3
@@ -243,7 +252,7 @@ fn test_transpose_2d() raises:
 
     # Create a permutation array of the form
     # [1, 0]
-    var perm = NDBuffer[DType.index, 1, 2].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, MutableAnyOrigin, 2].stack_allocation()
     perm[0] = 1
     perm[1] = 0
 
@@ -252,7 +261,9 @@ fn test_transpose_2d() raises:
     #  [-1, -1, -1],
     #  [-1, -1, -1]]
     alias out_shape = DimList(3, 3)
-    var output = NDBuffer[DType.index, 2, out_shape].stack_allocation()
+    var output = NDBuffer[
+        DType.index, 2, MutableAnyOrigin, out_shape
+    ].stack_allocation()
     output.fill(0)
 
     # transpose
@@ -293,7 +304,9 @@ fn test_transpose_3d_identity() raises:
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
-    var input = NDBuffer[DType.index, 3, in_shape].stack_allocation()
+    var input = NDBuffer[
+        DType.index, 3, MutableAnyOrigin, in_shape
+    ].stack_allocation()
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 0, 1)] = 2
     input[IndexList[3](0, 0, 2)] = 3
@@ -309,7 +322,7 @@ fn test_transpose_3d_identity() raises:
 
     # Create an identity permutation array of the form
     # [0, 1, 2]
-    var perm = NDBuffer[DType.index, 1, 3].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, MutableAnyOrigin, 3].stack_allocation()
     perm[0] = 0
     perm[1] = 1
     perm[2] = 2
@@ -320,7 +333,9 @@ fn test_transpose_3d_identity() raises:
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = DimList(2, 2, 3)
-    var output = NDBuffer[DType.index, 3, out_shape].stack_allocation()
+    var output = NDBuffer[
+        DType.index, 3, MutableAnyOrigin, out_shape
+    ].stack_allocation()
     output.fill(0)
 
     # transpose
@@ -368,7 +383,9 @@ fn test_transpose_3d() raises:
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
-    var input = NDBuffer[DType.index, 3, in_shape].stack_allocation()
+    var input = NDBuffer[
+        DType.index, 3, MutableAnyOrigin, in_shape
+    ].stack_allocation()
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 0, 1)] = 2
     input[IndexList[3](0, 0, 2)] = 3
@@ -384,7 +401,7 @@ fn test_transpose_3d() raises:
 
     # Create a identity permutation array of the form
     # [2, 0, 1]
-    var perm = NDBuffer[DType.index, 1, 3].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, MutableAnyOrigin, 3].stack_allocation()
     perm[0] = 2
     perm[1] = 0
     perm[2] = 1
@@ -395,7 +412,9 @@ fn test_transpose_3d() raises:
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = DimList(3, 2, 2)
-    var output = NDBuffer[DType.index, 3, out_shape].stack_allocation()
+    var output = NDBuffer[
+        DType.index, 3, MutableAnyOrigin, out_shape
+    ].stack_allocation()
     output.fill(0)
 
     # transpose
@@ -445,7 +464,9 @@ fn test_transpose_si64() raises:
     #   [4, 5, 6]],
     #  [[7, 8, 9],
     #   [10, 11, 12]]]
-    var input = NDBuffer[DType.int64, 3, in_shape].stack_allocation()
+    var input = NDBuffer[
+        DType.int64, 3, MutableAnyOrigin, in_shape
+    ].stack_allocation()
     input[IndexList[3](0, 0, 0)] = 1
     input[IndexList[3](0, 0, 1)] = 2
     input[IndexList[3](0, 0, 2)] = 3
@@ -461,7 +482,7 @@ fn test_transpose_si64() raises:
 
     # Create a identity permutation array of the form
     # [2, 1, 0]
-    var perm = NDBuffer[DType.index, 1, 3].stack_allocation()
+    var perm = NDBuffer[DType.index, 1, MutableAnyOrigin, 3].stack_allocation()
     perm[0] = 2
     perm[1] = 1
     perm[2] = 0
@@ -472,7 +493,9 @@ fn test_transpose_si64() raises:
     #  [[-1, -1, -1],
     #   [-1, -1, -1]]]
     alias out_shape = DimList(3, 2, 2)
-    var output = NDBuffer[DType.int64, 3, out_shape].stack_allocation()
+    var output = NDBuffer[
+        DType.int64, 3, MutableAnyOrigin, out_shape
+    ].stack_allocation()
     output.fill(0)
 
     # transpose

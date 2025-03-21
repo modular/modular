@@ -232,7 +232,7 @@ fn _get_tile_n_k[
     c_type: DType,
     kernel_cols: Int,
     transpose_b: Bool,
-](b: NDBuffer[_, 2, _]) -> IndexList[2]:
+](b: NDBuffer[_, 2, _, _]) -> IndexList[2]:
     var tile_n_k: IndexList[2]
 
     @parameter

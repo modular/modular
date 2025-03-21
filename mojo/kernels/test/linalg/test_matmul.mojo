@@ -33,7 +33,7 @@ alias alignment = 64
 fn gemm_naive[](
     a: NDBuffer,
     b: NDBuffer,
-    c: NDBuffer,
+    c: NDBuffer[mut=True, *_],
     m: Int,
     n: Int,
     k: Int,
@@ -59,7 +59,7 @@ def test_matmul[
 ](m: Int, n: Int, k: Int, kernel_type_m: Int):
     var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
     var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(k * n)
-    var b = NDBuffer[b_type, 2, b_shape](b_ptr, Index(k, n))
+    var b = NDBuffer[b_type, 2, _, b_shape](b_ptr, Index(k, n))
 
     var padded_n_k = IndexList[2]()
     if kernel_type_m != 0:
@@ -94,14 +94,14 @@ def test_matmul[
     var c0_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
     var c1_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
 
-    var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
+    var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
 
-    var bp = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
+    var bp = NDBuffer[b_type, 2, _, DimList.create_unknown[2]()](
         bp_ptr, Index(padded_k, padded_n)
     )
-    var c = NDBuffer[c_type, 2, c_shape](c0_ptr, Index(m, n))
+    var c = NDBuffer[c_type, 2, _, c_shape](c0_ptr, Index(m, n))
 
-    var golden = NDBuffer[c_type, 2, c_shape](c1_ptr, Index(m, n))
+    var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
 
     # saturated VNNI only has a range [0,127] for the input a
     var vnni_range: Int = 128 if saturated else 256
@@ -146,13 +146,18 @@ def test_matmul[
             transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp), kernel_type_m)
+        ](
+            c,
+            a,
+            rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp),
+            kernel_type_m,
+        )
     else:
         matmul[
             transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp))
+        ](c, a, rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp))
 
     gemm_naive(a, b, golden, m, n, k)
 

@@ -34,7 +34,7 @@ fn matrix_band_part[
     num_lower: NDBuffer[int_type, 1],
     num_upper: NDBuffer[int_type, 1],
     exclude_buf: NDBuffer[cond_type, 1],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ctx: DeviceContextPtr,
 ) raises:
     var lower_diagonal_index = Int(num_lower[0])
@@ -77,7 +77,7 @@ fn _matrix_band_part_impl[
     input_shape: IndexList[rank],
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
-    output: NDBuffer[type, rank],
+    output: NDBuffer[mut=True, type, rank],
     ctx: DeviceContextPtr,
 ) raises:
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()

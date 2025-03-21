@@ -17,9 +17,9 @@ from utils.index import Index, IndexList
 fn matrix_solve_tiny[
     type: DType, M: Int, N: Int, K: Int
 ](
-    X: NDBuffer[type, 2, DimList(K, N)],
-    A: NDBuffer[type, 2, DimList(M, K)],
-    B: NDBuffer[type, 2, DimList(M, N)],
+    X: NDBuffer[mut=True, type, 2, _, DimList(K, N)],
+    A: NDBuffer[type, 2, _, DimList(M, K)],
+    B: NDBuffer[type, 2, _, DimList(M, N)],
 ):
     """Solve A*X = B, where A is a 3x3 matrix, B and X are 3x2."""
     constrained[M == 3]()
@@ -80,7 +80,7 @@ fn matrix_solve[
 ](
     a: NDBuffer[type, a_rank],
     b: NDBuffer[type, b_rank],
-    x: NDBuffer[type, x_rank],
+    x: NDBuffer[mut=True, type, x_rank],
 ) raises:
     """
     A specialized matrix solver for batch_sizex3x3 matrix LHS
@@ -116,13 +116,13 @@ fn matrix_solve[
 
         for batch in range(batch_size):
             # Get a 2D view of the Tensor.
-            var x_view = NDBuffer[type, 2, DimList(3, 2)](
+            var x_view = NDBuffer[type, 2, _, DimList(3, 2)](
                 x.data.offset(batch * 3 * 2), DimList(3, 2)
             )
-            var a_view = NDBuffer[type, 2, DimList(3, 3)](
+            var a_view = NDBuffer[type, 2, _, DimList(3, 3)](
                 a.data.offset(batch * 3 * 3), DimList(3, 3)
             )
-            var b_view = NDBuffer[type, 2, DimList(3, 2)](
+            var b_view = NDBuffer[type, 2, _, DimList(3, 2)](
                 b.data.offset(batch * 3 * 2), DimList(3, 2)
             )
             matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)

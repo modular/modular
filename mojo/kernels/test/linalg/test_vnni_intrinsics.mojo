@@ -26,16 +26,22 @@ from testing import assert_equal
 
 
 def test_i8_to_i32():
-    var a = NDBuffer[DType.uint8, 1, 16 * 64].stack_allocation[alignment=64]()
-    var asat = NDBuffer[DType.uint8, 1, 16 * 64].stack_allocation[
+    var a = NDBuffer[
+        DType.uint8, 1, MutableAnyOrigin, 16 * 64
+    ].stack_allocation[alignment=64]()
+    var asat = NDBuffer[
+        DType.uint8, 1, MutableAnyOrigin, 16 * 64
+    ].stack_allocation[alignment=64]()
+    var b = NDBuffer[DType.int8, 1, MutableAnyOrigin, 64 * 16].stack_allocation[
         alignment=64
     ]()
-    var b = NDBuffer[DType.int8, 1, 64 * 16].stack_allocation[alignment=64]()
 
-    var c = NDBuffer[DType.int32, 1, 16 * 16].stack_allocation[alignment=64]()
-    var csat = NDBuffer[DType.int32, 1, 16 * 16].stack_allocation[
-        alignment=64
-    ]()
+    var c = NDBuffer[
+        DType.int32, 1, MutableAnyOrigin, 16 * 16
+    ].stack_allocation[alignment=64]()
+    var csat = NDBuffer[
+        DType.int32, 1, MutableAnyOrigin, 16 * 16
+    ].stack_allocation[alignment=64]()
 
     for i in range(16 * 64):
         a[i] = i & 255

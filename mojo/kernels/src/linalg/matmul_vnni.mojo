@@ -39,7 +39,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
     ](
         self,
         a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _],
+        b_packed: NDBuffer[_, 3, _, _],
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -94,14 +94,19 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         var a_local = NDBuffer[
             a.type,
             1,
+            MutableAnyOrigin,
             4 * kernel_rows,
             address_space = a.address_space,
-            origin = a.origin,
         ].stack_allocation()
         var a_base_ptr = a.data.offset(global_offset.M * K + global_k)
         var a_ptr = a_local.data if (
-            is_tail and not has_avx512f()
-        ) else a_base_ptr
+            is_tail
+            and not has_avx512f()
+            # This origin cast is not ideal since we give up
+            # exclusivity checking, but it is safe in the sense that
+            # `a` will be guaranteed to remain alive because
+            # it is an argument to the function.
+        ) else a_base_ptr.origin_cast[True, MutableAnyOrigin]()
         var a_ptr_stride = 4 if (is_tail and not has_avx512f()) else K
 
         var tail_length = tile_n_k[1] - kl
@@ -162,7 +167,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         self,
         c: NDBuffer,
         a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _],
+        b_packed: NDBuffer[_, 3, _, _],
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],

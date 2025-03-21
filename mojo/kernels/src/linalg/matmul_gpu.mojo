@@ -302,9 +302,9 @@ fn _matmul_gpu[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
 ](
-    c: NDBuffer[c_type, 2, _],
-    a: NDBuffer[a_type, 2, _],
-    b: NDBuffer[b_type, 2, _],
+    c: NDBuffer[mut=True, c_type, 2, _, _],
+    a: NDBuffer[a_type, 2, _, _],
+    b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
     alias a_shape = a.shape
@@ -355,9 +355,9 @@ fn _matmul_gpu[
                     config = kernels.mi300x_128x128_1 if transpose_b else kernels.mi300x_128x128_2,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](
-                    rebind[NDBuffer[c_type, 2, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                     kernels.mi300x_128x128_1 if transpose_b else kernels.mi300x_128x128_2,
                     ctx,
                 )
@@ -393,9 +393,9 @@ fn _matmul_gpu[
                         grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
                         schedule = MatmulSchedule.TILE2D,
                     ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b),
+                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                         m,
                         n,
                         k,
@@ -408,9 +408,9 @@ fn _matmul_gpu[
                         config = kernels.tuning_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b),
+                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                         kernels.tuning_config,
                         ctx,
                     )
@@ -424,9 +424,9 @@ fn _matmul_gpu[
                     config = config.value(),
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](
-                    rebind[NDBuffer[c_type, 2, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                     config.value(),
                     ctx,
                 )
@@ -471,9 +471,9 @@ fn _matmul_gpu[
                             grid_shape = Index(10, H100.sm_count // 10),
                             schedule = MatmulSchedule.TILE2D,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             m,
                             n,
                             k,
@@ -501,9 +501,9 @@ fn _matmul_gpu[
                             config=M4096_N2560_K8192_config,
                             schedule = MatmulSchedule.TILE2D,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             m,
                             n,
                             k,
@@ -534,9 +534,9 @@ fn _matmul_gpu[
                             grid_shape = Index(4, H100.sm_count // 4),
                             schedule = MatmulSchedule.TILE2D,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             m,
                             n,
                             k,
@@ -564,9 +564,9 @@ fn _matmul_gpu[
                             config=M4096_N8192_K2048_config,
                             schedule = MatmulSchedule.TILE2D,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             m,
                             n,
                             k,
@@ -597,9 +597,9 @@ fn _matmul_gpu[
                             grid_shape = Index(8, H100.sm_count // 8),
                             schedule = MatmulSchedule.TILE2D,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             m,
                             n,
                             k,
@@ -627,9 +627,9 @@ fn _matmul_gpu[
                             config=M4096_N14336_K8192_config,
                             schedule = MatmulSchedule.TILE2D,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             m,
                             n,
                             k,
@@ -660,9 +660,9 @@ fn _matmul_gpu[
                             grid_shape = Index(8, H100.sm_count // 8),
                             schedule = MatmulSchedule.TILE2D,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             m,
                             n,
                             k,
@@ -690,9 +690,9 @@ fn _matmul_gpu[
                             config=M4096_N8192_K7168_config,
                             schedule = MatmulSchedule.TILE2D,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             m,
                             n,
                             k,
@@ -719,9 +719,9 @@ fn _matmul_gpu[
                     config=default_config,
                     schedule = MatmulSchedule.NONE,
                 ](
-                    rebind[NDBuffer[c_type, 2, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                     m,
                     n,
                     k,
@@ -760,9 +760,9 @@ fn _matmul_gpu[
                             config=M16_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M16_N4096_K4096_config,
                             ctx,
                         )
@@ -782,9 +782,9 @@ fn _matmul_gpu[
                             config=M32_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M32_N4096_K4096_config,
                             ctx,
                         )
@@ -804,9 +804,9 @@ fn _matmul_gpu[
                             config=M64_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M64_N4096_K4096_config,
                             ctx,
                         )
@@ -826,9 +826,9 @@ fn _matmul_gpu[
                             config=M128_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M128_N4096_K4096_config,
                             ctx,
                         )
@@ -847,9 +847,9 @@ fn _matmul_gpu[
                             config=M256_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M256_N4096_K4096_config,
                             ctx,
                         )
@@ -868,9 +868,9 @@ fn _matmul_gpu[
                             config=M512_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M512_N4096_K4096_config,
                             ctx,
                         )
@@ -889,9 +889,9 @@ fn _matmul_gpu[
                             config=M768_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M768_N4096_K4096_config,
                             ctx,
                         )
@@ -913,9 +913,9 @@ fn _matmul_gpu[
                             config=M896_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M896_N4096_K4096_config,
                             ctx,
                         )
@@ -934,9 +934,9 @@ fn _matmul_gpu[
                             config=M1606_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1606_N4096_K4096_config,
                             ctx,
                         )
@@ -958,9 +958,9 @@ fn _matmul_gpu[
                             config=M2048_N4096_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M2048_N4096_K4096_config,
                             ctx,
                         )
@@ -983,9 +983,9 @@ fn _matmul_gpu[
                             config=M16_N14336_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M16_N14336_K4096_config,
                             ctx,
                         )
@@ -1005,9 +1005,9 @@ fn _matmul_gpu[
                             config=M32_N14336_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M32_N14336_K4096_config,
                             ctx,
                         )
@@ -1027,9 +1027,9 @@ fn _matmul_gpu[
                             config=M64_N14336_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M64_N14336_K4096_config,
                             ctx,
                         )
@@ -1052,9 +1052,9 @@ fn _matmul_gpu[
                             config=M16_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M16_N4096_K14336_config,
                             ctx,
                         )
@@ -1074,9 +1074,9 @@ fn _matmul_gpu[
                             config=M32_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M32_N4096_K14336_config,
                             ctx,
                         )
@@ -1096,9 +1096,9 @@ fn _matmul_gpu[
                             config=M64_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M64_N4096_K14336_config,
                             ctx,
                         )
@@ -1117,9 +1117,9 @@ fn _matmul_gpu[
                             config=M128_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M128_N4096_K14336_config,
                             ctx,
                         )
@@ -1138,9 +1138,9 @@ fn _matmul_gpu[
                             config=M512_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M512_N4096_K14336_config,
                             ctx,
                         )
@@ -1159,9 +1159,9 @@ fn _matmul_gpu[
                             config=M768_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M768_N4096_K14336_config,
                             ctx,
                         )
@@ -1180,9 +1180,9 @@ fn _matmul_gpu[
                             config=M896_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M896_N4096_K14336_config,
                             ctx,
                         )
@@ -1201,9 +1201,9 @@ fn _matmul_gpu[
                             config=M1024_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1024_N4096_K14336_config,
                             ctx,
                         )
@@ -1222,9 +1222,9 @@ fn _matmul_gpu[
                             config=M1152_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1152_N4096_K14336_config,
                             ctx,
                         )
@@ -1243,9 +1243,9 @@ fn _matmul_gpu[
                             config=M1280_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1280_N4096_K14336_config,
                             ctx,
                         )
@@ -1264,9 +1264,9 @@ fn _matmul_gpu[
                             config=M1606_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1606_N4096_K14336_config,
                             ctx,
                         )
@@ -1285,9 +1285,9 @@ fn _matmul_gpu[
                             config=M2048_N4096_K14336_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M2048_N4096_K14336_config,
                             ctx,
                         )
@@ -1309,9 +1309,9 @@ fn _matmul_gpu[
                             config=M128_N128256_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M128_N128256_K4096_config,
                             ctx,
                         )
@@ -1330,9 +1330,9 @@ fn _matmul_gpu[
                             config=M768_N128256_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M768_N128256_K4096_config,
                             ctx,
                         )
@@ -1351,9 +1351,9 @@ fn _matmul_gpu[
                             config=M2048_N128256_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M2048_N128256_K4096_config,
                             ctx,
                         )
@@ -1376,9 +1376,9 @@ fn _matmul_gpu[
                             config=M16_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M16_N28672_K4096_config,
                             ctx,
                         )
@@ -1398,9 +1398,9 @@ fn _matmul_gpu[
                             config=M32_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M32_N28672_K4096_config,
                             ctx,
                         )
@@ -1420,9 +1420,9 @@ fn _matmul_gpu[
                             config=M64_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M64_N28672_K4096_config,
                             ctx,
                         )
@@ -1441,9 +1441,9 @@ fn _matmul_gpu[
                             config=M128_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M128_N28672_K4096_config,
                             ctx,
                         )
@@ -1462,9 +1462,9 @@ fn _matmul_gpu[
                             config=M256_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M256_N28672_K4096_config,
                             ctx,
                         )
@@ -1483,9 +1483,9 @@ fn _matmul_gpu[
                             config=M512_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M512_N28672_K4096_config,
                             ctx,
                         )
@@ -1504,9 +1504,9 @@ fn _matmul_gpu[
                             config=M768_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M768_N28672_K4096_config,
                             ctx,
                         )
@@ -1525,9 +1525,9 @@ fn _matmul_gpu[
                             config=M896_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M896_N28672_K4096_config,
                             ctx,
                         )
@@ -1546,9 +1546,9 @@ fn _matmul_gpu[
                             config=M1024_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1024_N28672_K4096_config,
                             ctx,
                         )
@@ -1567,9 +1567,9 @@ fn _matmul_gpu[
                             config=M1152_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1152_N28672_K4096_config,
                             ctx,
                         )
@@ -1588,9 +1588,9 @@ fn _matmul_gpu[
                             config=M1280_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1280_N28672_K4096_config,
                             ctx,
                         )
@@ -1609,9 +1609,9 @@ fn _matmul_gpu[
                             config=M1606_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1606_N28672_K4096_config,
                             ctx,
                         )
@@ -1630,9 +1630,9 @@ fn _matmul_gpu[
                             config=M2048_N28672_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M2048_N28672_K4096_config,
                             ctx,
                         )
@@ -1655,9 +1655,9 @@ fn _matmul_gpu[
                             config=M16_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M16_N6144_K4096_config,
                             ctx,
                         )
@@ -1677,9 +1677,9 @@ fn _matmul_gpu[
                             config=M32_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M32_N6144_K4096_config,
                             ctx,
                         )
@@ -1699,9 +1699,9 @@ fn _matmul_gpu[
                             config=M64_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M64_N6144_K4096_config,
                             ctx,
                         )
@@ -1721,9 +1721,9 @@ fn _matmul_gpu[
                             config=M128_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M128_N6144_K4096_config,
                             ctx,
                         )
@@ -1742,9 +1742,9 @@ fn _matmul_gpu[
                             config=M256_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M256_N6144_K4096_config,
                             ctx,
                         )
@@ -1763,9 +1763,9 @@ fn _matmul_gpu[
                             config=M512_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M512_N6144_K4096_config,
                             ctx,
                         )
@@ -1784,9 +1784,9 @@ fn _matmul_gpu[
                             config=M768_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M768_N6144_K4096_config,
                             ctx,
                         )
@@ -1805,9 +1805,9 @@ fn _matmul_gpu[
                             config=M896_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M896_N6144_K4096_config,
                             ctx,
                         )
@@ -1826,9 +1826,9 @@ fn _matmul_gpu[
                             config=M1024_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1024_N6144_K4096_config,
                             ctx,
                         )
@@ -1847,9 +1847,9 @@ fn _matmul_gpu[
                             config=M768_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M768_N6144_K4096_config,
                             ctx,
                         )
@@ -1868,9 +1868,9 @@ fn _matmul_gpu[
                             config=M768_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M768_N6144_K4096_config,
                             ctx,
                         )
@@ -1889,9 +1889,9 @@ fn _matmul_gpu[
                             config=M1606_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M1606_N6144_K4096_config,
                             ctx,
                         )
@@ -1910,9 +1910,9 @@ fn _matmul_gpu[
                             config=M2048_N6144_K4096_config,
                             elementwise_lambda_fn=elementwise_lambda_fn,
                         ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                             M2048_N6144_K4096_config,
                             ctx,
                         )
@@ -1929,9 +1929,9 @@ fn _matmul_gpu[
                     config=config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](
-                    rebind[NDBuffer[c_type, 2, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                     best_config,
                     ctx,
                 )
@@ -1942,9 +1942,9 @@ fn _matmul_gpu[
                     config = kernels.ampere_256x128_3,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](
-                    rebind[NDBuffer[c_type, 2, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                     best_config,
                     ctx,
                 )
@@ -1955,9 +1955,9 @@ fn _matmul_gpu[
                     config = kernels.ampere_128x128_4,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](
-                    rebind[NDBuffer[c_type, 2, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
                     best_config,
                     ctx,
                 )
@@ -2001,8 +2001,8 @@ fn split_k_reduce[
     work_space_shape: DimList,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    work_space: NDBuffer[work_space_type, 3, work_space_shape],
+    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
+    work_space: NDBuffer[work_space_type, 3, _, work_space_shape],
     ctx: DeviceContext,
 ) raises:
     alias simd_width = simdwidthof[c_type, target = _get_gpu_target()]()
@@ -2050,9 +2050,9 @@ fn multistage_gemm[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     serial_reduction: Bool = False,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
+    a: NDBuffer[a_type, 2, _, a_shape],
+    b: NDBuffer[b_type, 2, _, b_shape],
     runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     ctx: DeviceContext,
 ) raises:

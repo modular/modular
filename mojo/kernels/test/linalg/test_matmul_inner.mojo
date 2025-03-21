@@ -41,7 +41,7 @@ fn _matmul_inner_loop[
 ](
     c: NDBuffer,
     a: NDBuffer,
-    b_packed: NDBuffer[_, 3, _],
+    b_packed: NDBuffer[_, 3, _, _],
     global_offset: GemmShape,
     global_bound: GemmShape,
     tile_n_k: IndexList[2],
@@ -107,7 +107,7 @@ fn matmul_inner_loop[
 ](
     c: NDBuffer,
     a: NDBuffer,
-    b_packed: NDBuffer[_, 3, _],
+    b_packed: NDBuffer[_, 3, _, _],
     m: Int,
     n: Int,
     k: Int,
@@ -156,9 +156,9 @@ fn test_micro_kernel[
         * (factor * config.kernel_cols)
     )
     var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
-    var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
+    var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
 
-    var b_packed = NDBuffer[b_type, 3, config.packed_shape](
+    var b_packed = NDBuffer[b_type, 3, _, config.packed_shape](
         b_packed_ptr,
         Index(
             np // config.kernel_cols,
@@ -167,7 +167,7 @@ fn test_micro_kernel[
         ),
     )
 
-    var c = NDBuffer[c_type, 2, c_shape](c_ptr, Index(m, n))
+    var c = NDBuffer[c_type, 2, _, c_shape](c_ptr, Index(m, n))
 
     a.fill(1)
     b_packed.fill(1)

@@ -1054,7 +1054,7 @@ fn multistage_gemm_split_k_kernel[
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
     b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    work_space: NDBuffer[work_space_type, 3],
+    work_space: NDBuffer[work_space_type, 3, MutableAnyOrigin],
     num_partitions: UInt,
     locks: UnsafePointer[Int32],
 ):

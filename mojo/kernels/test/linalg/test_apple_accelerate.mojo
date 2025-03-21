@@ -24,7 +24,7 @@ alias c_type = DType.float32
 
 
 fn gemm_naive(
-    c: NDBuffer,
+    c: NDBuffer[mut=True, *_],
     a: NDBuffer,
     b: NDBuffer,
     m: Int,
@@ -39,7 +39,14 @@ fn gemm_naive(
                 c[i, j] += a_val * b_val
 
 
-def test_matmul(c: NDBuffer, a: NDBuffer, b: NDBuffer, m: Int, n: Int, k: Int):
+def test_matmul(
+    c: NDBuffer[mut=True, *_],
+    a: NDBuffer[mut=True, *_],
+    b: NDBuffer[mut=True, *_],
+    m: Int,
+    n: Int,
+    k: Int,
+):
     @parameter
     if not os_is_macos():
         return
@@ -118,7 +125,7 @@ def test_matmul():
 
 
 fn bmm_naive(
-    c: NDBuffer,
+    c: NDBuffer[mut=True, *_],
     a: NDBuffer,
     b: NDBuffer,
     batches: Int,
@@ -136,7 +143,13 @@ fn bmm_naive(
 
 
 def test_batched_matmul(
-    c: NDBuffer, a: NDBuffer, b: NDBuffer, batches: Int, m: Int, n: Int, k: Int
+    c: NDBuffer[mut=True, *_],
+    a: NDBuffer[mut=True, *_],
+    b: NDBuffer[mut=True, *_],
+    batches: Int,
+    m: Int,
+    n: Int,
+    k: Int,
 ):
     @parameter
     if not os_is_macos():

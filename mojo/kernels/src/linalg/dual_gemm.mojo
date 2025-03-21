@@ -806,10 +806,10 @@ fn multistage_dual_gemm[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     num_k_partitions: Int = 1,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b0: NDBuffer[b_type, 2, b_shape],
-    b1: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     var tensor_c = from_ndbuffer_row_major(c)
@@ -893,10 +893,10 @@ fn dual_gemm[
     ] = None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b0: NDBuffer[b_type, 2, b_shape],
-    b1: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     # TODO: Autotune. Currently, these are a copy+paste of `_matmul_gpu`.
@@ -941,10 +941,10 @@ fn dual_gemm[
                 config = kernels.tuning_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[b_type, 2, b_shape]](b0),
-                rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
+                rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
                 ctx,
             )
             return
@@ -957,10 +957,10 @@ fn dual_gemm[
                 config = config.value(),
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[b_type, 2, b_shape]](b0),
-                rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
+                rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
                 ctx,
             )
             return
@@ -992,10 +992,10 @@ fn dual_gemm[
                         config=M128_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
                         ctx,
                     )
                     return
@@ -1013,10 +1013,10 @@ fn dual_gemm[
                         config=M256_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
                         ctx,
                     )
                     return
@@ -1034,10 +1034,10 @@ fn dual_gemm[
                         config=M512_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
                         ctx,
                     )
                     return
@@ -1055,10 +1055,10 @@ fn dual_gemm[
                         config=M1606_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
                         ctx,
                     )
                     return
@@ -1076,10 +1076,10 @@ fn dual_gemm[
                         config=M2048_N28672_K4096_config,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ](
-                        rebind[NDBuffer[c_type, 2, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
-                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
                         ctx,
                     )
                     return
@@ -1091,10 +1091,10 @@ fn dual_gemm[
             ),
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](
-            rebind[NDBuffer[c_type, 2, c_shape]](c),
-            rebind[NDBuffer[a_type, 2, a_shape]](a),
-            rebind[NDBuffer[b_type, 2, b_shape]](b0),
-            rebind[NDBuffer[b_type, 2, b_shape]](b1),
+            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+            rebind[NDBuffer[b_type, 2, b0.origin, b_shape]](b0),
+            rebind[NDBuffer[b_type, 2, b1.origin, b_shape]](b1),
             ctx,
         )
         return
@@ -1132,10 +1132,10 @@ fn dual_gemv_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b0: NDBuffer[b_type, 2, b_shape],
-    b1: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
 ):
     var m: UInt = c.dim(0)
     var n: UInt = b0.dim(0)
@@ -1269,10 +1269,10 @@ fn dual_gemv[
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b0: NDBuffer[b_type, 2, b_shape],
-    b1: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim(0)
@@ -1324,10 +1324,10 @@ fn swishGLU[
     b_shape: DimList, //,
     target: StringLiteral = "cpu",
 ](
-    a: NDBuffer[a_type, 2, a_shape],
-    b0: NDBuffer[b_type, 2, b_shape],
-    b1: NDBuffer[b_type, 2, b_shape],
-    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
     ctx: DeviceContextPtr,
 ) raises:
     """

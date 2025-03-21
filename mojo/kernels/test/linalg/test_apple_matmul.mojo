@@ -44,7 +44,7 @@ fn bench_run[
 
 fn gemm_naive[
     transpose_b: Bool
-](a: NDBuffer, b: NDBuffer, c: NDBuffer, m: Int, n: Int, k: Int):
+](a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, *_], m: Int, n: Int, k: Int):
     for i in range(m):
         for p in range(k):
             for j in range(n):
@@ -59,7 +59,15 @@ fn gemm_naive[
 
 fn gemm_naive_elementwise[
     transpose_b: Bool
-](a: NDBuffer, b: NDBuffer, c: NDBuffer, m: Int, n: Int, k: Int, val: Int):
+](
+    a: NDBuffer,
+    b: NDBuffer,
+    c: NDBuffer[mut=True, *_],
+    m: Int,
+    n: Int,
+    k: Int,
+    val: Int,
+):
     for i in range(m):
         for p in range(k):
             for j in range(n):
@@ -87,17 +95,17 @@ def test_matmul[
     b_packed: Bool,
     epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
-    bp: NDBuffer[b_type, 2, DimList.create_unknown[2]()],
+    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
+    a: NDBuffer[a_type, 2, _, a_shape],
+    b: NDBuffer[b_type, 2, _, b_shape],
+    bp: NDBuffer[mut=True, b_type, 2, _, DimList.create_unknown[2]()],
     m: Int,
     n: Int,
     k: Int,
     kernel_type_m: Int,
 ) -> Int:
     var c1_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
-    var golden = NDBuffer[c_type, 2, c_shape](c1_ptr, Index(m, n))
+    var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
     for i in range(m):
         for j in range(n):
             golden[IndexList[2]((i, j))] = 0
@@ -156,7 +164,7 @@ def test_matmul[
             ](
                 c,
                 a,
-                rebind[NDBuffer[b_type, 2, b_shape]](bp),
+                rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp),
                 kernel_type_m,
             )
         else:
@@ -164,7 +172,7 @@ def test_matmul[
                 transpose_b=transpose_b,
                 b_packed=b_packed,
                 elementwise_lambda_fn=epilogue_fn,
-            ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp))
+            ](c, a, rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp))
 
     bench_fn_matmul()
 
@@ -235,7 +243,7 @@ def test_matmul[
 
     var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
     var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(k * n)
-    var b = NDBuffer[b_type, 2, b_shape](
+    var b = NDBuffer[b_type, 2, _, b_shape](
         b_ptr, Index(n, k) if transpose_b else Index(k, n)
     )
 
@@ -276,12 +284,12 @@ def test_matmul[
         padded_k * padded_n
     )
 
-    var bp = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
+    var bp = NDBuffer[b_type, 2, _, DimList.create_unknown[2]()](
         bp_ptr, Index(padded_k, padded_n)
     )
-    var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
+    var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
 
-    var c = NDBuffer[c_type, 2, c_shape](c0_ptr, Index(m, n))
+    var c = NDBuffer[c_type, 2, _, c_shape](c0_ptr, Index(m, n))
 
     for i in range(m):
         for p in range(k):
@@ -439,7 +447,7 @@ def test_types[b_packed: Bool, mixed_kernels: Bool]():
 
 
 fn bmm_naive(
-    c: NDBuffer,
+    c: NDBuffer[mut=True, *_],
     a: NDBuffer,
     b: NDBuffer,
     batches: Int,
@@ -470,9 +478,9 @@ fn bmm_naive(
 def test_batched_matmul[
     has_lambda: Bool
 ](
-    c: NDBuffer[_, 3],
-    a: NDBuffer[_, 3],
-    b: NDBuffer[_, 3],
+    c: NDBuffer[mut=True, _, 3],
+    a: NDBuffer[mut=True, _, 3],
+    b: NDBuffer[mut=True, _, 3],
     batches: Int,
     m: Int,
     n: Int,

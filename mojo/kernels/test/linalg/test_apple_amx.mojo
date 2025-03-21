@@ -20,14 +20,14 @@ from testing import *
 from utils.index import IndexList
 
 
-fn fill_a(buf: NDBuffer):
+fn fill_a(buf: NDBuffer[mut=True, *_]):
     # Fills the A matrix with the following values row + 2*col
     for i in range(buf.dim[0]()):
         for j in range(buf.dim[1]()):
             buf[i, j] = Scalar[buf.type](i // (j + 1) + j)
 
 
-fn fill_b(buf: NDBuffer):
+fn fill_b(buf: NDBuffer[mut=True, *_]):
     # Fills the A matrix with the following values row/(col + 1) + col
     for i in range(buf.dim[0]()):
         for j in range(buf.dim[1]()):
@@ -39,9 +39,15 @@ fn clear_c(buf: NDBuffer):
 
 
 def test_dot_at_b[type: DType, shape: Tuple[Int, Int]]():
-    var a_matrix = NDBuffer[type, 2, shape=shape].stack_allocation()
-    var b_matrix = NDBuffer[type, 2, shape=shape].stack_allocation()
-    var c_matrix = NDBuffer[type, 2, shape=shape].stack_allocation()
+    var a_matrix = NDBuffer[
+        type, 2, MutableAnyOrigin, shape=shape
+    ].stack_allocation()
+    var b_matrix = NDBuffer[
+        type, 2, MutableAnyOrigin, shape=shape
+    ].stack_allocation()
+    var c_matrix = NDBuffer[
+        type, 2, MutableAnyOrigin, shape=shape
+    ].stack_allocation()
 
     fill_a(a_matrix)
     fill_b(b_matrix)

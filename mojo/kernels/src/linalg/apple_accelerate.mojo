@@ -223,14 +223,18 @@ fn apple_gemv[
     b_packed: Bool,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
-](c: NDBuffer[_, 2, _], a: NDBuffer[_, 2, _], b: NDBuffer[_, 2, _]) raises:
+](
+    c: NDBuffer[mut=True, _, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
+) raises:
     # Recall:
     # if b_packed=True, this will be called AFTER pack shape and actual packing
     # function (in MatmulPack.mojo), which will TRANSPOSE the input.
     var K = a.dim[1]() if b_packed else b.dim[0]()
     var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
 
-    var transposed_b = NDBuffer[b.type, 2]()
+    var transposed_b = NDBuffer[b.type, 2, MutableAnyOrigin]()
     var transposed_b_ptr = UnsafePointer[Scalar[b.type]]()
 
     # If both b_packed and transpose_b are False, we need to transpose B at

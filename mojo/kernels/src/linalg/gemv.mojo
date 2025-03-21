@@ -142,9 +142,9 @@ fn gemv_kernel_vector[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    b: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
     m: UInt,
     n: UInt,
     k: UInt,
@@ -225,9 +225,9 @@ fn gemv_split_k[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    output: NDBuffer[c_type, 2, c_shape],
-    act: NDBuffer[a_type, 2, a_shape],
-    weight: NDBuffer[b_type, 2, b_shape],
+    output: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
+    act: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    weight: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
     m: UInt,
     n: UInt,
     k: UInt,
@@ -400,9 +400,9 @@ fn gevm_tc_kernel_vector_8x[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
-    c: NDBuffer[c_type, 2],
-    a: NDBuffer[a_type, 2],
-    b: NDBuffer[b_type, 2],
+    c: NDBuffer[c_type, 2, MutableAnyOrigin],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin],
+    b: NDBuffer[b_type, 2, MutableAnyOrigin],
     m: UInt,
     n: UInt,
     k: UInt,
@@ -828,9 +828,9 @@ fn gemv[
     b_type: DType,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[c_type, 1, c_size],
-    a_buf: NDBuffer[a_type, 2, a_shape],
-    b_buf: NDBuffer[b_type, 1, b_size],
+    c_buf: NDBuffer[mut=True, c_type, 1, _, c_size],
+    a_buf: NDBuffer[a_type, 2, _, a_shape],
+    b_buf: NDBuffer[b_type, 1, _, b_size],
 ) raises:
     alias simd_width = simdwidthof[c_type]()
 
@@ -887,9 +887,9 @@ fn naive_gemv[
     b_size: Dim,
     type: DType,
 ](
-    c_buf: NDBuffer[type, 1, c_size],
-    a_buf: NDBuffer[type, 2, a_shape],
-    b_buf: NDBuffer[type, 1, b_size],
+    c_buf: NDBuffer[mut=True, type, 1, _, c_size],
+    a_buf: NDBuffer[type, 2, _, a_shape],
+    b_buf: NDBuffer[type, 1, _, b_size],
 ):
     var M = a_buf.dim[0]()
     var K = a_buf.dim[1]()

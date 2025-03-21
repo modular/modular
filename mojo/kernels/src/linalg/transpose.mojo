@@ -23,13 +23,14 @@ fn _transpose_inplace_4x4[
     rows: Int,
     cols: Int,
     type: DType,
-](bufloat0: NDBuffer[type, 2, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, type, 2, _, DimList(rows, cols)]):
     constrained[rows == 4]()
     constrained[cols == 4]()
     var buf = rebind[
         NDBuffer[
             type,
             2,
+            bufloat0.origin,
             DimList(4, 4),
         ],
     ](bufloat0)
@@ -59,13 +60,14 @@ fn _transpose_inplace_8x8[
     rows: Int,
     cols: Int,
     type: DType,
-](bufloat0: NDBuffer[type, 2, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, type, 2, _, DimList(rows, cols)]):
     constrained[rows == 8]()
     constrained[cols == 8]()
     var buf = rebind[
         NDBuffer[
             type,
             2,
+            bufloat0.origin,
             DimList(8, 8),
         ],
     ](bufloat0)
@@ -156,13 +158,14 @@ fn _transpose_inplace_16x16[
     rows: Int,
     cols: Int,
     type: DType,
-](bufloat0: NDBuffer[type, 2, DimList(rows, cols)]):
+](bufloat0: NDBuffer[mut=True, type, 2, _, DimList(rows, cols)]):
     constrained[rows == 16]()
     constrained[cols == 16]()
     var buf = rebind[
         NDBuffer[
             type,
             2,
+            bufloat0.origin,
             DimList(16, 16),
         ],
     ](bufloat0)
@@ -338,7 +341,7 @@ fn _transpose_inplace_naive[
     rows: Int,
     cols: Int,
     type: DType,
-](buf: NDBuffer[type, 2, DimList(rows, cols)]):
+](buf: NDBuffer[mut=True, type, 2, _, DimList(rows, cols)]):
     for i in range(rows):
         for j in range(i + 1, cols):
             var tmp = buf[i, j]
@@ -350,7 +353,7 @@ fn transpose_inplace[
     rows: Int,
     cols: Int,
     type: DType,
-](buf: NDBuffer[type, 2, DimList(rows, cols)]):
+](buf: NDBuffer[mut=True, type, 2, _, DimList(rows, cols)]):
     # Reject sizes covered by specialized implementations
     constrained[rows == cols]()
 
@@ -389,7 +392,7 @@ fn _fill_strides[
     input_shape: DimList,
     type: DType,
 ](
-    buf: NDBuffer[type, rank, input_shape],
+    buf: NDBuffer[type, rank, _, input_shape],
     strides: UnsafePointer[Scalar[DType.index]],
 ):
     """
@@ -398,7 +401,7 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    _fill_strides(buf, NDBuffer[DType.index, 1, rank](strides))
+    _fill_strides(buf, NDBuffer[DType.index, 1, _, rank](strides))
 
 
 fn _fill_strides[
@@ -406,8 +409,8 @@ fn _fill_strides[
     input_shape: DimList,
     type: DType,
 ](
-    buf: NDBuffer[type, rank, input_shape],
-    strides: NDBuffer[DType.index, 1, rank],
+    buf: NDBuffer[type, rank, _, input_shape],
+    strides: NDBuffer[mut=True, DType.index, 1, _, rank],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -589,8 +592,8 @@ fn _process_tile[
 fn _transpose_2d_serial_tiled[
     rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, _],
-    input: NDBuffer[type, rank, _],
+    output: NDBuffer[mut=True, type, rank, _, _],
+    input: NDBuffer[type, rank, _, _],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -653,8 +656,8 @@ fn _should_run_parallel(
 fn _transpose_2d_parallel_tiled[
     rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, _],
-    input: NDBuffer[type, rank, _],
+    output: NDBuffer[type, rank, _, _],
+    input: NDBuffer[type, rank, _, _],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -718,8 +721,8 @@ fn transpose_2d[
     input_shape: DimList,
     type: DType,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -826,8 +829,8 @@ fn _transpose_4d_swap_middle_helper[
 fn transpose_4d_swap_middle[
     rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, _],
-    input: NDBuffer[type, rank, _],
+    output: NDBuffer[mut=True, type, rank, _, _],
+    input: NDBuffer[type, rank, *_],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -853,8 +856,8 @@ fn transpose_3d_swap_outer[
     input_shape: DimList,
     type: DType,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -878,8 +881,8 @@ fn transpose_3d_swap_outer[
 fn transpose_3d_swap_inner[
     rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, _],
-    input: NDBuffer[type, rank, _],
+    output: NDBuffer[mut=True, type, rank, _, _],
+    input: NDBuffer[type, rank, _, _],
     perms: UnsafePointer[Scalar[DType.index]],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
@@ -911,8 +914,8 @@ fn transpose_trivial_memcpy[
     input_shape: DimList,
     type: DType,
 ](
-    output: NDBuffer[type, rank, output_shape],
-    input: NDBuffer[type, rank, input_shape],
+    output: NDBuffer[mut=True, type, rank, _, output_shape],
+    input: NDBuffer[type, rank, _, input_shape],
 ):
     var src_ptr = input.data.offset(0)
     var dst_ptr = output.data.offset(0)
@@ -947,7 +950,7 @@ fn _copy_with_strides[
     rank: Int, type: DType, //
 ](
     axis: Int,
-    output: NDBuffer[type, rank, _],
+    output: NDBuffer[mut=True, type, rank, _, _],
     input: UnsafePointer[Scalar[type]],
     input_strides: UnsafePointer[Scalar[DType.index]],
     output_strides: UnsafePointer[Scalar[DType.index]],
@@ -1071,8 +1074,8 @@ fn _copy_with_strides[
 fn transpose_strided[
     rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, _],
-    input: NDBuffer[type, rank, _],
+    output: NDBuffer[mut=True, type, rank, _, _],
+    input: NDBuffer[type, rank, _, _],
     perms: UnsafePointer[Scalar[DType.index]],
 ) raises:
     # Compute `permuted_input_strides`
@@ -1117,8 +1120,8 @@ fn transpose_strided[
 fn transpose[
     rank: Int, type: DType, //
 ](
-    output: NDBuffer[type, rank, _],
-    input: NDBuffer[type, rank, _],
+    output: NDBuffer[mut=True, type, rank, _, _],
+    input: NDBuffer[type, rank, _, _],
     perms: UnsafePointer[Scalar[DType.index]],
 ) raises:
     """

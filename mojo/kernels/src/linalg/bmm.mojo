@@ -77,7 +77,9 @@ fn _get_batch_dims[
 @always_inline
 fn _reshape_nd_buffer_with_batch_to_3d(
     buffer: NDBuffer,
-) -> NDBuffer[buffer.type, 3, address_space = buffer.address_space]:
+) -> NDBuffer[
+    buffer.type, 3, buffer.origin, address_space = buffer.address_space
+]:
     alias rank = buffer.rank
     constrained[rank >= 3, "expecting at least rank-3 NDBuffer"]()
 
@@ -100,7 +102,9 @@ fn _reshape_nd_buffer_with_batch_to_3d(
 @always_inline
 fn _reshape_nd_buffer_with_batch_to_2d(
     buffer: NDBuffer,
-) -> NDBuffer[buffer.type, 2, address_space = buffer.address_space]:
+) -> NDBuffer[
+    buffer.type, 2, buffer.origin, address_space = buffer.address_space
+]:
     alias rank = buffer.rank
     constrained[rank >= 2, "expecting at least rank-2 NDBuffer"]()
 
@@ -125,7 +129,7 @@ fn _small_batched_matmul[
     c_type: DType,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[c_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
 ) raises:
@@ -264,7 +268,7 @@ fn batched_matmul[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[c_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
     *,
@@ -323,7 +327,7 @@ fn _batched_matmul_cpu[
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
-    c_buf: NDBuffer[c_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
 ) raises:
@@ -419,7 +423,7 @@ fn _batched_matmul_cpu[
                 c.data.offset(batch * c_stride_between_batches),
                 IndexList[2](c.dim[1](), c.dim[2]()),
             )
-            var a_view = NDBuffer[a_type, 2](
+            var a_view = NDBuffer[a_type, 2, MutableAnyOrigin](
                 a.data.offset(batch * a_stride_between_batches),
                 IndexList[2](a.dim[1](), a.dim[2]()),
             )
@@ -505,9 +509,9 @@ fn batched_matmul_kernel[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
-    c_buff: NDBuffer[c_type, 3, c_shape],
-    a_buff: NDBuffer[a_type, 3, a_shape],
-    b_buff: NDBuffer[b_type, 3, b_shape],
+    c_buff: NDBuffer[mut=True, c_type, 3, MutableAnyOrigin, c_shape],
+    a_buff: NDBuffer[a_type, 3, MutableAnyOrigin, a_shape],
+    b_buff: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
     c_buff_nd_shape: IndexList[rank],
 ) -> None:
     var batch_size: UInt = c_buff.dim(0)
@@ -551,7 +555,7 @@ fn _batched_matmul_gpu[
     transpose_b: Bool = False,
     elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[c_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
     ctx: DeviceContext,
@@ -647,7 +651,7 @@ fn batched_matmul[
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: NDBuffer[c_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
     *,

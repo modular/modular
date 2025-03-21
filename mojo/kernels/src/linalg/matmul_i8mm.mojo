@@ -154,7 +154,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
     ](
         self,
         a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _],
+        b_packed: NDBuffer[_, 3, _, _],
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -221,7 +221,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
         self,
         c: NDBuffer,
         a: NDBuffer,
-        b_packed: NDBuffer[_, 3, _],
+        b_packed: NDBuffer[_, 3, _, _],
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
