@@ -14,7 +14,7 @@ fn test_map():
     print("== test_map")
 
     var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
-    var vector = NDBuffer[DType.float32, 1, _, 5](vector_stack.unsafe_ptr())
+    var vector = NDBuffer[DType.float32, 1, _, 5](vector_stack)
 
     @parameter
     @__copy_capture(vector)

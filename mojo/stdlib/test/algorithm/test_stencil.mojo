@@ -62,13 +62,11 @@ fn test_stencil_avg_pool():
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack)
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, _, output_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[dtype, rank, _, output_shape](output_stack)
 
     fill_buffer(input)
     output.fill(0)
@@ -180,13 +178,11 @@ fn test_stencil_avg_pool_padded():
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack)
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, _, output_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[dtype, rank, _, output_shape](output_stack)
 
     fill_buffer(input)
     output.fill(0)
@@ -300,13 +296,11 @@ fn test_stencil_avg_pool_stride_2():
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack)
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, _, output_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[dtype, rank, _, output_shape](output_stack)
 
     fill_buffer(input)
     output.fill(0)
@@ -423,13 +417,11 @@ fn test_stencil_max_pool_dilation_2():
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
-    var input = NDBuffer[dtype, rank, _, input_shape](input_stack.unsafe_ptr())
+    var input = NDBuffer[dtype, rank, _, input_shape](input_stack)
     var output_stack = InlineArray[Scalar[dtype], Int(output_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[dtype, rank, _, output_shape](
-        output_stack.unsafe_ptr()
-    )
+    var output = NDBuffer[dtype, rank, _, output_shape](output_stack)
 
     fill_buffer(input)
     output.fill(0)
