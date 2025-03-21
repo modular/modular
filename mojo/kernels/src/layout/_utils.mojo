@@ -146,7 +146,9 @@ struct ManagedLayoutTensor[
                 self.runtime_layout,
             )
 
-    fn device_buffer[update: Bool = True](self) raises -> NDBuffer[dtype, 2]:
+    fn device_buffer[
+        update: Bool = True
+    ](self) raises -> NDBuffer[dtype, 2, MutableAnyOrigin]:
         @parameter
         if update:
             self._update_device()
@@ -176,7 +178,9 @@ struct ManagedLayoutTensor[
                 self.runtime_layout,
             )
 
-    fn buffer[update: Bool = True](self) raises -> NDBuffer[dtype, 2]:
+    fn buffer[
+        update: Bool = True
+    ](self) raises -> NDBuffer[dtype, 2, MutableAnyOrigin]:
         @parameter
         if update:
             self._update_host()
