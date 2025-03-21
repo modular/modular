@@ -8030,7 +8030,7 @@ struct DistributedAllReduceSum:
 
         with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
             allreduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
-                dev_ctxs, in_bufs, out_bufs, rank_sigs
+                in_bufs, out_bufs, rank_sigs, dev_ctxs
             )
 
 
@@ -8082,7 +8082,7 @@ struct DistributedAllGather:
         @parameter
         for i in range(num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-        allgather[ngpus=num_devices](dev_ctxs, in_bufs, out_bufs)
+        allgather[ngpus=num_devices](in_bufs, out_bufs, dev_ctxs)
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
