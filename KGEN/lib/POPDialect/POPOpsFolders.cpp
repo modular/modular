@@ -284,9 +284,45 @@ OpFoldResult SubOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult MulOp::fold(FoldAdaptor adaptor) {
-  return foldSIMDOp(
-      adaptor.getOperands(), [](APSInt lhs, APSInt rhs) { return lhs * rhs; },
-      [](APFloat lhs, APFloat rhs) { return lhs * rhs; });
+  if (auto res = foldSIMDOp(
+          adaptor.getOperands(),
+          [](APSInt lhs, APSInt rhs) { return lhs * rhs; },
+          [](APFloat lhs, APFloat rhs) { return lhs * rhs; }))
+    return res;
+
+  std::optional<KGENDType> dtype = getType().getResolvedDType();
+  if (!dtype || !dtype->isIntLike())
+    return {};
+
+  // Pattern-match trivial cases, such as 0*x or 1*x. Support both scalar and
+  // SIMD types.
+  auto foldTrivialMultiplication = [&](Value lhs, Value rhs) -> OpFoldResult {
+    SIMDAttr constAttr;
+    if (!mlir::matchPattern(lhs, mlir::m_Constant(&constAttr)))
+      return {};
+    const APSInt &constVal = constAttr.getValues().front().getIntVal();
+    if (!llvm::all_of(constAttr.getValues(), [&](const DTypeValue &val) {
+          return val.getIntVal() == constVal;
+        }))
+      return {};
+    if (constVal.isZero())
+      return lhs;
+    if (constVal.isOne())
+      return rhs;
+    return {};
+  };
+
+  // Try to fold trivial multiplication expecting a constant operand in lhs.
+  // For example, 0*x = 0
+  if (auto res = foldTrivialMultiplication(getLhs(), getRhs()))
+    return res;
+
+  // Otherwise, swap operands and try again. This will help to fold trivial
+  // multiplication such as x*0 = 0
+  if (auto res = foldTrivialMultiplication(getRhs(), getLhs()))
+    return res;
+
+  return {};
 }
 
 OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
