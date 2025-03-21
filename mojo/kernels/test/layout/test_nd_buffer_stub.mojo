@@ -121,9 +121,7 @@ fn test_copy_from_nd_buffer_scalars():
     print("== test_copy_from_nd_buffer_scalars")
 
     var buff_stack = InlineArray[Float32, 64](uninitialized=True)
-    var buff = NDBuffer[DType.float32, 2, _, DimList(8, 8)](
-        buff_stack.unsafe_ptr()
-    )
+    var buff = NDBuffer[DType.float32, 2, _, DimList(8, 8)](buff_stack)
     linspace_fill(buff)
 
     var tensor_stack = InlineArray[Float32, 64](uninitialized=True)
@@ -161,9 +159,7 @@ fn test_copy_to_nd_buffer_scalars():
     arange(layout_tensor)
 
     var buff_stack = InlineArray[Float32, 64](uninitialized=True)
-    var buff = NDBuffer[DType.float32, 2, _, DimList(8, 8)](
-        buff_stack.unsafe_ptr()
-    )
+    var buff = NDBuffer[DType.float32, 2, _, DimList(8, 8)](buff_stack)
     buff.zero()
 
     alias threads_layout = Layout.row_major(4, 4)
@@ -1163,9 +1159,7 @@ fn test_composed_tile_vectorize_distribute_small():
 fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
     print("==test_copy_nd_buffer_to_layout_tensor_masked_scalar")
     var buff_stack = InlineArray[Float32, 7 * 9](uninitialized=True)
-    var buff_7x9 = NDBuffer[DType.float32, 2, _, DimList(7, 9)](
-        buff_stack.unsafe_ptr()
-    )
+    var buff_7x9 = NDBuffer[DType.float32, 2, _, DimList(7, 9)](buff_stack)
     linspace_fill(buff_7x9)
 
     var tensor_stack = InlineArray[Float32, 8 * 12](uninitialized=True)
@@ -1242,9 +1236,7 @@ fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
 fn test_copy_from_nd_buffer_masked_scalar():
     print("test_copy_from_nd_buffer_masked_scalar")
     var buff_stack = InlineArray[Float32, 7 * 9](uninitialized=True)
-    var buff_7x9 = NDBuffer[DType.float32, 2, _, DimList(7, 9)](
-        buff_stack.unsafe_ptr()
-    )
+    var buff_7x9 = NDBuffer[DType.float32, 2, _, DimList(7, 9)](buff_stack)
     linspace_fill(buff_7x9)
 
     var tensor_stack = InlineArray[Float32, 8 * 12](uninitialized=True)
@@ -1311,9 +1303,7 @@ fn test_copy_to_nd_buffer_masked_scalar():
     print("== test_copy_to_nd_buffer_masked_scalar")
 
     var buff_stack = InlineArray[Float32, 7 * 9](uninitialized=True)
-    var buff_7x9 = NDBuffer[DType.float32, 2, _, DimList(7, 9)](
-        buff_stack.unsafe_ptr()
-    )
+    var buff_7x9 = NDBuffer[DType.float32, 2, _, DimList(7, 9)](buff_stack)
     buff_7x9.zero()
 
     var tensor_stack = InlineArray[Float32, 8 * 12](uninitialized=True)
