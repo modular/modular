@@ -7,7 +7,6 @@
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from buffer.dimlist import Dim, DimList
-from collections import InlineArray
 
 
 # CHECK-LABEL: test_ndbuffer_dynamic_shape
@@ -17,7 +16,7 @@ fn test_ndbuffer_dynamic_shape():
     # Create a buffer of size 16
     var buffer = InlineArray[Scalar[DType.index], 16](uninitialized=True)
 
-    var matrix = NDBuffer[DType.index, 2](buffer.unsafe_ptr(), DimList(4, 4))
+    var matrix = NDBuffer[DType.index, 2](buffer, DimList(4, 4))
 
     matrix.dynamic_shape[0] = 42
     matrix.dynamic_shape[1] = 43

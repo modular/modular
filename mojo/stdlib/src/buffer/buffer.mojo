@@ -302,6 +302,31 @@ struct NDBuffer[
     @implicit
     fn __init__(
         mut self,
+        span: Span[
+            Scalar[type],
+            address_space=address_space,
+            origin=origin, **_,
+        ],
+    ):
+        """Constructs an NDBuffer with statically known rank, shapes and
+        type.
+
+        Constraints:
+            The rank, shapes, and type are known.
+
+        Args:
+            span: Span of the data.
+        """
+        constrained[
+            shape.all_known[rank](),
+            "dimensions must all be known",
+        ]()
+        self = Self(span.unsafe_ptr())
+
+    @always_inline
+    @implicit
+    fn __init__(
+        mut self,
         # For functions
         other: NDBuffer[type, rank, *_, **_],
     ):
@@ -401,6 +426,24 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         mut self,
+        span: Span[Scalar[type], address_space=address_space, origin=origin],
+        dynamic_shape: IndexList[rank, **_],
+    ):
+        """Constructs an NDBuffer with statically known rank, but dynamic
+        shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            span: Span of the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+        """
+        self = Self(span.unsafe_ptr(), dynamic_shape)
+
+    @always_inline
+    fn __init__(
+        mut self,
         ptr: UnsafePointer[
             Scalar[type], address_space=address_space, mut=mut, origin=origin
         ],
@@ -417,6 +460,24 @@ struct NDBuffer[
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
         self = Self(ptr, _make_tuple[rank](dynamic_shape))
+
+    @always_inline
+    fn __init__(
+        mut self,
+        span: Span[Scalar[type], address_space=address_space, origin=origin],
+        dynamic_shape: DimList,
+    ):
+        """Constructs an NDBuffer with statically known rank, but dynamic
+        shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            span: Span of the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+        """
+        self = Self(span.unsafe_ptr(), dynamic_shape)
 
     @always_inline
     fn __init__(
@@ -459,6 +520,26 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         mut self,
+        span: Span[Scalar[type], address_space=address_space, origin=origin],
+        dynamic_shape: IndexList[rank, **_],
+        dynamic_stride: IndexList[rank, **_],
+    ):
+        """Constructs a strided NDBuffer with statically known rank, but
+        dynamic shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            span: Span over the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+            dynamic_stride: A static tuple of size 'rank' representing strides.
+        """
+        self = Self(span.unsafe_ptr(), dynamic_shape, dynamic_stride)
+
+    @always_inline
+    fn __init__(
+        mut self,
         ptr: UnsafePointer[
             Scalar[type], address_space=address_space, mut=mut, origin=origin
         ],
@@ -481,6 +562,26 @@ struct NDBuffer[
             dynamic_shape=_make_tuple[rank](dynamic_shape),
             dynamic_stride=dynamic_stride,
         )
+
+    @always_inline
+    fn __init__(
+        mut self,
+        span: Span[Scalar[type], address_space=address_space, origin=origin],
+        dynamic_shape: DimList,
+        dynamic_stride: IndexList[rank, **_],
+    ):
+        """Constructs a strided NDBuffer with statically known rank, but
+        dynamic shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            span: Pointer to the data.
+            dynamic_shape: A DimList of size 'rank' representing shapes.
+            dynamic_stride: A static tuple of size 'rank' representing strides.
+        """
+        self = Self(span.unsafe_ptr(), dynamic_shape, dynamic_stride)
 
     @always_inline("nodebug")
     fn origin_cast[

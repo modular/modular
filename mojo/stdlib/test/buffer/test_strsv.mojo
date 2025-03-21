@@ -97,11 +97,11 @@ fn test_strsv():
 
     alias size: Int = 64
     var l_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var L = NDBuffer[DType.float32, 1, _, size * size](l_stack.unsafe_ptr())
+    var L = NDBuffer[DType.float32, 1, _, size * size](l_stack)
     var x0_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var x0 = NDBuffer[DType.float32, 1, _, size](x0_stack.unsafe_ptr())
+    var x0 = NDBuffer[DType.float32, 1, _, size](x0_stack)
     var x1_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var x1 = NDBuffer[DType.float32, 1, _, size](x1_stack.unsafe_ptr())
+    var x1 = NDBuffer[DType.float32, 1, _, size](x1_stack)
 
     fill_L[size](L)
     fill_x[size](x0)

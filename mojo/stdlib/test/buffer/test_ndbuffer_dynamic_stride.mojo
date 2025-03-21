@@ -7,7 +7,6 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import InlineArray
 
 from utils.index import Index
 
@@ -22,12 +21,9 @@ fn test_sub_matrix():
         uninitialized=True
     )
     # Create a 4x4 matrix.
-    var matrix = NDBuffer[
-        DType.float32,
-        2,
-        _,
-        DimList(num_row, num_col),
-    ](matrix_stack.unsafe_ptr())
+    var matrix = NDBuffer[DType.float32, 2, _, DimList(num_row, num_col)](
+        matrix_stack
+    )
     for i in range(num_row):
         for j in range(num_col):
             matrix[Index(i, j)] = Float32(i * num_col + j)
@@ -84,9 +80,7 @@ fn test_broadcast():
     # Create a buffer holding a single value with zero stride.
     var arr = InlineArray[Float32, 1](uninitialized=True)
     var stride_buf = NDBuffer[DType.float32, 1, _, DimList(100)](
-        arr.unsafe_ptr(),
-        DimList(100),
-        Index(0),
+        arr, DimList(100), Index(0)
     )
 
     # CHECK: 2.0
