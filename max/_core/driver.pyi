@@ -7,9 +7,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Any, overload
+from typing import Annotated, Any, Generator, overload
 
 import max._core
+import numpy
 import typing_extensions
 from numpy.typing import ArrayLike
 
@@ -189,6 +190,14 @@ class Tensor:
     def __init__(
         self, shape: Annotated[ArrayLike, dict(writable=False)], device: Device
     ) -> None: ...
+    @overload
+    def __init__(self, other: Tensor) -> None:
+        """
+        Moves the internals from an existing Tensor object into a new Tensor object.
+
+        Primarily used for initializing subclasses with existing Tensors.
+        """
+
     @property
     def device(self) -> Device:
         """Device on which tensor is resident."""
@@ -244,6 +253,9 @@ class Tensor:
     def shape(self) -> tuple:
         """Shape of tensor."""
 
+    def contiguous(self) -> Tensor:
+        """Creates a contiguous copy of the tensor."""
+
     def copy(self, device: Device | None = None) -> Tensor:
         """
         Create a deep copy on an optionally given device.
@@ -258,6 +270,22 @@ class Tensor:
             cpu_tensor = driver.Tensor([2, 3], dtype=DType.bfloat16, device=driver.CPU())
 
             cpu_copy = cpu_tensor.copy()
+        """
+
+    @staticmethod
+    def from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
+        """
+        Create a tensor from an object implementing the dlpack protocol.
+        This usually does not result in a copy, and the producer of the object
+        retains ownership of the underlying memory.
+        """
+
+    @staticmethod
+    def from_numpy(arr: numpy.ndarray) -> Tensor:
+        """
+        Creates a tensor from a provided numpy array on the host device.
+        The underlying data is not copied unless the array is noncontiguous. If
+        it is, a contiguous copy will be returned.
         """
 
     def item(self) -> Any:
@@ -283,6 +311,24 @@ class Tensor:
 
         The tensor is only copied if the input device is different from the
         device upon which the tensor is already resident.
+        """
+
+    def to_numpy(self) -> numpy.ndarray:
+        """
+        Converts the tensor to a numpy array.
+
+        If the tensor is on the host (CPU), the numpy array aliases the existing memory.
+        Otherwise, it is copied to the host device.
+        """
+
+    def view(
+        self, dtype: max._core.dtype.DType, shape: Sequence[int] | None = None
+    ) -> Tensor:
+        """
+        Return a new tensor with the given type and shape that shares the
+        underlying memory.
+        If the shape is not given, it will be deduced if possible, or a
+        ValueError is raised.
         """
 
     @staticmethod
@@ -313,8 +359,10 @@ class Tensor:
         """Sets an item in the tensor."""
 
     def _aligned(self, alignment: int | None = None) -> bool: ...
+    def __aligned(self, alignment: int | None = None) -> bool: ...
     @staticmethod
     def _from_dlpack(arg: object, /) -> Tensor: ...
+    def _iterate_indices(self) -> Generator[Sequence[int]]: ...
     def _view(
         self, dtype: max._core.dtype.DType, shape: Sequence[int]
     ) -> Tensor: ...
