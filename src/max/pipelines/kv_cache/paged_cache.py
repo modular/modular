@@ -155,11 +155,14 @@ class FetchPagedKVCacheCollectionFA3Fallback:
             step_constant,
             out_dim=Dim(self.num_layers),
         )
+        if blocks.device is not None:
+            layers_arange = layers_arange.to(blocks.device)
         layers_arange = ops.reshape(layers_arange, shape=[-1, 1, 1])
         lookup_table = ops.reshape(
             lookup_table,
             shape=[1, lookup_table.shape[0], lookup_table.shape[1]],
         )
+
         lookup_table = ops.tile(lookup_table, repeats=[self.num_layers, 1, 1])
         lookup_table = lookup_table * self.num_layers + layers_arange
         cache_lengths_cast = cache_lengths.cast(DType.int32)
@@ -305,7 +308,7 @@ class PagedKVCacheManager(KVCacheManager):
         if max_batch_size > self.total_num_pages:
             logger.warning(
                 f"Insufficient cache memory to support a batch containing {max_batch_size} requests with one token per request. "
-                f"Need to allocate at least {max_batch_size} blocks, but only have enough memory for {self.total_num_pages} blocks. "
+                f"Need to allocate at least {max_batch_size} pages, but only have enough memory for {self.total_num_pages} pages. "
                 f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
             )
 
@@ -313,9 +316,13 @@ class PagedKVCacheManager(KVCacheManager):
         if blocks_needed_for_max_seq_len > self.total_num_pages:
             logger.warning(
                 f"Insufficient cache memory to support a batch containing one request at the max sequence length of {max_seq_len} tokens. "
-                f"Need to allocate at least {blocks_needed_for_max_seq_len} blocks, but only have enough memory for {self.total_num_pages} blocks. "
-                f"One page requires {single_page_size_bytes} but only {cache_memory_per_device} are available."
+                f"Need to allocate at least {blocks_needed_for_max_seq_len} pages, but only have enough memory for {self.total_num_pages} pages. "
+                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
             )
+
+        logger.info(
+            f"Paged KVCache Manager allocated {self.total_num_pages} pages using {single_page_size_bytes_str} per page"
+        )
 
         # call our base class constructor
         super().__init__(

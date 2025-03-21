@@ -118,7 +118,7 @@ struct UnsafePointer[
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
     @doc_private
-    @always_inline
+    @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Self._mlir_type):
         """Create a pointer from a low-level pointer primitive.
@@ -137,7 +137,7 @@ struct UnsafePointer[
         """
         self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
 
-    @always_inline
+    @always_inline("builtin")
     @implicit
     fn __init__(
         out self, other: UnsafePointer[type, address_space=address_space, **_]
@@ -158,7 +158,7 @@ struct UnsafePointer[
         Returns:
             A copy of the value.
         """
-        return UnsafePointer(self.address)
+        return self
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -216,7 +216,7 @@ struct UnsafePointer[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @always_inline("nodebug")
     fn __getitem__(self) -> ref [origin, address_space] type:
         """Return a reference to the underlying data.
 
@@ -232,7 +232,7 @@ struct UnsafePointer[
             )
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn offset[I: Indexer, //](self, idx: I) -> Self:
         """Returns a new pointer shifted by the specified offset.
 
@@ -247,7 +247,7 @@ struct UnsafePointer[
         """
         return __mlir_op.`pop.offset`(self.address, index(idx))
 
-    @always_inline
+    @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
     ](self, offset: I) -> ref [origin, address_space] type:
@@ -264,7 +264,7 @@ struct UnsafePointer[
         """
         return (self + offset)[]
 
-    @always_inline
+    @always_inline("nodebug")
     fn __add__[I: Indexer, //](self, offset: I) -> Self:
         """Return a pointer at an offset from the current one.
 

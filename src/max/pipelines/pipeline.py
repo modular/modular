@@ -47,7 +47,8 @@ from max.pipelines.kv_cache import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 
-from .config import KVCacheConfig, PipelineConfig, SupportedEncoding
+from .config import PipelineConfig
+from .config_enums import SupportedEncoding
 from .context import InputContext
 from .hf_utils import download_weight_files
 from .interfaces import (
@@ -58,6 +59,7 @@ from .interfaces import (
     TokenGenerator,
 )
 from .kv_cache import KVCacheManager, KVCacheParams
+from .max_config import KVCacheConfig
 from .sampling import token_sampler
 
 try:
@@ -212,6 +214,7 @@ class PipelineModel(ABC, Generic[T]):
             "PipelineModel must implement calculate_max_seq_len"
         )
 
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
     @classmethod
     @abstractmethod
     def get_kv_params(
@@ -224,6 +227,7 @@ class PipelineModel(ABC, Generic[T]):
         """Returns the KV cache params for the pipeline model."""
         ...
 
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
     @classmethod
     @abstractmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
@@ -420,7 +424,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._weight_adapters = weight_adapters
 
         # Expand eos tokens if more are provided in pipeline_config
-        if "eos_token_id" in self.huggingface_config:
+        if self._pipeline_config.ignore_eos:
+            self._eos_token_id = set([])
+        elif "eos_token_id" in self.huggingface_config:
             eos_tokens = self.huggingface_config.eos_token_id
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
@@ -528,10 +534,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
             self._pipeline_config,
             huggingface_config=self.huggingface_config,
         )
-        # this is effectively: max_seq_len - (num_tokens_in_kv_cache + num_new_tokens) - num_new_tokens
-        num_available_steps = max_seq_len - (
-            context.current_length - context.active_length
-        )
+        num_available_steps = context.compute_num_available_steps(max_seq_len)
+
         if num_available_steps <= 0:
             raise ValueError(
                 f"Request {context.cache_seq_id} length ({context.current_length}) is larger than or equal to the configured max_length ({max_seq_len})"

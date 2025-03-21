@@ -31,6 +31,7 @@ from utils.write import (
     _WriteBufferHeap,
     _WriteBufferStack,
     write_args,
+    WritableVariadicPack,
 )
 
 alias defined_mode = env_get_string["ASSERT", "safe"]()
@@ -227,9 +228,9 @@ fn debug_assert[
 
 
 @no_inline
-fn _debug_assert_msg(
-    messages: VariadicPack[_, Writable, *_], loc: _SourceLocation
-):
+fn _debug_assert_msg[
+    origin: ImmutableOrigin, *Ts: Writable
+](messages: VariadicPack[origin, Writable, *Ts], loc: _SourceLocation):
     """Aborts with (or prints) the given message and location.
 
     This function is intentionally marked as no_inline to reduce binary size.
@@ -239,53 +240,28 @@ fn _debug_assert_msg(
     abort's implementation could use debug_assert)
     """
 
-    var stdout = sys.stdout
-
     @parameter
-    if is_amd_gpu():
-        # FIXME: debug_assert printing is disabled on AMD GPU, see KERN-1448
-        pass
-    elif is_nvidia_gpu():
-        # Count the total length of bytes to allocate only once
-        var arg_bytes = _TotalWritableBytes()
-        arg_bytes.write(
-            "At ",
-            loc,
-            ": ",
-            _GPUThreadInfo(),
-            " Assert ",
-            "Warning: " if defined_mode == "warn" else " Error: ",
-        )
-        write_args(arg_bytes, messages, end="\n")
-
-        var buffer = _WriteBufferHeap(arg_bytes.size + 1)
-        buffer.write(
+    if is_gpu():
+        print(
             "At ",
             loc,
             ": ",
             _GPUThreadInfo(),
             " Assert ",
             "Warning: " if defined_mode == "warn" else "Error: ",
+            WritableVariadicPack(messages),
+            sep="",
         )
-        write_args(buffer, messages, end="\n")
-        buffer.data[buffer.pos] = 0
-        stdout.write_bytes(
-            Span[Byte, ImmutableAnyOrigin](ptr=buffer.data, length=buffer.pos)
-        )
-        buffer.data.free()
-
     else:
-        var buffer = _WriteBufferStack[4096](stdout)
-        buffer.write("At ", loc, ": ")
-
-        @parameter
-        if defined_mode == "warn":
-            buffer.write(" Assert Warning: ")
-        else:
-            buffer.write(" Assert Error: ")
-
-        write_args(buffer, messages, end="\n")
-        buffer.flush()
+        print(
+            "At ",
+            loc,
+            ": ",
+            " Assert ",
+            "Warning: " if defined_mode == "warn" else "Error: ",
+            WritableVariadicPack(messages),
+            sep="",
+        )
 
     @parameter
     if defined_mode != "warn":

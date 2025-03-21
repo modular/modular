@@ -23,6 +23,17 @@ from .layer import Layer
 class Conv2D(Layer):
     """A 2D convolution over an input signal composed of several input
     planes.
+
+    Example:
+        .. code-block:: python
+
+            conv = nn.Conv2D(
+                filter=filter_2d,
+                bias=bias_2d,
+                stride=2,
+                padding=1
+            )
+            output = conv(x)
     """
 
     filter: TensorValueLike
@@ -70,6 +81,16 @@ class Conv2D(Layer):
 class Conv1D(Layer):
     """A 1D convolution over an input signal composed of several input
     planes.
+
+    Example:
+        .. code-block:: python
+
+            conv = nn.Conv1D(
+                filter=filter_1d,
+                bias=bias_1d,
+                stride=1,
+                padding=1
+            )
     """
 
     filter: TensorValueLike  # [kernel_size, in_channels, out_channels]
@@ -117,6 +138,16 @@ class Conv1D(Layer):
 class Conv3D(Layer):
     """A 3D convolution over an input signal composed of several input
     planes.
+
+    Example:
+        .. code-block:: python
+
+            conv = nn.Conv3D(
+                filter=filter_3d,
+                bias=bias_3d,
+                stride=1,
+                padding=1
+            )
     """
 
     filter: TensorValueLike  # [depth, height, width, in_channels / num_groups, out_channels]

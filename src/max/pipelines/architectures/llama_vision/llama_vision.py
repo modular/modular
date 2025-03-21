@@ -55,6 +55,7 @@ from max.pipelines.kv_cache._utils import build_max_lengths_tensor
 from transformers import AutoConfig
 
 from .language_model import CausalLanguageModel, instantiate_language_model
+from .model_config import LlamaVisionConfig
 from .vision_model import instantiate_vision_model
 
 logger = logging.getLogger("max.pipelines")
@@ -172,15 +173,17 @@ class MultimodalKVCacheManager(KVCacheManager):
         )
 
         remaining_memory = available_cache_memory - vision_kv_cache_size
-        if remaining_memory > 0:
-            text_kv_cache_size = estimate_kv_cache_size(
-                params,
-                max_batch_size,
-                max_seq_len,
-                num_layers,
-                remaining_memory,
-                devices,
-            )
+        if remaining_memory <= 0:
+            return vision_kv_cache_size
+
+        text_kv_cache_size = estimate_kv_cache_size(
+            params,
+            max_batch_size,
+            max_seq_len,
+            num_layers,
+            remaining_memory,
+            devices,
+        )
         return vision_kv_cache_size + text_kv_cache_size
 
     @classmethod
@@ -867,7 +870,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.vision_config.num_hidden_layers
+        return LlamaVisionConfig.get_num_layers(huggingface_config)
 
     def _prepare_vision_inputs(
         self,
@@ -1091,17 +1094,11 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.text_config.num_key_value_heads,
-            head_dim=(
-                huggingface_config.text_config.hidden_size
-                // huggingface_config.text_config.num_attention_heads
-            ),
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+        return LlamaVisionConfig.get_kv_params(
+            huggingface_config=huggingface_config,
             n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     def load_kv_manager(

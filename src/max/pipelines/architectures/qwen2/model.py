@@ -49,6 +49,7 @@ from max.pipelines.log_probabilities import (
 from transformers import AutoConfig
 
 from .graph import transformer
+from .model_config import Qwen2Config
 
 
 class Qwen2Inputs(ModelInputs):
@@ -263,20 +264,16 @@ class Qwen2Model(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.hidden_size
-            // huggingface_config.num_attention_heads,
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
+        return Qwen2Config.get_kv_params(
+            huggingface_config=huggingface_config,
             n_devices=n_devices,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
+        return Qwen2Config.get_num_layers(huggingface_config)
 
     @classmethod
     def calculate_max_seq_len(

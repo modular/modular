@@ -28,13 +28,8 @@ from max.graph.weights import WeightsAdapter, WeightsFormat, weights_format
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig, AutoTokenizer
 
-from .config import (
-    KVCacheConfig,
-    PipelineConfig,
-    PipelineEngine,
-    RopeType,
-    SupportedEncoding,
-)
+from .config import PipelineConfig
+from .config_enums import PipelineEngine, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
 from .hf_utils import get_architectures_from_huggingface_repo
@@ -45,6 +40,9 @@ from .interfaces import (
     TokenGenerator,
 )
 from .kv_cache import KVCacheStrategy
+from .max_config import (
+    KVCacheConfig,
+)
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer
@@ -98,6 +96,7 @@ class SupportedArchitecture:
         task: PipelineTask,
         tokenizer: Type[Union[TextTokenizer, TextAndVisionTokenizer]],
         default_weights_format: WeightsFormat,
+        multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
     ):
@@ -125,6 +124,7 @@ class SupportedArchitecture:
         self.pipeline_model = pipeline_model
         self.tokenizer = tokenizer
         self.default_weights_format = default_weights_format
+        self.multi_gpu_supported = multi_gpu_supported
         self.rope_type = rope_type
         self.weight_adapters = weight_adapters or {}
         self.task = task
@@ -290,6 +290,15 @@ class PipelineRegistry:
             pipeline_config.engine = PipelineEngine.HUGGINGFACE
             return pipeline_config
 
+        if (
+            not arch.multi_gpu_supported
+            and len(model_config.device_specs) > 1
+            and model_config.device_specs[0].device_type == "gpu"
+        ):
+            raise ValueError(
+                f"Multiple GPU inference is currently not supported for {model_config.model_path}."
+            )
+
         # The remainder of this function, assumes we have both a valid model_path,
         # and a SupportedArchitecture. We should then validate the details of the existing architecture
         # and fallback to HuggingFace if needed.
@@ -382,10 +391,17 @@ class PipelineRegistry:
         # devices.
         for device_spec in model_config.device_specs:
             if not model_config.quantization_encoding.supported_on(device_spec):
-                raise ValueError(
-                    f"{model_config.quantization_encoding} is not supported on {device_spec.device_type}. "
-                    "Please use the flag --devices=cpu or --devices=gpu to configure the device."
+                available_encodings = list(arch.supported_encodings.keys())
+
+                msg = (
+                    f"The encoding '{model_config.quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
+                    f"You have two options to resolve this:\n"
+                    f"1. Use a different device\n"
+                    f"2. Use a different encoding (encodings available for this model: {', '.join(str(enc) for enc in available_encodings)})\n\n"
+                    f"Please use the --help flag for more information."
                 )
+
+                raise ValueError(msg)
 
         model_config.finalize_encoding_config()
 
@@ -513,6 +529,12 @@ class PipelineRegistry:
 
         model_weights_size = model_cls.estimate_weights_size(pipeline_config)
 
+        if model_weights_size > free_memory:
+            raise RuntimeError(
+                f"Model size exceeds available memory ({to_human_readable_bytes(model_weights_size)} > {to_human_readable_bytes(free_memory)}). "
+                "Try running a smaller model, using a smaller precision, or using a device with more memory."
+            )
+
         total_size = model_weights_size
         available_kv_cache_memory = int(
             free_memory * model_config.kv_cache_config.device_memory_utilization
@@ -560,7 +582,6 @@ class PipelineRegistry:
         )
 
         total_size += actual_kv_cache_size
-
         # If the model is too large to fit in memory, and the user did not
         # specify a max_length, try to infer a value that would fit.
         if total_size > free_memory and not user_provided_max_length:
@@ -583,20 +604,19 @@ class PipelineRegistry:
                     f"Truncated model's default max_length from {original_max_length} to {inferred_max_length} to fit in memory."
                 )
                 pipeline_config.max_length = inferred_max_length
-                if not model_config.quantization_encoding:
-                    msg = "quantization_encoding must be provided in PipelineConfig"
-                    raise ValueError(msg)
+            else:
+                pipeline_config.max_length = 1
 
-                actual_kv_cache_size = self._calculate_kv_cache_size(
-                    model_cls,
-                    pipeline_config,
-                    available_kv_cache_memory,
-                    huggingface_config,
-                    devices=devices,
-                    kv_cache_config=model_config.kv_cache_config,
-                    cache_dtype=model_config.quantization_encoding.cache_dtype,
-                )
-                total_size = model_weights_size + actual_kv_cache_size
+            actual_kv_cache_size = self._calculate_kv_cache_size(
+                model_cls,
+                pipeline_config,
+                available_kv_cache_memory,
+                huggingface_config,
+                devices=devices,
+                kv_cache_config=model_config.kv_cache_config,
+                cache_dtype=model_config.quantization_encoding.cache_dtype,
+            )
+            total_size = model_weights_size + actual_kv_cache_size
 
         if free_memory:
             free_memory_str = f" / {to_human_readable_bytes(free_memory)} free"
@@ -681,11 +701,6 @@ class PipelineRegistry:
                         | set to default ║ Recommend max_length | Recommend both           |
                         +----------------+----------------------+--------------------------+
         """
-        if weights_size > original_free_memory:
-            raise RuntimeError(
-                "Weights size exceeds available memory. Try running a smaller model, using a smaller precision, or using a device with more memory."
-            )
-
         original_max_length = cast(int, pipeline_config.max_length)
         original_max_batch_size = cast(int, pipeline_config.max_batch_size)
 

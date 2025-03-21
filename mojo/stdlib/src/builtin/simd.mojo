@@ -62,11 +62,11 @@ from sys import (
     is_big_endian,
     is_gpu,
     is_nvidia_gpu,
-    is_x86,
     llvm_intrinsic,
     prefetch,
     simdwidthof,
     sizeof,
+    CompilationTarget,
 )
 from sys._assembly import inlined_assembly
 from sys.info import _current_arch, _is_sm_9x
@@ -486,9 +486,9 @@ struct SIMD[type: DType, size: Int](
         """
         _simd_construction_checks[type, size]()
 
-        var casted = __mlir_op.`pop.cast`[
-            _type = Scalar[DType.bool]._mlir_type
-        ](value._as_scalar_bool())
+        var casted = __mlir_op.`pop.cast_from_builtin`[
+            _type = __mlir_type.`!pop.scalar<bool>`
+        ](value.value)
         self = Scalar[DType.bool](casted)
 
     @always_inline("nodebug")
@@ -2168,7 +2168,7 @@ struct SIMD[type: DType, size: Int](
         @parameter
         if (
             # TODO: Allow SSE3 when we have sys.has_sse3()
-            (sys.has_sse4() or sys.has_neon())
+            (CompilationTarget.has_sse4() or sys.has_neon())
             and Self.type == DType.uint8
             and Self.size == 16
         ):
@@ -2456,7 +2456,7 @@ struct SIMD[type: DType, size: Int](
             return self[0]
 
         @parameter
-        if is_x86() or size_out > 1:
+        if CompilationTarget.is_x86() or size_out > 1:
 
             @always_inline
             @parameter
@@ -2514,7 +2514,7 @@ struct SIMD[type: DType, size: Int](
             return self[0]
 
         @parameter
-        if is_x86() or size_out > 1:
+        if CompilationTarget.is_x86() or size_out > 1:
 
             @always_inline
             @parameter
@@ -2921,7 +2921,9 @@ fn _pshuf_or_tbl1(
     lookup_table: SIMD[DType.uint8, 16], indices: SIMD[DType.uint8, 16]
 ) -> SIMD[DType.uint8, 16]:
     @parameter
-    if sys.has_sse4():  # TODO: Allow SSE3 when we have sys.has_sse3()
+    if (
+        CompilationTarget.has_sse4()
+    ):  # TODO: Allow SSE3 when we have sys.has_sse3()
         return _pshuf(lookup_table, indices)
     elif sys.has_neon():
         return _tbl1(lookup_table, indices)
@@ -3432,41 +3434,9 @@ fn _f32_to_bfloat16_scalar(
         return _unchecked_zero[DType.bfloat16, 1]()
 
     elif is_amd_gpu():
-        alias round_bias = Int32(0x7FFF)
-
-        # Compute the mask of unordered values.
-        var unordered_mask = inlined_assembly[
-            "v_cmp_u_f32 $0, $1, $1",
-            SIMD[DType.uint64, 1],
-            constraints="=s,v",
-            has_side_effect=False,
-        ](val)
-
-        # Compute "rounded_val = val + lsb + round_bias" to round-to-nearest.
-        var lsb = inlined_assembly[
-            "v_bfe_u32 $0, $1, 16, 1",
-            SIMD[DType.uint32, 1],
-            constraints="=v,v",
-            has_side_effect=False,
-        ](val)
-        var rounded_val = inlined_assembly[
-            "v_add3_u32 $0, $1, $2, $3",
-            SIMD[DType.uint32, 1],
-            constraints="=v,v,v,v",
-            has_side_effect=False,
-        ](val, lsb, round_bias)
-
-        # Select the rounded value or NaN based on the unordered mask.
-        var float_bits = inlined_assembly[
-            "v_cndmask_b32 $0, $1, $2, $3",
-            SIMD[DType.uint32, 1],
-            constraints="=v,v,v,s",
-            has_side_effect=False,
-        ](rounded_val, _nan[DType.float32](), unordered_mask)
-
-        return bitcast[DType.bfloat16, 1](
-            UInt16(float_bits >> _fp32_bf16_mantissa_diff)
-        )
+        return __mlir_op.`pop.cast`[
+            _type = __mlir_type.`!pop.scalar<bf16>`, fast = __mlir_attr.unit
+        ](rebind[Scalar[DType.float32]](val).value)
 
     if _isnan(val):
         return _nan[DType.bfloat16]()
