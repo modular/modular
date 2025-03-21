@@ -20,9 +20,8 @@ from typing import Callable, Mapping, Optional, Sequence, TextIO, TypeVar, Union
 
 import click
 from generate_llm_logits import Flake, generate_llm_logits
-from llama3.verify import verify
+from llama3.verify import DiscrepancyReport, verify
 from max.entrypoints.cli import DevicesOptionType
-from model.utils.exceptions import AccuracyError
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -37,7 +36,7 @@ class DeviceKind(enum.Enum):
     GPU = "gpu"
 
 
-class VerificationVerdict(enum.Enum):
+class VerificationStatus(enum.Enum):
     OK = "ok"
     INVALID = "invalid"
     ERROR = "error"
@@ -49,11 +48,21 @@ class VerificationVerdict(enum.Enum):
 
 
 _VERDICT_EMOJI = {
-    VerificationVerdict.OK: "✅",
-    VerificationVerdict.INVALID: "🟡",
-    VerificationVerdict.ERROR: "❌",
-    VerificationVerdict.FLAKE: "❄️",
+    VerificationStatus.OK: "✅",
+    VerificationStatus.INVALID: "🟡",
+    VerificationStatus.ERROR: "❌",
+    VerificationStatus.FLAKE: "❄️",
 }
+
+
+@dataclass
+class VerificationVerdict:
+    status: VerificationStatus
+    discrepancy_report: Optional[DiscrepancyReport] = None
+
+    @property
+    def emoji(self) -> str:
+        return self.status.emoji
 
 
 def resolve_rlocation(rloc: str) -> Path:
@@ -78,13 +87,27 @@ def dump_results(
     # Warning: The logits verification pipeline parses these results
     # using grep/awk.
     # Please verify that this doesn't break before changing the output format
-    to.write("| Status | Pipeline |\n")
-    to.write("|:------:|:---------|\n")
+    to.write("| Status | Pipeline | Modality | KL Div | MAE |\n")
+    to.write("|:------:|:---------|:--------:|:------:|:----:|\n")
 
     for pipeline, verdict in sorted(
         verdicts.items(), key=lambda x: x[0].lower()
     ):
-        to.write(f"| {verdict.emoji} | {pipeline} |\n")
+        kl_div = "N/A"
+        mae = "N/A"
+        modality = "N/A"
+
+        if verdict.discrepancy_report is not None:
+            modality = verdict.discrepancy_report.model_modality
+            mae = f"{verdict.discrepancy_report.avg_mae:.2e}"
+
+            # Handle KL Div which may be None for non logits models
+            if verdict.discrepancy_report.avg_kl_div is not None:
+                kl_div = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
+
+        to.write(
+            f"| {verdict.emoji} | {pipeline} | {modality} | {kl_div} | {mae} |\n"
+        )
 
 
 @dataclass
@@ -303,7 +326,7 @@ def run_llm_verification(
         )
 
     try:
-        verify(
+        result = verify(
             pipeline_outputs=max_golden_path,
             torch_outputs=torch_golden_path,
             eval_metric=eval_metrics,
@@ -313,12 +336,18 @@ def run_llm_verification(
             kl_div_threshold=kl_div_threshold,
             print_suggested_tolerances=print_suggested_tolerances,
         )
-    except AccuracyError:
-        return VerificationVerdict.INVALID
+        status = (
+            VerificationStatus.OK
+            if result.passed
+            else VerificationStatus.INVALID
+        )
+        return VerificationVerdict(
+            status=status,
+            discrepancy_report=result.discrepancy_report,
+        )
     except Exception:
         traceback.print_exc()
-        return VerificationVerdict.ERROR
-    return VerificationVerdict.OK
+        return VerificationVerdict(status=VerificationStatus.ERROR)
 
 
 # TODO(akirchhoff): Make this kw_only when we drop support for Python 3.9.
@@ -345,10 +374,10 @@ class PipelineDef:
         try:
             return self.run(device_type, devices, print_suggested_tolerances)
         except Flake:
-            return VerificationVerdict.FLAKE
+            return VerificationVerdict(status=VerificationStatus.FLAKE)
         except Exception:
             traceback.print_exc()
-            return VerificationVerdict.ERROR
+            return VerificationVerdict(status=VerificationStatus.ERROR)
 
 
 PIPELINES = {
@@ -780,17 +809,17 @@ def main(
     print("-" * 40)
     print()
     print("# pipelines run:", len(verdicts))
-    for verdict in list(VerificationVerdict):
+    for status in list(VerificationStatus):
         print(
-            f"# pipelines {verdict.name}:",
-            sum(v == verdict for v in verdicts.values()),
+            f"# pipelines {status.name}:",
+            sum(v.status == status for v in verdicts.values()),
         )
     print()
     dump_results(verdicts)
 
-    if any(v != VerificationVerdict.OK for v in verdicts.values()):
+    if any(v.status != VerificationStatus.OK for v in verdicts.values()):
         if all(
-            v in (VerificationVerdict.OK, VerificationVerdict.FLAKE)
+            v.status in (VerificationStatus.OK, VerificationStatus.FLAKE)
             for v in verdicts.values()
         ):
             # If every failure was a flake, propagate the EX_TEMPFAIL status code onward.

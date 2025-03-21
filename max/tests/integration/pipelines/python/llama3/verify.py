@@ -20,8 +20,9 @@ ENCODING=float32
 ```
 """
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, TypedDict, TypeVar
+from typing import List, Literal, Optional, Sequence, TypedDict, TypeVar
 
 import click
 import numpy as np
@@ -149,7 +150,7 @@ def main(
     which causes issues when called from multiprocessing.
     """
 
-    verify(
+    result = verify(
         pipeline_outputs=pipeline_outputs,
         torch_outputs=torch_outputs,
         eval_metric=eval_metric,
@@ -160,6 +161,57 @@ def main(
         diff_count=diff_count,
         print_suggested_tolerances=print_suggested_tolerances,
     )
+
+    if not result.passed:
+        raise AccuracyError(result.error_message)
+
+
+@dataclass(frozen=True)
+class DiscrepancyReport:
+    """Contains discrepancy metrics between model outputs."""
+
+    model_modality: Literal["logit", "embedding"]
+    """Type of model output modality being compared ('logit' or 'embedding')."""
+
+    mae_per_prompt: List[float]
+    """Mean absolute error for each prompt."""
+
+    rmse_per_prompt: List[float]
+    """Root mean square error for each prompt."""
+
+    kl_div_per_prompt: Optional[List[float]] = None
+    """KL divergence for each prompt (only for logit outputs)."""
+
+    @property
+    def avg_mae(self) -> float:
+        """Calculate average mean absolute error across all prompts."""
+        return sum(self.mae_per_prompt) / len(self.mae_per_prompt)
+
+    @property
+    def avg_rmse(self) -> float:
+        """Calculate average root mean square error across all prompts."""
+        return sum(self.rmse_per_prompt) / len(self.rmse_per_prompt)
+
+    @property
+    def avg_kl_div(self) -> Optional[float]:
+        """Calculate average KL divergence across all prompts (only for logit outputs)."""
+        if self.kl_div_per_prompt is None:
+            return None
+        return sum(self.kl_div_per_prompt) / len(self.kl_div_per_prompt)
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    """Result of model output verification."""
+
+    passed: bool
+    """Whether the verification passed or failed."""
+
+    discrepancy_report: DiscrepancyReport
+    """Report containing discrepancy metrics between model outputs."""
+
+    error_message: Optional[str] = None
+    """Error message if verification failed, None otherwise."""
 
 
 def verify(
@@ -172,7 +224,7 @@ def verify(
     kl_div_threshold: Optional[float] = None,
     diff_count: Optional[int] = None,
     print_suggested_tolerances: Optional[bool] = None,
-):
+) -> VerificationResult:
     """Verify that pipeline outputs match torch outputs within specified tolerances.
 
     Args:
@@ -185,6 +237,9 @@ def verify(
         kl_div_threshold: Threshold for KL divergence
         diff_count: Number of differences to show in error output
         print_suggested_tolerances: Whether to print suggested tolerances on failure
+
+    Returns:
+        VerificationResult containing pass/fail status and discrepancy report
     """
 
     # MyPy needs the TypeVar in order to infer the type of the return value
@@ -247,7 +302,13 @@ def verify(
 
     compare_values(pipeline_results, torch_results, compare_fn=compare)
 
+    report = compute_discrepancy_report(pipeline_results, torch_results)
+    print_discrepancy_report(report)
+
+    error_message = None
+    test_passed = True
     if any_failed:
+        test_passed = False
         validator.print_error_table(
             first_framework,
             other_framework,
@@ -262,15 +323,14 @@ def verify(
                 " where the results differ."
             )
 
-        print_discrepancy_report(pipeline_results, torch_results)
-        raise AccuracyError(
+        error_message = (
             f'The outputs when using the "{first_framework}"'
             " framework is not within tolerance to the"
             f' outputs when using the "{other_framework}"'
             " framework."
         )
+        CONSOLE.print(error_message)
 
-    print_discrepancy_report(pipeline_results, torch_results)
     # the results are within tolerance, so we log a good message
     CONSOLE.print(
         f'👍 The outputs when using the "{first_framework}" framework'
@@ -279,20 +339,30 @@ def verify(
         f" ({validator.threshold_str()})"
     )
 
+    return VerificationResult(
+        passed=test_passed,
+        discrepancy_report=report,
+        error_message=error_message,
+    )
 
-def print_discrepancy_report(
+
+def compute_discrepancy_report(
     results: List[ModelOutput], references: List[ModelOutput]
-) -> None:
-    """Calculate and print discrepancy metrics between outputs from two model runs.
+) -> DiscrepancyReport:
+    """Calculate discrepancy metrics between outputs from two model runs.
 
     Args:
         results: List of model outputs to evaluate
         references: List of reference model outputs to compare against
+
+    Returns:
+        A DiscrepancyReport containing the calculated metrics
     """
     if len(results) != len(references):
         raise ValueError("The two lists must have the same length")
 
     mae_per_prompt, rmse_per_prompt, kl_div_per_prompt = [], [], []
+    model_modality: Optional[Literal["logit", "embedding"]] = None
     for result, reference in zip(results, references):
         verify_matching_prompts(result, reference)
         kl_div = None
@@ -301,23 +371,30 @@ def print_discrepancy_report(
                 result["embeddings"].astype(np.float64),
                 reference["embeddings"].astype(np.float64),
             )
+            model_modality = "embedding"
         elif "values" in result and "values" in reference:
             mae, rmse, kl_div = calculate_logit_discrepancies(
                 result["values"], reference["values"]
             )
+            model_modality = "logit"
         else:
             raise ValueError(
-                "Unknown model output type, did not find embeddings or values"
+                "Unknown model modality, did not find embeddings or values"
             )
         mae_per_prompt.append(mae)
         rmse_per_prompt.append(rmse)
         if kl_div is not None:
             kl_div_per_prompt.append(kl_div)
 
-    kl_div_parameter = (
-        None if len(kl_div_per_prompt) == 0 else kl_div_per_prompt
+    if model_modality is None:
+        raise ValueError("Could not determine model modality")
+
+    return DiscrepancyReport(
+        mae_per_prompt=mae_per_prompt,
+        rmse_per_prompt=rmse_per_prompt,
+        kl_div_per_prompt=kl_div_per_prompt if kl_div_per_prompt else None,
+        model_modality=model_modality,
     )
-    print_discrepancy_results(mae_per_prompt, rmse_per_prompt, kl_div_parameter)
 
 
 def verify_matching_prompts(
@@ -398,54 +475,36 @@ def calculate_logit_discrepancies(
     return float(mae_average), float(rmse_average), float(kl_div_average)
 
 
-def print_discrepancy_results(
-    mae_per_prompt: Sequence[float],
-    rmse_per_prompt: Sequence[float],
-    kl_div_per_prompt: Optional[Sequence[float]],
-) -> None:
-    """Print discrepancy results in a standardized format.
+def print_discrepancy_report(report: DiscrepancyReport) -> None:
+    """Print discrepancy metrics in a standardized format.
 
     Args:
-        mae_per_prompt: Sequence of mean absolute error values
-        rmse_per_prompt: Sequence of root mean square error values
-        kl_div_per_prompt: Optional sequence of KL divergence values
-
-    Returns:
-        None
+        report: DiscrepancyReport containing the metrics to print
     """
-    # TODO: Add reference values as to what are good/ok/bad numbers once
-    # we gain experience with them
-
-    # Determine if we're working with logits or embeddings
-    output_type = "logit" if kl_div_per_prompt is not None else "embedding"
-
-    # Calculate averages
-    # TODO: These averages can be misleading if the number of steps is different
-    # for each prompt (happens when there's a token mismatch).
-    avg_mae = sum(mae_per_prompt) / len(mae_per_prompt)
-    avg_rmse = sum(rmse_per_prompt) / len(rmse_per_prompt)
-
     # Format the per-prompt values
     formatter = "{:.2e}".format
-    formatted_mae = ", ".join(formatter(error) for error in mae_per_prompt)
-    formatted_rmse = ", ".join(formatter(error) for error in rmse_per_prompt)
+    formatted_mae = ", ".join(
+        formatter(error) for error in report.mae_per_prompt
+    )
+    formatted_rmse = ", ".join(
+        formatter(error) for error in report.rmse_per_prompt
+    )
 
-    CONSOLE.print(f"\n===== {output_type} discrepancy report =====\n")
+    CONSOLE.print(f"\n===== {report.model_modality} discrepancy report =====\n")
 
-    if kl_div_per_prompt is not None:
-        avg_kl_div = sum(kl_div_per_prompt) / len(kl_div_per_prompt)
+    if report.kl_div_per_prompt is not None:
         formatted_kl_div = ", ".join(
-            formatter(error) for error in kl_div_per_prompt
+            formatter(error) for error in report.kl_div_per_prompt
         )
         CONSOLE.print(
-            f"KL Div: {formatter(avg_kl_div)} <— Use this number if unsure"
+            f"KL Div: {formatter(report.avg_kl_div)} <— Use this number if unsure"
         )
 
-    CONSOLE.print(f"RMSE:   {formatter(avg_rmse)}")
-    CONSOLE.print(f"MAE:    {formatter(avg_mae)}")
+    CONSOLE.print(f"RMSE:   {formatter(report.avg_rmse)}")
+    CONSOLE.print(f"MAE:    {formatter(report.avg_mae)}")
     CONSOLE.print("\nPer prompt discrepancy numbers:")
 
-    if kl_div_per_prompt is not None:
+    if report.kl_div_per_prompt is not None:
         CONSOLE.print(f"KL Div: [{formatted_kl_div}]")
 
     CONSOLE.print(f"RMSE:   [{formatted_rmse}]")
@@ -453,10 +512,10 @@ def print_discrepancy_results(
 
     CONSOLE.print("\nLower numbers are better.")
     CONSOLE.print(
-        f"They measure how close the {output_type}s are between the two frameworks."
+        f"They measure how close the {report.model_modality}s are between the two frameworks."
     )
 
-    if kl_div_per_prompt is not None:
+    if report.kl_div_per_prompt is not None:
         CONSOLE.print(
             "The numbers are computed until the first token mismatch, if any."
         )
