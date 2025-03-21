@@ -548,6 +548,13 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @implicit
     @always_inline
     fn __init__(out self, value: Int):
+        """Initialize an `IntTuple` with a single integer value.
+
+        Creates an `IntTuple` containing a single integer element.
+
+        Args:
+            value: The integer value to store in the tuple.
+        """
         if value < Self.MinimumValue:
             abort("Only integers greater than MinimumValue are supported")
         self._store = IntArray(2)

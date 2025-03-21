@@ -68,6 +68,20 @@ from utils.index import Index
 
 
 fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
+    """Calculates the number of matrix registers required per thread.
+
+    Determines how many registers each thread in a warp needs to store a matrix
+    of the given dimensions. This is calculated by dividing the total number of
+    elements (dim_1 * dim_2) by the warp size, as the matrix is distributed
+    across all threads in the warp.
+
+    Parameters:
+        dim_1: First dimension of the matrix.
+        dim_2: Second dimension of the matrix.
+
+    Returns:
+        The number of matrix registers needed per thread.
+    """
     return (dim_1 * dim_2) // WARP_SIZE
 
 
@@ -1263,6 +1277,22 @@ fn _load_matrix_frag[
 fn get_mma_shape[
     input_type: DType, accum_type: DType, shape_id: Int = 0
 ]() -> IndexList[3]:
+    """Returns the appropriate matrix multiply-accumulate (MMA) shape for tensor core operations.
+
+    Selects the optimal MMA shape based on the GPU architecture, input data type,
+    accumulation data type, and optional shape identifier. This function handles
+    different configurations for both NVIDIA and AMD GPUs.
+
+    Parameters:
+        input_type: The data type of the input matrices (A and B).
+        accum_type: The data type used for accumulation (C and D).
+        shape_id: Optional identifier to select between multiple valid shapes (default: 0).
+
+    Returns:
+        An `IndexList[3]` containing the MMA dimensions in the format `[M, N, K]`,
+        where `M×N` is the output matrix size and `K` is the reduction dimension.
+    """
+
     @parameter
     if has_nvidia_gpu_accelerator():
 
@@ -1316,6 +1346,20 @@ fn get_mma_shape[
 
 @always_inline
 fn get_fragment_size[mma_shape: IndexList[3]]() -> IndexList[3]:
+    """Calculates the fragment size per thread for a given MMA shape.
+
+    For tensor core operations, each thread in a warp handles a portion of the
+    computation. This function determines how many elements each thread needs to
+    process for the A, B, and C/D matrices based on the MMA shape.
+
+    Parameters:
+        mma_shape: An `IndexList[3]` containing the MMA dimensions [M, N, K].
+
+    Returns:
+        An `IndexList[3]` containing the fragment sizes per thread for matrices
+        A, B, and C/D respectively, calculated as:
+        `[M*K/WARP_SIZE, N*K/WARP_SIZE, M*N/WARP_SIZE]`.
+    """
     return IndexList[3](
         mma_shape[0] * mma_shape[2] // WARP_SIZE,
         mma_shape[1] * mma_shape[2] // WARP_SIZE,

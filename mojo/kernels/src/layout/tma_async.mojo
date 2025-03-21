@@ -133,10 +133,28 @@ fn _tma_desc_tile_layout[
 @value
 @register_passable("trivial")
 struct SharedMemBarrier(CollectionElement):
+    """A hardware-accelerated synchronization primitive for GPU shared memory operations.
+
+    This struct provides a barrier mechanism optimized for coordinating thread execution
+    and memory transfers in GPU kernels, particularly for Tensor Memory Accelerator (TMA)
+    operations. It enables efficient synchronization between threads and memory operations
+    by leveraging hardware-specific barrier instructions.
+
+    Key features:
+    - Thread synchronization across thread blocks
+    - Memory transfer completion tracking
+    - Hardware-accelerated barrier operations
+    - Support for phased synchronization
+
+    This barrier is particularly useful for ensuring that shared memory operations
+    complete before dependent computations begin, which is critical for maintaining
+    data consistency in high-performance GPU kernels.
+    """
+
     var mbar: Int64
     """Shared memory location used for the barrier state.
 
-    This field stores a an 8-byte aligned shared memory location that
+    This field stores an 8-byte aligned shared memory location that
     maintains the state of the barrier. The memory must be in shared address
     space to be accessible by all threads in a block.
     """
@@ -146,7 +164,8 @@ struct SharedMemBarrier(CollectionElement):
         """Initialize the barrier state with the expected number of threads.
 
         Sets up the barrier to expect arrivals from the specified number of threads
-        before it can be satisfied.
+        before it can be satisfied. This is essential for coordinating thread
+        synchronization in GPU kernels.
 
         Args:
             num_threads: Number of threads that must arrive at the barrier
@@ -160,7 +179,7 @@ struct SharedMemBarrier(CollectionElement):
 
         Used with TMA operations to indicate the expected size of data transfer.
         The barrier will be satisfied when the specified number of bytes has been
-        transferred.
+        transferred, enabling efficient coordination of memory operations.
 
         Args:
             bytes: Number of bytes expected to be transferred.
@@ -173,13 +192,15 @@ struct SharedMemBarrier(CollectionElement):
 
         Blocks the calling thread until the barrier is satisfied, either by
         the expected number of threads arriving or the expected data transfer
-        completing.
+        completing. This method implements an efficient spin-wait mechanism
+        optimized for GPU execution.
 
         Args:
             phase: The phase value to check against. Defaults to 0.
 
         Note:
-            Minimizes thread divergence during synchronization.
+            Minimizes thread divergence during synchronization by using
+            hardware-accelerated barrier instructions.
         """
         # Based on cutlass
         # https://github.com/NVIDIA/cutlass/blob/b78588d1630aa6643bf021613717bafb705df4ef/include/cute/arch/copy_sm90_desc.hpp#L92-L110
@@ -207,6 +228,16 @@ struct SharedMemBarrier(CollectionElement):
             origin = __origin_of(self),
         ],
     ):
+        """Get an unsafe pointer to the barrier's memory location.
+
+        Provides low-level access to the shared memory location storing the barrier state.
+        This method is primarily used internally by other barrier operations that need
+        direct access to the underlying memory.
+
+        Returns:
+            An unsafe pointer to the barrier's memory location in shared memory,
+            properly typed and aligned for barrier operations.
+        """
         return __type_of(result)(UnsafePointer.address_of(self.mbar))
 
     @always_inline
@@ -216,7 +247,8 @@ struct SharedMemBarrier(CollectionElement):
         """Signal arrival at the barrier from a specific CTA (Cooperative Thread Array) in a cluster.
 
         This method is used in multi-CTA scenarios to coordinate barrier arrivals
-        across different CTAs within a cluster.
+        across different CTAs within a cluster. It enables efficient synchronization
+        across thread blocks in clustered execution models.
 
         Args:
             cta_id: The ID of the CTA (Cooperative Thread Array) that is arriving.
@@ -236,7 +268,8 @@ struct SharedMemBarrier(CollectionElement):
         """Signal arrival at the barrier and return the arrival count.
 
         This method increments the arrival count at the barrier and returns
-        the updated count.
+        the updated count. It's used to track how many threads have reached
+        the synchronization point.
 
         Returns:
             The updated arrival count after this thread's arrival.

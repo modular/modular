@@ -448,6 +448,9 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
         Outputs the swizzle parameters (bits, base, shift) in a
         tuple format.
 
+        Parameters:
+            W: The writer type that implements the Writer trait.
+
         Args:
             writer: The writer to write to.
         """
@@ -574,7 +577,7 @@ struct ComposedLayout[
     Combines two layouts. Output of the first (`LayoutA`) is input to
     the second (`LayoutB`), with optional offset in between.
 
-    Attributes:
+    Parameters:
         LayoutA: The first layout to apply.
         LayoutB: The second layout to apply.
         offset: Optional offset between layouts (default: 0).
@@ -680,6 +683,10 @@ fn eval_composed[
 
     Evaluates a `ComposedLayout[Layout, Swizzle]`. Applies the base
     layout, adds an optional offset, and then applies the swizzle.
+
+    Parameters:
+        composed_layout: The composed layout to evaluate, consisting of a base Layout
+                         and a Swizzle transformation.
 
     Args:
         idx: The input index to transform.
