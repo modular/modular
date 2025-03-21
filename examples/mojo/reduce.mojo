@@ -37,7 +37,7 @@ alias scalar = Scalar[type]
 # Simple summation of the array elements
 fn naive_reduce_sum[
     size: Int
-](buffer: NDBuffer[type, 1, size]) raises -> scalar:
+](buffer: NDBuffer[type, 1, _, size]) raises -> scalar:
     var my_sum: scalar = 0
     var c: scalar = 0
     for i in range(buffer.size()):
@@ -50,7 +50,7 @@ fn naive_reduce_sum[
 
 fn stdlib_reduce_sum[
     size: Int
-](array: NDBuffer[type, 1, size]) raises -> scalar:
+](array: NDBuffer[type, 1, _, size]) raises -> scalar:
     var my_sum = sum(array)
     return my_sum
 
@@ -65,10 +65,10 @@ def pretty_print(name: String, elements: Int, time: Float64):
 
 
 fn bench[
-    func: fn[size: Int] (buffer: NDBuffer[type, 1, size]) raises -> scalar,
+    func: fn[size: Int] (buffer: NDBuffer[type, 1, _, size]) raises -> scalar,
     size: Int,
     name: String,
-](buffer: NDBuffer[type, 1, size]) raises:
+](buffer: NDBuffer[type, 1, _, size]) raises:
     @parameter
     fn runner() raises:
         var result = func[size](buffer)
@@ -90,8 +90,8 @@ fn main() raises:
     rand(ptr_small, size_small)
     rand(ptr_large, size_large)
 
-    var buffer_small = NDBuffer[type, 1, size_small](ptr_small)
-    var buffer_large = NDBuffer[type, 1, size_large](ptr_large)
+    var buffer_small = NDBuffer[type, 1, _, size_small](ptr_small)
+    var buffer_large = NDBuffer[type, 1, _, size_large](ptr_large)
 
     bench[naive_reduce_sum, size_small, "naive"](buffer_small)
     bench[naive_reduce_sum, size_large, "naive"](buffer_large)

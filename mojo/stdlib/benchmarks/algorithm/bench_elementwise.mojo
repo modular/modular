@@ -28,7 +28,9 @@ from utils.index import Index, IndexList
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = NDBuffer[DType.index, 1, n].stack_allocation()
+    var vector = NDBuffer[
+        DType.index, 1, MutableAnyOrigin, n
+    ].stack_allocation()
 
     for i in range(len(vector)):
         vector[i] = -1
