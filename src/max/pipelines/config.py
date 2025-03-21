@@ -20,11 +20,16 @@ import os
 from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Optional, get_type_hints
 
-from max.driver import (
-    DeviceSpec,
-)
+from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.config_enums import PipelineEngine, RopeType
+from max.graph.weights import WeightsFormat, weights_format
+from max.pipelines.config_enums import (
+    _ALTERNATE_ENCODINGS,
+    PipelineEngine,
+    RopeType,
+    SupportedEncoding,
+)
+from max.pipelines.kv_cache import KVCacheStrategy
 from max.pipelines.max_config import (
     KVCacheConfig,
     MAXConfig,
@@ -33,6 +38,8 @@ from max.pipelines.max_config import (
     SamplingConfig,
     repo_exists_with_retry,
 )
+from max.pipelines.registry import PIPELINE_REGISTRY
+from transformers import AutoTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -235,12 +242,317 @@ class PipelineConfig(MAXConfig):
                     "enable_structured_output is not currently supported on CPU."
                 )
 
+        # Run Baseline Validation
+        self._validate_pipeline_config()
+
         if self.draft_model:
             if not repo_exists_with_retry(self.draft_model):
                 raise ValueError(
                     "draft_model provided does not exist on HuggingFace."
                     "Only public HuggingFace draft models currently supported."
                 )
+
+            # Run Additional Checks for Speculative Decoding
+            self._validate_pipeline_config_for_speculative_decoding()
+
+    def _validate_pipeline_config_for_speculative_decoding(self) -> None:
+        # When `draft_model` is not provided, speculative decoding is disabled.
+        if not self.draft_model:
+            return None
+
+        # Assume `draft_model` is provided, and thus speculative decoding is enabled.
+        # We don't support running speculative decoding with the HuggingFace backend.
+        if self.engine == PipelineEngine.HUGGINGFACE:
+            msg = (
+                "Speculative Decoding not supported with the HuggingFace Engine"
+            )
+            raise ValueError(msg)
+
+        # Validate that both the `draft_model` and target model `model_path` have the same
+        # architecture
+        draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
+            self.draft_model,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+
+        if not draft_arch:
+            msg = "MAX-Optimized architecture not found for `draft_model`"
+            raise ValueError(msg)
+
+        target_arch = PIPELINE_REGISTRY.retrieve_architecture(
+            self.model_config.model_path,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+        if not target_arch:
+            msg = "MAX-Optimized architecture not found for target model (`model_path`)"
+            raise ValueError(msg)
+
+        if draft_arch != target_arch:
+            msg = f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
+            raise ValueError(msg)
+
+        # Validate that their tokenizers are identical.
+        draft_tokenizer = AutoTokenizer.from_pretrained(
+            self.draft_model,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+        target_tokenizer = AutoTokenizer.from_pretrained(
+            self.model_config.model_path,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+
+        # Compare Vocabularies
+        if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
+            msg = f"tokenizer for draft_model ({self.draft_model}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+            raise ValueError(msg)
+
+        # Compare Tokenizer Configuration
+        if draft_tokenizer.__dict__ == target_tokenizer.__dict__:
+            msg = f"tokenizer for draft_model ({self.draft_model}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+            raise ValueError(msg)
+
+    def _validate_pipeline_config(self) -> None:
+        """Update pipeline config with appropriate values if not provided.
+        If invalid config is provided, error out with detailed reason."""
+        # Retrieve the architecture
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            model_path=self.model_config.model_path,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+
+        # If nothing is provided, we should not update any more params.
+        # Instead, fall back to the HuggingFace engine.
+        if not arch and self.engine == PipelineEngine.MAX:
+            raise ValueError(
+                "MAX-optimized architecture not available, failing as engine is provided as 'MAX'"
+            )
+
+        elif not arch:
+            msg = (
+                "MAX-optimized architecture not available for"
+                f" '{self.model_config.model_path}' falling back to"
+                " HuggingFace."
+            )
+            logger.warning(msg)
+            self.engine = PipelineEngine.HUGGINGFACE
+            return
+
+        if (
+            not arch.multi_gpu_supported
+            and len(self.model_config.device_specs) > 1
+            and self.model_config.device_specs[0].device_type == "gpu"
+        ):
+            raise ValueError(
+                f"Multiple GPU inference is currently not supported for {self.model_config.model_path}."
+            )
+
+        # The remainder of this function, assumes we have both a valid model_path,
+        # and a SupportedArchitecture. We should then validate the details of the existing architecture
+        # and fallback to HuggingFace if needed.
+
+        # If weight_path and quantization_encoding are provided, verify that they are consistent.
+        huggingface_weights_repo = self.model_config.huggingface_weights_repo()
+        try:
+            _weights_format = weights_format(self.model_config.weight_path)
+        except ValueError:
+            _weights_format = None
+        if (
+            self.model_config.weight_path
+            and self.model_config.quantization_encoding
+            # Cannot validate quantization_encoding for pytorch.
+            and _weights_format != WeightsFormat.pytorch
+        ):
+            # Get the encoding of the first weight path file.
+            if os.path.exists(self.model_config.weight_path[0]):
+                file_encoding = SupportedEncoding.parse_from_file_name(
+                    str(self.model_config.weight_path[0])
+                )
+            else:
+                file_encoding = huggingface_weights_repo.encoding_for_file(
+                    self.model_config.weight_path[0]
+                )
+
+            if file_encoding:
+                if file_encoding != self.model_config.quantization_encoding:
+                    msg = f"weight_path provided '{self.model_config.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.model_config.quantization_encoding}'. Please update one."
+                    raise ValueError(msg)
+        # If weight path is not None, infer the quantization_encoding from the weight_path.
+        elif (
+            self.model_config.weight_path
+            and not self.model_config.quantization_encoding
+            and _weights_format != WeightsFormat.pytorch
+        ):
+            if os.path.exists(self.model_config.weight_path[0]):
+                # Not currently supported. Infer encoding from local path.
+                if self.model_config.weight_path[0].suffix == ".safetensors":
+                    msg = "If a local safetensors file is provided, please provide a quantization_encoding."
+                    raise ValueError(msg)
+
+                if encoding := SupportedEncoding.parse_from_file_name(
+                    str(self.model_config.weight_path[0])
+                ):
+                    msg = f"encoding inferred from weights file: {encoding}"
+                    logger.debug(msg)
+                    self.model_config.quantization_encoding = encoding
+
+            else:
+                if encoding := huggingface_weights_repo.encoding_for_file(
+                    self.model_config.weight_path[0]
+                ):
+                    msg = f"encoding inferred from weights file: {encoding}"
+                    logger.debug(msg)
+                    self.model_config.quantization_encoding = encoding
+                else:
+                    msg = f"encoding cannot be inferred from weights file: {self.model_config.weight_path[0]}, please pass a quantization_encoding explictly."
+                    raise ValueError(msg)
+        elif not self.model_config.quantization_encoding:
+            # Check if the repo only has one quantization_encoding.
+            supported_encodings = huggingface_weights_repo.supported_encodings
+            if len(supported_encodings) == 1:
+                msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
+                logger.debug(msg)
+                self.model_config.quantization_encoding = supported_encodings[0]
+            elif (
+                not self.model_config.device_specs[0].device_type == "cpu"
+            ) and SupportedEncoding.bfloat16 in arch.supported_encodings:
+                # TODO(AITLIB-137): replace this with more full featured logic.
+                # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
+                self.model_config.quantization_encoding = (
+                    SupportedEncoding.bfloat16
+                )
+            else:
+                msg = f"encoding not provided, using default encoding of {arch.default_encoding}"
+                logger.debug(msg)
+                self.model_config.quantization_encoding = arch.default_encoding
+        # by this point, the quantization_encoding must be provided. verify it is supported.
+        if (
+            self.model_config.quantization_encoding
+            not in arch.supported_encodings
+        ):
+            if self.engine == PipelineEngine.MAX:
+                msg = f"quantization_encoding of '{self.model_config.quantization_encoding}' not supported by MAX engine, unable to run with engine = 'max'."
+                raise ValueError(msg)
+
+            else:
+                msg = f"quantization_encoding of '{self.model_config.quantization_encoding}' not supported by MAX engine, falling back to HuggingFace."
+                logger.warning(msg)
+                self.engine = PipelineEngine.HUGGINGFACE
+                return
+
+        # Check that the quantization encoding is supported on the specified
+        # devices.
+        for device_spec in self.model_config.device_specs:
+            if not self.model_config.quantization_encoding.supported_on(
+                device_spec
+            ):
+                available_encodings = list(arch.supported_encodings.keys())
+
+                msg = (
+                    f"The encoding '{self.model_config.quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
+                    f"You have two options to resolve this:\n"
+                    f"1. Use a different device\n"
+                    f"2. Use a different encoding (encodings available for this model: {', '.join(str(enc) for enc in available_encodings)})\n\n"
+                    f"Please use the --help flag for more information."
+                )
+
+                raise ValueError(msg)
+
+        self.model_config.finalize_encoding_config()
+
+        # We should now have a valid quantization_encoding, and possibly a weight_path.
+        # If no weight_path is provided, we should grab the default.
+        if not self.model_config.weight_path:
+            # Retrieve the default files for each weights format.
+
+            # Get alternate encoding (e.g. if float32 is requested and there are
+            # only bfloat16 weights, allow retrieving the bfloat16 weights
+            # because they can be cast to float32).
+            if self.model_config.quantization_encoding:
+                alternate_encoding = _ALTERNATE_ENCODINGS.get(
+                    self.model_config.quantization_encoding
+                )
+            else:
+                alternate_encoding = None
+
+            weight_files = huggingface_weights_repo.files_for_encoding(
+                encoding=self.model_config.quantization_encoding,
+                alternate_encoding=alternate_encoding,
+            )
+
+            if default_weight_files := weight_files.get(
+                arch.default_weights_format, []
+            ):
+                self.model_config.weight_path = default_weight_files
+            elif weight_files:
+                # Load any available weight file.
+                self.model_config.weight_path = next(
+                    iter(weight_files.values())
+                )
+
+        if not self.model_config.weight_path:
+            if self.model_config.quantization_encoding not in [
+                SupportedEncoding.bfloat16,
+                SupportedEncoding.float32,
+            ]:
+                msg = f"compatible weights cannot be found for '{self.model_config.quantization_encoding}' in 'gguf' format, in the provided repo: '{huggingface_weights_repo.repo_id}'"
+                raise ValueError(msg)
+            else:
+                msg = f"compatible weights cannot be found for '{self.model_config.quantization_encoding}'"
+                raise ValueError(msg)
+
+        # Check supported_cache_strategy
+        supported_cache_strategies = arch.supported_encodings.get(
+            self.model_config.quantization_encoding, []
+        )
+        if (
+            self.model_config.kv_cache_config.cache_strategy
+            == KVCacheStrategy.MODEL_DEFAULT
+            and supported_cache_strategies
+        ):
+            default_strategy = supported_cache_strategies[0]
+            msg = f"default cache_strategy of '{default_strategy}' enabled"
+            logger.debug(msg)
+
+            self.model_config.kv_cache_config.cache_strategy = default_strategy
+        elif (
+            supported_cache_strategies
+            and self.model_config.kv_cache_config.cache_strategy
+            not in supported_cache_strategies
+        ):
+            supported_strategy = supported_cache_strategies[0]
+
+            msg = f"cache_strategy = '{self.model_config.kv_cache_config.cache_strategy}' not supported for '{self.model_config.quantization_encoding}', using '{supported_strategy}' cache strategy."
+            logger.warning(msg)
+
+            self.model_config.kv_cache_config.cache_strategy = (
+                supported_strategy
+            )
+
+        # Assume at this point, an architecture,
+        # a model_path and weight_paths are available.
+        assert self.model_config.weight_path, "weight_path must be provided."
+        for path in self.model_config.weight_path:
+            # Check if file exists locally.
+            if not os.path.exists(path):
+                # If does not exist locally, verify that it exists on Huggingface.
+                if not huggingface_weights_repo.file_exists(str(path)):
+                    msg = (
+                        f"weight_path: '{path}' does not exist locally, and"
+                        f" '{self.model_config.model_path}/{path}' does"
+                        " not exist on HuggingFace."
+                    )
+                    raise ValueError(msg)
+
+        if self.rope_type is None:
+            self.rope_type = arch.rope_type
+
+        devices = load_devices(self.model_config.device_specs)
+        PIPELINE_REGISTRY._estimate_memory_footprint(self, arch, devices)
+
+        # If we pass validation ensure and the engine is not set, just set it
+        # to MAX.
+        if self.engine is None:
+            self.engine = PipelineEngine.MAX
 
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""

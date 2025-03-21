@@ -19,6 +19,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import (
+    TYPE_CHECKING,
     Generic,
     Optional,
     Protocol,
@@ -47,7 +48,9 @@ from max.pipelines.kv_cache import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 
-from .config import PipelineConfig
+if TYPE_CHECKING:
+    from .config import PipelineConfig
+
 from .config_enums import SupportedEncoding
 from .context import InputContext
 from .hf_utils import download_weight_files

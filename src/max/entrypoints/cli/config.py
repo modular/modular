@@ -26,10 +26,10 @@ from typing import Any, Union, get_args, get_origin, get_type_hints
 
 import click
 from max.driver import DeviceSpec
-from max.pipelines import (
+from max.pipelines.config import PipelineConfig
+from max.pipelines.max_config import (
     KVCacheConfig,
     MAXModelConfig,
-    PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
 )

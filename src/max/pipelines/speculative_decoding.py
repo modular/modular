@@ -13,7 +13,7 @@
 # mypy: disable-error-code="import-not-found"
 """Speculative Decoding Text Generation Pipeline"""
 
-from typing import Type, TypeVar
+from typing import Any, Type, TypeVar
 
 from max.driver import load_devices, scan_available_devices
 from max.engine import InferenceSession
@@ -25,7 +25,6 @@ from max.graph.weights import (
 )
 from transformers import AutoConfig
 
-from .config import PipelineConfig
 from .config_enums import RepoType
 from .context import InputContext
 from .hf_utils import download_weight_files
@@ -41,7 +40,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
     def __init__(
         self,
-        pipeline_config: PipelineConfig,
+        pipeline_config: Any,  # PipelineConfig
         pipeline_model: Type[PipelineModel],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
