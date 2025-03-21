@@ -86,7 +86,7 @@ fn all_gather_test[
         )
 
     # Perform allgather
-    allgather(list_of_ctx, in_bufs, out_bufs)
+    allgather(in_bufs, out_bufs, list_of_ctx)
 
     # Synchronize all devices
     @parameter

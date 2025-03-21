@@ -148,7 +148,7 @@ fn allreduce_test[
     # Warm up.
     for _ in range(num_warmups):
         allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
-            list_of_ctx, in_bufs, out_bufs, rank_sigs
+            in_bufs, out_bufs, rank_sigs, list_of_ctx
         )
 
     # Synchronize all devices.
@@ -162,7 +162,7 @@ fn allreduce_test[
     @parameter
     for _ in range(num_iters):
         allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
-            list_of_ctx, in_bufs, out_bufs, rank_sigs
+            in_bufs, out_bufs, rank_sigs, list_of_ctx
         )
 
     # Synchronize all devices.
