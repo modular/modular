@@ -164,11 +164,11 @@ fn bench_reduce[
             @parameter
             if max_num_blocks:
                 allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
-                    list_of_ctx, in_bufs, out_bufs, rank_sigs, max_num_blocks
+                    in_bufs, out_bufs, rank_sigs, list_of_ctx, max_num_blocks
                 )
             else:
                 allreduce[ngpus=ngpus, outputs_lambda=outputs_lambda](
-                    list_of_ctx, in_bufs, out_bufs, rank_sigs
+                    in_bufs, out_bufs, rank_sigs, list_of_ctx
                 )
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
