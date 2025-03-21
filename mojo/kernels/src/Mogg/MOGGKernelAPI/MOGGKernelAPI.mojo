@@ -489,7 +489,7 @@ fn _to_managed_tensor_slice_index_list_shape[
 @always_inline
 fn get_scalar_from_ndbuffer[
     dtype: DType
-](tensor: NDBuffer[dtype, 1]) -> Scalar[dtype]:
+](tensor: NDBuffer[dtype, 1, MutableAnyOrigin]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
     return tensor[0]
 
@@ -551,8 +551,10 @@ fn get_int_from_shape[
 @always_inline
 fn managed_tensor_slice_to_ndbuffer_primitive[
     type: DType, rank: Int, //
-](tensor: ManagedTensorSlice[type=type, rank=rank]) -> NDBuffer[type, rank]:
-    return NDBuffer[type, rank](
+](tensor: ManagedTensorSlice[type=type, rank=rank]) -> NDBuffer[
+    type, rank, MutableAnyOrigin
+]:
+    return NDBuffer[type, rank, MutableAnyOrigin](
         tensor._ptr, tensor._spec.shape, tensor._runtime_strides
     )
 
@@ -563,6 +565,7 @@ fn managed_tensor_slice_to_ndbuffer[
 ](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
     spec.type,
     spec.rank,
+    MutableAnyOrigin,
     spec.shape,
     spec.strides,
     alignment = spec.alignment,
@@ -573,6 +576,7 @@ fn managed_tensor_slice_to_ndbuffer[
     return NDBuffer[
         spec.type,
         spec.rank,
+        _,
         spec.shape,
         spec.strides,
         alignment = spec.alignment,
@@ -585,9 +589,9 @@ fn managed_tensor_slice_to_ndbuffer[
 fn input_variadic_tensors_to_static_tuple_ndbuffer[
     type: DType, rank: Int, size: Int
 ](indices: InputVariadicTensors[type, rank, size=size]) -> StaticTuple[
-    NDBuffer[type, rank], size
+    NDBuffer[type, rank, MutableAnyOrigin], size
 ]:
-    var result = StaticTuple[NDBuffer[type, rank], size]()
+    var result = StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], size]()
 
     @parameter
     for i in range(size):
@@ -4834,7 +4838,9 @@ struct ConcatFromList:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
-        var input_as_ndbuffer = List[NDBuffer[type, rank]](capacity=len(inputs))
+        var input_as_ndbuffer = List[NDBuffer[type, rank, MutableAnyOrigin]](
+            capacity=len(inputs)
+        )
         for i in range(len(inputs)):
             input_as_ndbuffer.append(
                 managed_tensor_slice_to_ndbuffer(inputs[i])
@@ -4885,7 +4891,9 @@ struct Split:
         ctx: DeviceContextPtr,
     ) raises:
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_bufs = StaticTuple[NDBuffer[type, rank], output.size]()
+        var output_bufs = StaticTuple[
+            NDBuffer[type, rank, MutableAnyOrigin], output.size
+        ]()
 
         @parameter
         for i in range(output.size):
@@ -5853,7 +5861,7 @@ struct QMatmulGPURepackGGUF:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
-            gpu_qint4_repack_Q4_0[target](
+            gpu_qint4_repack_Q4_0[b_shape = b.static_spec.shape, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
                 ctx,
@@ -5915,7 +5923,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
             gpu_qint4_repack_GPTQ[128, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
-                rebind[NDBuffer[DType.int32, 1]](
+                rebind[NDBuffer[DType.int32, 1, MutableAnyOrigin]](
                     managed_tensor_slice_to_ndbuffer(perm_idx)
                 ),
                 ctx=ctx,
@@ -6925,7 +6933,7 @@ struct Struct_mha_ragged_paged_fa3_fallback_causal_mask_no_pos:
         ]()
         var full_lookup_table = kv_collection.lookup_table
         var full_lookup_table_shape = full_lookup_table.dynamic_shape
-        var sliced_lookup_table = NDBuffer[DType.int32, 2](
+        var sliced_lookup_table = NDBuffer[DType.int32, 2, MutableAnyOrigin](
             full_lookup_table._offset(
                 StaticTuple[Int, 3](Int(layer_idx), 0, 0)
             ),
@@ -7202,7 +7210,9 @@ struct PackConvTransposeFilterShape:
         rank: Int,
         filter_type: DType,
         _synchronous: Bool,
-    ](filter_buf: NDBuffer[filter_type, rank]) -> IndexList[rank + 1]:
+    ](filter_buf: NDBuffer[filter_type, rank, MutableAnyOrigin]) -> IndexList[
+        rank + 1
+    ]:
         return pack_filter_shape_conv_transpose(filter_buf, 1)
 
 
@@ -7910,7 +7920,13 @@ struct Struct_swishGLU:
         b1: InputTensor[type = b0.type, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
-        swishGLU[target=target](
+        swishGLU[
+            a_type = a.static_spec.type,
+            a_shape = a.static_spec.shape,
+            b_type = b0.static_spec.type,
+            b_shape = b0.static_spec.shape,
+            target=target,
+        ](
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b0),
             managed_tensor_slice_to_ndbuffer(b1),
@@ -7987,17 +8003,17 @@ struct DistributedAllReduceSum:
             dev_ctxs.append(dev_ctxs_input[i])
 
         # Marshal input and output variadic tensors into the expected format.
-        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
-            NDBuffer[type, rank]()
-        )
+        var in_bufs = InlineArray[
+            NDBuffer[type, rank, MutableAnyOrigin], inputs.size
+        ](NDBuffer[type, rank, MutableAnyOrigin]())
 
         @parameter
         for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
-        var out_bufs = InlineArray[NDBuffer[type, rank], num_devices](
-            NDBuffer[type, rank]()
-        )
+        var out_bufs = InlineArray[
+            NDBuffer[type, rank, MutableAnyOrigin], num_devices
+        ](NDBuffer[type, rank, MutableAnyOrigin]())
 
         @parameter
         for i in range(num_devices):
@@ -8067,17 +8083,17 @@ struct DistributedAllGather:
             dev_ctxs.append(dev_ctxs_input[i])
 
         # Marshal input and output variadic tensors into the expected format.
-        var in_bufs = InlineArray[NDBuffer[type, rank], inputs.size](
-            NDBuffer[type, rank]()
-        )
+        var in_bufs = InlineArray[
+            NDBuffer[type, rank, MutableAnyOrigin], inputs.size
+        ](NDBuffer[type, rank, MutableAnyOrigin]())
 
         @parameter
         for i in range(inputs.size):
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
-        var out_bufs = InlineArray[NDBuffer[type, rank], num_devices](
-            NDBuffer[type, rank]()
-        )
+        var out_bufs = InlineArray[
+            NDBuffer[type, rank, MutableAnyOrigin], num_devices
+        ](NDBuffer[type, rank, MutableAnyOrigin]())
 
         @parameter
         for i in range(num_devices):
@@ -8149,6 +8165,7 @@ struct AdvancedIndexingGetItem:
         ctx: DeviceContextPtr,
     ) raises:
         advanced_indexing_getitem[
+            input_rank=input_rank,
             start_axis=start_axis,
             target=target,
             single_thread_blocking_override=_synchronous,

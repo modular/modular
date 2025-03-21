@@ -209,9 +209,11 @@ struct Foo:
 @always_inline
 fn toNDBuffer[
     out_dtype: DType, out_rank: Int
-](tensor: ManagedTensorSlice) -> NDBuffer[out_dtype, out_rank]:
+](tensor: ManagedTensorSlice) -> NDBuffer[
+    out_dtype, out_rank, MutableAnyOrigin
+]:
     # TODO(GEX-734): forward other static params automatically
-    return rebind[NDBuffer[out_dtype, out_rank]](
+    return rebind[NDBuffer[out_dtype, out_rank, MutableAnyOrigin]](
         NDBuffer[tensor.type, tensor.rank](tensor._ptr, tensor.shape())
     )
 
