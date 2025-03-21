@@ -81,12 +81,15 @@ trait QuantizedGemm:
         ...
 
     @staticmethod
-    fn build_b_buffer(N: Int, K: Int) -> NDBuffer[DType.uint8, 2]:
+    fn build_b_buffer(
+        N: Int, K: Int
+    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         ...
 
     @staticmethod
     def pack_b_buffer(
-        b: NDBuffer[DType.uint8, 2], b_packed: NDBuffer[DType.uint8, 2]
+        b: NDBuffer[mut=True, DType.uint8, 2],
+        b_packed: NDBuffer[mut=True, DType.uint8, 2],
     ):
         ...
 
@@ -122,7 +125,9 @@ struct qgemm_Q4_0(QuantizedGemm):
         return _block_Q4_0.group_size
 
     @staticmethod
-    fn build_b_buffer(N: Int, K: Int) -> NDBuffer[DType.uint8, 2]:
+    fn build_b_buffer(
+        N: Int, K: Int
+    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
             N * k_groups * sizeof[_block_Q4_0]()
@@ -141,7 +146,8 @@ struct qgemm_Q4_0(QuantizedGemm):
 
     @staticmethod
     def pack_b_buffer(
-        b: NDBuffer[DType.uint8, 2], b_packed: NDBuffer[DType.uint8, 2]
+        b: NDBuffer[mut=True, DType.uint8, 2],
+        b_packed: NDBuffer[mut=True, DType.uint8, 2],
     ):
         matmul_qint4_pack_b[_block_Q4_0.group_size](b, b_packed)
 
@@ -209,7 +215,9 @@ struct qgemm_Q4_K(QuantizedGemm):
         return _block_QK_K.quantized_k
 
     @staticmethod
-    fn build_b_buffer(N: Int, K: Int) -> NDBuffer[DType.uint8, 2]:
+    fn build_b_buffer(
+        N: Int, K: Int
+    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
             N * k_groups * sizeof[_block_Q4_K]()
@@ -230,7 +238,8 @@ struct qgemm_Q4_K(QuantizedGemm):
 
     @staticmethod
     def pack_b_buffer(
-        b: NDBuffer[DType.uint8, 2], b_packed: NDBuffer[DType.uint8, 2]
+        b: NDBuffer[mut=True, DType.uint8, 2],
+        b_packed: NDBuffer[mut=True, DType.uint8, 2],
     ):
         matmul_Q4_K_pack_b(b, b_packed)
 
@@ -337,7 +346,9 @@ struct qgemm_Q6_K(QuantizedGemm):
         return _block_QK_K.quantized_k
 
     @staticmethod
-    fn build_b_buffer(N: Int, K: Int) -> NDBuffer[DType.uint8, 2]:
+    fn build_b_buffer(
+        N: Int, K: Int
+    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = UnsafePointer[UInt8].alloc(
             N * k_groups * sizeof[_block_Q6_K]()
@@ -358,7 +369,8 @@ struct qgemm_Q6_K(QuantizedGemm):
 
     @staticmethod
     def pack_b_buffer(
-        b: NDBuffer[DType.uint8, 2], b_packed: NDBuffer[DType.uint8, 2]
+        b: NDBuffer[mut=True, DType.uint8, 2],
+        b_packed: NDBuffer[mut=True, DType.uint8, 2],
     ):
         matmul_Q6_K_pack_b(b, b_packed)
 
@@ -435,7 +447,7 @@ fn reference_gemm[
 ](
     a: NDBuffer[DType.float32, 2],
     b: NDBuffer[DType.uint8, 2],
-    c: NDBuffer[DType.float32, 2],
+    c: NDBuffer[mut=True, DType.float32, 2],
 ):
     var M = a.dim[0]()
     var N = b.dim[0]()
@@ -467,25 +479,31 @@ fn reference_gemm[
 
 
 struct GemmContext[qgemm: QuantizedGemm]:
-    var a: NDBuffer[DType.float32, 2]
-    var b: NDBuffer[DType.uint8, 2]
-    var b_packed: NDBuffer[DType.uint8, 2]
-    var c: NDBuffer[DType.float32, 2]
-    var c_golden: NDBuffer[DType.float32, 2]
+    var a: NDBuffer[DType.float32, 2, MutableAnyOrigin]
+    var b: NDBuffer[DType.uint8, 2, MutableAnyOrigin]
+    var b_packed: NDBuffer[DType.uint8, 2, MutableAnyOrigin]
+    var c: NDBuffer[DType.float32, 2, MutableAnyOrigin]
+    var c_golden: NDBuffer[DType.float32, 2, MutableAnyOrigin]
 
     @staticmethod
-    def _build_float_buffer(M: Int, N: Int) -> NDBuffer[DType.float32, 2]:
+    def _build_float_buffer(
+        M: Int, N: Int
+    ) -> NDBuffer[DType.float32, 2, MutableAnyOrigin]:
         var ptr = UnsafePointer[Float32].alloc(M * N)
         for i in range(M * N):
             ptr[i] = random_float64(min=-1.0, max=+1.0).cast[DType.float32]()
         return NDBuffer[DType.float32, 2](ptr, Index(M, N))
 
     @staticmethod
-    def _build_b_buffer(N: Int, K: Int) -> NDBuffer[DType.uint8, 2]:
+    def _build_b_buffer(
+        N: Int, K: Int
+    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         return qgemm.build_b_buffer(N, K)
 
     @staticmethod
-    def _pack_b_buffer(b: NDBuffer[DType.uint8, 2]) -> NDBuffer[DType.uint8, 2]:
+    def _pack_b_buffer(
+        b: NDBuffer[mut=True, DType.uint8, 2]
+    ) -> NDBuffer[DType.uint8, 2, MutableAnyOrigin]:
         var b_packed_buffer = UnsafePointer[UInt8].alloc(len(b))
         var b_packed = NDBuffer[DType.uint8, 2](b_packed_buffer, b.get_shape())
         qgemm.pack_b_buffer(b, b_packed)

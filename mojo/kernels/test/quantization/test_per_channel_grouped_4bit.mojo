@@ -137,11 +137,9 @@ fn _read_write_to_tensors[
     var data_matrix_backing = InlineArray[Float32, num_elements](
         uninitialized=True
     )
-    var data_matrix = NDBuffer[
-        DType.float32,
-        rank,
-        DimList(num_elements),
-    ](data_matrix_backing.unsafe_ptr())
+    var data_matrix = NDBuffer[DType.float32, rank, _, DimList(num_elements)](
+        data_matrix_backing.unsafe_ptr()
+    )
     for i in range(num_elements):
         data_matrix[i] = i
 
@@ -153,26 +151,28 @@ fn _read_write_to_tensors[
         uninitialized=True
     )
     var packed_blob = NDBuffer[
-        DType.uint8, rank, DimList(num_blocks * block_size)
+        DType.uint8, rank, _, DimList(num_blocks * block_size)
     ](packed_blob_backing.unsafe_ptr())
 
     # Tensor to store the dequantized data
     var out_data_matrix_backing = InlineArray[Float32, num_elements](
         uninitialized=True
     )
-    var out_data_matrix = NDBuffer[
-        DType.float32,
-        1,
-        DimList(num_elements),
-    ](out_data_matrix_backing.unsafe_ptr())
+    var out_data_matrix = NDBuffer[DType.float32, 1, _, DimList(num_elements)](
+        out_data_matrix_backing.unsafe_ptr()
+    )
     for i in range(num_elements):
         out_data_matrix[i] = 0
 
-    var rebound_data_matrix = rebind[NDBuffer[DType.float32, rank]](data_matrix)
-    var rebound_packed_block = rebind[NDBuffer[DType.uint8, rank]](packed_blob)
-    var rebound_out_data_matrix = rebind[NDBuffer[DType.float32, rank]](
-        out_data_matrix
-    )
+    var rebound_data_matrix = rebind[
+        NDBuffer[DType.float32, rank, data_matrix.origin]
+    ](data_matrix)
+    var rebound_packed_block = rebind[
+        NDBuffer[DType.uint8, rank, packed_blob.origin]
+    ](packed_blob)
+    var rebound_out_data_matrix = rebind[
+        NDBuffer[DType.float32, rank, out_data_matrix.origin]
+    ](out_data_matrix)
 
     Q4sym[group_size, DType.float32].quantize_and_write_to_tensor[rank](
         rebound_data_matrix,

@@ -273,7 +273,7 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 fn _quantize_a_Q8_K[
     group_size: Int, type: DType, *, interleave_group_sums: Bool = False
 ](a: NDBuffer[type, 2, **_]) -> UnsafePointer[
-    _block_Q8_K_packed[group_size], origin = a.origin
+    _block_Q8_K_packed[group_size], mut = a.mut, origin = a.origin
 ]:
     alias quantized_k = _block_QK_K.quantized_k
     alias group_count = quantized_k // group_size
@@ -575,8 +575,8 @@ fn _pack_block_Q6_K[
 def matmul_Q4_K_pack_b[
     b_origin: MutableOrigin, b_packed_origin: MutableOrigin
 ](
-    b: NDBuffer[DType.uint8, 2, origin=b_origin],
-    b_packed: NDBuffer[DType.uint8, 2, origin=b_packed_origin],
+    b: NDBuffer[DType.uint8, 2, b_origin],
+    b_packed: NDBuffer[DType.uint8, 2, b_packed_origin],
 ):
     var N = b.dim[0]()
     var K = b.dim[1]()
@@ -605,8 +605,8 @@ def matmul_Q4_K_pack_b[
 def matmul_Q6_K_pack_b[
     b_origin: MutableOrigin, b_packed_origin: MutableOrigin
 ](
-    b: NDBuffer[DType.uint8, 2, origin=b_origin],
-    b_packed: NDBuffer[DType.uint8, 2, origin=b_packed_origin],
+    b: NDBuffer[DType.uint8, 2, b_origin],
+    b_packed: NDBuffer[DType.uint8, 2, b_packed_origin],
 ):
     var N = b.dim[0]()
     var K = b.dim[1]()

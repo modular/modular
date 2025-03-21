@@ -967,7 +967,7 @@ fn _matmul_qint4_m_1[
 ](
     a_quant: NDBuffer[aq_type, 2],
     a_scale: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2, b_static_shape],
+    b: NDBuffer[DType.uint8, 2, _, b_static_shape],
     c: NDBuffer[DType.float32, 2],
 ):
     alias simd_width = simdwidthof[DType.float32]()
@@ -1042,7 +1042,7 @@ fn _matmul_qint4_m_any[
 ](
     a_quant: NDBuffer[aq_type, 2],
     a_scale: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2, b_static_shape],
+    b: NDBuffer[DType.uint8, 2, _, b_static_shape],
     c: NDBuffer[DType.float32, 2],
 ):
     alias simd_width = simdwidthof[DType.float32]()
@@ -1191,7 +1191,7 @@ fn _matmul_qint4[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2, b_static_shape],
+    b: NDBuffer[DType.uint8, 2, _, b_static_shape],
     c: NDBuffer[DType.float32, 2],
 ):
     alias simd_width = simdwidthof[DType.float32]()
@@ -1236,7 +1236,7 @@ fn matmul_qint4[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a: NDBuffer[DType.float32, 2],
-    b: NDBuffer[DType.uint8, 2, b_static_shape],
+    b: NDBuffer[DType.uint8, 2, _, b_static_shape],
     c: NDBuffer[DType.float32, 2],
 ):
     @parameter

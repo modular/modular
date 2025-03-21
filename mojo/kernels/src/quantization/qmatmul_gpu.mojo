@@ -1381,9 +1381,9 @@ fn multistage_gemm_q[
     config: MatmulConfig[a_type, b_type, c_type, True],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[c_type, 2, _, c_shape],
+    a: NDBuffer[a_type, 2, _, a_shape],
+    b: NDBuffer[b_type, 2, _, b_shape],
     runtime_config: MatmulConfig[a_type, b_type, c_type, True],
     ctx: DeviceContext,
 ) raises:
@@ -1492,9 +1492,9 @@ fn matmul_gpu_qint4[
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, _],
-    a: NDBuffer[a_type, 2, _],
-    b: NDBuffer[DType.uint8, 2, _],
+    c: NDBuffer[c_type, 2, _, _],
+    a: NDBuffer[a_type, 2, _, _],
+    b: NDBuffer[DType.uint8, 2, _, _],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_gpu[target](), "unsupported target"]()
@@ -1513,9 +1513,9 @@ fn matmul_gpu_qint4_impl[
     target: StaticString,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: NDBuffer[c_type, 2, _],
-    a: NDBuffer[a_type, 2, _],
-    b: NDBuffer[DType.uint8, 2, _],
+    c: NDBuffer[c_type, 2, _, _],
+    a: NDBuffer[a_type, 2, _, _],
+    b: NDBuffer[DType.uint8, 2, _, _],
     ctx: Optional[DeviceContext],
 ) raises:
     # constrained[is_gpu[target](), "unsupported target"]()
@@ -1550,9 +1550,9 @@ fn matmul_gpu_qint4_impl[
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M16_config,
                 cuda_ctx,
             )
@@ -1571,9 +1571,9 @@ fn matmul_gpu_qint4_impl[
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M32_config,
                 cuda_ctx,
             )
@@ -1592,9 +1592,9 @@ fn matmul_gpu_qint4_impl[
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M64_config,
                 cuda_ctx,
             )
@@ -1613,9 +1613,9 @@ fn matmul_gpu_qint4_impl[
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M128_config,
                 cuda_ctx,
             )
@@ -1634,9 +1634,9 @@ fn matmul_gpu_qint4_impl[
                 config=M512_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M512_config,
                 cuda_ctx,
             )
@@ -1658,9 +1658,9 @@ fn matmul_gpu_qint4_impl[
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M16_config,
                 cuda_ctx,
             )
@@ -1679,9 +1679,9 @@ fn matmul_gpu_qint4_impl[
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M32_config,
                 cuda_ctx,
             )
@@ -1700,9 +1700,9 @@ fn matmul_gpu_qint4_impl[
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M64_config,
                 cuda_ctx,
             )
@@ -1721,9 +1721,9 @@ fn matmul_gpu_qint4_impl[
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M128_config,
                 cuda_ctx,
             )
@@ -1742,9 +1742,9 @@ fn matmul_gpu_qint4_impl[
                 config=M256_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M256_config,
                 cuda_ctx,
             )
@@ -1766,9 +1766,9 @@ fn matmul_gpu_qint4_impl[
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M16_config,
                 cuda_ctx,
             )
@@ -1787,9 +1787,9 @@ fn matmul_gpu_qint4_impl[
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M32_config,
                 cuda_ctx,
             )
@@ -1808,9 +1808,9 @@ fn matmul_gpu_qint4_impl[
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M64_config,
                 cuda_ctx,
             )
@@ -1829,9 +1829,9 @@ fn matmul_gpu_qint4_impl[
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M128_config,
                 cuda_ctx,
             )
@@ -1853,9 +1853,9 @@ fn matmul_gpu_qint4_impl[
                 config=M16_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M16_config,
                 cuda_ctx,
             )
@@ -1874,9 +1874,9 @@ fn matmul_gpu_qint4_impl[
                 config=M32_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M32_config,
                 cuda_ctx,
             )
@@ -1895,9 +1895,9 @@ fn matmul_gpu_qint4_impl[
                 config=M64_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M64_config,
                 cuda_ctx,
             )
@@ -1916,9 +1916,9 @@ fn matmul_gpu_qint4_impl[
                 config=M128_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M128_config,
                 cuda_ctx,
             )
@@ -1937,9 +1937,9 @@ fn matmul_gpu_qint4_impl[
                 config=M512_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](
-                rebind[NDBuffer[c_type, 2, c_shape]](c),
-                rebind[NDBuffer[a_type, 2, a_shape]](a),
-                rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
                 M512_config,
                 cuda_ctx,
             )
@@ -1959,9 +1959,9 @@ fn matmul_gpu_qint4_impl[
         config=default_config,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](
-        rebind[NDBuffer[c_type, 2, c_shape]](c),
-        rebind[NDBuffer[a_type, 2, a_shape]](a),
-        rebind[NDBuffer[DType.uint8, 2, b_shape]](b),
+        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+        rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b),
         default_config,
         cuda_ctx,
     )
@@ -1972,8 +1972,8 @@ fn gpu_qint4_repack_Q4_0[
     b_shape: DimList, //,
     target: StaticString,
 ](
-    b: NDBuffer[DType.uint8, 2, b_shape],
-    b_packed: NDBuffer[DType.uint8, 2, b_shape],
+    b: NDBuffer[DType.uint8, 2, _, b_shape],
+    b_packed: NDBuffer[DType.uint8, 2, _, b_shape],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_gpu[target](), "unsupported target"]()
@@ -1989,10 +1989,10 @@ fn gpu_qint4_repack_Q4_0[
     alias K = b.shape.get[1]() // group_bytes * group_size
 
     var tensor_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b_shape]](b)
+        rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b)
     )
     var tensor_packed_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b_shape]](b_packed)
+        rebind[NDBuffer[DType.uint8, 2, b_packed.origin, b_shape]](b_packed)
     )
 
     var smem_usage: Int = BN * 2 * group_bytes
@@ -2018,9 +2018,9 @@ fn gpu_qint4_repack_GPTQ[
     group_size: Int,
     target: StaticString,
 ](
-    b: NDBuffer[DType.uint8, 2, b_shape],
-    b_packed: NDBuffer[DType.uint8, 2, b_packed_shape],
-    perm_idx: OptionalReg[NDBuffer[DType.int32, 1]] = None,
+    b: NDBuffer[DType.uint8, 2, _, b_shape],
+    b_packed: NDBuffer[DType.uint8, 2, _, b_packed_shape],
+    perm_idx: OptionalReg[NDBuffer[DType.int32, 1, MutableAnyOrigin]] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     constrained[is_gpu[target](), "unsupported target"]()
@@ -2044,10 +2044,12 @@ fn gpu_qint4_repack_GPTQ[
     ]()
 
     var tensor_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b_shape]](b)
+        rebind[NDBuffer[DType.uint8, 2, b.origin, b_shape]](b)
     )
     var tensor_packed_b = from_ndbuffer_row_major(
-        rebind[NDBuffer[DType.uint8, 2, b_packed_shape]](b_packed)
+        rebind[NDBuffer[DType.uint8, 2, b_packed.origin, b_packed_shape]](
+            b_packed
+        )
     )
 
     var smem_usage: Int = BN * 2 * group_bytes
@@ -2055,7 +2057,9 @@ fn gpu_qint4_repack_GPTQ[
     if perm_idx:
         alias perm_shape = DimList((K,))
         var tensor_perm = from_ndbuffer_row_major(
-            rebind[NDBuffer[DType.int32, 1, perm_shape]](perm_idx.value())
+            rebind[NDBuffer[DType.int32, 1, MutableAnyOrigin, perm_shape]](
+                perm_idx.value()
+            )
         )
 
         alias repack = repack_GPTQ_for_sm8x[

@@ -426,7 +426,7 @@ fn scale_min_k4(
 
 fn q4_k_dequantize_impl(
     input_tensor: NDBuffer[DType.uint8, 2],
-    output_tensor: NDBuffer[DType.float32, 2],
+    output_tensor: NDBuffer[mut=True, DType.float32, 2],
 ):
     alias group_nelems = block_Q4_K.group_size
     # 2 elements per byte.
@@ -509,7 +509,7 @@ struct block_Q6_K:
 
 fn q6_k_dequantize_impl(
     input_tensor: NDBuffer[DType.uint8, 2],
-    output_tensor: NDBuffer[DType.float32, 2],
+    output_tensor: NDBuffer[mut=True, DType.float32, 2],
     output_shape: IndexList[2],
 ):
     alias group_nelems = block_Q6_K.group_size
