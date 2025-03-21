@@ -45,6 +45,19 @@ mojo_library(
     ],
 )
 
+mojo_library(
+    name = "kernel_verification_ops",
+    srcs = glob(["Inputs/kernel_verification_ops/*.mojo"]),
+    visibility = [":__subpackages__"],
+    deps = [
+        "//Kernels/mojo/buffer",
+        "//Kernels/mojo/extensibility/compiler_internal",
+        "//Kernels/mojo/register",
+        "//SDK/lib/API/mojo/max/tensor",
+        "//open-source/mojo/stdlib/stdlib",
+    ],
+)
+
 lit_tests(
     name = "test",
     size = "large",
