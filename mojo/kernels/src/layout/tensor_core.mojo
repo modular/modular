@@ -3,8 +3,39 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module provides abstractions for using Tensor Cores do to arithmetic and
-matrix operations.
+"""
+Tensor Core Module for High-Performance Matrix Operations
+
+Provides abstractions for using GPU Tensor Cores to perform optimized matrix operations.
+It supports both NVIDIA and AMD GPU architectures with hardware-specific optimizations.
+
+Key Components:
+--------------
+- `TensorCore`: Core struct that encapsulates tensor core operations with support for various
+  data types and matrix shapes. It handles loading matrix fragments, performing matrix
+  multiply-accumulate operations, and storing results.
+
+- Matrix Fragment Management: Functions for loading and storing matrix fragments to/from
+  shared memory with hardware-specific optimizations.
+
+- Matrix Multiply-Accumulate (MMA): Optimized implementations of matrix multiplication
+  operations using tensor cores.
+
+Supported Operations:
+-------------------
+- Matrix loading with various layouts and swizzling patterns
+- Matrix multiply-accumulate (D = A * B + C)
+- Matrix storing with hardware-specific optimizations
+
+Supported Data Types:
+-------------------
+- NVIDIA: float32, bfloat16, float16, float8_e4m3fn, float8_e5m2
+- AMD: float32, bfloat16, float16
+
+Supported Matrix Shapes:
+----------------------
+- NVIDIA: 16×8×8, 16×8×4, 16×8×16, 8×8×4, 16×8×32
+- AMD: 16×16×4, 16×16×16
 """
 
 from collections import OptionalReg
@@ -90,10 +121,31 @@ struct TensorCore[
     shape: IndexList[3],
     transpose_b: Bool = False,
 ]:
+    """TensorCore provides an abstraction for GPU tensor core hardware to perform optimized matrix operations.
 
+    This struct encapsulates the functionality required to efficiently map matrix operations to Tensor Cores
+    on NVIDIA and AMD GPUs. It handles loading matrix fragments, performing matrix multiply-accumulate
+    operations, and storing results with hardware-specific optimizations.
+
+    Parameters:
+        out_type: The data type for output/accumulation operations.
+        in_type: The data type for input matrix elements.
+        shape: The shape parameters for the matrix operation in the form [M, N, K]
+               where M×N is the output shape and K is the inner dimension.
+        transpose_b: Whether to transpose the B matrix before multiplication. Defaults to False.
+
+    Note:
+        Different shapes and data types are supported depending on the GPU hardware.
+        For NVIDIA GPUs:
+          - float32: 16×8×8 or 16×8×4
+          - half-precision: 16×8×16
+          - float8: 16×8×32
+        For AMD GPUs:
+          - float32: 16×16×4
+          - half-precision: 16×16×16
     """
-    Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
-    """
+
+    # Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
 
     alias supported_fp32 = in_type == DType.float32 and (
         shape == shape_16x8x8 if is_nvidia_gpu() else shape == shape_16x16x4
@@ -119,10 +171,30 @@ struct TensorCore[
     ]
 
     fn __init__(out self):
+        """
+        Initialize a new TensorCore instance.
+        """
         pass
 
     @staticmethod
     fn get_shapes[out_type: DType, in_type: DType]() -> List[IndexList[3]]:
+        """
+        Get supported shapes for given data types.
+
+        Returns a list of valid shapes for the specified output and input data types.
+
+        Parameters:
+            out_type: The output/accumulation data type.
+            in_type: The input matrix data type.
+
+        Returns:
+            List[IndexList[3]]: Valid shapes for the matrix operations given the specified types.
+
+        Note:
+            The returned shapes are hardware-dependent. Different shapes are supported
+            for different combinations of input and output types.
+        """
+
         @parameter
         if out_type is DType.float32 and in_type is DType.float32:
             return List[IndexList[3]](shape_16x8x4, shape_16x8x8)
@@ -153,6 +225,21 @@ struct TensorCore[
             address_space = AddressSpace.LOCAL,
         ],
     ):
+        """
+        Load the A matrix fragments.
+
+        Loads matrix A from memory into a LayoutTensor suitable for tensor core operations.
+
+        Parameters:
+            swizzle: Optional swizzle pattern for optimal memory access (AMD only).
+
+        Args:
+            a: The source matrix A data.
+
+        Returns:
+            The loaded matrix fragments as a `LayoutTensor`.
+        """
+
         @parameter
         if is_nvidia_gpu():
             constrained[swizzle is None, "Swizzle is not supported on NVIDIA"]()
@@ -295,6 +382,27 @@ struct TensorCore[
             address_space = AddressSpace.LOCAL,
         ],
     ):
+        """
+        Load the B matrix fragments.
+
+        Loads matrix B from memory into a `LayoutTensor` suitable for tensor core operations.
+        The function handles different hardware architectures and memory access patterns.
+
+        Parameters:
+            swizzle: Optional swizzle pattern for optimal memory access (AMD only).
+                     Will cause an error if used with NVIDIA GPUs.
+
+        Args:
+            b: The source matrix B data.
+
+        Returns:
+            The loaded matrix fragments as a `LayoutTensor`.
+
+        Note:
+            If transpose_b is `True`, the B matrix will be transposed during loading.
+            This is more efficient than transposing the matrix in memory.
+        """
+
         @parameter
         if is_nvidia_gpu():
             constrained[swizzle is None, "Swizzle is not supported on NVIDIA"]()
@@ -426,6 +534,19 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn load_c(self, c: LayoutTensor, out res: Self.c_reg_tile_type):
+        """
+        Load the C matrix fragments.
+
+        Loads matrix C from memory into a `LayoutTensor` suitable for tensor core operations.
+        The function handles different hardware architectures and memory access patterns.
+
+        Args:
+            c: The source matrix C data.
+
+        Returns:
+            The loaded matrix fragments as a `LayoutTensor`.
+        """
+
         @parameter
         if is_nvidia_gpu():
             return self._load_c_nvidia(c)
@@ -480,6 +601,16 @@ struct TensorCore[
 
     @always_inline
     fn store_d(self, d_dst: LayoutTensor, d_src: LayoutTensor):
+        """
+        Store matrix D to destination memory.
+
+        Stores the result matrix D from tensor core computation to the destination memory.
+
+        Args:
+            d_dst: The destination tensor to store the result.
+            d_src: The source tensor containing the computed result.
+        """
+
         @parameter
         if is_nvidia_gpu():
             self._store_d_nvidia(d_dst, d_src)
@@ -546,6 +677,19 @@ struct TensorCore[
         c: LayoutTensor,
         out res: Self.c_reg_tile_type,
     ):
+        """
+        Perform matrix multiply-accumulate operation (MMA).
+
+        Executes `D = A * B + C` using tensor cores.
+
+        Args:
+            a: The A matrix input.
+            b: The B matrix input.
+            c: The C matrix input for accumulation.
+
+        Returns:
+            `Self.c_reg_tile_type`: The result of the MMA operation.
+        """
         var a_reg = load_to_simd(a)
         var b_reg = load_to_simd(b)
         var c_reg = load_to_simd(c)
@@ -567,8 +711,22 @@ struct TensorCore[
         self,
         warp_tile: LayoutTensor,
         fragments: LayoutTensor,
-        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
+        mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
+        """
+        Load A matrix fragments from shared memory.
+
+        Optimized version for loading A matrix fragments from shared memory.
+
+        Parameters:
+            swizzle: Whether to use swizzling (NVIDIA) or not.
+                     Defaults to True if NVIDIA, False if AMD.
+
+        Args:
+            warp_tile: The source data in shared memory.
+            fragments: The destination tensor for fragments.
+            mma_tile_coord_k: The K coordinate of the MMA tile. Defaults to 0.
+        """
         constrained[
             warp_tile.address_space == AddressSpace.SHARED,
             "warp_tile must be in shared memory",
@@ -646,9 +804,29 @@ struct TensorCore[
         self,
         warp_tile: LayoutTensor,
         fragments: LayoutTensor,
-        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
-        warp_tile_coord_n: UInt = 0,  # n coordiante of warp tile
+        mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
+        warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
+        """Load B matrix fragments from shared memory into registers for tensor core operations.
+
+        This function loads matrix B fragments from a warp tile in shared memory into register fragments
+        for use in tensor core matrix multiply operations. It handles hardware-specific optimizations
+        for both NVIDIA and AMD GPUs.
+
+        Parameters:
+            swizzle: Optional memory access pattern for AMD GPUs to optimize memory bandwidth.
+                     Must be None when running on NVIDIA GPUs.
+
+        Args:
+            warp_tile: Source `LayoutTensor` in shared memory containing the B matrix data.
+            fragments: Destination `LayoutTensor` to store the loaded matrix fragments.
+            mma_tile_coord_k: K-dimension coordinate within the warp tile. Defaults to 0.
+            warp_tile_coord_n: N-dimension coordinate within the warp tile. Defaults to 0.
+
+        Note:
+            The `warp_tile` must be in shared memory. For NVIDIA GPUs, `swizzle` must be `None`.
+            For AMD GPUs, providing an appropriate `swizzle` pattern can improve performance.
+        """
         constrained[
             warp_tile.address_space == AddressSpace.SHARED,
             "warp_tile must be in shared memory",
@@ -864,8 +1042,27 @@ struct TensorCore[
         warp_tile: LayoutTensor,
         fragments: LayoutTensor,
         scales: LayoutTensor,
-        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
+        mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
+        """Load quantized B matrix fragments from shared memory with dequantization.
+
+        This function loads int4 quantized matrix B fragments from shared memory, dequantizes them
+        using the provided scales, and stores the result in register fragments for tensor core operations.
+
+        Args:
+            warp_tile: Source `LayoutTensor` in shared memory containing the quantized B matrix data.
+            fragments: Destination `LayoutTensor` to store the dequantized matrix fragments.
+            scales: `LayoutTensor` containing the scaling factors for dequantization.
+            mma_tile_coord_k: K-dimension coordinate within the warp tile. Defaults to 0.
+
+        Notes:
+
+            - The `warp_tile` must be in shared memory.
+            - The `fragments` and `scales` must be in local memory.
+            - This function only supports half-precision data types (bfloat16, float16).
+            - The quantized data is stored as int4 values packed into int32 elements.
+            - Each thread processes multiple fragments by unpacking and dequantizing the int4 values.
+        """
         constrained[
             warp_tile.address_space == AddressSpace.SHARED,
             "warp_tile must be in shared memory",
@@ -907,7 +1104,7 @@ struct TensorCore[
             return v
 
         # The wrap_tile is of shape [WK // 64, 128 * n_mma]
-        # Every contigous 128 ints stores a 64x16 repacked tile
+        # Every contiguous 128 ints stores a 64x16 repacked tile
         var mma_tile = warp_tile.tile[
             1, (repack_tile[0] * repack_tile[1]) // pack_factor
         ](0, mma_tile_coord_k)
@@ -933,6 +1130,24 @@ struct TensorCore[
     fn mma(
         self, a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
     ):
+        """Perform matrix multiply-accumulate operation using tensor cores.
+
+        Executes C = A * B + C using tensor cores, where A, B, and C are matrix fragments
+        stored in register memory. This function handles the mapping of fragments to
+        hardware tensor core operations.
+
+        Args:
+            a_frag: Matrix A fragments as a `LayoutTensor`.
+            b_frag: Matrix B fragments as a `LayoutTensor`.
+            c_frag: Matrix C fragments as a `LayoutTensor` for both input and output.
+
+        Notes:
+
+            - All fragments must be properly loaded using the corresponding load functions.
+            - The function assumes fragments are vectorized layout tensors with dimensions num_vectors x 1.
+            - The c_frag shape[0] must equal num_m_mmas * num_n_mmas.
+            - The result is accumulated in-place in c_frag.
+        """
         # TODO: Assume that fragments are all vectorized layout tensor with
         # dims num_vectors x 1. Consider using TensorCore to allocate fragments
         # so the caller don't explicitly maintain the shape.
