@@ -8,7 +8,7 @@ from collections import Optional
 from sys import bitwidthof
 
 from buffer import NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import *
 from layout.layout_tensor import LayoutTensor
 from memory import UnsafePointer
@@ -27,7 +27,7 @@ struct ManagedLayoutTensor[
     alias index_type: DType = _get_index_type(layout, AddressSpace.GENERIC)
     alias layout_bitwidth = bitwidthof[Self.index_type]()
     var device_data: Optional[DeviceBuffer[dtype]]
-    var host_data: DeviceBuffer[dtype]
+    var host_data: HostBuffer[dtype]
     var runtime_layout: RuntimeLayout[
         layout,
         bitwidth = Self.layout_bitwidth,
