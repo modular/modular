@@ -139,6 +139,32 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
     return matchParams(PValue(actualType).get(), expectedParamRef.getParam());
   }
 
+  // Handle when both are metatypes.
+  // For example, when we match a Tuple[Int, Bool] against a
+  // T: __type_of(Tuple[*ArgTypes]), this will infer that the ArgTypes variadic
+  // is [Int, Bool].
+  if (auto actualMetaType = dyn_cast<StructMetaType>(actualType)) {
+    auto actualDRT = actualMetaType.getType();
+    if (auto expectedMetaType = dyn_cast<StructMetaType>(expectedType)) {
+      auto expectedDRT = expectedMetaType.getType();
+      // Ignore if these are two fundamentally different symbols.
+      if (actualDRT.getSymbol() != expectedDRT.getSymbol())
+        return failure();
+
+      // Fail if the parameter lists fundamentally mismatch.
+      assert(actualDRT.getParamValues().size() ==
+                 expectedDRT.getParamValues().size() &&
+             "two instances of same struct must have same length param lists");
+
+      // Match up the parameter bindings.
+      for (auto [actual, expected] :
+           llvm::zip(actualDRT.getParamValues(), expectedDRT.getParamValues()))
+        if (failed(matchParams(actual, expected)))
+          return failure();
+      return success();
+    }
+  }
+
   // Handle when both are StructTypes.
   if (auto actualDRT = dyn_cast<StructType>(actualType)) {
     if (auto expectedDRT = dyn_cast<StructType>(expectedType)) {

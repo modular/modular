@@ -102,7 +102,7 @@ struct TestParamStruct[A: Int]:
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <{value = add(mul(#lit.struct.extract<:!Int *"A`", "value">, 2), 1)}>
     alias B = A+A+1
-    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <{value = add(mul(#lit.struct.extract<:!Int *"A`", "value">, 3), 1)}> 
+    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <{value = add(mul(#lit.struct.extract<:!Int *"A`", "value">, 3), 1)}>
     alias C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
     # CHECK-SAME: <apply(:!lit.generator<{{.*}}TestParamStruct <:!Int {1}>>> {{.*}}__init__()"<:!Int {1}>)>
@@ -496,7 +496,7 @@ fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
     var inlined_initself_call = InitSelfCtor(42)
 
     # CHECK: %inlined_byrefresult_call = lit.var.decl "inlined_byrefresult_call"
-    # CHECK-NEXT: [[CST:%.*]] = kgen.param.constant: !Int = <{24}> 
+    # CHECK-NEXT: [[CST:%.*]] = kgen.param.constant: !Int = <{24}>
     # CHECK-NEXT: lit.call{{.*}}intbox_memory_result{{.*}}([[CST]], %inlined_byrefresult_call)
     var inlined_byrefresult_call = intbox_memory_result(24)
 
@@ -1600,3 +1600,20 @@ struct DepUser[b: Int]:
         pass
 
 
+# Ensure we can infer a variadic parameter from inside an incoming
+# parameter-value.
+
+fn infer_variadic[
+    ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`], //,
+    T: __type_of(Tuple[*ArgTypes]),
+]():
+    pass
+
+
+# CHECK-LABEL:     lit.fn @"test_infer_variadic()"
+fn test_infer_variadic():
+    # CHECK: lit.call @parameters::@"infer_variadic{{.*}}"<:variadic<!AnyType> [
+    # CHECK-SAME: [!Int,
+    # CHECK-SAME: [!Bool,
+    # CHECK-SAME: :meta<!lit.struct<#Tuple <:variadic<!AnyType>
+    infer_variadic[Tuple[Int, Bool]]()
