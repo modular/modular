@@ -81,17 +81,17 @@ kgen.func @mul_zero_one(
 }
 
 // CHECK-LABEL: @div
-kgen.func @div(%arg0: !pop.scalar<si64>, %arg1: !pop.simd<2, si32>) -> (
+kgen.func @div(%arg0: !pop.scalar<si64>, %arg1: !pop.simd<2, si32>, %arg2: !pop.simd<4, index>) -> (
     !pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>,
     !pop.scalar<si64>, !pop.simd<2, si32>, !pop.scalar<ui32>,
-    !pop.simd<2, ui32>, !pop.scalar<index>
+    !pop.simd<2, ui32>, !pop.scalar<index>, !pop.simd<4, index>
   ) {
   // CHECK-DAG: <si4> = <-3
   // CHECK-DAG: <ui4> = <0>
   // CHECK-DAG: <"1.25">
   // CHECK-DAG: %[[ONE_INDEX:.*]] = kgen.param.constant: scalar<index> = <1>
   // CHECK-DAG: %[[ONE_U32:.*]] = kgen.param.constant: scalar<ui32> = <1>
-  // CHECK-DAG: %[[TWO_FOUR:.*]] = kgen.param.constant: simd<2, ui32> = <<2, 4>>
+  // CHECK-DAG: %[[ONE_TWO:.*]] = kgen.param.constant: simd<2, ui32> = <<1, 2>>
   // CHECK-DAG: %[[ONE:.*]] = kgen.param.constant: scalar<si64> = <1>
   // CHECK-DAG: pop.shr %arg0, %[[ONE]] : !pop.scalar<si64>
   // CHECK-DAG: %[[TWO:.*]] = kgen.param.constant: simd<2, si32> = <2>
@@ -99,9 +99,11 @@ kgen.func @div(%arg0: !pop.scalar<si64>, %arg1: !pop.simd<2, si32>) -> (
   // CHECK-DAG: %[[U32:.*]] = pop.cast %{{.*}} : !pop.scalar<si64> to !pop.scalar<ui32>
   // CHECK-DAG: pop.shr %[[U32]], %[[ONE_U32]] : !pop.scalar<ui32>
   // CHECK-DAG: %[[SIMD_U32:.*]] = pop.cast %{{.*}} : !pop.simd<2, si32> to !pop.simd<2, ui32>
-  // CHECK-DAG: pop.div %[[SIMD_U32]], %[[TWO_FOUR]] : !pop.simd<2, ui32>
+  // CHECK-DAG: pop.shr %[[SIMD_U32]], %[[ONE_TWO]] : !pop.simd<2, ui32>
   // CHECK-DAG: %[[INDEX:.*]] = pop.cast %{{.*}} : !pop.scalar<si64> to !pop.scalar<index>
   // CHECK-DAG: pop.shr %[[INDEX]], %[[ONE_INDEX]] : !pop.scalar<index>
+  // CHECK-DAG: %[[SIMD_INDEX:.*]] = kgen.param.constant: simd<4, index> = <<1, 2, 3, 4>>
+  // CHECK-DAG: pop.shr %arg2, %[[SIMD_INDEX]] : !pop.simd<4, index>
   %0 = kgen.param.constant: scalar<si4> = <7>
   %1 = kgen.param.constant: scalar<si4> = <-2>
   %2 = kgen.param.constant: scalar<ui4> = <7>
@@ -125,10 +127,13 @@ kgen.func @div(%arg0: !pop.scalar<si64>, %arg1: !pop.simd<2, si32>) -> (
   %two_index = kgen.param.constant: scalar<index> = <2>
   %iarg0 = pop.cast %arg0 : !pop.scalar<si64> to !pop.scalar<index>
   %13 = pop.div %iarg0, %two_index : !pop.scalar<index>
-  kgen.return %6, %7, %8, %9, %10, %11, %12, %13 : !pop.scalar<si4>, !pop.scalar<ui4>,
+  %14 = kgen.param.constant: simd<4, index> = <<2, 4, 8, 16>>
+  %15 = pop.div %arg2, %14 : !pop.simd<4, index>
+  kgen.return %6, %7, %8, %9, %10, %11, %12, %13, %15 : !pop.scalar<si4>, !pop.scalar<ui4>,
                                                    !pop.scalar<f32>, !pop.scalar<si64>,
                                                    !pop.simd<2, si32>, !pop.scalar<ui32>,
-                                                   !pop.simd<2, ui32>, !pop.scalar<index>
+                                                   !pop.simd<2, ui32>, !pop.scalar<index>,
+                                                   !pop.simd<4, index>
 }
 
 // CHECK-LABEL: @div_zero
