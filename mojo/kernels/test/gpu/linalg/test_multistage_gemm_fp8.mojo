@@ -48,7 +48,7 @@ from layout.layout_tensor import (
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
-    copy_local_to_sram,
+    copy,
     copy_sram_to_dram,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
