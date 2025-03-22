@@ -839,6 +839,9 @@ fn wgmma_async[
     accum_type: DType = c_dtype,
     layout_a: StaticString = "row",
     layout_b: StaticString = "col",
+    scale_d: Int = 1,
+    scale_a: Int = 1,
+    scale_b: Int = 1,
 ](
     mat_a_desc: WGMMADescriptor,
     mat_b_desc: WGMMADescriptor,
@@ -860,6 +863,9 @@ fn wgmma_async[
         accum_type: Accumulation data type (defaults to c_dtype).
         layout_a: Memory layout for matrix A ("row" or "col").
         layout_b: Memory layout for matrix B ("row" or "col").
+        scale_d: Scale factor for matrix C.
+        scale_a: Scale factor for matrix A.
+        scale_b: Scale factor for matrix B.
 
     Args:
         mat_a_desc: WGMMA descriptor for matrix A.
@@ -877,10 +883,48 @@ fn wgmma_async[
 
     constrained[
         (m * n // 128) * sizeof[accum_type]() == width * sizeof[c_dtype](),
-        "Number of output registers "
-        + String(width)
-        + " don't match the instruction shape "
-        + String(Index(m, n, k)),
+        String(
+            "Number of output registers ",
+            width,
+            " don't match the instruction shape ",
+            Index(m, n, k),
+        ),
+    ]()
+
+    constrained[
+        scale_d == 1 or scale_d == -1,
+        String(
+            "Invalid scale in value of scaled_d '",
+            scale_d,
+            (
+                "' which is not supported. Only 1 or -1 is supported as the"
+                " scale in values.."
+            ),
+        ),
+    ]()
+
+    constrained[
+        scale_a == 1 or scale_a == -1,
+        String(
+            "Invalid scale in value of scaled_a '",
+            scale_a,
+            (
+                "' which is not supported. Only 1 or -1 is supported as the"
+                " scale in values."
+            ),
+        ),
+    ]()
+
+    constrained[
+        scale_b == 1 or scale_b == -1,
+        String(
+            "Invalid scale in value of scaled_b '",
+            scale_b,
+            (
+                "' which is not supported. Only 1 or -1 is supported as the"
+                " scale in values."
+            ),
+        ),
     ]()
 
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
@@ -904,6 +948,9 @@ fn wgmma_async[
             type_c = __mlir_attr.`f32`,
             layout_a=layout_a_value,
             layout_b=layout_b_value,
+            scale_d = scale_d.value,
+            scale_a = scale_a.value,
+            scale_b = scale_b.value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.bfloat16:
@@ -916,6 +963,9 @@ fn wgmma_async[
             type_c = __mlir_attr.`f32`,
             layout_a=layout_a_value,
             layout_b=layout_b_value,
+            scale_d = scale_d.value,
+            scale_a = scale_a.value,
+            scale_b = scale_b.value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float16:
@@ -929,6 +979,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f16`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -941,6 +994,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f32`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float8_e4m3fn and b_type is DType.float8_e4m3fn:
@@ -954,6 +1010,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f16`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -966,6 +1025,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f32`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float8_e5m2 and b_type is DType.float8_e5m2:
@@ -979,6 +1041,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f16`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -991,6 +1056,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f32`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float8_e4m3fn and b_type is DType.float8_e5m2:
@@ -1004,6 +1072,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f16`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -1016,6 +1087,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f32`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.float8_e5m2 and b_type is DType.float8_e4m3fn:
@@ -1029,6 +1103,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f16`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
         else:
@@ -1041,6 +1118,9 @@ fn wgmma_async[
                 type_c = __mlir_attr.`f32`,
                 layout_a=layout_a_value,
                 layout_b=layout_b_value,
+                scale_d = scale_d.value,
+                scale_a = scale_a.value,
+                scale_b = scale_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.int8 and b_type is DType.int8:
@@ -1053,6 +1133,9 @@ fn wgmma_async[
             type_c = __mlir_attr.`si32`,
             layout_a=layout_a_value,
             layout_b=layout_b_value,
+            scale_d = scale_d.value,
+            scale_a = scale_a.value,
+            scale_b = scale_b.value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.uint8 and b_type is DType.uint8:
@@ -1065,6 +1148,9 @@ fn wgmma_async[
             type_c = __mlir_attr.`si32`,
             layout_a=layout_a_value,
             layout_b=layout_b_value,
+            scale_d = scale_d.value,
+            scale_a = scale_a.value,
+            scale_b = scale_b.value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.int8 and b_type is DType.uint8:
@@ -1077,6 +1163,9 @@ fn wgmma_async[
             type_c = __mlir_attr.`si32`,
             layout_a=layout_a_value,
             layout_b=layout_b_value,
+            scale_d = scale_d.value,
+            scale_a = scale_a.value,
+            scale_b = scale_b.value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     elif a_type is DType.uint8 and b_type is DType.int8:
@@ -1089,6 +1178,9 @@ fn wgmma_async[
             type_c = __mlir_attr.`si32`,
             layout_a=layout_a_value,
             layout_b=layout_b_value,
+            scale_d = scale_d.value,
+            scale_a = scale_a.value,
+            scale_b = scale_b.value,
             _type = __type_of(c_reg.value),
         ](desc_a_value, desc_b_value, c_reg.value)
     return c_reg
