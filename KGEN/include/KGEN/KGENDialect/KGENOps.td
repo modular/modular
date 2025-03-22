@@ -2039,7 +2039,7 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
                   );
 
   let regions = (region SizedRegion<1>:$bodyRegion);
-  let results = (outs PointerOf<KGEN_ClosureType>: $result);
+  let results = (outs AnyType: $result);
   let assemblyFormat = [{
     `` custom<ClosureInitValue>($funcTypeGenerator, $functionType,
                                    $captures, $moveOrCopyCaptureSymbols,
