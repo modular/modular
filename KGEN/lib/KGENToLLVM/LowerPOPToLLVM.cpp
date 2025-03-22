@@ -1793,12 +1793,12 @@ struct ConvertPoPNVVMWGMAMMAAsync
                                 NVVMWGMAMMAAsyncOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
 
-    auto *ctx = mmaOp.getContext();
-    auto loc = mmaOp->getLoc();
+    MLIRContext *ctx = mmaOp.getContext();
+    Location loc = mmaOp->getLoc();
 
-    auto shapeM = cast<IntegerAttr>(mmaOp.getShapeM()).getInt();
-    auto shapeN = cast<IntegerAttr>(mmaOp.getShapeN()).getInt();
-    auto shapeK = cast<IntegerAttr>(mmaOp.getShapeK()).getInt();
+    int64_t shapeM = cast<IntegerAttr>(mmaOp.getShapeM()).getInt();
+    int64_t shapeN = cast<IntegerAttr>(mmaOp.getShapeN()).getInt();
+    int64_t shapeK = cast<IntegerAttr>(mmaOp.getShapeK()).getInt();
 
     auto vecType = cast<VectorType>(adaptor.getRegC().getType());
 
@@ -1816,14 +1816,18 @@ struct ConvertPoPNVVMWGMAMMAAsync
       inputOperand =
           b.create<LLVM::InsertValueOp>(loc, inputOperand, element, i);
     }
-    // If we need to compute `(-1) * A * (-1) * B` or a non-accumulated version,
-    // we will need to expose these attributes. Otherwise, we are currently
-    // performing `D = A * B + C` , which covers 99%
-    // of the use cases we care about, if not more.
-    auto scaleOutAttr =
-        NVVM::WGMMAScaleOutAttr::get(ctx, NVVM::WGMMAScaleOut::one);
-    auto scaleInAttr =
-        NVVM::WGMMAScaleInAttr::get(ctx, NVVM::WGMMAScaleIn::one);
+
+    int64_t scaleD = resolveScaleOut(mmaOp.getScaleD());
+    int64_t scaleA = resolveScaleIn(mmaOp.getScaleA());
+    int64_t scaleB = resolveScaleIn(mmaOp.getScaleB());
+
+    auto scaleDAttr = NVVM::WGMMAScaleOutAttr::get(
+        ctx,
+        scaleD == 0 ? NVVM::WGMMAScaleOut::zero : NVVM::WGMMAScaleOut::one);
+    auto scaleAAttr = NVVM::WGMMAScaleInAttr::get(
+        ctx, scaleA == -1 ? NVVM::WGMMAScaleIn::neg : NVVM::WGMMAScaleIn::one);
+    auto scaleBAttr = NVVM::WGMMAScaleInAttr::get(
+        ctx, scaleB == -1 ? NVVM::WGMMAScaleIn::neg : NVVM::WGMMAScaleIn::one);
     auto overflowAttr =
         NVVM::MMAIntOverflowAttr::get(ctx, NVVM::MMAIntOverflow::wrapped);
 
@@ -1848,9 +1852,8 @@ struct ConvertPoPNVVMWGMAMMAAsync
     auto instShape = NVVM::MMAShapeAttr::get(ctx, shapeM, shapeN, shapeK);
     Value resStruct = b.create<NVVM::WgmmaMmaAsyncOp>(
         mmaOp.getLoc(), inputOperand.getType(), inputOperand, descA, descB,
-        instShape, typeA.value(), typeB.value(), typeC.value(), scaleOutAttr,
-        scaleInAttr, scaleInAttr, layoutA.value(), layoutB.value(),
-        overflowAttr);
+        instShape, typeA.value(), typeB.value(), typeC.value(), scaleDAttr,
+        scaleAAttr, scaleBAttr, layoutA.value(), layoutB.value(), overflowAttr);
 
     Value result = b.create<LLVM::UndefOp>(mmaOp.getLoc(), vecType);
     for (int i = 0, e = vecType.getNumElements(); i < e; ++i) {
@@ -1862,6 +1865,25 @@ struct ConvertPoPNVVMWGMAMMAAsync
     b.replaceOp(mmaOp, result);
 
     return success();
+  }
+
+private:
+  int64_t resolveScaleOut(std::optional<TypedAttr> scaleOutAttr) const {
+    if (!scaleOutAttr)
+      return 1;
+
+    int64_t scaleOut = cast<IntegerAttr>(*scaleOutAttr).getInt();
+    assert(scaleOut == 0 || scaleOut == 1 && "Invalid scale out value");
+    return scaleOut;
+  }
+
+  int64_t resolveScaleIn(std::optional<TypedAttr> scaleInAttr) const {
+    if (!scaleInAttr)
+      return 1;
+
+    int64_t scaleIn = cast<IntegerAttr>(*scaleInAttr).getInt();
+    assert(scaleIn == -1 || scaleIn == 1 && "Invalid scale in value");
+    return scaleIn;
   }
 };
 } // namespace

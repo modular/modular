@@ -29,6 +29,34 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
     kgen.return %2 : !pop.simd<4, f32>
   }
 
+  // CHECK-LABEL: llvm.func @nvvm_wgmma_async_scale_out
+  kgen.func export @nvvm_wgmma_async_scale_out(%arg0: !pop.scalar<si64>, %arg1: !pop.scalar<si64>, %arg2: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
+    %0 = pop.cast_to_builtin %arg0 : !pop.scalar<si64> to i64
+    %1 = pop.cast_to_builtin %arg1 : !pop.scalar<si64> to i64
+    // CHECK-DAG: %[[VEC:.*]] = llvm.mlir.undef : vector<4xf32>
+    // CHECK-DAG: %[[C3:.*]] = llvm.mlir.constant(3 : i32) : i32
+    // CHECK-DAG: %[[C2:.*]] = llvm.mlir.constant(2 : i32) : i32
+    // CHECK-DAG: %[[C1:.*]] = llvm.mlir.constant(1 : i32) : i32
+    // CHECK-DAG: %[[C0:.*]] = llvm.mlir.constant(0 : i32) : i32
+    // CHECK-DAG: %5 = llvm.extractelement %arg2[%4 : i32] : vector<4xf32>
+    // CHECK-DAG: %6 = llvm.extractelement %arg2[%3 : i32] : vector<4xf32>
+    // CHECK-DAG: %7 = llvm.extractelement %arg2[%2 : i32] : vector<4xf32>
+    // CHECK-DAG: %8 = llvm.extractelement %arg2[%1 : i32] : vector<4xf32>
+    // CHECK: %[[SVAL:.*]] = llvm.inline_asm has_side_effects
+    // CHECK-SAME: wgmma.mma_async.sync.aligned.m64n8k8.f32.tf32.tf32
+    // CHECK: %[[SE_0:.+]] = llvm.extractvalue %[[SVAL]][0] : !llvm.struct<(f32, f32, f32, f32)>
+    // CHECK: %[[VEC_0:.+]] = llvm.insertelement %[[SE_0]], %[[VEC]][%4 : i32] : vector<4xf32>
+    // CHECK: %[[SE_1:.+]] = llvm.extractvalue %[[SVAL]][1] : !llvm.struct<(f32, f32, f32, f32)>
+    // CHECK: %[[VEC_1:.+]] = llvm.insertelement %[[SE_1]], %[[VEC_0]][%3 : i32] : vector<4xf32>
+    // CHECK: %[[SE_2:.+]] = llvm.extractvalue %[[SVAL]][2] : !llvm.struct<(f32, f32, f32, f32)>
+    // CHECK: %[[VEC_2:.+]] = llvm.insertelement %[[SE_2]], %[[VEC_1]][%2 : i32] : vector<4xf32>
+    // CHECK: %[[SE_3:.+]] = llvm.extractvalue %[[SVAL]][3] : !llvm.struct<(f32, f32, f32, f32)>
+    // CHECK: %[[RES:.+]] = llvm.insertelement %[[SE_3]], %[[VEC_2]][%1 : i32] : vector<4xf32>
+    // return %[[RES]]
+    %2 = pop.nvvm.wgmma.mma_async %0 %1 %arg2 tf32 tf32 f32 {layout_a = "row" : !kgen.string, layout_b = "col" : !kgen.string, shape_k = 8 : index, shape_m = 64 : index, shape_n = 8 : index, scale_d = 0 : index} : <4, f32> -> <4, f32>
+    kgen.return %2 : !pop.simd<4, f32>
+  }
+
   // CHECK-LABEL: llvm.func @kgen_fp8_param_constant
   kgen.func export @kgen_fp8_param_constant() -> (f8E4M3, f8E5M2) {
     // CHECK: llvm.mlir.constant(56 : i8) : i8
