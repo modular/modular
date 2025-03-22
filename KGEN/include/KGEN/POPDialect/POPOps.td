@@ -188,6 +188,7 @@ def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect,
     %c = pop.rem %a, %b : !pop.simd<size, type>
     ```
   }];
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//
