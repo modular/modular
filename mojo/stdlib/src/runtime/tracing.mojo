@@ -9,6 +9,7 @@ from collections import Optional
 from collections.optional import OptionalReg
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
+from memory import UnsafePointer
 
 import gpu.host._tracing as gpu_tracing
 from buffer import NDBuffer
@@ -393,10 +394,22 @@ struct Trace[
         if is_profiling_disabled[category, level]():
             return
 
-        # FIXME: The tracing builtins below expect an immortal string, so there
-        # is no way to support the dynamic [String] case.  Should it just be
-        # removed?
-        name_str = self.name[StaticString]
+        # The tracing builtins below expect the string to live across begin/end
+        # calls, so we have to pass an inner pointer into the representation.
+        #
+        # FIXME(user-defined-type-merging): We need library-defined type merging
+        # to use something like:
+        # name_str_slice = StringSlice(self.name[StaticString]) if cond
+        #                      else StringSlice(self.name[String])
+        var name_str_ptr: UnsafePointer[Byte]
+        var name_str_len: Int
+        if self.name.isa[StaticString]():
+            name_str_ptr = self.name[StaticString].unsafe_ptr()
+            name_str_len = len(self.name[StaticString])
+        else:
+            name_str_ptr = self.name[String].unsafe_ptr()
+            name_str_len = len(self.name[String])
+
         if self.detail:
             # 1. If there is a detail string we must heap allocate the string
             #    because it presumably contains information only known at
@@ -407,8 +420,8 @@ struct Trace[
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBeginDetail", Int
             ](
-                name_str.unsafe_ptr(),
-                len(name_str),
+                name_str_ptr,
+                name_str_len,
                 self.detail.unsafe_ptr(),
                 len(self.detail),
                 self.parent_id,
@@ -419,8 +432,8 @@ struct Trace[
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBeginTask", Int
             ](
-                name_str.unsafe_ptr(),
-                len(name_str),
+                name_str_ptr,
+                name_str_len,
                 self.parent_id,
                 self.int_payload.value(),
             )
@@ -430,8 +443,8 @@ struct Trace[
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBegin", Int
             ](
-                name_str.unsafe_ptr(),
-                len(name_str),
+                name_str_ptr,
+                name_str_len,
                 self.parent_id,
             )
 
