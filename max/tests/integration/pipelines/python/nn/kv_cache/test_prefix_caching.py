@@ -101,7 +101,7 @@ def create_paged_manager(
             prefix_blocks, tokens_to_encode, new_pages_needed = (
                 self.query_fetch_stats(seq_id, prompt, num_steps=num_steps)
             )
-            data = self.active_requests[seq_id]
+            blocks = self.get_req_blocks(seq_id)
             num_pages = len(blocks)
             assert num_pages == num_pages_by_seq[seq_id], (
                 "Querying should not mutate the state of the cache"
@@ -124,7 +124,6 @@ def create_paged_manager(
         for seq_id in seq_ids_and_prompts:
             prev_num_pages = num_pages_by_seq[seq_id]
             prefix_blocks = prefix_blocks_by_seq[seq_id]
-            data = self.active_requests[seq_id]
             blocks = self.get_req_blocks(seq_id)
             curr_num_pages = len(blocks)
             num_new_pages_needed = new_pages_by_seq[seq_id]
@@ -145,6 +144,7 @@ def create_paged_manager(
             trimmed_prompt = seq_ids_and_prompts[seq_id]
             actual_tokens_to_encode = len(trimmed_prompt)
             predicted_tokens_to_encode = tokens_to_encode_by_seq[seq_id]
+            assert actual_tokens_to_encode <= predicted_tokens_to_encode
             diff = abs(actual_tokens_to_encode - predicted_tokens_to_encode)
             assert diff < page_size
 
