@@ -217,7 +217,7 @@ struct InlineArray[
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
-            Int(ptr) == (Int(self.unsafe_ptr().offset(size))),
+            ptr == self.unsafe_ptr().offset(size),
             "error during initialization, please create a bug report",
         )
 
