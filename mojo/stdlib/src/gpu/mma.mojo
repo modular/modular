@@ -1202,6 +1202,9 @@ fn wgmma_async[
     accum_type: DType = c_dtype,
     layout_a: StaticString = "row",
     layout_b: StaticString = "col",
+    scale_d: Int = 1,
+    scale_a: Int = 1,
+    scale_b: Int = 1,
 ](
     mat_a_frag: SIMD[a_dtype, frag_a_width],
     mat_b_desc: WGMMADescriptor,
@@ -1222,6 +1225,9 @@ fn wgmma_async[
         accum_type: Data type used for accumulation (defaults to c_dtype).
         layout_a: Layout of matrix A ("row" or "col", defaults to "row").
         layout_b: Layout of matrix B ("row" or "col", defaults to "col").
+        scale_d: Scale factor for output matrix C (defaults to 1).
+        scale_a: Scale factor for matrix A (defaults to 1).
+        scale_b: Scale factor for matrix B (defaults to 1).
 
     Args:
         mat_a_frag: Fragment containing matrix A data.
@@ -1270,9 +1276,6 @@ fn wgmma_async[
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_b_desc.desc.value
     )
-    alias scale_d = 1
-    alias scale_a = 1
-    alias scale_b = 1
     alias trans_b = 1 if layout_b == "row" else 0
 
     @parameter
