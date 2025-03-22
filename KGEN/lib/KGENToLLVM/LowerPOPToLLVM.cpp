@@ -1611,6 +1611,7 @@ struct ConvertPOPCallLLVMIntrinsic
     return success();
   }
 
+private:
   /// POP dialect fastmath flags match the LLVM ones.
   static LLVM::FastmathFlagsAttr
   convertFastmathFlags(FastmathFlags fmf, ConversionPatternRewriter &rewriter) {
