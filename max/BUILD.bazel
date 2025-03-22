@@ -58,9 +58,7 @@ modular_genrule(
 
     # Fix missing `typing` imports, since these are manually replaced
     # These will get merged with other `typing` imports during formatting.
-    # Also add a max._core.driver import to appease mypy
-    echo "from typing import Any\n$(cat $(location {driver}))" > $(location {driver})
-    echo "from typing import Any, Mapping\nimport max._core.driver\n$(cat $(location {engine}))" > $(location {engine})
+    echo "from typing import Any, Mapping\n$(cat $(location {engine}))" > $(location {engine})
 
     # Add copyright headers
     header="

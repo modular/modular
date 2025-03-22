@@ -12,7 +12,6 @@ from collections.abc import Sequence
 from typing import Any, Mapping, overload
 
 import max._core
-import max._core.driver
 
 class FrameworkFormat(enum.Enum):
     max_graph = 0
