@@ -100,7 +100,7 @@ fn mha_sm90[
     batch_size: Int,
     seq_len_arg: Int,
     num_keys_arg: Int,
-    valid_length: NDBuffer[DType.uint32, 1],
+    valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     kv_input_row_offsets: OptionalReg[
         NDBuffer[DType.uint32, 1, MutableAnyOrigin]
     ],
