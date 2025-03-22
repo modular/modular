@@ -13,8 +13,8 @@ from utils import IndexList, StaticTuple
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.allreduce import MAX_GPUS, Signal, allreduce
-from gpu.allreduce import elementwise_epilogue_type
+from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce
+from gpu.comm.allreduce import elementwise_epilogue_type
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from testing import assert_almost_equal
