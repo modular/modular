@@ -29,7 +29,7 @@ from layout.layout_tensor import (
     copy_dram_to_sram,
     copy_local_to_dram,
     copy_dram_to_local,
-    copy_local_to_sram,
+    copy,
     ThreadScope,
 )
 from layout.runtime_layout import RuntimeLayout
@@ -217,11 +217,13 @@ fn gemm_kernel[
     # Warp-level function to copy from local registers to shared memory
     @always_inline
     @parameter
-    fn copy_local_to_sram_warp(
-        smem_warp_tile: LayoutTensor,
-        reg_tile: LayoutTensor,
+    fn copy_warp(
+        smem_warp_tile: LayoutTensor[
+            *_, address_space = AddressSpace.SHARED, **_
+        ],
+        reg_tile: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
     ):
-        copy_local_to_sram[
+        copy[
             thread_layout=thread_layout,
             swizzle=swizzle,
             thread_scope = ThreadScope.WARP,
@@ -244,8 +246,8 @@ fn gemm_kernel[
     @always_inline
     @parameter
     fn copy_local_to_shared():
-        copy_local_to_sram_warp(a_smem_warp_tile, a_load_tile)
-        copy_local_to_sram_warp(b_smem_warp_tile, b_load_tile)
+        copy_warp(a_smem_warp_tile, a_load_tile)
+        copy_warp(b_smem_warp_tile, b_load_tile)
 
     # Function to load from shared memory to registers for computation
     @always_inline

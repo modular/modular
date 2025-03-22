@@ -41,7 +41,7 @@ from layout.layout_tensor import (
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
-    copy_local_to_sram,
+    copy,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout
@@ -107,7 +107,7 @@ fn warp_split_k_reduction[
             + ((warp_k_part_id % i_red) * BM * BN)
         ).vectorize[1, c_frag_size]()
         if i_red <= warp_k_part_id < 2 * i_red:
-            copy_local_to_sram[thread_layout=red_layout](
+            copy[thread_layout=red_layout](
                 red_tb_smem,
                 c_reg_tile.vectorize[1, c_frag_size](),
             )
@@ -869,10 +869,7 @@ fn multistage_gemm_kernel[
             WM, WN
         ]().shared().view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
 
-        copy_local_to_sram[
-            thread_layout = Layout.row_major(8, 4),
-            swizzle=swizzle,
-        ](
+        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
             accum_smem_warp_tile.vectorize[1, 2](),
             c_reg_tile.vectorize[1, 2]().transpose(),
         )
