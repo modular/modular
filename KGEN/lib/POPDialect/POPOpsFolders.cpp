@@ -342,14 +342,11 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
   if (!mlir::matchPattern(op.getRhs(), mlir::m_Constant(&rhsAttr)))
     return b.notifyMatchFailure(op, "rhs is not a constant");
 
-  const APSInt &rhsIntVal = rhsAttr.getValues().front().getIntVal();
   if (!llvm::all_of(rhsAttr.getValues(), [&](const DTypeValue &val) {
         APInt intVal = val.getIntVal();
-        return intVal == rhsIntVal && intVal.isStrictlyPositive() &&
-               intVal.isPowerOf2();
+        return intVal.isStrictlyPositive() && intVal.isPowerOf2();
       })) {
-    return b.notifyMatchFailure(
-        op, "rhs is not a uniform constant that is positive power of 2");
+    return b.notifyMatchFailure(op, "rhs values are not positive power of 2");
   }
 
   ssize_t intWidth = dtype->getWidthInBits();
@@ -359,9 +356,14 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
   }
   assert(intWidth > 0 && "Could not determine size of an integer");
 
-  SmallVector<DTypeValue> values(
-      *size, DTypeValue(APInt(intWidth, rhsIntVal.logBase2(), dtype->isSInt()),
-                        *dtype));
+  SmallVector<DTypeValue> values;
+  values.reserve(*size);
+  for (size_t i = 0, e = *size; i < e; ++i) {
+    APInt intVal = rhsAttr.getValues()[i].getIntVal();
+    values.push_back(DTypeValue(
+        APInt(intWidth, intVal.logBase2(), dtype->isSInt()), *dtype));
+  }
+
   b.replaceOpWithNewOp<ShrOp>(
       op, op.getType(), op.getLhs(),
       b.create<ParamConstantOp>(op.getLoc(),
