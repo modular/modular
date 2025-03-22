@@ -45,7 +45,7 @@ from layout.layout_tensor import (
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
-    copy_local_to_sram,
+    copy,
     copy_sram_to_dram,
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -732,10 +732,7 @@ fn multistage_qgemm_kernel[
             a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN)
         )
 
-        copy_local_to_sram[
-            thread_layout = Layout.row_major(8, 4),
-            swizzle=swizzle,
-        ](
+        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
             accum_smem_warp_tile.vectorize[1, 2](),
             c_reg_tile.vectorize[1, 2]().transpose(),
         )
