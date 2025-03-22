@@ -2008,7 +2008,8 @@ def KGEN_IsCompileTimeOp: KGENOp<"is_compile_time",
 
 def KGEN_ClosureInitOp : KGENOp<"closure.init", [
   FunctionLike,
-  SingleBlock
+  SingleBlock,
+  DeclInterface
 ]> {
   let summary = "Allocate memory and store values into a closure struct.";
   let description = [{
@@ -2050,6 +2051,7 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
   let extraClassDeclaration = [{
     Region *getCallableRegion() { return &getBodyRegion(); }
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
   let hasVerifier = 1;
 }
