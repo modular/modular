@@ -39,7 +39,7 @@ from layout.layout_tensor import (
     copy_dram_to_sram,
     copy_local_to_dram,
     copy_dram_to_local,
-    copy_local_to_sram,
+    copy,
     copy_sram_to_dram,
     ThreadScope,
 )
@@ -579,14 +579,14 @@ fn mha_single_batch[
         # warp scratch and p_smem are using the same smem space
         barrier()
 
-        copy_local_to_sram[thread_layout = Layout.row_major(4, 16)](
+        copy[thread_layout = Layout.row_major(4, 16)](
             p_smem.tile[WM, BN](warp_id, 0).vectorize[output_frag_size, 1](),
             p_reg_tile.vectorize[1, output_frag_size](),
         )
         # ensure that write to p_smem is finished
         barrier()
 
-        # not using swizzle here as I need to figure out how to swizzle copy_local_to_sram correctly
+        # not using swizzle here as I need to figure out how to swizzle copy correctly
         mma[transpose_b=False, k_group_size=k_group_size, config=config](
             out_reg_tile, p_smem, p_smem, v_tile, v_smem
         )
@@ -609,7 +609,7 @@ fn mha_single_batch[
 
     var output_smem_warp_tile = output_smem.tile[WM, depth](warp_id, 0)
 
-    copy_local_to_sram[
+    copy[
         thread_layout = Layout.row_major(4, 16),
         thread_scope = ThreadScope.WARP,
     ](

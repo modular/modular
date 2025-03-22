@@ -54,7 +54,7 @@ from layout.layout_tensor import (
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
-    copy_local_to_sram,
+    copy,
     copy_sram_to_dram,
 )
 from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
@@ -1760,9 +1760,7 @@ fn mha_single_batch[
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
             Int(warp_y), Int(warp_x)
         )
-        copy_local_to_sram[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -2533,9 +2531,7 @@ fn mha_single_batch_pipelined[
                 num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
             ]()
 
-            copy_local_to_sram[
-                thread_layout = Layout.row_major(8, 4), swizzle=swizzle
-            ](
+            copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
                 accum_smem_warp_tile.vectorize[1, 2](),
                 output_reg_tile.vectorize[1, 2]().transpose(),
             )
@@ -2550,7 +2546,7 @@ fn mha_single_batch_pipelined[
                 accum_smem_tile.vectorize[1, simd_size](),
             )
         else:
-            copy_local_to_sram[thread_layout = Layout.row_major(4, 16)](
+            copy[thread_layout = Layout.row_major(4, 16)](
                 accum_smem_warp_tile.vectorize[4, 1](),
                 output_reg_tile.vectorize[1, 4](),
             )
@@ -3711,18 +3707,14 @@ fn mha_decoding_single_batch[
 
     @parameter
     if decoding_warp_split_k:
-        copy_local_to_sram[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.tile[num_output_rows, p_frag_size](0, 0)
             .vectorize[1, 2]()
             .transpose(),
         )
     else:
-        copy_local_to_sram[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -4179,9 +4171,7 @@ fn mha_decoding_single_batch_pipelined[
         alias swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
-        copy_local_to_sram[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -4215,7 +4205,7 @@ fn mha_decoding_single_batch_pipelined[
             accum_smem_warp_tile.vectorize[1, simd_size](),
         )
     else:
-        copy_local_to_sram[thread_layout = Layout.row_major(4, 16)](
+        copy[thread_layout = Layout.row_major(4, 16)](
             accum_smem_warp_tile.vectorize[4, 1](),
             output_reg_tile.vectorize[1, 4](),
         )

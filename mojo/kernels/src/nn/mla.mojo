@@ -44,7 +44,7 @@ from layout.layout_tensor import (
     LayoutTensorIter,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy_local_to_sram,
+    copy,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
@@ -1135,9 +1135,7 @@ fn mla_decoding_single_batch[
             Int(warp_y), Int(warp_x)
         )
 
-        copy_local_to_sram[
-            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
-        ](
+        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )

@@ -36,7 +36,7 @@ from layout.layout_tensor import (
     LayoutTensorIter,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy_local_to_sram,
+    copy,
     copy_sram_to_dram,
     cp_async_k_major,
     cp_async_mn_major,
@@ -1192,7 +1192,7 @@ fn _mha_single_batch_sm90_fa3[
             output_reg_tile.vectorize[1, p_frag_size]()
         ).layout.size()
         # named_barrier[num_consumer_threads]()
-        copy_local_to_sram[thread_layout=mma_thread_layout, swizzle=swizzle](
+        copy[thread_layout=mma_thread_layout, swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -1911,7 +1911,7 @@ fn _mha_single_batch_sm90_fa2[
     alias ortvsize = __type_of(
         output_reg_tile.vectorize[1, p_frag_size]()
     ).layout.size()
-    copy_local_to_sram[thread_layout=mma_thread_layout, swizzle=swizzle](
+    copy[thread_layout=mma_thread_layout, swizzle=swizzle](
         accum_smem_warp_tile.vectorize[1, 2](),
         output_reg_tile.vectorize[1, 2]().transpose(),
     )
