@@ -65,6 +65,7 @@ trait AnyType:
     system resources that need proper cleanup.
 
     Key aspects:
+
     - Any type with a destructor must implement this trait
     - The destructor (`__del__`) is called automatically when an instance's lifetime ends
     - Composition of types with destructors automatically gets a destructor
@@ -72,6 +73,7 @@ trait AnyType:
         `@explicit_destroy`
 
     Example:
+
     ```mojo
     @value
     struct ResourceOwner(AnyType):
@@ -86,6 +88,7 @@ trait AnyType:
     ```
 
     Best practices:
+
     - Implement this trait when your type owns resources that need cleanup
     - Ensure the destructor properly frees all owned resources
     - Consider using `@explicit_destroy` for types that should never have destructors
