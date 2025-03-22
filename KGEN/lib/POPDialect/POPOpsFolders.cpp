@@ -325,7 +325,8 @@ OpFoldResult MulOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
-LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
+template <typename Op>
+static LogicalResult canonicalizeDivRem(Op op, PatternRewriter &b) {
   std::optional<KGEN::KGENDType> dtype = op.getType().getResolvedDType();
   if (!dtype)
     return b.notifyMatchFailure(op, "result type isn't resolved");
@@ -337,7 +338,7 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
   if (!size)
     return b.notifyMatchFailure(op, "result type size isn't resolved");
 
-  // Canonicalize "x / 2^n" into "x >> n"
+  // Canonicalize "x / 2^n" into "x >> n" and "x % 2^n" into "x & (2^n - 1)"
   SIMDAttr rhsAttr;
   if (!mlir::matchPattern(op.getRhs(), mlir::m_Constant(&rhsAttr)))
     return b.notifyMatchFailure(op, "rhs is not a constant");
@@ -360,16 +361,24 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
   values.reserve(*size);
   for (size_t i = 0, e = *size; i < e; ++i) {
     APInt intVal = rhsAttr.getValues()[i].getIntVal();
-    values.push_back(DTypeValue(
-        APInt(intWidth, intVal.logBase2(), dtype->isSInt()), *dtype));
+    if constexpr (std::is_same_v<Op, DivOp>)
+      intVal = APInt(intWidth, intVal.logBase2(), dtype->isSInt());
+    else
+      intVal = intVal - 1;
+    values.push_back(DTypeValue(intVal, *dtype));
   }
 
-  b.replaceOpWithNewOp<ShrOp>(
+  b.replaceOpWithNewOp<
+      std::conditional_t<std::is_same_v<Op, DivOp>, ShrOp, SIMDAndOp>>(
       op, op.getType(), op.getLhs(),
       b.create<ParamConstantOp>(op.getLoc(),
                                 SIMDAttr::get(values, op.getType())));
 
   return success();
+}
+
+LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
+  return canonicalizeDivRem(op, b);
 }
 
 OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
@@ -385,6 +394,10 @@ OpFoldResult DivOp::fold(FoldAdaptor adaptor) {
           return std::nullopt;
         return lhs / rhs;
       });
+}
+
+LogicalResult RemOp::canonicalize(RemOp op, PatternRewriter &b) {
+  return canonicalizeDivRem(op, b);
 }
 
 OpFoldResult RemOp::fold(FoldAdaptor adaptor) {
