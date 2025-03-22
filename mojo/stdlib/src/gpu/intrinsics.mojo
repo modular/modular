@@ -665,27 +665,36 @@ fn store_release[
         value: Value to store.
 
     Note:
-        - Only supported on NVIDIA GPUs.
-        - Maps directly to PTX st.release instruction.
+        - Only supported on GPUs.
+        - Maps directly to PTX st.release instruction on NVIDIA, LLVM atomic
+          store on AMDGPU.
         - Ensures all previous memory operations complete before this store.
         - Critical for implementing synchronization primitives.
     """
-    constrained[
-        is_nvidia_gpu(), "store_release is not currently supported on AMD GPUs"
-    ]()
-    alias constraints = _get_register_constraint[
-        type
-    ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
-    alias scope_str = scope.mnemonic()
-    inlined_assembly[
-        "st.release."
-        + ((scope_str + ".") if scope_str else "")
-        + "global."
-        + _get_type_suffix[type]()
-        + " [$1], $0;",
-        NoneType,
-        constraints=constraints,
-    ](value, ptr)
+    constrained[is_gpu(), "atomic store only supported on GPU"]()
+
+    @parameter
+    if is_nvidia_gpu():
+        alias constraints = _get_register_constraint[
+            type
+        ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+        alias scope_str = scope.mnemonic()
+        inlined_assembly[
+            "st.release."
+            + ((scope_str + ".") if scope_str else "")
+            + "global."
+            + _get_type_suffix[type]()
+            + " [$1], $0;",
+            NoneType,
+            constraints=constraints,
+        ](value, ptr)
+    elif is_amd_gpu():
+        __mlir_op.`pop.store`[
+            alignment = ptr.alignment.value,
+            ordering = __mlir_attr.`#pop<atomic_ordering release>`,
+        ](value, ptr.address)
+    else:
+        abort("unsupported device type")
 
 
 @always_inline
@@ -709,27 +718,36 @@ fn load_acquire[
         The loaded value.
 
     Note:
-        - Only supported on NVIDIA GPUs.
-        - Maps directly to PTX ld.acquire instruction.
+        - Only supported on GPUs.
+        - Maps directly to PTX ld.acquire instruction on NVIDIA, LLVM atomic
+          load on AMDGPU.
         - Ensures subsequent memory operations don't execute until after load.
         - Critical for implementing synchronization primitives.
     """
-    constrained[
-        is_nvidia_gpu(), "load_acquire is not currently supported on AMD GPUs"
-    ]()
-    alias constraints = "=" + _get_register_constraint[
-        type
-    ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
-    alias scope_str = scope.mnemonic()
-    return inlined_assembly[
-        "ld.acquire."
-        + ((scope_str + ".") if scope_str else "")
-        + "global."
-        + _get_type_suffix[type]()
-        + " $0, [$1];",
-        Scalar[type],
-        constraints=constraints,
-    ](ptr.address_space_cast[AddressSpace.GENERIC]())
+    constrained[is_gpu(), "atomic load only supported on GPU"]()
+
+    @parameter
+    if is_nvidia_gpu():
+        alias constraints = "=" + _get_register_constraint[
+            type
+        ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+        alias scope_str = scope.mnemonic()
+        return inlined_assembly[
+            "ld.acquire."
+            + ((scope_str + ".") if scope_str else "")
+            + "global."
+            + _get_type_suffix[type]()
+            + " $0, [$1];",
+            Scalar[type],
+            constraints=constraints,
+        ](ptr.address_space_cast[AddressSpace.GENERIC]())
+    elif is_amd_gpu():
+        return __mlir_op.`pop.load`[
+            alignment = ptr.alignment.value,
+            ordering = __mlir_attr.`#pop<atomic_ordering acquire>`,
+        ](ptr.address)
+    else:
+        return abort[Scalar[type]]("unsupported device type")
 
 
 @always_inline
