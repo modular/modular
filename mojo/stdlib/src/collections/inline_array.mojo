@@ -218,7 +218,7 @@ struct InlineArray[
             ptr += 1
         debug_assert(
             ptr == self.unsafe_ptr().offset(size),
-            "error during initialization, please create a bug report",
+            "error during `InlineArray` initialization, please file a bug report.",
         )
 
     @always_inline
