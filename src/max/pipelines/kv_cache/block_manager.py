@@ -197,6 +197,14 @@ class BlockManager:
         )
         tokens_to_encode = data.inflight_idx - new_cached_idx
 
+        # Empty out the request info if this is not a real request.
+        if seq_id < 0:
+            if seq_id in self.req_to_blocks:
+                assert len(self.req_to_blocks[seq_id]) == 0
+                del self.req_to_blocks[seq_id]
+            if seq_id in self.req_to_block_hashes:
+                del self.req_to_block_hashes[seq_id]
+
         return set(prefix_cache_block_ids), tokens_to_encode, num_new_blocks
 
     @traced
@@ -253,6 +261,8 @@ class BlockManager:
             seq_id, data
         )
 
+        orig_cached_idx = data.cached_idx
+
         if len(prefix_cache_blocks) > 0:
             # Touch the computed blocks to make sure they won't be evicted.
             self.touch(prefix_cache_blocks)
@@ -264,6 +274,10 @@ class BlockManager:
             req_blocks.extend(prefix_cache_blocks)
             data.committed_idx += len(prefix_cache_blocks) * self.block_size
             data.cached_idx = data.committed_idx
+
+            # Check that the cached_idx has increased.
+            assert data.cached_idx > orig_cached_idx
+            orig_cached_idx = data.cached_idx
 
         # Query prefix cache for partial blocks
         partial_block, tokens_matched = (
@@ -285,6 +299,10 @@ class BlockManager:
                 partial_block.block_id,
                 tokens_matched,
             )
+
+            # Check that the cached_idx has increased.
+            assert data.cached_idx > orig_cached_idx
+            orig_cached_idx = data.cached_idx
 
         # Update cache hit rate metrics.
         new_prompt_len = data.num_prompt_tokens
@@ -349,22 +367,25 @@ class BlockManager:
         parent_tokens = data.tokens[
             num_committed_blocks * self.block_size : (data.inflight_idx - 1)
         ]
-        current_tokens_in_partial_block = data.cached_idx % self.block_size
         if len(parent_tokens) == 0:
             return None, 0
 
-        parent_tokens = parent_tokens[: self.block_size]
-
         # Find the longest prefix match in the prefix cache.
         children = self.parent_to_child_hash[parent_hash.hash_value]
-        best_tokens_matched = current_tokens_in_partial_block
 
+        parent_tokens = parent_tokens[: self.block_size]
         res = children.find_string_with_largest_common_prefix(
             tuple(parent_tokens)
         )
         if res is None:
             return None, 0
         best_child_tokens, best_tokens_matched = res
+
+        # It is not profitable to do COW if this request's partial block has
+        # at least as many tokens as the best match in the prefix cache.
+        current_tokens_in_partial_block = data.cached_idx % self.block_size
+        if current_tokens_in_partial_block >= best_tokens_matched:
+            return None, 0
 
         child_hash = hash_block_tokens(
             parent_hash.hash_value,

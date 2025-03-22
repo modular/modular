@@ -42,6 +42,10 @@ class BlockHashType(NamedTuple):
     # The token ids of the block.
     token_ids: tuple[int, ...]
 
+    def __repr__(self) -> str:
+        token_ids_str = ", ".join(str(x) for x in self.token_ids[:5])
+        return f"BlockHashType({self.hash_value}, [{token_ids_str}, ...])"
+
 
 ROOT_BLOCK_HASH = BlockHashType(hash("None"), -1, ())
 
@@ -103,6 +107,9 @@ class KVCacheBlock:
     # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
     prev_free_block: Optional["KVCacheBlock"] = None
     next_free_block: Optional["KVCacheBlock"] = None
+
+    def __repr__(self) -> str:
+        return f"KVCacheBlock(block_id={self.block_id}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash})"
 
 
 class FreeKVCacheBlockQueue:
