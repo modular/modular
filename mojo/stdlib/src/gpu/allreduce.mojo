@@ -346,9 +346,7 @@ fn _multi_gpu_barrier[
     is_start: Bool,
     need_fence: Bool = False,
 ](
-    rank_sigs: InlineArray[
-        UnsafePointer[Signal], MAX_GPUS
-    ],  # all-to-all table of Signals
+    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
     self_sg: UnsafePointer[Signal],
     my_rank: Int,
 ):
@@ -452,8 +450,8 @@ fn _allreduce_2stage_kernel[
     outputs_lambda: elementwise_epilogue_type,
 ](
     result: NDBuffer[type, rank, MutableAnyOrigin],
-    src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    src_ptrs: StaticTuple[UnsafePointer[Scalar[type]], ngpus],
+    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     max_num_blocks: Int,
 ):
@@ -609,8 +607,8 @@ fn _allreduce_1stage_kernel[
     outputs_lambda: elementwise_epilogue_type,
 ](
     result: NDBuffer[type, rank, MutableAnyOrigin],
-    src_ptrs: InlineArray[UnsafePointer[Scalar[type]], ngpus],
-    rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
+    src_ptrs: StaticTuple[UnsafePointer[Scalar[type]], ngpus],
+    rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     max_num_blocks: Int,
 ):
@@ -731,9 +729,7 @@ fn _allreduce_p2p[
 
     # Pass a stack-allocated array of pointers to the device kernel, which
     # doesn't need dynamic tensor spec info from NDBuffer.
-    var list_of_in_ptrs = InlineArray[UnsafePointer[Scalar[type]], ngpus](
-        UnsafePointer[Scalar[type]]()
-    )
+    var list_of_in_ptrs = StaticTuple[UnsafePointer[Scalar[type]], ngpus]()
 
     @parameter
     for i in range(ngpus):
@@ -743,6 +739,16 @@ fn _allreduce_p2p[
     alias rank_4_byte_threshold = 512 * 1024
     alias rank_8_byte_threshold = 256 * 1024
     var payload_bytecount = list_of_in_bufs[0].bytecount()
+
+    # TODO(MOCO-1736): fix kernel interface codegen issue so that we can pass
+    # `InlineArray` here.
+    var rank_sigs_tuple = StaticTuple[UnsafePointer[Signal], MAX_GPUS](
+        UnsafePointer[Signal]()
+    )
+
+    @parameter
+    for i in range(ngpus):
+        rank_sigs_tuple[i] = rank_sigs[i]
 
     @parameter
     for i in range(ngpus):
@@ -771,7 +777,7 @@ fn _allreduce_p2p[
             ](
                 curr_out_buf,
                 list_of_in_ptrs,
-                rank_sigs,
+                rank_sigs_tuple,
                 num_elements,
                 max_num_blocks,
                 grid_dim=grid_size,
@@ -798,7 +804,7 @@ fn _allreduce_p2p[
             ](
                 curr_out_buf,
                 list_of_in_ptrs,
-                rank_sigs,
+                rank_sigs_tuple,
                 num_elements,
                 max_num_blocks,
                 grid_dim=grid_size,
