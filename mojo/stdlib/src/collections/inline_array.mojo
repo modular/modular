@@ -179,12 +179,13 @@ struct InlineArray[
             fill: The element value to fill each index with.
 
         Example:
+
             ```mojo
             var filled = InlineArray[Int, 5](fill=42)  # [42, 42, 42, 42, 42]
 
             # For large arrays, consider adjusting batch_size to balance
             # compile time and runtime performance:
-            var large = InlineArray[Int, 10000, batch_size=32](fill=0)
+            var large = InlineArray[Int, 10000].__init__[batch_size=32](fill=0)
             ```
 
         Notes:
@@ -215,6 +216,10 @@ struct InlineArray[
         for _ in range(unroll_end, size):
             ptr.init_pointee_copy(fill)
             ptr += 1
+        debug_assert(
+            Int(ptr) == (Int(self.unsafe_ptr().offset(size))),
+            "error during initialization, please create a bug report",
+        )
 
     @always_inline
     @implicit
