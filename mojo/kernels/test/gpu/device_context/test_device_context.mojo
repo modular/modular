@@ -106,7 +106,7 @@ def test_print(ctx: DeviceContext):
 
     iota(host_buffer.unsafe_ptr(), size)
 
-    # CHECK: DeviceBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+    # CHECK: HostBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
     print(host_buffer)
 
     var dev_buffer = ctx.enqueue_create_buffer[DType.uint16](size)
@@ -122,7 +122,7 @@ def test_print(ctx: DeviceContext):
 
     iota(large_buffer.unsafe_ptr(), large_size)
 
-    # CHECK: DeviceBuffer([0.0, 1.0, 2.0, ..., 998.0, 999.0, 1000.0])
+    # CHECK: HostBuffer([0.0, 1.0, 2.0, ..., 998.0, 999.0, 1000.0])
     print(large_buffer)
 
 
