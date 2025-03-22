@@ -712,3 +712,39 @@ kgen.generator export @top() {
 
 // expected-error @below {{parameter name and parameter value length mismatch. Expected 1, got 2}}
 kgen.func @illegal_applied_struct_param_length(%arg0: !kgen.struct_inst<"Bar"[elemT]<:dtype f32, 16>(data: struct<()>) memoryOnly>) {}
+
+// -----
+
+// COM: register passable closures must have closure type.
+
+kgen.generator @closure_types(%arg0 : index) {
+  // expected-error @+1 {{'kgen.closure.init' op expected escaping/nonescaping closure type if type is a pointer}}
+  %0 = kgen.closure.init(%arg0)(%arg3: index) -> index {
+	  kgen.return %arg0 : index
+  } : (index), !kgen.pointer<!kgen.closure<@closure_types, "another_closure3" registerpassable>>
+  kgen.return
+}
+
+// -----
+
+// COM: Escaping closures must have pointer type
+
+kgen.generator @closure_types(%arg0 : index) {
+  // expected-error @+1 {{'kgen.closure.init' op expected register passable closure type if type is not a pointer}}
+  %1 = kgen.closure.init(%arg0)(%arg3: index) -> index {
+	  kgen.return %arg0 : index
+  } : (index), !kgen.closure<@closure_types, "another_closure2" escaping>
+  kgen.return
+}
+
+// -----
+
+// COM: kgen.closure.init must have a closure type.
+
+kgen.generator @closure_types(%arg0 : index) {
+  // expected-error @+1 {{'kgen.closure.init' op expected closure type}}
+  %2 = kgen.closure.init(%arg0)(%arg3: index) -> index {
+	  kgen.return %arg0 : index
+  } : (index), !kgen.struct<(index, index)>
+  kgen.return
+}

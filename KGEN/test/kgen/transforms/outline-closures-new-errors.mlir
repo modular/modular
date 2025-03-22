@@ -7,7 +7,7 @@ kgen.generator @closure_types(%arg0 : index, %arg1 : index) {
   %3 = kgen.closure.init(%arg1)(%arg2: index) -> index {
     %1 = index.add %0, %arg0
     kgen.return %1 : index
-  } : (index), <!kgen.closure<@closure_types, "fn" nonescaping>>
+  } : (index), !kgen.pointer<!kgen.closure<@closure_types, "fn" nonescaping>>
   kgen.return
 }
 
@@ -31,7 +31,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x> read_mem) -> index {
 kgen.generator @invalid() {
   %3 = kgen.closure.init()(%arg2: index) -> index {
     kgen.return %arg2 : index
-  } : (), <!kgen.closure<@invalid, "fn" nonescaping>>
+  } : (), !kgen.pointer<!kgen.closure<@invalid, "fn" nonescaping>>
   %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.pointer<!kgen.closure<@invalid, "fn" nonescaping>> read_mem) -> index
   kgen.return
 }

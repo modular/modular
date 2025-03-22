@@ -1755,7 +1755,30 @@ LogicalResult ClosureInitOp::verify() {
       return emitOpError(
           "expected symbol constant attribute or unit attribute");
   }
-  return success();
+  // If type is pointer it must be a pointer to a closure type and it cannot be
+  // register passable.
+  if (auto ptr = dyn_cast<PointerType>(getResult().getType())) {
+    if (auto closureType = dyn_cast<ClosureType>((ptr.getElementType()))) {
+      if (closureType.getClosureMemoryKind() ==
+          ClosureMemoryKind::REGISTER_PASSABLE)
+        return emitOpError(
+            "expected escaping/nonescaping closure type if type is a pointer");
+      else
+        return success();
+    }
+    return emitOpError("expected closure type");
+  }
+
+  // if register passable, it must be a closure type.
+  if (auto closureType = dyn_cast<ClosureType>(getResult().getType())) {
+    if (closureType.getClosureMemoryKind() !=
+        ClosureMemoryKind::REGISTER_PASSABLE)
+      return emitOpError(
+          "expected register passable closure type if type is not a pointer");
+    else
+      return success();
+  }
+  return emitOpError("expected closure type");
 }
 
 ///===----------------------------------------------------------------------===//
