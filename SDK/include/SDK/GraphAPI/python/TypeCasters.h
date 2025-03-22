@@ -14,6 +14,8 @@
 #include "nanobind/stl/string_view.h"
 #include <SDK/GraphAPI/python/Bindings.h>
 #include <Support/AssertStream.h>
+#include <mlir-c/Bindings/Python/Interop.h>
+#include <mlir-c/IR.h>
 #include <nanobind/stl/unique_ptr.h>
 
 namespace nb = nanobind;
@@ -268,6 +270,26 @@ struct type_caster<::llvm::ArrayRef<bool>> {
                          cleanup_list *cleanup) noexcept {
     // TODO(MAXPLAT-123): Make these views.
     return make_caster<std::vector<bool>>::from_cpp(ar.vec(), policy, cleanup);
+  }
+};
+
+/// Casts object <-> mlir::TypeRange.
+template <>
+struct type_caster<::mlir::TypeRange> {
+  using Caster = make_caster<llvm::ArrayRef<mlir::Type>>;
+  NB_TYPE_CASTER(::mlir::TypeRange, Caster::Name)
+  Caster caster;
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    if (caster.from_python(src, flags, cleanup)) {
+      value = mlir::TypeRange(caster.value);
+      return true;
+    }
+    return false;
+  }
+  static handle from_cpp(::mlir::TypeRange t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return Caster::VecCaster::from_cpp(t, policy, cleanup);
   }
 };
 
