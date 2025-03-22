@@ -107,7 +107,7 @@ def while_loop(
     def wrap_while_block_function(
         user_func,
         block_args: Iterable[mlir.BlockArgument],
-        guard_against_chain_mutations: bool = True,
+        is_cond_block: bool = False,
     ):
         """Adapts a user-provided loop function to handle execution chain state.
 
@@ -146,13 +146,16 @@ def while_loop(
             Graph.current._update_chain(execution_chain)
 
             # Invoke user function with only the loop variables
-            user_func_result = user_func(*loop_vars)
+            result = user_func(*loop_vars)
 
-            if guard_against_chain_mutations:
-                if Graph.current._current_chain != execution_chain:
-                    raise Exception("Chain mutation detected")
-
-            return user_func_result
+            # The cond block function returns a boolean tensor, but mo.while
+            # expects the cond block's yield operation to yield all loop
+            # carried values, so add loop_vars to the result list when building
+            # the cond block.
+            if is_cond_block:
+                return [result] + loop_vars
+            else:
+                return result
 
         return chain_aware_wrapper
 
@@ -170,7 +173,9 @@ def while_loop(
         # TODO: We won't need the guard_against_chain_mutations flag once we
         # have a way to track the chain state across the while loop's predicate block
         pred_wrapped_fn = wrap_while_block_function(
-            predicate, pred_block.arguments, guard_against_chain_mutations=True
+            predicate,
+            pred_block.arguments,
+            is_cond_block=True,
         )
 
         Graph.current._build_block(
@@ -178,13 +183,13 @@ def while_loop(
             pred_wrapped_fn,
             mo.YieldOp,
             "pred_block",
-            [TensorType(DType.bool, [])],
-            add_chain=False,
+            [TensorType(DType.bool, [])] + out_types[:-1],
         )
 
         body_block = while_op.bodyRegion.blocks[0]
         body_wrapped_fn = wrap_while_block_function(
-            body, body_block.arguments, guard_against_chain_mutations=False
+            body,
+            body_block.arguments,
         )
         Graph.current._build_block(
             body_block,
