@@ -2539,8 +2539,17 @@ def POP_NVVMWGMAMMAAsyncOp : POPOp<"nvvm.wgmma.mma_async", [Pure]> {
   let description = [{
     The `nvvm.wgmma.mma_async` operation takes a shared memory descriptors
     `descriptor_a` and `descriptor_b` and performs warp group level (4-warps)
-    matrix-multiply-and-accumulate `D = A * B + C` operation with an instruction
-    of shapes `shape_m`, `shape_n` and `shape_k`.
+    matrix-multiply-and-accumulate `D = A * B + C` or `D = A * B` operation with
+    an instruction of shapes `shape_m`, `shape_n` and `shape_k`.
+
+    An optional `scale_d` attribute can be used to scale the result of the
+    matrix-multiply-and-accumulate operation. By default, the scale is 1.
+
+    An optional `scale_a` attribute can be used to scale the `descriptor_a`
+    matrix. By default, the scale is 1.
+
+    An optional `scale_b` attribute can be used to scale the `descriptor_b`
+    matrix. By default, the scale is 1.
 
     Example:
     ```mlir
@@ -2560,11 +2569,17 @@ def POP_NVVMWGMAMMAAsyncOp : POPOp<"nvvm.wgmma.mma_async", [Pure]> {
                        AttrOfType<Index>:$shape_n,
                        AttrOfType<Index>:$shape_k,
                        AttrOfType<KGEN_StringType>:$layout_a,
-                       AttrOfType<KGEN_StringType>:$layout_b);
+                       AttrOfType<KGEN_StringType>:$layout_b,
+                       OptionalAttr<AttrOfType<Index>>:$scaleD,
+                       OptionalAttr<AttrOfType<Index>>:$scaleA,
+                       OptionalAttr<AttrOfType<Index>>:$scaleB);
 
   let results = (outs UnboundOrFloatOrUnsignedSIMD:$res);
   let assemblyFormat = [{
     $descriptor_a $descriptor_b $reg_c $type_a $type_b $type_c
+    (`scale_d`  `<` custom<IndexParamValue>($scaleD)^ `>`)?
+    (`scale_a`  `<` custom<IndexParamValue>($scaleA)^ `>`)?
+    (`scale_b`  `<` custom<IndexParamValue>($scaleB)^ `>`)?
     attr-dict `:` type($reg_c) `->` type($res)
   }];
   let hasVerifier = 1;
