@@ -5922,13 +5922,16 @@ fn copy_dram_to_local[
 
 
 @always_inline("nodebug")
-fn copy_local_to_sram[
+fn copy[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     row_major: Bool = False,
     # row_major is used when using prefetching from dram to sram via registers for AMD GPUs
-](dst: LayoutTensor, src: LayoutTensor):
+](
+    dst: LayoutTensor[*_, address_space = _GPUAddressSpace.SHARED, **_],
+    src: LayoutTensor[*_, address_space = _GPUAddressSpace.LOCAL, **_],
+):
     """Synchronously copy data from local memory (registers) to SRAM (shared memory).
 
     This function performs a synchronous copy operation from register memory to shared
@@ -5964,7 +5967,7 @@ fn copy_local_to_sram[
         # ...
 
         # Copy processed data to shared memory for inter-thread communication
-        copy_local_to_sram[Layout((8, 8))](shared_data, register_data)
+        copy[Layout((8, 8))](shared_data, register_data)
         ```
 
     Performance:
