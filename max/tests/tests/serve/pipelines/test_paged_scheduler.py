@@ -442,6 +442,8 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16():
             max_seq_len=prompt_len + output_tokens,
         )
 
+    # We will schedule 8192 / 500 = 16.38 CE req per batch due to target_tokens_per_batch_ce.
+    # This is rounded up to 17 due to chunked prefill.
     expected = [
         # batch_type, batch_size, terminated, num_steps, tokens_to_encode
         BatchInfo(CE, 17, 1, 1, 8192),
@@ -459,7 +461,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16():
     assert actual == expected
 
 
-def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_384():
+def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384():
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
@@ -483,11 +485,103 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_384():
             shared_prefix=shared_prefix,
         )
 
+    # We predict approx 384 tokens to be cache hit.
+    # This means we encode 500 - 384 = 116 tokens per CE batch.
+    # Hence, we will schedule approx 8192 / 116 = 70.62 CE req per batch.
+    # This is rounded up to 71 due to chunked prefill.
     expected = [
         # batch_type, batch_size, terminated, num_steps, tokens_to_encode
         BatchInfo(CE, 17, 1, 1, 8192),
         BatchInfo(CE, 71, 1, 1, 8192),
         BatchInfo(CE, 14, 0, 1, 1552),
+        BatchInfo(TG, 100, 0, 10, 100),
+        BatchInfo(TG, 100, 100, 6, 100),
+        BatchInfo(TG, 0, 0, 0, 0),
+    ]
+    actual = run_until_completion(scheduler)
+    assert actual == expected
+
+
+def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
+    num_prompts = 100
+    prompt_len = 500
+    output_tokens = 16
+    prefix_len = 200
+
+    scheduler = create_paged_scheduler(
+        enable_chunked_prefill=True,
+        enable_in_flight_batching=False,
+        enable_prefix_caching=True,
+    )
+
+    # set seed for reproducibility
+    np.random.seed(42)
+    shared_prefix = rand(prefix_len)
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+            shared_prefix=shared_prefix,
+        )
+
+    # Since we don't consider COW, we predict 128 tokens to be cache hit.
+    # This means we encode 500 - 128 = 372 tokens per CE batch.
+    # Hence, we will schedule approx 8192 / 372 = 22.02 CE req per batch.
+    # This is rounded up to 23 due to chunked prefill.
+    # The first batch doesn't get cache hits so it is smaller.
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 23, 1, 1, 8192),
+        BatchInfo(CE, 23, 1, 1, 8192),
+        BatchInfo(CE, 23, 1, 1, 8192),
+        BatchInfo(CE, 18, 0, 1, 6608),
+        BatchInfo(TG, 100, 0, 10, 100),
+        BatchInfo(TG, 100, 100, 6, 100),
+        BatchInfo(TG, 0, 0, 0, 0),
+    ]
+    actual = run_until_completion(scheduler)
+    assert actual == expected
+
+
+def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
+    num_prompts = 100
+    prompt_len = 500
+    output_tokens = 16
+    prefix_len = 64
+
+    scheduler = create_paged_scheduler(
+        enable_chunked_prefill=True,
+        enable_in_flight_batching=False,
+        enable_prefix_caching=True,
+    )
+
+    # set seed for reproducibility
+    np.random.seed(42)
+    shared_prefix = rand(prefix_len)
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+            shared_prefix=shared_prefix,
+        )
+
+    # Since we don't consider COW, we predict 0 tokens to be cache hit.
+    # Hence, we will schedule approx 8192 / 500 = 16.38 CE req per batch.
+    # This is rounded up to 17 due to chunked prefill.
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 18, 1, 1, 8192),
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 17, 1, 1, 8192),
+        BatchInfo(CE, 18, 1, 1, 8192),
+        BatchInfo(CE, 2, 0, 1, 848),
         BatchInfo(TG, 100, 0, 10, 100),
         BatchInfo(TG, 100, 100, 6, 100),
         BatchInfo(TG, 0, 0, 0, 0),
@@ -513,6 +607,8 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
             max_seq_len=prompt_len + output_tokens,
         )
 
+    # With inflight batching, the CE batches become bigger and bigger since they
+    # now include TG requests.
     expected = [
         # batch_type, batch_size, terminated, num_steps, tokens_to_encode
         BatchInfo(CE, 17, 1, 1, 8192),
