@@ -45,6 +45,10 @@ struct _DeviceFunctionCpp:
     pass
 
 
+struct _DeviceMulticastBufferCpp:
+    pass
+
+
 struct _DeviceStreamCpp:
     pass
 
@@ -56,6 +60,7 @@ struct _DeviceTimerCpp:
 alias _DeviceContextPtr = UnsafePointer[_DeviceContextCpp]
 alias _DeviceBufferPtr = UnsafePointer[_DeviceBufferCpp]
 alias _DeviceFunctionPtr = UnsafePointer[_DeviceFunctionCpp]
+alias _DeviceMulticastBufferPtr = UnsafePointer[_DeviceMulticastBufferCpp]
 alias _DeviceStreamPtr = UnsafePointer[_DeviceStreamCpp]
 alias _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp]
 alias _CharPtr = UnsafePointer[UInt8]
@@ -74,7 +79,7 @@ fn _checked(
     location: OptionalReg[_SourceLocation] = None,
 ) raises:
     if err:
-        _raise_checked_impl(err, msg, location.or_else(__call_location[2]()))
+        _raise_checked_impl(err, msg, location.or_else(__call_location[1]()))
 
 
 @no_inline
@@ -3434,6 +3439,30 @@ struct DeviceContext:
             )
         )
 
+    fn supports_multicast(self) raises -> Bool:
+        """Returns True if this device supports multicast memory mappings.
+
+        Returns:
+            True if the current device supports multicast memory, False otherwise.
+
+        Raises:
+            If there's an error checking peer access capability.
+        """
+        var result: Bool = False
+        # const char *AsyncRT_DeviceContext_supportsMulticast(bool *result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_supportsMulticast",
+                _CharPtr,
+                UnsafePointer[Bool],
+                _DeviceContextPtr,
+            ](
+                UnsafePointer.address_of(result),
+                self._handle,
+            )
+        )
+        return result
+
     @staticmethod
     @always_inline
     fn number_of_devices(*, api: String = String(Self.device_api)) -> Int:
@@ -3473,6 +3502,104 @@ struct DeviceContext:
                 api.unsafe_ptr(),
             )
         )
+
+
+struct DeviceMulticastBuffer[type: DType]:
+    """Represents a muticast memory object enables special memory operations to be broadcast
+    across a group of devices.
+
+    Parameters:
+        type: Data type to be stored in the associated memory regions.
+    """
+
+    var _handle: _DeviceMulticastBufferPtr
+
+    @doc_private
+    fn __init__(
+        mut self,
+        owned contexts: List[DeviceContext],
+        size: Int,
+    ) raises:
+        alias elem_size = sizeof[type]()
+        var handle = _DeviceMulticastBufferPtr()
+
+        var ctxs_len = len(contexts)
+        var ctxs = UnsafePointer[_DeviceContextPtr].alloc(ctxs_len)
+        for i in range(ctxs_len):
+            ctxs[i] = contexts[i]._handle
+
+        # const char* AsyncRT_DeviceMulticastBuffer_allocate(const DeviceMulticastBuffer **result, size_t ctxsLen, const DeviceContext **ctxs, size_t len, size_t elemSize)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceMulticastBuffer_allocate",
+                _CharPtr,
+                UnsafePointer[_DeviceMulticastBufferPtr],
+                _SizeT,
+                UnsafePointer[_DeviceContextPtr],
+                _SizeT,
+                _SizeT,
+            ](
+                UnsafePointer.address_of(handle),
+                ctxs_len,
+                ctxs,
+                size,
+                elem_size,
+            )
+        )
+
+        self._handle = handle
+
+    @doc_private
+    fn unicast_buffer_for(
+        self, ctx: DeviceContext
+    ) raises -> DeviceBuffer[type]:
+        # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
+        var buf_handle = _DeviceBufferPtr()
+        var buf_ptr = UnsafePointer[Scalar[type]]()
+
+        _checked(
+            external_call[
+                "AsyncRT_DeviceMulticastBuffer_unicastBufferFor",
+                _CharPtr,
+                UnsafePointer[_DeviceBufferPtr],
+                UnsafePointer[UnsafePointer[Scalar[type]]],
+                _DeviceMulticastBufferPtr,
+                _DeviceContextPtr,
+            ](
+                UnsafePointer.address_of(buf_handle),
+                UnsafePointer.address_of(buf_ptr),
+                self._handle,
+                ctx._handle,
+            )
+        )
+
+        return DeviceBuffer[type](buf_handle, buf_ptr)
+
+    @doc_private
+    fn multicast_buffer_for(
+        self, ctx: DeviceContext
+    ) raises -> DeviceBuffer[type]:
+        # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
+        var buf_handle = _DeviceBufferPtr()
+        var buf_ptr = UnsafePointer[Scalar[type]]()
+
+        _checked(
+            external_call[
+                "AsyncRT_DeviceMulticastBuffer_multicastBufferFor",
+                _CharPtr,
+                UnsafePointer[_DeviceBufferPtr],
+                UnsafePointer[UnsafePointer[Scalar[type]]],
+                _DeviceMulticastBufferPtr,
+                _DeviceContextPtr,
+            ](
+                UnsafePointer.address_of(buf_handle),
+                UnsafePointer.address_of(buf_ptr),
+                self._handle,
+                ctx._handle,
+            )
+        )
+
+        return DeviceBuffer[type](buf_handle, buf_ptr)
 
 
 struct _HostMappedBuffer[

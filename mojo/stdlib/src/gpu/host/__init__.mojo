@@ -11,6 +11,7 @@ from .device_context import (
     DeviceBuffer,
     DeviceContext,
     DeviceFunction,
+    DeviceMulticastBuffer,
     DeviceStream,
 )
 from .dim import *
