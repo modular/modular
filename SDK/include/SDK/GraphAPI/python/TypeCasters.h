@@ -11,6 +11,7 @@
 #include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
 #include "nanobind/nanobind.h"
+#include "nanobind/stl/string_view.h"
 #include <SDK/GraphAPI/python/Bindings.h>
 #include <Support/AssertStream.h>
 #include <nanobind/stl/unique_ptr.h>
@@ -103,20 +104,25 @@ public:
   }
 };
 
-/// Casts object <-> DType.
+/// Casts str <-> llvm::StringRef.
 template <>
 struct type_caster<::llvm::StringRef> {
   NB_TYPE_CASTER(::llvm::StringRef, const_name("str"))
+  using Caster = make_caster<std::string_view>;
+  Caster caster;
 
   bool from_python(handle_t<nb::str> src, uint8_t flags,
                    cleanup_list *cleanup) noexcept {
-    value = nb::str(src).c_str();
+    if (!caster.from_python(src, flags, cleanup)) {
+      return false;
+    }
+    value = caster.value;
     return true;
   }
 
   static handle from_cpp(::llvm::StringRef t, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
-    return nb::str(t.data(), t.size());
+    return Caster::from_cpp(t, policy, cleanup);
   }
 };
 
