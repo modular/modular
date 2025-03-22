@@ -168,6 +168,12 @@ def while_loop(
     # Separate actual loop results from the execution chain
     *results, out_chain = results
 
+    def while_condition_op(args) -> mlir.OpView:
+        """Adaptor for mo.WhileConditionOp, whose constructor takes the
+        condition value and the list of yielded values."""
+        condition, *results = args
+        return mo.WhileConditionOp(condition, results)
+
     try:
         pred_block = while_op.condRegion.blocks[0]
         # TODO: We won't need the guard_against_chain_mutations flag once we
@@ -181,7 +187,7 @@ def while_loop(
         Graph.current._build_block(
             pred_block,
             pred_wrapped_fn,
-            mo.YieldOp,
+            while_condition_op,
             "pred_block",
             [TensorType(DType.bool, [])] + out_types[:-1],
         )
