@@ -31,16 +31,13 @@ fn run_func[
         out_dev[0] = result
 
     ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)
-    var out_h = UnsafePointer[Scalar[type]].alloc(1)
-    ctx.enqueue_copy(out_h, out)
-    ctx.synchronize()
-    assert_almost_equal(
-        out_h[0],
-        ref_,
-        msg=String("while testing ", out_prefix, " for the dtype ", type),
-        atol=1e-2 if type.is_half_float() else 1e-8,
-    )
-    _ = out
+    with out.map_to_host() as out_host:
+        assert_almost_equal(
+            out_host[0],
+            ref_,
+            msg=String("while testing ", out_prefix, " for the dtype ", type),
+            atol=1e-2 if type.is_half_float() else 1e-8,
+        )
 
 
 def main():

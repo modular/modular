@@ -28,21 +28,12 @@ def run_elementwise[
 
     alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
 
-    var in_host = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
-    ].stack_allocation()
-    var out_host = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
-    ].stack_allocation()
+    var in_device = ctx.enqueue_create_buffer[type](length)
+    var out_device = ctx.enqueue_create_buffer[type](length)
 
-    var flattened_length = in_host.num_elements()
-    for i in range(length):
-        in_host[i] = 0.001 * abs(Scalar[type](i) - length // 2)
-
-    var in_device = ctx.enqueue_create_buffer[type](flattened_length)
-    var out_device = ctx.enqueue_create_buffer[type](flattened_length)
-
-    ctx.enqueue_copy(in_device, in_host.data)
+    with in_device.map_to_host() as in_host:
+        for i in range(length):
+            in_host[i] = 0.001 * abs(Scalar[type](i) - length // 2)
 
     var in_buffer = NDBuffer[type, 1](in_device.unsafe_ptr(), Index(length))
     var out_buffer = NDBuffer[type, 1](out_device.unsafe_ptr(), Index(length))
@@ -59,35 +50,29 @@ def run_elementwise[
 
     elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
 
-    ctx.enqueue_copy(out_host.data, out_device)
-
-    ctx.synchronize()
-
-    for i in range(length):
-        var msg = String(
-            "values did not match at position ", i, " for dtype=", type
-        )
-
-        @parameter
-        if type is DType.float32:
-            assert_almost_equal(
-                out_host[i],
-                isqrt(in_host[i]),
-                msg=msg,
-                atol=1e-08,
-                rtol=1e-05,
-            )
-        else:
-            assert_almost_equal(
-                out_host[i],
-                isqrt(in_host[i]),
-                msg=msg,
-                atol=1e-04,
-                rtol=1e-03,
+    with out_device.map_to_host() as out_host:
+        for i in range(length):
+            var msg = String(
+                "values did not match at position ", i, " for dtype=", type
             )
 
-    _ = in_device
-    _ = out_device
+            @parameter
+            if type is DType.float32:
+                assert_almost_equal(
+                    out_host[i],
+                    isqrt(in_host[i]),
+                    msg=msg,
+                    atol=1e-08,
+                    rtol=1e-05,
+                )
+            else:
+                assert_almost_equal(
+                    out_host[i],
+                    isqrt(in_host[i]),
+                    msg=msg,
+                    atol=1e-04,
+                    rtol=1e-03,
+                )
 
 
 def main():

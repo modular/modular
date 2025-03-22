@@ -25,23 +25,13 @@ def run_elementwise[
 
     alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
 
-    var in_host = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
-    ].stack_allocation()
-    var out_host = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
-    ].stack_allocation()
-
-    var flattened_length = in_host.num_elements()
+    var in_device = ctx.enqueue_create_buffer[type](length)
+    var out_device = ctx.enqueue_create_buffer[type](length)
 
     alias epsilon = 0.001
-    for i in range(length):
-        in_host[i] = Scalar[type](i) + epsilon
-
-    var in_device = ctx.enqueue_create_buffer[type](flattened_length)
-    var out_device = ctx.enqueue_create_buffer[type](flattened_length)
-
-    ctx.enqueue_copy(in_device, in_host.data)
+    with in_device.map_to_host() as in_host:
+        for i in range(length):
+            in_host[i] = Scalar[type](i) + epsilon
 
     var in_buffer = NDBuffer[type, 1](in_device.unsafe_ptr(), Index(length))
     var out_buffer = NDBuffer[type, 1](out_device.unsafe_ptr(), Index(length))
@@ -57,24 +47,19 @@ def run_elementwise[
 
     elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
 
-    ctx.enqueue_copy(out_host.data, out_device)
-    ctx.synchronize()
+    with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:
+        for i in range(length):
+            var expected_value = log_fn(in_host[i])
 
-    for i in range(length):
-        var expected_value = log_fn(in_host[i])
-
-        alias atol = 1e-07 if type == DType.float32 else 1e-4
-        alias rtol = 2e-07 if type == DType.float32 else 2e-2
-        assert_almost_equal(
-            out_host[i],
-            expected_value,
-            msg=String("values did not match at position ", i),
-            atol=atol,
-            rtol=rtol,
-        )
-
-    _ = in_device
-    _ = out_device
+            alias atol = 1e-07 if type == DType.float32 else 1e-4
+            alias rtol = 2e-07 if type == DType.float32 else 2e-2
+            assert_almost_equal(
+                out_host[i],
+                expected_value,
+                msg=String("values did not match at position ", i),
+                atol=atol,
+                rtol=rtol,
+            )
 
 
 def main():
