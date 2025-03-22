@@ -21,6 +21,7 @@ from gpu import (
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.intrinsics import load_acquire, store_release
 from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
 from math import exp
 from memory import UnsafePointer
@@ -73,6 +74,18 @@ fn kernel_cast[
     type: DType, target: DType
 ](x: UnsafePointer[Scalar[type]], y: UnsafePointer[Scalar[target]]):
     y[0] = x[0].cast[target]()
+
+
+fn kernel_atomic[
+    type: DType, memory: Bool = True
+](
+    output: UnsafePointer[Scalar[type]],
+    ptr: UnsafePointer[Scalar[type]],
+    val: Scalar[type],
+):
+    output[] = ptr[]
+    store_release[memory=memory](ptr, val)
+    output[] = load_acquire[memory=memory](ptr)
 
 
 fn parametric[f: fn (UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
@@ -312,6 +325,34 @@ def test_schedule_group_barrier_compile():
     )
 
 
+def test_atomic_compile():
+    print("== test_atomic_compile")
+
+    # Memory model reference: https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
+
+    # store atomic release system
+    # CHECK: buffer_wbl2 sc0 sc1
+    # CHECK: s_waitcnt vmcnt(0)
+    # CHECK: global_store_dword {{.*}} sc0 sc1
+
+    # load atomic acquire system
+    # CHECK: global_load_dword {{.*}} sc0 sc1
+    # CHECK: s_waitcnt vmcnt(0)
+    # CHECK: buffer_inv sc0 sc1
+
+    print(_compile_code_asm[kernel_atomic[DType.int32], target=MI300X_TARGET]())
+
+    # CHECK: store atomic {{.*}} release
+    # CHECK: load atomic {{.*}} acquire
+    print(
+        _compile_code_asm[
+            kernel_atomic[DType.int32],
+            target=MI300X_TARGET,
+            emission_kind="llvm-opt",
+        ]()
+    )
+
+
 def main():
     test_shuffle_compile()
     test_cast_fp32_bf16_compile()
@@ -322,3 +363,4 @@ def main():
     test_threadid_compile()
     test_schedule_barrier_compile()
     test_schedule_group_barrier_compile()
+    test_atomic_compile()
