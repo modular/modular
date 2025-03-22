@@ -13,6 +13,7 @@ from .device_context import (
     DeviceFunction,
     DeviceMulticastBuffer,
     DeviceStream,
+    HostBuffer,
 )
 from .dim import *
 from .func_attribute import Attribute, FuncAttribute

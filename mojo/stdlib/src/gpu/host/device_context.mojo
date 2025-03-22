@@ -112,10 +112,510 @@ struct _DeviceBufferMode:
 
     alias _SYNC = _DeviceBufferMode(0)
     alias _ASYNC = _DeviceBufferMode(1)
-    alias _HOST = _DeviceBufferMode(2)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._mode == other._mode
+
+
+struct HostBuffer[
+    type: DType,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    mut: Bool = True,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
+](Sized, Stringable, Writable):
+    """Represents a block of host-resident storage. For GPU devices, a host
+    buffer is allocated in the host's global memory.
+
+    To allocate a `HostBuffer`, use one of the methods provided by
+    `DeviceContext`, such as
+    [`enqueue_create_host_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer).
+
+    Parameters:
+        type: Data type to be stored in the buffer.
+        address_space: The address space of the underlying pointer.
+        mut: The mutability of the underlying pointer.
+        origin: The origin of the underlying pointer.
+    """
+
+    alias _HostPtr = UnsafePointer[
+        Scalar[type], address_space=address_space, mut=mut, origin=origin
+    ]
+
+    # _device_ptr must be the first word in the struct to enable passing of
+    # HostBuffer to kernels. The first word is passed to the kernel and
+    # it needs to contain the value registered with the driver.
+    var _device_ptr: Self._HostPtr
+    var _handle: _DeviceBufferPtr
+
+    @doc_private
+    fn __init__(
+        mut self,
+        ctx: DeviceContext,
+        size: Int,
+    ) raises:
+        """This init takes in a constructed `DeviceContext` and schedules an
+        owned buffer allocation using the stream in the device context.
+        """
+        alias elem_size = sizeof[type]()
+        var cpp_handle = _DeviceBufferPtr()
+        var device_ptr = Self._HostPtr()
+
+        # const char *AsyncRT_DeviceContext_createHostBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_createHostBuffer",
+                _CharPtr,
+                UnsafePointer[_DeviceBufferPtr],
+                UnsafePointer[Self._HostPtr],
+                _DeviceContextPtr,
+                _SizeT,
+                _SizeT,
+            ](
+                UnsafePointer.address_of(cpp_handle),
+                UnsafePointer.address_of(device_ptr),
+                ctx._handle,
+                size,
+                elem_size,
+            )
+        )
+
+        self._device_ptr = device_ptr
+        self._handle = cpp_handle
+
+    @doc_private
+    fn __init__(mut self, handle: _DeviceBufferPtr, device_ptr: Self._HostPtr):
+        self._device_ptr = device_ptr
+        self._handle = handle
+
+    @doc_private
+    fn __init__(
+        mut self,
+        ctx: DeviceContext,
+        ptr: Self._HostPtr,
+        size: Int,
+        *,
+        owning: Bool,
+    ):
+        alias elem_size = sizeof[type]()
+        var cpp_handle = _DeviceBufferPtr()
+        # void AsyncRT_DeviceContext_createBuffer_owning(
+        #     const DeviceBuffer **result, const DeviceContext *ctx,
+        #     void *device_ptr, size_t len, size_t elem_size, bool owning)
+        external_call[
+            "AsyncRT_DeviceContext_createBuffer_owning",
+            NoneType,
+            UnsafePointer[_DeviceBufferPtr],
+            _DeviceContextPtr,
+            Self._HostPtr,
+            _SizeT,
+            _SizeT,
+            Bool,
+        ](
+            UnsafePointer.address_of(cpp_handle),
+            ctx._handle,
+            ptr,
+            size,
+            elem_size,
+            owning,
+        )
+
+        self._device_ptr = ptr
+        self._handle = cpp_handle
+
+    fn __copyinit__(out self, existing: Self):
+        """Creates a copy of an existing host buffer by incrementing its reference count.
+
+        This copy constructor creates a new reference to the same underlying host buffer
+        by incrementing the reference count of the native buffer object. Both the original
+        and the copy will refer to the same memory on the device.
+
+        Args:
+            existing: The host buffer to copy.
+        """
+        # Increment the reference count before copying the handle.
+        #
+        # void AsyncRT_DeviceBuffer_retain(const DeviceBuffer *buffer)
+        external_call[
+            "AsyncRT_DeviceBuffer_retain",
+            NoneType,
+            _DeviceBufferPtr,
+        ](existing._handle)
+        self._device_ptr = existing._device_ptr
+        self._handle = existing._handle
+
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a copy of self.
+
+        Returns:
+            A copy of this value.
+        """
+        return self
+
+    fn __moveinit__(out self, owned existing: Self):
+        """Initializes this buffer by taking ownership of an existing buffer.
+
+        This move constructor transfers ownership of the device buffer from the existing
+        instance to the new instance without incrementing the reference count.
+
+        Args:
+            existing: The buffer to move from, which will no longer be valid after this call.
+        """
+        self._device_ptr = existing._device_ptr
+        self._handle = existing._handle
+
+    fn __del__(owned self):
+        """Releases resources associated with this host buffer.
+
+        This function schedules an owned buffer free using the stream in the
+        device context. The actual deallocation may occur asynchronously after
+        all operations using this buffer have completed.
+        """
+        # void AsyncRT_DeviceBuffer_release(const DeviceBuffer *buffer)
+        external_call[
+            "AsyncRT_DeviceBuffer_release", NoneType, _DeviceBufferPtr
+        ](
+            self._handle,
+        )
+
+    fn __len__(self) -> Int:
+        """Returns the number of elements in this buffer.
+
+        This method calculates the number of elements by dividing the total byte size
+        of the buffer by the size of each element.
+
+        Returns:
+            The number of elements in the buffer.
+        """
+        # int64_t AsyncRT_DeviceBuffer_bytesize(const DeviceBuffer *buffer)
+        return (
+            external_call[
+                "AsyncRT_DeviceBuffer_bytesize", Int, _DeviceBufferPtr
+            ](self._handle)
+            // sizeof[type]()
+        )
+
+    fn create_sub_buffer[
+        view_type: DType
+    ](self, offset: Int, size: Int) raises -> HostBuffer[view_type]:
+        """Creates a sub-buffer view of this buffer with a different element type.
+
+        This method creates a new buffer that references a subset of the memory in this
+        buffer, potentially with a different element type. The sub-buffer shares the
+        underlying memory with the original buffer.
+
+        Parameters:
+            view_type: The data type for elements in the new sub-buffer.
+
+        Args:
+            offset: The starting offset in elements from the beginning of this buffer.
+            size: The number of elements in the new sub-buffer.
+
+        Returns:
+            A new HostBuffer referencing the specified region with the specified element type.
+        """
+        alias elem_size = sizeof[view_type]()
+        var new_handle = _DeviceBufferPtr()
+        var new_device_ptr = UnsafePointer[Scalar[view_type]]()
+        # const char *AsyncRT_DeviceBuffer_createSubBuffer(
+        #     const DeviceBuffer **result, void **device_ptr,
+        #     const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_createSubBuffer",
+                _CharPtr,
+                UnsafePointer[_DeviceBufferPtr],
+                UnsafePointer[UnsafePointer[Scalar[view_type]]],
+                _DeviceBufferPtr,
+                _SizeT,
+                _SizeT,
+                _SizeT,
+            ](
+                UnsafePointer.address_of(new_handle),
+                UnsafePointer.address_of(new_device_ptr),
+                self._handle,
+                offset,
+                size,
+                elem_size,
+            )
+        )
+        return HostBuffer[view_type](new_handle, new_device_ptr)
+
+    fn enqueue_copy_to(self, dst: HostBuffer[type, **_]) raises:
+        """Enqueues an asynchronous copy from this buffer to another host buffer.
+
+        This method schedules a memory copy operation from this buffer to the destination
+        buffer. The operation is asynchronous and will be executed in the stream associated
+        with this buffer's context.
+
+        Args:
+            dst: The destination host buffer to copy data to.
+        """
+        # const char * AsyncRT_DeviceBuffer_copyTo(const DeviceBuffer* src, const DeviceBuffer *dst)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyTo",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](self._handle, dst._handle)
+        )
+
+    fn enqueue_copy_to(self, dst: DeviceBuffer[type, **_]) raises:
+        """Enqueues an asynchronous copy from this buffer to a device buffer.
+
+        This method schedules a memory copy operation from this buffer to the destination
+        buffer. The operation is asynchronous and will be executed in the stream associated
+        with this buffer's context.
+
+        Args:
+            dst: The destination device buffer to copy data to.
+        """
+        # const char * AsyncRT_DeviceBuffer_copyTo(const DeviceBuffer* src, const DeviceBuffer *dst)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyTo",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](self._handle, dst._handle)
+        )
+
+    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[type]]) raises:
+        """Enqueues an asynchronous copy from this buffer to host memory.
+
+        This method schedules a memory copy operation from this device buffer to the
+        specified host memory location. The operation is asynchronous and will be
+        executed in the stream associated with this buffer's context.
+
+        Args:
+            dst_ptr: Pointer to the destination host memory location.
+        """
+        # const char * AsyncRT_DeviceBuffer_copyToPtr(const DeviceBuffer* src, void *dst)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyToPtr",
+                _CharPtr,
+                _DeviceBufferPtr,
+                UnsafePointer[Scalar[type]],
+            ](self._handle, dst_ptr)
+        )
+
+    fn enqueue_copy_from(self, src: HostBuffer[type, **_]) raises:
+        """Enqueues an asynchronous copy to this buffer from another host buffer.
+
+        This method schedules a memory copy operation to this buffer from the source
+        buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            src: The source host buffer to copy data from.
+        """
+        # const char * AsyncRT_DeviceBuffer_copyFrom(const DeviceBuffer* dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyFrom",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](self._handle, src._handle)
+        )
+
+    fn enqueue_copy_from(self, src: DeviceBuffer[type, **_]) raises:
+        """Enqueues an asynchronous copy to this buffer from a device buffer.
+
+        This method schedules a memory copy operation to this buffer from the source
+        buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            src: The source device buffer to copy data from.
+        """
+        # const char * AsyncRT_DeviceBuffer_copyFrom(const DeviceBuffer* dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyFrom",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](self._handle, src._handle)
+        )
+
+    fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[type]]) raises:
+        """Enqueues an asynchronous copy to this buffer from host memory.
+
+        This method schedules a memory copy operation to this device buffer from the
+        specified host memory location. The operation is asynchronous and will be
+        executed in the stream associated with this buffer's context.
+
+        Args:
+            src_ptr: Pointer to the source host memory location.
+        """
+        # const char * AsyncRT_DeviceBuffer_copyFromPtr(const DeviceBuffer* dst, const void *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyFromPtr",
+                _CharPtr,
+                _DeviceBufferPtr,
+                UnsafePointer[Scalar[type]],
+            ](self._handle, src_ptr)
+        )
+
+    fn enqueue_fill(self, val: Scalar[type]) raises -> Self:
+        """Enqueues an operation to fill this buffer with a specified value.
+
+        This method schedules a memory set operation that fills the entire buffer
+        with the specified value. The operation is asynchronous and will be executed
+        in the stream associated with this buffer's context.
+
+        Args:
+            val: The value to fill the buffer with.
+
+        Returns:
+            Self reference for method chaining.
+        """
+        self.context().enqueue_memset(self, val)
+        return self
+
+    fn reassign_ownership_to(self, ctx: DeviceContext) raises:
+        """Transfers ownership of this buffer to another device context.
+
+        This method changes the device context that owns this buffer. This can be
+        useful when sharing buffers between different contexts or when migrating
+        workloads between devices.
+
+        Args:
+            ctx: The new device context to take ownership of this buffer.
+        """
+        # const char * AsyncRT_DeviceBuffer_reassignOwnershipTo(const DeviceBuffer *buf, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_reassignOwnershipTo",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceContextPtr,
+            ](self._handle, ctx._handle)
+        )
+
+    fn take_ptr(
+        owned self,
+    ) -> Self._HostPtr:
+        """Takes ownership of the device pointer from this buffer.
+
+        This method releases the device pointer from the buffer's control and
+        returns it to the caller. After this call, the buffer no longer owns
+        the pointer, and the caller is responsible for managing its lifecycle.
+
+        Returns:
+            The raw device pointer that was owned by this buffer.
+        """
+        # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
+        external_call[
+            "AsyncRT_DeviceBuffer_release_ptr", NoneType, _DeviceBufferPtr
+        ](self._handle)
+        var result = self._device_ptr
+        self._device_ptr = Self._HostPtr()
+        return result
+
+    fn unsafe_ptr(
+        self,
+    ) -> Self._HostPtr:
+        """Returns the raw device pointer without transferring ownership.
+
+        This method provides direct access to the underlying device pointer
+        for advanced use cases. The buffer retains ownership of the pointer.
+
+        Returns:
+            The raw device pointer owned by this buffer.
+        """
+        return self._device_ptr
+
+    fn context(self) raises -> DeviceContext:
+        """Returns the device context associated with this buffer.
+
+        This method retrieves the device context that owns this buffer and is
+        responsible for managing its lifecycle and operations.
+
+        Returns:
+            The device context associated with this buffer.
+        """
+        # const DeviceContext *AsyncRT_DeviceBuffer_context(const DeviceBuffer *buffer)
+        var ctx_ptr: _DeviceContextPtr = external_call[
+            "AsyncRT_DeviceBuffer_context", _DeviceContextPtr, _DeviceBufferPtr
+        ](self._handle)
+        return DeviceContext(ctx_ptr)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """Writes a string representation of this buffer to the provided writer.
+
+        This method formats the buffer's contents as a string and writes it to
+        the specified writer. For large buffers, a compact representation is used.
+
+        Parameters:
+            W: The writer type.
+
+        Args:
+            writer: The writer to output the formatted string to.
+        """
+        writer.write("HostBuffer")
+        writer.write("(")
+
+        @parameter
+        fn serialize[T: Writable](val: T):
+            writer.write(val)
+
+        var size = len(self)
+
+        if size < 1000:
+            writer.write("[")
+            _serialize_elements[serialize_fn=serialize](
+                self.unsafe_ptr(), len(self)
+            )
+            writer.write("]")
+        else:
+            _serialize_elements[serialize_fn=serialize, compact=True](
+                self.unsafe_ptr(), size
+            )
+        writer.write(")")
+
+    fn __str__(self) -> String:
+        """Returns a string representation of the `HostBuffer`.
+
+        This method creates a human-readable string representation of the buffer's contents
+        by mapping the device memory to host memory and formatting the elements.
+
+        Returns:
+            A string containing the formatted buffer contents.
+        """
+        return String.write(self)
+
+    fn __getitem__(self, idx: Int) -> Scalar[type]:
+        """Retrieves the element at the specified index from the host buffer.
+
+        This operator allows direct access to individual elements in the host buffer
+        using array indexing syntax.
+
+        Args:
+            idx: The index of the element to retrieve.
+
+        Returns:
+            The scalar value at the specified index.
+        """
+        return self._device_ptr[idx]
+
+    fn __setitem__(
+        self: HostBuffer[type, mut=True], idx: Int, val: Scalar[type]
+    ):
+        """Sets the element at the specified index in the host buffer.
+
+        This operator allows direct modification of individual elements in the host buffer
+        using array indexing syntax.
+
+        Args:
+            idx: The index of the element to modify.
+            val: The new value to store at the specified index.
+        """
+        self._device_ptr[idx] = val
 
 
 struct DeviceBuffer[
@@ -205,23 +705,10 @@ struct DeviceBuffer[
                 )
             )
         else:
-            # const char *AsyncRT_DeviceContext_createHostBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
-            _checked(
-                external_call[
-                    "AsyncRT_DeviceContext_createHostBuffer",
-                    _CharPtr,
-                    UnsafePointer[_DeviceBufferPtr],
-                    UnsafePointer[Self._DevicePtr],
-                    _DeviceContextPtr,
-                    _SizeT,
-                    _SizeT,
-                ](
-                    UnsafePointer.address_of(cpp_handle),
-                    UnsafePointer.address_of(device_ptr),
-                    ctx._handle,
-                    size,
-                    elem_size,
-                )
+            raise Error(
+                "DeviceBuffer.__init__: Unsupported _DeviceBufferMode(",
+                mode._mode,
+                ")",
             )
 
         self._device_ptr = device_ptr
@@ -410,6 +897,26 @@ struct DeviceBuffer[
             ](self._handle, dst._handle)
         )
 
+    fn enqueue_copy_to(self, dst: HostBuffer[type, **_]) raises:
+        """Enqueues an asynchronous copy from this buffer to a host buffer.
+
+        This method schedules a memory copy operation from this buffer to the destination
+        buffer. The operation is asynchronous and will be executed in the stream associated
+        with this buffer's context.
+
+        Args:
+            dst: The destination host buffer to copy data to.
+        """
+        # const char * AsyncRT_DeviceBuffer_copyTo(const DeviceBuffer* src, const DeviceBuffer *dst)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyTo",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](self._handle, dst._handle)
+        )
+
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[type]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
@@ -439,6 +946,26 @@ struct DeviceBuffer[
 
         Args:
             src: The source device buffer to copy data from.
+        """
+        # const char * AsyncRT_DeviceBuffer_copyFrom(const DeviceBuffer* dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceBuffer_copyFrom",
+                _CharPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](self._handle, src._handle)
+        )
+
+    fn enqueue_copy_from(self, src: HostBuffer[type, **_]) raises:
+        """Enqueues an asynchronous copy to this buffer from a host buffer.
+
+        This method schedules a memory copy operation to this buffer from the source
+        buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            src: The source host buffer to copy data from.
         """
         # const char * AsyncRT_DeviceBuffer_copyFrom(const DeviceBuffer* dst, const DeviceBuffer *src)
         _checked(
@@ -640,34 +1167,6 @@ struct DeviceBuffer[
             A string containing the formatted buffer contents.
         """
         return String.write(self)
-
-    fn __getitem__(self, idx: Int) -> Scalar[type]:
-        """Retrieves the element at the specified index from the device buffer.
-
-        This operator allows direct access to individual elements in the device buffer
-        using array indexing syntax. The access is performed directly on device memory.
-
-        Args:
-            idx: The index of the element to retrieve.
-
-        Returns:
-            The scalar value at the specified index.
-        """
-        return self._device_ptr[idx]
-
-    fn __setitem__(
-        self: DeviceBuffer[type, mut=True], idx: Int, val: Scalar[type]
-    ):
-        """Sets the element at the specified index in the device buffer.
-
-        This operator allows direct modification of individual elements in the device buffer
-        using array indexing syntax. The modification is performed directly on device memory.
-
-        Args:
-            idx: The index of the element to modify.
-            val: The new value to store at the specified index.
-        """
-        self._device_ptr[idx] = val
 
 
 # @doc_private does not work on structs - see MOTO-992.
@@ -964,7 +1463,6 @@ struct DeviceFunction[
         )
         self._handle = result
 
-    @always_inline
     fn _copy_to_constant_memory(self, mapping: ConstantMemoryMapping) raises:
         # const char *AsyncRT_DeviceFunction_copyToConstantMemory(const DeviceFunction *func, const char *name,
         #                                                         const void *data, size_t byte_size)
@@ -1999,7 +2497,7 @@ struct DeviceContext:
 
     fn enqueue_create_host_buffer[
         type: DType
-    ](self, size: Int) raises -> DeviceBuffer[type]:
+    ](self, size: Int) raises -> HostBuffer[type]:
         """Enqueues the creation of a host memory DeviceBuffer.
 
         This function allocates memory on the host that is accessible by the device.
@@ -2031,7 +2529,7 @@ struct DeviceContext:
             ```
             .
         """
-        return DeviceBuffer[type](self, size, _DeviceBufferMode._HOST)
+        return HostBuffer[type](self, size)
 
     @always_inline
     fn compile_function[
@@ -2841,6 +3339,102 @@ struct DeviceContext:
             )
         )
 
+    @always_inline
+    fn enqueue_copy[
+        type: DType
+    ](
+        self, dst_buf: DeviceBuffer[type, **_], src_buf: HostBuffer[type, **_]
+    ) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+        """
+        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._handle,
+            )
+        )
+
+    @always_inline
+    fn enqueue_copy[
+        type: DType
+    ](
+        self, dst_buf: HostBuffer[type, **_], src_buf: DeviceBuffer[type, **_]
+    ) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+        """
+        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._handle,
+            )
+        )
+
+    @always_inline
+    fn enqueue_copy[
+        type: DType
+    ](
+        self, dst_buf: HostBuffer[type, **_], src_buf: HostBuffer[type, **_]
+    ) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+        """
+        # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._handle,
+            )
+        )
+
     @deprecated("DeviceContext is an asynchronous API")
     @always_inline
     fn copy_sync[
@@ -2941,6 +3535,53 @@ struct DeviceContext:
     fn enqueue_memset[
         type: DType
     ](self, dst: DeviceBuffer[type, **_], val: Scalar[type]) raises:
+        """Enqueues an async memset operation, setting all of the elements in
+        the destination device buffer to the specified value.
+
+        Parameters:
+            type: Type of the data stored in the buffer.
+
+        Args:
+            dst: Destination buffer.
+            val: Value to set all elements of `dst` to.
+        """
+        alias bitwidth = bitwidthof[type]()
+        constrained[
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
+            "bitwidth of memset type must be one of [8,16,32,64]",
+        ]()
+        var value: UInt64
+
+        @parameter
+        if bitwidth == 8:
+            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
+        elif bitwidth == 16:
+            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+        elif bitwidth == 32:
+            value = UInt64(bitcast[DType.uint32, 1](val))
+        else:
+            value = bitcast[DType.uint64, 1](val)
+
+        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint64_t val, size_t val_size)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_setMemory_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UInt64,
+                _SizeT,
+            ](
+                self._handle,
+                dst._handle,
+                value,
+                sizeof[type](),
+            )
+        )
+
+    fn enqueue_memset[
+        type: DType
+    ](self, dst: HostBuffer[type, **_], val: Scalar[type]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination device buffer to the specified value.
 
@@ -3613,7 +4254,7 @@ struct _HostMappedBuffer[
         type, address_space=address_space, mut=mut, origin=origin
     ]
     var _dev_buf: Self._DevBuf
-    var _cpu_buf: DeviceBuffer[type, **_]
+    var _cpu_buf: HostBuffer[type, **_]
 
     fn __init__(
         mut self,
@@ -3628,7 +4269,7 @@ struct _HostMappedBuffer[
     fn __del__(owned self):
         pass
 
-    fn __enter__(mut self) raises -> DeviceBuffer[type]:
+    fn __enter__(mut self) raises -> HostBuffer[type]:
         self._dev_buf.enqueue_copy_to(self._cpu_buf)
         self._ctx.synchronize()
         return self._cpu_buf
