@@ -48,7 +48,7 @@ fetch_logs() {
 check_server_status() {
     echo "🔍 Checking server health..."
 
-    if echo "$EC2_LOGS" | grep -q "Pulling from docker.modular.com/modular/max-openai-api"; then
+    if echo "$EC2_LOGS" | grep -q "Pulling from docker.modular.com/modular/max-nvidia-full"; then
         echo "⏳ Docker image is still being pulled..."
         return 1
     fi

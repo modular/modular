@@ -41,7 +41,7 @@ check_server_status() {
     local logs=$1
     echo "🔍 Checking server health..."
 
-    if echo "$logs" | grep -q "Pulling from docker.modular.com/modular/max-openai-api"; then
+    if echo "$logs" | grep -q "Pulling from docker.modular.com/modular/max-nvidia-full"; then
         echo "⏳ Docker image is still being pulled..."
         return 1
     fi
