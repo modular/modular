@@ -295,25 +295,28 @@ struct Trace[
 ]:
     """An object representing a specific trace."""
 
-    var name: Variant[String, StaticString]
+    var _name_value: Variant[String, StaticString]
     var int_payload: OptionalReg[Int]
     var detail: String
     var event_id: Int
     var parent_id: Int
 
+    # This constructor is intentionally hidden because Variant is too flexible
+    # about what it allows and we want to ensure that only StaticString or
+    # String are used.
     @always_inline
     fn __init__(
         out self,
-        name: Variant[String, StaticString],
+        *,
+        owned _name_value: Variant[String, StaticString],
         detail: String = "",
         parent_id: Int = 0,
-        *,
         task_id: OptionalReg[Int] = None,
     ):
         """Creates a Mojo trace with the given name.
 
         Args:
-            name: The name that is used to identify this Mojo trace.
+            _name_value: The name that is used to identify this Mojo trace.
             detail: Details of the trace entry.
             parent_id: Parent to associate the trace with. Trace name will be
                 appended to parent name. 0 (default) indicates no parent.
@@ -325,7 +328,7 @@ struct Trace[
 
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
-            self.name = name
+            self._name_value = _name_value^
 
             @parameter
             if _gpu_is_enabled_details():
@@ -334,7 +337,7 @@ struct Trace[
                 self.detail = ""
             self.int_payload = None
         elif is_profiling_enabled[category, level]():
-            self.name = name
+            self._name_value = _name_value^
             self.detail = detail
 
             @parameter
@@ -344,11 +347,42 @@ struct Trace[
                 self.detail += "target=" + target.value()
             self.int_payload = task_id
         else:
-            self.name = StaticString("")
+            self._name_value = StaticString("")
             self.detail = ""
             self.int_payload = None
 
-    # TODO(StringLiteral): Remove this overload when StringLiteral changes.
+    @always_inline
+    fn __init__(
+        out self,
+        owned name: String,
+        detail: String = "",
+        parent_id: Int = 0,
+        *,
+        task_id: OptionalReg[Int] = None,
+    ):
+        self = Self(
+            _name_value=name^,
+            detail=detail,
+            parent_id=parent_id,
+            task_id=task_id,
+        )
+
+    @always_inline
+    fn __init__(
+        out self,
+        name: StaticString,
+        detail: String = "",
+        parent_id: Int = 0,
+        *,
+        task_id: OptionalReg[Int] = None,
+    ):
+        self = Self(
+            _name_value=name,
+            detail=detail,
+            parent_id=parent_id,
+            task_id=task_id,
+        )
+
     @always_inline
     fn __init__(
         out self,
@@ -358,7 +392,12 @@ struct Trace[
         *,
         task_id: OptionalReg[Int] = None,
     ):
-        self = Self(StaticString(name), detail, parent_id, task_id=task_id)
+        self = Self(
+            _name_value=StaticString(name),
+            detail=detail,
+            parent_id=parent_id,
+            task_id=task_id,
+        )
 
     @always_inline
     fn __enter__(mut self):
@@ -377,7 +416,7 @@ struct Trace[
                 # registration.
                 self.event_id = Int(
                     _start_gpu_range(
-                        message=self._get_name_as_str()
+                        message=self.name()
                         + (("/" + self.detail) if self.detail else ""),
                         category=Int(category),
                     )
@@ -385,7 +424,7 @@ struct Trace[
             else:
                 self.event_id = Int(
                     _start_gpu_range(
-                        message=self._get_name_as_str(), category=Int(category)
+                        message=self.name(), category=Int(category)
                     )
                 )
             return
@@ -403,12 +442,12 @@ struct Trace[
         #                      else StringSlice(self.name[String])
         var name_str_ptr: UnsafePointer[Byte]
         var name_str_len: Int
-        if self.name.isa[StaticString]():
-            name_str_ptr = self.name[StaticString].unsafe_ptr()
-            name_str_len = len(self.name[StaticString])
+        if self._name_value.isa[StaticString]():
+            name_str_ptr = self._name_value[StaticString].unsafe_ptr()
+            name_str_len = len(self._name_value[StaticString])
         else:
-            name_str_ptr = self.name[String].unsafe_ptr()
-            name_str_len = len(self.name[String])
+            name_str_ptr = self._name_value[String].unsafe_ptr()
+            name_str_len = len(self._name_value[String])
 
         if self.detail:
             # 1. If there is a detail string we must heap allocate the string
@@ -482,7 +521,7 @@ struct Trace[
 
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
-            var message = self._get_name_as_str()
+            var message = self.name()
 
             @parameter
             if _gpu_is_enabled_details():
@@ -492,10 +531,10 @@ struct Trace[
             _mark_gpu(message=message)
 
     @always_inline
-    fn _get_name_as_str(self) -> String:
-        return String(self.name[StaticString]) if self.name.isa[
+    fn name(self) -> String:
+        return String(self._name_value[StaticString]) if self._name_value.isa[
             StaticString
-        ]() else self.name[String]
+        ]() else self._name_value[String]
 
     # WAR: passing detail_fn to __init__ causes internal compiler crash
     @staticmethod
