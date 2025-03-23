@@ -3,9 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME(KERN-1690): Enable debug-assert and fix error
 # REQUIRES: H100-GPU
-# RUN: %mojo-no-debug-no-assert %s
+# RUN: %mojo-no-debug %s
 
 from gpu import barrier, WARP_SIZE
 from gpu.host import DeviceContext, FuncAttribute
@@ -148,7 +147,7 @@ def test_warp_specialize_gemm_with_multicasting[
     # fmt: on
 
     debug_assert(
-        ((M // BM) % (CLUSTER_M)) == 0,
+        (ceildiv(M, BM) % (CLUSTER_M)) == 0,
         String(
             "Number of blocks on M axis should be multiple of cluster dim. M",
             "(M // BM=",
@@ -159,7 +158,7 @@ def test_warp_specialize_gemm_with_multicasting[
     )
 
     debug_assert(
-        ((N // BN) % (CLUSTER_N)) == 0,
+        (ceildiv(N, BN) % (CLUSTER_N)) == 0,
         String(
             "Number of blocks on M axis should be multiple of cluster dim. N",
             "N // BN=(",
