@@ -9,15 +9,10 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from collections.optional import Optional, OptionalReg
-from math import ceildiv, exp2
-from sys import alignof, simdwidthof
-
-import linalg.vendor_blas
 from algorithm.functional import elementwise
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList, _make_tuple
-from builtin._location import __source_location
+from buffer.dimlist import Dim, DimList
+from collections.optional import Optional, OptionalReg
 from gpu import barrier, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
@@ -25,25 +20,24 @@ from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
-    assert_with_measure,
-    fill,
     arange,
+    fill,
     random,
     zero,
 )
-from internal_utils._measure import cosine
 from internal_utils._utils import ValOrDim, dynamic, static
+from linalg import vendor_blas
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels
+from math import ceildiv
 from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
-from testing import assert_equal
-
+from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof
+from testing import assert_almost_equal
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import FPUtils
-from sys import has_nvidia_gpu_accelerator
 
 alias init_fn_type = fn (buff: NDBuffer[mut=True, *_]) capturing -> None
 
@@ -91,7 +85,7 @@ fn test[
     m: ValOrDim,
     n: ValOrDim,
     k: ValOrDim,
-    threshold: OptionalReg[Float64] = None,
+    rtol: Float64 = 1e-3 if type == DType.float32 else 1e-2,
 ) raises:
     constrained[
         Int(n.dim) > 0 and Int(k.dim) > 0,
@@ -251,9 +245,14 @@ fn test[
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
     ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
     ctx.synchronize()
-    assert_with_measure[cosine](
-        c_host.tensor, c_host_ref.tensor, threshold=threshold
-    )
+
+    c_host_tensor = c_host.tensor
+    c_host_ref_tensor = c_host_ref.tensor
+    for m in range(M):
+        for n in range(N):
+            var expect = c_host_ref_tensor[m, n]
+            var actual = c_host_tensor[m, n]
+            assert_almost_equal(actual, expect, rtol=rtol)
 
     _ = c_device
     _ = c_device_ref
@@ -267,13 +266,12 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
+        print("===> tfloat32-float32 mma")
         test[
             DType.float32,
             init_a=arange,
             init_b=arange,
         ](ctx, dynamic(512), static[12288](), static[4096]())
-
-        print("===> tfloat32-float32 mma")
         test[DType.float32, init_a=arange](
             ctx, dynamic(256), static[384](), static[128]()
         )
@@ -364,11 +362,14 @@ def main():
         ](ctx, dynamic(777), static[12288](), static[2048]())
 
         print("===> bfloat16-float32 mma with epilogue")
+        # Our default split-k reduction precision is output precision. For
+        # bfloat16, we need a larger tolerance since the referece may reduce
+        # in float32.
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(14), static[3072](), static[12288]())
+        ](ctx, dynamic(14), static[3072](), static[12288](), rtol=2e-2)
         test[
             DType.bfloat16,
             transpose_b=True,
@@ -383,7 +384,7 @@ def main():
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(400), static[3072](), static[32768]())
+        ](ctx, dynamic(400), static[3072](), static[32768](), rtol=2e-2)
         test[
             DType.bfloat16,
             transpose_b=True,
