@@ -68,6 +68,8 @@ alias _IntPtr = UnsafePointer[Int32]
 alias _VoidPtr = UnsafePointer[NoneType]
 alias _SizeT = UInt
 
+alias _DumpPath = Variant[Bool, Path, StringLiteral, fn () capturing -> Path]
+
 # Define helper methods to call AsyncRT bindings.
 
 
@@ -1483,9 +1485,7 @@ struct DeviceFunction[
         )
 
     @staticmethod
-    fn _dump_q[
-        name: String, val: Variant[Bool, Path, fn () capturing -> Path]
-    ]() -> (Bool, Variant[Bool, Path, fn () capturing -> Path]):
+    fn _dump_q[name: String, val: _DumpPath]() -> (Bool, _DumpPath):
         alias name_upper = get_string_literal[name.upper()]()
         alias env_var = "DUMP_GPU_" + name_upper
 
@@ -1496,15 +1496,11 @@ struct DeviceFunction[
             @parameter
             if _is_bool_like[env_val]():
                 alias env_bool_val = env_get_bool[env_var]()
-                return env_bool_val, Variant[
-                    Bool, Path, fn () capturing -> Path
-                ](env_bool_val)
+                return env_bool_val, _DumpPath(env_bool_val)
 
             @parameter
             if _is_path_like(env_val):
-                return True, Variant[Bool, Path, fn () capturing -> Path](
-                    Path(env_val)
-                )
+                return True, _DumpPath(Path(env_val))
 
             constrained[
                 False,
@@ -1529,6 +1525,10 @@ struct DeviceFunction[
         if val.isa[Path]():
             return val.unsafe_get[Path]() != Path(""), val
 
+        @parameter
+        if val.isa[StringLiteral]():
+            return val.unsafe_get[StringLiteral]() != "", val
+
         return val.isa[fn () capturing -> Path](), val
 
     @staticmethod
@@ -1548,11 +1548,18 @@ struct DeviceFunction[
         """
         return String(path).replace("%", self._func_impl.module_name)
 
+    fn _expand_path(self, path: StringLiteral) -> Path:
+        """If the path contains a `%` character, it is replaced with the module
+        name. This allows one to dump multiple kernels which are disambiguated
+        by the module name.
+        """
+        return String(path).replace("%", self._func_impl.module_name)
+
     @no_inline
     fn dump_rep[
-        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
     ](self) raises:
         """Dumps various representations of the compiled device function.
 
@@ -1608,6 +1615,10 @@ struct DeviceFunction[
                 self._expand_path(dump_asm_val.unsafe_get[Path]()).write_text(
                     asm
                 )
+            elif dump_asm_val.isa[StringLiteral]():
+                self._expand_path(
+                    dump_asm_val.unsafe_get[StringLiteral]()
+                ).write_text(asm)
             else:
                 print(asm)
 
@@ -1630,6 +1641,10 @@ struct DeviceFunction[
                 self._expand_path(dump_sass_val.unsafe_get[Path]()).write_text(
                     sass
                 )
+            elif dump_sass_val.isa[StringLiteral]():
+                self._expand_path(
+                    dump_sass_val.unsafe_get[StringLiteral]()
+                ).write_text(sass)
             else:
                 print(sass)
 
@@ -1655,6 +1670,10 @@ struct DeviceFunction[
                 self._expand_path(dump_llvm_val.unsafe_get[Path]()).write_text(
                     llvm
                 )
+            elif dump_llvm_val.isa[StringLiteral]():
+                self._expand_path(
+                    dump_llvm_val.unsafe_get[StringLiteral]()
+                ).write_text(llvm)
             else:
                 print(llvm)
 
@@ -2536,8 +2555,8 @@ struct DeviceContext:
         func_type: AnyTrivialRegType, //,
         func: func_type,
         *,
-        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
     ](
         self,
         *,
@@ -2579,9 +2598,9 @@ struct DeviceContext:
         func_type: AnyTrivialRegType, //,
         func: func_type,
         *,
-        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
         _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
     ](
@@ -2704,9 +2723,9 @@ struct DeviceContext:
         func_type: AnyTrivialRegType, //,
         func: func_type,
         *Ts: AnyType,
-        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
         self,
