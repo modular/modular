@@ -2231,11 +2231,20 @@ struct LayoutTensor[
             i += 1
         return zipped_divide(layout, tiler)
 
+    # FIXME: Workaround while we wait for parametrized aliases. What we're trying to do is:
+    # alias tile_type[*tile_sizes: Int] = LayoutTensor[
+    #     dtype,
+    #     Self._compute_tile_layout[*tile_sizes]()[0],
+    #     origin,
+    #     address_space=address_space,
+    #     element_layout=element_layout,
+    # ]
+
     @always_inline
-    fn tile[
+    @staticmethod
+    fn tile_type[
         *tile_sizes: Int,
     ](
-        self,
         *tile_coords: Int,
         out result: LayoutTensor[
             dtype,
@@ -2245,6 +2254,28 @@ struct LayoutTensor[
             element_layout=element_layout,
             masked = masked or _tile_is_masked[layout, *tile_sizes](),
         ],
+    ):
+        """Returns a the type of a tile view of the tensor with specified dimensions and coordinates.
+
+        Parameters:
+            tile_sizes: The dimensions of each tile along each axis of the tensor.
+
+        Args:
+            tile_coords: The coordinates of the specific tile to extract.
+
+        Returns:
+            The type of a view into the original tensor representing the specified tile.
+        """
+        while True:
+            pass
+
+    @always_inline
+    fn tile[
+        *tile_sizes: Int,
+    ](
+        self,
+        *tile_coords: Int,
+        out result: __type_of(self.tile_type[*tile_sizes]()),
     ):
         """Extract a tile (sub-tensor) from this tensor with specified dimensions and position.
 
