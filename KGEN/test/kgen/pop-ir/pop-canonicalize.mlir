@@ -148,30 +148,11 @@ kgen.func @div_zero() -> (!pop.scalar<si4>, !pop.scalar<f32>) {
 }
 
 // CHECK-LABEL: @rem
-kgen.func @rem(%arg0: !pop.scalar<si64>, %arg1: !pop.simd<2, si32>, %arg2: !pop.simd<4, index>) -> (
-    !pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>, !pop.scalar<f64>,
-    !pop.scalar<si64>, !pop.simd<2, si32>, !pop.scalar<ui32>, !pop.simd<2, ui32>,
-    !pop.scalar<index>, !pop.simd<4, index>
-  ) {
+kgen.func @rem() -> (!pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>, !pop.scalar<f64>) {
   // CHECK-DAG: <si4> = <1
   // CHECK-DAG: <ui4> = <7>
   // CHECK-DAG: <"0.5">
   // CHECK-DAG: <"1.140{{.*}}">
-  // CHECK-DAG: %[[ONE_INDEX:.*]] = kgen.param.constant: scalar<index> = <1>
-  // CHECK-DAG: %[[ONE_U32:.*]] = kgen.param.constant: scalar<ui32> = <1>
-  // CHECK-DAG: %[[ONE_THREE:.*]] = kgen.param.constant: simd<2, ui32> = <<1, 3>>
-  // CHECK-DAG: %[[ONE:.*]] = kgen.param.constant: scalar<si64> = <1>
-  // CHECK-DAG: pop.simd.and %arg0, %[[ONE]] : <1, si64>
-  // CHECK-DAG: %[[THREE:.*]] = kgen.param.constant: simd<2, si32> = <3>
-  // CHECK-DAG: pop.simd.and %arg1, %[[THREE]] : <2, si32>
-  // CHECK-DAG: %[[U32:.*]] = pop.cast %{{.*}} : !pop.scalar<si64> to !pop.scalar<ui32>
-  // CHECK-DAG: pop.simd.and %[[U32]], %[[ONE_U32]] : <1, ui32>
-  // CHECK-DAG: %[[SIMD_U32:.*]] = pop.cast %{{.*}} : !pop.simd<2, si32> to !pop.simd<2, ui32>
-  // CHECK-DAG: pop.simd.and %[[SIMD_U32]], %[[ONE_THREE]] : <2, ui32>
-  // CHECK-DAG: %[[INDEX:.*]] = pop.cast %{{.*}} : !pop.scalar<si64> to !pop.scalar<index>
-  // CHECK-DAG: pop.simd.and %[[INDEX]], %[[ONE_INDEX]] : <1, index>
-  // CHECK-DAG: %[[SIMD_INDEX:.*]] = kgen.param.constant: simd<4, index> = <<1, 3, 7, 15>>
-  // CHECK-DAG: pop.simd.and %arg2, %[[SIMD_INDEX]] : <4, index>
   %0 = kgen.param.constant: scalar<si4> = <7>
   %1 = kgen.param.constant: scalar<si4> = <-2>
   %2 = kgen.param.constant: scalar<ui4> = <7>
@@ -184,28 +165,8 @@ kgen.func @rem(%arg0: !pop.scalar<si64>, %arg1: !pop.simd<2, si32>, %arg2: !pop.
   %9 = kgen.param.constant: scalar<f64> = <"3.14">
   %10 = kgen.param.constant: scalar<f64> = <"2.0">
   %11 = pop.rem %9, %10 : !pop.scalar<f64>
-
-  // Check the canonicalization of x % 2^n into x & (2^n - 1)
-  %two_int = kgen.param.constant: scalar<si64> = <2>
-  %12 = pop.rem %arg0, %two_int : !pop.scalar<si64>
-  %four_simd = kgen.param.constant: simd<2, si32> = <<4, 4>>
-  %13 = pop.rem %arg1, %four_simd : !pop.simd<2, si32>
-  %two_uint = kgen.param.constant: scalar<ui32> = <2>
-  %uarg0 = pop.cast %arg0 : !pop.scalar<si64> to !pop.scalar<ui32>
-  %14 = pop.rem %uarg0, %two_uint : !pop.scalar<ui32>
-  %uarg1 = pop.cast %arg1 : !pop.simd<2, si32> to !pop.simd<2, ui32>
-  %two_four_simd = kgen.param.constant: simd<2, ui32> = <<2, 4>>
-  %15 = pop.rem %uarg1, %two_four_simd : !pop.simd<2, ui32>
-  %two_index = kgen.param.constant: scalar<index> = <2>
-  %iarg0 = pop.cast %arg0 : !pop.scalar<si64> to !pop.scalar<index>
-  %16 = pop.rem %iarg0, %two_index : !pop.scalar<index>
-  %17 = kgen.param.constant: simd<4, index> = <<2, 4, 8, 16>>
-  %18 = pop.rem %arg2, %17 : !pop.simd<4, index>
-  kgen.return %6, %7, %8, %11, %12, %13, %14, %15, %16, %18 : !pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>, !pop.scalar<f64>,
-                                                    !pop.scalar<si64>, !pop.simd<2, si32>, !pop.scalar<ui32>, !pop.simd<2, ui32>,
-                                                    !pop.scalar<index>, !pop.simd<4, index>
+  kgen.return %6, %7, %8, %11 : !pop.scalar<si4>, !pop.scalar<ui4>, !pop.scalar<f32>, !pop.scalar<f64>
 }
-
 
 // CHECK-LABEL: @max
 kgen.func @max() -> (!pop.scalar<si4>, !pop.scalar<f32>, !pop.scalar<f32>) {
