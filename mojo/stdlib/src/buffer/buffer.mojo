@@ -271,7 +271,7 @@ struct NDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[
             Scalar[type],
             address_space=address_space,
@@ -300,7 +300,7 @@ struct NDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        mut self,
+        out self,
         span: Span[
             Scalar[type],
             address_space=address_space,
@@ -325,7 +325,7 @@ struct NDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        mut self,
+        out self,
         # For functions
         other: NDBuffer[type, rank, *_, **_],
     ):
@@ -363,7 +363,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[
             __mlir_type[`!pop.scalar<`, type.value, `>`],
             address_space=address_space,
@@ -395,7 +395,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[
             Scalar[type], address_space=address_space, mut=mut, origin=origin
         ],
@@ -424,7 +424,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         span: Span[Scalar[type], address_space=address_space, origin=origin],
         dynamic_shape: IndexList[rank, **_],
     ):
@@ -442,7 +442,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[
             Scalar[type], address_space=address_space, mut=mut, origin=origin
         ],
@@ -462,7 +462,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         span: Span[Scalar[type], address_space=address_space, origin=origin],
         dynamic_shape: DimList,
     ):
@@ -480,7 +480,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[
             Scalar[type], address_space=address_space, mut=mut, origin=origin
         ],
@@ -518,7 +518,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         span: Span[Scalar[type], address_space=address_space, origin=origin],
         dynamic_shape: IndexList[rank, **_],
         dynamic_stride: IndexList[rank, **_],
@@ -538,7 +538,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[
             Scalar[type], address_space=address_space, mut=mut, origin=origin
         ],
@@ -564,7 +564,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         span: Span[Scalar[type], address_space=address_space, origin=origin],
         dynamic_shape: DimList,
         dynamic_stride: IndexList[rank, **_],

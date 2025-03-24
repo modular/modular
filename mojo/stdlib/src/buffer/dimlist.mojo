@@ -40,7 +40,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[I: Intable](mut self, value: I):
+    fn __init__[I: Intable](out self, value: I):
         """Creates a statically-known dimension.
 
         Parameters:
@@ -53,7 +53,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[I: Indexer](mut self, value: I):
+    fn __init__[I: Indexer](out self, value: I):
         """Creates a statically-known dimension.
 
         Parameters:
@@ -313,7 +313,7 @@ struct DimList(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[Intable: Intable](mut self, value: Intable):
+    fn __init__[Intable: Intable](out self, value: Intable):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -326,7 +326,7 @@ struct DimList(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[I: Indexer](mut self, values: (I,)):
+    fn __init__[I: Indexer](out self, values: (I,)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -339,7 +339,7 @@ struct DimList(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[I0: Indexer, I1: Indexer](mut self, values: (I0, I1)):
+    fn __init__[I0: Indexer, I1: Indexer](out self, values: (I0, I1)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -355,7 +355,7 @@ struct DimList(
     @implicit
     fn __init__[
         I0: Indexer, I1: Indexer, I2: Indexer
-    ](mut self, values: (I0, I1, I2)):
+    ](out self, values: (I0, I1, I2)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -371,7 +371,7 @@ struct DimList(
         )
 
     @always_inline("nodebug")
-    fn __init__[I0: Indexer, I1: Indexer](mut self, val0: I0, val1: I1):
+    fn __init__[I0: Indexer, I1: Indexer](out self, val0: I0, val1: I1):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -387,7 +387,7 @@ struct DimList(
     @always_inline("nodebug")
     fn __init__[
         I0: Indexer, I1: Indexer, I2: Indexer
-    ](mut self, val0: I0, val1: I1, val2: I2):
+    ](out self, val0: I0, val1: I1, val2: I2):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -405,7 +405,7 @@ struct DimList(
     @always_inline("nodebug")
     fn __init__[
         I0: Indexer, I1: Indexer, I2: Indexer, I3: Indexer
-    ](mut self, val0: I0, val1: I1, val2: I2, val3: I3):
+    ](out self, val0: I0, val1: I1, val2: I2, val3: I3):
         """Creates a statically-known dimension.
 
         Parameters:
