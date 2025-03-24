@@ -22,7 +22,6 @@ from sys.intrinsics import _type_is_eq
 from memory import UnsafePointer, memcmp, memcpy
 
 from utils.index import IndexList
-from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 
 # These representation must be kept in sync with the TensorShape file in
@@ -722,15 +721,13 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         var tuple = IndexList[rank]()
 
         @parameter
-        fn _fill[i: Int]():
+        for i in range(rank):
             alias T = Ts[i]
 
             @parameter
             if not _type_is_eq[T, Int]() and not _type_is_eq[T, UInt]():
                 constrained[False, "shape should consist of integer values"]()
             tuple[i] = rebind[Int](shapes[i])
-
-        unroll[_fill, rank]()
 
         self = Self(tuple)
 

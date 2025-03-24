@@ -20,7 +20,6 @@ from memory import UnsafePointer, bitcast, memcmp, memcpy, memset_zero
 from utils import IndexList
 from utils._serialize import _serialize
 from utils.index import Index
-from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 
 from .tensor_shape import TensorShape
