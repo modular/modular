@@ -17,6 +17,7 @@ from max.graph import (
     BufferType,
     DeviceRef,
     Dim,
+    Graph,
     StaticDim,
     SymbolicDim,
     TensorType,
@@ -311,6 +312,13 @@ def test_GEX_1918(mlir_context) -> None:
         _ = Dim(2**63) * 2
     with pytest.raises(ValueError):
         _ = Dim(2**63 - 1) + 1
+
+
+def test_MAXPLAT_148(mlir_context):
+    with pytest.raises(TypeError):
+        graph = Graph(
+            "MAXPLAT-148", input_types=[TensorType(DType.float32, [-1, 2])]
+        )
 
 
 def test_device_type(mlir_context) -> None:

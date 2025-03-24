@@ -668,6 +668,10 @@ class TensorType(Type):
         Returns:
             An ``mlir.Type`` in the specified Context.
         """
+        # TODO(MAXPLAT-149): This should fall out of the TensorType constructor
+        if any(isinstance(dim, StaticDim) and dim < 0 for dim in self.shape):
+            raise TypeError("Can't convert negative dim to tensor type.")
+
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
         if self.device:
