@@ -826,9 +826,13 @@ fn matmul[
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
     with Trace[TraceLevel.OP, target=target](
-        "matmul("
-        + _trace_description
-        + String(")") if _trace_description else String("matmul"),
+        # Create a string literal so that the event label works with the
+        # AsyncRT profiler, whose event labels must be `StaticString`s.
+        get_string_literal[
+            "matmul("
+            + _trace_description
+            + String(")") if _trace_description else String("matmul")
+        ](),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 
