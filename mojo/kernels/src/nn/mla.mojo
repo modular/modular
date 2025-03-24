@@ -95,7 +95,7 @@ fn flare_mla_decoding[
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    output: NDBuffer[_, rank, *_],
+    output: NDBuffer[mut=True, _, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],
     k: cache_t,
     mask: NDBuffer,
@@ -105,7 +105,9 @@ fn flare_mla_decoding[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]] = None,
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
@@ -197,7 +199,7 @@ fn flare_mla_decoding[
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
     decoding_warp_split_k: Bool = False,
 ](
-    output: NDBuffer[_, rank, *_],
+    output: NDBuffer[mut=True, _, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     mask: NDBuffer,
@@ -283,7 +285,9 @@ fn flare_mla_decoding_dispatch[
     max_cache_valid_length: Int,
     scale: Float32,
     ctx: DeviceContext,
-    kv_input_row_offsets: OptionalReg[NDBuffer[DType.uint32, 1]] = None,
+    kv_input_row_offsets: OptionalReg[
+        NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+    ] = None,
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     alias num_heads = config.num_heads
