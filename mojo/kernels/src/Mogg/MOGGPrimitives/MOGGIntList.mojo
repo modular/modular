@@ -95,7 +95,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.stack_alloc_data = IndexList[Self._safe_len]()
 
     @always_inline
-    fn __init__[rank: Int](mut self, shape: IndexList[rank]):
+    fn __init__[rank: Int](out self, shape: IndexList[rank]):
         constrained[rank == len(static_values)]()
         self.length = rank
         self.data = UnsafePointer[Int]()
