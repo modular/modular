@@ -421,7 +421,7 @@ struct Slice:
 
     fn __init__[
         T0: AnyTrivialRegType, T1: AnyTrivialRegType, T2: AnyTrivialRegType
-    ](mut self, start: T0, end: T1, step: T2):
+    ](out self, start: T0, end: T1, step: T2):
         pass
 
 
@@ -545,21 +545,21 @@ struct VariadicListMem[
 
     @implicit
     fn __init__(
-        mut self,
+        out self,
         value: Self._mlir_type,
     ):
         pass
 
     @implicit
     fn __init__(
-        mut self,
+        out self,
         value: __mlir_type[`!kgen.variadic<`, Self._mlir_ref_type, `, mut>`],
     ):
         pass
 
     @implicit
     fn __init__(
-        mut self,
+        out self,
         value: __mlir_type[
             `!kgen.variadic<`, Self._mlir_ref_type, `, owned_in_mem>`
         ],

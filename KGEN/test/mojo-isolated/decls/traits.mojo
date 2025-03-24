@@ -740,7 +740,7 @@ struct ABCOptionalParamInt[dim_parametric: ABCDim]:
 
 
 struct ABCDim:
-    fn __init__[type: SomeTrait](mut self, value: type):
+    fn __init__[type: SomeTrait](out self, value: type):
         pass
 
 

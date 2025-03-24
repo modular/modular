@@ -948,7 +948,7 @@ struct ShadowsOuterName:
 struct LegacyInOutInit:
     # This should be accepted for compatibility, but "out" is the preferred
     # spelling.
-    fn __init__(mut self):
+    fn __init__(out self):
         pass
 
 

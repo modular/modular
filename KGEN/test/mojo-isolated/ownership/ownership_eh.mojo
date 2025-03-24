@@ -31,7 +31,7 @@ struct RegExample:
         return
 
     fn __copyinit__(
-        mut self, existing: Self
+        out self, existing: Self
     ):  # CHECK: lit.fn @"__copyinit__
         return
 
