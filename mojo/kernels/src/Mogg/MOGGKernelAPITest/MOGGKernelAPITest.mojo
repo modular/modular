@@ -988,3 +988,54 @@ struct TensorOpaqueTensorKernel:
         input: InputTensor,
     ) raises:
         pass
+
+
+@compiler.register("test_same_rank_dtype")
+struct TestSameRankDtype:
+    @staticmethod
+    fn execute[
+        type: DType, rank: Int
+    ](
+        out: OutputTensor[type=type, rank=rank],
+        input: InputTensor[type=type, rank=rank],
+    ):
+        out[0] = input[0]
+
+
+@compiler.register("test_fix_rank")
+struct TestFixRank:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](
+        out: OutputTensor[type=type, rank=2],
+        input: InputTensor[type=type, rank=2],
+    ):
+        out[0] = input[0]
+
+
+@compiler.register("test_simd_input_size_1")
+struct TestSIMDInputSize1:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](out: OutputTensor[type=type, rank=2], input: SIMD[type=type, size=1],):
+        out[0] = input[0]
+
+
+@compiler.register("test_simd_input")
+struct TestSIMDInput:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](out: OutputTensor[type=type, rank=2], input: SIMD[type=type],):
+        out[0] = input[0]
+
+
+@compiler.register("test_simd_input_size_2")
+struct TestSIMDInputSize2:
+    @staticmethod
+    fn execute[
+        type: DType
+    ](out: OutputTensor[type=type, rank=2], input: SIMD[type=type, size=2],):
+        out[0] = input[0]
