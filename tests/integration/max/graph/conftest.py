@@ -44,3 +44,10 @@ def counter_mojopkg() -> Path:
     path = os.getenv("MODULAR_COUNTER_OPS_PATH")
     assert path is not None, "Test couldn't find `MODULAR_COUNTER_OPS_PATH` env"
     return Path(path)
+
+
+@pytest.fixture
+def custom_ops_mojopkg() -> Path:
+    path = os.getenv("CUSTOM_OPS_PATH")
+    assert path is not None, "Test couldn't find `CUSTOM_OPS_PATH` env"
+    return Path(path)
