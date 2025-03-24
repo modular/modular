@@ -67,6 +67,21 @@ fn _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[c.type, c.size]
         ](a, b, c, zero, zero, zero)
         d = rebind[__type_of(d)](r)
+    elif (
+        d.type is DType.float32
+        and d.size == 16
+        and a.type is DType.float16
+        and a.size == 4
+        and b.type is DType.float16
+        and b.size == 4
+        and c.type is DType.float32
+        and c.size == 16
+    ):
+        alias zero: UInt32 = 0
+        var r = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.32x32x8f16", SIMD[c.type, c.size]
+        ](a, b, c, zero, zero, zero)
+        d = rebind[__type_of(d)](r)
 
     # ===------------------------------------------------------------------===#
     # F32 = BF16 * BF16 + F32
@@ -93,6 +108,29 @@ fn _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             zero,
         )
         d = rebind[__type_of(d)](r)
+    elif (
+        d.type is DType.float32
+        and d.size == 16
+        and a.type is DType.bfloat16
+        and a.size == 4
+        and b.type is DType.bfloat16
+        and b.size == 4
+        and c.type is DType.float32
+        and c.size == 16
+    ):
+        alias zero: UInt32 = 0
+        var r = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.32x32x8bf16.1k", SIMD[c.type, c.size]
+        ](
+            bitcast[DType.int16, 4](a),
+            bitcast[DType.int16, 4](b),
+            c,
+            zero,
+            zero,
+            zero,
+        )
+        d = rebind[__type_of(d)](r)
+
     # ===------------------------------------------------------------------===#
     # F32 = FP32 * FP32 + FP32
     # ===------------------------------------------------------------------===#
