@@ -94,7 +94,7 @@ struct TileScheduler[
     var log_num_waves_n: FastDiv[DType.uint32]
 
     @always_inline
-    fn __init__(mut self, prob_shape: IndexList[3]):
+    fn __init__(out self, prob_shape: IndexList[3]):
         @parameter
         if schedule == MatmulSchedule.TILE2D:
             constrained[
