@@ -121,7 +121,7 @@ struct MatmulConfig[
     alias split_k_reduction_type = c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
 
     fn __init__(
-        mut self,
+        out self,
         block_tile_shape: IndexList[3] = Index(128, 128, 32),
         warp_tile_shape: IndexList[3] = Index(64, 64, 32),
         cluster_shape: IndexList[3] = Index(1, 1, 1),

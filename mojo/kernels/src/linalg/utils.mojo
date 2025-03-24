@@ -49,7 +49,7 @@ struct KernelConfig:
     var packed_shape: DimList
 
     fn __init__(
-        mut self,
+        out self,
         *,
         kernel_rows: Int,
         kernel_cols: Int,

@@ -55,7 +55,7 @@ struct _Accumulator[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         other_storage: NDBuffer[type, 1, _, num_rows * num_cols * simd_width],
     ):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
