@@ -146,7 +146,7 @@ struct ThroughputMeasure(CollectionElement):
     """Measured count of throughput metric."""
 
     fn __init__(
-        mut self,
+        out self,
         name: String,
         value: Int,
         reference: List[BenchMetric] = BenchMetric.DEFAULTS,
@@ -338,8 +338,7 @@ struct BenchConfig(CollectionElement):
     # TODO: to add median and stddev to verbose-timing
 
     fn __init__(
-        mut self,
-        /,
+        out self,
         out_file: Optional[Path] = None,
         min_runtime_secs: Float64 = 1.0,
         max_runtime_secs: Float64 = 2.0,
@@ -467,7 +466,7 @@ struct BenchmarkInfo(CollectionElement):
     """Whether to print verbose timing results."""
 
     fn __init__(
-        mut self,
+        out self,
         name: String,
         result: Report,
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
@@ -601,7 +600,7 @@ struct Bench:
     """A list containing the benchmark info."""
 
     fn __init__(
-        mut self,
+        out self,
         config: Optional[BenchConfig] = None,
         mode: Mode = Mode.Benchmark,
     ) raises:

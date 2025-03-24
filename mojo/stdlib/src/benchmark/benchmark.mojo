@@ -383,7 +383,7 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
     var min_warmuptime_secs: Float64
 
     fn __init__(
-        mut self,
+        out self,
         max_batch_size: Int = 0,
         max_iters: Int = 1_000_000_000,
         min_runtime_secs: Float64 = 2,
