@@ -218,7 +218,6 @@ from tensor_internal.managed_tensor_slice import get_kernel_simd_width
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
-from utils.loop import unroll
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _create_array, _set_array_elem
 
@@ -698,9 +697,9 @@ fn insert_index[
 ](indices: IndexList[rank]) -> IndexList[rank + 1]:
     var out = IndexList[rank + 1]()
 
-    @always_inline
     @parameter
-    fn add_dim[i: Int]():
+    for i in range(rank + 1):
+
         @parameter
         if i < axis:
             out[i] = indices[i]
@@ -709,7 +708,6 @@ fn insert_index[
         else:
             out[i] = value
 
-    unroll[add_dim, rank + 1]()
     return out
 
 
