@@ -54,7 +54,7 @@ class Llama3ConfigBase(MAXModelConfigBase):
     model_quantization_encoding: Optional[QuantizationEncoding]
     quantization_config: Optional[QuantizationConfig]
     kv_params: KVCacheParams
-    all_logits: bool
+    return_n_logits: int
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
     rms_norm_eps: Optional[float]
     tie_word_embeddings: bool
@@ -240,7 +240,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             # on the underlying model repo id.
             model_quantization_encoding=pipeline_config.model_config.graph_quantization_encoding,
             quantization_config=pipeline_config.model_config._quant_config,
-            all_logits=pipeline_config.enable_echo,
+            return_n_logits=-1 if pipeline_config.enable_echo else 1,
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),

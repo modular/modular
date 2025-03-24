@@ -180,7 +180,7 @@ def _transformer(
             kv_collection_constructor=FetchContinuousBatchingKVCacheCollection(
                 kv_params
             ),
-            all_logits=pipeline_config.enable_echo,
+            return_n_logits=-1 if pipeline_config.enable_echo else 1,
         )
 
 

@@ -95,7 +95,7 @@ class DistributedTransformer(Module):
             | FetchPagedKVCacheCollectionFA3Fallback
         ),
         devices: list[DeviceRef],
-        all_logits: bool = False,
+        return_n_logits: int = 1,
     ):
         super().__init__()
         self.dim = dim
@@ -106,8 +106,11 @@ class DistributedTransformer(Module):
         self.embed_tokens = embedding
         self.kv_params = kv_params
         self.kv_collection_constructor = kv_collection_constructor
-        self.all_logits = all_logits
+        self.return_n_logits = return_n_logits
         self.devices = devices
+
+        if not (return_n_logits == -1 or return_n_logits == 1):
+            raise ValueError("return_n_logits must be either -1 or 1")
 
     def __call__(
         self,
@@ -140,7 +143,7 @@ class DistributedTransformer(Module):
                 **kwargs,
             )
 
-        if self.all_logits:
+        if self.return_n_logits == -1:
             logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
             last_token_indices = input_row_offsets[1:] - 1
             last_token_logits = ops.gather(logits, last_token_indices, axis=0)

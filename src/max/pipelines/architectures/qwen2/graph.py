@@ -310,5 +310,5 @@ def transformer(
             embedding=embedding_layer,
             kv_params=kv_params,
             kv_collection_constructor=kv_collection,
-            all_logits=pipeline_config.enable_echo,
+            return_n_logits=-1 if pipeline_config.enable_echo else 1,
         )
