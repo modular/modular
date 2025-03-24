@@ -15,7 +15,6 @@ from memory import UnsafePointer, stack_allocation
 from memory.unsafe import bitcast
 
 from utils.index import Index, IndexList
-from utils.loop import unroll
 
 from .accumulate import _Accumulator
 from .matmul import InnerMatmulKernel

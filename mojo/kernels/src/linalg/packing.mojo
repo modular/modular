@@ -14,7 +14,6 @@ from memory import UnsafePointer, memcpy, stack_allocation
 from register import register_internal
 
 from utils.index import Index, IndexList
-from utils.loop import unroll
 
 from .apple_accelerate import use_apple_accelerate_lib
 from .gemv import gemv

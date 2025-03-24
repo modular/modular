@@ -16,7 +16,6 @@ from memory import UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
 
 from utils.index import IndexList, StaticTuple
-from utils.loop import unroll
 
 
 fn _transpose_inplace_4x4[

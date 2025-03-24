@@ -13,7 +13,6 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer
 
 from utils.index import Index, IndexList
-from utils.loop import unroll
 
 from .accumulate import _Accumulator
 from .matmul import InnerMatmulKernel

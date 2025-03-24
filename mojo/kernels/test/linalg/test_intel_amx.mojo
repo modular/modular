@@ -32,8 +32,6 @@
 # from linalg.transpose import transpose, transpose_inplace
 # from memory import UnsafePointer, memcmp, memset_zero
 
-# from utils.loop import unroll
-
 # alias void = DType.invalid.value
 # alias int32_pop = __mlir_type.`!pop.scalar<si32>`
 # alias int8_pop = __mlir_type.`!pop.scalar<si8>`
