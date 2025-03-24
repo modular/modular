@@ -7,14 +7,19 @@
 import pytest
 import torch
 from max._core.engine import PrintStyle
+from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
-from max.pipelines.architectures.deepseekV2.layers.moe import MoE
+from max.graph import DeviceRef, Graph, TensorType
+from max.pipelines.architectures.deepseekV2.layers.mix_of_experts import (
+    MoE,
+)
 from torch_reference.configuration_deepseek import (
     DeepseekV2Config,
 )
 from torch_reference.modeling_deepseek import DeepseekV2MoE
+
+torch.set_default_device(torch.device("cuda"))
 
 
 def generate_torch_outputs(
@@ -49,31 +54,34 @@ def generate_max_outputs(
     expert_weights: list[dict[str, torch.Tensor]],
     shared_expert_weights: dict[str, torch.Tensor],
 ) -> torch.Tensor:
-    state_dict = {"gate.gate_score.weight": dummy_moe_weight}
+    # TODO: .cpu()s added as workaround for GEX-1967
+    state_dict = {"gate.gate_score.weight": dummy_moe_weight.cpu()}
 
     for i in range(len(expert_weights)):
         state_dict[f"gate_proj{i}.weight"] = expert_weights[i][
             "gate_proj.weight"
-        ]
+        ].cpu()
         state_dict[f"down_proj{i}.weight"] = expert_weights[i][
             "down_proj.weight"
-        ]
-        state_dict[f"up_proj{i}.weight"] = expert_weights[i]["up_proj.weight"]
+        ].cpu()
+        state_dict[f"up_proj{i}.weight"] = expert_weights[i][
+            "up_proj.weight"
+        ].cpu()
 
     state_dict["shared_expert_gate_proj.weight"] = shared_expert_weights[
         "gate_proj.weight"
-    ]
+    ].cpu()
     state_dict["shared_expert_down_proj.weight"] = shared_expert_weights[
         "down_proj.weight"
-    ]
+    ].cpu()
     state_dict["shared_expert_up_proj.weight"] = shared_expert_weights[
         "up_proj.weight"
-    ]
+    ].cpu()
 
     moe = MoE()
     moe.load_state_dict(state_dict)
 
-    session = InferenceSession()
+    session = InferenceSession(devices=[Accelerator(0)])
     session.set_debug_print_options(style=PrintStyle.COMPACT)
     graph = Graph(
         "MoE",
@@ -86,6 +94,7 @@ def generate_max_outputs(
                     input_tensor.shape[1],
                     config.hidden_size,
                 ),
+                device=DeviceRef.GPU(),
             ),
         ),
     )
@@ -94,8 +103,8 @@ def generate_max_outputs(
     return compiled.execute(input_tensor)
 
 
-@pytest.mark.skip(reason="Accuracy debugging in progress")
-def test_moe(
+@pytest.mark.skip(reason="GPU kernel debugging in progress")
+def test_mix_of_experts(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
     dummy_moe_weight: torch.Tensor,
