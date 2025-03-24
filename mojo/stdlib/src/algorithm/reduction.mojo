@@ -33,7 +33,6 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from collections.string import StaticString
 
 from utils.index import Index, IndexList, StaticTuple
-from utils.loop import unroll
 
 from ._gpu.reduction import reduce_launch
 
