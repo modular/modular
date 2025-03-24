@@ -17,7 +17,7 @@ from nn.pad import _AxisParams, _do_pad, _fill, pad_constant, pad_reflect
 from python import Python
 from testing import assert_true
 
-from utils import IndexList, StaticTuple, unroll
+from utils import IndexList, StaticTuple
 
 
 @always_inline

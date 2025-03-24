@@ -57,7 +57,6 @@ from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
-from utils.loop import unroll
 from utils.numerics import get_accum_type
 
 from .conv_utils import (

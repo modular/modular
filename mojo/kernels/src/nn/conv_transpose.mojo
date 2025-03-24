@@ -25,7 +25,6 @@ from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
-from utils.loop import unroll
 
 from .conv_utils import (
     ConvInfoStatic,

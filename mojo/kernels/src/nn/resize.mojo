@@ -12,7 +12,7 @@ from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
 from memory import UnsafePointer, memcpy
 
-from utils import IndexList, StaticTuple, unroll
+from utils import IndexList, StaticTuple
 
 
 @value

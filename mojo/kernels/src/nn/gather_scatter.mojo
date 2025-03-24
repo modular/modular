@@ -25,7 +25,7 @@ from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import ManagedTensorSlice
 
-from utils import Index, IndexList, StaticTuple, unroll
+from utils import Index, IndexList, StaticTuple
 
 from .reshape import reshape
 

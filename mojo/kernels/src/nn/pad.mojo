@@ -19,7 +19,7 @@ from linalg.transpose import _fill_strides
 from memory import UnsafePointer, memcpy
 from register import register_internal
 
-from utils import IndexList, StaticTuple, unroll
+from utils import IndexList, StaticTuple
 
 
 @always_inline

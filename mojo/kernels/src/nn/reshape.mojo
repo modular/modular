@@ -9,7 +9,6 @@ from buffer.dimlist import DimList
 from register import register_internal
 
 from utils.index import IndexList
-from utils.loop import unroll
 
 
 # Reshape assumes inputs are contiguous. It should always be fused last and
