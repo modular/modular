@@ -34,17 +34,17 @@ Common use cases:
 Example:
 
 ```mojo
-    from layout import Layout, IntTuple
-    from layout.layout import blocked_product
+from layout import Layout, IntTuple
+from layout.layout import blocked_product
 
-    # Create a 3x4 row-major layout
-    var layout = Layout.row_major(3, 4)
+# Create a 3x4 row-major layout
+var layout = Layout.row_major(3, 4)
 
-    # Access the memory location for logical coordinates (1, 2)
-    var memory_idx = layout(IntTuple(1, 2))
+# Access the memory location for logical coordinates (1, 2)
+var memory_idx = layout(IntTuple(1, 2))
 
-    # Create a tiled layout for blocked matrix multiplication
-    var tiled = blocked_product(layout, Layout(IntTuple(2, 2)))
+# Create a tiled layout for blocked matrix multiplication
+var tiled = blocked_product(layout, Layout(IntTuple(2, 2)))
 ```
 """
 
@@ -168,16 +168,16 @@ fn make_layout(*layouts: Layout) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import Layout, IntTuple
-        from layout.layout import make_layout
+    ```mojo
+    from layout import Layout, IntTuple
+    from layout.layout import make_layout
 
-        var layout1 = Layout(IntTuple(2, 3), IntTuple(3, 1))
-        var layout2 = Layout(IntTuple(4, 5), IntTuple(5, 1))
-        var combined = make_layout(layout1, layout2)
-        # Result: Layout with shape ((2, 3), (4, 5)) and stride ((3, 1), (5, 1))
-        ```
-        .
+    var layout1 = Layout(IntTuple(2, 3), IntTuple(3, 1))
+    var layout2 = Layout(IntTuple(4, 5), IntTuple(5, 1))
+    var combined = make_layout(layout1, layout2)
+    # Result: Layout with shape ((2, 3), (4, 5)) and stride ((3, 1), (5, 1))
+    ```
+    .
     """
     var shape = IntTuple()
     var stride = IntTuple()
@@ -225,19 +225,19 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import IntTuple, Layout
-        from layout.layout import make_ordered_layout
+    ```mojo
+    from layout import IntTuple, Layout
+    from layout.layout import make_ordered_layout
 
-        # Create a layout with shape (2,3,4,5) where dimensions are traversed
-        # in the order: dim0, dim3, dim2, dim1
-        var layout = make_ordered_layout(
-            IntTuple(2, 3, 4, 5),
-            IntTuple(1, 4, 3, 2)
-        )
-        # Result: Layout with shape (2,3,4,5) and stride (1,24,6,2)
-        ```
-        .
+    # Create a layout with shape (2,3,4,5) where dimensions are traversed
+    # in the order: dim0, dim3, dim2, dim1
+    var layout = make_ordered_layout(
+        IntTuple(2, 3, 4, 5),
+        IntTuple(1, 4, 3, 2)
+    )
+    # Result: Layout with shape (2,3,4,5) and stride (1,24,6,2)
+    ```
+    .
     """
     var stride = compact_order(shape, order)
     return Layout(shape, stride)
@@ -429,14 +429,14 @@ struct Layout(
 
         Example:
 
-            ```mojo
-            from layout import Layout
+        ```mojo
+        from layout import Layout
 
-            # Create a 3x4 column-major layout
-            var layout = Layout.col_major(3, 4)
-            # Result: Layout with shape (3,4) and stride (1,3)
-            ```
-            .
+        # Create a 3x4 column-major layout
+        var layout = Layout.col_major(3, 4)
+        # Result: Layout with shape (3,4) and stride (1,3)
+        ```
+        .
         """
         var shape = IntTuple(dims)
         return Self.col_major(shape)
@@ -456,15 +456,15 @@ struct Layout(
 
         Example:
 
-            ```mojo
-            from layout import Layout
-            from layout.int_tuple import IntTuple
+        ```mojo
+        from layout import Layout
+        from layout.int_tuple import IntTuple
 
-            # Create a 3x4 column-major layout
-            var layout = Layout.col_major(IntTuple(3, 4))
-            # Result: Layout with shape (3,4) and stride (1,3)
-            ```
-            .
+        # Create a 3x4 column-major layout
+        var layout = Layout.col_major(IntTuple(3, 4))
+        # Result: Layout with shape (3,4) and stride (1,3)
+        ```
+        .
         """
         return Layout(shape, prefix_product(shape))
 
@@ -483,14 +483,14 @@ struct Layout(
 
         Example:
 
-            ```mojo
-            from layout import Layout
+        ```mojo
+        from layout import Layout
 
-            # Create a 3x4 row-major layout
-            var layout = Layout.row_major(3, 4)
-            # Result: Layout with shape (3,4) and stride (4,1)
-            ```
-            .
+        # Create a 3x4 row-major layout
+        var layout = Layout.row_major(3, 4)
+        # Result: Layout with shape (3,4) and stride (4,1)
+        ```
+        .
         """
         var shape = IntTuple(dims)
         return Self.row_major(shape)
@@ -563,16 +563,16 @@ struct Layout(
 
         Example:
 
-            ```mojo
-            from layout import Layout
-            from layout.int_tuple import IntTuple
+        ```mojo
+        from layout import Layout
+        from layout.int_tuple import IntTuple
 
-            # Create a row-major layout from a shape tuple
-            var shape = IntTuple(3, 4)
-            var layout = Layout.row_major(shape)
-            # Result: Layout with shape (3,4) and stride (4,1)
-            ```
-            .
+        # Create a row-major layout from a shape tuple
+        var shape = IntTuple(3, 4)
+        var layout = Layout.row_major(shape)
+        # Result: Layout with shape (3,4) and stride (4,1)
+        ```
+        .
         """
         return Layout(shape, reverse(prefix_product(reverse(shape))))
 
@@ -595,20 +595,20 @@ struct Layout(
 
         Example:
 
-            ```mojo
-            from layout import Layout
-            from layout.int_tuple import IntTuple
+        ```mojo
+        from layout import Layout
+        from layout.int_tuple import IntTuple
 
-            # Mark all dimensions as unknown
-            var layout = Layout(IntTuple(2, 3))
-            var unknown = layout.make_shape_unknown()
-            # Result: Layout with shape (?, ?) and original strides
+        # Mark all dimensions as unknown
+        var layout = Layout(IntTuple(2, 3))
+        var unknown = layout.make_shape_unknown()
+        # Result: Layout with shape (?, ?) and original strides
 
-            # Mark only first dimension as unknown
-            var partial = layout.make_shape_unknown[0]()
-            # Result: Layout with shape (?, 3) and original strides
-            ```
-            .
+        # Mark only first dimension as unknown
+        var partial = layout.make_shape_unknown[0]()
+        # Result: Layout with shape (?, 3) and original strides
+        ```
+        .
         """
 
         @parameter
@@ -929,16 +929,16 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import Layout, IntTuple
-        from layout.layout import coalesce
+    ```mojo
+    from layout import Layout, IntTuple
+    from layout.layout import coalesce
 
-        # A layout with shape (2,3,4) and stride (12,4,1) can be coalesced
-        var layout = Layout(IntTuple(2, 3, 4), IntTuple(12, 4, 1))
-        var coalesced = coalesce(layout)
-        # Result: Layout with shape (24) and stride (1)
-        ```
-        .
+    # A layout with shape (2, (1, 4)) and stride (1, (4, 2)) can be coalesced
+    var layout = Layout(IntTuple(2, IntTuple(1, 4)), IntTuple(1, IntTuple(4, 2)))
+    var coalesced = coalesce(layout)
+    # Result: Layout with shape (8) and stride (1)
+    ```
+    .
     """
     if keep_rank:
         # Fast path for single-element layouts
@@ -1003,11 +1003,16 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
 
 
 fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
-    """Composes two layouts to create a hierarchical layout.
+    """Composes two layouts to create a new layout.
 
     This function creates a new layout by composing two layouts, where the first
     layout defines the outer structure and the second layout defines the inner
-    structure. This is useful for creating tiled or blocked layouts.
+    structure.
+
+    The new layout is compatible with `layout_b` (that is, it has the same `size`
+    and every set of coordinates in `layout_b` has an equivalent in the new
+    layout). You can think of `layout_b` as selecting a subset of elements
+    from `layout_a`.
 
     Args:
         layout_a: The outer layout.
@@ -1018,17 +1023,18 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout.layout import Layout, IntTuple
-        from layout.layout import composition
+    ```mojo
+    from layout.layout import Layout, IntTuple
+    from layout.layout import composition
 
-        # Compose a row-major layout with a tiling layout
-        var base = Layout.row_major(6, 8)
-        var tiling = Layout(IntTuple(2, 2), IntTuple(1, 2))
-        var composed = composition(base, tiling)
-        # Result: A layout that tiles the original in 2x2 blocks
-        ```
-        .
+    # Compose a row-major layout with a tiling layout
+    var base = Layout.row_major(6, 8)
+    var tiling = Layout(IntTuple(3, 2), IntTuple(1, 3))
+    var composed = composition(base, tiling)
+    # Result: A layout that represents a 3x2 tile from
+    # layout_a
+    ```
+    .
     """
     if len(layout_b) == 0:
         return layout_a
@@ -1084,19 +1090,19 @@ fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import Layout, LayoutList, IntTuple
-        from layout.layout import composition
+    ```mojo
+    from layout import Layout, LayoutList, IntTuple
+    from layout.layout import composition
 
-        # Compose a layout with a list of tiling layouts
-        var base = Layout.row_major(6, 8)
-        var tilers = LayoutList()
-        tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
-        tilers.append(Layout(IntTuple(3, 3), IntTuple(1, 3)))
-        var composed = composition(base, tilers)
-        # Result: A layout with hierarchical tiling based on the tiler list
-        ```
-        .
+    # Compose a layout with a list of tiling layouts
+    var base = Layout.row_major(6, 8)
+    var tilers = LayoutList()
+    tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
+    tilers.append(Layout(IntTuple(3, 3), IntTuple(1, 3)))
+    var composed = composition(base, tilers)
+    # Result: A layout with hierarchical tiling based on the tiler list
+    ```
+    .
     """
     var result = Layout()
     for i in range(len(tiler)):
@@ -1125,16 +1131,16 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import Layout, IntTuple
-        from layout.layout import complement
+    ```mojo
+    from layout import Layout, IntTuple
+    from layout.layout import complement
 
-        # Compute the complement of a layout
-        var base = Layout(IntTuple(2, 3), IntTuple(3, 1))
-        var comp = complement(base, 10)
-        # Result: A layout that fills the gaps in the original layout
-        ```
-        .
+    # Compute the complement of a layout
+    var base = Layout(IntTuple(2, 3), IntTuple(3, 1))
+    var comp = complement(base, 10)
+    # Result: A layout that fills the gaps in the original layout
+    ```
+    .
     """
     var current_idx = 1
     var sorted = sorted(zip(flatten(layout.stride), flatten(layout.shape)))
@@ -1195,17 +1201,17 @@ fn apply_tiler[
 
     Example:
 
-        ```mojo
-        from layout import Layout, LayoutList, IntTuple
-        from layout.layout import apply_tiler, logical_divide
+    ```mojo
+    from layout import Layout, LayoutList, IntTuple
+    from layout.layout import apply_tiler, logical_divide
 
-        # Apply logical_divide to each element of a layout with a tiler
-        var base = Layout.row_major(6, 8)
-        var tilers = LayoutList()
-        tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
-        var result = apply_tiler[logical_divide](base, tilers)
-        ```
-        .
+    # Apply logical_divide to each element of a layout with a tiler
+    var base = Layout.row_major(6, 8)
+    var tilers = LayoutList()
+    tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
+    var result = apply_tiler[logical_divide](base, tilers)
+    ```
+    .
     """
     if len(tiler) == 0:
         return layout_a
@@ -1318,18 +1324,34 @@ fn blocked_product(layout_a: Layout, layout_b: Layout) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import Layout
-        from layout.layout import blocked_product
+    ```mojo
+    from layout import Layout
+    from layout.layout import blocked_product
 
-        # Create a 4x4 matrix layout
-        var matrix = Layout.row_major(4, 4)
-        # Define 2x2 blocks
-        var block = Layout.row_major(2, 2)
-        # Create a blocked layout with 2x2 blocks
-        var blocked = blocked_product(matrix, block)
-        ```
-        .
+    # Create a 2x3 matrix layout
+    var matrix = Layout.row_major(2, 3)
+    # Define 2x2 blocks
+    var block = Layout.row_major(2, 2)
+    # Create a blocked layout with 2x2 blocks
+    var blocked = blocked_product(block, matrix)
+    ```
+
+    Output:
+
+    ```plaintext
+    (((2, 2), (2, 3)):((2, 12), (1, 4)))
+          0    1    2    3    4    5
+       +----+----+----+----+----+----+
+    0  |  0 |  1 |  4 |  5 |  8 |  9 |
+       +----+----+----+----+----+----+
+    1  |  2 |  3 |  6 |  7 | 10 | 11 |
+       +----+----+----+----+----+----+
+    2  | 12 | 13 | 16 | 17 | 20 | 21 |
+       +----+----+----+----+----+----+
+    3  | 14 | 15 | 18 | 19 | 22 | 23 |
+       +----+----+----+----+----+----+
+    ```
+    .
     """
     # ((a_0, a_1, ...), (tile_0, tile_1, ...))
     var lp = logical_product(layout_a, layout_b)
@@ -1358,17 +1380,17 @@ fn tile_to_shape(
 
     Example:
 
-        ```mojo
-        from layout import Layout, IntTuple
-        from layout.layout import tile_to_shape
+    ```mojo
+    from layout import Layout, IntTuple
+    from layout.layout import tile_to_shape
 
-        # Create a 2x2 tile layout
-        var tile = Layout.row_major(2, 2)
-        # Tile it to create a 6x4 layout
-        var tiled = tile_to_shape(tile, IntTuple(6, 4))
-        # Result: A layout with 3x2 tiles of size 2x2 each
-        ```
-        .
+    # Create a 2x2 tile layout
+    var tile = Layout.row_major(2, 2)
+    # Tile it to create a 6x4 layout
+    var tiled = tile_to_shape(tile, IntTuple(6, 4))
+    # Result: A layout with 3x2 tiles of size 2x2 each
+    ```
+    .
     """
     var flat_tile_shape = product_each(tile.shape)
     var flat_target_shape = product_each(target_shape)
@@ -1411,17 +1433,17 @@ fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import Layout, LayoutList, IntTuple
-        from layout.layout import logical_product
+    ```mojo
+    from layout import Layout, LayoutList, IntTuple
+    from layout.layout import logical_product
 
-        # Create a product of a layout with a list of layouts
-        var base = Layout.row_major(6, 8)
-        var tilers = LayoutList()
-        tilers.append(Layout(IntTuple(2, 2)))
-        var result = logical_product(base, tilers)
-        ```
-        .
+    # Create a product of a layout with a list of layouts
+    var base = Layout.row_major(6, 8)
+    var tilers = LayoutList()
+    tilers.append(Layout(IntTuple(2, 2)))
+    var result = logical_product(base, tilers)
+    ```
+    .
     """
     if len(tiler) == 1:
         return logical_product(layout_a, tiler[0])
@@ -1446,17 +1468,17 @@ fn hierarchical_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import Layout, LayoutList, IntTuple
-        from layout.layout import hierarchical_unzip
+    ```mojo
+    from layout import Layout, LayoutList, IntTuple
+    from layout.layout import hierarchical_unzip
 
-        # Create a layout to unzip
-        var base = Layout.row_major(6, 8)
-        var tilers = LayoutList()
-        tilers.append(Layout(IntTuple(2, 2)))
-        var result = hierarchical_unzip(base, tilers)
-        ```
-        .
+    # Create a layout to unzip
+    var base = Layout.row_major(6, 8)
+    var tilers = LayoutList()
+    tilers.append(Layout(IntTuple(2, 2)))
+    var result = hierarchical_unzip(base, tilers)
+    ```
+    .
     """
     var res_1 = Layout()
     var res_2 = Layout()
@@ -1495,16 +1517,16 @@ fn hierarchical_unzip(
 
     Example:
 
-        ```mojo
-        from layout import Layout, IntTuple
-        from layout.layout import hierarchical_unzip
+    ```mojo
+    from layout import Layout, IntTuple
+    from layout.layout import hierarchical_unzip
 
-        # Create layouts
-        var base = Layout.row_major(6, 8)
-        var pattern = Layout(IntTuple(2, 2))
-        var result = hierarchical_unzip(base, pattern)
-        ```
-        .
+    # Create layouts
+    var base = Layout.row_major(6, 8)
+    var pattern = Layout(IntTuple(2, 2))
+    var result = hierarchical_unzip(base, pattern)
+    ```
+    .
     """
     return logical_divide(layout_a, layout_b)
 
@@ -1528,16 +1550,16 @@ fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import Layout, IntTuple
-        from layout.layout import zipped_divide
+    ```mojo
+    from layout import Layout, IntTuple
+    from layout.layout import zipped_divide
 
-        # Create layouts
-        var base = Layout.row_major(6, 8)
-        var pattern = Layout(IntTuple(2, 2))
-        var result = zipped_divide(base, pattern)
-        ```
-        .
+    # Create layouts
+    var base = Layout.row_major(6, 8)
+    var pattern = Layout(IntTuple(2, 2))
+    var result = zipped_divide(base, pattern)
+    ```
+    .
     """
     return hierarchical_unzip(layout_a, layout_b)
 
@@ -1561,17 +1583,17 @@ fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
 
     Example:
 
-        ```mojo
-        from layout import Layout, LayoutList, IntTuple
-        from layout.layout import zipped_divide
+    ```mojo
+    from layout import Layout, LayoutList, IntTuple
+    from layout.layout import zipped_divide
 
-        # Create layouts
-        var base = Layout.row_major(6, 8)
-        var tilers = LayoutList()
-        tilers.append(Layout(IntTuple(2, 2)))
-        var result = zipped_divide(base, tilers)
-        ```
-        .
+    # Create layouts
+    var base = Layout.row_major(6, 8)
+    var tilers = LayoutList()
+    tilers.append(Layout(IntTuple(2, 2)))
+    var result = zipped_divide(base, tilers)
+    ```
+    .
     """
     return hierarchical_unzip(layout_a, tiler)
 
@@ -1671,8 +1693,9 @@ fn sublayout(layout: Layout, *modes: Int) -> Layout:
         A new layout containing only the specified dimensions.
 
     Example:
-        From a layout with shape (3,4,5), sublayout(layout, 0, 2) would
-        create a layout with shape (3,5).
+
+    From a layout with shape (3,4,5), sublayout(layout, 0, 2) would
+    create a layout with shape (3,5).
     """
     var shape = IntTuple()
     var stride = IntTuple()
@@ -1797,32 +1820,35 @@ fn expand_modes_alike(
         An array containing two layouts with matching hierarchical structures.
 
     Example:
-        Given layouts with different structures:
-        - layout_0: (((3, (5, 2)), 4):((1, (24, 12)), 3))
-        - layout_1: ((30, (2, 2)):(2, (60, 1)))
 
-        The result would be two layouts with matching structures:
-        - (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
-        - (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
+    Given layouts with different structures:
 
-        ```mojo
-        from layout import Layout, IntTuple
-        from layout.layout import expand_modes_alike
+    - layout_0: (((3, (5, 2)), 4):((1, (24, 12)), 3))
+    - layout_1: ((30, (2, 2)):(2, (60, 1)))
 
-         alias layout_0 = Layout(
-             IntTuple(IntTuple(3, IntTuple(5, 2)), 4),
-             IntTuple(IntTuple(1, IntTuple(24, 12)), 3),
-         )
-         alias layout_1 = Layout(
-             IntTuple(30, IntTuple(2, 2)), IntTuple(2, IntTuple(60, 1))
-         )
-         alias uc = expand_modes_alike(layout_0, layout_1)
-         print(uc[0])
-         # (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
-         print(uc[1])
-         # (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
-        ```
-        .
+    The result would be two layouts with matching structures:
+
+    - (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
+    - (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
+
+    ```mojo
+    from layout import Layout, IntTuple
+    from layout.layout import expand_modes_alike
+
+    alias layout_0 = Layout(
+        IntTuple(IntTuple(3, IntTuple(5, 2)), 4),
+        IntTuple(IntTuple(1, IntTuple(24, 12)), 3),
+    )
+    alias layout_1 = Layout(
+        IntTuple(30, IntTuple(2, 2)), IntTuple(2, IntTuple(60, 1))
+    )
+    alias uc = expand_modes_alike(layout_0, layout_1)
+    print(uc[0])
+    # (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
+    print(uc[1])
+    # (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
+    ```
+    .
     """
     var uc = expand_modes_alike(
         layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
