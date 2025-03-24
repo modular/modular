@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# TODO(MOTO-1007): Remove this once we have a fix for asan.
+# UNSUPPORTED: asan
 
 # COM: Check if we can produce a help message for the `mojo debug` command.
 # RUN: %debug --help | FileCheck %s --check-prefix=CHECK-DEBUGGER-HELP

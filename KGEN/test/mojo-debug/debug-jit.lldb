@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %debug -X -b -X -o -X 'b jit.mojo:9' -X -o -X 'run' '%S/Inputs/jit.mojo' | FileCheck %s
+# TODO(MOTO-1007): Remove this once we have a fix for asan.
+# UNSUPPORTED: asan
 
 # COM: Here we test debugging of a source file passed by relative path.
 # RUN: mkdir -p debug-jit/Inputs

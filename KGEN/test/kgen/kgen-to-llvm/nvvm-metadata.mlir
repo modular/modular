@@ -13,13 +13,13 @@ kgen.func export @kernel_grid_constant(%0: !kgen.pointer<none> read_mem, %1: !kg
   kgen.return
 }
 
-// CHECK: !llvm.module.flags = !{![[LLVM_MODULE_FLAGS:.+]]}
 // CHECK: !nvvm.annotations = !{![[NVVM_ANNOTATIONS:.+]]}
+// CHECK: !llvm.module.flags = !{![[LLVM_MODULE_FLAGS:.+]]}
 
-// CHECK: ![[LLVM_MODULE_FLAGS]] = !{i32 2, !"Debug Info Version", i32 3}
 // CHECK: ![[NVVM_ANNOTATIONS]] = !{ptr @kernel_grid_constant, !"grid_constant", ![[GRID_CST_ARGS:.+]]}
 // The following arg number is 2 because NVVM expects 1-based indices.
 // CHECK: ![[GRID_CST_ARGS]] = !{i32 2}
+// CHECK: ![[LLVM_MODULE_FLAGS]] = !{i32 2, !"Debug Info Version", i32 3}
 
 
 }
