@@ -22,10 +22,7 @@ from utils import Index
 
 def _to_device_str(gpu_id: Int, sm_ver: Int) -> String:
     # TODO fix this for AMD
-    return (
-        "Device(type=gpu,gpu_id={0},target_info(triple=,arch=,features=[])"
-        .format(gpu_id, sm_ver)
-    )
+    return "Device(type=gpu,id={0})".format(gpu_id)
 
 
 def test_accelerator_device():
@@ -136,13 +133,13 @@ def test_print():
     any_tensor = AnyTensor(gpu_tensor1^)
 
     assert_true("Tensor(<Unable to print device tensor>," in String(any_tensor))
-    assert_true("Device(" in String(any_tensor))
+    assert_true("Device(type=gpu" in String(any_tensor))
     assert_true("dtype=float32, shape=10x2" in String(any_tensor))
 
     # Tensor
     tensor = any_tensor^.to_device_tensor().to_tensor[DType.float32, 2]()
     assert_true("Tensor(<Unable to print device tensor>," in String(tensor))
-    assert_true("Device(" in String(tensor))
+    assert_true("Device(type=gpu" in String(tensor))
     assert_true("dtype=float32, shape=10x2" in String(tensor))
 
 

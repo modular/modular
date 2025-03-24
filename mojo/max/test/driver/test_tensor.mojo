@@ -61,7 +61,7 @@ def test_round_trip():
     assert_equal(tensor[1, 0], 3)
 
     dt2 = tensor^.to_device_tensor()
-    assert_true("DeviceTensor(Device(type=cpu,target_info(" in String(dt2))
+    assert_true("DeviceTensor(Device(type=cpu" in String(dt2))
     assert_true("Spec(10x2xfloat32))" in String(dt2))
 
     tensor2 = dt2^.to_tensor[DType.float32, 2]()
