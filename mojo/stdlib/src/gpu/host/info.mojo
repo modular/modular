@@ -552,7 +552,7 @@ struct Flops:
     """INT4 operations per second in TOPS."""
 
     fn __init__(
-        mut self,
+        out self,
         *,
         fp16: Float64,
         i8: Float64,

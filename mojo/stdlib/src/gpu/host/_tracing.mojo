@@ -191,7 +191,7 @@ struct EventAttributes:
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         *,
         message: String = "",
         category: Int = _TraceType_MAX,
@@ -449,7 +449,7 @@ struct Range:
     var _end_fn: _RangeEnd
 
     fn __init__(
-        mut self,
+        out self,
         *,
         message: String = "",
         color: Optional[Color] = None,
@@ -499,7 +499,7 @@ struct RangeStack:
     var _pop_fn: _RangePop
 
     fn __init__(
-        mut self,
+        out self,
         *,
         message: String = "",
         color: Optional[Color] = None,

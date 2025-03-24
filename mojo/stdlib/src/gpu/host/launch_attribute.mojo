@@ -501,7 +501,7 @@ struct AccessPolicyWindow:
     fn __init__[
         T: AnyType
     ](
-        mut self,
+        out self,
         *,
         base_ptr: UnsafePointer[T, **_],
         count: Int,

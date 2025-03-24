@@ -151,7 +151,7 @@ struct HostBuffer[
 
     @doc_private
     fn __init__(
-        mut self,
+        out self,
         ctx: DeviceContext,
         size: Int,
     ) raises:
@@ -185,13 +185,13 @@ struct HostBuffer[
         self._handle = cpp_handle
 
     @doc_private
-    fn __init__(mut self, handle: _DeviceBufferPtr, device_ptr: Self._HostPtr):
+    fn __init__(out self, handle: _DeviceBufferPtr, device_ptr: Self._HostPtr):
         self._device_ptr = device_ptr
         self._handle = handle
 
     @doc_private
     fn __init__(
-        mut self,
+        out self,
         ctx: DeviceContext,
         ptr: Self._HostPtr,
         size: Int,
@@ -656,7 +656,7 @@ struct DeviceBuffer[
     @doc_private
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ctx: DeviceContext,
         size: Int,
         mode: _DeviceBufferMode,
@@ -718,14 +718,14 @@ struct DeviceBuffer[
 
     @doc_private
     fn __init__(
-        mut self, handle: _DeviceBufferPtr, device_ptr: Self._DevicePtr
+        out self, handle: _DeviceBufferPtr, device_ptr: Self._DevicePtr
     ):
         self._device_ptr = device_ptr
         self._handle = handle
 
     @doc_private
     fn __init__(
-        mut self,
+        out self,
         ctx: DeviceContext,
         ptr: Self._DevicePtr,
         size: Int,
@@ -1399,7 +1399,7 @@ struct DeviceFunction[
     @doc_private
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ctx: DeviceContext,
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
@@ -1912,7 +1912,7 @@ struct DeviceExternalFunction:
     @doc_private
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ctx: DeviceContext,
         *,
         function_name: StringSlice,
@@ -2180,7 +2180,7 @@ struct DeviceContext:
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         device_id: Int = 0,
         *,
         api: String = String(Self.device_api),
@@ -4176,7 +4176,7 @@ struct DeviceMulticastBuffer[type: DType]:
 
     @doc_private
     fn __init__(
-        mut self,
+        out self,
         owned contexts: List[DeviceContext],
         size: Int,
     ) raises:
@@ -4276,7 +4276,7 @@ struct _HostMappedBuffer[
     var _cpu_buf: HostBuffer[type, **_]
 
     fn __init__(
-        mut self,
+        out self,
         ctx: DeviceContext,
         buf: Self._DevBuf,
     ) raises:

@@ -54,7 +54,7 @@ struct Random[rounds: Int = 6]:
     var _counter: SIMD[DType.uint32, 4]
 
     fn __init__(
-        mut self,
+        out self,
         *,
         seed: UInt64 = 0,
         subsequence: UInt64 = 0,

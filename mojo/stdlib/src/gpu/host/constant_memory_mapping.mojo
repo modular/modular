@@ -50,7 +50,7 @@ struct ConstantMemoryMapping:
     """
 
     fn __init__(
-        mut self,
+        out self,
         name: StringLiteral,
         ptr: UnsafePointer[NoneType],
         byte_count: Int,
