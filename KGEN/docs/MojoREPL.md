@@ -178,7 +178,7 @@ example, consider the following expression:
 struct S:
   var value: Int
 
-  fn __init__(mut self, x : Int):
+  fn __init__(out self, x : Int):
     self.value = x
 
 s = S(10)
@@ -192,7 +192,7 @@ struct S:
   var value: Int
   var value2: Int
 
-  fn __init__(mut self, x : Int):
+  fn __init__(out self, x : Int):
     self.value = x
     self.value2 = 15
 

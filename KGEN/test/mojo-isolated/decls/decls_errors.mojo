@@ -98,6 +98,7 @@ fn bad_out5(out a: Int) -> Int: pass
 fn bad_out6(out self) -> None: pass
 
 struct BadInitResult:
+  # expected-warning @+1 {{__init__ method with 'mut' convention is deprecated, please use 'out' instead}}
   fn __init__(mut self) raises -> None:
     pass
 

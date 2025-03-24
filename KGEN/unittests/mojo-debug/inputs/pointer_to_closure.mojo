@@ -13,7 +13,7 @@ struct CallbackHolder:
     var len: Int
 
     fn __init__(
-        mut self,
+        out self,
         func: fn (UnsafePointer[NoneType], StaticString) -> None,
     ):
         self.callback = func
