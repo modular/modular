@@ -25,7 +25,7 @@ M::getTargetMachineForHost(bool isJIT, llvm::CodeGenOptLevel optLevel) {
     return Error("no target exists for '" + hostTriple + "': " + errorMessage);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      hostTriple, hostCpu, targetFeatures,
+      llvm::Triple(hostTriple), hostCpu, targetFeatures,
       /*Options=*/{},
       /*RM=*/llvm::Reloc::Model::PIC_,
       /*CM=*/std::nullopt, /*OL=*/optLevel, /*JIT=*/isJIT));
