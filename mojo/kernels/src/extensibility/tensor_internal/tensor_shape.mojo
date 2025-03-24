@@ -704,7 +704,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
 
     @always_inline
     @implicit
-    fn __init__[*Ts: CollectionElement](mut self, shapes: Tuple[*Ts]):
+    fn __init__[*Ts: CollectionElement](out self, shapes: Tuple[*Ts]):
         """Initializes a TensorShape from the values provided.
 
         Args:
@@ -841,7 +841,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
 
     @always_inline
     @implicit
-    fn __init__[rank: Int](mut self, shapes: IndexList[rank]):
+    fn __init__[rank: Int](out self, shapes: IndexList[rank]):
         """Initializes a TensorShape from the values provided.
 
         Parameters:
