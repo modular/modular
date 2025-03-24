@@ -276,7 +276,7 @@ struct _TaskGroupBox(CollectionElement):
 
     var handle: AnyCoroutine
 
-    fn __init__[type: AnyType](mut self, owned coro: Coroutine[type]):
+    fn __init__[type: AnyType](out self, owned coro: Coroutine[type]):
         var handle = coro._handle
         __disable_del coro
         self.handle = handle
