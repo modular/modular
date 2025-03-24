@@ -67,7 +67,10 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
     ) -> ModelOutputs:
         """Runs the graph."""
         model_inputs = cast(DummyModelInputs, model_inputs)
-        return ModelOutputs(next_token_logits=model_inputs.input1)
+        assert model_inputs.input1 is not None
+        return ModelOutputs(
+            next_token_logits=model_inputs.input1, logits=model_inputs.input1
+        )
 
     @classmethod
     def calculate_max_seq_len(
