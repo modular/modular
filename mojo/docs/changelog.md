@@ -20,6 +20,9 @@ what we publish.
 
 ### Language changes
 
+- The Mojo compiler now warns about obsolete use of `mut self` in initializers,
+  please switch over to `fn __init__(out self)` instead.
+
 ### Standard library changes
 
 - You can now forward a `VariadicPack` that is `Writable` to a writer using
@@ -93,5 +96,8 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 - The `SIMD.roundeven()` method has been removed from the standard library.
   This functionality is now handled by the `round()` function.
+
+- Error messages about the obsolete `borrowed` and `inout` keywords, as well as
+  the obsolete `-> Int as name` syntax has been removed.
 
 ### 🛠️ Fixed
