@@ -146,7 +146,7 @@ struct ContiguousKVCache[
     var max_cache_length: UInt32
 
     fn __init__(
-        mut self,
+        out self,
         block: Self.BlockType,
         cache_lengths: NDBuffer[DType.uint32, 1],
         is_cache_empty: Bool,
@@ -328,7 +328,7 @@ struct ContinuousBatchingKVCache[
         return -1
 
     fn __init__(
-        mut self,
+        out self,
         blocks: Self.BlocksType,
         cache_lengths: NDBuffer[DType.uint32, 1],
         lookup_table: NDBuffer[DType.uint32, 1],
@@ -839,7 +839,7 @@ struct ContiguousKVCacheCollection[
     var max_cache_len_in_batch: UInt32
 
     fn __init__(
-        mut self,
+        out self,
         key_cache: NDBuffer[Self.type, 5],
         value_cache: NDBuffer[Self.type, 5],
         cache_lengths: NDBuffer[DType.uint32, 1],
@@ -981,7 +981,7 @@ struct ContinuousBatchingKVCacheCollection[
     var batch_size: Int
 
     fn __init__(
-        mut self,
+        out self,
         blocks: Self.CacheType.BlocksType,
         cache_lengths: NDBuffer[DType.uint32, 1],
         lookup_table: NDBuffer[DType.uint32, 1],
@@ -997,7 +997,7 @@ struct ContinuousBatchingKVCacheCollection[
         self.batch_size = cache_lengths.dim[0]()
 
     fn __init__(
-        mut self,
+        out self,
         blocks: Self.CacheType.BlocksType,
         cache_lengths: NDBuffer[DType.uint32, 1],
         lookup_table: NDBuffer[DType.uint32, 1],
