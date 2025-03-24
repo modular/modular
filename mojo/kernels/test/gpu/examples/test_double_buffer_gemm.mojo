@@ -33,8 +33,6 @@ from sys.info import (
 )
 from testing import assert_almost_equal
 
-from utils import unroll
-
 
 fn is_benchmark() -> Bool:
     for arg in argv():
