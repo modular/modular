@@ -57,7 +57,7 @@ struct HostNDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
     ):
         constrained[
             shape.all_known[rank](),
@@ -78,7 +78,7 @@ struct HostNDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        mut self,
+        out self,
         dynamic_shape: IndexList[rank, **_],
     ):
         self.tensor = NDBuffer[type, rank, _, shape](
@@ -89,7 +89,7 @@ struct HostNDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        mut self,
+        out self,
         dynamic_shape: DimList,
     ):
         self = Self(_make_tuple[rank](dynamic_shape))
@@ -125,7 +125,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         *,
         ctx: DeviceContext,
     ) raises:
@@ -144,7 +144,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         dynamic_shape: IndexList[rank, **_],
         *,
         ctx: DeviceContext,
@@ -159,7 +159,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         dynamic_shape: DimList,
         *,
         ctx: DeviceContext,
@@ -168,7 +168,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         dynamic_shape: IndexList[rank] = _make_tuple[rank](shape),
         *,
         stride: IndexList[rank],
@@ -184,7 +184,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         dynamic_shape: DimList,
         *,
         stride: IndexList[rank],
@@ -208,7 +208,7 @@ struct TestTensor[type: DType, rank: Int]:
     var num_elements: Int
 
     fn __init__(
-        mut self,
+        out self,
         shape: DimList,
         values: List[Scalar[type]] = List[Scalar[type]](),
     ):
