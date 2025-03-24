@@ -35,7 +35,7 @@ struct Planet:
     var mass: Float64
 
     fn __init__(
-        mut self,
+        out self,
         pos: SIMD[DType.float64, 4],
         velocity: SIMD[DType.float64, 4],
         mass: Float64,
