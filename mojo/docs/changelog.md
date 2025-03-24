@@ -43,6 +43,24 @@ In this example the variadic pack is buffered to the stack in the `print` call
 along with the extra arguments, before doing a single syscall to write to
 stdout.
 
+- Removed `unroll` utility. Now simply use `@parameter` on for-loops.
+
+```mojo
+from utils.loop import unroll
+
+# Before
+@always_inline
+@parameter
+fn foo[i: Int]():
+    body_logic[i]()
+unroll[foo, iteration_range]()
+
+# After
+@parameter
+for i in range(iteration_range):
+    body_logic[i]()
+```
+
 ### GPU changes
 
 - `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the

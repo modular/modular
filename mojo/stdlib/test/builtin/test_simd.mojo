@@ -25,7 +25,7 @@ from testing import (
     assert_true,
 )
 
-from utils import IndexList, StaticTuple, unroll
+from utils import IndexList, StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
 
 
@@ -304,11 +304,9 @@ def test_truthy():
         assert_true(Scalar[type](True))
 
     @parameter
-    fn test_dtype_unrolled[i: Int]() raises:
+    for i in range(dtypes.__len__()):
         alias type = dtypes[i]
         test_dtype[type]()
-
-    unroll[test_dtype_unrolled, dtypes.__len__()]()
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
@@ -1830,11 +1828,9 @@ def test_comparison():
             assert_true(mixed_ge[3])
 
     @parameter
-    fn test_dtype_unrolled[i: Int]() raises:
+    for i in range(dtypes.__len__()):
         alias type = dtypes[i]
         test_dtype[type]()
-
-    unroll[test_dtype_unrolled, dtypes.__len__()]()
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter

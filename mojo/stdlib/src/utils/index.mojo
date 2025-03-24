@@ -27,7 +27,6 @@ from sys import bitwidthof
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from builtin.io import _get_dtype_printf_format, _snprintf
 
-from . import unroll
 from .static_tuple import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
@@ -241,10 +240,8 @@ struct IndexList[
         var tup = Self()
 
         @parameter
-        fn fill[idx: Int]():
+        for idx in range(2):
             tup[idx] = rebind[Int](elems[idx])
-
-        unroll[fill, 2]()
 
         self = tup
 
@@ -267,10 +264,8 @@ struct IndexList[
         var tup = Self()
 
         @parameter
-        fn fill[idx: Int]():
+        for idx in range(3):
             tup[idx] = rebind[Int](elems[idx])
-
-        unroll[fill, 3]()
 
         self = tup
 
@@ -293,10 +288,8 @@ struct IndexList[
         var tup = Self()
 
         @parameter
-        fn fill[idx: Int]():
+        for idx in range(4):
             tup[idx] = rebind[Int](elems[idx])
-
-        unroll[fill, 4]()
 
         self = tup
 

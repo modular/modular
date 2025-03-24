@@ -17,7 +17,6 @@ from collections.string.string_slice import StaticString, StringSlice
 
 from .index import Index, IndexList, product
 from .lock import BlockingScopedLock, BlockingSpinLock, SpinWaiter
-from .loop import unroll
 from .static_tuple import StaticTuple
 from .variant import Variant
 from .write import Writable, Writer, write_args, write_buffered
