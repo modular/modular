@@ -937,9 +937,12 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         )
         var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
+        var cache_length = k_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+
         return k_cache.load[width=width](
             bs=batch_idx,
-            tok_idx=token_idx,
+            tok_idx=cache_token_idx,
             head_idx=idx[1],
             head_dim_idx=idx[2],
         )
@@ -956,9 +959,12 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         )
         var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
+        var cache_length = k_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+
         k_cache.store(
             bs=batch_idx,
-            tok_idx=token_idx,
+            tok_idx=cache_token_idx,
             head_idx=idx[1],
             head_dim_idx=idx[2],
             val=val,
@@ -1038,9 +1044,12 @@ def rms_norm_kv_cache_ragged_paged[
         )
         var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
+        var cache_length = k_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+
         return k_cache.load[width=width](
             bs=batch_idx,
-            tok_idx=token_idx,
+            tok_idx=cache_token_idx,
             head_idx=idx[1],
             head_dim_idx=idx[2],
         )
@@ -1057,9 +1066,12 @@ def rms_norm_kv_cache_ragged_paged[
         )
         var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
 
+        var cache_length = k_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
+
         k_cache.store(
             bs=batch_idx,
-            tok_idx=token_idx,
+            tok_idx=cache_token_idx,
             head_idx=idx[1],
             head_dim_idx=idx[2],
             val=val,
