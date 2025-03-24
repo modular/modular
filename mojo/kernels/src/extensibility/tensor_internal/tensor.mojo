@@ -147,7 +147,7 @@ struct Tensor[type: DType](
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         owned shape: TensorShape,
         owned ptr: UnsafePointer[Scalar[type]],
     ):
@@ -162,7 +162,7 @@ struct Tensor[type: DType](
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         owned spec: TensorSpec,
         owned ptr: UnsafePointer[Scalar[type]],
     ):
@@ -210,7 +210,7 @@ struct Tensor[type: DType](
 
     @always_inline
     fn __init__(
-        mut self, shape: TensorShape, owned list: List[Scalar[type], *_]
+        out self, shape: TensorShape, owned list: List[Scalar[type], *_]
     ):
         """Initializes a 1-dimensional Tensor from the provided list.
 
