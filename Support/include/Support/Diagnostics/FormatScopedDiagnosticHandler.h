@@ -23,6 +23,8 @@ public:
   FormatScopedDiagnosticHandler(mlir::MLIRContext *ctx);
   std::string formatMessage() const;
 
+  static void emitDiagLocSeverity(llvm::raw_ostream &os,
+                                  const mlir::Diagnostic &diag);
   static void emitDiagnosticToStream(llvm::raw_ostream &os,
                                      const mlir::Diagnostic &diag);
 

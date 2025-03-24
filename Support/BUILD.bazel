@@ -945,7 +945,10 @@ modular_cc_library(
 modular_cc_library(
     name = "Diagnostics",
     srcs = glob(["lib/Diagnostics/**/*.cpp"]),
-    hdrs = glob(["include/Support/Diagnostics/**/*.h"]),
+    hdrs = glob(["include/Support/Diagnostics/**/*.h"]) + [
+        "include/Support/LLVMForwardDecls.h",
+        "include/Support/LogicalResult.h",
+    ],
     deps = ["@llvm-project//mlir:IR"],
 )
 
