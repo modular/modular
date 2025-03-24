@@ -8,7 +8,7 @@
 
 
 struct MyAffine:
-    fn __init__(mut self):
+    fn __init__(out self):
         pass
 
 # CHECK-LABEL: @"testAffineThing
@@ -19,7 +19,7 @@ fn testAffineThing():
 
 @explicit_destroy
 struct EmptyExplicit:
-    fn __init__(mut self):
+    fn __init__(out self):
         pass
 
     # CHECK-LABEL: @"consume
@@ -35,7 +35,7 @@ fn correctUseExample():
 
 struct ImplicitlyDestructibleContainerOfExplicit:
     var m: EmptyExplicit
-    fn __init__(mut self):
+    fn __init__(out self):
         self.m = EmptyExplicit()
     fn __del__(owned self):
         self.m^.consume()

@@ -814,7 +814,7 @@ fn form_reference_to_overloaded():
 
 @register_passable("trivial")
 struct StaticVec[size: Int]:
-  fn __init__[type: __mlir_type.`!kgen.dtype`](mut self, v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]):
+  fn __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]):
       pass
 
   @staticmethod
@@ -1049,7 +1049,7 @@ struct MixedInferAndPosParam[size: Int]:
 
     # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt](
     # CHECK-SAME: T0: !ToInt, T1: !ToInt
-    fn __init__[T0: ToInt, T1: ToInt, //](mut self, a: T0, b: T1):
+    fn __init__[T0: ToInt, T1: ToInt, //](out self, a: T0, b: T1):
         self.f0 = a.to_int()
 
 @value
@@ -1059,7 +1059,7 @@ struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int]:
 
     # CHECK-LABEL: lit.fn @"__init__[{{.*}}ToInt](
     # CHECK-SAME: T0: !ToInt, T1: !ToInt
-    fn __init__[T0: ToInt, T1: ToInt, //](mut self, z: ST, a: T0, b: T1):
+    fn __init__[T0: ToInt, T1: ToInt, //](out self, z: ST, a: T0, b: T1):
         self.f0 = a.to_int()
 
 # CHECK-LABEL: lit.fn @"useMixedInferAndPosParam()"
@@ -1579,7 +1579,7 @@ struct MOCO1065[
     T: CollectionElement,
     o: Origin[is_mutable]._mlir_type,
 ]:
-    fn __init__(mut self: MOCO1065[UInt8, o], ref [o] string: Empty):
+    fn __init__(out self: MOCO1065[UInt8, o], ref [o] string: Empty):
         pass
 
 fn test_MOCO1065[p: Empty](t: Empty):

@@ -12,7 +12,7 @@ from builtin.coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 
 @explicit_destroy("Must use consume!")
 struct EmptyExplicit:
-    fn __init__(mut self):
+    fn __init__(out self):
         pass
     fn consume(owned self):
         __disable_del self
@@ -25,12 +25,12 @@ fn errorExample():
 # expected-error @below {{Must use consume!}}
 struct ImplicitlyDestructibleContainerOfExplicitWithAutoDel:
     var m: EmptyExplicit
-    fn __init__(mut self):
+    fn __init__(out self):
         self.m = EmptyExplicit()
 
 struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
     var m: EmptyExplicit
-    fn __init__(mut self):
+    fn __init__(out self):
         self.m = EmptyExplicit()
     # expected-error @below {{Must use consume!}}
     fn __del__(owned self):
