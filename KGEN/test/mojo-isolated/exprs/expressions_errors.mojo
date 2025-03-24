@@ -688,16 +688,6 @@ fn bad_named_return2(out output: Int):
    # expected-error @below {{'return' in function with a named return slot should not return the slot itself}}
    return output
 
-# expected-error @+1 {{'as' result syntax removed, please move to 'out' syntax instead}}
-fn bad_named_return3() -> Int as output: pass
-
-fn bad_arg_convention(
-    # expected-error @+1 {{'borrowed' syntax removed, please use 'read' instead}}
-    borrowed x: Int,
-    # expected-error @+1 {{'inout' syntax removed, please use 'mut' instead}}
-    inout y: Int): pass
-
-
 fn unbound_function_type():
   # expected-error @below {{function type missing required origin set parameter}}
   var f: fn() [_] -> None

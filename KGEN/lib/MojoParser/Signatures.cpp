@@ -253,27 +253,9 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
   };
 
-  // Reject legacy syntax.
-  // TODO: remove this (and the borrowed/inout keywords) after 25.2 branches.
-  if (p.getToken().isAny(Token::kw_borrowed, Token::kw_inout)) {
-    StringRef spelling = "";
-    if (p.getToken().is(Token::kw_borrowed))
-      spelling = "read";
-    if (p.getToken().is(Token::kw_inout))
-      spelling = "mut";
-    auto diag = p.emitError(p.getToken().getLoc());
-    diag << "'" << p.getTokenSpelling() << "' syntax removed, please use '"
-         << spelling << "' instead"
-         << FixIt::replaceToken(p.getToken().getLoc(), spelling);
-  }
-
   // Any owned/read/mut/ref keyword sets convention.
   if (p.consumeIf(Token::kw_owned))
     convention = kConventionOwned;
-  else if (p.consumeIf(Token::kw_borrowed))
-    convention = kConventionRead;
-  else if (p.consumeIf(Token::kw_inout))
-    convention = kConventionMut;
   else if (p.getToken().is(Token::kw_ref)) {
     (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
     convention = kConventionRef;
@@ -285,8 +267,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     handleContextualArgConvention("read", kConventionRead);
   }
 
-  while (p.getToken().isAny(Token::kw_owned, Token::kw_borrowed,
-                            Token::kw_inout, Token::kw_ref)) {
+  while (p.getToken().isAny(Token::kw_owned, Token::kw_ref)) {
     p.emitTokenError("argument already has a convention specified");
     p.consumeToken();
   }
@@ -974,15 +955,6 @@ void ParsedArgumentList::parseResultIfPresent(
   // If this result parsing fails, then we just continue on as if none was
   // specified.
   (void)p.parseExpression(resultArg.typeExpr, stmtIndent);
-
-  // Parse a name binding for the result if present.
-  SMLoc asLoc;
-  // TODO: remove this after 25.2 branches.
-  if (p.consumeIf(Token::kw_as, &asLoc)) {
-    p.emitError(asLoc) << "'as' result syntax removed, please move to 'out' "
-                          "syntax instead";
-    (void)p.parseIdentifier(resultArg.name, "expected result name");
-  }
 
   // If we already had a result, emit an error but keep parsing.
   if (resultArg.convention == ParsedArgument::kConventionOut) {
@@ -1709,8 +1681,10 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
         argList.parsedArgs[0].convention == ParsedArgument::kConventionMut &&
         (!argList.resultArg.typeExpr || // Allow "no ->" and "-> None"
          argList.resultArg.typeExpr->kind == ExprNode::kNoneLiteral)) {
-      // TODO: Remove this legacy hack, to allow people to write inout/mut for
-      // self on init.
+      // TODO(25.4): Make this an error.
+      shared.emitWarning(argList.parsedArgs[0].loc,
+                         "__init__ method with 'mut' convention is deprecated, "
+                         "please use 'out' instead");
       argList.resultArg = argList.parsedArgs[0];
       argList.parsedArgs.erase(argList.parsedArgs.begin());
       argList.resultArg.convention = ParsedArgument::kConventionOut;
