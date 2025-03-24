@@ -1076,9 +1076,9 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
   if (!target)
     return Error("could not construct host target info: " + errorMessage);
 
-  std::unique_ptr<llvm::TargetMachine> machine(
-      target->createTargetMachine(targetTriple, arch, features, /*Options=*/{},
-                                  /*RM=*/relocModel));
+  std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
+      llvm::Triple(targetTriple), arch, features, /*Options=*/{},
+      /*RM=*/relocModel));
   if (!machine)
     return Error("failed to create target machine for data layout lookup");
 
