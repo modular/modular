@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Diagnostics/FormatScopedDiagnosticHandler.h"
+#include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/BuiltinOps.h"
 
 using namespace M;
@@ -33,7 +34,7 @@ static std::string locationToString(Location location) {
       .str();
 }
 
-void FormatScopedDiagnosticHandler::emitDiagnosticToStream(
+void FormatScopedDiagnosticHandler::emitDiagLocSeverity(
     raw_ostream &os, const Diagnostic &diag) {
   // Only display the location if it is meaningful.
   std::string location = locationToString(diag.getLocation());
@@ -43,8 +44,14 @@ void FormatScopedDiagnosticHandler::emitDiagnosticToStream(
   os << severityToString(diag.getSeverity()) << ": ";
   os << diag;
   os << "\n";
+}
 
-  // Display each note, indented two spaces
+void FormatScopedDiagnosticHandler::emitDiagnosticToStream(
+    raw_ostream &os, const Diagnostic &diag) {
+  // First emit the diag itself.
+  emitDiagLocSeverity(os, diag);
+
+  // Then display each note, indented two spaces.
   const char *indentation = "  ";
   for (Diagnostic &note : diag.getNotes()) {
     os << indentation;
