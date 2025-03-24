@@ -325,7 +325,7 @@ struct TestCase[_sampling: Bool, _largest: Bool = True]:
     var num_blocks_per_input: OptionalReg[Int]
 
     fn __init__(
-        mut self,
+        out self,
         N: Int,
         K: Int,
         block_size: Int,
@@ -348,7 +348,7 @@ struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True]:
     var num_blocks_per_input: OptionalReg[Int]
 
     fn __init__(
-        mut self,
+        out self,
         input_shape: IndexList[rank],
         K: Int,
         block_size: OptionalReg[Int] = None,

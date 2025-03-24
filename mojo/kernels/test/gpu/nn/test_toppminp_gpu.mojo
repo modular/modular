@@ -40,7 +40,7 @@ struct TestCase[_type: DType, _out_idx_type: DType, _is_top_p: Bool]:
     var p_threshold: Scalar[_type]
 
     fn __init__(
-        mut self,
+        out self,
         batch_size: Int,
         vocab_size: Int,
         temperature: Scalar[_type] = Scalar[_type](1.0),
