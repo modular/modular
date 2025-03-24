@@ -145,6 +145,7 @@ class MockPipelineModel(PipelineModel):
                 rand_values[i, self.eos_token] += 0.9
 
         return ModelOutputs(
+            logits=Tensor.from_numpy(rand_values),
             next_token_logits=Tensor.from_numpy(rand_values),
         )
 
