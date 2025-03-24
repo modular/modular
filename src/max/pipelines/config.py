@@ -183,6 +183,12 @@ class PipelineConfig(MAXConfig):
                             **kv_cache_kwargs
                         )
                         setattr(self, config_name, model_config)
+                    elif config_name == "_sampling_config" and (
+                        self.enable_echo or self.draft_model
+                    ):
+                        sampling_config = config_class(**matched_kwargs)
+                        sampling_config.enable_variable_logits = True
+                        setattr(self, config_name, sampling_config)
                     else:
                         setattr(
                             self, config_name, config_class(**matched_kwargs)

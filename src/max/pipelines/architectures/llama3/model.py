@@ -196,14 +196,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
             ),
         )
 
-        if self.pipeline_config.enable_echo:
+        if len(model_outputs) == 3:
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
                 logits=cast(Tensor, model_outputs[1]),
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logit_offsets=cast(Tensor, model_outputs[2]),
             )
         else:
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0])
+                logits=cast(Tensor, model_outputs[0]),
+                next_token_logits=cast(Tensor, model_outputs[0]),
             )
 
     def _prepare_ragged_initial_token_inputs(

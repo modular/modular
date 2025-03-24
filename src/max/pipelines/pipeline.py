@@ -142,11 +142,14 @@ class ModelInputs:
 
 @dataclass(frozen=True)
 class ModelOutputs:
+    logits: Tensor
+    """Logits for a variable number of tokens per sequence."""
+
     next_token_logits: Tensor | None = None
     """Logits for just the next token."""
 
-    logits: Tensor | None = None
-    """Logits for the entire token sequence."""
+    logit_offsets: Tensor | None = None
+    """Offsets to access variable length logits for each sequence."""
 
 
 T = TypeVar("T", bound=InputContext)
@@ -669,15 +672,18 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self,
         logits: Tensor,
         prev_tokens: Tensor,
+        logit_offsets: Optional[Tensor],
         bitmask: Optional[Tensor],
     ) -> tuple[Tensor, Tensor]:
-        if bitmask is not None:
-            a, b = self._sampler(logits, prev_tokens, bitmask)[:2]
-        else:
-            a, b = self._sampler(
-                logits,
-                prev_tokens,
-            )[:2]
+        graph_inputs = [logits, prev_tokens]
+
+        if logit_offsets:
+            graph_inputs.append(logit_offsets)
+
+        if bitmask:
+            graph_inputs.append(bitmask)
+
+        a, b = self._sampler(*graph_inputs)[:2]
         assert isinstance(a, Tensor)
         assert isinstance(b, Tensor)
         return (a, b)
@@ -726,8 +732,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
             model_outputs = self._pipeline_model.execute(
                 model_inputs=curr_step_inputs,
             )
-            assert model_outputs.next_token_logits is not None
-            next_token_logits = model_outputs.next_token_logits
 
             if bitmask is not None:
                 assert self.vocab_size is not None
@@ -744,8 +748,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
             # Sample next token.
             tracer.next("sample_next_token")
             new_tokens, new_generated_tokens = self.sample_logits(
-                next_token_logits,
+                model_outputs.logits,
                 generated_tokens,
+                model_outputs.logit_offsets,
                 bitmask,
             )
 

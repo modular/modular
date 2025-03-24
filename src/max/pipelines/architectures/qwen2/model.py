@@ -123,17 +123,13 @@ class Qwen2Model(PipelineModel[TextContext]):
         assert isinstance(model_outputs[0], Tensor)
         if len(model_outputs) > 1:
             assert isinstance(model_outputs[1], Tensor)
-            logits = model_outputs[1]
-        else:
-            logits = None
-
-        if self.pipeline_config.enable_echo:
             return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=logits,
+                logits=model_outputs[1], next_token_logits=model_outputs[0]
             )
         else:
-            return ModelOutputs(next_token_logits=model_outputs[0])
+            return ModelOutputs(
+                logits=model_outputs[0], next_token_logits=model_outputs[0]
+            )
 
     def _prepare_ragged_initial_token_inputs(
         self,

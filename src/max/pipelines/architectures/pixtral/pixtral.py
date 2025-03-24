@@ -153,7 +153,9 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         )
         assert not self.pipeline_config.enable_echo
         assert isinstance(model_outputs[0], Tensor)
-        return ModelOutputs(next_token_logits=model_outputs[0])
+        return ModelOutputs(
+            logits=model_outputs[0], next_token_logits=model_outputs[0]
+        )
 
     def prepare_initial_token_inputs(
         self,

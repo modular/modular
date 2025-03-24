@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Callable
+from typing import Callable, cast
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
@@ -160,6 +160,12 @@ class Transformer(Module):
             all_logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
             return self._apply_logits_postprocessor(
                 (last_token_logits, all_logits)
+            )
+
+            return (
+                last_token_logits,
+                all_logits,
+                cast(TensorValue, kwargs["input_row_offsets"]),
             )
 
         return self._apply_logits_postprocessor((last_token_logits,))
