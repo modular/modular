@@ -151,3 +151,80 @@ def expert_weights(config: DeepseekV2Config) -> list[dict[str, torch.Tensor]]:
         }
         experts.append(expert)
     return experts
+
+
+@pytest.fixture
+def attention_weights(config: DeepseekV2Config) -> dict[str, torch.Tensor]:
+    """Create dummy weights for DeepseekV2Attention module"""
+    torch.manual_seed(42)  # For reproducibility
+
+    weight_scale = 192.0  # so that we won't get overflow in the attention layer
+
+    weights = {}
+
+    # Query projection weights
+    if config.q_lora_rank is not None:
+        weights["q_a_proj.weight"] = (
+            torch.randn(
+                config.q_lora_rank,
+                config.hidden_size,
+                dtype=torch.bfloat16,
+            )
+            / weight_scale
+        )
+        weights["q_a_layernorm.weight"] = torch.ones(
+            config.q_lora_rank, dtype=torch.bfloat16
+        )
+        weights["q_b_proj.weight"] = (
+            torch.randn(
+                config.num_attention_heads
+                * (config.qk_nope_head_dim + config.qk_rope_head_dim),
+                config.q_lora_rank,
+                dtype=torch.bfloat16,
+            )
+            / weight_scale
+        )
+    else:
+        weights["q_proj.weight"] = (
+            torch.randn(
+                config.num_attention_heads
+                * (config.qk_nope_head_dim + config.qk_rope_head_dim),
+                config.hidden_size,
+                dtype=torch.bfloat16,
+            )
+            / weight_scale
+        )
+
+    # Key-value projection weights
+    weights["kv_a_proj_with_mqa.weight"] = (
+        torch.randn(
+            config.kv_lora_rank + config.qk_rope_head_dim,
+            config.hidden_size,
+            dtype=torch.bfloat16,
+        )
+        / weight_scale
+    )
+    weights["kv_a_layernorm.weight"] = torch.ones(
+        config.kv_lora_rank, dtype=torch.bfloat16
+    )
+    weights["kv_b_proj.weight"] = (
+        torch.randn(
+            config.num_attention_heads
+            * (config.qk_nope_head_dim + config.v_head_dim),
+            config.kv_lora_rank,
+            dtype=torch.bfloat16,
+        )
+        / weight_scale
+    )
+
+    # Output projection weights
+    weights["o_proj.weight"] = (
+        torch.randn(
+            config.hidden_size,
+            config.num_attention_heads * config.v_head_dim,
+            dtype=torch.bfloat16,
+        )
+        / weight_scale
+    )
+
+    return weights
