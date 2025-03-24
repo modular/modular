@@ -36,7 +36,7 @@ struct TileMask[
     var offset: IndexList[rank]
 
     fn __init__(
-        mut self,
+        out self,
         max_dim: IndexList[rank],
         offset: IndexList[rank] = IndexList[rank](0),
     ):

@@ -136,7 +136,7 @@ struct Element[
         self.runtime_layout = __type_of(self.runtime_layout)()
 
     fn __init__(
-        mut self,
+        out self,
         element_data: Self.element_data_type,
         runtime_layout: RuntimeLayout[
             layout,
@@ -678,7 +678,7 @@ struct MemoryElement[
     """
 
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[
             Scalar[dtype], address_space=address_space, alignment=alignment
         ],

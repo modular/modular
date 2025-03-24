@@ -367,7 +367,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         span: Span[
             Scalar[dtype],
             origin,
@@ -416,7 +416,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         span: Span[
             Scalar[dtype],
             origin,
@@ -490,7 +490,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
@@ -540,7 +540,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         ptr: UnsafePointer[
             Scalar[dtype],
             address_space=address_space,
@@ -653,7 +653,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         device_buffer: DeviceBuffer[
             dtype,
             address_space=address_space,
@@ -673,7 +673,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         host_buffer: HostBuffer[
             dtype,
             address_space=address_space,
@@ -693,7 +693,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         device_buffer: DeviceBuffer[
             dtype,
             address_space=address_space,
@@ -721,7 +721,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         host_buffer: HostBuffer[
             dtype,
             address_space=address_space,

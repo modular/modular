@@ -97,7 +97,7 @@ struct RuntimeLayout[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         shape: RuntimeTuple[
             layout.shape, element_bitwidth=bitwidth, unsigned=True
         ],

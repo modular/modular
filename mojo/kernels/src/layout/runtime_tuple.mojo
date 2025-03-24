@@ -131,7 +131,7 @@ struct RuntimeTuple[
 
     @always_inline
     @implicit
-    fn __init__[l: Int](mut self, values: IndexList[l, **_]):
+    fn __init__[l: Int](out self, values: IndexList[l, **_]):
         """Initialize a `RuntimeTuple` from an `IndexList`.
 
         Parameters:
