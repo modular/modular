@@ -184,7 +184,7 @@ struct MHAConfig:
         return num_smem_bytes
 
     fn __init__(
-        mut self,
+        out self,
         type: DType,
         num_heads: UInt,
         depth: UInt,

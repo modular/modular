@@ -39,7 +39,7 @@ struct _MatmulConfig:
     var pack_sizes: VariadicList[Int]
 
     fn __init__(
-        mut self,
+        out self,
         *,
         col_sizes: VariadicList[Int],
         row_sizes: VariadicList[Int],

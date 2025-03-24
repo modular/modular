@@ -61,7 +61,7 @@ struct ImageData[
     var dynamic_layout: Image2DLayout
 
     fn __init__(
-        mut self, data: NDBuffer[type, 4, origin, shape], layout: Image2DLayout
+        out self, data: NDBuffer[type, 4, origin, shape], layout: Image2DLayout
     ):
         """Construct of an image data instance with dynamic layout param.
 

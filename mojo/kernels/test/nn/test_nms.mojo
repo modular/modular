@@ -23,7 +23,7 @@ struct BoxCoords[type: DType]:
     var x2: Scalar[type]
 
     fn __init__(
-        mut self,
+        out self,
         y1: Scalar[type],
         x1: Scalar[type],
         y2: Scalar[type],

@@ -20,7 +20,7 @@ struct BoundingBox[type: DType]:
     var se: SIMD[type, 2]
 
     fn __init__(
-        mut self,
+        out self,
         y1: Scalar[type],
         x1: Scalar[type],
         y2: Scalar[type],

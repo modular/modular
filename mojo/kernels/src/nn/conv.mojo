@@ -138,7 +138,7 @@ struct Naive2dConvolution[
         naive2d_convolution._outer_loop()
 
     fn __init__(
-        mut self,
+        out self,
         output: UnsafePointer[Scalar[output_type]],
         input: UnsafePointer[Scalar[input_type]],
         filter: UnsafePointer[Scalar[filter_type]],
