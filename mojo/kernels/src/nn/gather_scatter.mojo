@@ -90,7 +90,7 @@ struct Axis(Intable, Indexer):
         self.axis = axis
 
     @always_inline
-    fn __init__(mut self, axis: Int, rank: Int) raises:
+    fn __init__(out self, axis: Int, rank: Int) raises:
         self.axis = normalize_neg_index(axis, rank)
 
     @always_inline
