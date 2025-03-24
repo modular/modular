@@ -13,7 +13,7 @@ from buffer import Dim
 ```
 """
 
-from utils import IndexList, StaticTuple, unroll
+from utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Dim

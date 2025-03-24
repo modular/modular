@@ -24,7 +24,6 @@ from memory.pointer import AddressSpace, _GPUAddressSpace
 from utils._serialize import _serialize
 from utils.index import IndexList
 from utils.index import product as tuple_product
-from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 
 alias _MAX_RANK = 8
