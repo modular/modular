@@ -256,7 +256,7 @@ struct _VariadicListMemIter[
     ]
 
     fn __init__(
-        mut self, index: Int, ref [list_origin]list: Self.variadic_list_type
+        out self, index: Int, ref [list_origin]list: Self.variadic_list_type
     ):
         self.index = index
         self.src = Pointer.address_of(list)

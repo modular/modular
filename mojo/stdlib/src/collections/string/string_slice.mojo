@@ -549,7 +549,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     @implicit
     fn __init__[
         O: ImmutableOrigin, //
-    ](mut self: StringSlice[O], ref [O]value: String):
+    ](out self: StringSlice[O], ref [O]value: String):
         """Construct an immutable StringSlice.
 
         Parameters:

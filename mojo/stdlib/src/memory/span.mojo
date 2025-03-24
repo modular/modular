@@ -172,7 +172,7 @@ struct Span[
     @implicit
     fn __init__[
         size: Int, //
-    ](mut self, ref [origin]array: InlineArray[T, size]):
+    ](out self, ref [origin]array: InlineArray[T, size]):
         """Construct a `Span` from an `InlineArray`.
 
         Parameters:

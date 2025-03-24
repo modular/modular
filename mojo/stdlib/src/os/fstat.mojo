@@ -96,8 +96,7 @@ struct stat_result(Stringable, Writable):
     """User defined flags for file."""
 
     fn __init__(
-        mut self,
-        /,
+        out self,
         *,
         st_mode: Int,
         st_ino: Int,

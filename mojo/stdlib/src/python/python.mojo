@@ -46,10 +46,10 @@ fn _init_python_global() -> _PythonGlobal:
 struct _PythonGlobal:
     var cpython: CPython
 
-    fn __moveinit__(mut self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         self.cpython = other.cpython^
 
-    fn __init__(mut self):
+    fn __init__(out self):
         self.cpython = CPython()
 
     fn __del__(owned self):

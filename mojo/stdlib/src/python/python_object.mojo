@@ -372,7 +372,7 @@ struct PythonObject(
         self.py_object = cpython.PyLong_FromSsize_t(integer)
 
     @implicit
-    fn __init__[dt: DType](mut self, value: SIMD[dt, 1]):
+    fn __init__[dt: DType](out self, value: SIMD[dt, 1]):
         """Initialize the object with a generic scalar value. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
         converted to the appropriate integer or floating point type.
@@ -424,7 +424,7 @@ struct PythonObject(
         self.py_object = cpython.PyUnicode_DecodeUTF8(string)
 
     @implicit
-    fn __init__[*Ts: CollectionElement](mut self, value: ListLiteral[*Ts]):
+    fn __init__[*Ts: CollectionElement](out self, value: ListLiteral[*Ts]):
         """Initialize the object from a list literal.
 
         Parameters:
@@ -465,7 +465,7 @@ struct PythonObject(
             _ = cpython.PyList_SetItem(self.py_object, i, obj.py_object)
 
     @implicit
-    fn __init__[*Ts: CollectionElement](mut self, value: Tuple[*Ts]):
+    fn __init__[*Ts: CollectionElement](out self, value: Tuple[*Ts]):
         """Initialize the object from a tuple literal.
 
         Parameters:

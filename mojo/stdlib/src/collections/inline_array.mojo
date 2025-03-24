@@ -136,7 +136,7 @@ struct InlineArray[
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     fn __init__(
-        mut self,
+        out self,
         *,
         owned unsafe_assume_initialized: InlineArray[
             UnsafeMaybeUninitialized[Self.ElementType], Self.size
@@ -234,7 +234,7 @@ struct InlineArray[
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         *,
         owned storage: VariadicListMem[Self.ElementType, _],
     ):

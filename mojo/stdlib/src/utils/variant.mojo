@@ -114,7 +114,7 @@ struct Variant[*Ts: CollectionElement](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @implicit
-    fn __init__[T: CollectionElement](mut self, owned value: T):
+    fn __init__[T: CollectionElement](out self, owned value: T):
         """Create a variant with one of the types.
 
         Parameters:

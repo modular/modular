@@ -494,7 +494,7 @@ struct SIMD[type: DType, size: Int](
     @always_inline("nodebug")
     @implicit
     fn __init__(
-        mut self,
+        out self,
         value: Self._mlir_type,
     ):
         """Initializes the SIMD vector with the underlying mlir value.

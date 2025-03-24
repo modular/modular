@@ -83,7 +83,7 @@ struct _DictEntryIter[
     var src: Pointer[Dict[K, V], dict_origin]
 
     fn __init__(
-        mut self, index: Int, seen: Int, ref [dict_origin]dict: Dict[K, V]
+        out self, index: Int, seen: Int, ref [dict_origin]dict: Dict[K, V]
     ):
         self.index = index
         self.seen = seen

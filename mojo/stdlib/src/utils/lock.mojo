@@ -108,7 +108,7 @@ struct BlockingScopedLock:
     """The underlying lock instance."""
 
     fn __init__(
-        mut self,
+        out self,
         lock: UnsafePointer[Self.LockType],
     ):
         """Primary constructor.
@@ -120,7 +120,7 @@ struct BlockingScopedLock:
         self.lock = lock
 
     fn __init__(
-        mut self,
+        out self,
         mut lock: Self.LockType,
     ):
         """Secondary constructor.
