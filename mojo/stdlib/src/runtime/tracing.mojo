@@ -326,6 +326,14 @@ struct Trace[
         self.event_id = 0  # Known only when begin recording in __enter__
         self.parent_id = parent_id
 
+        # Debug assert the AsyncRT profiler => StaticString invariant for now,
+        # to avoid making this raising.
+        debug_assert(
+            is_profiling_disabled[category, level]()
+            or _name_value.isa[StaticString](),
+            "the AsyncRT profiler only supports `StaticString` names",
+        )
+
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
             self._name_value = _name_value^
@@ -433,21 +441,14 @@ struct Trace[
         if is_profiling_disabled[category, level]():
             return
 
-        # The tracing builtins below expect the string to live across begin/end
+        # The tracing builtins below expect the string to live beyond begin/end
         # calls, so we have to pass an inner pointer into the representation.
         #
-        # FIXME(user-defined-type-merging): We need library-defined type merging
-        # to use something like:
-        # name_str_slice = StringSlice(self.name[StaticString]) if cond
-        #                      else StringSlice(self.name[String])
-        var name_str_ptr: UnsafePointer[Byte]
-        var name_str_len: Int
-        if self._name_value.isa[StaticString]():
-            name_str_ptr = self._name_value[StaticString].unsafe_ptr()
-            name_str_len = len(self._name_value[StaticString])
-        else:
-            name_str_ptr = self._name_value[String].unsafe_ptr()
-            name_str_len = len(self._name_value[String])
+        # IMPORTANT: since the AsyncRT profiler only supports `StaticString`
+        # names, `self._name_value` must be `StaticString` when
+        # `is_profiling_enabled()` is set.
+        var name_str_ptr = self._name_value[StaticString].unsafe_ptr()
+        var name_str_len = len(self._name_value[StaticString])
 
         if self.detail:
             # 1. If there is a detail string we must heap allocate the string
