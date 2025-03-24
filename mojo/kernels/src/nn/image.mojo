@@ -268,7 +268,7 @@ struct ImageShape:
         shape: DimList,
         type: DType,
         layout: Image2DLayout,
-    ](mut self, image_data: ImageData[shape, type, layout]):
+    ](out self, image_data: ImageData[shape, type, layout]):
         """Constructor of an ImageShape instance from an ImageData.
 
         Args:
