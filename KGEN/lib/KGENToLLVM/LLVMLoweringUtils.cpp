@@ -951,7 +951,8 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     return b.create<LLVM::IntToPtrOp>(
         tc.convertType(ptr.getType()),
         b.create<LLVM::ConstantOp>(
-            b.getIntegerAttr(tc.getIndexType(), ptr.getAddr())));
+            b.getIntegerAttr(tc.getIndexType(), ptr.getAddr())),
+        LLVM::DereferenceableAttr{});
   }
 
   // We can lower `StoreToMemAttr` by writing the underlying value into a

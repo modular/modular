@@ -14,6 +14,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
+#include <chrono>
 
 using namespace M;
 
@@ -29,37 +30,30 @@ doLockedFileOperation(const std::filesystem::path &filePath,
   // Lock or wait for the file to be able to operate on it.
   while (true) {
     llvm::LockFileManager lockManager(filePathStr);
-    switch (lockManager) {
-    case llvm::LockFileManager::LFS_Error:
+    bool owned;
+    if (llvm::Error err = lockManager.tryLock().moveInto(owned)) {
       return Error("unable to take lock file for '" + filePathStr +
-                   "': " + lockManager.getErrorMessage());
-    case llvm::LockFileManager::LFS_Owned:
-      // We got the lock, and can operate on the file.
-      return callable();
-
-    case llvm::LockFileManager::LFS_Shared:
-      // Another process is touching the file, handle the different
-      // outcomes of this below.
-      break;
+                   "': " + toString(std::move(err)));
+    } else if (!owned) {
+      // Wait for the other process to finish touching the file.
+      switch (lockManager.waitForUnlockFor(std::chrono::seconds(90))) {
+      case llvm::WaitForUnlockResult::Success:
+        // We now have the lock file, and can proceed to operate on the file if
+        // the other process didn't do it.
+        break;
+      case llvm::WaitForUnlockResult::OwnerDied:
+        // The owner died, try again to take the file.
+        continue;
+      case llvm::WaitForUnlockResult::Timeout:
+        // We timed out when trying to acquire the lock for the file.
+        // TODO: We could try again, but the default timeout is 1.5 minutes.
+        return Error("timed out waiting for lock file for '" + filePathStr +
+                     "'");
+      }
     }
 
-    // Wait for the other process to finish touching the file.
-    switch (lockManager.waitForUnlock()) {
-    case llvm::LockFileManager::Res_Success:
-      // We now have the lock file, and can proceed to operate on the file if
-      // the other process didn't do it.
-      return callable();
-    case llvm::LockFileManager::Res_OwnerDied:
-      // The owner died, try again to take the file.
-      continue;
-    case llvm::LockFileManager::Res_Timeout:
-      // We timed out when trying to acquire the lock for the file.
-      // TODO: We could try again, but the default timeout is 1.5 minutes.
-      return Error("timed out waiting for lock file for '" + filePathStr + "'");
-    }
+    return callable();
   }
-
-  llvm_unreachable("something has gone very wrong with the lock file manager");
 }
 
 ErrorOr<std::filesystem::path> M::writeFileUnderLock(
