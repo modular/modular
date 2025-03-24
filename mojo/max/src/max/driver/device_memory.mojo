@@ -86,7 +86,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         )
 
     fn __init__(
-        mut self,
+        out self,
         num_bytes: Int,
         device: Device,
         name: Optional[String] = None,
@@ -115,7 +115,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
 
     @doc_private
     fn __init__(
-        mut self,
+        out self,
         owned_impl_ptr: UnsafePointer[NoneType],
         num_bytes: Int,
         device: Device,
@@ -149,7 +149,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
 
     fn __init__[
         type: DType, rank: Int
-    ](mut self, owned tensor: Tensor[type, rank]) raises:
+    ](out self, owned tensor: Tensor[type, rank]) raises:
         """Creates a DeviceMemory from the existing `tensor` storage.
 
         Args:
@@ -326,7 +326,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
     var spec: TensorSpec
 
     fn __init__(
-        mut self, spec: TensorSpec, device: Device, name: Optional[String]
+        out self, spec: TensorSpec, device: Device, name: Optional[String]
     ) raises:
         """Allocates a DeviceTensor in the Device's address space.
 

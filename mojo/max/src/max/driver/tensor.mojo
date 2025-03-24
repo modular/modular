@@ -88,7 +88,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement):
         self._device_memory_impl_ptr = tmp^._steal_impl_ptr()
 
     fn __init__(
-        mut self, shape: TensorShape, device: Optional[Device] = None
+        out self, shape: TensorShape, device: Optional[Device] = None
     ) raises:
         """Creates tensor with given shape on the given device. If device is
         not given tensor will be created on cpu.

@@ -75,7 +75,7 @@ struct TensorNames(Sized):
     var length: Int
 
     fn __init__(
-        mut self,
+        out self,
         fn_name: String,
         ptr: CCompiledModel,
         length: Int,
@@ -119,7 +119,7 @@ struct InputTensorNames(Sized):
     alias GetInputTensorNamesFnName = "M_getInputNames"
 
     fn __init__(
-        mut self,
+        out self,
         ptr: CCompiledModel,
         length: Int,
         lib: DLHandle,
@@ -146,7 +146,7 @@ struct OutputTensorNames(Sized):
     alias GetOutputTensorNamesFnName = "M_getOutputNames"
 
     fn __init__(
-        mut self,
+        out self,
         ptr: CCompiledModel,
         length: Int,
         lib: DLHandle,

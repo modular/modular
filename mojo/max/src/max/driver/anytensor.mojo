@@ -103,7 +103,7 @@ struct AnyTensor:
     @implicit
     fn __init__[
         type: DType, rank: Int
-    ](mut self, owned tensor: Tensor[type, rank]) raises:
+    ](out self, owned tensor: Tensor[type, rank]) raises:
         """Creates AnyTensor from a Tensor.
 
         Args:
@@ -422,7 +422,7 @@ struct AnyMemory:
     @implicit
     fn __init__[
         type: DType, rank: Int
-    ](mut self, owned tensor: Tensor[type, rank]) raises:
+    ](out self, owned tensor: Tensor[type, rank]) raises:
         """Creates AnyMemory from a Tensor.
 
         Args:

@@ -50,7 +50,7 @@ struct _OwnedGraph(Movable):
     var parameters: Set[String]
 
     fn __init__(
-        mut self,
+        out self,
         owned ctx: _mlir.Context,
         owned op: _mlir.Operation,
         in_types: List[Type],
@@ -186,7 +186,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         self = Self("graph", List[Type](in_type))
 
     fn __init__(
-        mut self,
+        out self,
         in_types: List[Type],
         out_types: List[Type] = List[Type](),
     ):
@@ -208,7 +208,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         self = Self("graph", in_types, out_types)
 
     fn __init__(
-        mut self,
+        out self,
         name: String,
         in_types: List[Type],
         out_types: List[Type] = List[Type](),

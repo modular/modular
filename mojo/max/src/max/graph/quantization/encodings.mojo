@@ -143,7 +143,7 @@ struct _BlockQ40:
     """Nibbles / quants."""
 
     def __init__(
-        mut self,
+        out self,
         d: Float16,
         qs: InlineArray[UInt8, Self.QK4_0 // 2],
     ):
@@ -619,7 +619,7 @@ struct _BlockQ4K:
     """4-bit quants."""
 
     def __init__(
-        mut self,
+        out self,
         d: Float16,
         dmin: Float16,
         scales: InlineArray[UInt8, K_SCALE_SIZE],
@@ -882,7 +882,7 @@ struct _BlockQ5K:
     """Lower 4 bits of quants."""
 
     def __init__(
-        mut self,
+        out self,
         d: Float16,
         dmin: Float16,
         scales: InlineArray[UInt8, K_SCALE_SIZE],
@@ -1053,7 +1053,7 @@ struct _BlockQ6K:
     """Super-block scale."""
 
     def __init__(
-        mut self,
+        out self,
         ql: InlineArray[UInt8, QK_K // 2],
         qh: InlineArray[UInt8, QK_K // 4],
         scales: InlineArray[Int8, QK_K // 16],

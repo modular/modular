@@ -19,7 +19,7 @@ struct _CheckpointTensor:
     var spec: TensorSpec
 
     fn __init__(
-        mut self,
+        out self,
         owned ptr: UnsafePointer[UInt8],
         owned spec: TensorSpec,
     ):

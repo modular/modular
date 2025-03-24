@@ -144,7 +144,7 @@ struct TorchInputSpec(Movable):
         self.torch_lib = lib
 
     fn __init__(
-        mut self,
+        out self,
         shape: List[ShapeElement],
         dtype: DType,
         lib: DLHandle,
@@ -183,7 +183,7 @@ struct TorchInputSpec(Movable):
         self.torch_lib = lib
 
     fn __init__(
-        mut self,
+        out self,
         shape: NoneType,
         dtype: DType,
         lib: DLHandle,

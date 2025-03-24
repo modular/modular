@@ -28,7 +28,7 @@ struct Value:
     alias _NewListFnName = "M_createListAsyncValue"
 
     fn __init__(
-        mut self,
+        out self,
         ptr: CValue,
         lib: DLHandle,
         owned session: InferenceSession,
@@ -178,7 +178,7 @@ struct List(Sized):
     var _session: InferenceSession
 
     fn __init__(
-        mut self,
+        out self,
         ptr: CList,
         lib: DLHandle,
         owned session: InferenceSession,

@@ -75,7 +75,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         self._session = existing._session^
 
     fn __init__(
-        mut self,
+        out self,
         ptr: CTensorSpec,
         lib: DLHandle,
         owned session: InferenceSession,
@@ -95,7 +95,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         self._session = session^
 
     fn __init__(
-        mut self,
+        out self,
         name: String,
         spec: TensorSpec,
         lib: DLHandle,
@@ -132,7 +132,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         self._session = session^
 
     fn __init__(
-        mut self,
+        out self,
         name: String,
         shape: Optional[List[Optional[Int]]],
         dtype: DType,
@@ -172,7 +172,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             self = Self(name, casted_shape, dtype, lib, session)
 
     fn __init__(
-        mut self,
+        out self,
         name: String,
         shape: Optional[List[Optional[Int64]]],
         dtype: DType,

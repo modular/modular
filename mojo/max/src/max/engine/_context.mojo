@@ -77,7 +77,7 @@ struct RuntimeConfig:
     alias NewRuntimeConfigFnName = "M_newRuntimeConfig"
 
     fn __init__(
-        mut self,
+        out self,
         lib: DLHandle,
         device: Device,
         allocator_type: AllocatorType = AllocatorType.CACHING,

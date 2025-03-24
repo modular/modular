@@ -49,7 +49,7 @@ struct NamedTensor:
 
     fn __init__[
         dtype: DType
-    ](mut self, owned name: String, owned tensor: Tensor[dtype]):
+    ](out self, owned name: String, owned tensor: Tensor[dtype]):
         """Creates a `NamedTensor` owning the tensor with a reference count.
 
         Parameters:
