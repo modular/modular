@@ -17,8 +17,6 @@ from linalg.utils import (
     get_matmul_prefetch_b_distance_k,
 )
 
-from utils.loop import unroll
-
 alias MR = 6
 alias NR = 64
 

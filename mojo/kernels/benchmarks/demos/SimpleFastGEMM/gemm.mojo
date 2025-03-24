@@ -20,7 +20,6 @@ from linalg.utils import (
 from memory import UnsafePointer
 
 from utils.index import Index
-from utils.loop import unroll
 
 alias dtype = DType.float32
 alias simd_size = simdwidthof[dtype]()
