@@ -537,8 +537,13 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         self._store[0] = size
         for i in range(size):
             var value = elements[i]
-            if value < Self.MinimumValue:
-                abort("Only integers greater than MinimumValue are supported")
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if value < Self.MinimumValue:
+                    abort(
+                        "Only integers greater than MinimumValue are supported"
+                    )
             self._store[i + 1] = value
 
         @parameter
@@ -555,8 +560,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         Args:
             value: The integer value to store in the tuple.
         """
-        if value < Self.MinimumValue:
-            abort("Only integers greater than MinimumValue are supported")
+
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            if value < Self.MinimumValue:
+                abort("Only integers greater than MinimumValue are supported")
         self._store = IntArray(2)
         self._store[0] = 1
         self._store[1] = value
@@ -659,8 +667,14 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         var i = 0
         for dim in dimlist.value:
             var value = dim.get() if dim else UNKNOWN_VALUE
-            if value < Self.MinimumValue:
-                abort("Only integers greater than MinimumValue are supported")
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if value < Self.MinimumValue:
+                    abort(
+                        "Only integers greater than MinimumValue are supported"
+                    )
+
             self._store[i + 1] = value
             i += 1
 
@@ -884,8 +898,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             the new elements, which may impact performance for large tuples.
             - Aborts if called on a non-owning (sub-tuple) instance.
         """
-        if not self._store.owning():
-            abort("Can't modify a sub-tuple.")
+
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            if not self._store.owning():
+                abort("Can't modify a sub-tuple.")
 
         if len(elements) == 0:
             return
@@ -941,8 +958,11 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             - Aborts if called on a non-owning (sub-tuple) instance.
             - If the input tuple is empty, this method returns without making any changes.
         """
-        if not self._store.owning():
-            abort("Can't modify a sub-tuple.")
+
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            if not self._store.owning():
+                abort("Can't modify a sub-tuple.")
 
         if len(tuple) == 0:
             return
@@ -1046,15 +1066,18 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         if self._store.owning() > 0:
             var data_size = self._store.size()
             var computed_size = Self.tuple_size(self._store)
-            if data_size != computed_size:
-                abort(
-                    String(
-                        "size validation failed: ",
-                        data_size,
-                        " != ",
-                        computed_size,
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if data_size != computed_size:
+                    abort(
+                        String(
+                            "size validation failed: ",
+                            data_size,
+                            " != ",
+                            computed_size,
+                        )
                     )
-                )
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -1512,7 +1535,10 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int]:
                 self.ts[2][][idx],
             )
         else:
-            abort("Only zip[2] or zip[3] are supported.")
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                abort("Only zip[2] or zip[3] are supported.")
 
             var result = IntTuple[origin](self.ts[0][][idx])
             for i in range(1, n):
@@ -2104,8 +2130,11 @@ fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     Note:
         If either input contains `UNKNOWN_VALUE`, the result will be `UNKNOWN_VALUE`.
     """
-    if len(a) != len(b):
-        abort("Tuple sizes don't match: ", len(a), " != ", len(b))
+
+    @parameter
+    if INT_TUPLE_VALIDATION:
+        if len(a) != len(b):
+            abort("Tuple sizes don't match: ", len(a), " != ", len(b))
     if is_int(a):
         if UNKNOWN_VALUE in (Int(a), Int(b)):
             return UNKNOWN_VALUE
@@ -2129,8 +2158,11 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     Note:
         If the input tuples have different lengths, `abort()` will be called.
     """
-    if len(a) != len(b):
-        abort("Tuple sizes don't match: ", len(a), " != ", len(b))
+
+    @parameter
+    if INT_TUPLE_VALIDATION:
+        if len(a) != len(b):
+            abort("Tuple sizes don't match: ", len(a), " != ", len(b))
     if is_int(a):
         return Int(a) * Int(b)
     var r: Int = 0
@@ -2426,8 +2458,11 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
     """
     if is_tuple(a):
         if is_tuple(init):  # tuple tuple
-            if len(a) != len(init):
-                abort("len(a) != len(init)")
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if len(a) != len(init):
+                    abort("len(a) != len(init)")
             return apply_zip[_prefix_product2](a, init)
         else:  # tuple "int"
             var v_init = Int(init)
@@ -2440,8 +2475,13 @@ fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
                 )
             return r
     else:
+
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            if is_tuple(init):  # "int" tuple
+                abort("'int' tuple not allowed")  # Error
+
         if is_tuple(init):  # "int" tuple
-            abort("'int' tuple not allowed")  # Error
             return IntTuple()
         else:  # "int" "int"
             return init.owned_copy()
@@ -2473,8 +2513,11 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
     """
     if is_tuple(a):
         if is_tuple(b):  # tuple tuple
-            if len(a) != len(b):
-                abort("Tuple sizes don't match: ", len(a), " != ", len(b))
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if len(a) != len(b):
+                    abort("Tuple sizes don't match: ", len(a), " != ", len(b))
             return apply_zip[shape_div](a, b)
         else:  # tuple "int"
             var vb = Int(b)
@@ -2493,8 +2536,10 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
             if va == UNKNOWN_VALUE or vb == UNKNOWN_VALUE:
                 return UNKNOWN_VALUE
 
-            if not (va % vb == 0 or vb % va == 0):
-                abort("Incompatible shape values: ", va, " ", vb)
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if not (va % vb == 0 or vb % va == 0):
+                    abort("Incompatible shape values: ", va, " ", vb)
 
             return va // vb if va % vb == 0 else signum(va * vb)
 
@@ -2574,16 +2619,22 @@ fn idx2crd2(
 
     if is_tuple(idx):
         if is_tuple(shape):  # tuple tuple tuple
-            if len(idx) != len(shape) or len(idx) != len(stride):
-                abort("input shapes mismatch")
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if len(idx) != len(shape) or len(idx) != len(stride):
+                    abort("input shapes mismatch")
 
             return apply_zip[idx2crd2](idx, shape, stride)
         else:  # tuple "int" "int"
             return abort[IntTuple]("Illegal inputs")  # Error
     else:
         if is_tuple(shape):  # "int" tuple tuple
-            if len(shape) != len(stride):
-                abort("input shapes mismatch")
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if len(shape) != len(stride):
+                    abort("input shapes mismatch")
 
             @parameter
             fn idx2crd2(shape: IntTuple, stride: IntTuple) -> IntTuple:
@@ -2739,21 +2790,30 @@ fn crd2idx(
 
     if is_tuple(crd):
         if is_tuple(shape):  # tuple tuple tuple
-            if len(crd) != len(shape) or len(crd) != len(stride):
-                abort("Shape mismatch")
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if len(crd) != len(shape) or len(crd) != len(stride):
+                    abort("Shape mismatch")
             var r: Int = 0
             for z in zip(crd, shape, stride):
                 r += crd2idx(z[0], z[1], z[2])
             return r
         else:  # tuple "int" "int"
-            abort("Illegal input types")
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                abort("Illegal input types")
             return 0
     else:
         var int_crd: Int = 0 if len(crd) == 0 else Int(crd)
 
         if is_tuple(shape):  # "int" tuple tuple
-            if len(shape) != len(stride):
-                abort("Can't compute idx, shape != stride")
+
+            @parameter
+            if INT_TUPLE_VALIDATION:
+                if len(shape) != len(stride):
+                    abort("Can't compute idx, shape != stride")
             if len(shape) == 0:
                 return 0
             var result: Int = 0
@@ -2938,8 +2998,11 @@ fn _flat_apply_invperm(tuple: IntTuple, perm: IntList) -> IntTuple:
 
 fn _flat_compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
     """Helper function that computes compact order for flattened inputs."""
-    if len(shape) != len(order):
-        abort("Shape and order must have the same size")
+
+    @parameter
+    if INT_TUPLE_VALIDATION:
+        if len(shape) != len(order):
+            abort("Shape and order must have the same size")
 
     var perm = _sorted_perm(order)
     var sorted_shape = _flat_apply_perm(shape, perm)
