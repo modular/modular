@@ -20,6 +20,7 @@ from time import perf_counter_ns
 """
 
 from math import floor
+from memory import UnsafePointer
 from os import abort
 from sys import (
     external_call,
@@ -30,9 +31,7 @@ from sys import (
     os_is_linux,
     os_is_windows,
 )
-from sys._assembly import inlined_assembly
 
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
