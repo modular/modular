@@ -31,14 +31,18 @@ from ..clamp import clamp
 from ..comm import Allreduce
 from ..kernels import (
     MHAMaskVariant,
+    flare_mla_decode_ragged,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     fused_qkv_ragged_matmul_quantized,
+    matmul_k_cache_ragged,
+    rms_norm_key_cache,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
 from ..layer import Module
 from ..linear import LinearV2
+from ..norm import RMSNormV2
 from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
     AttentionImpl,
@@ -358,6 +362,11 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
         scale: float | None = None,
         has_bias: bool = False,
         clip_qkv: float | None = None,
+        q_lora_rank: int | None = None,
+        kv_lora_rank: int = 512,
+        qk_nope_head_dim: int = 128,
+        qk_rope_head_dim: int = 64,
+        v_head_dim: int = 128,
     ):
         """Initializes the attention layer.
 
@@ -397,62 +406,199 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
         if has_bias:
             raise ValueError("Latent Attention with Rope does not support bias")
 
-        if not kv_params.cache_strategy.uses_opaque():
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
-
         self.rope = rope
         self.n_heads = num_attention_heads
         self.layer_idx = layer_idx
         self.kv_params = kv_params
         self.num_key_value_heads = num_key_value_heads
         self.hidden_size = hidden_size
-        self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
-        )
+
+        self.q_lora_rank = q_lora_rank
+        self.kv_lora_rank = kv_lora_rank
+        self.qk_nope_head_dim = qk_nope_head_dim
+        self.qk_rope_head_dim = qk_rope_head_dim
+        self.qk_head_dim = qk_nope_head_dim + qk_rope_head_dim
+        self.v_head_dim = v_head_dim
+        self.cache_head_dim = kv_lora_rank + qk_rope_head_dim
+
+        self.scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
         self.devices = devices
 
-        self.o_proj = Weight(  # type: ignore
-            name="o_proj.weight",
-            dtype=DType.bfloat16,
-            shape=(2048, 2048),  # Deepseek-V2-lite weight shapes.
-        )
+        if self.q_lora_rank is not None:
+            self.q_a_proj = Weight(
+                name="q_a_proj.weight",
+                dtype=dtype,
+                shape=(self.q_lora_rank, self.hidden_size),
+            )
+            self.q_a_layernorm = RMSNormV2(dim=self.q_lora_rank, eps=1e-6)
+            self.q_b_proj = Weight(
+                name="q_b_proj.weight",
+                dtype=dtype,
+                shape=(self.n_heads * self.qk_head_dim, self.q_lora_rank),
+            )
+        else:
+            self.q_proj = Weight(
+                name="q_proj.weight",
+                dtype=dtype,
+                shape=(self.n_heads * self.qk_head_dim, self.hidden_size),
+            )
 
-        self.q_proj = Weight(
-            name="q_proj.weight",
-            dtype=DType.bfloat16,
-            shape=(3072, 2048),  # Deepseek-V2-lite weight shapes.
-        )
         self.kv_a_proj_layernorm = Weight(
             name="kv_a_layernorm.weight",
-            dtype=DType.bfloat16,
-            shape=(512,),  # Deepseek-V2-lite weight shapes.
+            dtype=dtype,
+            shape=(self.kv_lora_rank,),
         )
         self.kv_a_proj_with_mqa = Weight(
             name="kv_a_proj_with_mqa.weight",
-            dtype=DType.bfloat16,
-            shape=(576, 2048),  # Deepseek-V2-lite weight shapes.
+            dtype=dtype,
+            shape=(self.cache_head_dim, self.hidden_size),
         )
-
         self.kv_b_proj = Weight(
             name="kv_b_proj.weight",
-            dtype=DType.bfloat16,
-            shape=(4096, 512),  # Deepseek-V2-lite weight shapes.
+            dtype=dtype,
+            shape=(
+                self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
+                self.kv_lora_rank,
+            ),
+        )
+        self.o_proj = linear_cls(
+            in_dim=self.n_heads * self.v_head_dim,
+            out_dim=self.hidden_size,
+            dtype=dtype,
+            device=devices[0] if devices else None,
+        )
+
+    @property
+    def w_uk_uv(self) -> List[TensorValue]:
+        """The concatenation of q, k, and v weight vectors."""
+        kv_b_proj_weight: TensorValue = self.kv_b_proj.transpose(0, 1)
+
+        kv_b_proj_weight = kv_b_proj_weight.reshape(
+            (
+                self.kv_lora_rank,
+                self.n_heads,
+                (self.qk_nope_head_dim + self.v_head_dim),
+            )
+        )
+
+        w_uk, w_uv = ops.split(
+            kv_b_proj_weight, [self.qk_nope_head_dim, self.v_head_dim], axis=2
+        )
+
+        w_uv = w_uv.transpose(0, 1)
+
+        w_uk_t = w_uk.permute([1, 2, 0])
+
+        return [w_uk_t, w_uv]
+
+    @property
+    def wqkv(self) -> TensorValue:
+        raise NotImplementedError(
+            "wqkv is not implemented for LatentAttentionWithRope"
+        )
+
+    @property
+    def wqkv_bias(self) -> TensorValue | None:
+        raise NotImplementedError(
+            "wqkv_bias is not implemented for LatentAttentionWithRope"
         )
 
     def __call__(
         self,
         x: TensorValue,
         kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
+            PagedKVCacheCollection, ContinuousBatchingKVCacheCollection
         ],
         **kwargs,
     ) -> TensorValue:
-        raise NotImplementedError(
-            "LatentAttentionWithRope is not yet implemented."
+        assert isinstance(kv_collection, PagedKVCacheCollection)
+
+        # Get attributes from input.
+        total_seq_len = x.shape[0]
+
+        layer_idx = self.layer_idx
+
+        if self.q_lora_rank is not None:
+            xq = self.q_a_layernorm(x @ self.q_a_proj.T) @ self.q_b_proj.T
+        else:
+            xq = x @ self.q_proj.T
+
+        w_uk, w_uv = self.w_uk_uv
+
+        matmul_k_cache_ragged(
+            self.kv_params,
+            hidden_states=x,
+            weight=self.kv_a_proj_with_mqa,
+            input_row_offsets=kwargs["input_row_offsets"],
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
         )
+
+        rms_norm_key_cache(
+            self.kv_params,
+            kv_collection=kv_collection,
+            gamma=self.kv_a_proj_layernorm,
+            epsilon=1e-6,
+            layer_idx=layer_idx,
+            total_seq_len=total_seq_len,
+            input_row_offsets=kwargs["input_row_offsets"],
+            rms_norm_cols=self.kv_lora_rank,
+        )
+
+        xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
+
+        xq_nope, xq_rope = ops.split(
+            xq, [self.qk_nope_head_dim, self.qk_rope_head_dim], axis=2
+        )
+
+        # Apply rope.
+        if xq.device is not None:
+            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+        else:
+            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+
+        xq_rope = fused_qk_ragged_rope(
+            self.kv_params,
+            xq_rope,
+            kwargs["input_row_offsets"],
+            kv_collection,
+            freqs_cis,
+            ops.constant(layer_idx, DType.uint32),
+            interleaved=True,
+        )
+
+        # from [B, H, D] to [H, B, D]
+        xq_nope = xq_nope.transpose(0, 1)
+
+        # batched matmul
+        xq_nope_proj = xq_nope @ w_uk
+
+        xq_nope_proj = xq_nope_proj.transpose(0, 1)
+
+        xq = ops.concat([xq_nope_proj, xq_rope], axis=2)
+
+        # Calculate Flash Attention.
+        attn_out = flare_mla_decode_ragged(
+            self.kv_params,
+            input=xq,
+            kv_collection=kv_collection,
+            layer_idx=ops.constant(layer_idx, DType.uint32),
+            input_row_offsets=kwargs["input_row_offsets"],
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=self.scale,
+        )
+
+        # from [B, H, D] to [H, B, D]
+        attn_out = attn_out.transpose(0, 1)
+
+        # batched matmul
+        attn_out_proj = attn_out @ w_uv
+
+        attn_out_proj = attn_out_proj.transpose(0, 1)
+
+        attn_out = ops.reshape(attn_out_proj, shape=[total_seq_len, -1])
+
+        return self.o_proj(attn_out)
 
 
 class GGUFQAttentionWithRope(AttentionWithRopeV2):

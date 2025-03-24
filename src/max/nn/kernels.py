@@ -963,6 +963,88 @@ def flash_attention_ragged(
     )[0].tensor
 
 
+def flare_mla_decode_ragged(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    qk_rope_dim: int = 64,
+) -> TensorValue:
+    """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
+
+    Notably, this materializes the attention mask (dependent on MHAMaskVariant)
+    within the kernel.
+    `input` and `input_row_offsets` are used together to implement the ragged
+    tensor.
+    `input_row_offsets` indicates where each batch starts and ends in `input`
+
+    Note that this is self attention and the KV sequence length is
+    assumed to be equal to the Q sequence length.
+    For KV sequence length != Q sequence length, use `cross_attention_ragged`.
+    """
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        msg = (
+            f"expected input of rank {input_rank_expected} but got {input.rank}"
+        )
+        raise ValueError(msg)
+
+    if input.dtype != kv_params.dtype:
+        msg = (
+            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected uint32 layer_idx but got {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    op_name = f"mo.mla.decode.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+
+    return ops.inplace_custom(
+        op_name,
+        values=[
+            input,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            # NOTE: The scale argument to flash attention is constrained to float32.
+            ops.constant(scale, dtype=DType.float32),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[
+                    input.shape[0],
+                    input.shape[1],
+                    input.shape[2] - qk_rope_dim,
+                ],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def cross_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
