@@ -350,7 +350,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         self.spec = TensorSpec()
         self._storage = DeviceMemory()
 
-    fn __init__(mut self, owned storage: DeviceMemory, spec: TensorSpec) raises:
+    fn __init__(out self, owned storage: DeviceMemory, spec: TensorSpec) raises:
         """Constructs a DeviceTensor from an existing storage buffer and spec.
 
         Args:

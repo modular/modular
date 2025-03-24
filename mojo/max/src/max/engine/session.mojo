@@ -273,7 +273,7 @@ struct InputSpec(CollectionElement):
         self._dynamic = None
         self._dtype = spec.dtype()
 
-    fn __init__(mut self, spec: Optional[List[Optional[Int64]]], dtype: DType):
+    fn __init__(out self, spec: Optional[List[Optional[Int64]]], dtype: DType):
         """
         Create specifications for one input tensor, as a list of integers.
         Only applicable for TorchScript models.

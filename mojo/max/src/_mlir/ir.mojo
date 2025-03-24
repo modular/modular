@@ -123,7 +123,7 @@ struct Context:
         self.c = _c.IR.mlirContextCreateWithThreading(threading_enabled)
 
     fn __init__(
-        mut self, owned registry: DialectRegistry, threading_enabled: Bool
+        out self, owned registry: DialectRegistry, threading_enabled: Bool
     ):
         self.c = _c.IR.mlirContextCreateWithRegistry(
             registry.c, threading_enabled
@@ -218,7 +218,7 @@ struct Location(CollectionElement, Stringable):
     fn __init__(out self, c: Self.cType):
         self.c = c
 
-    fn __init__(mut self, ctx: Context, filename: String, line: Int, col: Int):
+    fn __init__(out self, ctx: Context, filename: String, line: Int, col: Int):
         self.c = _c.IR.mlirLocationFileLineColGet(
             ctx.c,
             StaticString(ptr=filename.unsafe_ptr(), length=len(filename)),
@@ -366,7 +366,7 @@ struct Operation(CollectionElement, Stringable, Writable):
         self.c = op
 
     fn __init__(
-        mut self,
+        out self,
         name: String,
         location: Location,
         *,
@@ -392,7 +392,7 @@ struct Operation(CollectionElement, Stringable, Writable):
         self.c = _c.IR.mlirOperationCreate(UnsafePointer.address_of(state))
 
     fn __init__(
-        mut self,
+        out self,
         name: String,
         location: Location,
         *,
@@ -646,11 +646,11 @@ struct Type(CollectionElement, Stringable, Writable):
     var c: Self.cType
 
     @implicit
-    fn __init__[T: DialectType](mut self, type: T):
+    fn __init__[T: DialectType](out self, type: T):
         self = type.to_mlir()
 
     @implicit
-    fn __init__(mut self, type: Self.cType):
+    fn __init__(out self, type: Self.cType):
         self.c = type
 
     @staticmethod
@@ -733,11 +733,11 @@ struct Attribute(CollectionElement, Stringable):
     var c: Self.cType
 
     @implicit
-    fn __init__[T: DialectAttribute](mut self, attr: T):
+    fn __init__[T: DialectAttribute](out self, attr: T):
         self = attr.to_mlir()
 
     @implicit
-    fn __init__(mut self, c: Self.cType):
+    fn __init__(out self, c: Self.cType):
         self.c = c
 
     fn context(self) -> Context:
@@ -778,7 +778,7 @@ struct Block(CollectionElement, Stringable):
         self = Self(args, locations)
 
     fn __init__(
-        mut self,
+        out self,
         args: List[Type],
         locations: List[Location],
     ):

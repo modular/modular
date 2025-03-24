@@ -90,7 +90,7 @@ struct EngineTensorView:
     var _dtype: DType
 
     @implicit
-    fn __init__[type: DType](mut self, tensor: Tensor[type]):
+    fn __init__[type: DType](out self, tensor: Tensor[type]):
         """Creates a non-owning view of given Tensor.
 
         Parameters:

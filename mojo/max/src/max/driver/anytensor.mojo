@@ -288,7 +288,7 @@ struct _CMojoValue:
         self._ptr = UnsafePointer[NoneType]()
         self._destroy_func = Self._destroy_pointee_wrapper[NoneType]
 
-    fn __init__[T: Movable](mut self, ptr: UnsafePointer[T]):
+    fn __init__[T: Movable](out self, ptr: UnsafePointer[T]):
         self._ptr = ptr.bitcast[NoneType]()
         self._destroy_func = Self._destroy_pointee_wrapper[T]
 
@@ -331,7 +331,7 @@ struct AnyMojoValue:
     fn __init__(out self, impl: _CMojoValue):
         self._impl = impl
 
-    fn __init__[T: Movable](mut self, owned val: T):
+    fn __init__[T: Movable](out self, owned val: T):
         """Creates Type erased Mojo Value from T.
 
         Args:
