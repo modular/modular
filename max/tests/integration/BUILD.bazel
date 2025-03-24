@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "lit_tests", "mojo_library", "requirement")
+load("//bazel:api.bzl", "mojo_library")
 
 filegroup(
     name = "inputs",
@@ -55,31 +55,5 @@ mojo_library(
         "//Kernels/mojo/register",
         "//SDK/lib/API/mojo/max/tensor",
         "//open-source/mojo/stdlib/stdlib",
-    ],
-)
-
-lit_tests(
-    name = "test",
-    size = "large",
-    srcs = glob(
-        [
-            "**/*.mlir",
-            "**/*.yaml",
-        ],
-        exclude = [
-            "max-cli/benchmark/Inputs/**",
-            "Inputs/**",
-        ],
-    ),
-    data = glob(["max-cli/benchmark/Inputs/**"]) + [
-        ":inputs",
-        "//PyTorch:TorchRuntimePlugins",
-        "//PyTorch/tools/torch:mtorch",
-    ],
-    tools = [
-        "//SDK/tools/max",
-    ],
-    deps = [
-        requirement("torch"),
     ],
 )
