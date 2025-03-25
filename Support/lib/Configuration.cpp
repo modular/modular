@@ -106,34 +106,6 @@ static std::pair<StringRef, StringRef> getSectionAndProp(const StringRef &key) {
   return std::pair<StringRef, StringRef>(section, prop);
 }
 
-ErrorOrSuccess Config::overrideFrom(const Config &other) {
-  // Find all the sections present in other
-  llvm::StringSet<> overrideSections;
-  for (const auto &properties : other.getAllValues()) {
-    auto [section, prop] = getSectionAndProp(properties.first());
-    // Handle global properties one-at-a-time rather than by section
-    if (section.empty())
-      continue;
-    overrideSections.insert(section);
-  }
-
-  // Remove all keys in sections present in other
-  for (auto it = kv.begin(); it != kv.end();) {
-    const StringRef key = (*it).getKey();
-    auto [section, prop] = getSectionAndProp(key);
-    if (!section.empty() && overrideSections.contains(section))
-      kv.erase(key);
-    ++it;
-  }
-
-  // Copy over all the values from other. The two maps should be
-  // non-overlapping, EXCEPT for global params. Global params in other will
-  // clobber global params on this Config.
-  for (const auto &entry : other.getAllValues())
-    kv[entry.getKey()] = entry.getValue();
-  return success();
-}
-
 ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
   auto emitError = [&](llvm::SMLoc loc, const Twine &msg) -> Error {
     if (!mgr)
@@ -209,16 +181,6 @@ ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
   return success();
 }
 
-ErrorOrSuccess Config::copyFrom(const Config &other) {
-  const llvm::StringMap<std::string> &otherContents = other.getAllValues();
-  for (const auto &mapEntry : otherContents) {
-    if (!kv.insert({mapEntry.first(), mapEntry.second}).second)
-      return Error(Twine("key ") + mapEntry.first() +
-                   " already exists in the map");
-  }
-  return success();
-}
-
 StringRef Config::getValue(StringRef key) {
   std::string upper = key.upper();
   std::replace_if(
@@ -265,24 +227,6 @@ ErrorOr<bool> Config::getValueAsBool(StringRef key, bool defaultValue) {
 
 void Config::setValue(StringRef key, StringRef value) {
   kv[key.lower()] = value;
-}
-
-void Config::getValuesInSection(
-    StringRef section,
-    SmallVectorImpl<std::pair<StringRef, StringRef>> &values) {
-  // Iterate all the properties in the map.
-  for (auto &properties : kv) {
-    // Split on the last '.' - that's the section.
-    auto [header, prop] = getSectionAndProp(properties.first());
-    if (header == section)
-      values.emplace_back(prop, properties.second);
-  }
-
-  // Sort the values so they come out in a deterministic order.
-  llvm::stable_sort(values, [](const std::pair<StringRef, StringRef> &lhs,
-                               const std::pair<StringRef, StringRef> &rhs) {
-    return lhs.first < rhs.first;
-  });
 }
 
 void Config::populateEnvOverrides() {
@@ -444,10 +388,6 @@ ErrorOr<std::filesystem::path> Config::getModularConfigFolderPath(bool create) {
 
 ErrorOr<std::filesystem::path> Config::getModularDataFolderPath(bool create) {
   return findBestPathForType(FolderType::Data, create);
-}
-
-ErrorOr<std::filesystem::path> Config::getModularCacheFolderPath(bool create) {
-  return findBestPathForType(FolderType::Cache, create);
 }
 
 ErrorOr<std::filesystem::path> Config::getConfigFilePath(bool create) {
