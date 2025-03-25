@@ -12,37 +12,9 @@ from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 
 
-fn _run_memcpy(ctx: DeviceContext, length: Int) raises:
+fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-")
     print("_run_memcpy(", length, ")")
-
-    var in_host = ctx.malloc_host[Float32](length)
-    var out_host = UnsafePointer[Float32].alloc(length)
-    var in_dev = ctx.create_buffer_sync[DType.float32](length)
-    var out_dev = ctx.create_buffer_sync[DType.float32](length)
-
-    # Initialize the input and outputs with known values.
-    for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
-
-    # Copy to and from device buffers.
-    ctx.copy_sync(in_dev, in_host)
-    ctx.copy_sync(out_dev, in_dev)
-    ctx.copy_sync(out_host, out_dev)
-
-    for i in range(length):
-        if i < 10:
-            print("at index", i, "the value is", out_host[i])
-        expect_eq(out_host[i], i, "at index ", i, " the value is ", out_host[i])
-
-    out_host.free()
-    ctx.free_host(in_host)
-
-
-fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
-    print("-")
-    print("_run_memcpy_async(", length, ")")
 
     var in_host = ctx.enqueue_create_host_buffer[DType.float32](length)
     var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -71,9 +43,9 @@ fn _run_memcpy_async(ctx: DeviceContext, length: Int, use_context: Bool) raises:
         expect_eq(out_host[i], i, "at index ", i, " the value is ", out_host[i])
 
 
-fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
+fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
     print("-")
-    print("_run_sub_memcpy_async(", length, ")")
+    print("_run_sub_memcpy(", length, ")")
 
     var half_length = length // 2
 
@@ -119,11 +91,9 @@ fn _run_sub_memcpy_async(ctx: DeviceContext, length: Int) raises:
         )
 
 
-fn _run_fake_memcpy_async(
-    ctx: DeviceContext, length: Int, use_take_ptr: Bool
-) raises:
+fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
     print("-")
-    print("_run_fake_memcpy_async(", length, ", take_ptr = ", use_take_ptr, ")")
+    print("_run_fake_memcpy(", length, ", take_ptr = ", use_take_ptr, ")")
 
     var half_length = length // 2
 
@@ -187,17 +157,14 @@ fn main() raises:
 
     alias one_mb = 1024 * 1024
 
-    _run_memcpy(ctx, 64)
-    _run_memcpy(ctx, one_mb)
+    _run_memcpy(ctx, 64, True)
+    _run_memcpy(ctx, one_mb, True)
+    _run_memcpy(ctx, 64, False)
+    _run_memcpy(ctx, one_mb, False)
 
-    _run_memcpy_async(ctx, 64, True)
-    _run_memcpy_async(ctx, one_mb, True)
-    _run_memcpy_async(ctx, 64, False)
-    _run_memcpy_async(ctx, one_mb, False)
+    _run_sub_memcpy(ctx, 64)
 
-    _run_sub_memcpy_async(ctx, 64)
-
-    _run_fake_memcpy_async(ctx, 64, False)
-    # _run_fake_memcpy_async(ctx, 64, True)
+    _run_fake_memcpy(ctx, 64, False)
+    # _run_fake_memcpy(ctx, 64, True)
 
     print("Done.")
