@@ -111,8 +111,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     wgmma_shape: IndexList[3],
     a_desc_layout: Layout,
     b_desc_layout: Layout,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     c_smem_layout: Layout,
     cluster_shape: StaticTuple[Int32, 3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -144,6 +142,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
+
+    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
+    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
 
     alias simd_size = simdwidthof[c_type]()
 
@@ -644,8 +645,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     wgmma_shape: IndexList[3],
     a_desc_layout: Layout,
     b_desc_layout: Layout,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     c_smem_layout: Layout,
     cluster_shape: StaticTuple[Int32, 3],
     grid_shape: IndexList[2],
@@ -679,6 +678,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
+
+    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
+    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
 
     alias simd_size = simdwidthof[c_type]()
 
@@ -1365,8 +1367,6 @@ fn hopper_matmul_tma_wgmma[
         wgmma_shape,
         __type_of(a_tma_op).desc_layout,
         __type_of(b_tma_op).desc_layout,
-        a_smem_layout,
-        b_smem_layout,
         transpose_b=True,
     ]
     ctx.enqueue_function[kernel](
@@ -1500,9 +1500,6 @@ fn warp_specialize_gemm_with_multicasting[
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
 
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK, a_swizzle]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK, b_swizzle]()
-
     a_tma_op = create_tma_tile[
         a_type,
         2,
@@ -1528,8 +1525,8 @@ fn warp_specialize_gemm_with_multicasting[
 
     alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
-        a_smem_layout.size() * sizeof[a_type]()
-        + b_smem_layout.size() * sizeof[b_type]()
+        BM * BK * sizeof[a_type]()
+        + BN * BK * sizeof[b_type]()
         + (sizeof[Int64]() * 2)
     ) + c_smem_layout.size() * sizeof[c_type]()
 
@@ -1548,8 +1545,6 @@ fn warp_specialize_gemm_with_multicasting[
             wgmma_shape,
             __type_of(a_tma_op).desc_layout,
             __type_of(b_tma_op).desc_layout,
-            a_smem_layout,
-            b_smem_layout,
             c_smem_layout,
             cluster_shape=cluster_shape,
             grid_shape=grid_shape_adjusted,
@@ -1586,8 +1581,6 @@ fn warp_specialize_gemm_with_multicasting[
             wgmma_shape,
             __type_of(a_tma_op).desc_layout,
             __type_of(b_tma_op).desc_layout,
-            a_smem_layout,
-            b_smem_layout,
             c_smem_layout,
             cluster_shape=cluster_shape,
             transpose_b=True,
