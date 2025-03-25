@@ -142,7 +142,7 @@ struct UInt(Indexer, _HashableWithHasher):
 
         writer.write(UInt64(self))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __int__(self) -> Int:
         """Gets the integral value, wrapping to a negative number on overflow.
 
@@ -188,7 +188,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         hasher._update_with_simd(UInt64(self))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __eq__(self, rhs: UInt) -> Bool:
         """Compare this UInt to the RHS using EQ comparison.
 
@@ -204,7 +204,7 @@ struct UInt(Indexer, _HashableWithHasher):
             ](self.value, rhs.value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ne__(self, rhs: UInt) -> Bool:
         """Compare this UInt to the RHS using NE comparison.
 
@@ -220,7 +220,7 @@ struct UInt(Indexer, _HashableWithHasher):
             ](self.value, rhs.value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __add__(self, rhs: UInt) -> UInt:
         """Return `self + rhs`.
 
@@ -232,7 +232,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return __mlir_op.`index.add`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __sub__(self, rhs: UInt) -> UInt:
         """Return `self - rhs`.
 
@@ -244,7 +244,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return __mlir_op.`index.sub`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __mul__(self, rhs: UInt) -> UInt:
         """Return `self * rhs`.
 
@@ -334,7 +334,7 @@ struct UInt(Indexer, _HashableWithHasher):
             n >>= 1
         return res
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __lshift__(self, rhs: UInt) -> UInt:
         """Return `self << rhs`.
 
@@ -358,7 +358,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return __mlir_op.`index.shru`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __and__(self, rhs: UInt) -> UInt:
         """Return `self & rhs`.
 
@@ -370,7 +370,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return __mlir_op.`index.and`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __xor__(self, rhs: UInt) -> UInt:
         """Return `self ^ rhs`.
 
@@ -382,7 +382,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return __mlir_op.`index.xor`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __or__(self, rhs: UInt) -> UInt:
         """Return `self | rhs`.
 
@@ -394,7 +394,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return __mlir_op.`index.or`(self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __invert__(self) -> UInt:
         """Return ~self.
 
@@ -533,8 +533,8 @@ struct UInt(Indexer, _HashableWithHasher):
     # Reversed operations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
-    fn __radd__(self, value: Self) -> Self:
+    @always_inline("builtin")
+    fn __radd__(self, value: UInt) -> UInt:
         """Return `value + self`.
 
         Args:
@@ -545,7 +545,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return self + value
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rsub__(self, value: UInt) -> UInt:
         """Return `value - self`.
 
@@ -605,7 +605,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return value**self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rlshift__(self, value: UInt) -> UInt:
         """Return `value << self`.
 
@@ -629,7 +629,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return value >> self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rand__(self, value: UInt) -> UInt:
         """Return `value & self`.
 
@@ -641,7 +641,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return value & self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ror__(self, value: UInt) -> UInt:
         """Return `value | self`.
 
@@ -653,7 +653,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return value | self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __rxor__(self, value: UInt) -> UInt:
         """Return `value ^ self`.
 
@@ -737,7 +737,7 @@ struct UInt(Indexer, _HashableWithHasher):
             pred = __mlir_attr.`#index<cmp_predicate uge>`
         ](self.value, rhs.value)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """Convert this Int to Bool.
 
@@ -746,7 +746,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return self != 0
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ceil__(self) -> Self:
         """Return the ceiling of the UInt value, which is itself.
 
@@ -755,7 +755,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __floor__(self) -> Self:
         """Return the floor of the UInt value, which is itself.
 
@@ -764,7 +764,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __round__(self) -> Self:
         """Return the rounded value of the UInt value, which is itself.
 
@@ -785,7 +785,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __trunc__(self) -> Self:
         """Return the truncated UInt value, which is itself.
 
@@ -794,7 +794,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __abs__(self) -> Self:
         """Return the absolute value of the UInt value.
 
@@ -803,7 +803,7 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return self
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __pos__(self) -> UInt:
         """Return +self.
 

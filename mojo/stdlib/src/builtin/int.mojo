@@ -1041,7 +1041,7 @@ struct Int(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __bool__(self) -> Bool:
         """Convert this Int to Bool.
 
@@ -1050,7 +1050,7 @@ struct Int(
         """
         return self != 0
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __as_bool__(self) -> Bool:
         """Convert this Int to Bool.
 
