@@ -186,7 +186,7 @@ fn fn_args_poor_style(arg: ArgStruct, arg2: ArgStruct):
         arg: `arg` starts with a valid character but doesn't end with a period
         arg2: this should start with a capital letter.
     """
-    # expected-warning @-3 {{'arg' description should end with a period '.', but this ends with 'd'}}
+    # expected-warning @-3 {{'arg' description should end with a period '.' or backtick '`', but this ends with 'd'}}
     # expected-warning @-3 {{'arg2' description should begin with a capital letter or non-alpha character, but this begins with 't'}}
     pass
 
@@ -242,7 +242,7 @@ fn fn_returns_section_poor_style() -> Index:
         doesn't start with a capital letter, doesn't end with a period!
     """
     # expected-warning @-2 {{section body should begin with a capital letter or non-alpha character, but this begins with 'd'}}
-    # expected-warning @-3 {{section body should end with a period '.', but this ends with '!'}}
+    # expected-warning @-3 {{section body should end with a period '.' or backtick '`', but this ends with '!'}}
     return `0`
 
 
