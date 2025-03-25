@@ -131,12 +131,11 @@ async def start_model_worker(
         engine_queue.use_process_healthcheck(worker)
 
     # before progressing, observe the worker process to be healthy or dead
-    loop = asyncio.get_running_loop()
-    dt = loop.create_task(monitor.until_dead())
+    dt = asyncio.create_task(monitor.until_dead())
     if use_heartbeat:
-        ht = loop.create_task(monitor.until_healthy())
+        ht = asyncio.create_task(monitor.until_healthy())
     else:
-        ht = loop.create_task(monitor.until_started())
+        ht = asyncio.create_task(monitor.until_started())
 
     completed_tasks, pending_tasks = await asyncio.wait(
         [ht, dt],
@@ -183,9 +182,9 @@ async def start_model_worker(
 
     try:
         if use_heartbeat:
-            worker_task = loop.create_task(monitor.shutdown_if_unhealthy())
+            worker_task = asyncio.create_task(monitor.shutdown_if_unhealthy())
         else:
-            worker_task = loop.create_task(monitor.shutdown_if_dead())
+            worker_task = asyncio.create_task(monitor.shutdown_if_dead())
         yield engine_queue
     finally:
         worker_task.cancel()
