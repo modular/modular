@@ -678,9 +678,11 @@ processIOSpecs(LIT::FnOp func, bool isShapeFunc = false) {
 
     if (symbolMatches(structType.getSymbol(), kMaxList) &&
         ioSpec != IOSpec::InputTensor) {
-      // TODO(GEX_1882)
+
       emitError(loc, "Only input tensors are allowed as the element type for "
                      "list arguments at the moment.");
+
+      return std::nullopt;
     }
 
     bool isOutput = isOutputIOSpec(*ioSpec);
