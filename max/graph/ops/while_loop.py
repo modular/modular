@@ -176,8 +176,6 @@ def while_loop(
 
     try:
         pred_block = while_op.condRegion.blocks[0]
-        # TODO: We won't need the guard_against_chain_mutations flag once we
-        # have a way to track the chain state across the while loop's predicate block
         pred_wrapped_fn = wrap_while_block_function(
             predicate,
             pred_block.arguments,
