@@ -196,6 +196,12 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_TRANSACTION_RECORDING_INCLUDE_RESPONSES",
     )
 
+    experimental_enable_kvcache_agent: bool = Field(
+        default=False,
+        description="Experimental: Enable KV Cache Agent support.",
+        alias="MAX_SERVE_EXPERIMENTAL_ENABLE_KVCACHE_AGENT",
+    )
+
 
 def api_prefix(settings: Settings, api_type: APIType):
     return "/" + str(api_type) if len(settings.api_types) > 1 else ""
