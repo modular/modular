@@ -930,12 +930,12 @@ fn wgmma_async[
     ]()
 
     constrained[
-        scale_d == 1 or scale_d == -1,
+        scale_d == 1 or scale_d == 0,
         String(
             "Invalid scale in value of scaled_d '",
             scale_d,
             (
-                "' which is not supported. Only 1 or -1 is supported as the"
+                "' which is not supported. Only 1 or 0 is supported as the"
                 " scale in values.."
             ),
         ),
