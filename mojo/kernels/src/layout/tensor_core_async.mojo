@@ -662,7 +662,10 @@ struct TensorCoreAsync[
     @staticmethod
     @always_inline
     fn wgmma[
-        num_warp_groups: Int = 1
+        num_warp_groups: Int = 1,
+        scale_c: Int = 1,
+        scale_a: Int = 1,
+        scale_b: Int = 1,
     ](
         a_smem_tile: LayoutTensor[
             a_type, _, address_space = AddressSpace.SHARED, *_, **_
@@ -681,6 +684,9 @@ struct TensorCoreAsync[
 
         Parameters:
             num_warp_groups: Number of warp groups to distribute work across (default: 1).
+            scale_c: Scale factor for matrix C. Valid values are 1 or 0 (default: 1).
+            scale_a: Scale factor for matrix A. Valid values are 1 or -1 (default: 1).
+            scale_b: Scale factor for matrix B. Valid values are 1 or -1 (default: 1).
 
         Args:
             a_smem_tile: Matrix A in shared memory.
@@ -688,6 +694,9 @@ struct TensorCoreAsync[
             c_reg_tile: Output matrix C in register memory.
             wg_idx: Warp group index for multi-warp group scenarios (default: 0).
         """
+        constrained[scale_c == 1 or scale_c == 0]()
+        constrained[scale_a == 1 or scale_a == -1]()
+        constrained[scale_b == 1 or scale_b == -1]()
         alias a_smem_layout = a_smem_tile.layout
         alias b_smem_layout = b_smem_tile.layout
 
@@ -773,14 +782,16 @@ struct TensorCoreAsync[
             a_desc += a_m_stride * num_m_mmas * wg_idx
 
         @parameter
-        for m_mma in range(num_m_mmas):
+        for k_mma in range(num_k_mmas):
+            alias scale_d = scale_c if k_mma == 0 else 1
 
             @parameter
-            for n_mma in range(num_n_mmas):
-                alias mma_id = n_mma * num_m_mmas + m_mma
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for k_mma in range(num_k_mmas):
+                for n_mma in range(num_n_mmas):
+                    alias mma_id = n_mma * num_m_mmas + m_mma
+
                     # Offsets when K is multiple of canonical layouts.
                     alias a_offset_bytes = (
                         k_mma // a_num_k_mmas_per_tile
@@ -798,7 +809,6 @@ struct TensorCoreAsync[
                     alias b_offset = n_mma * b_n_stride + b_k_mma * b_k_stride + b_offset_bytes
                     a_desc_m = a_desc + a_offset
                     b_desc_n = b_desc + b_offset
-
                     c_frags[mma_id, 0] = wgmma_async[
                         mma_shape[0],
                         mma_shape[1],
@@ -806,6 +816,9 @@ struct TensorCoreAsync[
                         a_type=a_type,
                         b_type=b_type,
                         layout_b= "col" if transpose_b else "row",
+                        scale_d=scale_d,
+                        scale_a=scale_a,
+                        scale_b=scale_b,
                     ](a_desc_m, b_desc_n, c_frags[mma_id, 0])
 
     @staticmethod
@@ -887,14 +900,15 @@ struct TensorCoreAsync[
         b_desc = _rhs_descriptor[mma_shape, transpose_b, b_swizzle](b_smem_tile)
 
         @parameter
-        for m_mma in range(num_m_mmas):
+        for k_mma in range(num_k_mmas):
 
             @parameter
-            for n_mma in range(num_n_mmas):
-                alias mma_id = n_mma * num_m_mmas + m_mma
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for k_mma in range(num_k_mmas):
+                for n_mma in range(num_n_mmas):
+                    alias mma_id = n_mma * num_m_mmas + m_mma
+
                     # a_desc_m = a_desc + m_mma * a_m_stride + k_mma * a_k_stride
                     alias offset = n_mma * b_n_stride + k_mma * b_k_stride
                     b_desc_n = b_desc + offset
