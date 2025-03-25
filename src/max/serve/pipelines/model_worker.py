@@ -11,7 +11,7 @@ import multiprocessing
 import os
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Mapping
+from typing import AsyncGenerator, Mapping, Optional
 
 import uvloop
 from max.pipelines import EmbeddingsGenerator, PipelinesFactory, TokenGenerator
@@ -75,6 +75,7 @@ async def start_model_worker(
     batch_config: TokenGeneratorPipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
+    kvcache_agent_queue: Optional[multiprocessing.Queue] = None,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
@@ -101,6 +102,7 @@ async def start_model_worker(
         "REQUEST": engine_queue.request_q,
         "RESPONSE": engine_queue.response_q,
         "CANCEL": engine_queue.cancel_q,
+        "KV_CACHE_AGENT": kvcache_agent_queue,
     }
 
     logger.info("Starting worker: %s", worker_name)
