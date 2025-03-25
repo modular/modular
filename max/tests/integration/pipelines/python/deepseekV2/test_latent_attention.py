@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
+import pytest
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator, Tensor
+from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
@@ -179,6 +180,9 @@ def generate_max_outputs(
     return torch.concat(all_outputs, dim=1)
 
 
+@pytest.mark.skipif(
+    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
+)
 def test_latent_attention(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
