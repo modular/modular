@@ -133,6 +133,8 @@ fn top_k[
         ctx: The device call context.
     """
 
+    var normalized_axis = normalize_neg_index(Int64(axis), rank)
+
     @parameter
     if is_cpu[target]():
         constrained[
@@ -144,14 +146,13 @@ fn top_k[
         _top_k_cpu[largest=largest](
             input,
             k,
-            axis,
+            Int(normalized_axis),
             out_vals,
             out_idxs,
             grain_size,
             sorted,
         )
     else:
-        var normalized_axis = normalize_neg_index(Int64(axis), rank)
         if normalized_axis != rank - 1:
             raise Error("axis other than -1 not supported on GPU")
         if not sorted:
