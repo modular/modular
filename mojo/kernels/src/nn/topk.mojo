@@ -26,6 +26,11 @@ from gpu import (
     lane_id,
     thread_idx,
 )
+from gpu.grid_controls import (
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+    pdl_launch_attributes,
+)
 import gpu.warp as warp
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.dim import Dim
@@ -618,6 +623,8 @@ fn _topk_stage1[
         alignment = alignof[TopK_2[T, largest]](),
     ]()
 
+    wait_on_dependent_grids()
+
     # Pack the topk_vals and topk_idxs into shared memory
     var block_offset = block_lane * block_size
     var stride = block_size * num_blocks_per_input
@@ -648,6 +655,8 @@ fn _topk_stage1[
             topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
 
         barrier()
+
+    launch_dependent_grids()
 
 
 @always_inline("nodebug")
@@ -712,14 +721,6 @@ fn _topk_stage2[
     var _local_topk_vals = local_topk_vals + batch_id * num_elem_reduced
     var _local_topk_idxs = local_topk_idxs + batch_id * num_elem_reduced
 
-    # Handle the case where stage 1 is executed with a single block
-    if num_blocks_per_input == 1:
-        if tid < K and not sampling:
-            batch_i_topk_vals[tid] = _local_topk_vals[tid]
-            # cast to out_idx_type
-            batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
-            return
-
     # Allocate shared memory for values and indices
     var num_e_rounded = ceildiv(num_elem_reduced, WARP_SIZE) * WARP_SIZE
     var vals_smem_size = num_e_rounded
@@ -733,6 +734,16 @@ fn _topk_stage2[
     # These values are only read from in the sampling case.
     var s_val2 = UnsafePointer[Scalar[T], address_space = AddressSpace.SHARED]()
     var s_id = UnsafePointer[Int, address_space = AddressSpace.SHARED]()
+
+    wait_on_dependent_grids()
+
+    # Handle the case where stage 1 is executed with a single block
+    if num_blocks_per_input == 1:
+        if tid < K and not sampling:
+            batch_i_topk_vals[tid] = _local_topk_vals[tid]
+            # cast to out_idx_type
+            batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
+            return
 
     @parameter
     if sampling:
@@ -810,6 +821,8 @@ fn _topk_stage2[
                     var idx: Int = s_id[ki]
                     batch_i_topk_idxs[0] = _local_topk_idxs[idx]
                     break
+
+    launch_dependent_grids()
 
 
 fn _topk_gpu[
@@ -904,6 +917,7 @@ fn _topk_gpu[
         grid_dim=grid_dim_stage1,
         block_dim=block_dim_stage1,
         shared_mem_bytes=shared_mem_bytes_1,
+        attributes=pdl_launch_attributes(),
     )
 
     var num_elem_reduced = ceildiv(
@@ -936,6 +950,7 @@ fn _topk_gpu[
         grid_dim=grid_dim_stage2,
         block_dim=block_dim_stage2,
         shared_mem_bytes=shared_mem_bytes_2,
+        attributes=pdl_launch_attributes(),
     )
 
 
