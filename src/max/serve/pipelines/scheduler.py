@@ -435,7 +435,6 @@ class TokenGenerationScheduler(Scheduler):
 
         # Keep preempting requests until we can schedule the entire active batch
         max_seq_len = self.paged_manager.max_seq_len
-        initial_active_batch_size = len(self.active_batch)
         while len(self.active_batch) > 1:
             # Compute the number of steps available for the active batch
             num_steps = self.scheduler_config.max_forward_steps_tg
@@ -484,11 +483,14 @@ class TokenGenerationScheduler(Scheduler):
         # large max seq len or the KV cache is very small.
         last_req = next(iter(self.active_batch.values()))
         current_len = last_req.current_length
-        num_preemptions = initial_active_batch_size - 1
-        msg = f"Insufficient KV pages to run token generation on a single request with {current_len} tokens. "
-        if num_preemptions > 0:
-            msg += f"This is even after preempting {num_preemptions} requests. "
-        msg += "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
+        page_size = self.paged_manager.page_size
+        total_num_blocks = self.paged_manager.total_num_pages
+        max_seq_len = total_num_blocks * page_size
+        msg = (
+            f"Insufficient KV pages to run token generation on a single request with {current_len} tokens.\n"
+            f"The KVCache has {total_num_blocks} pages with page size {page_size}. This is only enough to support {max_seq_len} tokens.\n"
+            "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
+        )
         raise RuntimeError(msg)
 
     def _create_batch_to_execute(
