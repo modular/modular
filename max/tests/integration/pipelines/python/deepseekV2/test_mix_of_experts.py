@@ -19,8 +19,6 @@ from torch_reference.configuration_deepseek import (
 )
 from torch_reference.modeling_deepseek import DeepseekV2MoE
 
-torch.set_default_device(torch.device("cuda"))
-
 
 def generate_torch_outputs(
     config: DeepseekV2Config,

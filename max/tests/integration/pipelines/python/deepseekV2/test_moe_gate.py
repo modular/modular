@@ -34,7 +34,7 @@ def generate_max_outputs(
     input_tensor: torch.Tensor,
     dummy_moe_weight: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    state_dict = {"gate_score.weight": dummy_moe_weight.to(torch.float32)}
+    state_dict = {"gate_score.weight": dummy_moe_weight.to(torch.float32).cpu()}
     model = MaxMoEGate()
     model.load_state_dict(state_dict)
     session = InferenceSession()
