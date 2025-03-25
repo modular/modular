@@ -404,7 +404,6 @@ class Graph:
         block_terminator_op: mlir.Operation | mlir.OpView,
         block_name: str,
         expected_output_types: list[Type] | None,
-        add_chain: bool = True,
     ):
         """Builds and verifies a block within the graph.
 
@@ -427,8 +426,6 @@ class Graph:
             It is the caller's responsibility to update the graph chain after
             the block is built.
         """
-        parent_chain = self._current_chain
-
         with self._block(block), self._location():
             expected_output_types = expected_output_types or []
 
@@ -445,7 +442,7 @@ class Graph:
 
             _ = self._add_op(
                 block_terminator_op,
-                results + ([self._current_chain] if add_chain else []),
+                results + [self._current_chain],
             )
 
     def output(self, *outputs: Value) -> None:
