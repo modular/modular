@@ -535,6 +535,7 @@ async def openai_create_chat_completion(
             request_path=request.url.path,
             response_format=response_format,
             stop=completion_request.stop,
+            ignore_eos=completion_request.ignore_eos,
         )
 
         if completion_request.stream:
@@ -930,6 +931,7 @@ async def openai_create_completion(
                 request_path=request.url.path,
                 logprobs=completion_request.logprobs,
                 echo=completion_request.echo,
+                ignore_eos=completion_request.ignore_eos,
             )
             token_requests.append(tgr)
 

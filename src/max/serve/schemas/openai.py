@@ -3451,6 +3451,7 @@ class CreateCompletionRequest(BaseModel):
         description='A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse. [Learn more](/docs/guides/safety-best-practices/end-user-ids).\n',
         examples=['user-1234'],
     )
+    ignore_eos: bool = Field(default=False, description="Whether to ignore the EOS token and continue generating tokens after the EOS token is generated.")
 
 
 class CreateCompletionResponse(BaseModel):
@@ -4880,6 +4881,8 @@ class CreateChatCompletionRequest(BaseModel):
         max_length=128,
         min_length=1,
     )
+    # Extra args
+    ignore_eos: bool = Field(default=False, description="Whether to ignore the EOS token and continue generating tokens after the EOS token is generated.")
 
 
 class CreateThreadAndRunRequest(BaseModel):
