@@ -133,6 +133,13 @@ def common_server_options(func):
         default=0,
         help="Simulate fake-perf with failure percentage",
     )
+    @click.option(
+        "--experimental-enable-kvcache-agent",
+        is_flag=True,
+        show_default=True,
+        default=False,
+        help="Experimental: Enable KV Cache Agent support.",
+    )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -151,6 +158,7 @@ def cli_serve(
     batch_timeout,
     model_name,
     sim_failure,
+    experimental_enable_kvcache_agent,
     **config_kwargs,
 ):
     """Start a model serving endpoint for inference.
@@ -174,6 +182,7 @@ def cli_serve(
         batch_timeout=batch_timeout,
         model_name=model_name,
         failure_percentage=failure_percentage,
+        experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
     )
 
 
