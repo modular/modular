@@ -7,7 +7,7 @@
 
 ./bazelw run SDK/integration-test/pipelines/python:pipelines_mteb --\
     --model-path=sentence-transformers/all-mpnet-base-v2 \
-    --max-cache-batch-size=1000 \
+    --max-batch-size=1000 \
     --eval-task="STSBenchmark" \
     --eval-output-folder=$PWD/mteb-output
 
@@ -108,7 +108,7 @@ class EmbeddingModel:
         """
         if self.pipeline_config.max_batch_size is None:
             logger.warning(
-                "Please set --max-cache-batch-size, otherwise the batch size"
+                "Please set --max-batch-size, otherwise the batch size"
                 " will automatically be set to 1."
             )
             batch_size = 1

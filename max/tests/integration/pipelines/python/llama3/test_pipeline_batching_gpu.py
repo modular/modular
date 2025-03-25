@@ -27,7 +27,7 @@ def pipeline_config() -> PipelineConfig:
     return PipelineConfig(
         model_path="HuggingFaceTB/SmolLM-135M",
         quantization_encoding=SupportedEncoding.float32,
-        max_cache_batch_size=4,
+        max_batch_size=4,
     )
 
 
