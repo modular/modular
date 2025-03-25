@@ -50,7 +50,6 @@ from gpu.sync import (
     mbarrier_try_wait_parity_shared,
 )
 from layout import IntTuple, LayoutTensor, Layout
-from layout.tensor_core_async import _CM_K_BYTES
 from memory import UnsafePointer, stack_allocation
 from memory.pointer import _GPUAddressSpace
 from utils.index import Index, IndexList

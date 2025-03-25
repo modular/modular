@@ -27,8 +27,6 @@ Performance features:
 
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
-from sys import sizeof
-
 from gpu import WARP_SIZE, barrier
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import thread_idx
@@ -42,19 +40,19 @@ from gpu.mma import (
 )
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import (
-    is_row_major,
-    tile_to_shape,
-    upcast,
     MakeLayoutList,
+    coalesce,
+    composition,
+    downcast,
     logical_divide,
     logical_product,
-    right_inverse,
-    composition,
     make_layout,
-    downcast,
+    right_inverse,
+    tile_to_shape,
+    upcast,
 )
 from memory.unsafe_pointer import UnsafePointer
-
+from sys import sizeof
 from utils import Index, IndexList
 
 # ===-----------------------------------------------------------------------===#
@@ -159,18 +157,16 @@ alias supported_mma_shape = (
 )
 
 # Core matrix dimensions
-alias _CM_M = 8
-alias _CM_N = 8
-alias _CM_K_BYTES = 16
-alias _CM_K_BITS = _CM_K_BYTES * 8
-# TODO: unify by the following
+# Each core matix has 8 rows and 16 bytes per row.
 alias _CM_NUM_ROWS = 8
 alias _CM_ROW_BYTES = 16
+alias _CM_ROW_BITS = 128
 
+# WGMMA's K dim has 32 bytes.
 alias WGMMA_K_BYTES = 32
 
-alias _CM_LAYOUT_BITS = Layout.row_major(_CM_M, _CM_K_BITS)
-alias _CM_TILE_STRIDE = IntTuple(1, _CM_K_BITS)
+alias _CM_LAYOUT_BITS = Layout.row_major(_CM_NUM_ROWS, _CM_ROW_BITS)
+alias _CM_TILE_STRIDE = IntTuple(1, _CM_ROW_BITS)
 
 
 # constructs core matrix or "minimal dense" layout in bytes as described in file
@@ -178,7 +174,7 @@ alias _CM_TILE_STRIDE = IntTuple(1, _CM_K_BITS)
 fn _select_k_atom_bits[
     swizzle_mode: TensorMapSwizzle,
 ]() -> Layout:
-    return Layout.row_major(_CM_M, _CM_K_BITS * (swizzle_mode.bytes() // 16))
+    return Layout.row_major(_CM_NUM_ROWS, swizzle_mode.bytes() * 8)
 
 
 fn select_k_atom[
@@ -270,8 +266,8 @@ fn tile_to_descriptor[
     @parameter
     if is_k_major:
         # Tile a layout to ((8,m),(T,2)) shape to match the K-major wgmma descriptor
-        alias T = _CM_K_BYTES // sizeof[type]()
-        alias tiler = MakeLayoutList(Layout(8), Layout(T))
+        alias T = _CM_ROW_BYTES // sizeof[type]()
+        alias tiler = MakeLayoutList(Layout(_CM_NUM_ROWS), Layout(T))
         return logical_divide(layout, tiler)
     else:
         # We are not using atom layout for MN-major layouts.
