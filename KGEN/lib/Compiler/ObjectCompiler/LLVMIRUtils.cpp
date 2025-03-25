@@ -769,8 +769,29 @@ void LLVMModulePerFunctionSplitterImpl::collectValueUsers(
 
   // If the current value is a mutable global variable, then it can't be
   // split.
-  if (auto *global = dyn_cast<llvm::GlobalVariable>(value))
-    valueInfos[value].canBeSplit = global->isConstant();
+  // [MOCO-1680] Also don't split private symbols as linking might not work if
+  // there's a use of the symbol in a module where the symbol is external. That
+  // is, if the symbol becomes external in a module, code generation may emit
+  // code assuming the symbol is in GOT. However, private symbols are not
+  // getting entries in GOT, therefore final linkage will fail with "undefined
+  // symbol".
+  //
+  // NOTE: It's possible to support private symbols by switching them
+  // to internal linkage (see https://llvm.org/docs/LangRef.html#linkage-types):
+  // - internal: Similar to private, but the value shows as a local symbol
+  //            (STB_LOCAL in the case of ELF) in the object file.
+  // However, it cannot be done here, because it's not yet known how
+  // many modules will use it.
+  if (auto *global = dyn_cast<llvm::GlobalVariable>(value)) {
+    valueInfos[value].canBeSplit =
+        global->isConstant() && !global->hasPrivateLinkage();
+    LLVM_DEBUG({
+      llvm::dbgs() << "global " << global->getName()
+                   << (valueInfos[value].canBeSplit ? " can be split"
+                                                    : " cannot be split");
+      llvm::dbgs() << '\n';
+    });
+  }
 }
 
 /// Propagate use information through the module.
@@ -831,7 +852,9 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
       }
     }
 
-    if (info->canBeSplit || isa_and_nonnull<llvm::GlobalValue>(info->value))
+    // To save time spent in combining dependencies, skip non-immediate
+    // dependencies (users) of the global value that cannot be split.
+    if (info->canBeSplit || !isa_and_nonnull<llvm::GlobalValue>(info->value))
       continue;
 
     // If a value cannot be split, propagate its dependencies up to its
