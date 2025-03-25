@@ -108,28 +108,20 @@ struct NonInputTensorList:
                 static_spec = StaticTensorSpec[type, rank].create_unknown()
             ]
         ],
-        mutable: List[
-            MutableInputTensor[
-                static_spec = StaticTensorSpec[type, rank].create_unknown()
-            ]
-        ],
     ):
       pass
 )");
 
   createTestClient()
       .open(doc)
-      .onDiagnostics(
-          doc,
-          [](const std::vector<lsp::Diagnostic> &diags) {
-            ASSERT_EQ((int)diags.size(), 2);
-            EXPECT_EQ(diags[0].message,
-                      "Only input tensors are allowed as the element type "
-                      "for list arguments at the moment.");
-            EXPECT_EQ(diags[1].message,
-                      "Only input tensors are allowed as the element type "
-                      "for list arguments at the moment.");
-          })
+      .onDiagnostics(doc,
+                     [](const std::vector<lsp::Diagnostic> &diags) {
+                       ASSERT_EQ((int)diags.size(), 1);
+                       EXPECT_EQ(
+                           diags[0].message,
+                           "Only input tensors are allowed as the element type "
+                           "for list arguments at the moment.");
+                     })
       .execute();
 }
 
