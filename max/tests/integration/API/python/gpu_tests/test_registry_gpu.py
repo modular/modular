@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-from functools import wraps
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
@@ -26,18 +25,8 @@ from test_common.pipeline_model import (
     DUMMY_ARCH,
     REPLIT_ARCH,
     DummyLlamaPipelineModel,
+    prepare_registry,
 )
-
-
-def prepare_registry(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        PIPELINE_REGISTRY.reset()
-        result = func(*args, **kwargs)
-
-        return result
-
-    return wrapper
 
 
 @prepare_registry

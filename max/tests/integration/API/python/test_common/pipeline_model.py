@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from functools import wraps
 from typing import Any, Sequence, cast
 
 from max.driver import Device, Tensor, load_devices
@@ -13,6 +14,7 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.pipelines import (
+    PIPELINE_REGISTRY,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -317,3 +319,14 @@ REPLIT_ARCH = SupportedArchitecture(
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.gguf,
 )
+
+
+def prepare_registry(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        PIPELINE_REGISTRY.reset()
+        result = func(*args, **kwargs)
+
+        return result
+
+    return wrapper

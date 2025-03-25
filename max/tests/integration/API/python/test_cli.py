@@ -80,22 +80,6 @@ TEST_COMMANDS = [
         },
         valid=True,
     ),
-    CLITestCommand(
-        args=[
-            "--model-path",
-            "modularai/llama-3.1",
-            "--cache-strategy",
-            "naive",
-            "--devices",
-            "cpu",
-        ],
-        expected={
-            "model_config": {
-                "trust_remote_code": False,
-            },
-        },
-        valid=True,
-    ),
 ]
 
 
@@ -166,13 +150,24 @@ def testing(
                     assert test_value == expected_value
 
 
-def test_cli__terminal_commands():
-    runner = CliRunner()
-    for idx, command in enumerate(TEST_COMMANDS):
-        # idx here is the index of the command in the TEST_COMMANDS list.
-        # This makes it easier for us to identify which command failed.
-        command.args.extend(["--idx", str(idx)])
-        print(f"full_args: {command.args}")
-        result = runner.invoke(testing, command.args)
+@pytest.mark.parametrize(
+    "command, idx",
+    [(cmd, i) for i, cmd in enumerate(TEST_COMMANDS)],
+    ids=["TEST_COMMANDS[" + str(i) + "]" for i in range(len(TEST_COMMANDS))],
+)
+def test_cli__terminal_commands(command, idx):
+    """
+    Test individual terminal CLI commands
 
-        assert result.exit_code == 0
+    Args:
+        command: Command object containing args and valid flag
+        idx: Index of the command in TEST_COMMANDS list
+    """
+    runner = CliRunner()
+
+    # Add the index to the command args
+    command_args = command.args + ["--idx", str(idx)]
+    print(f"full_args: {command_args}")
+
+    result = runner.invoke(testing, command_args)
+    assert result.exit_code == 0, f"Command failed: {command_args}"

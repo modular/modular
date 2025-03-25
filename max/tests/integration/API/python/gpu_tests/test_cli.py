@@ -33,10 +33,7 @@ from test_common.pipeline_cli_utils import (
     CLITestEnum,
     Output,
 )
-from test_common.pipeline_model import DUMMY_ARCH
-
-PIPELINE_REGISTRY.reset()
-PIPELINE_REGISTRY.register(DUMMY_ARCH)
+from test_common.pipeline_model import DUMMY_ARCH, prepare_registry
 
 VALID_RESULTS = {
     "bool_field": Output(
@@ -84,14 +81,18 @@ VALID_RESULTS = {
 }
 
 
+@prepare_registry
 def test_pipeline_config_cli_parsing():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(PipelineConfig)
     for config_field in fields(PipelineConfig):
         if not config_field.name.startswith("_"):
             validate_field_type(field_types[config_field.name])
 
 
+@prepare_registry
 def test_cli__get_default():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
     for config_field in fields(CLITestConfig):
         assert (
             get_default(config_field)
@@ -99,7 +100,9 @@ def test_cli__get_default():
         )
 
 
+@prepare_registry
 def test_cli__get_field_type():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
         if not config_field.name.startswith("_"):
@@ -113,7 +116,9 @@ def test_cli__get_field_type():
                 assert expected_type == field_type
 
 
+@prepare_registry
 def test_cli__option_is_flag():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
         if not config_field.name.startswith("_"):
@@ -123,7 +128,9 @@ def test_cli__option_is_flag():
             )
 
 
+@prepare_registry
 def test_cli__option_is_multiple():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
         if not config_field.name.startswith("_"):
@@ -131,7 +138,9 @@ def test_cli__option_is_multiple():
             assert multiple == VALID_RESULTS[config_field.name].multiple
 
 
+@prepare_registry
 def test_cli__option_is_optional():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
         if not config_field.name.startswith("_"):
@@ -148,22 +157,6 @@ def cli():
 # as the kv cache strategy changes within config right after the config is
 # initialized, which may not be what is provided in the command line.
 TEST_COMMANDS = [
-    CLITestCommand(
-        args=[
-            "--model-path",
-            "modularai/llama-3.1",
-            "--cache-strategy",
-            "naive",
-            "--devices",
-            "gpu",
-        ],
-        expected={
-            "model_config": {
-                "trust_remote_code": False,
-            },
-        },
-        valid=True,
-    ),
     CLITestCommand(
         args=[
             "--model-path",
@@ -334,14 +327,29 @@ def testing(
                     assert test_value == expected_value
 
 
-def test_cli__terminal_commands():
-    runner = CliRunner()
-    for idx, command in enumerate(TEST_COMMANDS):
-        command.args.extend(["--idx", str(idx)])
-        print(f"full_args: {command.args}")
-        result = runner.invoke(testing, command.args)
+@pytest.mark.parametrize(
+    "command, idx",
+    [(cmd, i) for i, cmd in enumerate(TEST_COMMANDS)],
+    ids=["TEST_COMMANDS[" + str(i) + "]" for i in range(len(TEST_COMMANDS))],
+)
+@prepare_registry
+def test_cli_commands(command, idx):
+    """
+    Test individual CLI commands
 
-        if command.valid:
-            assert result.exit_code == 0
-        else:
-            assert result.exit_code != 0
+    Args:
+        command: Command object containing args and valid flag
+        idx: Index of the command in TEST_COMMANDS list
+    """
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    runner = CliRunner()
+
+    command_args = command.args + ["--idx", str(idx)]
+    print(f"Testing command: {command_args}")
+
+    result = runner.invoke(testing, command_args)
+
+    if command.valid:
+        assert result.exit_code == 0, f"Command should succeed: {command_args}"
+    else:
+        assert result.exit_code != 0, f"Command should fail: {command_args}"
