@@ -10,6 +10,7 @@ modular_py_test(
 
 test_suite(
     name = "tests",
+    tags = ["manual"],
     tests = [
         ":max_tests",
         "//SDK/lib/API/python/tests/driver:tests",
