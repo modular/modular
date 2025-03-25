@@ -10,6 +10,7 @@
 #include "Support/ML/DType.h"
 #include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
+#include "mlir/IR/Location.h"
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string_view.h"
 #include <SDK/GraphAPI/python/Bindings.h>
@@ -103,6 +104,40 @@ public:
     }
     value = unwrap(mlirPythonCapsuleToContext(capsule.ptr()));
     return !mlirContextIsNull(wrap(value));
+  }
+};
+
+/// Casts MlirLocation <-> mlir::Location.
+template <>
+struct type_caster<::mlir::Location> {
+  static constexpr auto Name = const_name("Location");
+  template <typename T>
+  using Cast = movable_cast_t<::mlir::Location>;
+  using Caster = make_caster<MlirLocation>;
+  Caster caster;
+
+  std::optional<::mlir::Location> value;
+
+  explicit operator ::mlir::Location *() { return &*value; }
+  explicit operator ::mlir::Location &() { return *value; }
+  explicit operator ::mlir::Location &&() { return std::move(*value); }
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    if (!caster.from_python(src, flags, cleanup)) {
+      return false;
+    }
+    value = unwrap(caster.value);
+    return true;
+  }
+
+  template <typename T>
+  static constexpr bool can_cast() {
+    return Caster::can_cast<T>();
+  }
+
+  static handle from_cpp(::mlir::Location t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return Caster::from_cpp(wrap(t), policy, cleanup);
   }
 };
 
