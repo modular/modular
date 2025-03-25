@@ -9,11 +9,9 @@
 from __future__ import annotations
 
 import logging
-import multiprocessing
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import AsyncGenerator, Optional
 
 import uvloop
 from fastapi import FastAPI
@@ -79,37 +77,42 @@ async def lifespan(
 
     logger.info("Starting server...")
     try:
-        if settings.experimental_enable_kvcache_agent:
-            kvcache_agent_task = start_kvcache_agent(settings)
-        else:
-            kvcache_agent_task = none_kvcache_agent_task()
+        async with AsyncExitStack() as exit_stack:
+            if settings.experimental_enable_kvcache_agent:
+                kvcache_agent_queue = await exit_stack.enter_async_context(
+                    start_kvcache_agent(settings)
+                )
+            else:
+                kvcache_agent_queue = None
 
-        async with kvcache_agent_task as kvcache_agent_queue:
             # start telemetry worker and configure Metrics to use it
-            async with start_telemetry_consumer(settings) as metric_client:
-                METRICS.configure(client=metric_client)
-                # start model worker
-                mw_task = start_model_worker(
+            metric_client = await exit_stack.enter_async_context(
+                start_telemetry_consumer(settings)
+            )
+            METRICS.configure(client=metric_client)
+            # start model worker
+            engine_queue = await exit_stack.enter_async_context(
+                start_model_worker(
                     serving_settings.model_factory,
                     serving_settings.pipeline_config,
                     settings,
                     metric_client,
                     kvcache_agent_queue,
                 )
+            )
 
-                async with mw_task as engine_queue:
-                    METRICS.pipeline_load(serving_settings.model_name)
-                    pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
-                        model_name=serving_settings.model_name,
-                        tokenizer=serving_settings.tokenizer,
-                        engine_queue=engine_queue,
-                    )
-                    app.state.pipeline = pipeline
-                    async with pipeline:
-                        logger.info(
-                            f"Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)"
-                        )
-                        yield
+            METRICS.pipeline_load(serving_settings.model_name)
+            pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
+                model_name=serving_settings.model_name,
+                tokenizer=serving_settings.tokenizer,
+                engine_queue=engine_queue,
+            )
+            app.state.pipeline = pipeline
+            await exit_stack.enter_async_context(pipeline)
+            logger.info(
+                f"Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)"
+            )
+            yield
     except KeyboardInterrupt as e:
         # Exit gracefully if user used Ctrl+C
         logger.info("Workers have shut down successfully (keyboard interrupt)")
@@ -185,13 +188,6 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
 def make_metrics_app():
     disable_created_metrics()
     return make_asgi_app()
-
-
-@asynccontextmanager
-async def none_kvcache_agent_task() -> AsyncGenerator[
-    Optional[multiprocessing.Queue], None
-]:
-    yield None
 
 
 async def main() -> None:
