@@ -169,7 +169,7 @@ void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
 
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());
-  pm.addNestedPass<FuncOp>(createLowerCallingConventions());
+  pm.addPass(createLowerCallingConventions());
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
 #ifndef MODULAR_PRODUCTION
