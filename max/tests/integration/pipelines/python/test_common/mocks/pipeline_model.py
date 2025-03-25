@@ -53,6 +53,7 @@ class MockPipelineModel(PipelineModel):
         weights: Weights,
         devices: list[Device] = [],
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
@@ -62,6 +63,7 @@ class MockPipelineModel(PipelineModel):
         self.kv_cache_config = kv_cache_config
         self.weights = weights
         self.adapter = adapter
+        self.return_n_logits = return_n_logits
 
         if not devices:
             self.devices = [CPU()]
