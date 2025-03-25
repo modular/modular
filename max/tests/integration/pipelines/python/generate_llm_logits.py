@@ -50,6 +50,15 @@ from typing_extensions import ParamSpec
 # likely caused by a network flake and could be resolved by a retry.
 EX_TEMPFAIL = 75
 
+ENCODING_TO_TORCH_DTYPE: dict[str, torch.dtype] = {
+    "float32": torch.float32,
+    "bfloat16": torch.bfloat16,
+    "gptq": torch.float16,
+    "q4_k": torch.float32,
+    "q4_0": torch.float32,
+    "q6_k": torch.float32,
+}
+
 
 @dataclass
 class MaxPipelineAndTokenizer:
@@ -223,7 +232,11 @@ class Llama3_1PipelineOracle(PipelineOracle):
         weight_path = self._weight_path_for(encoding=encoding)
         config = transformers.AutoConfig.from_pretrained(config_path)
         model = transformers.AutoModelForCausalLM.from_pretrained(
-            "UNUSED", config=config, gguf_file=weight_path, device_map=device
+            "UNUSED",
+            config=config,
+            gguf_file=weight_path,
+            device_map=device,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
         return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
 
@@ -290,7 +303,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
@@ -350,26 +363,18 @@ class ReplitPipelineOracle(PipelineOracle):
         #     gguf_file=weight_path,
         #     device_map=device,
         #     trust_remote_code=True,
+        #     torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         # )
         # However we receive this error if we do:
         #     ValueError: Architecture mpt not supported
         # So we cannot use GGUF here.
-        torch_dtype: torch.dtype
-        if encoding == "float32":
-            torch_dtype = torch.float32
-        elif encoding == "bfloat16":
-            torch_dtype = torch.bfloat16
-        else:
-            raise ValueError(
-                f"Could not convert encoding {encoding} to a torch dtype."
-            )
         model = transformers.AutoModelForCausalLM.from_pretrained(
             hf_repo_id,
             revision=revision,
             config=config,
             device_map=device,
             trust_remote_code=True,
-            torch_dtype=torch_dtype,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
         return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
 
@@ -436,7 +441,7 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
@@ -486,7 +491,7 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
             config=config,
             # Set device map to auto and just hope for enough GPU VRAM.
             device_map="auto",
-            torch_dtype=torch.bfloat16,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
         return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
 
@@ -552,23 +557,12 @@ class GenericOracle(PipelineOracle):
             self.model_path,
             trust_remote_code=trust_remote_code,
         )
-        torch_dtype: torch.dtype
-        if encoding == "float32":
-            torch_dtype = torch.float32
-        elif encoding == "bfloat16":
-            torch_dtype = torch.bfloat16
-        elif encoding == "gptq":
-            torch_dtype = torch.float16
-        else:
-            raise ValueError(
-                f"Could not convert encoding {encoding} to a torch dtype."
-            )
         model = self.auto_model_cls.from_pretrained(
             self.model_path,
             revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
             device_map=device,
-            torch_dtype=torch_dtype,
             trust_remote_code=trust_remote_code,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 

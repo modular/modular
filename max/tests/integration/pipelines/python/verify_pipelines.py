@@ -450,8 +450,8 @@ PIPELINES = {
             # Example sign flip:
             # `(13, array([57398])) │  6.65283e-03 │ -6.65283e-03`
             absolute_tolerance=0.2,
-            relative_tolerance=0.2,
-            cos_dist_threshold=4e-4,
+            relative_tolerance=0.17,
+            cos_dist_threshold=3.2e-4,
             kl_div_threshold=2e-3,
         ),
     ),
