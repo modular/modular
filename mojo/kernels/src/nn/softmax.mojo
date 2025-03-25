@@ -1762,7 +1762,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
 
 @always_inline
-fn _rowmax_for_online_softmax[
+fn _rowmax_online_softmax[
     type: DType,
     reg_tile_layout: Layout,
     row_accum_layout: Layout,
@@ -1770,6 +1770,7 @@ fn _rowmax_for_online_softmax[
     accum_frag_layout: Layout, //,
     block_layout_by_warp: Layout,
     warp_layout: Layout,
+    use_exp2: Bool,
 ](
     out score_frag_rowmax: LayoutTensor[
         type,
@@ -1792,6 +1793,7 @@ fn _rowmax_for_online_softmax[
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],
+    init_rowmax: Bool = False,
 ):
     alias num_colwise_warps = block_layout_by_warp.shape[0].value()
     alias num_rowwise_warps = block_layout_by_warp.shape[1].value()
@@ -1805,7 +1807,6 @@ fn _rowmax_for_online_softmax[
     # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
 
     # TODO: fragment_layout should ideally be inferred from the shape of output_reg_tile or score_reg_tile
-    alias frag_type = score_reg_tile.element_type
     alias frag_size = fragment_layout.size()
     # alias frag_num_rows = fragment_layout.shape[0].value() # sm90 1
     alias frag_num_cols = fragment_layout.shape[1].value()  # sm90 2
@@ -1825,15 +1826,18 @@ fn _rowmax_for_online_softmax[
     score_frag_rowmax = __type_of(rowmax_tensor).stack_allocation()
 
     alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
+    alias exp_function = exp2 if use_exp2 else exp
 
     # Online softmax
     @parameter
     for col_tile in range(num_colwise_tiles):
         # Initialize local max with the running max.
-        score_frag_rowmax._set[col_tile](rowmax_tensor._get[col_tile]())
+        score_frag_rowmax._set[col_tile](
+            score_reg_tile._get[col_tile, 0]().reduce_max[frag_num_rows]()
+        )
 
         @parameter
-        for row_tile in range(num_rowwise_tiles):
+        for row_tile in range(1, num_rowwise_tiles):
             score_frag_rowmax._set[col_tile](
                 max(
                     score_frag_rowmax._get[col_tile](),
@@ -1842,7 +1846,19 @@ fn _rowmax_for_online_softmax[
                     ](),
                 )
             )
+    if not init_rowmax:
 
+        @parameter
+        for col_tile in range(num_colwise_tiles):
+            score_frag_rowmax._set[col_tile](
+                max(
+                    score_frag_rowmax._get[col_tile](),
+                    rowmax_tensor._get[col_tile](),
+                )
+            )
+
+    @parameter
+    for col_tile in range(num_colwise_tiles):
         # Every four threads have elements on the same row.
         # Reduce max for T0-T3, T4-T7, etc for nvidia
         #                T0-T15, T16-T31, etc for amd
@@ -1851,6 +1867,116 @@ fn _rowmax_for_online_softmax[
                 score_frag_rowmax._get[col_tile]()
             )
         )
+
+        # Softmax numerator based on mma results.
+        @parameter
+        for row_tile in range(num_rowwise_tiles):
+            score_reg_tile._set[col_tile, row_tile](
+                exp_function(
+                    score_reg_tile._get[col_tile, row_tile]()
+                    - score_frag_rowmax._get[col_tile, size=frag_size]()
+                )
+            )
+
+
+@always_inline
+fn _rowsum[
+    type: DType,
+    reg_tile_layout: Layout,
+    fragment_layout: Layout, //,
+    warp_layout: Layout,
+](
+    score_reg_tile: LayoutTensor[
+        type,
+        reg_tile_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        element_layout=fragment_layout,
+    ],
+    out score_frag_rowsum: LayoutTensor[
+        type,
+        Layout.row_major(reg_tile_layout[0].size()),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        element_layout = Layout.row_major(fragment_layout.shape[0].value()),
+    ],
+):
+    # Assume p_reg_tile has been properly vectorized. The element layout
+    # represents number elements per thread in a row or column
+    # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
+
+    alias frag_num_rows = score_frag_rowsum.element_layout.size()
+
+    alias num_colwise_tiles = reg_tile_layout[0].size()
+    alias num_rowwise_tiles = reg_tile_layout[1].size()
+    # The online softmax attributes for each thread's elements (fragments).
+    alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
+
+    score_frag_rowsum = __type_of(score_frag_rowsum).stack_allocation()
+
+    # Initialize local max with the running max, and local sum with zero.
+    @parameter
+    for col_tile in range(num_colwise_tiles):
+        score_frag_rowsum._set[col_tile](
+            score_reg_tile._get[col_tile, 0]().reduce_add[frag_num_rows]()
+        )
+
+    alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
+
+    @parameter
+    for row_tile in range(1, num_rowwise_tiles):
+
+        @parameter
+        for col_tile in range(num_colwise_tiles):
+            score_frag_rowsum._set[col_tile](
+                score_frag_rowsum._get[col_tile]()
+                + score_reg_tile._get[col_tile, row_tile]().reduce_add[
+                    frag_num_rows
+                ]()
+            )
+
+    @parameter
+    for col_tile in range(num_colwise_tiles):
+        score_frag_rowsum._set[col_tile](
+            warp.lane_group_sum_and_broadcast[Int(num_rowwise_lanes)](
+                score_frag_rowsum._get[col_tile]()
+            )
+        )
+
+
+@always_inline
+fn _online_softmax_correction[
+    type: DType,
+    row_accum_layout: Layout,
+    accum_frag_layout: Layout, //,
+    use_exp2: Bool,
+](
+    rowmax_tensor: LayoutTensor[
+        type,
+        row_accum_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        element_layout=accum_frag_layout,
+    ],
+    score_frag_rowmax: LayoutTensor[
+        type,
+        row_accum_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+        element_layout=accum_frag_layout,
+    ],
+):
+    alias num_colwise_tiles = row_accum_layout.size()
+    alias exp_function = exp2 if use_exp2 else exp
+
+    @parameter
+    for col_tile in range(num_colwise_tiles):
+        # Corrention since previous max may be updated.
+        sfr = score_frag_rowmax._get[col_tile]()
+        score_frag_rowmax._set[col_tile](
+            exp_function(rowmax_tensor._get[col_tile]() - sfr)
+        )
+        rowmax_tensor._set[col_tile](sfr)
 
 
 @always_inline
@@ -1862,7 +1988,7 @@ fn _online_softmax_iter_for_mma_output_sm90[
     accum_frag_layout: Layout, //,
     block_layout_by_warp: Layout,
     warp_layout: Layout,
-    use_exp2: Bool = False,
+    use_exp2: Bool,
 ](
     out correction: LayoutTensor[
         type,
@@ -1905,8 +2031,6 @@ fn _online_softmax_iter_for_mma_output_sm90[
     # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
 
     # TODO: fragment_layout should ideally be inferred from the shape of output_reg_tile or score_reg_tile
-    alias frag_type = score_reg_tile.element_type
-    alias frag_size = fragment_layout.size()
     # alias frag_num_rows = fragment_layout.shape[0].value() # sm90 1
     alias frag_num_cols = fragment_layout.shape[1].value()  # sm90 2
     alias frag_num_rows = accum_frag_layout.size()
@@ -1924,13 +2048,8 @@ fn _online_softmax_iter_for_mma_output_sm90[
             " where `frag_num_rows > 1`. This simplifies the implementation."
         ),
     ]()
-    score_frag_rowsum = __type_of(rowmax_tensor).stack_allocation()
-    correction = __type_of(correction).stack_allocation()
 
     # Initialize local max with the running max, and local sum with zero.
-    @parameter
-    for col_tile in range(num_colwise_tiles):
-        score_frag_rowsum._set[col_tile](0)
 
     alias is_nvidia: Bool = is_nvidia_gpu()
     # this is basically M in mma shape, but for nvidia we absorb the factor
@@ -1940,56 +2059,23 @@ fn _online_softmax_iter_for_mma_output_sm90[
     ) if is_nvidia else UInt32(16)
     alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
-    # Online softmax
-    score_frag_rowmax = _rowmax_for_online_softmax[
-        block_layout_by_warp, warp_layout
+    # Online softmax; correction is initially used as `score_frag_rowmax`
+    correction = _rowmax_online_softmax[
+        block_layout_by_warp, warp_layout, use_exp2=use_exp2
     ](score_reg_tile, rowmax_tensor)
 
     alias exp_function = exp2 if use_exp2 else exp
 
-    # TODO: We can let all threads read shared memory in the above so that
-    # we don't need to use warp shuffling.
-    @parameter
-    for col_tile in range(num_colwise_tiles):
-        # Corrention since previous max may be updated.
-        correction._set[col_tile](
-            exp_function(
-                rowmax_tensor._get[col_tile]()
-                - score_frag_rowmax._get[col_tile]()
-            )
-        )
+    score_frag_rowsum = _rowsum[warp_layout](score_reg_tile)
 
-        # Softmax numerator based on mma results.
-        @parameter
-        for row_tile in range(num_rowwise_tiles):
-            score_reg_tile._set[col_tile, row_tile](
-                exp_function(
-                    score_reg_tile._get[col_tile, row_tile]()
-                    - score_frag_rowmax._get[col_tile, size=frag_size]()
-                )
-            )
+    _online_softmax_correction[use_exp2=True](rowmax_tensor, correction)
 
     @parameter
     for col_tile in range(num_colwise_tiles):
-        # Sum softmax numerator from a thread's fragments.
-        @parameter
-        for row_tile in range(num_rowwise_tiles):
-            score_frag_rowsum._set[col_tile](
-                score_frag_rowsum._get[col_tile]()
-                + score_reg_tile._get[col_tile, row_tile]().reduce_add[
-                    frag_num_rows
-                ]()
-            )
-
-        score_frag_rowsum._set[col_tile](
-            warp.lane_group_sum_and_broadcast[Int(num_rowwise_lanes)](
-                score_frag_rowsum._get[col_tile]()
-            )
-        )
-
         # Save current rowmax and rowsum
-        rowmax_tensor._set[col_tile](score_frag_rowmax._get[col_tile]())
         rowsum_tensor._set[col_tile](
             rowsum_tensor._get[col_tile]() * correction._get[col_tile]()
-            + score_frag_rowsum._get[col_tile]()
+            + rebind[SIMD[type, accum_frag_layout.size()]](
+                score_frag_rowsum._get[col_tile]()
+            )
         )

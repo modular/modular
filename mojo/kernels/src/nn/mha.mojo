@@ -438,6 +438,11 @@ fn flash_attention_dispatch[
                 alias num_threads = config.num_threads[True]()
                 constrained[num_threads % 128 == 0]()
 
+                alias num_heads = config.num_heads
+                alias persistent = env_get_bool[
+                    "USE_MHA_PERSISTENT_KERNEL", False
+                ]()
+                alias num_heads_per_block: UInt32 = config.num_heads_per_block()
                 alias kernel_sm90 = mha_sm90[
                     mask.rank,
                     config.type,
@@ -470,7 +475,7 @@ fn flash_attention_dispatch[
                     score_mod_functor,
                     grid_dim=(
                         Int(ceildiv(max_prompt_len, BM)),
-                        Int(config.num_heads),
+                        Int(config.num_heads // num_heads_per_block),
                         Int(batch_size),
                     ),
                     block_dim=(Int(num_threads), 1, 1),

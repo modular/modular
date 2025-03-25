@@ -13,6 +13,7 @@ from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
 from sys import (
     alignof,
+    env_get_bool,
     is_nvidia_gpu,
     simdwidthof,
     has_amd_gpu_accelerator,
@@ -126,8 +127,12 @@ struct MHAConfig:
             + self.num_producer_threads[producer_consumer_kernel]()
         )
 
-    fn q_smem_size(self) -> UInt:
-        return self.block_m() * self.depth
+    fn q_smem_size(self, sm_90: Bool = False) -> UInt:
+        q_smem = self.block_m() * self.depth
+        return (
+            UInt(2)
+            * q_smem if (sm_90 and self.num_heads_per_block() > 1) else q_smem
+        )
 
     fn kv_smem_size(self, sm_90: Bool = False) -> UInt:
         kv_smem = self.block_n() * self.depth
@@ -149,6 +154,18 @@ struct MHAConfig:
         n_warps_n = self.num_warps_n()
         return 2 * n_warps_n * self.block_m() if n_warps_n > 1 else 0
 
+    fn num_heads_per_block(self) -> UInt32:
+        alias persistent = env_get_bool["USE_MHA_PERSISTENT_KERNEL", False]()
+
+        @parameter
+        if not persistent:
+            return 1
+        else:
+            return (
+                4 if self.num_heads % 4
+                == 0 else (1 if self.num_heads > 4 else self.num_heads)
+            ) if self.algorithm == 3 else 1
+
     fn shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False
     ](self) -> UInt:
@@ -166,11 +183,10 @@ struct MHAConfig:
             )
         else:
             num_smem_elements = (
-                self.q_smem_size()
+                self.q_smem_size(sm_90_fa3)
                 + self.k_smem_size(sm_90_fa3)
                 + self.v_smem_size(sm_90_fa3)
                 + self.warp_scratch_smem_size()
-                + (self.block_m() * self.depth if sm_90_fa3 else 0)
             )
 
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
@@ -179,8 +195,9 @@ struct MHAConfig:
         num_smem_bytes = self.type.sizeof() * num_smem_elements
         if sm_90_fa3:
             num_smem_bytes += (
-                4 * sizeof[DType.int64]() * self.num_pipeline_stages
-            )
+                4 * self.num_pipeline_stages
+                + (4 if self.num_heads_per_block() > 1 else 0)
+            ) * sizeof[DType.int64]()
         return num_smem_bytes
 
     fn __init__(
