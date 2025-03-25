@@ -446,17 +446,17 @@ private:
   /// Given pointers to the \p first and \p last characters in a portion of a
   /// doc string, emits warnings (prefixed with the given \p name) if:
   /// 1. The first character is not either a capital letter or a backtick '`'.
-  /// 2. The last character is not a period.
+  /// 2. The last character is not a period or a backtick.
   void validateStyle(StringRef name, const char *first, const char *last) {
     if (!isValidFirstCharacter(*first))
       emitDiag(first, name) << " should begin with a capital letter or "
                                "non-alpha character, but this begins with '"
                             << *first << "'";
 
-    if (*last != '.')
+    if (*last != '.' && *last != '`')
       emitDiag(last, name)
-          << " should end with a period '.', but this ends with '" << *last
-          << "'";
+          << " should end with a period '.' or backtick '`', but this ends with"
+          << " '" << *last << "'";
   }
 
   //===----------------------------------------------------------------------===//

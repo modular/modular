@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This is a module doc."""
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s -mojo-diagnose-missing-doc-strings -verify-diagnostics | FileCheck %s --implicit-check-not warning
 
 from docs_package import documented_method_defined_in_init
 
@@ -57,3 +57,25 @@ trait Trait:
   fn f(self):
     """This is a trait function doc."""
     ...
+
+# MOTO-869: A docstring ending with an example should pass validation.
+@value
+struct StructWithExamples:
+    """A struct with a function in it."""
+
+    fn method_with_example(self, zot: Int) raises:
+        """A function with an example.
+
+        Args:
+            zot: A number.
+
+        Raises:
+            An error, obviously.
+
+        Example:
+
+        ```mojo
+        method_with_example()
+        ```
+        """
+        pass
