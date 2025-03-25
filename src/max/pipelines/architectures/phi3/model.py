@@ -40,6 +40,7 @@ class Phi3Model(LlamaModelBase):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -50,4 +51,5 @@ class Phi3Model(LlamaModelBase):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
