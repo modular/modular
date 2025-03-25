@@ -268,18 +268,7 @@ def encode(prompt, num_warmups, **config_kwargs):
     cls=WithLazyPipelineOptions,
 )
 def cli_warm_cache(**config_kwargs) -> None:
-    """Load and compile the model to prepare caches.
-
-    This command is particularly useful in combination with
-    --save-to-serialized-model-path. Providing that option to this command
-    will result in a compiled model being stored to that path. Subsequent
-    invocations of other commands can then use --serialized-model-path to
-    reuse the previously-compiled model.
-
-    Even without --save-to-serialized-model-path, this command will as a side
-    effect warm the Hugging Face cache and in some cases, MAX compilation
-    caches.
-    """
+    """Load and compile the model to prepare caches."""
     from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 
     pipeline_config = PipelineConfig(**config_kwargs)

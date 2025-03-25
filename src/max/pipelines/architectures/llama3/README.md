@@ -117,10 +117,6 @@ pipeline:
   in the model.
   Valid values: `q4_0`, `q4_k`, `q6_k`, `bfloat16`, `float32`.
   (Default value: `float32`).
-- `--save-to-serialized-model-path`: If specified, writes the serialized model
-  to this path.
-- `--serialized-model-path`: If specified, tries to load a serialized model
-  from this path.
 - `--top-k`: Limits the sampling to the K most probable tokens. Default is 1.
 - `--version`: Selects which version in the Llama 3 family to use.
   Valid values: `3`, `3.1`.

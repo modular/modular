@@ -54,12 +54,6 @@ class PipelineConfig(MAXConfig):
     engine: Optional[PipelineEngine] = None
     """Engine backend to use for serving, 'max' for the max engine, or 'huggingface' as fallback option for improved model coverage."""
 
-    serialized_model_path: Optional[str] = None
-    """DEPRECATED: Serialization paths no longer supported."""
-
-    save_to_serialized_model_path: Optional[str] = None
-    """DEPRECATED: Serialization paths no longer supported."""
-
     max_length: Optional[int] = None
     """Maximum sequence length of the model."""
 
@@ -104,9 +98,6 @@ class PipelineConfig(MAXConfig):
 
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
-
-    max_cache_batch_size: Optional[int] = None
-    """DEPRECATED: The maximum cache batch size to use for the model. Use max_batch_size instead."""
 
     use_experimental_kernels: str = os.environ.get(
         "USE_EXPERIMENTAL_KERNELS", "false"
@@ -213,12 +204,6 @@ class PipelineConfig(MAXConfig):
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
             raise ValueError("max_length must be non-negative.")
-
-        if self.max_cache_batch_size is not None:
-            logger.warning(
-                "--max-cache-batch-size is deprecated, use `--max-batch-size` instead. This setting will stop working in a future release."
-            )
-            self.max_batch_size = self.max_cache_batch_size
 
         # Set sensible defaults. These are platform-specific.
         if self.max_num_steps < 0:
@@ -403,15 +388,12 @@ class PipelineConfig(MAXConfig):
         pipeline_help = {
             "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
-            "serialized_model_path": "DEPRECATED: Serialization paths no longer supported.",
-            "save_to_serialized_model_path": "DEPRECATED: Serialization paths no longer supported.",
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",
-            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-cache-batch-size`. Default is 32.",
+            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 32.",
             "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`",
             "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Requires chunked prefill.",
-            "max_cache_batch_size": "DEPRECATED: Use `max_batch_size` instead.",
             "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is set to 1.",
             "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",

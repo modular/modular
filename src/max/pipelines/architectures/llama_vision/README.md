@@ -112,7 +112,7 @@ pipeline:
   Default is 1.
 - `--max-ce-batch-size`: Set the maximum cache size reserved for a single
   context encoding batch. The effective limit will be the lesser of this value
-  and `max-cache-batch-size`.
+  and `max-batch-size`.
   Default is 32.
 - `--max-length`: Controls the maximum length of the text sequence (includes the
   input tokens). Defaults to huggingface model config's max sequence length.
@@ -123,10 +123,6 @@ pipeline:
   quantized to a low bits per weight format.
   Valid values: `q4_0`, `q4_k`, `q6_k`, `bfloat16`, `float32`.
   (Default value: `bfloat16`).
-- `--save-to-serialized-model-path`: If specified, writes the serialized model
-  to this path.
-- `--serialized-model-path`: If specified, tries to load a serialized model
-  from this path.
 - `--top-k`: Limits the sampling to the K most probable tokens. Default is 1.
 - `--trust-remote-code`: Indicate whether to allow custom modeling files from
   Hugging Face repositories. Set this to true with caution, as it may
