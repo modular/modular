@@ -106,8 +106,6 @@ fn tma_wgmma_kernel[
     b_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -118,6 +116,21 @@ fn tma_wgmma_kernel[
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+    alias num_m_mmas = BM // wgmma_shape[0]
+    alias num_n_mmas = BN // wgmma_shape[1]
+
+    alias a_smem_layout = tile_layout_k_major[
+        a_type, BM, BK, swizzle_mode=a_swizzle
+    ]()
+    alias b_smem_layout = tile_layout_k_major[
+        b_type, BN, BK, swizzle_mode=b_swizzle
+    ]() if transpose_b else tile_layout_mn_major[
+        b_type, BN, BK, swizzle_mode=b_swizzle
+    ]()
+
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
@@ -144,12 +157,6 @@ fn tma_wgmma_kernel[
         b_swizzle=b_swizzle,
         transpose_b=transpose_b,
     ]()
-
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias num_m_mmas = BM // wgmma_shape[0]
-    alias num_n_mmas = BN // wgmma_shape[1]
 
     alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
     var c_reg_tile = LayoutTensor[
@@ -298,16 +305,6 @@ def test_tma_wgmma[
         Layout.row_major(M, N),
     ](ctx)
 
-    # Shared memory tile layouts
-    alias a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    alias b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]()
-
     a_tma_op = create_tma_tile[
         a_type, 2, Index(BM, BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
@@ -330,8 +327,6 @@ def test_tma_wgmma[
         __type_of(b_tma_op).desc_layout,
         block_tile_shape,
         wgmma_shape,
-        a_smem_layout,
-        b_smem_layout,
         transpose_b=transpose_b,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
