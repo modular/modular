@@ -14,20 +14,20 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines import (
     PipelineTask,
+    RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 
+from ..llama3 import weight_adapters
 from .model import Qwen2Model
 
 qwen2_arch = SupportedArchitecture(
     name="Qwen2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=[
-        "Qwen/Qwen2.5-7B-Instruct",
-    ],
+    example_repo_ids=["Qwen/Qwen2.5-7B-Instruct", "Qwen/QwQ-32B"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
@@ -44,4 +44,9 @@ qwen2_arch = SupportedArchitecture(
     },
     pipeline_model=Qwen2Model,
     tokenizer=TextTokenizer,
+    rope_type=RopeType.normal,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
+    },
 )

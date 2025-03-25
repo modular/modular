@@ -56,6 +56,7 @@ class Llama3ConfigBase(MAXModelConfigBase):
     kv_params: KVCacheParams
     return_n_logits: int
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
+    attention_bias: bool
     rms_norm_eps: Optional[float]
     tie_word_embeddings: bool
     stacked_mlp: bool
@@ -165,6 +166,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        attention_bias: bool = False,
     ) -> Llama3Config:
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
@@ -251,6 +253,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 cache_dtype=cache_dtype,
             ),
             norm_method=norm_method,
+            attention_bias=attention_bias,
             tie_word_embeddings=tie_word_embeddings,
             stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
             stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,

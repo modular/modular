@@ -83,12 +83,18 @@ class Llama3(Transformer):
         attention_cls: Callable[..., AttentionWithRopeV2]
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             assert config.quantization_config is not None
+            assert not config.attention_bias, (
+                "Attention bias is not supported for GPTQAttentionWithRope."
+            )
             attention_cls = functools.partial(
                 GPTQAttentionWithRope,
                 quantization_config=config.quantization_config,
                 scale=config.attention_multiplier,
             )
         elif config.model_quantization_encoding is not None:
+            assert not config.attention_bias, (
+                "Attention bias is not supported for GGUFQAttentionWithRope."
+            )
             attention_cls = functools.partial(
                 GGUFQAttentionWithRope,
                 quantization_encoding=config.model_quantization_encoding,
@@ -100,6 +106,7 @@ class Llama3(Transformer):
                 stacked_qkv=config.stacked_qkv,
                 scale=config.attention_multiplier,
                 clip_qkv=config.clip_qkv,
+                has_bias=config.attention_bias,
             )
 
         layers = [

@@ -109,6 +109,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
     """Normalization layer."""
 
+    attention_bias: bool = False
+    """Whether to use attention bias."""
+
     logits_postprocessor: Callable[[TensorValue], TensorValue] | None = None
     """Postprocessor for the logits."""
 
@@ -446,6 +449,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             n_devices=len(self.devices),
             logits_postprocessor=self.logits_postprocessor,
             norm_method=self.norm_method,
+            attention_bias=self.attention_bias,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
         )
