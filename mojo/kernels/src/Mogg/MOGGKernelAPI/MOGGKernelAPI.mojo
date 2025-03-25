@@ -4012,6 +4012,7 @@ struct TopK:
         type: DType,
         rank: Int,
         target: StringLiteral,
+        _trace_name: StringLiteral,
     ](
         values: OutputTensor[type=type, rank=rank],
         indices: OutputTensor[type = DType.int64, rank=rank],
@@ -4021,15 +4022,16 @@ struct TopK:
         sorted: Scalar[DType.bool],
         ctx: DeviceContextPtr,
     ) raises:
-        top_k[largest=True, target=target](
-            managed_tensor_slice_to_ndbuffer(input),
-            Int(k),
-            Int(axis),
-            managed_tensor_slice_to_ndbuffer(values),
-            managed_tensor_slice_to_ndbuffer(indices),
-            sorted,
-            ctx,
-        )
+        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+            top_k[largest=True, target=target](
+                managed_tensor_slice_to_ndbuffer(input),
+                Int(k),
+                Int(axis),
+                managed_tensor_slice_to_ndbuffer(values),
+                managed_tensor_slice_to_ndbuffer(indices),
+                sorted,
+                ctx,
+            )
 
     @staticmethod
     fn shape(
