@@ -37,6 +37,7 @@ from layout.layout_tensor import (
     LayoutTensorIter,
     copy_sram_to_dram,
 )
+from layout.runtime_layout import RuntimeLayout, RuntimeTuple, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from utils.numerics import get_accum_type
 from layout.tensor_core_async import (
@@ -44,6 +45,7 @@ from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,
     tile_layout_k_major,
+    st_matrix_n_layout,
 )
 from layout.tma_async import (
     PipelineState,
@@ -449,6 +451,11 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 and BN == wgmma_shape[1] \
                 and BM == WG_BM
         # fmt: on
+        var st_matrix_rt_layout = RuntimeLayout[
+            st_matrix_n_layout[c_type, WG_BN, num_m_mmas, num_consumer](),
+            linear_idx_type = DType.int32,
+            bitwidth=32,
+        ]()
 
         @parameter
         if use_stmatrix:
@@ -468,14 +475,18 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
                         var d_reg = c_frag.load[8](0, 0).cast[DType.bfloat16]()
 
+                        var st_matrix_args = RuntimeTuple[
+                            IntTuple(
+                                UNKNOWN_VALUE,
+                                IntTuple(
+                                    i,
+                                    m_mma,
+                                    UNKNOWN_VALUE,
+                                ),
+                            )
+                        ](warp_group_thread_idx, i, m_mma, local_warp_group_idx)
                         var offset = c_smem_tile.ptr.offset(
-                            m_mma * wgmma_shape[0] * WG_BN
-                            + local_warp_group_idx
-                            * (BM // num_consumer)
-                            * WG_BN
-                            + (warp_id * 16 + lane % 16) * WG_BN
-                            + i * 16
-                            + 8 * (lane // 16)
+                            st_matrix_rt_layout(st_matrix_args)
                         )
                         var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
 
@@ -981,6 +992,11 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                     and BN == wgmma_shape[1] \
                     and BM == WG_BM
             # fmt: on
+            var st_matrix_rt_layout = RuntimeLayout[
+                st_matrix_n_layout[c_type, WG_BN, num_m_mmas, num_consumer](),
+                linear_idx_type = DType.int32,
+                bitwidth=32,
+            ]()
 
             @parameter
             if use_stmatrix:
@@ -1002,14 +1018,23 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                                 DType.bfloat16
                             ]()
 
+                            var st_matrix_args = RuntimeTuple[
+                                IntTuple(
+                                    UNKNOWN_VALUE,
+                                    IntTuple(
+                                        i,
+                                        m_mma,
+                                        UNKNOWN_VALUE,
+                                    ),
+                                )
+                            ](
+                                warp_group_thread_idx,
+                                i,
+                                m_mma,
+                                local_warp_group_idx,
+                            )
                             var offset = c_smem_tile.ptr.offset(
-                                m_mma * wgmma_shape[0] * WG_BN
-                                + local_warp_group_idx
-                                * (BM // num_consumer)
-                                * WG_BN
-                                + (warp_id * 16 + lane % 16) * WG_BN
-                                + i * 16
-                                + 8 * (lane // 16)
+                                st_matrix_rt_layout(st_matrix_args)
                             )
                             var d_reg_f32_packed = bitcast[DType.float32, 4](
                                 d_reg
