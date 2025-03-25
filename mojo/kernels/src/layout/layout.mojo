@@ -1914,6 +1914,23 @@ fn upcast(layout: Layout, factor: Int) -> Layout:
         return res
 
 
+fn downcast(layout: Layout, factor: Int) -> Layout:
+    """Splits elements in a layout to create a finer layout without changing the
+    total number of elements so that the alignment is preserved.
+
+    This function is useful for converting between different data type granularities,
+    such as from uint128 to bf16.
+
+    Args:
+        layout: The layout to downcast.
+        factor: The number of elements to split into.
+
+    Returns:
+        A new layout with adjusted shape and stride for the finer granularity.
+    """
+    return Layout(layout.shape, mul(layout.stride, factor))
+
+
 fn is_row_major[rank: Int](layout: Layout) -> Bool:
     """Checks if a layout has row-major ordering for the specified rank.
 

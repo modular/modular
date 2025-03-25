@@ -51,6 +51,7 @@ from layout.layout import (
     right_inverse,
     composition,
     make_layout,
+    downcast,
 )
 from memory.unsafe_pointer import UnsafePointer
 
@@ -429,6 +430,58 @@ fn wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
     alias tiler = Layout.col_major(num_m_mma, num_n_mma)
     alias TV_tile_to_idx = logical_product(TV_to_idx, tiler)
     return List(proj_i, proj_j, TV_tile_to_idx)
+
+
+fn st_matrix_n_atom[num_stmatrix: Int]() -> Layout:
+    """Creates a layout for N-major `st_matrix` atom in the context of WGMMA C
+    matrix.
+
+    The domain of this layout is the warp group local thread index. Thus, the
+    layout takes [0, 128) as input and returns an offset for a logical array
+    with an element size of 128-bit.
+
+    Parameters:
+        num_stmatrix: Number of N-dimension tiles in the C matrix.
+
+    Returns:
+        `Layout` - A layout that maps warp group local thread index to an offset
+        for a logical array with an element size of 128-bit.
+    """
+    # C with the granularity of 128-bit per element
+    alias C = Layout.row_major(64, 2 * num_stmatrix)
+    return Layout(
+        IntTuple(16, 2, 4),
+        IntTuple(C(IntTuple(1, 0)), C(IntTuple(0, 1)), C(IntTuple(16, 0))),
+    )
+
+
+fn st_matrix_n_layout[
+    c_type: DType, WG_BN: Int, num_m_mmas: Int, num_consumer: Int
+]() -> Layout:
+    """Creates a layout for N-major `st_matrix` in the context of WGMMA C
+    matrix.
+
+    The layout modes are: the warp group local thread index, the N-dimension
+    tiling size `WG_BN // 16`, the number of MMA tiles `num_m_mmas` in the
+    M-dimension, and the number of consumers `num_consumer`. The output is an
+    offset for a logical array with the element type `c_type`.
+
+    Parameters:
+        c_type: Data type of the C matrix.
+        WG_BN: Size of the K dimension in the C matrix in shared memory.
+        num_m_mmas: Number of MMA tiles in the M dimension.
+        num_consumer: Number of consumers.
+
+    Returns:
+        `Layout` - A layout that maps warp group local thread index to an offset
+        for a logical array with the element type `c_type`.
+    """
+    alias n_stmatrix = WG_BN // 16
+    alias atom = st_matrix_n_atom[n_stmatrix]()
+    alias b128_layout = logical_product(
+        atom, Layout.col_major(n_stmatrix, num_m_mmas, num_consumer)
+    )
+    return downcast(b128_layout, 128 // (8 * sizeof[c_type]()))
 
 
 fn _wgmma_descriptor[
