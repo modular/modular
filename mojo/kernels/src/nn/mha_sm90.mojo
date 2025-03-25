@@ -1115,12 +1115,12 @@ fn _mha_single_batch_sm90_fa3[
             k_smem_subi = k_smem_iter.next_unsafe(Int(read_idx * num_k_iters_0))
             q_smem_subi = q_smem_iter.next_unsafe(Int(q_idx * num_k_iters_0))
             produced_mbar_k[read_idx].wait(read_phase)
-            _ = p_reg_tile.fill(0)
             wgmma_0.arrive()
 
             @parameter
             for k_iter in range(num_k_iters_0):
-                wgmma_0.wgmma[num_consumer](
+                alias scale_c = 0 if k_iter == 0 else 1
+                wgmma_0.wgmma[num_consumer, scale_c=scale_c](
                     q_smem_subi.next_unsafe(k_iter)[],
                     k_smem_subi.next_unsafe(k_iter)[],
                     p_reg_tile,
