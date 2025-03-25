@@ -174,8 +174,6 @@ bool Settings::set(StringRef key, StringRef value) {
 
 bool Settings::clear(StringRef key) { return set(key, ""); }
 
-ErrorOrSuccess Settings::flush() { return config.flush(); }
-
 ErrorOr<StringRef> Settings::userID() const {
   return entitlementStore.getUserID();
 }

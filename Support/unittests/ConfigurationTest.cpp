@@ -47,40 +47,6 @@ key3 = value3
   EXPECT_EQ(cfg.getValue("section.subsection.key3"), "value3");
 }
 
-TEST(Configuration, RoundTrip) {
-  StringRef input = R"(
-[section]
-key = value
-# this is a comment
-key2 = value2 # with a comment
-; another comment
-
-[section.subsection] # yet another comment
-key3 = value3
-)";
-  StringRef output = R"([section]
-key = value
-key2 = value2
-new_key = new value
-
-[section.subsection]
-key3 = value3
-
-)";
-
-  Config cfg;
-  auto err = cfg.parseFrom(input);
-  ASSERT_FALSE(err.isError()) << err.getError();
-
-  cfg.setValue("section.new_key", "new value");
-
-  std::string out;
-  llvm::raw_string_ostream stream(out);
-  cfg.flush(stream);
-
-  EXPECT_EQ(out, output);
-}
-
 TEST(Configuration, Globals) {
   StringRef input = R"(
 key = value
@@ -224,26 +190,6 @@ malformed line here
 )"));
 }
 
-TEST(Configuration, EmptyValue) {
-  Config cfg;
-  cfg.setValue("good", "something");
-  cfg.setValue("bad", "");
-  cfg.setValue("inner.good", "another_thing");
-  cfg.setValue("inner.bad", "");
-  cfg.setValue("empty_section.bad", "");
-
-  std::string cfgString;
-  llvm::raw_string_ostream os(cfgString);
-  cfg.flush(os);
-
-  StringRef cfgStringRef = cfgString;
-  EXPECT_TRUE(cfgStringRef.contains("good = something"));
-  EXPECT_TRUE(cfgStringRef.contains("good = another_thing"));
-  EXPECT_TRUE(cfgStringRef.contains("inner"));
-  EXPECT_FALSE(cfgStringRef.contains("bad"));
-  EXPECT_FALSE(cfgStringRef.contains("empty_section"));
-}
-
 #ifdef LLVM_ON_UNIX
 // Regression test for a bug in Configuration
 TEST(Configuration, PageBoundary) {
@@ -375,34 +321,6 @@ key5 = value5
 
   err = from.copyFrom(from);
   ASSERT_TRUE(err.getError());
-}
-
-/// This test checks that we can round-trip globals correctly. Currently, the
-/// implementation requires that they be placed at the beginning of the file,
-/// but in theory this could change under the hood and this test should still
-/// pass.
-TEST(Configuration, RoundTripGlobals) {
-  // Build the config:
-  // global = another_thing
-  // [a]
-  // value = something
-  Config cfg;
-  cfg.setValue("a.value", "something");
-  cfg.setValue("global", "another_thing");
-  ASSERT_EQ(cfg.getValue("global"), "another_thing")
-      << std::string(cfg.getValue("global"));
-
-  std::string cfgString;
-  llvm::raw_string_ostream os(cfgString);
-  cfg.flush(os);
-
-  ASSERT_TRUE(StringRef(cfgString).contains("global = another_thing"))
-      << cfgString;
-  Config newConfig;
-  auto err = newConfig.parseFrom(cfgString);
-  ASSERT_FALSE(err.isError()) << err.getError();
-  EXPECT_EQ(newConfig.getValue("global"), "another_thing")
-      << std::string(newConfig.getValue("global"));
 }
 
 TEST(Configuration, BooleanValues) {

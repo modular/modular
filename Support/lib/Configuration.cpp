@@ -291,65 +291,6 @@ void Config::populateEnvOverrides() {
       getValue(k);
 }
 
-void Config::flush(raw_ostream &os) {
-  std::vector<std::pair<StringRef, std::vector<std::string>>> sections;
-  DenseMap<StringRef, unsigned> sectionNameToID;
-  for (auto &kV : kv) {
-    // Apparently MSVC can't handle structured bindings for some reason.
-    StringRef k = kV.first();
-    std::string &v = kV.second;
-
-    if (v.empty())
-      continue;
-
-    auto [section, prop] = getSectionAndProp(k);
-    if (section.empty())
-      section = "globals";
-
-    auto it = sectionNameToID.try_emplace(section, sections.size());
-    if (it.second)
-      sections.push_back({section, {}});
-
-    sections[it.first->second].second.push_back((prop + " = " + v).str());
-  }
-
-  // Sort the sections to make the output deterministic.
-  llvm::stable_sort(sections, [](const auto &lhs, const auto &rhs) {
-    // Globals must always come first.
-    if (lhs.first == "globals")
-      return true;
-
-    return lhs.first < rhs.first;
-  });
-  for (auto &sectionAndProps : sections)
-    llvm::stable_sort(sectionAndProps.second);
-
-  for (auto &sectionAndProps : sections) {
-    // Apparently MSVC can't handle structured bindings for some reason.
-    StringRef section = sectionAndProps.first;
-    std::vector<std::string> &props = sectionAndProps.second;
-
-    if (section != "globals")
-      os << "[" << section << "]";
-    os << "\n";
-
-    // First, sort the properties.
-    llvm::stable_sort(props);
-    for (auto &prop : props)
-      os << prop << "\n";
-    os << "\n";
-  }
-}
-
-ErrorOrSuccess Config::flush() {
-  auto configFilePathOr = getConfigFilePath(/*create=*/true);
-
-  // TODO: Depreciating modular.cfg. We no longer support flushing the config
-  // file to disk. This was always racy and error prone.
-
-  return success();
-}
-
 /// Get the list of search paths, in order of preference.
 static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
                            FolderType type) {
