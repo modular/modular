@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
@@ -143,21 +144,46 @@ class DistributedTransformer(Module):
                 **kwargs,
             )
 
-        if self.return_n_logits == -1:
-            logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
-            last_token_indices = input_row_offsets[1:] - 1
-            last_token_logits = ops.gather(logits, last_token_indices, axis=0)
-            return (last_token_logits, logits)
-        else:
-            h0 = h[0]  # All the outputs are the same here.
-            last_token_indices = input_row_offsets[1:] - 1
-            last_token = ops.gather(h0, last_token_indices, axis=0)
+        last_logits = ops.gather(
+            ops.cast(self.lm_head(self.norm(h))[0], DType.float32),
+            input_row_offsets[1:] - 1,
+            axis=0,
+        )
 
-            # Always return float32 logits, no matter the activation type
-            last_token_distributed = distribute_value(last_token, self.devices)
-            return (
-                ops.cast(
-                    self.lm_head(self.norm(last_token_distributed))[0],
-                    DType.float32,
-                ),
+        logits = None
+        offsets = None
+
+        if self.return_n_logits > 1:
+            return_n_logits_range = ops.range(
+                ops.constant(self.return_n_logits, DType.int64),
+                ops.constant(0, DType.int64),
+                ops.constant(-1, DType.int64),
+                out_dim="return_n_logits_range",
             )
+            offsets = (
+                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+            )
+            last_indices = ops.reshape(offsets, shape=(-1,))
+            logits = ops.gather(
+                ops.cast(self.lm_head(self.norm(h))[0], DType.float32),
+                last_indices,
+                axis=0,
+            )
+            offsets = ops.range(
+                ops.constant(0, DType.int64),
+                last_indices.shape[0],
+                ops.constant(self.return_n_logits, DType.int64),
+                out_dim="logit_offsets",
+            )
+        elif self.return_n_logits == -1:
+            logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
+            offsets = cast(TensorValue, kwargs["input_row_offsets"])
+        elif self.return_n_logits == 0 or self.return_n_logits < -1:
+            raise ValueError(
+                f"return_n_logits provided ({self.return_n_logits}), must be greater than -1, and cannot be 0"
+            )
+
+        if logits is not None and offsets is not None:
+            return (last_logits, logits, offsets)
+        else:
+            return (last_logits,)

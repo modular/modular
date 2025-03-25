@@ -141,8 +141,10 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             model_inputs.attention_mask,
             copy_inputs_to_device=False,
         )
-        assert isinstance(model_outputs[0], Tensor)
-        return ModelOutputs(logits=model_outputs[0])
+
+        return ModelOutputs(
+            logits=cast(Tensor, model_outputs[0]),
+        )
 
     def prepare_initial_token_inputs(
         self,

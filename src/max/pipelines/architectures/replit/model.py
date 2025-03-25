@@ -118,19 +118,16 @@ class ReplitModel(PipelineModel[TextContext]):
             *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=False,
         )
-        if self.pipeline_config.enable_echo:
-            assert len(model_outputs) == 2
-            assert isinstance(model_outputs[0], Tensor)
-            assert isinstance(model_outputs[1], Tensor)
+        if len(model_outputs) == 3:
             return ModelOutputs(
-                logits=model_outputs[1],
-                next_token_logits=model_outputs[0],
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Tensor, model_outputs[1]),
+                logit_offsets=cast(Tensor, model_outputs[2]),
             )
         else:
-            assert len(model_outputs) == 1
-            assert isinstance(model_outputs[0], Tensor)
             return ModelOutputs(
-                logits=model_outputs[0], next_token_logits=model_outputs[0]
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Tensor, model_outputs[0]),
             )
 
     def prepare_initial_token_inputs(

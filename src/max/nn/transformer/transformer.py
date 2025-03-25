@@ -114,8 +114,11 @@ class Transformer(Module):
         self.logits_postprocessor = logits_postprocessor
         self.return_n_logits = return_n_logits
 
-        if not (return_n_logits == -1 or return_n_logits == 1):
-            raise ValueError("return_n_logits must be either -1 or 1")
+        if return_n_logits == 0 or return_n_logits < -1:
+            raise ValueError(
+                "return_n_logits must be greater than or equal to -1"
+                "and cannot be 0."
+            )
 
     def _apply_logits_postprocessor(
         self, output: tuple[TensorValue, ...]
@@ -154,21 +157,53 @@ class Transformer(Module):
                 **kwargs,
             )
 
-        last_h = ops.gather(h, kwargs["input_row_offsets"][1:] - 1, axis=0)
-        last_token_logits = ops.cast(
-            self.lm_head(self.norm(last_h)), DType.float32
-        )
+        # Retrieve a variable number of tokens
+        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
+        last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
+        logits = None
+        offsets = None
 
-        if self.return_n_logits == -1:
-            all_logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
-            last_token_logits, all_logits = self._apply_logits_postprocessor(
-                (last_token_logits, all_logits)
+        if self.return_n_logits > 1:
+            return_n_logits_range = ops.range(
+                ops.constant(self.return_n_logits, DType.int64),
+                ops.constant(0, DType.int64),
+                ops.constant(-1, DType.int64),
+                out_dim="return_n_logits_range",
+            )
+            offsets = (
+                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+            )
+            last_indices = ops.reshape(offsets, shape=(-1,))
+            last_tokens = ops.gather(h, last_indices, axis=0)
+            logits = ops.cast(
+                self.lm_head(self.norm(last_tokens)), DType.float32
+            )
+            offsets = ops.range(
+                ops.constant(0, DType.int64),
+                last_indices.shape[0],
+                ops.constant(self.return_n_logits, DType.int64),
+                out_dim="logit_offsets",
+            )
+        elif self.return_n_logits == -1:
+            logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
+            offsets = cast(TensorValue, kwargs["input_row_offsets"])
+        elif self.return_n_logits == 0 or self.return_n_logits < -1:
+            raise ValueError(
+                f"return_n_logits provided ({self.return_n_logits}), must be greater than -1, and cannot be 0"
             )
 
-            return (
-                last_token_logits,
-                all_logits,
-                cast(TensorValue, kwargs["input_row_offsets"]),
+        if logits:
+            last_logits, logits = self._apply_logits_postprocessor(
+                (
+                    last_logits,
+                    logits,
+                )
             )
+        else:
+            last_logits = self._apply_logits_postprocessor((last_logits,))[0]
 
-        return self._apply_logits_postprocessor((last_token_logits,))
+        if offsets is not None:
+            assert logits is not None
+            return (last_logits, logits, offsets)
+        else:
+            return (last_logits,)
