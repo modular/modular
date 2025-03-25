@@ -87,6 +87,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format, None),
+            return_n_logits=self.pipeline_config.max_num_steps,
         )
 
         # Load draft model
@@ -149,6 +150,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
             weights=draft_weights,
             adapter=weight_adapters.get(_draft_weights_format, None),
+            return_n_logits=1,
         )
 
     def next_token(

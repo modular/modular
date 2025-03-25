@@ -689,6 +689,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
         self.vision_config = huggingface_config.vision_config
@@ -707,6 +708,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the

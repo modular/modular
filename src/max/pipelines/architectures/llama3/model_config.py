@@ -165,6 +165,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
+        return_n_logits: int,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> Llama3Config:
@@ -242,7 +243,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             # on the underlying model repo id.
             model_quantization_encoding=pipeline_config.model_config.graph_quantization_encoding,
             quantization_config=pipeline_config.model_config._quant_config,
-            return_n_logits=-1 if pipeline_config.enable_echo else 1,
+            return_n_logits=return_n_logits,
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),

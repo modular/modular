@@ -128,6 +128,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         """
         Args:
@@ -143,6 +144,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
         self.model = self.load_model(session)
 
@@ -452,6 +454,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             attention_bias=self.attention_bias,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
+            return_n_logits=self.return_n_logits,
         )
         nn_model: Module
         if len(self.devices) > 1:
@@ -569,6 +572,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             norm_method=self.norm_method,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
+            return_n_logits=self.return_n_logits,
         )
         nn_model = NaiveLlama3(model_config)
 
@@ -723,6 +727,7 @@ class Llama3Model(LlamaModelBase):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -733,4 +738,5 @@ class Llama3Model(LlamaModelBase):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )

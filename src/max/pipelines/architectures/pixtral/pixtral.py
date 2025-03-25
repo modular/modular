@@ -103,6 +103,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -113,6 +114,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the

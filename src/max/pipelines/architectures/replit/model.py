@@ -84,6 +84,7 @@ class ReplitModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         if pipeline_config.model_config.device_specs[0] == DeviceSpec.cpu():
             msg = "Replit currently only supported on gpu."
@@ -98,6 +99,7 @@ class ReplitModel(PipelineModel[TextContext]):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
         self.model = self.load_model(session)
 

@@ -86,6 +86,8 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             devices=devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
             weights=weights,
+            adapter=None,
+            return_n_logits=-1,
         )
 
     @traced
