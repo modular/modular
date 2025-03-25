@@ -70,7 +70,11 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
 
 /// Lower a concrete pack to a struct.
 static StructType lowerPackTypeToStruct(PackType pack) {
-  ArrayRef<TypedAttr> typeExprs = pack.getVariadicIfResolved().getValues();
+  VariadicAttr variadicAttr = pack.getVariadicIfResolved();
+  if (!variadicAttr)
+    return nullptr;
+
+  ArrayRef<TypedAttr> typeExprs = variadicAttr.getValues();
   SmallVector<Type> elementTypes;
   elementTypes.reserve(typeExprs.size());
   for (TypedAttr typeExpr : typeExprs)
@@ -81,6 +85,8 @@ static StructType lowerPackTypeToStruct(PackType pack) {
 /// Lower a concrete pack attribute to a struct attribute.
 static StructAttr lowerPackAttrToStruct(PackAttr pack) {
   StructType structType = lowerPackTypeToStruct(pack.getType());
+  if (!structType)
+    return nullptr;
   return StructAttr::get(pack.getValues(), structType);
 }
 
