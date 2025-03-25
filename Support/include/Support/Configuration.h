@@ -60,14 +60,6 @@ public:
   /// Provides a simple ini-style parser.
   ErrorOrSuccess parseFrom(StringRef buffer, llvm::SourceMgr *mgr = nullptr);
 
-  /// Copy all the values from another config object into current object.
-  /// Error if any of the keys from incoming config already exist.
-  ErrorOrSuccess copyFrom(const Config &other);
-
-  /// Copy the sections from another config object into the current object.
-  /// Pre-existing sections are removed and replaced, not merged.
-  ErrorOrSuccess overrideFrom(const Config &other);
-
   /// Get a value with a possible override from the environment.
   StringRef getValue(StringRef key);
 
@@ -82,13 +74,6 @@ public:
   /// Set a value - this will override anything that was already set for that
   /// key.
   void setValue(StringRef key, StringRef value);
-
-  /// Given a section name, get a list of all the values in that section. Global
-  /// properties (properties without a section) can be listed by simply using an
-  /// empty string for the section.
-  void
-  getValuesInSection(StringRef section,
-                     SmallVectorImpl<std::pair<StringRef, StringRef>> &values);
 
   /// Get all the values contained in the config.
   const llvm::StringMap<std::string> &getAllValues() const { return kv; }
@@ -130,15 +115,6 @@ public:
   /// On other systems except Windows, will typically be $HOME/.modular
   static ErrorOr<std::filesystem::path>
   getModularConfigFolderPath(bool create = true);
-
-  /// Get the path to the canonical modular cache folder.
-  ///
-  /// On systems that follow the XDG Base Directory Specification, this will be
-  /// the $XDG_CACHE_HOME/modular folder (typically $HOME/.cache/modular)
-  ///
-  /// On other systems except Windows, will typically be $HOME/.modular/cache
-  static ErrorOr<std::filesystem::path>
-  getModularCacheFolderPath(bool create = true);
 
   /// Get the path to the canonical modular config file.
   /// Often $XDG_CONFIG_HOME/modular/modular.cfg or $HOME/.modular/modular.cfg
