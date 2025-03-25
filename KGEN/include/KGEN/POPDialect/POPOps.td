@@ -2569,16 +2569,13 @@ def POP_NVVMWGMAMMAAsyncOp : POPOp<"nvvm.wgmma.mma_async", [Pure]> {
                        AttrOfType<Index>:$shape_k,
                        AttrOfType<KGEN_StringType>:$layout_a,
                        AttrOfType<KGEN_StringType>:$layout_b,
-                       OptionalAttr<AttrOfType<Index>>:$scaleD,
-                       OptionalAttr<AttrOfType<Index>>:$scaleA,
-                       OptionalAttr<AttrOfType<Index>>:$scaleB);
+                       AttrOfType<Index>:$scale_d,
+                       AttrOfType<Index>:$scale_a,
+                       AttrOfType<Index>:$scale_b);
 
   let results = (outs UnboundOrFloatOrUnsignedSIMD:$res);
   let assemblyFormat = [{
     $descriptor_a $descriptor_b $reg_c $type_a $type_b $type_c
-    (`scale_d`  `<` custom<IndexParamValue>($scaleD)^ `>`)?
-    (`scale_a`  `<` custom<IndexParamValue>($scaleA)^ `>`)?
-    (`scale_b`  `<` custom<IndexParamValue>($scaleB)^ `>`)?
     attr-dict `:` type($reg_c) `->` type($res)
   }];
   let hasVerifier = 1;

@@ -1868,20 +1868,14 @@ struct ConvertPoPNVVMWGMAMMAAsync
   }
 
 private:
-  int64_t resolveScaleOut(std::optional<TypedAttr> scaleOutAttr) const {
-    if (!scaleOutAttr)
-      return 1;
-
-    int64_t scaleOut = cast<IntegerAttr>(*scaleOutAttr).getInt();
+  int64_t resolveScaleOut(TypedAttr scaleOutAttr) const {
+    int64_t scaleOut = cast<IntegerAttr>(scaleOutAttr).getInt();
     assert(scaleOut == 0 || scaleOut == 1 && "Invalid scale out value");
     return scaleOut;
   }
 
-  int64_t resolveScaleIn(std::optional<TypedAttr> scaleInAttr) const {
-    if (!scaleInAttr)
-      return 1;
-
-    int64_t scaleIn = cast<IntegerAttr>(*scaleInAttr).getInt();
+  int64_t resolveScaleIn(TypedAttr scaleInAttr) const {
+    int64_t scaleIn = cast<IntegerAttr>(scaleInAttr).getInt();
     assert(scaleIn == -1 || scaleIn == 1 && "Invalid scale in value");
     return scaleIn;
   }

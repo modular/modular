@@ -25,7 +25,7 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
     // CHECK: %[[SE_3:.+]] = llvm.extractvalue %[[SVAL]][3] : !llvm.struct<(f32, f32, f32, f32)>
     // CHECK: %[[RES:.+]] = llvm.insertelement %[[SE_3]], %[[VEC_2]][%1 : i32] : vector<4xf32>
     // return %[[RES]]
-    %2 = pop.nvvm.wgmma.mma_async %0 %1 %arg2 tf32 tf32 f32 {layout_a = "row" : !kgen.string, layout_b = "col" : !kgen.string, shape_k = 8 : index, shape_m = 64 : index, shape_n = 8 : index} : <4, f32> -> <4, f32>
+    %2 = pop.nvvm.wgmma.mma_async %0 %1 %arg2 tf32 tf32 f32 {layout_a = "row" : !kgen.string, layout_b = "col" : !kgen.string, shape_k = 8 : index, shape_m = 64 : index, shape_n = 8 : index, scale_d = 1 : index, scale_a = 1 : index, scale_b = 1 : index} : <4, f32> -> <4, f32>
     kgen.return %2 : !pop.simd<4, f32>
   }
 
@@ -53,7 +53,7 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
     // CHECK: %[[SE_3:.+]] = llvm.extractvalue %[[SVAL]][3] : !llvm.struct<(f32, f32, f32, f32)>
     // CHECK: %[[RES:.+]] = llvm.insertelement %[[SE_3]], %[[VEC_2]][%1 : i32] : vector<4xf32>
     // return %[[RES]]
-    %2 = pop.nvvm.wgmma.mma_async %0 %1 %arg2 tf32 tf32 f32 {layout_a = "row" : !kgen.string, layout_b = "col" : !kgen.string, shape_k = 8 : index, shape_m = 64 : index, shape_n = 8 : index, scale_d = 0 : index} : <4, f32> -> <4, f32>
+    %2 = pop.nvvm.wgmma.mma_async %0 %1 %arg2 tf32 tf32 f32 {layout_a = "row" : !kgen.string, layout_b = "col" : !kgen.string, shape_k = 8 : index, shape_m = 64 : index, shape_n = 8 : index, scale_d = 0 : index, scale_a = 1 : index, scale_b = 1 : index} : <4, f32> -> <4, f32>
     kgen.return %2 : !pop.simd<4, f32>
   }
 
