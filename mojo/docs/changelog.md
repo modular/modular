@@ -90,6 +90,8 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [0,0,0] Assert Error: x should be
 At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be 2 but is: 1
 ```
 
+- Removed deprecated `DeviceContext` methods `copy_sync` and `memset_sync`.
+
 ### Tooling changes
 
 ### ❌ Removed
