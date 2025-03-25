@@ -533,5 +533,5 @@ def main():
     with DeviceContext() as ctx:
         run_matmul_stream_k[DType.float32, 128, 128, 128](ctx)
         run_matmul_stream_k[DType.float32, 512, 2560, 8192](ctx)
-        run_matmul_stream_k[DType.float32, 256, 256, 1024](ctx)
-        run_matmul_stream_k[DType.float32, 128, 128, 1024](ctx)
+        # run_matmul_stream_k[DType.float32, 256, 256, 1024](ctx)
+        # run_matmul_stream_k[DType.float32, 128, 128, 1024](ctx)
