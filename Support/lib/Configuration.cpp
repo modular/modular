@@ -95,17 +95,6 @@ ErrorOr<Config> Config::open() {
   return std::move(cfg);
 }
 
-static std::pair<StringRef, StringRef> getSectionAndProp(const StringRef &key) {
-  auto [section, prop] = key.rsplit('.');
-  // If the property is empty, that means we didn't have a header (split
-  // always fills the first return value). Swap header and prop here cause if
-  // we want everything that doesn't have a section, then section should be an
-  // empty string.
-  if (prop.empty())
-    std::swap(section, prop);
-  return std::pair<StringRef, StringRef>(section, prop);
-}
-
 ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
   auto emitError = [&](llvm::SMLoc loc, const Twine &msg) -> Error {
     if (!mgr)
