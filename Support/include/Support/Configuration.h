@@ -97,12 +97,6 @@ public:
   /// nothing if env overrides are disabled.
   void populateEnvOverrides();
 
-  /// Flush the configs to the provided stream.
-  // TODO: Preserve user comments.
-  void flush(llvm::raw_ostream &os);
-  /// Flush the configuration to the canonical location.
-  ErrorOrSuccess flush();
-
   // Enable or disable the functionality that allows environment variables to
   // override the existing variables on read.
   void setEnvOverride(bool newVal);

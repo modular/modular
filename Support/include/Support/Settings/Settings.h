@@ -71,10 +71,6 @@ public:
   /// Clear deletes a value from the underlying config only. See `set`.
   bool clear(StringRef key);
 
-  /// Flushes the configuration. An error will be raised here if a set failed
-  /// previously (and e.g. conflicted with an entitlement).
-  ErrorOrSuccess flush();
-
   /// Get an entitlement of the explicit type.
   template <class T>
   bool getBool() {
