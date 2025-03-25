@@ -7,7 +7,7 @@
 import torch
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import MaxMoEGate
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import (
@@ -49,6 +49,7 @@ def generate_max_outputs(
                     input_tensor.shape[1],
                     config.hidden_size,
                 ),
+                DeviceRef.CPU(),
             ),
         ),
     )
