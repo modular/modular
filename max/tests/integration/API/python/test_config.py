@@ -53,15 +53,18 @@ def test_config__raises_with_unsupported_GPTQ_format():
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
         quantization_encoding="gptq",
     )
-    config.model_config.finalize_encoding_config()
 
     # We expect this to fail.
+    # TODO(AITLIB-286): This test case will fail if we don't explicitly call
+    # finalize_encoding_config(). This is unexpected behavior as this should
+    # already be implicitly called by the PipelineConfig validation step
+    # shortly after instantiation.
     with pytest.raises(ValueError):
         unsupported_config = PipelineConfig(
             model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
             quantization_encoding="gptq",
         )
-        unsupported_config.model_config.finalize_encoding_config()
+        unsupported_config.model_config._finalize_encoding_config()
 
 
 def test_validate_model_path__correct_repo_id_provided():
