@@ -313,9 +313,14 @@ def create_batch_and_execute(
 
 
 def run_until_completion(
-    scheduler: TokenGenerationScheduler, max_num_iters: int = 20
+    scheduler: TokenGenerationScheduler,
+    max_num_iters: int = 50,
+    output_list: list | None = None,
 ) -> list[BatchInfo]:
-    batch_infos = []
+    if output_list is None:
+        batch_infos = []
+    else:
+        batch_infos = output_list
 
     for _ in range(max_num_iters):
         batch_info = create_batch_and_execute(scheduler)
@@ -377,7 +382,7 @@ def test_tg_request_exceed_max_seq_len(num_reqs):
         BatchInfo.empty(),
     ]
     actual = run_until_completion(scheduler)
-    assert actual == expected
+    assert len(actual) == len(expected) and actual == expected
 
 
 def test_basic_chunked_prefill():
@@ -422,7 +427,7 @@ def test_basic_chunked_prefill():
         BatchInfo.empty(),
     ]
     actual = run_until_completion(scheduler)
-    assert actual == expected
+    assert len(actual) == len(expected) and actual == expected
 
 
 def test_num_prompts_100_prompt_len_500_output_tokens_16():
@@ -458,7 +463,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16():
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
-    assert actual == expected
+    assert len(actual) == len(expected) and actual == expected
 
 
 def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384():
@@ -499,7 +504,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384():
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
-    assert actual == expected
+    assert len(actual) == len(expected) and actual == expected
 
 
 def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
@@ -543,7 +548,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
-    assert actual == expected
+    assert len(actual) == len(expected) and actual == expected
 
 
 def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
@@ -587,7 +592,63 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
-    assert actual == expected
+    assert len(actual) == len(expected) and actual == expected
+
+
+def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_basic():
+    num_prompts = 10
+    prompt_len = 100
+    output_tokens = 100
+    prefix_len = 64
+
+    page_size = 10
+    num_blocks = 50  # this is enough for 500 tokens
+
+    scheduler = create_paged_scheduler(
+        max_seq_len=num_blocks * page_size,
+        page_size=page_size,
+        num_blocks=num_blocks,
+        enable_chunked_prefill=False,
+        enable_in_flight_batching=False,
+        enable_prefix_caching=False,
+    )
+
+    # set seed for reproducibility
+    np.random.seed(42)
+    shared_prefix = rand(prefix_len)
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+            shared_prefix=shared_prefix,
+        )
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        #
+        # Can only schedule 5 of 10 reqs bc of 500 token limit due to limited blocks.
+        BatchInfo(CE, 5, 0, 1, 500),
+        # To schedule a tg iteration, we need to preempt a request (bs 5->4)
+        BatchInfo(TG, 4, 0, 10, 4),
+        BatchInfo(TG, 4, 0, 10, 4),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 2, 10, 2),
+        # This encodes more than 3*100 tokens since we are re-encoding some previously
+        # preempted requests that have already generated some tokens.
+        BatchInfo(CE, 3, 0, 1, 383),
+        BatchInfo(TG, 3, 0, 10, 3),
+        # ...
+    ]
+    actual = run_until_completion(scheduler, max_num_iters=len(expected))
+    assert len(actual) == len(expected) and actual == expected
 
 
 def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
@@ -625,7 +686,106 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
-    assert actual == expected
+    assert len(actual) == len(expected) and actual == expected
+
+
+def test_tg_preemption_basic():
+    num_prompts = 2
+    prompt_len = 10
+    output_tokens = 100
+    page_size = 10
+    num_blocks = 11  # enough for 110 tokens or exactly 1 request
+    scheduler = create_paged_scheduler(
+        enable_chunked_prefill=False,
+        enable_in_flight_batching=False,
+        num_blocks=num_blocks,
+        max_batch_size=999,
+        page_size=page_size,
+    )
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+        )
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        BatchInfo(CE, 2, 0, 1, 20),  # Schedule req 0 and 1
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 1, 0, 10, 1),  # Run out of blocks so we preempt req 1
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 1, 10, 1),  # Req 0 finishes
+        # Req 1 begins again. We run CE on all orig prompt tokens and newly generated tokens.
+        BatchInfo(CE, 1, 0, 1, 51),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 1, 9, 1),
+        BatchInfo(TG, 0, 0, 0, 0),
+    ]
+    actual = run_until_completion(scheduler)
+    assert len(actual) == len(expected) and actual == expected
+
+
+def test_oom():
+    num_prompts = 2
+    # one req is 110 tokens
+    prompt_len = 10
+    output_tokens = 100
+    # this can hold 100 tokens, but is not enough for even 1 request
+    page_size = 10
+    num_blocks = 10
+    scheduler = create_paged_scheduler(
+        enable_chunked_prefill=False,
+        enable_in_flight_batching=False,
+        num_blocks=num_blocks,
+        max_batch_size=999,
+        page_size=page_size,
+    )
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+        )
+
+    actual: list[BatchInfo] = []
+    with pytest.raises(RuntimeError) as e:
+        run_until_completion(scheduler, output_list=actual)
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        BatchInfo(CE, 2, 0, 1, 20),  # Schedule req 0 and 1
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 1, 0, 10, 1),  # Preempt req 1 (bs 2->1)
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        # Can't schedule req 1 and there are no other reqs to preempt, give up!
+    ]
+    # The error message should be informative:
+    assert (
+        "Insufficient KV pages to run token generation on a single request with 101 tokens.\n"
+        "The KVCache has 10 pages with page size 10. This is only enough to support 100 tokens.\n"
+        "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
+        in str(e.value)
+    )
+    assert len(actual) == len(expected) and actual == expected
 
 
 @pytest.mark.parametrize(
@@ -676,6 +836,6 @@ def test_misc_sch_configs(
             shared_prefix=shared_prefix,
         )
 
-    # make sure that we terminated within 100 iterations
+    # make sure that we terminated within 1000 iterations
     actual = run_until_completion(scheduler, max_num_iters=1000)
     assert actual[-1] == BatchInfo.empty()
