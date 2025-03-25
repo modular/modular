@@ -25,7 +25,7 @@ Key Components:
   various configurations for different tensor shapes and memory access patterns.
 """
 
-from sys import sizeof
+from sys import sizeof, alignof, simdwidthof
 from sys._assembly import inlined_assembly
 from sys import llvm_intrinsic
 from gpu.host import DeviceBuffer, DeviceContext
@@ -760,20 +760,29 @@ struct TMATensorTile[
             - The descriptor is copied in 8 chunks of 16 bytes each (total 128 bytes)
         """
         # NOTE: Only one thread should call this
+
         var src_desc = UnsafePointer.address_of(self.descriptor).bitcast[
             UInt8
         ]().address_space_cast[_GPUAddressSpace.GLOBAL]()
         var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]()
 
+        alias simd_width = simdwidthof[DType.uint8]()
+        alias src_align = alignof[SIMD[DType.uint8, simd_width]]()
+        alias dst_align = alignof[SIMD[DType.uint8, simd_width]]()
+
+        alias descriptor_bytes = 128
+
         @parameter
-        for i in range(8):
-            async_copy[16](src_desc + i * 16, dst_desc + i * 16)
+        for src_idx in range(descriptor_bytes // simd_width):
+            var src_vec = (src_desc).load[
+                width=simd_width, alignment=src_align
+            ](src_idx * simd_width)
+            dst_desc.store[alignment=dst_align](src_idx * simd_width, src_vec)
 
     @always_inline
     fn replace_tensormap_global_address_in_gmem[
         dtype: DType,
-        src_layout: Layout,
-    ](self, new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin]):
+    ](self, src_ptr: UnsafePointer[Scalar[dtype],],):
         """
         Replaces the global memory address in the TMA descriptor stored in global memory.
 
@@ -784,26 +793,32 @@ struct TMATensorTile[
 
         Parameters:
             dtype: The data type of the new source tensor.
-            src_layout: The layout of the new source tensor.
 
         Args:
-            new_src: The new source tensor whose address will replace the current one in the descriptor.
+            src_ptr: The new source tensor whose address will replace the current one in the descriptor.
                     Must have compatible layout with the original tensor.
 
         Note:
             A memory fence may be required after this operation to ensure visibility
             of the changes to other threads.
         """
+
+        constrained[
+            src_ptr.address_space
+            in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+            "src address space must be GENERIC or GLOBAL.",
+        ]()
+
         var desc_ptr = UnsafePointer.address_of(self.descriptor).bitcast[
             NoneType
         ]()
-        var new_global_ptr = new_src.ptr.bitcast[NoneType]()
+
         inlined_assembly[
             "tensormap.replace.tile.global_address.global.b1024.b64 [$0], $1;",
             NoneType,
             constraints="l,l",
             has_side_effect=True,
-        ](desc_ptr, new_global_ptr)
+        ](desc_ptr, src_ptr.bitcast[NoneType]())
 
     @always_inline
     fn tensormap_fence_acquire(self):
@@ -857,13 +872,12 @@ struct TMATensorTile[
     @always_inline
     fn replace_tensormap_global_address_in_shared_mem[
         dtype: DType,
-        src_layout: Layout,
     ](
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = _GPUAddressSpace.SHARED
+            TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
         ],
-        new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
+        src_ptr: UnsafePointer[Scalar[dtype],],
     ):
         """
         Replaces the global memory address in the TMA descriptor stored in shared memory.
@@ -876,12 +890,10 @@ struct TMATensorTile[
 
         Parameters:
             dtype: The data type of the new source tensor.
-            src_layout: The layout of the new source tensor.
 
         Args:
             smem_tma_descriptor_ptr: Pointer to the TMA descriptor in shared memory that will be modified.
-            new_src: The new source tensor whose address will replace the current one in the descriptor.
-                    Must have compatible layout with the original tensor.
+            src_ptr: The new source tensor whose address will replace the current one in the descriptor.
 
         Notes:
 
@@ -890,6 +902,13 @@ struct TMATensorTile[
               of the changes to other threads.
             - Typically used with descriptors previously initialized with `smem_tensormap_init`.
         """
+
+        constrained[
+            src_ptr.address_space
+            in (_GPUAddressSpace.GENERIC, _GPUAddressSpace.GLOBAL),
+            "src address space must be GENERIC or GLOBAL.",
+        ]()
+
         # NOTE: Only one thread should call this
         inlined_assembly[
             (
@@ -901,7 +920,7 @@ struct TMATensorTile[
             has_side_effect=True,
         ](
             smem_tma_descriptor_ptr.bitcast[NoneType](),
-            new_src.ptr.bitcast[NoneType](),
+            src_ptr.bitcast[NoneType](),
         )
 
     @always_inline
@@ -947,6 +966,153 @@ struct TMATensorTile[
             constraints="l,r",
             has_side_effect=True,
         ](gmem_tma_descriptor_ptr, smem_tma_descriptor_ptr.bitcast[NoneType]())
+
+    @always_inline
+    fn replace_tensormap_global_dim_strides_in_shared_mem[
+        dtype: DType,
+        only_update_dim_0: Bool,
+        /,
+        *,
+        rank: Int,
+    ](
+        self,
+        smem_tma_descriptor_ptr: UnsafePointer[
+            TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
+        ],
+        gmem_dims: IndexList[rank],
+        gmem_strides: IndexList[rank],
+    ):
+        """
+        Replaces dimensions and strides in a TMA descriptor stored in shared memory.
+        Note: This function is only supported for CUDA versions >= 12.5.
+
+        This function allows dynamically modifying the dimensions and strides of a TMA
+        descriptor that has been previously initialized in shared memory. If only the first dimension (dim 0) is updated, then updating strides can be skipped.
+
+        Parameters:
+            dtype: The data type of the new source tensor.
+            only_update_dim_0: If true, only the first dimension (dim 0) is updated with updating strides.
+            rank: The rank of the tensor.
+
+        Args:
+            smem_tma_descriptor_ptr: Pointer to the TMA descriptor in shared memory that will be modified.
+            gmem_dims: The global dimensions of the tensor to be updated.
+            gmem_strides: The global strides of the tensor to be updated.
+
+        Notes:
+            - Only one thread should call this method to avoid race conditions.
+            - A memory fence may be required after this operation to ensure visibility
+            of the changes to other threads.
+        """
+
+        var desc_ptr = smem_tma_descriptor_ptr.bitcast[UInt64]()
+
+        @parameter
+        if only_update_dim_0:
+            alias temp = "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], " + String(
+                rank - 1
+            ) + ", $1;"
+            inlined_assembly[
+                temp,
+                NoneType,
+                constraints="l,r",
+                has_side_effect=True,
+            ](desc_ptr, gmem_dims[0])
+
+        else:
+            # Replace dimensions
+            @parameter
+            for i in range(rank):
+                alias temp = "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], " + String(
+                    i
+                ) + ", $1;"
+                inlined_assembly[
+                    temp,
+                    NoneType,
+                    constraints="l,r",
+                    has_side_effect=True,
+                ](desc_ptr, gmem_dims[rank - i - 1])
+
+            # Replace strides - note: stride for innermost dimension is implicitly 1
+            # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
+            @parameter
+            for i in range(1, rank):
+                alias temp = "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [$0], " + String(
+                    i - 1
+                ) + ", $1;"
+                inlined_assembly[
+                    temp,
+                    NoneType,
+                    constraints="l,l",
+                    has_side_effect=True,
+                ](desc_ptr, gmem_strides[rank - i - 1] * sizeof[dtype]())
+
+    @always_inline
+    fn replace_tensormap_global_dim_strides_in_shared_mem[
+        dtype: DType,
+        tensor_rank: Int,
+        dim_idx: Int,
+    ](
+        self,
+        smem_tma_descriptor_ptr: UnsafePointer[
+            TMADescriptor, address_space = _GPUAddressSpace.SHARED, **_
+        ],
+        dim_value: UInt32,
+        dim_stride: Optional[UInt64] = None,
+    ):
+        """
+        Replaces dimensions and strides in a TMA descriptor stored in shared memory.
+        Note: This function is only supported for CUDA versions >= 12.5.
+        This function allows dynamically modifying the dimensions and strides of a TMA
+        descriptor that has been previously initialized in shared memory. If only the first dimension is updated, then updating strides can be skipped.
+
+        Parameters:
+            dtype: The data type of the source tensor in GMEM.
+            tensor_rank: The rank of the source tensor in GMEM.
+            dim_idx: The index of the dimension to be updated in the TMA descriptor with the provided dimension and stride values at runtime.
+
+        Args:
+            smem_tma_descriptor_ptr: Pointer to the TMA descriptor in shared memory that will be modified.
+            dim_value: The new dimension value to be set.
+            dim_stride: The new stride value to be set.
+
+        Notes:
+            - Only one thread should call this method to avoid race conditions.
+            - A memory fence may be required after this operation to ensure visibility
+            of the changes to other threads.
+        """
+
+        var desc_ptr = smem_tma_descriptor_ptr.bitcast[UInt64]()
+
+        # Replace dimensions
+
+        alias temp = "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], " + String(
+            tensor_rank - dim_idx - 1
+        ) + ", $1;"
+        inlined_assembly[
+            temp,
+            NoneType,
+            constraints="l,r",
+            has_side_effect=True,
+        ](desc_ptr, dim_value)
+
+        # Replace strides - note: stride for innermost dimension is implicitly 1
+        # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides shound be left shifted by 4 for CUDA versions < 12.5
+        @parameter
+        if dim_idx > 0:
+            debug_assert(
+                dim_stride is not None,
+                " dim_stride must be provided if dim_idx > 0",
+            )
+            alias temp = "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [$0], " + String(
+                tensor_rank - dim_idx - 1
+            ) + ", $1;"
+            inlined_assembly[
+                temp,
+                NoneType,
+                constraints="l,l",
+                has_side_effect=True,
+            ](desc_ptr, dim_stride)
 
 
 @always_inline
@@ -1170,10 +1336,7 @@ struct TMATensorTileArray[
             to accommodate hardware requirements like WGMMA.
     """
 
-    var tensormaps: StaticTuple[
-        UnsafePointer[TMATensorTile[dtype, cta_tile_layout, desc_layout],],
-        num_of_tensormaps,
-    ]
+    var tensormaps_ptr: UnsafePointer[UInt8]
     """A static tuple of pointers to TMA descriptors.
 
     This field stores an array of pointers to `TMATensorTile` instances, where each pointer
@@ -1184,48 +1347,26 @@ struct TMATensorTileArray[
     global and shared memory with specific memory access patterns defined by the layouts.
     """
 
+    alias descriptor_bytes = 128
+    """Size of the TMA descriptor in bytes.
+
+    This is a constant value that represents the size of the TMA descriptor in bytes.
+    It is used to calculate the offset of the TMA descriptor in the device memory.
+    """
+
     @always_inline
     fn __init__(
         out self,
-        ctx: DeviceContext,
         tensormaps_device: DeviceBuffer[DType.uint8],
-        template_tma_tensormap: Optional[
-            TMATensorTile[dtype, cta_tile_layout, desc_layout]
-        ],
     ) raises:
         """
         Initializes a new TMATensorTileArray.
 
         Args:
-            ctx: Device context.
             tensormaps_device: Device buffer to store TMA descriptors.
-            template_tma_tensormap: TMA desctripor tempalate.
         """
-        self.tensormaps = StaticTuple[
-            UnsafePointer[TMATensorTile[dtype, cta_tile_layout, desc_layout]],
-            num_of_tensormaps,
-        ]()
-        # initialize with a template tensor map if provided
-        if template_tma_tensormap:
-            var tensormaps_host_ptr = stack_allocation[
-                num_of_tensormaps * 128, UInt8
-            ]()
 
-            @parameter
-            for i in range(num_of_tensormaps):
-                for j in range(128):
-                    tensormaps_host_ptr[
-                        i * 128 + j
-                    ] = template_tma_tensormap.value().descriptor.data[j]
-            ctx.enqueue_copy(tensormaps_device, tensormaps_host_ptr)
-
-        tensormaps_device_ptr = tensormaps_device.unsafe_ptr()
-
-        @parameter
-        for i in range(num_of_tensormaps):
-            self.tensormaps[i] = UnsafePointer[Scalar[DType.uint8]](
-                tensormaps_device_ptr + i * 128
-            ).bitcast[TMATensorTile[dtype, cta_tile_layout, desc_layout]]()
+        self.tensormaps_ptr = tensormaps_device.unsafe_ptr()
 
     @always_inline
     fn __getitem__(
@@ -1244,5 +1385,6 @@ struct TMATensorTileArray[
         Returns:
             `UnsafePointer` to the `TMATensorTile` at the specified index.
         """
-
-        return self.tensormaps[index]
+        return UnsafePointer[UInt8](
+            self.tensormaps_ptr + index * self.descriptor_bytes
+        ).bitcast[TMATensorTile[dtype, cta_tile_layout, desc_layout]]()
