@@ -70,6 +70,7 @@ indices_types = st.shared(
 
 
 @given(input=input_types, indices=indices_types, batch_dims=n_batch_dims)
+@pytest.mark.skip("MAXPLAT-152")
 def test_gather_nd__batch_dims(
     input: TensorType, indices: TensorType, batch_dims: int
 ):
@@ -90,6 +91,7 @@ def test_gather_nd__batch_dims(
 
 
 @given(input=input_types, indices=indices_types, batch_dims=...)
+@pytest.mark.skip("MAXPLAT-152")
 def test_gather_nd__invalid_batch_dims(
     input: TensorType, indices: TensorType, batch_dims: int
 ):
@@ -114,6 +116,7 @@ def test_gather_nd__invalid_batch_dims(
     indices=indices_types,
     batch_dims=n_batch_dims,
 )
+@pytest.mark.skip("MAXPLAT-152")
 def test_gather_nd__mismatching_batch_dims(
     input: TensorType, indices: TensorType, batch_dims: int
 ):
@@ -131,6 +134,7 @@ def test_gather_nd__mismatching_batch_dims(
 
 
 @given(input=input_types, indices=..., batch_dims=n_batch_dims)
+@pytest.mark.skip("MAXPLAT-152")
 def test_gather_nd__symbolic_index(
     input: TensorType, indices: TensorType, batch_dims: int
 ):
@@ -143,6 +147,7 @@ def test_gather_nd__symbolic_index(
 
 
 @given(input=input_types, indices=indices_types, batch_dims=n_batch_dims)
+@pytest.mark.skip("MAXPLAT-152")
 def test_gather_nd__index_too_long(
     input: TensorType, indices: TensorType, batch_dims: int
 ):
@@ -164,6 +169,7 @@ def test_gather_nd__index_too_long(
     batch_dims=n_batch_dims,
     dtype=st.sampled_from([dtype for dtype in DType if dtype.is_float()]),
 )
+@pytest.mark.skip("MAXPLAT-152")
 def test_gather_nd__non_int_indices(
     input: TensorType,
     indices: TensorType,

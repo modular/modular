@@ -5,24 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for chunk."""
 
-from typing import MutableSequence
-
-from ..type import Shape
-from ..value import TensorValue
-from .slice_tensor import SliceIndex, slice_tensor
+from ..value import TensorValue, TensorValueLike
+from .slice_tensor import slice_tensor
 
 
-def chunk(a: TensorValue, chunks: int, dim: int = 0) -> list[TensorValue]:
+def chunk(x: TensorValueLike, chunks: int, axis: int = 0) -> list[TensorValue]:
     """
     Chunk the tensor into an exact number of chunks along the specified dim.
 
     Args:
-        a: The tensor to chunk.
+        x: The tensor to chunk.
         chunks: The number of chunks to split the tensor into.
-        dim: The dimension to split the tensor along.
+            `chunks` must statically evenly divide `x.shape[axis]`.
+        axis: The axis to split the tensor along.
 
     Returns:
-        A list of tensors.
+        A list of `chunks` tensors.
 
     Example:
         >>> a = TensorValue([1, 2, 3, 4, 5])
@@ -32,49 +30,31 @@ def chunk(a: TensorValue, chunks: int, dim: int = 0) -> list[TensorValue]:
     # TODO(GEX-1943): once we have control flow in the graph, this can be updated to
     # dynamic chunk counts while still supporting algebraic dims. For now,
     # this will generate exactly chunks or fail.
+    x = TensorValue(x)
 
-    if a.rank == 0 and chunks > 1:
-        msg = f"Cannot split 1 value into {chunks=}"
-        raise ValueError(msg)
+    if x.rank == 0 and chunks > 1:
+        raise ValueError(f"Cannot split scalar value into {chunks=}")
 
-    # Check if the dimension is out of bounds. We put the error message
-    # construction here to make sure we have the correct dim before we start
-    # normalizing it.
-    dim_err_msg = f"'{dim=}' is out of bounds for tensor of rank {a.rank}"
-    chunks_err_msg = f"chunk: '{dim=}' of {a.shape=} must be exactly divisible into {chunks=}"
+    if axis < 0:
+        axis = x.rank + axis
 
-    if dim < 0:
-        dim = a.rank + dim
+    if not 0 <= axis < x.rank:
+        raise ValueError(f"'{axis=}' out of bounds for tensor {x=}")
 
-    if a.rank < dim:
-        raise ValueError(dim_err_msg)
+    # Convert to a python bigint for int math
+    n = int(x.shape[axis])
 
-    n = a.shape[dim]
+    if n % chunks != 0:
+        raise ValueError(
+            "chunk: {chunks=} must statically divide {x.shape[axis]=}"
+        )
 
     # Determine chunk size using ceiling division.
-    chunk_size = (n + chunks - 1) // chunks
-    full_size = chunk_size * chunks
+    chunk_size = n // chunks
 
-    # Ensure exact divisbility
-    target_shape = Shape(a.shape)
-    target_shape[dim] = full_size
-    # The rebind adds a better compile and runtime time error message if hit.
-    a.rebind(target_shape, chunks_err_msg)
-    try:
-        # The reshape catches errors with static shapes right at build time.
-        a = a.reshape(target_shape)
-    except ValueError as e:
-        # This intentially does not reraise the initial error.
-        # The initial error is just noise used to figure out if we divide exactly.
-        raise ValueError(chunks_err_msg)
+    def slices(offset):
+        slices = [slice(None)] * x.rank
+        slices[axis] = slice(chunk_size * offset, chunk_size * (offset + 1))
+        return slices
 
-    # Build a tuple of slice objects for all dimensions.
-    slices: MutableSequence[SliceIndex] = [slice(None)] * a.rank
-    result = []
-    for i in range(chunks):
-        start = i * chunk_size
-        end = start + chunk_size
-
-        slices[dim] = slice(start, end)
-        result.append(slice_tensor(a, slices))
-    return result
+    return [slice_tensor(x, slices(offset)) for offset in range(chunks)]

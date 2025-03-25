@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import builtins
 import itertools
+import math
 import operator
 import os
 import random
@@ -24,6 +26,7 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     Dim,
+    DimLike,
     Graph,
     Shape,
     StaticDim,
@@ -60,8 +63,37 @@ dtypes = st.sampled_from(
 )
 
 
-def static_dims(min: int = 0, max: int = 2**63 - 1):
+def uniform_distributed_static_dims(min: int = 0, max: int = 2**63 - 1):
     return st.builds(StaticDim, st.integers(min_value=min, max_value=max))
+
+
+def clip(v, min, max):
+    # Like np.clip, but more stable for python int types.
+    # np.clip will cast to a float for values > intmax.
+    return min if v < min else max if v > max else v
+
+
+@st.composite
+def log_bucket(draw, e: float, min: int, max: int):
+    lower = clip(int(2**e), min, max)
+    upper = clip(int(2 ** (e + 1)), min, max)
+    return draw(st.integers(min_value=lower, max_value=upper))
+
+
+def log_distributed_static_dims(min: int = 1, max: int = 2**63 - 1):
+    assert min > 0, "can't generate 0 with log distribution"
+    return (
+        st.floats(min_value=math.log2(min), max_value=math.log2(max))
+        .flatmap(lambda e: log_bucket(e, min, max))
+        .map(StaticDim)
+    )
+
+
+def static_dims(min: int = 0, max: int = 2**63 - 1):
+    return st.one_of(
+        uniform_distributed_static_dims(min, max),
+        log_distributed_static_dims(builtins.max(1, min), max),
+    )
 
 
 symbolic_dims = st.builds(
@@ -74,16 +106,18 @@ symbolic_dims = st.builds(
 static_positive_dims = st.builds(
     StaticDim, st.integers(min_value=1, max_value=2**63 - 1)
 )
+
 dims = st.one_of(static_dims(), symbolic_dims)
+small_dims = st.one_of(static_dims(min=1, max=16), symbolic_dims)
 
 
 @st.composite
-def shapes(
+def all_shapes(
     draw,
     min_rank: int = 1,
-    max_rank: int = 10,
-    include_dims: Sequence = (),
-    is_static: bool = False,
+    max_rank: int = 5,
+    dims: st.SearchStrategy[Dim] = dims,
+    include_dims: Sequence[DimLike | st.SearchStrategy[Dim]] = (),
     max_size: int = MAX_INT64,
 ) -> Shape:
     """A strategy to produce shapes whose product fits within an int64.
@@ -96,47 +130,33 @@ def shapes(
         The product of static dims in the shape is guaranteed to fit within an
         int64.
     """
-    dims = list(include_dims)
-    cumulative_product = reduce(
-        operator.mul,
-        [dim.dim for dim in dims if isinstance(dim, StaticDim)],
-        1,
-    )
-
-    # Draw a random shape size.
-    remaining_rank = draw(
-        st.integers(
-            min_value=max(0, min_rank - len(dims)),
-            max_value=max_rank - len(dims),
+    min_rank -= len(include_dims)
+    max_rank -= len(include_dims)
+    generated_dims = draw(st.lists(dims, min_size=min_rank, max_size=max_rank))
+    generated_include_dims = draw(
+        st.tuples(
+            *(
+                dim if isinstance(dim, st.SearchStrategy) else st.just(dim)
+                for dim in include_dims
+            )
         )
     )
-    for _ in range(remaining_rank):
-        # Decide whether to insert a symbolic dimension.
-        if not is_static and draw(st.booleans()):
-            dim = draw(symbolic_dims)
-            dims.append(dim)
-            continue
+    all_dims = (*generated_include_dims, *generated_dims)
+    product = reduce(
+        operator.mul, [int(dim) for dim in Shape(all_dims).static_dims], 1
+    )
+    assume(product <= max_size)
+    return draw(st.permutations(all_dims).map(Shape))
 
-        # Draw a static dim.
-        max_value = max_size // max(1, cumulative_product)
-        # Get the max exponent: bits needed to represent the max value,
-        # excluding sign and leading zeros.
-        max_exponent = max_value.bit_length()
 
-        # We want to draw from the range [2**e, 2**(e + 1) - 1).
-        # So draw the exponent from integers {0, 1, ..., max_exponent - 1}.
-        exponent = draw(st.integers(min_value=0, max_value=max_exponent - 1))
-        low = 2**exponent
+def small_shapes(*args, **kwargs):
+    return all_shapes(*args, dims=small_dims, **kwargs)
 
-        # Ensure that the dim product fits in an int64.
-        high = min(2 ** (exponent + 1) - 1, max_value)
-        dim_value = draw(st.integers(min_value=low, max_value=high))
-        assert (dim_value * cumulative_product) <= max_size
 
-        dims.append(StaticDim(dim_value))
-        cumulative_product *= dim_value
-
-    return Shape(dims)
+def shapes(*args, **kwargs):
+    if "dims" in kwargs:
+        return all_shapes(*args, **kwargs)
+    return st.one_of(small_shapes(*args, **kwargs), all_shapes(*args, **kwargs))
 
 
 def valid_broadcast_rank(shape_st, max_size: int | None = None):

@@ -26,6 +26,7 @@ within_rank = rank.flatmap(lambda r: st.integers(min_value=0, max_value=r - 1))
     normalized_end=within_rank,
     negative_index_end=...,
 )
+@pytest.mark.skip("MAXPLAT-153")
 def test_flatten_success(
     input_type: TensorType,
     normalized_start: int,

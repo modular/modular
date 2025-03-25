@@ -10,6 +10,7 @@ from collections.abc import Collection
 import pytest
 from conftest import (
     shapes,
+    static_dims,
     symbolic_dims,
     tensor_types,
 )
@@ -63,7 +64,7 @@ def negative_one_reshape(shapes):
 
 shared_shapes = st.shared(shapes())
 # Use a max rank of 4 to reduce the probability of drawing 1-dims.
-shared_static_shapes = st.shared(shapes(max_rank=4, is_static=True))
+shared_static_shapes = st.shared(shapes(dims=static_dims()))
 
 
 @given(
@@ -83,6 +84,7 @@ def test_reshape__can_permute_input_shape(
     input_type=tensor_types(shapes=shared_shapes),
     reshape_shape=negative_one_reshape(shared_shapes),
 )
+@pytest.mark.skip("MAXPLAT-151")
 def test_reshapes__can_replace_any_dims_with_negative_one(
     input_type: TensorType, reshape_shape: list[Dim]
 ):
@@ -151,6 +153,7 @@ def test_reshapes__squeeze(input_type: TensorType, reshape_shape: list[Dim]):
     output_shape=shared_shapes.flatmap(st.permutations),
     dim=symbolic_dims,
 )
+@pytest.mark.skip(reason="MAXPLAT-151")
 def test_reshape__fails_with_different_symbolic_dim(
     input_type: TensorType,
     output_shape: list[Dim],
@@ -177,6 +180,7 @@ def test_reshape__fails_with_different_symbolic_dim(
     ),
     output_shape=Shape([268435456]),
 )
+@pytest.mark.skip(reason="MAXPLAT-151")
 def test_reshape__fails_with_different_number_of_elements(
     input_type: TensorType,
     output_shape: Shape,

@@ -5,39 +5,72 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
+import operator
+from functools import reduce
+
 import pytest
 from conftest import axes, shapes, tensor_types
-from hypothesis import assume, given
+from hypothesis import assume, example, given
 from hypothesis import strategies as st
-from max.graph import Graph, TensorType, ops
+from max.dtype import DType
+from max.graph import Dim, Graph, Shape, StaticDim, TensorType, ops
 
-shared_types = st.shared(tensor_types(shapes=shapes(is_static=True)))
-chunks = st.integers(min_value=1, max_value=4)
+shared_types = st.shared(tensor_types())
+chunks = st.integers(min_value=1, max_value=20)
 
 
-@given(input_type=shared_types, chunks=chunks, dim=axes(shared_types))
-def test_chunk(input_type: TensorType, chunks: int, dim: int):
-    assume(input_type.rank > 0)
+@given(input_type=shared_types, chunks=chunks, axis=axes(shared_types))
+def test_chunk(input_type: TensorType, chunks: int, axis: int):
+    assume(isinstance(input_type.shape[axis], StaticDim))
+    chunk_size = int(input_type.shape[axis])
+
+    assume(chunk_size * chunks < 2**63)
+    product = reduce(
+        operator.mul, [int(axis) for axis in input_type.shape.static_dims], 1
+    )
+    assume(product * chunks < 2**63)
+
+    expected_shape = Shape(input_type.shape)
+    expected_type = TensorType(input_type.dtype, expected_shape)
+    input_type.shape[axis] = Dim(chunk_size * chunks)
+
     with Graph("chunk", input_types=[input_type]) as graph:
-        target_shape = input_type.shape.static_dims
-        n = target_shape[dim]
-        assume(int(n) % chunks == 0)
-        outs = ops.chunk(graph.inputs[0], chunks, dim=dim)
-        chunk_size = (n + chunks - 1) // chunks
-        for i in range(chunks):
-            start = i * chunk_size
-            end = min(start + chunk_size, n)
-            expected_length = end - start
-            assert int(outs[i].shape[dim]) == expected_length
-        graph.output(outs[0])
+        outs = ops.chunk(graph.inputs[0], chunks, axis=axis)
+        assert len(outs) == chunks
+        assert all(out.type == expected_type for out in outs)
 
 
-@given(input_type=shared_types, chunks=chunks, dim=axes(shared_types))
-def test_chunk_not_exact(input_type: TensorType, chunks: int, dim: int):
-    assume(input_type.rank > 0)
+@given(
+    input_type=shared_types,
+    chunks=st.integers(min_value=2),
+    axis=axes(shared_types),
+)
+@example(
+    input_type=TensorType(DType.float32, [9223372036854775806]),
+    chunks=2,
+    axis=-1,
+).via("MAXPLAT-183")
+def test_chunk__not_exact(input_type: TensorType, chunks: int, axis: int):
+    assume(isinstance(input_type.shape[axis], StaticDim))
+    assume(int(input_type.shape[axis]) % chunks != 0)
     with Graph("chunk", input_types=[input_type]) as graph:
-        target_shape = input_type.shape.static_dims
-        n = target_shape[dim]
-        assume(int(n) % chunks != 0)
-        with pytest.raises(ValueError, match="must be exactly divisible"):
-            outs = ops.chunk(graph.inputs[0], chunks, dim=dim)
+        with pytest.raises(ValueError, match="must statically divide"):
+            outs = ops.chunk(graph.inputs[0], chunks, axis=axis)
+
+
+@given(
+    input_type=tensor_types(shapes=shapes(min_rank=0, max_rank=0)), chunks=...
+)
+def test_chunk__split_scalar(input_type: TensorType, chunks: int):
+    assume(chunks > 1)
+    with Graph("chunk", input_types=[input_type]) as graph:
+        with pytest.raises(ValueError):
+            outs = ops.chunk(graph.inputs[0], chunks)
+
+
+@given(input_type=shared_types, chunks=..., axis=axes(shared_types))
+def test_chunk__non_static_dim(input_type: TensorType, chunks: int, axis: int):
+    assume(not isinstance(input_type.shape[axis], StaticDim))
+    with Graph("chunk", input_types=[input_type]) as graph:
+        with pytest.raises(TypeError):
+            outs = ops.chunk(graph.inputs[0], chunks, axis=axis)
