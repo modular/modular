@@ -122,7 +122,7 @@ class FetchPagedKVCacheCollectionFA3Fallback:
             raise ValueError(msg)
 
         if blocks.rank != 5:
-            msg = f"expected blocks to be of rank 6, got {blocks.rank}"
+            msg = f"expected blocks to be of rank 5, got {blocks.rank}"
             raise ValueError(msg)
 
         # For all tensors other than the blocks tensor, the length should be equivalent
