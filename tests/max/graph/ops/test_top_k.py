@@ -5,56 +5,71 @@
 # ===----------------------------------------------------------------------=== #
 """ops.top_k tests."""
 
-import numpy as np
 import pytest
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def test_top_k_output_tensor_types():
-    input = np.array([0, 1, 2, 3, 4, 5]).astype(np.float32)
     k = 4
 
-    expected_weight_tensor_type = TensorType(dtype=DType.float32, shape=[k])
-    expected_idx_tensor_type = TensorType(dtype=DType.int64, shape=[k])
+    expected_weight_tensor_type = TensorType(
+        dtype=DType.float32, shape=[k], device=DeviceRef.CPU()
+    )
+    expected_idx_tensor_type = TensorType(
+        dtype=DType.int64, shape=[k], device=DeviceRef.CPU()
+    )
 
     with Graph(
         "top_k",
-        input_types=[TensorType(dtype=DType.float32, shape=input.shape)],
+        input_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=[6],
+                device=DeviceRef.CPU(),
+            )
+        ],
     ) as graph:
-        input_as_constant = ops.constant(input, DType.from_numpy(input.dtype))
-        weight_tensor, idx_tensor = ops.top_k(input_as_constant, k)
+        weight_tensor, idx_tensor = ops.top_k(graph.inputs[0].tensor, k)
 
         assert weight_tensor.type == expected_weight_tensor_type
         assert idx_tensor.type == expected_idx_tensor_type
 
 
 def test_top_k_with_axis_greater_than_input_rank():
-    input = np.array([0, 1, 2, 3, 4, 5]).astype(np.float32)
+    input_shape = [0, 1, 2, 3, 4, 5]
     k = 4
 
-    axis_greater_than_input_rank = len(input.shape) + 1
+    axis_greater_than_input_rank = len(input_shape) + 1
 
     with Graph(
         "top_k",
-        input_types=[TensorType(dtype=DType.float32, shape=input.shape)],
+        input_types=[
+            TensorType(
+                dtype=DType.float32, shape=input_shape, device=DeviceRef.CPU()
+            )
+        ],
     ) as graph:
-        input = np.array([0, 1, 2, 3, 4, 5]).astype(np.float32)
-        input_as_constant = ops.constant(input, DType.from_numpy(input.dtype))
-        with pytest.raises(IndexError):
-            ops.top_k(input_as_constant, k, axis=axis_greater_than_input_rank)
+        with pytest.raises(ValueError, match=r"axis \(\d+\) out of bound"):
+            ops.top_k(
+                graph.inputs[0].tensor, k, axis=axis_greater_than_input_rank
+            )
 
 
 def test_top_k_with_k_greater_than_input_length():
-    input = np.array([0, 1, 2, 3, 4, 5]).astype(np.float32)
-    k = 4
-
-    k_greater_than_input_length = len(input) + 1
+    input_shape = [6]
+    k_greater_than_input_length = input_shape[-1] + 1
 
     with Graph(
         "top_k",
-        input_types=[TensorType(dtype=DType.float32, shape=input.shape)],
+        input_types=[
+            TensorType(
+                dtype=DType.float32, shape=input_shape, device=DeviceRef.CPU()
+            )
+        ],
     ) as graph:
-        input_as_constant = ops.constant(input, DType.from_numpy(input.dtype))
-        with pytest.raises(IndexError):
-            ops.top_k(input_as_constant, k_greater_than_input_length)
+        with pytest.raises(
+            ValueError,
+            match=r"k \(\d+\) cannot be larger than dimension size along axis \d+",
+        ):
+            ops.top_k(graph.inputs[0].tensor, k_greater_than_input_length)
