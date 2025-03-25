@@ -9,7 +9,9 @@ import functools
 
 # TODO(MAXPLAT-75): Generate mypy stubs
 from max import mlir
-from max._core import Type
+from max._core import OpBuilder, Type
+
+# TODO(MAXPLAT-75): typing
 from max._core.dialects import builtin, mo, mosh  # type: ignore
 from max._core.dtype import DType
 
@@ -71,3 +73,16 @@ def test_builtin_integerattr(mlir_context):
 
 def test_builtin_moduleop(mlir_context):
     op = builtin.ModuleOp(mlir.Location.current)
+
+
+def test_mo_graph_op(mlir_context):
+    loc = mlir.Location.current
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = builder.create(mo.GraphOp, loc, "hello", [], [])
+
+    # TODO(MAXPLAT-75): typing
+    assert graph.name == "hello"  # type: ignore
+    assert graph.input_params == []  # type: ignore
+    assert graph.function_type == builtin.FunctionType(mlir_context, [], [])  # type: ignore
