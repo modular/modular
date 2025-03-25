@@ -617,10 +617,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 start_pos.tensor,
             )[0]
 
-            if self.pipeline_config.enable_echo:
-                graph.output(logits[:, -1], logits)
-            else:
-                graph.output(logits[:, -1])
+            graph.output(logits)
 
             return graph
 

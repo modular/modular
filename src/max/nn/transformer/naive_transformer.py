@@ -88,6 +88,7 @@ class NaiveTransformer(Module):
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
         | None = None,
+        return_n_logits: int = 1,
     ):
         super().__init__()
         self.dim = dim
@@ -100,6 +101,7 @@ class NaiveTransformer(Module):
         self.output_type = output_type
         self.embedding_multiplier = embedding_multiplier
         self.logits_postprocessor = logits_postprocessor
+        self.return_n_logits = return_n_logits
 
     def _apply_logits_postprocessor(
         self, output: tuple[TensorValue]
@@ -131,9 +133,16 @@ class NaiveTransformer(Module):
                 i,
             )
 
-        output = self.lm_head(self.norm(h))
-        if self.output_type is not None:
-            casted_output = ops.cast(output, self.output_type)
-            return self._apply_logits_postprocessor((casted_output,))
+        logits = self.lm_head(self.norm(h[:, -1]))
 
-        return self._apply_logits_postprocessor((output,))
+        if self.return_n_logits != 1:
+            raise ValueError(
+                f"return_n_logits provided ({self.return_n_logits}), must be 1"
+                "variable token lengths not supported with NaiveTransformer."
+            )
+
+        if self.output_type is not None:
+            casted_logits = ops.cast(logits, self.output_type)
+            return self._apply_logits_postprocessor((casted_logits,))
+
+        return self._apply_logits_postprocessor((logits,))
