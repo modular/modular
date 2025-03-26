@@ -164,7 +164,6 @@ class Model:
         self,
         *args: InputType,
         copy_inputs_to_device: bool = True,
-        output_device: Device | None = None,
     ) -> list[Tensor | MojoValue]:
         """Executes the model with the provided input and returns the outputs.
 
@@ -188,15 +187,9 @@ class Model:
               on whatever device they're currently on, which the model must be
               prepared for.
 
-            output_device:
-              The device to copy output tensors to. Defaults to :obj:`None`, in
-              which case the tensors will remain resident on the same device as
-              the model.
-
         Returns:
             A list of output tensors and Mojo values. The output tensors will be
-            resident on the execution device by default (you can change it with
-            the ``output_device`` argument).
+            resident on the execution device.
 
         Raises:
             RuntimeError: If the given input tensors' shape don't match what
@@ -258,11 +251,6 @@ class Model:
                 processed_results.append(result)
                 tracer.pop()
                 continue
-            # If an output device is provided and it is different from the
-            # device the tensor is already present on, we should copy to
-            # that device.
-            if output_device:
-                result = result.to(output_device)
             processed_results.append(result)
             tracer.pop()
         return processed_results
