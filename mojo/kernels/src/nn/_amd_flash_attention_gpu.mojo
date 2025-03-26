@@ -226,12 +226,17 @@ fn mma[
     alias MMA_K = mma_shape[2]
     alias accum_type = get_accum_type[mma_input_type]()
     alias WM = config.warp_m()
+    alias WN = config.warp_n()
     alias BM = config.block_m()
     alias BN = config.block_n()
     alias depth = config.depth
     var warp_id = thread_idx.x // WARP_SIZE
     alias num_warps = config.num_threads() // WARP_SIZE
     alias num_threads = config.num_threads()
+    alias num_warps_n = BN // WN
+
+    var warp_row = warp_id // num_warps_n
+    var warp_col = warp_id % num_warps_n
 
     @always_inline
     fn _mask_tensor_row(
@@ -335,7 +340,7 @@ fn mma[
     ]()
 
     alias num_m_mmas = ceildiv(WM, MMA_M)
-    alias num_n_mmas = ceildiv(BN, MMA_N)
+    alias num_n_mmas = ceildiv(WN, MMA_N)
     alias num_k_mmas2 = ceildiv(BK, (MMA_K * k_group_size))
 
     alias a_frag_size = num_matrix_reg[MMA_M, MMA_K]()
@@ -351,8 +356,14 @@ fn mma[
 
     @parameter
     for i in range(num_iters):
-        var a_warp_tile = a_smem_iter.next_unsafe(i)[].tile[WM, BK](warp_id, 0)
-        var b_warp_tile = b_smem_iter.next_unsafe(i)[]
+        var a_warp_tile = a_smem_iter.next_unsafe(i)[].tile[WM, BK](warp_row, 0)
+        alias b_wtile_dim0 = WN if transpose_b else BK
+        alias b_wtile_dim1 = BK if transpose_b else WN
+        var b_wtile_coord0 = Int(warp_col) if transpose_b else 0
+        var b_wtile_coord1 = 0 if transpose_b else Int(warp_col)
+        var b_warp_tile = b_smem_iter.next_unsafe(i)[].tile[
+            b_wtile_dim0, b_wtile_dim1
+        ](b_wtile_coord0, b_wtile_coord1)
 
         @parameter
         for k_mma in range(Int(num_k_mmas2)):
@@ -832,14 +843,20 @@ fn mha_single_batch[
     alias output_frag_size = fragment_layout.size()
     alias accum_type = get_accum_type[q_type]()
 
-    alias WM = config.WM
+    alias WM = config.warp_m()
+    alias WN = config.warp_n()
     alias num_m_mmas = ceildiv(WM, MMA_M)
-    alias num_n_mmas = ceildiv(BN, MMA_N)
+    alias num_n_mmas = ceildiv(WN, MMA_N)
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
     var out_reg_tile = tb[accum_type]().row_major[
         num_m_mmas * num_n_mmas, output_frag_size
     ]().local().alloc().fill(0)
 
     var warp_id = thread_idx.x // WARP_SIZE
+
+    var warp_row = warp_id // num_warps_n
+    var warp_col = warp_id % num_warps_n
 
     var kv_head_idx = block_idx.y if token_gen else block_idx.y // group
 
@@ -862,10 +879,8 @@ fn mha_single_batch[
         num_m_mmas, fragment_layout.shape[0].value()
     ]().local().alloc().fill(0)
 
-    alias num_rowwise_warps = 1  # BN // WN
-
     var smem_manager = SharedMemoryManager[
-        q_type, BM, BN, BK, depth, num_rowwise_warps
+        q_type, BM, BN, BK, depth, num_warps_n
     ]()
     var q_smem_iter = smem_manager.get_q_iter()
     var p_smem_iter = smem_manager.get_p_iter()
@@ -875,8 +890,8 @@ fn mha_single_batch[
     var warp_scratch = smem_manager.get_warp_scratch_tensor()
 
     var mask_block_row: UInt32 = q_tile_idx * BM
-    var mask_warp_row = warp_id * WM
-    var mask_warp_col = 0
+    var mask_warp_row = warp_row * WM
+    var mask_warp_col = warp_col * WN
 
     @always_inline
     @parameter
@@ -997,7 +1012,7 @@ fn mha_single_batch[
             # TODO: generalize beyond 16x8 layout
             Layout.row_major(num_m_mmas, num_n_mmas),
             # threads layout by warp
-            Layout.row_major(BM // WM, 1),
+            Layout.row_major(num_warps_m, num_warps_n),
             warp_layout,
             use_exp2=use_exp2,
             fragment_layout=fragment_layout,
@@ -1008,7 +1023,7 @@ fn mha_single_batch[
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
                 1, output_frag_size
             ](),
-            warp_scratch.tile[2, WM](0, Int(warp_id)),
+            warp_scratch.tile[2 * num_warps_n, WM](0, Int(warp_row)),
             rowmax.ptr.address_space_cast[AddressSpace.GENERIC](),
             rowsum.ptr.address_space_cast[AddressSpace.GENERIC](),
         )
@@ -1023,6 +1038,7 @@ fn mha_single_batch[
                 BN,
                 BK,
                 WM,
+                WN,
                 MMA_M,
                 MMA_N,
                 num_m_mmas,
@@ -1032,7 +1048,8 @@ fn mha_single_batch[
             ](
                 p_smem_iter,
                 p_reg_vectorized,
-                warp_id,
+                warp_row,
+                warp_col,
             )
 
             barrier()
@@ -1119,7 +1136,7 @@ fn mha_single_batch[
             output_smem.vectorize[1, simd_width](),
         )
     else:
-        var output_warp_tile = output_tile.tile[WM, depth](warp_id, 0)
+        var output_warp_tile = output_tile.tile[WM, WN](warp_row, warp_col)
         copy_local_to_dram[
             dst_thread_layout=warp_layout,
             thread_scope = ThreadScope.WARP,
@@ -1139,6 +1156,7 @@ fn copy_fragment_to_smem[
     BN: Int,
     BK: Int,
     WM: Int,
+    WN: Int,
     MMA_M: Int,
     MMA_N: Int,
     num_m_mmas: Int,
@@ -1148,14 +1166,18 @@ fn copy_fragment_to_smem[
 ](
     p_smem_iter: LayoutTensorIter[*_, address_space = AddressSpace.SHARED, **_],
     p_reg_vectorized: LayoutTensor[*_, address_space = AddressSpace.LOCAL, **_],
-    warp_id: Int,
+    warp_row: Int,
+    warp_col: Int,
 ):
-    alias num_n_mmas_per_bk = num_n_mmas // (BN // BK)
+    alias num_n_mmas_per_bk = num_n_mmas // (WN // BK)
+
+    # for the following indexing logic, WN must be equal to BN or BK
+    constrained[WN == BK or WN == BN, "WN must be equal to BN or BK"]()
 
     @parameter
-    for i in range(Int(BN // BK)):
-        var p_smem_tile = p_smem_iter.next_unsafe(i)[]
-        var p_smem_warp_tile = p_smem_tile.tile[WM, BK](warp_id, 0)
+    for i in range(Int(WN // BK)):
+        var p_smem_tile = p_smem_iter.next_unsafe(i + warp_col * (WN // BK))[]
+        var p_smem_warp_tile = p_smem_tile.tile[WM, BK](warp_row, i)
 
         @parameter
         for m_mma in range(Int(num_m_mmas)):

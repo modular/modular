@@ -538,7 +538,7 @@ fn flash_attention_dispatch[
                 16 if q.type is DType.float32 else 32
             )
             alias WM = BM
-            alias WN = BN if has_amd_gpu_accelerator() else 32
+            alias WN = 32
             # num warps in M and N, multipled by warp size.
             alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
