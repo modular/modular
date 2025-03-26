@@ -46,11 +46,13 @@ class SchedulerOutput:
     def __init__(
         self,
         batch_type: BatchType = BatchType.TokenGeneration,
+        num_steps: int = 1,
         batch_inputs: dict[str, InputContext] = {},
         prompt_tokens: Optional[int] = None,
         tokens_to_encode: Optional[int] = None,
     ):
         self.batch_type = batch_type
+        self.num_steps = num_steps
         self.batch_inputs = batch_inputs
         self.batch_size = len(batch_inputs)
         self.prompt_tokens = (
@@ -180,14 +182,14 @@ class TokenGenerationSchedulerConfig:
             msg = "Need set `target_tokens_per_batch_ce` for the scheduler to enable chunked prefill."
             raise ValueError(msg)
 
-        if self.enable_chunked_prefill and self.max_forward_steps_ce > 1:
+        if self.max_forward_steps_ce > 1:
             self.max_forward_steps_ce = 1
             logger.info(
-                "Chunked prefill does not support multistep inference, overriding max_forward_steps_ce to 1."
+                "Prefill does not support multistep inference, overriding max_forward_steps_ce to 1."
             )
 
         if self.enable_in_flight_batching and not self.enable_chunked_prefill:
-            msg = " Requires chunked prefill for in-flight batching."
+            msg = "Requires chunked prefill for in-flight batching."
             raise ValueError(msg)
 
 
@@ -397,6 +399,7 @@ class TokenGenerationScheduler(Scheduler):
             batch_inputs=ce_batch,
             prompt_tokens=tot_prompt_tokens,
             tokens_to_encode=tot_tokens_to_encode,
+            num_steps=self.scheduler_config.max_forward_steps_ce,
         )
 
     @traced
@@ -431,13 +434,14 @@ class TokenGenerationScheduler(Scheduler):
             return SchedulerOutput(
                 batch_type=BatchType.TokenGeneration,
                 batch_inputs=self.active_batch.copy(),
+                num_steps=self.scheduler_config.max_forward_steps_tg,
             )
 
         # Keep preempting requests until we can schedule the entire active batch
+        num_steps = self.scheduler_config.max_forward_steps_tg
         max_seq_len = self.paged_manager.max_seq_len
         while len(self.active_batch) > 1:
             # Compute the number of steps available for the active batch
-            num_steps = self.scheduler_config.max_forward_steps_tg
             for context in self.active_batch.values():
                 num_available_steps = context.compute_num_available_steps(
                     max_seq_len
@@ -456,32 +460,35 @@ class TokenGenerationScheduler(Scheduler):
                 return SchedulerOutput(
                     batch_type=BatchType.TokenGeneration,
                     batch_inputs=self.active_batch.copy(),
+                    num_steps=num_steps,
                 )
             self._preempt_request()
 
         # There is one non-preempted request left in the active batch
         assert len(self.active_batch) == 1
-
-        # We can schedule the remaining request if we can run just one step.
-        # This request will be terminated in `next_token` if it exceeds the
-        # max_seq_len prior to executing all of the steps.
         seq_ids_and_prompts = {
             data.cache_seq_id: data.next_tokens
             for data in self.active_batch.values()
         }
+        last_req = next(iter(self.active_batch.values()))
+        if last_req.max_length is not None:
+            num_available_steps = last_req.compute_num_available_steps(
+                last_req.max_length
+            )
+            num_steps = min(num_steps, num_available_steps)
         if self.paged_manager.can_fetch(
             seq_ids_and_prompts,
-            num_steps=1,
+            num_steps=num_steps,
         ):
             return SchedulerOutput(
                 batch_type=BatchType.TokenGeneration,
                 batch_inputs=self.active_batch.copy(),
+                num_steps=num_steps,
             )
 
         # We have utterly failed to construct a TG batch.
         # This should literally never happen unless the user sets an absurdly
         # large max seq len or the KV cache is very small.
-        last_req = next(iter(self.active_batch.values()))
         current_len = last_req.current_length
         page_size = self.paged_manager.page_size
         total_num_blocks = self.paged_manager.total_num_pages
@@ -714,7 +721,7 @@ class TokenGenerationScheduler(Scheduler):
         # execute the batch
         batch_responses = self.pipeline.next_token(
             batch_to_execute,
-            num_steps=self.scheduler_config.max_forward_steps_ce,
+            num_steps=sch_output.num_steps,
         )
         # put the unfinished request back into the quene, and delete its responses
         self._handle_chunked_requests(batch_to_execute, batch_responses)
@@ -751,7 +758,7 @@ class TokenGenerationScheduler(Scheduler):
         # execute the batch
         batch_responses = self.pipeline.next_token(
             batch_to_execute,
-            num_steps=self.scheduler_config.max_forward_steps_tg,
+            num_steps=sch_output.num_steps,
         )
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
