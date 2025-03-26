@@ -109,6 +109,8 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
             print(x[Float64]) # 1.5
   ```
 
+- The `type` parameter of `SIMD` has been renamed to `dtype`.
+
 ### Tooling changes
 
 ### ❌ Removed

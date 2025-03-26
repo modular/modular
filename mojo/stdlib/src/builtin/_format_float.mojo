@@ -154,7 +154,7 @@ fn _write_float[W: Writer, type: DType, //](mut writer: W, value: Scalar[type]):
         #   - The biased binary exp into a decimal power of 10 exp
         # This does all the heavy lifting for perfect roundtrip, shortest
         # representable format, bankers rounding etc.
-        _to_decimal[casted.type](sig, exp)
+        _to_decimal[casted.dtype](sig, exp)
 
         # This is a custom routine for writing the decimal following python
         # behavior.  it can be further optimized with a lookup table, there is

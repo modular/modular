@@ -204,15 +204,15 @@ fn sqrt(x: Int) -> Int:
 @always_inline
 fn _sqrt_nvvm(x: SIMD) -> __type_of(x):
     constrained[
-        x.type in (DType.float32, DType.float64), "must be f32 or f64 type"
+        x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
-    alias instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.type is DType.float32 else "llvm.nvvm.sqrt.approx.d"
+    alias instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
     var res = __type_of(x)()
 
     @parameter
     for i in range(x.size):
         res[i] = llvm_intrinsic[
-            instruction, Scalar[x.type], has_side_effect=False
+            instruction, Scalar[x.dtype], has_side_effect=False
         ](x[i])
     return res
 
@@ -254,8 +254,8 @@ fn sqrt[
     elif is_nvidia_gpu():
 
         @parameter
-        if x.type in (DType.float16, DType.bfloat16):
-            return _sqrt_nvvm(x.cast[DType.float32]()).cast[x.type]()
+        if x.dtype in (DType.float16, DType.bfloat16):
+            return _sqrt_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
         return _sqrt_nvvm(x)
 
     return llvm_intrinsic["llvm.sqrt", __type_of(x), has_side_effect=False](x)
@@ -269,16 +269,16 @@ fn sqrt[
 @always_inline
 fn _isqrt_nvvm(x: SIMD) -> __type_of(x):
     constrained[
-        x.type in (DType.float32, DType.float64), "must be f32 or f64 type"
+        x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.type is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
+    alias instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
     var res = __type_of(x)()
 
     @parameter
     for i in range(x.size):
         res[i] = llvm_intrinsic[
-            instruction, Scalar[x.type], has_side_effect=False
+            instruction, Scalar[x.dtype], has_side_effect=False
         ](x[i])
     return res
 
@@ -293,14 +293,14 @@ fn isqrt(x: SIMD) -> __type_of(x):
     Returns:
         The elementwise reciprocal square root of x.
     """
-    constrained[x.type.is_floating_point(), "type must be floating point"]()
+    constrained[x.dtype.is_floating_point(), "type must be floating point"]()
 
     @parameter
     if is_nvidia_gpu():
 
         @parameter
-        if x.type in (DType.float16, DType.bfloat16):
-            return _isqrt_nvvm(x.cast[DType.float32]()).cast[x.type]()
+        if x.dtype in (DType.float16, DType.bfloat16):
+            return _isqrt_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
 
         return _isqrt_nvvm(x)
 
@@ -315,16 +315,16 @@ fn isqrt(x: SIMD) -> __type_of(x):
 @always_inline
 fn _recip_nvvm(x: SIMD) -> __type_of(x):
     constrained[
-        x.type in (DType.float32, DType.float64), "must be f32 or f64 type"
+        x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.type is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
+    alias instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
     var res = __type_of(x)()
 
     @parameter
     for i in range(x.size):
         res[i] = llvm_intrinsic[
-            instruction, Scalar[x.type], has_side_effect=False
+            instruction, Scalar[x.dtype], has_side_effect=False
         ](x[i])
     return res
 
@@ -339,14 +339,14 @@ fn recip(x: SIMD) -> __type_of(x):
     Returns:
         The elementwise reciprocal of x.
     """
-    constrained[x.type.is_floating_point(), "type must be floating point"]()
+    constrained[x.dtype.is_floating_point(), "type must be floating point"]()
 
     @parameter
     if is_nvidia_gpu():
 
         @parameter
-        if x.type in (DType.float16, DType.bfloat16):
-            return _recip_nvvm(x.cast[DType.float32]()).cast[x.type]()
+        if x.dtype in (DType.float16, DType.bfloat16):
+            return _recip_nvvm(x.cast[DType.float32]()).cast[x.dtype]()
 
         return _recip_nvvm(x)
 
@@ -430,7 +430,7 @@ fn exp2[
 
     var xc = x.clamp(-126, 126)
 
-    var m = xc.cast[__type_of(x.to_bits()).type]()
+    var m = xc.cast[__type_of(x.to_bits()).dtype]()
 
     xc -= m.cast[type]()
 
@@ -783,9 +783,9 @@ fn log(x: SIMD) -> __type_of(x):
         alias ln2 = 0.69314718055966295651160180568695068359375
 
         @parameter
-        if sizeof[x.type]() < sizeof[DType.float32]():
-            return log(x.cast[DType.float32]()).cast[x.type]()
-        elif x.type is DType.float32:
+        if sizeof[x.dtype]() < sizeof[DType.float32]():
+            return log(x.cast[DType.float32]()).cast[x.dtype]()
+        elif x.dtype is DType.float32:
             return (
                 _call_ptx_intrinsic[
                     instruction="lg2.approx.f32", constraints="=f,f"
@@ -816,9 +816,9 @@ fn log2(x: SIMD) -> __type_of(x):
     if is_nvidia_gpu():
 
         @parameter
-        if sizeof[x.type]() < sizeof[DType.float32]():
-            return log2(x.cast[DType.float32]()).cast[x.type]()
-        elif x.type is DType.float32:
+        if sizeof[x.dtype]() < sizeof[DType.float32]():
+            return log2(x.cast[DType.float32]()).cast[x.dtype]()
+        elif x.dtype is DType.float32:
             return _call_ptx_intrinsic[
                 instruction="lg2.approx.f32", constraints="=f,f"
             ](x)
@@ -1030,12 +1030,12 @@ fn isclose[
     """
 
     constrained[
-        a.type is DType.bool or a.type.is_numeric(),
+        a.dtype is DType.bool or a.dtype.is_numeric(),
         "input type must be boolean, integral, or floating-point",
     ]()
 
     @parameter
-    if a.type is DType.bool or a.type.is_integral():
+    if a.dtype is DType.bool or a.dtype.is_integral():
         return a == b
     else:
         var both_nan = isnan(a) & isnan(b)
@@ -1651,9 +1651,9 @@ fn log10(x: SIMD) -> __type_of(x):
         alias log10_2 = 0.301029995663981195213738894724493027
 
         @parameter
-        if sizeof[x.type]() < sizeof[DType.float32]():
-            return log10(x.cast[DType.float32]()).cast[x.type]()
-        elif x.type is DType.float32:
+        if sizeof[x.dtype]() < sizeof[DType.float32]():
+            return log10(x.cast[DType.float32]()).cast[x.dtype]()
+        elif x.dtype is DType.float32:
             return (
                 _call_ptx_intrinsic[
                     instruction="lg2.approx.f32", constraints="=f,f"

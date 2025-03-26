@@ -26,7 +26,7 @@ from testing import assert_equal, assert_true
 def test_c_int_type():
     if is_64bit() and (os_is_macos() or os_is_linux() or os_is_windows()):
         # `int` is always 32 bits on the modern 64-bit OSes.
-        assert_equal(c_int.type, DType.int32)
+        assert_equal(c_int.dtype, DType.int32)
     else:
         assert_true(False, "platform c_int size is untested")
 
@@ -34,17 +34,17 @@ def test_c_int_type():
 def test_c_long_type():
     if is_64bit() and (os_is_macos() or os_is_linux()):
         # `long` is 64 bits on macOS and Linux.
-        assert_equal(c_long.type, DType.int64)
+        assert_equal(c_long.dtype, DType.int64)
     elif is_64bit() and os_is_windows():
         # `long` is 32 bits only on Windows.
-        assert_equal(c_long.type, DType.int32)
+        assert_equal(c_long.dtype, DType.int32)
     else:
         assert_true(False, "platform c_long size is untested")
 
 
 def test_c_long_long_type():
     if is_64bit() and (os_is_macos() or os_is_linux() or os_is_windows()):
-        assert_equal(c_long_long.type, DType.int64)
+        assert_equal(c_long_long.dtype, DType.int64)
     else:
         assert_true(False, "platform c_long_long size is untested")
 

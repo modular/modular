@@ -574,7 +574,7 @@ fn masked_store[
     size: Int
 ](
     value: SIMD,
-    addr: UnsafePointer[Scalar[value.type], **_],
+    addr: UnsafePointer[Scalar[value.dtype], **_],
     mask: SIMD[DType.bool, size],
     alignment: Int = 1,
 ):
