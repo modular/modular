@@ -17,6 +17,9 @@ from typing import Any, Callable, Iterable, Optional
 
 from max import mlir
 from max._core import graph as _graph
+
+# TODO(GEX-1846): Get rid of this include.
+from max.engine import InferenceSession  # type: ignore
 from max.mlir.dialects import mo
 
 from .type import (
@@ -38,6 +41,11 @@ class KernelLibrary:
     _analysis: _graph.Analysis
 
     def __init__(self, context: mlir.Context, paths: list[Path] = []):
+        # TODO(GEX-1846): This is a terrible workaround to initialize M::Context on the Graph API.
+        # Get rid of this and properly setup the context instead.
+        mock_session = InferenceSession()
+        mock_session._impl.register_runtime_context(context)
+
         self._analysis = _graph.Analysis(context, paths)
 
     def library_paths(self) -> list[Path]:
