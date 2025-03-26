@@ -836,7 +836,7 @@ fn sum[
     @parameter
     if reduction_method is ReductionMethod.WARP:
         constrained[
-            output_type == x.type,
+            output_type == x.dtype,
             (
                 "the output type must match the input value for warp-level"
                 " reduction"
