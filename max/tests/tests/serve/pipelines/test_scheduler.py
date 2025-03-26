@@ -216,7 +216,9 @@ def test_schedule_ce(scheduler):
     mock_request = create_mock_request(cache_seq_id=0)
     batch_to_execute: dict[str, InputContext] = {"req1": mock_request}
     sch_output = SchedulerOutput(
-        batch_type=BatchType.ContextEncoding, batch_inputs=batch_to_execute
+        batch_type=BatchType.ContextEncoding,
+        batch_inputs=batch_to_execute,
+        num_steps=scheduler.scheduler_config.max_forward_steps_ce,
     )
 
     scheduler._schedule_ce(sch_output)
@@ -290,7 +292,10 @@ def test_schedule_mixed_ce_tg(scheduler):
 def test_schedule_tg(scheduler):
     mock_request = create_mock_request(cache_seq_id=0)
     batch_to_execute: dict[str, InputContext] = {"req1": mock_request}
-    sch_output = SchedulerOutput(batch_inputs=batch_to_execute)
+    sch_output = SchedulerOutput(
+        batch_inputs=batch_to_execute,
+        num_steps=scheduler.scheduler_config.max_forward_steps_tg,
+    )
 
     scheduler._schedule_tg(sch_output)
 

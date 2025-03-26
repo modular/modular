@@ -188,11 +188,11 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
     def next_token(
         self, batch: dict[str, TextContext], num_steps: int = 1
     ) -> dict[str, TextGenerationResponse]:
+        max_seq_len = self.kv_manager.max_seq_len
         # Truncate num steps based on the max seq len
         for context in batch.values():
-            assert context.max_length is not None
             num_available_steps = context.compute_num_available_steps(
-                context.max_length
+                max_seq_len
             )
             assert num_available_steps > 0
             num_steps = min(num_steps, num_available_steps)
@@ -292,7 +292,7 @@ def create_batch_and_execute(
     batch_size = batch_to_execute.batch_size
     batch_type = batch_to_execute.batch_type
     tokens_to_encode = batch_to_execute.tokens_to_encode
-
+    num_steps = batch_to_execute.num_steps
     if batch_to_execute.batch_size == 0:
         return BatchInfo.empty()
 
@@ -301,7 +301,10 @@ def create_batch_and_execute(
 
     # get prev num steps
     assert isinstance(scheduler.pipeline, FakeTokenGeneratorPipeline)
-    num_steps = scheduler.pipeline.prev_num_steps
+
+    # Pipelines should use whatever num_steps that the scheduler computed.
+    # It should not need to truncate it.
+    assert scheduler.pipeline.prev_num_steps == num_steps
 
     return BatchInfo(
         batch_type=batch_type,
@@ -459,7 +462,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16():
         BatchInfo(CE, 18, 1, 1, 8192),
         BatchInfo(CE, 2, 0, 1, 848),
         BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 6, 100),
+        BatchInfo(TG, 100, 100, 10, 100),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
@@ -500,7 +503,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384():
         BatchInfo(CE, 71, 1, 1, 8192),
         BatchInfo(CE, 14, 0, 1, 1552),
         BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 6, 100),
+        BatchInfo(TG, 100, 100, 10, 100),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
@@ -544,7 +547,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
         BatchInfo(CE, 23, 1, 1, 8192),
         BatchInfo(CE, 18, 0, 1, 6608),
         BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 6, 100),
+        BatchInfo(TG, 100, 100, 10, 100),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
@@ -588,7 +591,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
         BatchInfo(CE, 18, 1, 1, 8192),
         BatchInfo(CE, 2, 0, 1, 848),
         BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 6, 100),
+        BatchInfo(TG, 100, 100, 10, 100),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
@@ -680,9 +683,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
         BatchInfo(CE, 98, 1, 1, 8192),
         BatchInfo(CE, 100, 0, 1, 1188),
         BatchInfo(TG, 100, 32, 10, 100),
-        BatchInfo(TG, 68, 33, 2, 68),
-        BatchInfo(TG, 35, 32, 2, 35),
-        BatchInfo(TG, 3, 3, 2, 3),
+        BatchInfo(TG, 68, 68, 10, 68),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
