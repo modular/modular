@@ -291,7 +291,7 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
   // indentation.
   size_t indent = getIndentationLevel(lines[line]);
   while (++line < lineE && getIndentationLevel(lines[line]) >= indent)
-    paragraphOS << " " << lines[line].trim();
+    paragraphOS << "\n" << lines[line].trim();
   return paragraphOS.str();
 }
 
