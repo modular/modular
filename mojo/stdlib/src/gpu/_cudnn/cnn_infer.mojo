@@ -305,7 +305,7 @@ fn cudnnGetConvolution2dDescriptor(
 
 @value
 @register_passable("trivial")
-struct cudnnFusedOpsConstParamLabel_t:
+struct cudnnFusedOpsConstParamLabel_t(Writable):
     var _value: Int8
     alias CUDNN_PARAM_XDESC = Self(0)
     alias CUDNN_PARAM_XDATA_PLACEHOLDER = Self(1)
@@ -471,7 +471,7 @@ fn cudnnSetConvolutionReorderType(
 
 @value
 @register_passable("trivial")
-struct cudnnReorderType_t:
+struct cudnnReorderType_t(Writable):
     var _value: Int8
     alias CUDNN_DEFAULT_REORDER = Self(0)
     alias CUDNN_NO_REORDER = Self(1)
@@ -613,7 +613,7 @@ fn cudnnGetConvolutionForwardAlgorithm_v7(
 
 @value
 @register_passable("trivial")
-struct cudnnFusedOps_t:
+struct cudnnFusedOps_t(Writable):
     var _value: Int8
     alias CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS = Self(0)
     alias CUDNN_FUSED_SCALE_BIAS_ACTIVATION_WGRAD = Self(1)
@@ -693,7 +693,7 @@ fn cudnnDestroyConvolutionDescriptor(
 
 @value
 @register_passable("trivial")
-struct cudnnFusedOpsPointerPlaceHolder_t:
+struct cudnnFusedOpsPointerPlaceHolder_t(Writable):
     var _value: Int8
     alias CUDNN_PTR_NULL = Self(0)
     alias CUDNN_PTR_ELEM_ALIGNED = Self(1)
@@ -806,7 +806,7 @@ fn cudnnGetConvolutionReorderType(
 
 @value
 @register_passable("trivial")
-struct cudnnFusedOpsVariantParamLabel_t:
+struct cudnnFusedOpsVariantParamLabel_t(Writable):
     var _value: Int8
     alias CUDNN_PTR_XDATA = Self(0)
     alias CUDNN_PTR_BN_EQSCALE = Self(1)
@@ -1321,7 +1321,7 @@ fn cudnnGetConvolutionForwardAlgorithmMaxCount(
 
 @value
 @register_passable("trivial")
-struct cudnnConvolutionMode_t:
+struct cudnnConvolutionMode_t(Writable):
     var _value: Int8
     alias CUDNN_CONVOLUTION = Self(0)
     alias CUDNN_CROSS_CORRELATION = Self(1)

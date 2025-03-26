@@ -121,7 +121,7 @@ alias NVTXVersion = 2
 
 
 @value
-struct Color:
+struct Color(Intable):
     var _value: Int
 
     alias FORMAT = 1  # ARGB

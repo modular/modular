@@ -433,7 +433,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
 
 
 @value
-struct Scope:
+struct Scope(Writable, CollectionElement, EqualityComparableCollectionElement):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from

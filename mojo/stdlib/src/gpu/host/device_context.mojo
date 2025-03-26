@@ -583,7 +583,7 @@ struct DeviceBuffer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,
     origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
-](Sized, Stringable, Writable):
+](Sized, Stringable, Writable, CollectionElement):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
 
@@ -2040,7 +2040,7 @@ struct DeviceExternalFunction:
 
 
 @register_passable
-struct DeviceContext:
+struct DeviceContext(CollectionElement):
     """Represents a single stream of execution on a particular accelerator
     (GPU).
 

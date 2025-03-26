@@ -31,7 +31,7 @@ alias _KB = 1024
 
 @value
 @register_passable
-struct Vendor:
+struct Vendor(Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
@@ -525,7 +525,7 @@ alias MI300X = Info(
 
 @value
 @register_passable
-struct Flops:
+struct Flops(Writable):
     """
     Represents floating point operations per second for different precisions.
 
@@ -625,7 +625,7 @@ struct Flops:
 
 @value
 @register_passable
-struct Info:
+struct Info(Writable):
     """
     Comprehensive information about a GPU architecture.
 

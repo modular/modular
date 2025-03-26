@@ -193,7 +193,7 @@ struct ComputeType:
 
 @value
 @register_passable("trivial")
-struct Status:
+struct Status(Writable):
     var _value: Int32
 
     alias SUCCESS = Self(0)

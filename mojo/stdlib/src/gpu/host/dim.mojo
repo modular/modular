@@ -19,7 +19,7 @@ struct Dim(Stringable, Writable):
 
     var _value: IndexList[3]
     """Internal storage for the three dimension components (x, y, z).
-    
+
     This field stores the values for all three dimensions using an IndexList
     with a fixed size of 3. The dimensions are accessed in order: x, y, z.
     """

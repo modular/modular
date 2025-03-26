@@ -25,7 +25,7 @@ at a granular level, similar to CUDA's native launch attribute system.
 
 @value
 @register_passable("trivial")
-struct LaunchAttributeID:
+struct LaunchAttributeID(Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -285,7 +285,7 @@ struct LaunchAttributeValue:
 
 @value
 @register_passable("trivial")
-struct AccessProperty:
+struct AccessProperty(Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -389,7 +389,7 @@ struct AccessProperty:
 
 @value
 @register_passable("trivial")
-struct LaunchAttribute:
+struct LaunchAttribute(CollectionElement):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
@@ -455,7 +455,7 @@ struct LaunchAttribute:
 
 
 @register_passable("trivial")
-struct AccessPolicyWindow:
+struct AccessPolicyWindow(Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and

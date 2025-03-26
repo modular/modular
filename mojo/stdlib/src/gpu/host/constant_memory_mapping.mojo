@@ -12,7 +12,7 @@ constant memory that can be used for efficient data transfer between host and GP
 
 @value
 @register_passable("trivial")
-struct ConstantMemoryMapping:
+struct ConstantMemoryMapping(CollectionElement):
     """Represents a mapping of constant memory between host and device.
 
     This struct encapsulates the information needed to manage constant memory
@@ -27,7 +27,7 @@ struct ConstantMemoryMapping:
 
     var name: StringLiteral
     """A string identifier for the constant memory mapping.
-    
+
     This name is used to uniquely identify the constant memory region in the GPU
     programming model, allowing the runtime to properly associate the memory with
     kernel references to constant memory symbols.
@@ -35,7 +35,7 @@ struct ConstantMemoryMapping:
 
     var ptr: UnsafePointer[NoneType]
     """Pointer to the host memory location that will be mapped to device constant memory.
-    
+
     This raw pointer represents the starting address of the memory region that will be
     accessible as constant memory on the GPU. The memory should remain valid for the
     lifetime of any kernels that access it.
@@ -43,7 +43,7 @@ struct ConstantMemoryMapping:
 
     var byte_count: Int
     """Size of the memory mapping in bytes.
-    
+
     Specifies the total size of the constant memory region. This value is used by the
     runtime to determine how much data to transfer between host and device. The size
     must be sufficient to hold all data needed by GPU kernels.

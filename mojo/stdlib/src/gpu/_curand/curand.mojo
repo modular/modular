@@ -174,7 +174,7 @@ fn curandGetProperty(
 
 @value
 @register_passable("trivial")
-struct curandRngType:
+struct curandRngType(Writable):
     """
     CURAND generator types
     ."""
@@ -529,7 +529,7 @@ alias curandGenerator_t = UnsafePointer[curandGenerator_st]
 
 @value
 @register_passable("trivial")
-struct curandMethod:
+struct curandMethod(Writable):
     """\\cond UNHIDE_ENUMS ."""
 
     var _value: Int8
@@ -692,7 +692,7 @@ alias curandMethod_t = curandMethod
 
 @value
 @register_passable("trivial")
-struct curandStatus:
+struct curandStatus(Writable):
     """
     CURAND function call status types
     ."""
@@ -772,7 +772,7 @@ struct curandStatus:
 
 @value
 @register_passable("trivial")
-struct curandDirectionVectorSet:
+struct curandDirectionVectorSet(Writable):
     """
     CURAND choice of direction vector set
     ."""
@@ -1242,7 +1242,7 @@ alias curandDirectionVectors64_t = StaticTuple[UInt64, 64]
 
 @value
 @register_passable("trivial")
-struct curandOrdering:
+struct curandOrdering(Writable):
     """
     CURAND ordering of results in memory
     ."""

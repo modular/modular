@@ -22,7 +22,7 @@ such as shared memory allocation, cache behavior, and cluster configuration.
 
 @value
 @register_passable("trivial")
-struct Attribute:
+struct Attribute(Writable):
     """Represents GPU kernel function attributes.
 
     This struct defines constants for various function attributes that can be queried
