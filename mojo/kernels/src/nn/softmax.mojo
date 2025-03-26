@@ -17,7 +17,6 @@ from algorithm.reduction import (
 from bit import log2_floor
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from builtin.uint import _temp_uint_from_int
 from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu.host import DeviceAttribute, DeviceContext
 from gpu.host.info import is_cpu, is_gpu
@@ -689,8 +688,8 @@ fn softmax_kernel[
     output: NDBuffer[type, rank, MutableAnyOrigin],
     axis: Int,
 ):
-    var row_size = _temp_uint_from_int(shape[axis])
-    var num_rows = _temp_uint_from_int(shape.flattened_length()) // row_size
+    var row_size = UInt(shape[axis])
+    var num_rows = UInt(shape.flattened_length()) // row_size
 
     var max_buf = NDBuffer[
         accum_type, 1, MutableAnyOrigin, 1, address_space = AddressSpace.SHARED
@@ -713,7 +712,7 @@ fn softmax_kernel[
     ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
         return x + y
 
-    var row_size_padded = align_up(row_size, _temp_uint_from_int(BLOCK_SIZE))
+    var row_size_padded = align_up(row_size, UInt(BLOCK_SIZE))
 
     # grid stride loop over rows
     # each block reduces a row, which is convenient because it requires no partial
@@ -743,9 +742,7 @@ fn softmax_kernel[
 
         # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
         var exp_sum = Scalar[accum_type](0)
-        for offset_in_row in range(
-            UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
-        ):
+        for offset_in_row in range(UInt(0), row_size_padded, UInt(BLOCK_SIZE)):
             var idx_in_padded_row = thread_idx.x + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
@@ -770,9 +767,7 @@ fn softmax_kernel[
 
         # Step 3: Normalize output
         var block_exp_sum_recip = 1 / exp_sum_buf[0]
-        for offset_in_row in range(
-            UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
-        ):
+        for offset_in_row in range(UInt(0), row_size_padded, UInt(BLOCK_SIZE)):
             var idx_in_padded_row = thread_idx.x + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
