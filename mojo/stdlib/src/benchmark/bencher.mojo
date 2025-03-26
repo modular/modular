@@ -156,14 +156,14 @@ struct ThroughputMeasure(CollectionElement):
         Args:
             name: The name of BenchMetric in its corresponding reference.
             value: The measured value to assign to this metric.
-            reference: Pointer variadic list of BenchMetrics that contains this metric.
+            reference: List of BenchMetrics that contains this metric.
 
         Example:
-            For the default bench metrics BenchMetric.DEFAULTS the
+            For the default bench metrics `BenchMetric.DEFAULTS` the
             following are equivalent:
-                - ThroughputMeasure(BenchMetric.fmas, 1024)
-                - ThroughputMeasure("fmas", 1024)
-                - ThroughputMeasure("fmas", 1024, BenchMetric.DEFAULTS)
+                - `ThroughputMeasure(BenchMetric.fmas, 1024)`
+                - `ThroughputMeasure("fmas", 1024)`
+                - `ThroughputMeasure("fmas", 1024, BenchMetric.DEFAULTS)`
         """
         var metric = BenchMetric.get_metric_from_list(name, reference)
         self.metric = metric
