@@ -64,6 +64,9 @@ for i in range(iteration_range):
     body_logic[i]()
 ```
 
+- The `is_power_of_two(x)` function in the `bit` package is now a method on
+  `Int`, `UInt` and `SIMD`.
+
 ### GPU changes
 
 - `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the

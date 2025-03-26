@@ -1936,6 +1936,44 @@ def test_large_int_types():
     assert_equal(x.cast[DType.int256]() + z, z + z)
 
 
+def test_is_power_of_two_simd():
+    alias simd_width = 4
+    alias int8_t = DType.int8
+    alias int16_t = DType.int16
+    alias int32_t = DType.int32
+    alias int64_t = DType.int64
+
+    alias var1 = SIMD[int8_t, simd_width](-114, 0, 100, 2**6)
+    assert_equal(
+        var1.is_power_of_two(),
+        SIMD[DType.bool, simd_width](False, False, False, True),
+    )
+
+    alias var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, 2**13)
+    assert_equal(
+        var2.is_power_of_two(),
+        SIMD[DType.bool, simd_width](False, False, False, True),
+    )
+
+    alias var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, 2**29)
+    assert_equal(
+        var3.is_power_of_two(),
+        SIMD[DType.bool, simd_width](False, False, False, True),
+    )
+
+    # TODO: use this line after #2882 is fixed
+    # alias var4 = SIMD[int64_t, simd_width](-111444444, 0, 3000000, 2**59)
+    alias var4 = SIMD[int64_t, simd_width](
+        -111444444, 0, 3000000, 576460752303423488
+    )
+    assert_equal(
+        var4.is_power_of_two(),
+        SIMD[DType.bool, simd_width](False, False, False, True),
+    )
+
+    assert_equal(Int64.MIN.is_power_of_two(), False)
+
+
 def main():
     test_abs()
     test_add()
@@ -1994,4 +2032,5 @@ def main():
     test_float_conversion()
     test_reversed()
     test_large_int_types()
+    test_is_power_of_two_simd()
     # TODO: add tests for __and__, __or__, anc comparison operators

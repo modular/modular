@@ -1196,6 +1196,15 @@ struct Int(
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @always_inline("builtin")
+    fn is_power_of_two(self) -> Bool:
+        """Check if the integer is a (non-zero) power of two.
+
+        Returns:
+            True if the integer is a power of two, False otherwise.
+        """
+        return (self & (self - 1) == 0) & (self > 0)
+
     fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this integer to the provided Writer.

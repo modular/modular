@@ -367,53 +367,6 @@ fn log2_floor(val: Int) -> Int:
 
 
 # ===-----------------------------------------------------------------------===#
-# is_power_of_two
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn is_power_of_two(val: Int) -> Bool:
-    """Checks if the input value is a power of 2.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        True if the input value is a power of 2, False otherwise.
-    """
-    return (val > 0) & (val & (val - 1) == 0)
-
-
-@always_inline
-fn is_power_of_two[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[DType.bool, width]:
-    """Checks if the input value is a power of 2 for each element of a SIMD vector.
-
-    Parameters:
-        type: `dtype` used for the computation.
-        width: SIMD width used for the computation.
-
-    Constraints:
-        The element type of the input vector must be integral.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        A SIMD value where the element at position `i` is True if the integer at
-        position `i` of the input value is a power of 2, False otherwise.
-    """
-    constrained[type.is_integral(), "must be integral"]()
-
-    @parameter
-    if type.is_unsigned():
-        return pop_count(val) == 1
-    else:
-        return (val > 0) & (val & (val - 1) == 0)
-
-
-# ===-----------------------------------------------------------------------===#
 # next_power_of_two
 # ===-----------------------------------------------------------------------===#
 # reference: https://en.cppreference.com/w/cpp/numeric/bit_ceil
@@ -436,7 +389,7 @@ fn next_power_of_two(val: Int) -> Int:
     if val <= 1:
         return 1
 
-    if is_power_of_two(val):
+    if val.is_power_of_two():
         return val
 
     return 1 << bit_width(val - 1)

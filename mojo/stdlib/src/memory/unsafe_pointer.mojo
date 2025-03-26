@@ -29,7 +29,6 @@ from sys.intrinsics import (
     strided_store,
 )
 
-from bit import is_power_of_two
 from memory.memory import _free, _malloc
 
 # ===----------------------------------------------------------------------=== #
@@ -918,7 +917,7 @@ struct UnsafePointer[
             "offset type must be an integral type",
         ]()
         constrained[
-            is_power_of_two(alignment),
+            alignment.is_power_of_two(),
             "alignment must be a power of two integer value",
         ]()
 
@@ -973,7 +972,7 @@ struct UnsafePointer[
             "offset type must be an integral type",
         ]()
         constrained[
-            is_power_of_two(alignment),
+            alignment.is_power_of_two(),
             "alignment must be a power of two integer value",
         ]()
 

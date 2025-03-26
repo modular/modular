@@ -129,6 +129,15 @@ struct UInt(Indexer, _HashableWithHasher):
         """
         return String.write(self)
 
+    @always_inline("builtin")
+    fn is_power_of_two(self) -> Bool:
+        """Check if the integer is a (non-zero) power of two.
+
+        Returns:
+            True if the integer is a power of two, False otherwise.
+        """
+        return (self & (self - 1) == 0) & self.__bool__()
+
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
         """Formats this integer to the provided Writer.

@@ -21,7 +21,6 @@ from bit import (
     byte_swap,
     count_leading_zeros,
     count_trailing_zeros,
-    is_power_of_two,
     log2_floor,
     next_power_of_two,
     pop_count,
@@ -278,58 +277,6 @@ def test_bit_not_simd():
     )
 
 
-def test_is_power_of_two():
-    assert_equal(is_power_of_two(Int.MIN), False)
-    assert_equal(is_power_of_two(-(2**59)), False)
-    assert_equal(is_power_of_two(-1), False)
-    assert_equal(is_power_of_two(0), False)
-    assert_equal(is_power_of_two(1), True)
-    assert_equal(is_power_of_two(2), True)
-    assert_equal(is_power_of_two(3), False)
-    assert_equal(is_power_of_two(4), True)
-    assert_equal(is_power_of_two(5), False)
-    assert_equal(is_power_of_two(2**59), True)
-    assert_equal(is_power_of_two(Int.MAX), False)
-
-
-def test_is_power_of_two_simd():
-    alias simd_width = 4
-    alias int8_t = DType.int8
-    alias int16_t = DType.int16
-    alias int32_t = DType.int32
-    alias int64_t = DType.int64
-
-    alias var1 = SIMD[int8_t, simd_width](-114, 0, 100, 2**6)
-    assert_equal(
-        is_power_of_two(var1),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    alias var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, 2**13)
-    assert_equal(
-        is_power_of_two(var2),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    alias var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, 2**29)
-    assert_equal(
-        is_power_of_two(var3),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    # TODO: use this line after #2882 is fixed
-    # alias var4 = SIMD[int64_t, simd_width](-111444444, 0, 3000000, 2**59)
-    alias var4 = SIMD[int64_t, simd_width](
-        -111444444, 0, 3000000, 576460752303423488
-    )
-    assert_equal(
-        is_power_of_two(var4),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    assert_equal(is_power_of_two(Int64.MIN), False)
-
-
 def test_bit_width():
     assert_equal(bit_width(-(2**59)), 59)
     assert_equal(bit_width(-2), 1)
@@ -539,8 +486,6 @@ def main():
     test_prev_power_of_two_simd()
     test_bit_width()
     test_bit_width_simd()
-    test_is_power_of_two()
-    test_is_power_of_two_simd()
     test_count_leading_zeros()
     test_count_leading_zeros_simd()
     test_count_trailing_zeros()

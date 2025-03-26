@@ -210,8 +210,7 @@ fn _simd_construction_checks[type: DType, size: Int]():
     constrained[
         type is not DType.invalid, "simd type cannot be DType.invalid"
     ]()
-    constrained[size > 0, "simd width must be > 0"]()
-    constrained[size & (size - 1) == 0, "simd width must be power of 2"]()
+    constrained[size.is_power_of_two(), "simd width must be power of 2"]()
     constrained[
         not (type is DType.bfloat16 and has_neon()),
         "bf16 is not supported for ARM architectures",
@@ -1782,6 +1781,25 @@ struct SIMD[type: DType, size: Int](
         return __mlir_op.`pop.cast`[
             _type = SIMD[target, size]._mlir_type, fast = __mlir_attr.unit
         ](self.value)
+
+    @always_inline
+    fn is_power_of_two(self) -> SIMD[DType.bool, size]:
+        """Checks if the input value is a power of 2 for each element of a SIMD vector.
+
+        Constraints:
+            The element type of the input vector must be integral.
+
+        Returns:
+            A SIMD value where the element at position `i` is True if the integer at
+            position `i` of the input value is a power of 2, False otherwise.
+        """
+        constrained[type.is_integral(), "must be integral"]()
+
+        @parameter
+        if type.is_unsigned():
+            return pop_count(self) == 1
+        else:
+            return (self > 0) & (self & (self - 1) == 0)
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
