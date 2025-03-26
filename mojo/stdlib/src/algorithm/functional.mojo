@@ -17,7 +17,6 @@ from os import abort
 from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
 from collections.string import StaticString
 
-from bit import is_power_of_two
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_dim,
@@ -268,7 +267,7 @@ fn vectorize[
     if size != vector_end_simd:
 
         @parameter
-        if is_power_of_two(size - vector_end_simd):
+        if (size - vector_end_simd).is_power_of_two():
             func[size - vector_end_simd](vector_end_simd)
         else:
 
