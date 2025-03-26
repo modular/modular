@@ -124,3 +124,32 @@ fn wait_on_dependent_grids():
     @parameter
     if ENABLE_PDL_LAUNCH:
         __mlir_op.`nvvm.griddepcontrol.wait`[_type=None]()
+
+
+struct PDL:
+    """Programmatic Dependency Launch (PDL) control structure.
+
+    This struct provides a way to manage programmatic stream serialization on
+    NVIDIA GPUs. It includes functions for launching dependent grids and waiting
+    for them to complete.
+
+    Note:
+        - Only supported on NVIDIA SM90+ (Hopper architecture and newer) GPUs.
+    """
+
+    @always_inline
+    fn __init__(out self):
+        """Initialize the PDL control structure."""
+        pass
+
+    @always_inline
+    fn __enter__(self):
+        """Launch dependent grids that were previously configured to depend on the
+        current grid."""
+        wait_on_dependent_grids()
+
+    @always_inline
+    fn __exit__(self):
+        """Wait for all dependent grids launched by this grid to complete execution.
+        """
+        launch_dependent_grids()
