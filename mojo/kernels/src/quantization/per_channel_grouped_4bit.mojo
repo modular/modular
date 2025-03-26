@@ -7,7 +7,6 @@ from collections import InlineArray
 from math import ceil, ceildiv
 from sys.info import sizeof
 
-from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.buffer import prod_dims
 from memory import UnsafePointer, bitcast, memcpy
@@ -137,7 +136,7 @@ struct Q4sym[
     fn _check_constraints():
         # TODO
         constrained[
-            is_power_of_two(group_size), "`group_size` must be a power of 2."
+            group_size.is_power_of_two(), "`group_size` must be a power of 2."
         ]()
         constrained[
             group_size == 8 or group_size == 16 or group_size == 32,

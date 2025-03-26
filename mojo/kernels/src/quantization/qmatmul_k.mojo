@@ -19,7 +19,6 @@ from sys import (
 from sys.intrinsics import llvm_intrinsic
 
 from algorithm import sync_parallelize, tile, vectorize
-from bit import is_power_of_two
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.accumulate import _Accumulator
@@ -742,7 +741,7 @@ fn _matmul_group_stream[
     a_q_bits_ptr: UnsafePointer[Int8],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    constrained[is_power_of_two(tile_k) and tile_k <= 4]()
+    constrained[tile_k.is_power_of_two() and tile_k <= 4]()
 
     @parameter
     if CompilationTarget.is_x86():
