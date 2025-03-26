@@ -24,7 +24,7 @@ from .benchmark import _run_impl, _RunOptions
 
 
 @value
-struct BenchMetric(CollectionElement):
+struct BenchMetric(CollectionElement, Stringable, Writable):
     """Defines a benchmark throughput metric."""
 
     var code: Int
@@ -519,7 +519,7 @@ struct Mode:
         return self.value == other.value
 
 
-struct Bench:
+struct Bench(Writable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 
@@ -1155,7 +1155,7 @@ struct Bench:
 
 
 @value
-struct _Metric:
+struct _Metric(CollectionElement):
     var max_width: Int
     var rates: Dict[Int, Float64]
 
