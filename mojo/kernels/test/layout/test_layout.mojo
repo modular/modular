@@ -514,7 +514,7 @@ fn test_format_layout_grid() raises:
 # CHECK-LABEL: test_zipped_divide
 fn test_zipped_divide() raises:
     print("== test_zipped_divide")
-    alias layout_4x4_row_major = Layout(IntTuple(4, 4), IntTuple(4, 1))
+    alias layout_4x4_row_major = Layout.row_major(4, 4)
     assert_equal(
         String(zipped_divide(layout_4x4_row_major, Layout(2, 1))),
         "((2, (2, 4)):(4, (8, 1)))",
@@ -524,6 +524,18 @@ fn test_zipped_divide() raises:
         MakeLayoutList(Layout(2, 1), Layout(2, 1)),
     )
     assert_equal(String(zd0), "(((2, 2), (2, 2)):((4, 1), (8, 2)))")
+
+    # Resemble the case for distributing a tile over warp group.
+    alias tile_layout = Layout(
+        IntTuple(IntTuple(16, 64), 4), IntTuple(IntTuple(128, 2), 2048)
+    )
+    alias thread_layout = Layout(
+        IntTuple(IntTuple(8, 4), 4), IntTuple(IntTuple(4, 1), 32)
+    )
+    assert_equal(
+        String(zipped_divide(tile_layout, thread_layout.shape)),
+        "((((8, 4), 4), ((2, 16), 1)):(((128, 2), 2048), ((1024, 8), 0)))",
+    )
 
 
 # CHECK-LABEL: test_sublayout

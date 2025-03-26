@@ -1495,6 +1495,53 @@ fn hierarchical_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
     return make_layout(res_1, res_2)
 
 
+fn hierarchical_unzip(layout_a: Layout, tiler: IntTuple) -> Layout:
+    """Hierarchically unzips a layout according to a tuple of tile sizes.
+
+    This function creates a hierarchical layout by unzipping the first layout
+    according to the layouts in the tiler list. It's useful for decomposing
+    a layout into hierarchical components for more efficient memory access
+    patterns or to enable specialized tensor operations.
+
+    Args:
+        layout_a: The layout to be unzipped.
+        tiler: A IntTuple of tile sizes defining the unzipping patterns.
+
+    Returns:
+        A new layout representing the hierarchical unzipping with components
+        from both the original layout and the tiler layouts.
+
+    Example:
+
+    ```mojo
+    from layout import Layout, LayoutList, IntTuple
+    from layout.layout import hierarchical_unzip
+
+    # Create a layout to unzip
+    var base = Layout.row_major(6, 8)
+    var tilers = IntTuple(2, 2)
+    var result = hierarchical_unzip(base, tilers)
+    ```
+    .
+    """
+    if tiler.is_value():
+        return logical_divide(layout_a, Layout(tiler))
+
+    var res_1 = Layout()
+    var res_2 = Layout()
+
+    for i in range(len(tiler)):
+        var split = hierarchical_unzip(layout_a[i], tiler[i])
+        res_1.append(split[0])
+        res_2.append(split[1])
+
+    # Remainder if tiler is shorter.
+    for i in range(len(tiler), len(layout_a)):
+        res_2.append(layout_a[i])
+
+    return make_layout(res_1, res_2)
+
+
 @always_inline("nodebug")
 fn hierarchical_unzip(
     layout_a: Layout,
@@ -1596,6 +1643,39 @@ fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     .
     """
     return hierarchical_unzip(layout_a, tiler)
+
+
+@always_inline("nodebug")
+fn zipped_divide(layout: Layout, tiler: IntTuple) -> Layout:
+    """Divides a layout into blocks according to a tuple of tile sizes.
+
+    This function creates a hierarchical layout by dividing the first layout
+    according to the tile size in the tiler list.
+
+    Args:
+        layout: The layout to be divided.
+        tiler: A `IntTuple` of layouts defining the division patterns.
+
+    Returns:
+        A new layout representing the hierarchical division of layout_a according
+        to the patterns in tiler.
+
+    Example:
+
+    ```mojo
+    from layout import Layout, IntTuple
+    from layout.layout import zipped_divide
+
+    # Create layouts
+    var base = Layout.row_major(6, 8)
+    var tilers = IntTuple(2, 2)
+    var result = zipped_divide(base, tilers)
+    ```
+    .
+    """
+    if len(tiler) > layout.rank():
+        abort("tiler must not have more modes than input layout.")
+    return hierarchical_unzip(layout, tiler)
 
 
 @no_inline
