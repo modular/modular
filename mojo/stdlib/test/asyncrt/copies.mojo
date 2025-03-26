@@ -149,6 +149,33 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
         )
 
 
+fn _run_cpu_ctx_memcpy_async(
+    ctx: DeviceContext, cpu_ctx: DeviceContext, length: Int
+) raises:
+    print("-")
+    print("_run_cpu_ctx_memcpy_async(", length, ")")
+
+    var host_buf = cpu_ctx.enqueue_create_host_buffer[DType.int64](length)
+    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length).enqueue_fill(
+        13
+    )
+
+    for i in range(length):
+        host_buf[i] = 2 * i
+
+    ctx.enqueue_copy(dev_buf, host_buf)
+
+    with dev_buf.map_to_host() as dev_buf:
+        for i in range(length):
+            expect_eq(dev_buf[i], 2 * i)
+
+    host_buf = host_buf.enqueue_fill(12)
+    cpu_ctx.enqueue_copy(host_buf, dev_buf)
+
+    for i in range(length):
+        expect_eq(host_buf[i], 2 * i)
+
+
 fn main() raises:
     var ctx = create_test_device_context(buffer_cache_size=6 * 1024 * 1024)
 
@@ -166,5 +193,9 @@ fn main() raises:
 
     _run_fake_memcpy(ctx, 64, False)
     # _run_fake_memcpy(ctx, 64, True)
+
+    var cpu_ctx = DeviceContext(api="cpu")
+    _run_cpu_ctx_memcpy_async(ctx, cpu_ctx, 64)
+    _run_cpu_ctx_memcpy_async(ctx, cpu_ctx, one_mb)
 
     print("Done.")
