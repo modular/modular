@@ -329,6 +329,24 @@ KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef(
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsyncNonTrackedTensor(
+    void *data, size_t byteCount, size_t rank, size_t *dims, int8_t type,
+    AsyncRTWrapper<AnyAsyncValueRef> async) {
+
+  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
+  AnyAsyncValueRef &value = unwrap(async);
+
+  // Pack buffer and spec into tensor.
+  TensorBufferRef buf = ::M::TensorBufferRef::createWithNonTrackedMemory(
+      data, byteCount, /*alignment=*/std::nullopt);
+  TensorSpec spec(ArrayRef<size_t>(dims, rank), DType(type));
+  if (value.getPointer() && value.getPointer()->isIndirect())
+    value.copy().emplaceIndirect<Tensor>(std::move(buf), std::move(spec));
+  else
+    value = value.createReady<Tensor>(runtime, std::move(buf), std::move(spec));
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncDeviceBufferRef(
     void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> async,
     AsyncRT::DeviceContext *devCtx) {
