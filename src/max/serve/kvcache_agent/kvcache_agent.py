@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterator, Set
 
 import grpc
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (
+from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     KVCacheStateUpdate,
     MemoryTier,
     SubscriptionRequest,
@@ -74,8 +74,8 @@ class KVCacheAgentServicer(KVCacheAgentServiceServicer):
         logger.debug(f"New subscription request received from {context.peer()}")
         logger.debug(f"Current subscribers count: {len(self._subscribers)}")
         logger.debug(f"Current cache state: {self._cache_state}")
-        subscription_event = threading.Event()
-        subscription_queue = queue.Queue()
+        subscription_event: threading.Event = threading.Event()
+        subscription_queue: queue.Queue[KVCacheStateUpdate] = queue.Queue()
 
         # Add subscriber
         with self._lock:
