@@ -1020,7 +1020,7 @@ struct TestSIMDInputSize1:
     @staticmethod
     fn execute[
         type: DType
-    ](out: OutputTensor[type=type, rank=2], input: SIMD[type=type, size=1],):
+    ](out: OutputTensor[type=type, rank=2], input: SIMD[dtype=type, size=1],):
         out[0] = input[0]
 
 
@@ -1029,7 +1029,7 @@ struct TestSIMDInput:
     @staticmethod
     fn execute[
         type: DType
-    ](out: OutputTensor[type=type, rank=2], input: SIMD[type=type],):
+    ](out: OutputTensor[type=type, rank=2], input: SIMD[dtype=type],):
         out[0] = input[0]
 
 
@@ -1038,7 +1038,7 @@ struct TestSIMDInputSize2:
     @staticmethod
     fn execute[
         type: DType
-    ](out: OutputTensor[type=type, rank=2], input: SIMD[type=type, size=2],):
+    ](out: OutputTensor[type=type, rank=2], input: SIMD[dtype=type, size=2],):
         out[0] = input[0]
 
 

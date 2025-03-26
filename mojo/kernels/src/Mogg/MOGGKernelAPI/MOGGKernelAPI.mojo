@@ -3613,7 +3613,7 @@ struct PadConstant:
         output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
         padding: InputTensor[rank=1],
-        constant: Scalar[type=type],
+        constant: Scalar[dtype=type],
         ctx: DeviceContextPtr,
     ) raises:
         var paddings_ptr = padding._ptr
@@ -3877,7 +3877,7 @@ struct LayerNorm:
         input: FusedInputTensor[type=type, rank=rank],
         gamma: FusedInputTensor[type=type, rank=1],
         beta: InputTensor[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: Scalar[dtype=type],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3916,7 +3916,7 @@ struct LayerNorm:
         input: InputTensor[type=type, rank=rank],
         gamma: InputTensor[type=type, rank=1],
         beta: InputTensor[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: Scalar[dtype=type],
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -3932,7 +3932,7 @@ struct RMSNorm:
         output: OutputTensor[type=type, rank=rank],
         input: FusedInputTensor[type=type, rank=rank],
         gamma: InputTensor[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: Scalar[dtype=type],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -3958,7 +3958,7 @@ struct RMSNorm:
     ](
         input: InputTensor[type=type, rank=rank],
         gamma: InputTensor[type=type, rank=1],
-        epsilon: Scalar[type=type],
+        epsilon: Scalar[dtype=type],
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -5263,7 +5263,7 @@ struct MaskedFlashAttentionGPU:
         k: InputTensor[rank=rank],
         v: InputTensor[rank=rank],
         mask: InputTensor,
-        scale: Scalar[type = DType.float32],
+        scale: Scalar[dtype = DType.float32],
         ctx: DeviceContextPtr,
     ) raises:
         """`masked_flash_attention_gpu` is a hand-fused operator which does
@@ -5340,7 +5340,7 @@ struct NoMaskFlashAttentionCPU:
         q: InputTensor[type=type, rank=rank],
         k: FusedInputTensor[type=type, rank=rank],
         v: FusedInputTensor[type=type, rank=rank],
-        scale: Scalar[type = DType.float32],
+        scale: Scalar[dtype = DType.float32],
     ) raises:
         @parameter
         @always_inline
@@ -5391,7 +5391,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         k_cache: FusedInputTensor[type=type, rank = rank + 1],
         v_cache: FusedInputTensor[type=type, rank = rank + 1],
         mask: FusedInputTensor[type=type],
-        scale: Scalar[type = DType.float32],
+        scale: Scalar[dtype = DType.float32],
     ) raises:
         @parameter
         @always_inline
@@ -5472,7 +5472,7 @@ struct WithMaskFlashAttentionCPU:
         k: FusedInputTensor[type=type, rank=rank],
         v: FusedInputTensor[type=type, rank=rank],
         mask: FusedInputTensor[type=type],
-        scale: Scalar[type = DType.float32],
+        scale: Scalar[dtype = DType.float32],
     ) raises:
         @parameter
         @always_inline
