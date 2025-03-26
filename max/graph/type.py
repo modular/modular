@@ -23,6 +23,7 @@ else:
 import numpy as np
 from max import mlir
 from max._core import graph as _graph
+from max._core.dialects import mo  # type: ignore
 from max.dtype import DType
 
 
@@ -1005,9 +1006,7 @@ class _ChainType(Type):
         Returns:
             An mlir.Type in the specified Context.
         """
-        if not mlir.Context.current:
-            raise RuntimeError("No active mlir Context.")
-        return _graph.chain_type(mlir.Context.current)
+        return mo.ChainType(mlir.Context.current).ctype
 
     @staticmethod
     def from_mlir(t: mlir.Type) -> _ChainType:
@@ -1019,6 +1018,4 @@ class _ChainType(Type):
         Returns:
             The opaque type represented by the MLIR Type value.
         """
-        if not _graph.type_is_chain(t):
-            raise TypeError(f"Expected _ChainType, got: {t}")
         return _ChainType()

@@ -16,7 +16,9 @@ else:
 
 import numpy as np
 from max import mlir
+from max._core import Value as _Value  # type: ignore
 from max._core import graph as _graph
+from max._core.dialects import mo  # type: ignore
 from max.dtype import DType
 
 from . import ops
@@ -67,14 +69,13 @@ class Value:
                 return super().__new__(_OpaqueValue)
             elif _graph.type_is_buffer(value.type):
                 return super().__new__(BufferValue)
-            elif _graph.type_is_chain(value.type):
+            elif isinstance(_Value(value).type, mo.ChainType):
                 return super().__new__(_ChainValue)
             elif _graph.type_is_tensor(value.type):
                 return super().__new__(TensorValue)
             else:
                 raise TypeError(
-                    "Value() argument is an mlir.Value of unknown type"
-                    f" '{value.type}'"
+                    f"Value() argument is an mlir.Value of unknown type '{value.type}'"
                 )
         elif isinstance(value, Value):
             # Value(x) where x is an instance of a subclass of Value.
@@ -140,8 +141,10 @@ class Value:
 
 
 class _ChainValue(Value):
-    def __init__(self, value: Union[Value, mlir.Value]):
-        if isinstance(value, mlir.Value) and _graph.type_is_chain(value.type):
+    def __init__(self, value: Value | mlir.Value):
+        if isinstance(value, mlir.Value) and isinstance(
+            _Value(value).type, mo.ChainType
+        ):
             self._mlir_value = value
         elif isinstance(value, _ChainValue):
             self._mlir_value = value._mlir_value

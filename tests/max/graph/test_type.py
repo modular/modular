@@ -12,6 +12,7 @@ from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from max import mlir
 from max._core import graph as _graph
+from max._core.dialects import mo  # type: ignore
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -21,6 +22,7 @@ from max.graph import (
     StaticDim,
     SymbolicDim,
     TensorType,
+    _ChainType,
     _OpaqueType,
 )
 
@@ -92,17 +94,6 @@ def test_dims_print_reasonably(mlir_context):
     )
 )
 def test_symbolic_dim(name: str):
-    assume(name != "")
-    SymbolicDim(name)
-
-
-# TODO(MSDK-695): less restrictive dim names
-@given(
-    name=st.text(
-        alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z"))
-    )
-)
-def test_symbolic_dim__equals_name(name: str):
     assume(name != "")
     dim = SymbolicDim(name)
     assert isinstance(dim, Dim)
@@ -228,27 +219,27 @@ def test_type_checking(mlir_context) -> None:
     tensor_type = _graph.tensor_type(mlir_context, dtype, [dim])
     opaque_type = _graph.opaque_type(mlir_context, "custom_type")
     buffer_type = _graph.buffer_type(mlir_context, dtype, [dim])
-    chain_type = _graph.chain_type(mlir_context)
+    chain_type = mo.ChainType(mlir_context)
 
     assert _graph.type_is_tensor(tensor_type)
     assert not _graph.type_is_opaque(tensor_type)
     assert not _graph.type_is_buffer(tensor_type)
-    assert not _graph.type_is_chain(tensor_type)
+    assert not isinstance(tensor_type, mo.ChainType)
 
     assert _graph.type_is_opaque(opaque_type)
     assert not _graph.type_is_tensor(opaque_type)
     assert not _graph.type_is_buffer(opaque_type)
-    assert not _graph.type_is_chain(opaque_type)
+    assert not isinstance(opaque_type, mo.ChainType)
 
     assert _graph.type_is_buffer(buffer_type)
     assert not _graph.type_is_opaque(buffer_type)
     assert not _graph.type_is_tensor(buffer_type)
-    assert not _graph.type_is_chain(buffer_type)
+    assert not isinstance(buffer_type, mo.ChainType)
 
-    assert _graph.type_is_chain(chain_type)
-    assert not _graph.type_is_opaque(chain_type)
-    assert not _graph.type_is_tensor(chain_type)
-    assert not _graph.type_is_buffer(chain_type)
+    assert isinstance(chain_type, mo.ChainType)
+    assert not _graph.type_is_opaque(chain_type.ctype)
+    assert not _graph.type_is_tensor(chain_type.ctype)
+    assert not _graph.type_is_buffer(chain_type.ctype)
 
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -303,6 +294,15 @@ def test_buffer_type_with_device_accessors(mlir_context) -> None:
     assert _graph.buffer_type_get_device(cpu_buffer_type) == cpu_device
     assert _graph.buffer_type_get_device(cuda_buffer_type) == cuda_device0
     assert not _graph.buffer_type_get_device(default_buffer_type)
+
+
+def test_chain_type(mlir_context):
+    assert _ChainType() == _ChainType.from_mlir(_ChainType().to_mlir())
+
+
+def test_chain_type__no_mir_context():
+    with pytest.raises(TypeError):
+        _ChainType().to_mlir()
 
 
 @pytest.mark.skip("GEX-1918")
