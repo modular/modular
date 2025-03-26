@@ -5,18 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
-from sys import bitwidthof
+from sys import bitwidthof, sizeof
 
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import *
-from layout.layout_tensor import LayoutTensor
+from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from memory import UnsafePointer
 
 from utils.index import Index
 
 from .int_tuple import product, _get_index_type
 from gpu.intrinsics import make_buffer_resource, _buffer_resource
+from utils import IndexList
 
 
 struct ManagedLayoutTensor[
@@ -227,13 +228,20 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
         tensor.element_layout.all_dims_known(),
         "Element layout must be known for _get_bounds",
     ]()
+    constrained[
+        tensor.element_layout.size() == 1, "Element layout must be a scalar"
+    ]()
+
+    if tensor.dim(0) == 0 or tensor.dim(1) == 0:
+        return 0
+
     alias element_layout = tensor.element_layout
     alias element_offset = element_layout(element_layout.size() - 1)
-    return (
-        tensor._offset(tensor.dim(0) - 1, tensor.dim(1) - 1)
-        + element_offset
-        + 1
+    var strides = tensor.runtime_layout.stride.value
+    var offset = tensor._get_offset(
+        strides, IndexList[2](tensor.dim(0) - 1, tensor.dim(1) - 1)
     )
+    return offset + 1
 
 
 @always_inline
@@ -241,3 +249,42 @@ fn get_amd_buffer_descriptor(tensor: LayoutTensor) -> _buffer_resource:
     var ptr = tensor.ptr
     var size = _get_bounds(tensor)
     return make_buffer_resource(ptr, size)
+
+
+@always_inline
+fn get_amd_buffer_descriptor(
+    tensor_iter: LayoutTensorIter, bound: Int
+) -> _buffer_resource:
+    return make_buffer_resource(tensor_iter.ptr, bound)
+
+
+@always_inline
+fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
+    constrained[layout.all_dims_known(), "Layout must be known for idx2crd"]()
+    var res = IndexList[layout.rank()]()
+
+    @parameter
+    for i in range(layout.rank()):
+        alias stride = layout.stride[i].value()
+        alias shape = layout.shape[i].value()
+        res[i] = (Int(idx) // stride) % shape
+    return res
+
+
+@always_inline
+fn hash(tensor: LayoutTensor) -> Int:
+    # Calculate hash of the content of the layout tensor, it can be useful for debugging
+    constrained[
+        sizeof[tensor.dtype]() == 2, "Only support 2 byte types for hash"
+    ]()
+    var hash_value: Int = 0
+    alias size = tensor.layout.size()
+
+    for i in range(tensor.dim(0)):
+        for j in range(tensor.dim(1)):
+            var val = tensor[i, j]
+            var addr = UnsafePointer.address_of(val)
+            var addr_int = addr.bitcast[Int16]()
+            var val_int = addr_int[0]
+            hash_value = ((hash_value << 5) + hash_value) + Int(val_int)
+    return hash_value

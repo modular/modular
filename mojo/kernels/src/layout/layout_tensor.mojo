@@ -4724,7 +4724,7 @@ fn copy_dram_to_sram[
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor):
+](dst: LayoutTensor, src_iter: LayoutTensorIter, bound: Int):
     """Efficiently copy data from global memory (DRAM) to shared memory (SRAM) on AMD GPUs.
 
     This function implements an optimized memory transfer operation specifically for AMD GPU
@@ -4749,13 +4749,14 @@ fn copy_dram_to_sram[
 
     Args:
         dst: The destination tensor in shared memory (SRAM).
-        src: The source tensor in global memory (DRAM) to be copied.
-        src_base: The original global memory tensor from which src is derived.
-                 This is used to construct the buffer descriptor required by AMD's
-                 buffer_load intrinsic.
+        src_iter: The source tensor iterator in global memory (DRAM) to be copied.
+        bound: The bound of the source tensor iterator.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
-    _copy_dram_to_sram_validate_args(dst, src)
+    var src_tensor = src_iter[].vectorize[
+        dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
+    ]()
+    _copy_dram_to_sram_validate_args(dst, src_tensor)
     alias num_busy_threads = src_thread_layout.size()
 
     var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
@@ -4765,19 +4766,19 @@ fn copy_dram_to_sram[
         if worker_idx >= num_busy_threads:
             return
 
-    var src_fragments = src.distribute[src_thread_layout](worker_idx)
+    var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
     var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
         worker_idx
     )
 
-    alias simd_width = simdwidthof[dst.dtype]()
+    alias simd_width = src_tensor.element_layout.size()
     alias dst_align = alignof[SIMD[dst.dtype, simd_width]]()
 
     alias num_stores_per_thread = dst_fragments.layout.size()
-    # TODO: Use distance function, it gives parameter mismatch error
-    var offset = (Int(src.ptr) - Int(src_base.ptr)) // sizeof[src.dtype]()
-    var descriptor = get_amd_buffer_descriptor(src_base)
-    var src_frag_offset = src_fragments.distance(src.ptr) + offset
+    var descriptor = get_amd_buffer_descriptor(src_iter, bound)
+    var src_frag_offset = src_fragments.distance(src_tensor.ptr) + Int(
+        src_iter.offset
+    )
 
     @parameter
     for i in range(num_stores_per_thread):
@@ -4786,11 +4787,11 @@ fn copy_dram_to_sram[
         var src_idx: Scalar[src_fragments.index_type] = 0
 
         @parameter
-        if src.layout.all_dims_known():
+        if src_tensor.layout.all_dims_known():
             src_idx = src_static_idx
         else:
             src_idx = src_fragments.runtime_layout(i)
-        var src_vec = buffer_load[src.dtype, simd_width](
+        var src_vec = buffer_load[src_tensor.dtype, simd_width](
             descriptor,
             Int32(src_idx + Int(src_frag_offset)),
         )
@@ -5032,15 +5033,13 @@ fn cp_async_mn_major[
         )
 
 
-# Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
-#
 @always_inline("nodebug")
 fn copy_dram_to_sram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor):
+](dst: LayoutTensor, src_iter: LayoutTensorIter, bound: Int):
     """Synchronously copy data from DRAM to SRAM using a unified thread layout for AMD GPUs.
 
     This is a convenience wrapper around the more general `copy_dram_to_sram` function that uses
@@ -5059,9 +5058,8 @@ fn copy_dram_to_sram[
 
     Args:
         dst: The destination tensor, which must be in shared memory (SRAM).
-        src: The source tensor, which must be in global or generic memory (DRAM).
-        src_base: The original global memory tensor from which src is derived,
-                 used to construct the buffer descriptor for AMD GPUs.
+        src_iter: The source tensor iterator, which must be in global or generic memory (DRAM).
+        bound: The bound of the source tensor iterator.
 
     Performance:
 
@@ -5083,7 +5081,7 @@ fn copy_dram_to_sram[
         swizzle=swizzle,
         num_threads=num_threads,
         thread_scope=thread_scope,
-    ](dst, src, src_base)
+    ](dst, src_iter, bound)
 
 
 @always_inline("nodebug")
@@ -5905,11 +5903,7 @@ fn copy_dram_to_local[
           before performing computations, reducing memory access latency.
     """
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
-    alias simd_width = simdwidthof[src.dtype]()
-    constrained[
-        dst.element_layout.size() == simd_width,
-        "dst element size must be the same as simd width.",
-    ]()
+    alias simd_width = src.element_layout.size()
     _copy_local_to_dram_validate_args(src, dst)
 
     var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
