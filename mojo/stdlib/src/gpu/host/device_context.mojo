@@ -353,15 +353,7 @@ struct HostBuffer[
         Args:
             dst: The destination host buffer to copy data to.
         """
-        # const char * AsyncRT_DeviceBuffer_copyTo(const DeviceBuffer* src, const DeviceBuffer *dst)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyTo",
-                _CharPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](self._handle, dst._handle)
-        )
+        dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(self, dst: DeviceBuffer[type, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
@@ -373,15 +365,7 @@ struct HostBuffer[
         Args:
             dst: The destination device buffer to copy data to.
         """
-        # const char * AsyncRT_DeviceBuffer_copyTo(const DeviceBuffer* src, const DeviceBuffer *dst)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyTo",
-                _CharPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](self._handle, dst._handle)
-        )
+        dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[type]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
@@ -393,15 +377,7 @@ struct HostBuffer[
         Args:
             dst_ptr: Pointer to the destination host memory location.
         """
-        # const char * AsyncRT_DeviceBuffer_copyToPtr(const DeviceBuffer* src, void *dst)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyToPtr",
-                _CharPtr,
-                _DeviceBufferPtr,
-                UnsafePointer[Scalar[type]],
-            ](self._handle, dst_ptr)
-        )
+        self.context().enqueue_copy(dst_ptr, self)
 
     fn enqueue_copy_from(self, src: HostBuffer[type, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from another host buffer.
@@ -413,15 +389,7 @@ struct HostBuffer[
         Args:
             src: The source host buffer to copy data from.
         """
-        # const char * AsyncRT_DeviceBuffer_copyFrom(const DeviceBuffer* dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyFrom",
-                _CharPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](self._handle, src._handle)
-        )
+        self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src: DeviceBuffer[type, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from a device buffer.
@@ -433,15 +401,7 @@ struct HostBuffer[
         Args:
             src: The source device buffer to copy data from.
         """
-        # const char * AsyncRT_DeviceBuffer_copyFrom(const DeviceBuffer* dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyFrom",
-                _CharPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](self._handle, src._handle)
-        )
+        self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[type]]) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
@@ -453,15 +413,7 @@ struct HostBuffer[
         Args:
             src_ptr: Pointer to the source host memory location.
         """
-        # const char * AsyncRT_DeviceBuffer_copyFromPtr(const DeviceBuffer* dst, const void *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyFromPtr",
-                _CharPtr,
-                _DeviceBufferPtr,
-                UnsafePointer[Scalar[type]],
-            ](self._handle, src_ptr)
-        )
+        self.context().enqueue_copy(self, src_ptr)
 
     fn enqueue_fill(self, val: Scalar[type]) raises -> Self:
         """Enqueues an operation to fill this buffer with a specified value.
@@ -889,15 +841,7 @@ struct DeviceBuffer[
         Args:
             dst: The destination device buffer to copy data to.
         """
-        # const char * AsyncRT_DeviceBuffer_copyTo(const DeviceBuffer* src, const DeviceBuffer *dst)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyTo",
-                _CharPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](self._handle, dst._handle)
-        )
+        dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(self, dst: HostBuffer[type, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
@@ -909,15 +853,7 @@ struct DeviceBuffer[
         Args:
             dst: The destination host buffer to copy data to.
         """
-        # const char * AsyncRT_DeviceBuffer_copyTo(const DeviceBuffer* src, const DeviceBuffer *dst)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyTo",
-                _CharPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](self._handle, dst._handle)
-        )
+        dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[type]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
@@ -929,15 +865,7 @@ struct DeviceBuffer[
         Args:
             dst_ptr: Pointer to the destination host memory location.
         """
-        # const char * AsyncRT_DeviceBuffer_copyToPtr(const DeviceBuffer* src, void *dst)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyToPtr",
-                _CharPtr,
-                _DeviceBufferPtr,
-                UnsafePointer[Scalar[type]],
-            ](self._handle, dst_ptr)
-        )
+        self.context().enqueue_copy(dst_ptr, self)
 
     fn enqueue_copy_from(self, src: DeviceBuffer[type, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from another device buffer.
@@ -949,15 +877,7 @@ struct DeviceBuffer[
         Args:
             src: The source device buffer to copy data from.
         """
-        # const char * AsyncRT_DeviceBuffer_copyFrom(const DeviceBuffer* dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyFrom",
-                _CharPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](self._handle, src._handle)
-        )
+        self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src: HostBuffer[type, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from a host buffer.
@@ -969,15 +889,7 @@ struct DeviceBuffer[
         Args:
             src: The source host buffer to copy data from.
         """
-        # const char * AsyncRT_DeviceBuffer_copyFrom(const DeviceBuffer* dst, const DeviceBuffer *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyFrom",
-                _CharPtr,
-                _DeviceBufferPtr,
-                _DeviceBufferPtr,
-            ](self._handle, src._handle)
-        )
+        self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[type]]) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
@@ -989,15 +901,7 @@ struct DeviceBuffer[
         Args:
             src_ptr: Pointer to the source host memory location.
         """
-        # const char * AsyncRT_DeviceBuffer_copyFromPtr(const DeviceBuffer* dst, const void *src)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceBuffer_copyFromPtr",
-                _CharPtr,
-                _DeviceBufferPtr,
-                UnsafePointer[Scalar[type]],
-            ](self._handle, src_ptr)
-        )
+        self.context().enqueue_copy(self, src_ptr)
 
     fn enqueue_fill(self, val: Scalar[type]) raises -> Self:
         """Enqueues an operation to fill this buffer with a specified value.
@@ -2517,10 +2421,23 @@ struct DeviceContext:
     fn enqueue_create_host_buffer[
         type: DType
     ](self, size: Int) raises -> HostBuffer[type]:
-        """Enqueues the creation of a host memory DeviceBuffer.
+        """Enqueues the creation of a HostBuffer.
 
         This function allocates memory on the host that is accessible by the device.
         The memory is page-locked (pinned) for efficient data transfer between host and device.
+
+        Pinned memory is guaranteed to remain resident in the host's RAM, not be
+        paged/swapped out to disk. Memory allocated normally (for example, using
+        [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_ptr/UnsafePointer#alloc))
+        is pageable—individual pages of memory can be moved to secondary storage
+        (disk/SSD) when main memory fills up.
+
+        Using pinned memory allows devices to make fast transfers
+        between host memory and device memory, because they can use direct
+        memory access (DMA) to transfer data without relying on the CPU.
+
+        Allocating too much pinned memory can cause performance issues, since it
+        reduces the amount of memory available for other processes.
 
         Parameters:
             type: The data type to be stored in the allocated memory.
@@ -2529,7 +2446,7 @@ struct DeviceContext:
             size: The number of elements of `type` to allocate memory for.
 
         Returns:
-            A `DeviceBuffer` object that wraps the allocated host memory.
+            A `HostBuffer` object that wraps the allocated host memory.
 
         Raises:
             If memory allocation fails or if the device context is invalid.
@@ -3234,7 +3151,9 @@ struct DeviceContext:
     fn enqueue_copy[
         type: DType
     ](
-        self, dst_buf: DeviceBuffer[type], src_ptr: UnsafePointer[Scalar[type]]
+        self,
+        dst_buf: DeviceBuffer[type, **_],
+        src_ptr: UnsafePointer[Scalar[type]],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -3266,7 +3185,76 @@ struct DeviceContext:
     fn enqueue_copy[
         type: DType
     ](
-        self, dst_ptr: UnsafePointer[Scalar[type]], src_buf: DeviceBuffer[type]
+        self,
+        dst_buf: HostBuffer[type, **_],
+        src_ptr: UnsafePointer[Scalar[type]],
+    ) raises:
+        """Enqueues an async copy from the host to the provided device
+        buffer. The number of bytes copied is determined by the size of the
+        device buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_ptr: Host pointer to copy from.
+        """
+        # const char * AsyncRT_DeviceContext_HtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_HtoD_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceBufferPtr,
+                UnsafePointer[Scalar[type]],
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_ptr,
+            )
+        )
+
+    @always_inline
+    fn enqueue_copy[
+        type: DType
+    ](
+        self,
+        dst_ptr: UnsafePointer[Scalar[type]],
+        src_buf: DeviceBuffer[type, **_],
+    ) raises:
+        """Enqueues an async copy from the device to the host. The
+        number of bytes copied is determined by the size of the device buffer.
+
+        Parameters:
+            type: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_buf: Device buffer to copy from.
+        """
+        # const char * AsyncRT_DeviceContext_DtoH_async(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_DtoH_async",
+                _CharPtr,
+                _DeviceContextPtr,
+                UnsafePointer[Scalar[type]],
+                _DeviceBufferPtr,
+            ](
+                self._handle,
+                dst_ptr,
+                src_buf._handle,
+            )
+        )
+
+    @always_inline
+    fn enqueue_copy[
+        type: DType
+    ](
+        self,
+        dst_ptr: UnsafePointer[Scalar[type]],
+        src_buf: HostBuffer[type, **_],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
