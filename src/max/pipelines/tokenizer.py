@@ -161,14 +161,26 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
-        self.delegate = AutoTokenizer.from_pretrained(
-            model_path,
-            revision=revision,
-            trust_remote_code=trust_remote_code,
-            # If `max_length` is None, the max length will be taken
-            # from the HuggingFace tokenizer_config.
-            model_max_length=max_length,
-        )
+        try:
+            self.delegate = AutoTokenizer.from_pretrained(
+                model_path,
+                revision=revision,
+                trust_remote_code=trust_remote_code,
+                # If `max_length` is None, the max length will be taken
+                # from the HuggingFace tokenizer_config.
+                model_max_length=max_length,
+            )
+        except Exception as e:
+            msg = (
+                f"Failed to load tokenizer from {model_path}. "
+                "This can happen if:\n"
+                "- The model is not fully supported by the transformers python package\n"
+                "- Required configuration files are missing\n"
+                "- The model path is incorrect\n"
+                "- '--trust_remote_code=True' is needed but not set\n"
+            )
+            raise ValueError(msg) from e
+
         # As we are adding special tokens during chat templating prior to tokenization,
         # when add_special_tokens=True, we duplicate BOS tokens specifically.
         self._encode_with_special_tokens = functools.partial(
