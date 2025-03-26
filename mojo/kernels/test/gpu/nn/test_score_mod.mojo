@@ -7,7 +7,7 @@
 
 from math import exp2, iota
 
-from bit import is_power_of_two, log2_floor
+from bit import log2_floor
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from testing import assert_equal
 
@@ -27,7 +27,7 @@ fn generate_alibi_bias[
     var scale = SIMD[type, width](0)
 
     @parameter
-    if is_power_of_two(num_heads):
+    if num_heads.is_power_of_two():
         scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
     else:
         var log2_floor_num_heads = log2_floor(num_heads)
