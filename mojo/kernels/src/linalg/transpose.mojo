@@ -1128,8 +1128,10 @@ fn transpose[
     `output`.
 
     Example:
+        ```mojo
         transpose(output, input, [2, 0, 1])
         # guarantees output[x, y, z] = input[z, x, y]
+        ```
 
     Parameters:
         rank: The rank of input and output buffers.
