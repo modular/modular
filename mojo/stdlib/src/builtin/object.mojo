@@ -214,7 +214,7 @@ struct _Function(CollectionElement, CollectionElementNew):
     """The function pointer."""
 
     @always_inline
-    fn __init__[FnT: AnyTrivialRegType](mut self, value: FnT):
+    fn __init__[FnT: AnyTrivialRegType](out self, value: FnT):
         # FIXME: No "pointer bitcast" for signature function pointers.
         var f = UnsafePointer[Int16]()
         UnsafePointer.address_of(f).bitcast[FnT]()[] = value
@@ -325,7 +325,7 @@ struct _ObjectImpl(
 
     @always_inline
     @implicit
-    fn __init__[dt: DType](mut self, value: SIMD[dt, 1]):
+    fn __init__[dt: DType](out self, value: SIMD[dt, 1]):
         @parameter
         if dt.is_integral():
             self.value = Self.type(value)
@@ -781,7 +781,7 @@ struct object(
 
     @always_inline
     @implicit
-    fn __init__[dt: DType](mut self, value: SIMD[dt, 1]):
+    fn __init__[dt: DType](out self, value: SIMD[dt, 1]):
         """Initializes the object with a generic scalar value. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
         converted to the appropriate integer or floating point type.
@@ -835,7 +835,7 @@ struct object(
 
     @always_inline
     @implicit
-    fn __init__[*Ts: CollectionElement](mut self, value: ListLiteral[*Ts]):
+    fn __init__[*Ts: CollectionElement](out self, value: ListLiteral[*Ts]):
         """Initializes the object from a list literal.
 
         Parameters:

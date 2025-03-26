@@ -215,7 +215,7 @@ struct TemporaryDirectory:
     """Whether to ignore cleanup errors."""
 
     fn __init__(
-        mut self,
+        out self,
         suffix: String = "",
         prefix: String = "tmp",
         dir: Optional[String] = None,
@@ -293,7 +293,7 @@ struct NamedTemporaryFile:
     """Name of the file."""
 
     fn __init__(
-        mut self,
+        out self,
         mode: String = "w",
         name: Optional[String] = None,
         suffix: String = "",

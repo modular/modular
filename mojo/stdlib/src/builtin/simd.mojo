@@ -62,11 +62,11 @@ from sys import (
     is_big_endian,
     is_gpu,
     is_nvidia_gpu,
-    is_x86,
     llvm_intrinsic,
     prefetch,
     simdwidthof,
     sizeof,
+    CompilationTarget,
 )
 from sys._assembly import inlined_assembly
 from sys.info import _current_arch, _is_sm_9x
@@ -494,7 +494,7 @@ struct SIMD[type: DType, size: Int](
     @always_inline("nodebug")
     @implicit
     fn __init__(
-        mut self,
+        out self,
         value: Self._mlir_type,
     ):
         """Initializes the SIMD vector with the underlying mlir value.
@@ -1774,16 +1774,14 @@ struct SIMD[type: DType, size: Int](
             ).cast[target]()
 
         @parameter
-        if target is DType.bfloat16 and (
-            is_amd_gpu() or not _has_native_bf16_support()
-        ):
+        if target is DType.bfloat16 and not _has_native_bf16_support():
             return rebind[SIMD[target, size]](
                 _f32_to_bfloat16(self.cast[DType.float32]())
             )
 
-        return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
-            self.value
-        )
+        return __mlir_op.`pop.cast`[
+            _type = SIMD[target, size]._mlir_type, fast = __mlir_attr.unit
+        ](self.value)
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):
@@ -1929,21 +1927,6 @@ struct SIMD[type: DType, size: Int](
             upper_bound.
         """
         return max(min(self, upper_bound), lower_bound)
-
-    @always_inline("nodebug")
-    fn roundeven(self) -> Self:
-        """Performs elementwise banker's rounding on the elements of a SIMD
-        vector.
-
-        This rounding goes to the nearest integer with ties toward the nearest
-        even integer.
-
-        Returns:
-            The elementwise banker's rounding of this SIMD vector.
-        """
-        return llvm_intrinsic["llvm.roundeven", Self, has_side_effect=False](
-            self
-        )
 
     # TODO: Move to global function.
     @always_inline("nodebug")
@@ -2168,7 +2151,7 @@ struct SIMD[type: DType, size: Int](
         @parameter
         if (
             # TODO: Allow SSE3 when we have sys.has_sse3()
-            (sys.has_sse4() or sys.has_neon())
+            (CompilationTarget.has_sse4() or sys.has_neon())
             and Self.type == DType.uint8
             and Self.size == 16
         ):
@@ -2456,7 +2439,7 @@ struct SIMD[type: DType, size: Int](
             return self[0]
 
         @parameter
-        if is_x86() or size_out > 1:
+        if CompilationTarget.is_x86() or size_out > 1:
 
             @always_inline
             @parameter
@@ -2514,7 +2497,7 @@ struct SIMD[type: DType, size: Int](
             return self[0]
 
         @parameter
-        if is_x86() or size_out > 1:
+        if CompilationTarget.is_x86() or size_out > 1:
 
             @always_inline
             @parameter
@@ -2921,7 +2904,9 @@ fn _pshuf_or_tbl1(
     lookup_table: SIMD[DType.uint8, 16], indices: SIMD[DType.uint8, 16]
 ) -> SIMD[DType.uint8, 16]:
     @parameter
-    if sys.has_sse4():  # TODO: Allow SSE3 when we have sys.has_sse3()
+    if (
+        CompilationTarget.has_sse4()
+    ):  # TODO: Allow SSE3 when we have sys.has_sse3()
         return _pshuf(lookup_table, indices)
     elif sys.has_neon():
         return _tbl1(lookup_table, indices)
@@ -3204,32 +3189,9 @@ fn _convert_f32_to_float8[
 ](val: SIMD[type, size],) -> SIMD[target, size]:
     @parameter
     if is_nvidia_gpu() and _is_sm_9x():
-        alias asm_prefix = "cvt.rn.satfinite.e4m3x2.f32" if target is DType.float8_e4m3fn else "cvt.rn.satfinite.e5m2x2.f32"
-
-        @parameter
-        if size > 1:
-            var res = SIMD[target, size]()
-
-            @parameter
-            for i in range(0, size, 2):
-                var f8x2_f32x2 = inlined_assembly[
-                    asm_prefix + " $0, $1, $2;",
-                    Scalar[DType.uint16],
-                    constraints="=h,f,f",
-                    has_side_effect=False,
-                ](val[i + 1], val[i])
-                var ui8x2 = bitcast[target, 2](f8x2_f32x2)
-                res = res.insert[offset=i](ui8x2)
-            return res
-        else:
-            var f8x2_f32x2 = inlined_assembly[
-                asm_prefix + " $0, $1, $2;",
-                Scalar[DType.uint16],
-                constraints="=h,f,f",
-                has_side_effect=False,
-            ](Float32(0.0), val[0])
-            var ui8x2 = bitcast[target, 2](f8x2_f32x2)
-            return ui8x2[0]
+        return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
+            val.value
+        )
     else:
 
         @always_inline
@@ -3430,11 +3392,6 @@ fn _f32_to_bfloat16_scalar(
     if has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
         return _unchecked_zero[DType.bfloat16, 1]()
-
-    elif is_amd_gpu():
-        return __mlir_op.`pop.cast`[
-            _type = __mlir_type.`!pop.scalar<bf16>`, fast = __mlir_attr.unit
-        ](rebind[Scalar[DType.float32]](val).value)
 
     if _isnan(val):
         return _nan[DType.bfloat16]()

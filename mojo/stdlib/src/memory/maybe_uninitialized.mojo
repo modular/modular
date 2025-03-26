@@ -61,7 +61,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](CollectionElementNew):
     fn __init__[
         MovableType: Movable
     ](
-        mut self: UnsafeMaybeUninitialized[MovableType],
+        out self: UnsafeMaybeUninitialized[MovableType],
         owned value: MovableType,
     ):
         """The memory is now considered initialized.

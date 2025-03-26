@@ -163,7 +163,7 @@ struct LinkedList[
         self._tail = Self._NodePointer()
         self._size = 0
 
-    fn __init__(mut self, owned *elements: ElementType):
+    fn __init__(out self, owned *elements: ElementType):
         """Initialize a linked list with the given elements.
 
         Time Complexity: O(n) in len(elements)
@@ -208,7 +208,7 @@ struct LinkedList[
 
         self._size = length
 
-    fn __copyinit__(mut self, read other: Self):
+    fn __copyinit__(out self, read other: Self):
         """Initialize this list as a copy of another list.
 
         Time Complexity: O(n) in len(elements)
@@ -218,7 +218,7 @@ struct LinkedList[
         """
         self = other.copy()
 
-    fn __moveinit__(mut self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         """Initialize this list by moving elements from another list.
 
         Time Complexity: O(1)

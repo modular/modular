@@ -153,7 +153,7 @@ struct Bool(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[T: ImplicitlyBoolable, //](mut self, value: T):
+    fn __init__[T: ImplicitlyBoolable, //](out self, value: T):
         """Convert an ImplicitlyBoolable value to a Bool.
 
         Parameters:

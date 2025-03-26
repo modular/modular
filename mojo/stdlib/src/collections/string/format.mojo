@@ -72,7 +72,7 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         return self
 
     fn __init__(
-        mut self,
+        out self,
         first_curly: Int,
         last_curly: Int,
         field: Self._FieldVariantType,
@@ -592,7 +592,7 @@ struct _FormatSpec:
     """
 
     fn __init__(
-        mut self,
+        out self,
         fill: UInt8 = ord(" "),
         align: UInt8 = 0,
         sign: UInt8 = ord("-"),

@@ -46,7 +46,6 @@ from .paged_cache import (
     PagedKVCacheManagerFA3Fallback,
     PagedKVCacheType,
 )
-from .radix_trie import RadixTrie
 
 CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, Type[KVCacheManager]] = {
     KVCacheStrategy.CONTINUOUS: ContinuousBatchingKVCacheManager,
@@ -193,5 +192,4 @@ __all__ = [
     "KVCacheInputSymbols",
     "NaiveKVCacheManager",
     "ContinuousHFStaticCache",
-    "RadixTrie",
 ]

@@ -59,37 +59,40 @@ trait UnknownDestructibility:
 trait AnyType:
     """A trait for types that require lifetime management through destructors.
 
-        The `AnyType` trait is fundamental to Mojo's memory management system. It indicates
-        that a type has a destructor that needs to be called when instances go out of scope.
-        This is essential for types that own resources like memory, file handles, or other
-        system resources that need proper cleanup.
+    The `AnyType` trait is fundamental to Mojo's memory management system. It indicates
+    that a type has a destructor that needs to be called when instances go out of scope.
+    This is essential for types that own resources like memory, file handles, or other
+    system resources that need proper cleanup.
 
-        Key aspects:
-        - Any type with a destructor must implement this trait
-        - The destructor (`__del__`) is called automatically when an instance's lifetime ends
-        - Composition of types with destructors automatically gets a destructor
-        - All Mojo structs and traits inherit from `AnyType` by default unless they specify
-          `@explicit_destroy`
+    Key aspects:
 
-        Example:
+    - Any type with a destructor must implement this trait
+    - The destructor (`__del__`) is called automatically when an instance's lifetime ends
+    - Composition of types with destructors automatically gets a destructor
+    - All Mojo structs and traits inherit from `AnyType` by default unless they specify
+        `@explicit_destroy`
+
+    Example:
+
     ```mojo
-        @value
-        struct ResourceOwner(AnyType):
-            var ptr: UnsafePointer[Int]
+    @value
+    struct ResourceOwner(AnyType):
+        var ptr: UnsafePointer[Int]
 
-            fn __init__(out self, size: Int):
-                self.ptr = UnsafePointer[Int].alloc(size)
+        fn __init__(out self, size: Int):
+            self.ptr = UnsafePointer[Int].alloc(size)
 
-            fn __del__(owned self):
-                # Clean up owned resources
-                self.ptr.free()
+        fn __del__(owned self):
+            # Clean up owned resources
+            self.ptr.free()
     ```
 
-        Best practices:
-        - Implement this trait when your type owns resources that need cleanup
-        - Ensure the destructor properly frees all owned resources
-        - Consider using `@explicit_destroy` for types that should never have destructors
-        - Use composition to automatically handle nested resource cleanup
+    Best practices:
+
+    - Implement this trait when your type owns resources that need cleanup
+    - Ensure the destructor properly frees all owned resources
+    - Consider using `@explicit_destroy` for types that should never have destructors
+    - Use composition to automatically handle nested resource cleanup
     """
 
     fn __del__(owned self, /):

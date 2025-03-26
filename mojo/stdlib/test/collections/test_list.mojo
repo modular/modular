@@ -152,8 +152,6 @@ def test_list_pop():
 
     # list should be empty now
     assert_equal(0, len(list))
-    # capacity should be 1 according to shrink_to_fit behavior
-    assert_equal(1, list.capacity)
 
 
 def test_list_variadic_constructor():

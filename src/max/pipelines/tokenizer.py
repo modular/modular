@@ -314,6 +314,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
+            ignore_eos=request.ignore_eos,
         )
         return context
 
@@ -565,5 +566,6 @@ class TextAndVisionTokenizer(
             if max_gen_tokens is not None
             else None,
             json_schema=json_schema,
+            ignore_eos=request.ignore_eos,
         )
         return context

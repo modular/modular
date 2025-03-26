@@ -166,6 +166,11 @@ class TokenGeneratorRequest:
     """
     Optional list of stop expressions (see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
     """
+    ignore_eos: bool = False
+    """
+    If set to True, the response will ignore the EOS token, and continue to generate until the Max tokens or a
+    stop string is hit.
+    """
 
     def __str__(self) -> str:
         txt = f"Id: {self.id}"

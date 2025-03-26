@@ -221,6 +221,15 @@ def test_span_coerce():
     takes_span(a)
 
 
+# We don't actually need to call this test
+# but we want to make sure it compiles
+def test_conditional_conformance():
+    var l = List[Int](1, 2, 3)
+    var s = Span[Int, alignment=2](l)
+    s.fill(0)
+    _ = s == s
+
+
 def main():
     test_span_list_int()
     test_span_list_str()

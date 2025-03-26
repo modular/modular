@@ -677,9 +677,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         for j in range(normalized_idx + 1, self._len):
             (self.data + j).move_pointee_into(self.data + j - 1)
         self._len -= 1
-        if self._len * 4 < self.capacity:
-            if self.capacity > 1:
-                self._realloc(self.capacity // 2)
+
         return ret_val^
 
     fn reserve(mut self, new_capacity: Int):

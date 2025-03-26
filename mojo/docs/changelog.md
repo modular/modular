@@ -26,13 +26,13 @@ what we publish.
   Example:
   
   ```mojo
-    def my_function(mut arg: Variant):
+    def takes_variant(mut arg: Variant):
         if arg.is_type_supported[Float64]():
             arg = Float64(1.5)
 
     def main():
         var x = Variant[Int, Float64](1)
-        my_function(x)
+        takes_variant(x)
         if x.isa[Float64]():
             print(x[Float64]) # 1.5
   ```
@@ -40,5 +40,8 @@ what we publish.
 ### Tooling changes
 
 ### ❌ Removed
+
+- The `SIMD.roundeven()` method has been removed from the standard library.
+  This functionality is now handled by the `round()` function.
 
 ### 🛠️ Fixed

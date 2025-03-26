@@ -54,6 +54,7 @@ from .info import (
     simdbytewidth,
     simdwidthof,
     sizeof,
+    CompilationTarget,
 )
 from .intrinsics import (
     PrefetchCache,
