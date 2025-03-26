@@ -51,6 +51,7 @@ class MoE(Module):
         moe_intermediate_size: int = 1408,
         max_position_embeddings: int = 2048,
         n_shared_experts: int = 2,
+        dtype: DType = DType.bfloat16,
     ):
         """
         Args:
@@ -82,7 +83,7 @@ class MoE(Module):
                     self.max_position_embeddings,
                     self.moe_intermediate_size,
                 ),
-                dtype=DType.bfloat16,
+                dtype=dtype,
             )
             setattr(self, f"down_proj{i}", d)
             self.down_proj.append(d)
@@ -93,7 +94,7 @@ class MoE(Module):
                     self.moe_intermediate_size,
                     self.max_position_embeddings,
                 ),
-                dtype=DType.bfloat16,
+                dtype=dtype,
             )
             setattr(self, f"gate_proj{i}", g)
             self.gate_proj.append(g)
@@ -104,7 +105,7 @@ class MoE(Module):
                     self.moe_intermediate_size,
                     self.max_position_embeddings,
                 ),
-                dtype=DType.bfloat16,
+                dtype=dtype,
             )
             setattr(self, f"up_proj{i}", u)
             self.up_proj.append(u)
@@ -113,17 +114,17 @@ class MoE(Module):
         self.shared_expert_up_proj = LinearV2(
             in_dim=self.max_position_embeddings,
             out_dim=self.moe_intermediate_size * self.n_shared_experts,
-            dtype=DType.bfloat16,
+            dtype=dtype,
         )
         self.shared_expert_down_proj = LinearV2(
             in_dim=self.moe_intermediate_size * self.n_shared_experts,
             out_dim=self.max_position_embeddings,
-            dtype=DType.bfloat16,
+            dtype=dtype,
         )
         self.shared_expert_gate_proj = LinearV2(
             in_dim=self.max_position_embeddings,
             out_dim=self.moe_intermediate_size * self.n_shared_experts,
-            dtype=DType.bfloat16,
+            dtype=dtype,
         )
 
     def __call__(self, hidden_states: TensorValue):
@@ -156,6 +157,7 @@ class MoE(Module):
         hidden_states = ops.unsqueeze(
             ops.unsqueeze(hidden_states[0], axis=1), axis=-1
         )
+
         # (seq_len, k, h, w) @ (seq_len, 1, w, 1) -> (seq_len, k, h, 1)
         up_projs = topk_up_proj @ hidden_states
 
@@ -166,16 +168,19 @@ class MoE(Module):
         up_gate_projs = up_projs * gate_projs
 
         # (seq_len, k, w, h) @ (seq_len, k, h, 1) -> (seq_len, k, w)
-        down_projs = ops.squeeze(topk_down_proj @ up_gate_projs, axis=-1)
-
-        topk_weight = ops.unsqueeze(topk_weight, axis=2)
-        final_out = ops.squeeze(
-            ops.sum(down_projs * topk_weight, axis=1), axis=1
+        down_projs = ops.squeeze(topk_down_proj @ up_gate_projs, axis=-1).cast(
+            topk_weight.dtype
         )
+        topk_weight = ops.unsqueeze(topk_weight, axis=1)
+
+        # (seq_len, 1, k) @ (seq_len, k, w) -> (seq_len, 1, w)
+        summed_down_projs = (topk_weight @ down_projs).cast(identity.dtype)
+        final_out = ops.squeeze(summed_down_projs, axis=1)
 
         # TODO(MODELS-396): Probably should be a MLPV2 layer
         shared_expert_out = self.shared_expert_down_proj(
             ops.silu(self.shared_expert_gate_proj(identity))
             * self.shared_expert_up_proj(identity)
         )
+
         return final_out + shared_expert_out
