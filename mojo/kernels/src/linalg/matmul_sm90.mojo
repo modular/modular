@@ -1194,8 +1194,6 @@ fn hopper_matmul_tma_wgmma_kernel[
     wgmma_shape: IndexList[3],
     a_desc_layout: Layout,
     b_desc_layout: Layout,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     transpose_b: Bool = True,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
@@ -1212,6 +1210,9 @@ fn hopper_matmul_tma_wgmma_kernel[
 
     alias num_m_mmas = BM // wgmma_shape[0]
     alias num_n_mmas = BN // wgmma_shape[1]
+
+    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK]()
+    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK]()
 
     alias accum_type = get_accum_type[a_type]()
     alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
@@ -1347,9 +1348,6 @@ fn hopper_matmul_tma_wgmma[
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
-
-    alias a_smem_layout = tile_layout_k_major[a_type, BM, BK]()
-    alias b_smem_layout = tile_layout_k_major[b_type, BN, BK]()
 
     a_tma_op = create_tma_tile[a_type, 2, Index(BM, BK)](ctx, a)
     b_tma_op = create_tma_tile[b_type, 2, Index(BN, BK)](ctx, b)
