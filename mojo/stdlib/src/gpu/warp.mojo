@@ -71,6 +71,19 @@ fn _shuffle[
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[type]
         ](Int32(mask), val, offset, WIDTH_MASK)
+    elif type in (DType.int64, DType.uint64):
+        var val_bitcast = bitcast[
+            new_type = DType.uint32, new_width = simd_width * 2
+        ](val)
+        val_half1, val_half2 = val_bitcast.deinterleave()
+        var shuffle1 = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
+            mask, val_half1, offset
+        )
+        var shuffle2 = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
+            mask, val_half2, offset
+        )
+        var result = shuffle1.interleave(shuffle2)
+        return bitcast[type, simd_width](result)
     elif type.is_half_float():
 
         @parameter
