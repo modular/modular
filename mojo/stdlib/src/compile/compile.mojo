@@ -81,7 +81,9 @@ struct _PopulateInfo:
 
 @value
 @register_passable("trivial")
-struct Info[func_type: AnyTrivialRegType, func: func_type]:
+struct Info[func_type: AnyTrivialRegType, func: func_type](
+    Stringable, Writable
+):
     """Contains compilation information and results for a function.
 
     Stores assembly/IR code, function metadata, and error information from
