@@ -266,7 +266,7 @@ def execute_flash_attention[
             alias BK = (
                 (UInt(32) if type is DType.float32 else UInt(64))
                 // (1 if nps == 2 else 2)
-            ) if has_nvidia_gpu_accelerator() else 128
+            ) if has_nvidia_gpu_accelerator() else 32
             alias config = MHAConfig(
                 type,
                 num_q_heads,

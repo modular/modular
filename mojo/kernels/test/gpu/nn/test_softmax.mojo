@@ -17,7 +17,7 @@ from layout.layout_tensor import LayoutTensor
 from memory import UnsafePointer
 from nn.softmax import _online_softmax_kernel, _softmax_cpu, _softmax_gpu
 from testing import assert_almost_equal
-
+from sys import has_amd_gpu_accelerator
 from utils import IndexList
 
 
@@ -197,7 +197,9 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     _ = in_device_ref
 
 
-fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
+fn test_gpu_online_softmax[
+    WM: Int, WN: Int, transpose_fragments: Bool
+](ctx: DeviceContext) raises:
     print("== test_online_softmax")
 
     alias type = DType.float32
@@ -238,12 +240,17 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     )
 
     rand[type](in_host_ptr, shape.flattened_length())
+
     ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
     ctx.enqueue_function[
         _online_softmax_kernel[
-            WM, WN, DType.float32, Layout.row_major(shape[1], shape[2])
-        ]
+            WM,
+            WN,
+            DType.float32,
+            Layout.row_major(shape[1], shape[2]),
+            transpose_fragments,
+        ],
     ](
         in_device,
         out_device,
@@ -289,6 +296,13 @@ def main():
         test_gpu_softmax_half[DType.bfloat16](ctx)
         test_gpu_softmax_half[DType.float16](ctx)
         # Test general online-softmax, communicating data via shared memory.
-        test_gpu_online_softmax[32, 32](ctx)
+
+        test_gpu_online_softmax[32, 32, False](ctx)
         # Test covering entire row within one warp
-        test_gpu_online_softmax[16, 128](ctx)
+        test_gpu_online_softmax[16, 128, False](ctx)
+
+        @parameter
+        if has_amd_gpu_accelerator():
+            test_gpu_online_softmax[32, 32, True](ctx)
+            # Test covering entire row within one warp
+            test_gpu_online_softmax[16, 128, True](ctx)
