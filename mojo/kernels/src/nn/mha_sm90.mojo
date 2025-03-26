@@ -1093,9 +1093,6 @@ fn _mha_single_batch_sm90_fa3[
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation()
-        _ = rowmax.vectorize[accum_simd_width]().fill(
-            min_or_neg_inf[accum_type]()
-        )
 
         # Mask global memory iterator.
         mask_warp_row = warp_y * WM
@@ -1337,7 +1334,7 @@ fn _mha_single_batch_sm90_fa3[
                 Layout.row_major(num_warps_m, num_warps_n),
                 mma_thread_layout,
                 use_exp2=True,
-            ](vectorize_output(p_reg_tile), rowmax)
+            ](vectorize_output(p_reg_tile), rowmax, init_rowmax=True)
         )
         rowsum.copy_from(
             _rowsum[mma_thread_layout](vectorize_output(p_reg_tile))
@@ -1382,12 +1379,14 @@ fn _mha_single_batch_sm90_fa3[
             read_pipeline_states.step()
             read_idx = read_pipeline_states.index()
             read_phase = read_pipeline_states.phase()
-            p_frag.copy_from(  # copy new pfrag, used by `p_mul_v` on next iter
+            p_frag.vectorize[
+                1, a_frag_size
+            ]().copy_from(  # copy new pfrag, used by `p_mul_v` on next iter
                 p_reg_tile.reshape[
                     Layout.row_major(
                         num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
                     )
-                ](),
+                ]().vectorize[1, a_frag_size](),
             )
 
             # start wgmmas
@@ -1481,12 +1480,12 @@ fn _mha_single_batch_sm90_fa3[
             read_idx_prev = read_idx
             read_phase_prev = read_phase
 
-        p_frag.copy_from(
+        p_frag.vectorize[1, a_frag_size]().copy_from(
             p_reg_tile.reshape[
                 Layout.row_major(
                     num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
                 )
-            ](),
+            ]().vectorize[1, a_frag_size](),
         )
         p_mul_v(read_idx_prev, read_phase_prev)
 
