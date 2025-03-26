@@ -1039,3 +1039,19 @@ struct TestSIMDInputSize2:
         type: DType
     ](out: OutputTensor[type=type, rank=2], input: SIMD[type=type, size=2],):
         out[0] = input[0]
+
+
+@compiler.register("custom_op_with_custom_parameter_shape_func")
+struct CustomOpWithCustomParameterShapeFunc:
+    @staticmethod
+    fn execute[
+        test_flag: Int
+    ](y: FusedOutputTensor, x: FusedInputTensor) raises:
+        raise "This should not run!"
+
+    @always_inline
+    @staticmethod
+    fn shape[
+        test_flag: Int
+    ](input_tensor: InputTensor,) -> IndexList[input_tensor.rank]:
+        return input_tensor.shape()
