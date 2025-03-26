@@ -44,7 +44,7 @@ TEST(StackTraceTest, testStackTraceFormat) {
       frameDescs[1],
       ContainsRegex(
           R"(stack_trace::Foo<stdlib::builtin::int::Int, stdlib::builtin::int::Int>)"
-          R"(::getParametrized<stdlib::builtin::simd::SIMD,type=f32,size=1>\(self=.* @ 0x.*,)"
+          R"(::getParametrized<stdlib::builtin::simd::SIMD,dtype=f32,size=1>\(self=.* @ 0x.*,)"
           R"( val=\(\[0] = 105.25\)\) at stack_trace.mojo:17:31)"));
   EXPECT_THAT(
       frameDescs[2],
