@@ -29,7 +29,8 @@ Example:
     var filled = InlineArray[Int, 5](fill=42)
 ```
 
-Note:
+Notes:
+
 - For historical reasons, destructors are not run by default on the elements of an `InlineArray`.
   This can be controlled with the `run_destructors` parameter. In the future, this will
   default to `True` and the `run_destructors` parameter will be removed.
@@ -153,8 +154,9 @@ struct InlineArray[
                 All elements must be initialized.
 
         Warning:
-            This is an unsafe constructor. Only use it if you are certain all elements
-            are properly initialized.
+
+        This is an unsafe constructor. Only use it if you are certain all elements
+        are properly initialized.
         """
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
@@ -179,22 +181,23 @@ struct InlineArray[
             fill: The element value to fill each index with.
 
         Example:
-            ```mojo
-            var filled = InlineArray[Int, 5](fill=42)  # [42, 42, 42, 42, 42]
 
-            # For large arrays, consider adjusting batch_size to balance
-            # compile time and runtime performance:
-            var large = InlineArray[Int, 10000, batch_size=32](fill=0)
-            ```
+        ```mojo
+        var filled = InlineArray[Int, 5](fill=42)  # [42, 42, 42, 42, 42]
+
+        # For large arrays, consider adjusting batch_size to balance
+        # compile time and runtime performance:
+        var large = InlineArray[Int, 10000, batch_size=32](fill=0)
+        ```
 
         Notes:
 
-            - Full unrolling with large arrays (>2k elements) can cause significant
-              compiler slowdowns
-            - Using batch_size=64 balances AVX512 efficiency and instruction cache usage
-            - For very large arrays, using smaller batch sizes (e.g., 32 or 16) can
-              further improve compilation speed while still maintaining good runtime
-              performance
+        - Full unrolling with large arrays (>2k elements) can cause significant
+            compiler slowdowns.
+        - Using batch_size=64 balances AVX512 efficiency and instruction cache usage.
+        - For very large arrays, using smaller batch sizes (e.g., 32 or 16) can
+            further improve compilation speed while still maintaining good runtime
+            performance.
         """
         _inline_array_construction_checks[size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
@@ -225,9 +228,10 @@ struct InlineArray[
             elems: The elements to initialize the array with. Must match the array size.
 
         Example:
-            ```mojo
-            var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
-            ```
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
+        ```
         """
 
         self = Self(storage=elems^)
@@ -266,11 +270,11 @@ struct InlineArray[
             A new array containing copies of all elements.
 
         Example:
-            ```mojo
-            var arr = InlineArray[Int, 3](1, 2, 3)
-            var copy = arr.copy()  # Creates new array [1, 2, 3]
-            ```
-        .
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)
+        var copy = arr.copy()  # Creates new array [1, 2, 3]
+        ```
         """
 
         var copy = Self(uninitialized=True)
@@ -300,10 +304,11 @@ struct InlineArray[
         on each element in the array before deallocating the array's memory.
 
         Example:
-            ```mojo
-            var arr = InlineArray[Int, 3](1, 2, 3)
-            # arr's destructor is called automatically when it goes out of scope
-            ```
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)
+        # arr's destructor is called automatically when it goes out of scope
+        ```
         """
 
         @parameter
@@ -336,14 +341,14 @@ struct InlineArray[
             A reference to the element at the specified index.
 
         Example:
-            ```mojo
-            var arr = InlineArray[Int, 3](1, 2, 3)
-            print(arr[0])   # Prints 1 - first element
-            print(arr[1])   # Prints 2 - second element
-            print(arr[-1])  # Prints 3 - last element
-            print(arr[-2])  # Prints 2 - second to last element
-            ```
-        .
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)
+        print(arr[0])   # Prints 1 - first element
+        print(arr[1])   # Prints 2 - second element
+        print(arr[-1])  # Prints 3 - last element
+        print(arr[-2])  # Prints 2 - second to last element
+        ```
         """
         var normalized_index = normalize_index["InlineArray"](idx, len(self))
         return self.unsafe_get(normalized_index)
@@ -367,12 +372,12 @@ struct InlineArray[
             A reference to the element at the specified index.
 
         Example:
-            ```mojo
-            var arr = InlineArray[Int, 3](1, 2, 3)
-            print(arr[0])   # Prints 1 - first element
-            print(arr[-1])  # Prints 3 - last element
-            ```
-        .
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)
+        print(arr[0])   # Prints 1 - first element
+        print(arr[-1])  # Prints 3 - last element
+        ```
         """
         constrained[-size <= Int(idx) < size, "Index must be within bounds."]()
         alias normalized_index = normalize_index["InlineArray"](idx, size)
@@ -393,11 +398,11 @@ struct InlineArray[
             The size of the array as an Int.
 
         Example:
-            ```mojo
-            var arr = InlineArray[Int, 3](1, 2, 3)
-            print(len(arr))  # Prints 3
-            ```
-            .
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)
+        print(len(arr))  # Prints 3
+        ```
         """
         return size
 
@@ -423,16 +428,17 @@ struct InlineArray[
             A reference to the element at the given index.
 
         Warning:
-            This is an unsafe method. No bounds checking is performed.
-            Using an invalid index will cause undefined behavior.
-            Negative indices are not supported.
+
+        This is an unsafe method. No bounds checking is performed.
+        Using an invalid index will cause undefined behavior.
+        Negative indices are not supported.
 
         Example:
-            ```mojo
-            var arr = InlineArray[Int, 3](1, 2, 3)
-            print(arr.unsafe_get(0))  # Prints 1
-            ```
-            .
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)
+        print(arr.unsafe_get(0))  # Prints 1
+        ```
         """
         var i = index(idx)
         debug_assert(
@@ -466,18 +472,19 @@ struct InlineArray[
             matches that of the array reference.
 
         Warning:
-            This is an unsafe method. The returned pointer:
-            - Becomes invalid if the array is moved
-            - Must not be used to access memory outside array bounds
-            - Must be refreshed after any operation that could move the array
+
+        This is an unsafe method. The returned pointer:
+        - Becomes invalid if the array is moved
+        - Must not be used to access memory outside array bounds
+        - Must be refreshed after any operation that could move the array
 
         Example:
-            ```mojo
-            var arr = InlineArray[Int, 3](1, 2, 3)
-            var ptr = arr.unsafe_ptr()
-            print(ptr[0])  # Prints 1
-            ```
-            .
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)
+        var ptr = arr.unsafe_ptr()
+        print(ptr[0])  # Prints 1
+        ```
         """
         return UnsafePointer.address_of(self._array).bitcast[Self.ElementType]()
 
@@ -502,12 +509,12 @@ struct InlineArray[
             True if the value is found in any position in the array, False otherwise.
 
         Example:
-            ```mojo
-            var arr = InlineArray[Int, 3](1, 2, 3)
-            print(3 in arr)  # Prints True - value exists
-            print(4 in arr)  # Prints False - value not found
-            ```
-            .
+
+        ```mojo
+        var arr = InlineArray[Int, 3](1, 2, 3)
+        print(3 in arr)  # Prints True - value exists
+        print(4 in arr)  # Prints False - value not found
+        ```
         """
 
         @parameter

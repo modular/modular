@@ -49,9 +49,7 @@ fn constrained[cond: Bool, msg: StringSlice]():
             cores >= 2,
             "at least two cores are required"
         ]()
-
     ```
-
     """
     __mlir_op.`kgen.param.assert`[
         cond = cond.__mlir_i1__(),
@@ -82,5 +80,6 @@ fn constrained[cond: Bool]():
     def multicore_check[cores: Int]():
         constrained[cores <= num_physical_cores()]()
         constrained[cores >= 2]()
+    ```
     """
     constrained[cond, "param assertion failed"]()
