@@ -91,7 +91,7 @@ def test_array_int():
             assert_equal(arr[i], arg)
 
     def test_init_fill_scalars[
-        *DTs: DType, sizes: List[Int], batch_sizes: List[Int]
+        *dts: DType, sizes: List[Int], batch_sizes: List[Int]
     ]():
         @parameter
         for current_batch_size in range(len(batch_sizes)):
