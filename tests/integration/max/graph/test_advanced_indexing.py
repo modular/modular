@@ -60,6 +60,20 @@ class StandardInputAndIndexTensors:
     def max_output_tensor_type(self, dtype=DType.float32) -> TensorType:
         return TensorType(dtype, self.output_tensor_shape())
 
+    def max_output_tensor_type_unknown_shape(
+        self, dtype=DType.float32
+    ) -> TensorType:
+        shape = self.output_tensor_shape()
+
+        # Replace known integer dims with symbolic unknown values.
+        # We expect a runtime shape function to populate these values.
+        assert len(shape) <= 26, (
+            "Logic below only works for rank under 26, "
+            "expect weird dimension names otherwise."
+        )
+        erased_shape = [chr(ord("a") + i) for i in range(len(shape))]
+        return TensorType(dtype, erased_shape)
+
     def max_update_tensor_type(self, dtype=DType.float32) -> TensorType:
         return TensorType(dtype, self.output_tensor_shape())
 
@@ -94,8 +108,13 @@ class StandardInputAndIndexTensors:
 @pytest.mark.parametrize("start_axis", [0, 2])
 @pytest.mark.parametrize("num_indexing_tensors", [1, 3])
 @pytest.mark.parametrize("indexing_tensor_rank", [1, 2])
+@pytest.mark.parametrize("use_unknown_shape", [True, False])
 def test_advanced_indexing_get_item(
-    session, start_axis, num_indexing_tensors, indexing_tensor_rank
+    session,
+    start_axis,
+    num_indexing_tensors,
+    indexing_tensor_rank,
+    use_unknown_shape,
 ):
     data_generator = StandardInputAndIndexTensors(
         input_tensor_shape=[INPUT_DIM_LENGTH] * RANK,
@@ -114,7 +133,11 @@ def test_advanced_indexing_get_item(
         out = ops.custom(
             "advanced_indexing_getitem",
             values=list(graph.inputs),
-            out_types=[data_generator.max_output_tensor_type()],
+            out_types=[
+                data_generator.max_output_tensor_type()
+                if use_unknown_shape
+                else data_generator.max_output_tensor_type_unknown_shape()
+            ],
             parameters={"start_axis": start_axis},
         )[0]
         graph.output(out.cast(DType.float32))
