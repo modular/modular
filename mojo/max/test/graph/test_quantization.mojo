@@ -34,46 +34,50 @@ from testing import assert_equal
 
 
 def test_quantize_bfloat16():
+    # TODO(KERN-228): Enable for neon too once LLVM bfloat16 emulation matures on ARM.
     @parameter
-    if sys.has_neon():
-        # TODO(KERN-228): Enable once LLVM bfloat16 emulation matures on ARM.
-        return
+    if not sys.has_neon():
+        # Define hyperparameters.
+        alias num_tokens = 32
+        alias channels = 16
 
-    # Define hyperparameters.
-    alias num_tokens = 32
-    alias channels = 16
+        # Initialize graph.
+        g = Graph(
+            "bfloat16_quantization",
+            in_types=List[Type](
+                TensorType(DType.uint8, num_tokens, 2 * channels)
+            ),
+            out_types=List[Type](
+                TensorType(DType.uint8, num_tokens, 2 * channels)
+            ),
+        )
 
-    # Initialize graph.
-    g = Graph(
-        "bfloat16_quantization",
-        in_types=List[Type](TensorType(DType.uint8, num_tokens, 2 * channels)),
-        out_types=List[Type](TensorType(DType.uint8, num_tokens, 2 * channels)),
-    )
+        # Generate normally-distributed random tensor to quantize.
+        f32_tensor = Tensor[DType.float32].randn(
+            TensorShape(num_tokens, channels)
+        )
 
-    # Generate normally-distributed random tensor to quantize.
-    f32_tensor = Tensor[DType.float32].randn(TensorShape(num_tokens, channels))
+        # Quantize the float32 token embeddings to bfloat16.
+        bfloat16_symbol = g.quantize[BFloat16Encoding](f32_tensor)
 
-    # Quantize the float32 token embeddings to bfloat16.
-    bfloat16_symbol = g.quantize[BFloat16Encoding](f32_tensor)
+        # Add zeros with the weights as a "pseudo identity" op.
+        # Otherwise the API/runtime returns an invalid stack address as output.
+        # TODO(GEX-498): Fix issue returning mgp.buffer.constant directly.
+        g.output(bfloat16_symbol + g[0])
 
-    # Add zeros with the weights as a "pseudo identity" op.
-    # Otherwise the API/runtime returns an invalid stack address as output.
-    # TODO(GEX-498): Fix issue returning mgp.buffer.constant directly.
-    g.output(bfloat16_symbol + g[0])
+        zeros = Tensor[DType.uint8](TensorShape(num_tokens, 2 * channels))
+        memset_zero(zeros.unsafe_ptr(), zeros.num_elements())
 
-    zeros = Tensor[DType.uint8](TensorShape(num_tokens, 2 * channels))
-    memset_zero(zeros.unsafe_ptr(), zeros.num_elements())
+        output = execute_unary(g, zeros)
 
-    output = execute_unary(g, zeros)
+        # Bitcast output to bfloat16 then cast to float32 to verify.
+        output = Tensor(
+            TensorShape(num_tokens, channels),
+            output._steal_ptr().bitcast[BFloat16](),
+        ).astype[DType.float32]()
 
-    # Bitcast output to bfloat16 then cast to float32 to verify.
-    output = Tensor(
-        TensorShape(num_tokens, channels),
-        output._steal_ptr().bitcast[BFloat16](),
-    ).astype[DType.float32]()
-
-    # Set rtol based on bfloat16 resolution: 0.01.
-    assert_tensors_almost_equal(f32_tensor, output, rtol=1e-2)
+        # Set rtol based on bfloat16 resolution: 0.01.
+        assert_tensors_almost_equal(f32_tensor, output, rtol=1e-2)
 
 
 def test_quantize_q4_0():
@@ -142,7 +146,7 @@ def test_quantize_q4_0():
 
 
 def test_find_extrema():
-    array3 = InlineArray[Float32, 3](1.5, -3.2, 0.6)
+    array3 = InlineArray[Float32, 4](1.5, -3.2, 0.6, 1.0)
     min, max = _find_extrema[array3.size](array3.unsafe_ptr())
     assert_equal(min, -3.2)
     assert_equal(max, 1.5)
