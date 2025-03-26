@@ -5,6 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 # Implementation of the C++ backed DeviceContext in Mojo
+"""This module provides functionality for interacting with accelerators. In
+particular the
+[`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) struct,
+which represents a single stream of execution on a given accelerator. You can
+use this struct to allocate accelerator memory, copy data to and from the
+accelerator, and compile and execute functions on the accelerator."""
 
 from collections import List, Optional
 from collections.string import StaticString, StringSlice
@@ -1002,27 +1008,27 @@ struct DeviceBuffer[
         Raises:
             If there's an error during buffer creation or data transfer.
 
-        Note:
-            Values modified inside the `with` statement are updated on the
-            device when the `with` statement exits.
+        Notes:
+
+        Values modified inside the `with` statement are updated on the
+        device when the `with` statement exits.
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            var ctx = DeviceContext()
-            var length = 1024
-            var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
-            var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+        var ctx = DeviceContext()
+        var length = 1024
+        var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
+        var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
 
-            # Initialize the input and output with known values.
-            with in_dev.map_to_host() as in_host, out_dev.map_to_host() as out_host:
-                for i in range(length):
-                    in_host[i] = i
-                    out_host[i] = 255
-            ```
-            .
+        # Initialize the input and output with known values.
+        with in_dev.map_to_host() as in_host, out_dev.map_to_host() as out_host:
+            for i in range(length):
+                in_host[i] = i
+                out_host[i] = 255
+        ```
         """
         return Self._HostMappedBufferType(self.context(), self)
 
@@ -1089,17 +1095,17 @@ struct DeviceStream:
 
     Example:
 
-        ```mojo
-        from gpu.host import DeviceContext, DeviceStream
-        var ctx = DeviceContext(0)  # Select first GPU
-        var stream = DeviceStream(ctx)
+    ```mojo
+    from gpu.host import DeviceContext, DeviceStream
+    var ctx = DeviceContext(0)  # Select first GPU
+    var stream = DeviceStream(ctx)
 
-        # Launch operations on the stream
-        # ...
+    # Launch operations on the stream
+    # ...
 
-        # Wait for all operations in the stream to complete
-        stream.synchronize()
-        ```
+    # Wait for all operations in the stream to complete
+    stream.synchronize()
+    ```
     """
 
     var _handle: _DeviceStreamPtr
@@ -1114,7 +1120,7 @@ struct DeviceStream:
             ctx: The device context to associate this stream with.
 
         Raises:
-            If stream creation fails.
+            - If stream creation fails.
         """
         var result = _DeviceStreamPtr()
         # const char *AsyncRT_DeviceContext_stream(const DeviceStream **result, const DeviceContext *ctx)
@@ -1176,16 +1182,15 @@ struct DeviceStream:
 
         Example:
 
-            ```mojo
-            # Launch kernel or memory operations on the stream
-            # ...
+        ```mojo
+        # Launch kernel or memory operations on the stream
+        # ...
 
-            # Wait for completion
-            stream.synchronize()
+        # Wait for completion
+        stream.synchronize()
 
-            # Now it's safe to use results on the host
-            ```
-            .
+        # Now it's safe to use results on the host
+        ```
         """
         # const char *AsyncRT_DeviceStream_synchronize(const DeviceStream *stream)
         _checked(
@@ -1235,17 +1240,18 @@ struct DeviceFunction[
         _ptxas_info_verbose: Whether to enable verbose PTX assembly output. Defaults to False.
 
     Example:
-        ```mojo
-        from gpu.host import DeviceContext, DeviceFunction
 
-        fn my_kernel(x: Int, y: Int):
-            # Kernel implementation
-            pass
+    ```mojo
+    from gpu.host import DeviceContext, DeviceFunction
 
-        var ctx = DeviceContext()
-        var kernel = ctx.compile_function[my_kernel]()
-        ctx.enqueue_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
-        ```
+    fn my_kernel(x: Int, y: Int):
+        # Kernel implementation
+        pass
+
+    var ctx = DeviceContext()
+    var kernel = ctx.compile_function[my_kernel]()
+    ctx.enqueue_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
+    ```
     """
 
     # emit asm if cross compiling for nvidia gpus.
@@ -1482,9 +1488,10 @@ struct DeviceFunction[
         Raises:
             If any file operations fail during the dumping process.
 
-        Note:
-            When a path contains '%', it will be replaced with the module name to
-            help disambiguate multiple kernel dumps.
+        Notes:
+
+        When a path contains '%', it will be replaced with the module name to
+        help disambiguate multiple kernel dumps.
         """
 
         fn get_asm() -> StaticString:
@@ -1734,15 +1741,14 @@ struct DeviceFunction[
 
         Example:
 
-            ```mojo
-            from gpu.host import Attribute, DeviceFunction
+        ```mojo
+        from gpu.host import Attribute, DeviceFunction
 
-            var device_function = DeviceFunction(...)
+        var device_function = DeviceFunction(...)
 
-            # Get the maximum number of threads per block for this function
-            var max_threads = device_function.get_attribute(Attribute.MAX_THREADS_PER_BLOCK)
-            ```
-            .
+        # Get the maximum number of threads per block for this function
+        var max_threads = device_function.get_attribute(Attribute.MAX_THREADS_PER_BLOCK)
+        ```
         """
         var result: Int32 = 0
         # const char *AsyncRT_DeviceFunction_getAttribute(int32_t *result, const DeviceFunction *func, int32_t attr_code)
@@ -2036,7 +2042,9 @@ struct DeviceExternalFunction:
 @register_passable
 struct DeviceContext:
     """Represents a single stream of execution on a particular accelerator
-    (GPU). A `DeviceContext` serves as the low-level interface to the
+    (GPU).
+
+    A `DeviceContext` serves as the low-level interface to the
     accelerator inside a MAX [custom operation](/max/custom-ops/) and provides
     methods for allocating buffers on the device, copying data between host and
     device, and for compiling and running functions (also known as kernels) on
@@ -2110,16 +2118,15 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            # Create a context for the default GPU
-            var ctx = DeviceContext()
+        # Create a context for the default GPU
+        var ctx = DeviceContext()
 
-            # Create a context for a specific GPU (device 1) with buffer caching
-            var ctx2 = DeviceContext(1, buffer_cache_size=1024*1024)
-            ```
-            .
+        # Create a context for a specific GPU (device 1) with buffer caching
+        var ctx2 = DeviceContext(1, buffer_cache_size=1024*1024)
+        ```
         """
         # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *api, int id)
         var result = _DeviceContextPtr()
@@ -2219,15 +2226,14 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            # Using DeviceContext as a context manager
-            with DeviceContext() as ctx:
-                # Perform GPU operations
-                # Resources are automatically released when exiting the block
-            ```
-            .
+        # Using DeviceContext as a context manager
+        with DeviceContext() as ctx:
+            # Perform GPU operations
+            # Resources are automatically released when exiting the block
+        ```
         """
         return self^
 
@@ -2244,13 +2250,12 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            var ctx = DeviceContext()
-            print("Running on device:", ctx.name())
-            ```
-            .
+        var ctx = DeviceContext()
+        print("Running on device:", ctx.name())
+        ```
         """
         # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
         var name_ptr = external_call[
@@ -2285,20 +2290,19 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            var ctx = DeviceContext()
-            var api_name = ctx.api()
-            print("Using device API:", api_name)
+        var ctx = DeviceContext()
+        var api_name = ctx.api()
+        print("Using device API:", api_name)
 
-            # Conditionally execute code based on the API
-            if api_name == "cuda":
-                print("Running on NVIDIA GPU")
-            elif api_name == "hip":
-                print("Running on AMD GPU")
-            ```
-            .
+        # Conditionally execute code based on the API
+        if api_name == "cuda":
+            print("Running on NVIDIA GPU")
+        elif api_name == "hip":
+            print("Running on AMD GPU")
+        ```
         """
         # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
         var api_ptr = StaticString(ptr=UnsafePointer[Byte](), length=0)
@@ -2384,17 +2388,16 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            with DeviceContext() as ctx:
-                # Allocate host memory accessible by the device
-                var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
+        with DeviceContext() as ctx:
+            # Allocate host memory accessible by the device
+            var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
 
-                # Use the host buffer for device operations
-                # ...
-            ```
-            .
+            # Use the host buffer for device operations
+            # ...
+        ```
         """
         return HostBuffer[type](self, size)
 
@@ -2541,21 +2544,20 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
-            from gpu.host.device_context import DeviceExternalFunction
+        ```mojo
+        from gpu.host import DeviceContext
+        from gpu.host.device_context import DeviceExternalFunction
 
-            var ctx = DeviceContext()
-            var ptx_code = "..."  # PTX assembly code
-            var ext_func = DeviceExternalFunction(function_name="my_kernel", asm=ptx_code)
+        var ctx = DeviceContext()
+        var ptx_code = "..."  # PTX assembly code
+        var ext_func = DeviceExternalFunction(function_name="my_kernel", asm=ptx_code)
 
-            ctx.load_function(
-                function_name="my_kernel",
-                asm=ptx_code,
-                result=ext_func
-            )
-            ```
-            .
+        ctx.load_function(
+            function_name="my_kernel",
+            asm=ptx_code,
+            result=ext_func
+        )
+        ```
         """
         alias result_type = __type_of(result)
         result = result_type(
@@ -2803,25 +2805,24 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
-            from gpu.host.device_context import DeviceExternalFunction
+        ```mojo
+        from gpu.host import DeviceContext
+        from gpu.host.device_context import DeviceExternalFunction
 
-            # Create a device context and load an external function
-            with DeviceContext() as ctx:
-                var ext_func = DeviceExternalFunction("my_kernel")
+        # Create a device context and load an external function
+        with DeviceContext() as ctx:
+            var ext_func = DeviceExternalFunction("my_kernel")
 
-                # Enqueue the external function with execution configuration
-                ctx.enqueue_function(
-                    ext_func,
-                    grid_dim=Dim(16),
-                    block_dim=Dim(256)
-                )
+            # Enqueue the external function with execution configuration
+            ctx.enqueue_function(
+                ext_func,
+                grid_dim=Dim(16),
+                block_dim=Dim(256)
+            )
 
-                # Wait for completion
-                ctx.synchronize()
-            ```
-            .
+            # Wait for completion
+            ctx.synchronize()
+        ```
         """
         self._enqueue_external_function(
             f,
@@ -2886,19 +2887,18 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            fn gpu_operation(ctx: DeviceContext) raises capturing [_] -> None:
-                # Perform some GPU operation using ctx
-                pass
+        fn gpu_operation(ctx: DeviceContext) raises capturing [_] -> None:
+            # Perform some GPU operation using ctx
+            pass
 
-            with DeviceContext() as ctx:
-                # Measure execution time of a function that uses the context
-                var time_ns = ctx.execution_time[gpu_operation](10)
-                print("Execution time for 10 iterations:", time_ns, "ns")
-            ```
-            .
+        with DeviceContext() as ctx:
+            # Measure execution time of a function that uses the context
+            var time_ns = ctx.execution_time[gpu_operation](10)
+            print("Execution time for 10 iterations:", time_ns, "ns")
+        ```
         """
         var timer_ptr = _DeviceTimerPtr()
         # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
@@ -2957,19 +2957,18 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            fn some_gpu_operation() raises capturing [_] -> None:
-                # Perform some GPU operation
-                pass
+        fn some_gpu_operation() raises capturing [_] -> None:
+            # Perform some GPU operation
+            pass
 
-            with DeviceContext() as ctx:
-                # Measure execution time of a function
-                var time_ns = ctx.execution_time[some_gpu_operation]
-                print("Execution time:", time_ns, "ns")
-            ```
-            .
+        with DeviceContext() as ctx:
+            # Measure execution time of a function
+            var time_ns = ctx.execution_time[some_gpu_operation]
+            print("Execution time:", time_ns, "ns")
+        ```
         """
         var timer_ptr = _DeviceTimerPtr()
         # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
@@ -3029,21 +3028,20 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            var my_kernel = DeviceFunction(...)
+        var my_kernel = DeviceFunction(...)
 
-            fn benchmark_kernel(ctx: DeviceContext, i: Int) raises capturing [_] -> None:
-                # Run kernel with different parameters based on iteration
-                ctx.enqueue_function[my_kernel](grid_dim=Dim(i), block_dim=Dim(256))
+        fn benchmark_kernel(ctx: DeviceContext, i: Int) raises capturing [_] -> None:
+            # Run kernel with different parameters based on iteration
+            ctx.enqueue_function[my_kernel](grid_dim=Dim(i), block_dim=Dim(256))
 
-            with DeviceContext() as ctx:
-                # Measure execution time with iteration awareness
-                var time_ns = ctx.execution_time_iter[benchmark_kernel](10)
-                print("Total execution time:", time_ns, "ns")
-            ```
-            .
+        with DeviceContext() as ctx:
+            # Measure execution time with iteration awareness
+            var time_ns = ctx.execution_time_iter[benchmark_kernel](10)
+            print("Total execution time:", time_ns, "ns")
+        ```
         """
         var timer_ptr = _DeviceTimerPtr()
         # const char* AsyncRT_DeviceContext_startTimer(const DeviceTimer **result, const DeviceContext *ctx)
@@ -3521,23 +3519,22 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            # Create two device contexts
-            var ctx1 = DeviceContext(0)  # First GPU
-            var ctx2 = DeviceContext(1)  # Second GPU
+        # Create two device contexts
+        var ctx1 = DeviceContext(0)  # First GPU
+        var ctx2 = DeviceContext(1)  # Second GPU
 
-            # Enqueue operations on ctx1
-            # ...
+        # Enqueue operations on ctx1
+        # ...
 
-            # Make ctx2 wait for ctx1 to complete before proceeding
-            ctx2.enqueue_wait_for(ctx1)
+        # Make ctx2 wait for ctx1 to complete before proceeding
+        ctx2.enqueue_wait_for(ctx1)
 
-            # Enqueue operations on ctx2 that depend on ctx1's completion
-            # ...
-            ```
-            .
+        # Enqueue operations on ctx2 that depend on ctx1's completion
+        # ...
+        ```
         """
         # const char * AsyncRT_DeviceContext_enqueue_wait_for_context(const DeviceContext *ctx, const DeviceContext *other)
         _checked(
@@ -3566,15 +3563,14 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            with DeviceContext() as ctx:
-                # Get the driver version
-                var driver_version = ctx.get_driver_version()
-                print("GPU driver version:", driver_version)
-            ```
-            .
+        with DeviceContext() as ctx:
+            # Get the driver version
+            var driver_version = ctx.get_driver_version()
+            print("GPU driver version:", driver_version)
+        ```
         """
         var value: Int32 = 0
         # const char * AsyncRT_DeviceContext_getDriverVersion(int *result, const DeviceContext *ctx)
@@ -3631,17 +3627,16 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            var ctx = DeviceContext()
-            try:
-                ctx.is_compatible()  # Verify compatibility
-                # Continue with device operations
-            except:
-                print("Device is not compatible with MAX")
-            ```
-            .
+        var ctx = DeviceContext()
+        try:
+            ctx.is_compatible()  # Verify compatibility
+            # Continue with device operations
+        except:
+            print("Device is not compatible with MAX")
+        ```
         """
         # const char * AsyncRT_DeviceContext_isCompatible(const DeviceContext *ctx)
         _checked(
@@ -3670,15 +3665,14 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            var ctx = DeviceContext()
-            try:
-                var device_id = ctx.id()
-                print("Using device with ID:", device_id)
-            except:
-                print("Failed to get device ID")
-            ```
-            .
+        ```mojo
+        var ctx = DeviceContext()
+        try:
+            var device_id = ctx.id()
+            print("Using device with ID:", device_id)
+        except:
+            print("Failed to get device ID")
+        ```
         """
         # int64_t AsyncRT_DeviceContext_id(const DeviceContext *ctx)
         return external_call[
@@ -3700,8 +3694,9 @@ struct DeviceContext:
         Raises:
             If there's an error retrieving the compute capability.
 
-        Note:
-            This is a private method intended for internal use only.
+        Notes:
+
+        This is a private method intended for internal use only.
         """
         var compute_capability: Int32 = 0
         # const char * AsyncRT_DeviceContext_computeCapability(int32_t *result, const DeviceContext *ctx)
@@ -3732,18 +3727,17 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            var ctx = DeviceContext()
-            try:
-                (free, total) = ctx.get_memory_info()
-                print("Free memory:", free / (1024*1024), "MB")
-                print("Total memory:", total / (1024*1024), "MB")
-            except:
-                print("Failed to get memory information")
-            ```
-            .
+        var ctx = DeviceContext()
+        try:
+            (free, total) = ctx.get_memory_info()
+            print("Free memory:", free / (1024*1024), "MB")
+            print("Total memory:", total / (1024*1024), "MB")
+        except:
+            print("Failed to get memory information")
+        ```
         """
         var free = _SizeT(0)
         var total = _SizeT(0)
@@ -3784,21 +3778,20 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
-            var ctx1 = DeviceContext(0)  # First GPU
-            var ctx2 = DeviceContext(1)  # Second GPU
+        ```mojo
+        from gpu.host import DeviceContext
+        var ctx1 = DeviceContext(0)  # First GPU
+        var ctx2 = DeviceContext(1)  # Second GPU
 
-            try:
-                if ctx1.can_access(ctx2):
-                    print("Direct peer access is possible")
-                    ctx1.enable_peer_access(ctx2)
-                else:
-                    print("Direct peer access is not supported")
-            except:
-                print("Failed to check peer access capability")
-            ```
-            .
+        try:
+            if ctx1.can_access(ctx2):
+                print("Direct peer access is possible")
+                ctx1.enable_peer_access(ctx2)
+            else:
+                print("Direct peer access is not supported")
+        except:
+            print("Failed to check peer access capability")
+        ```
         """
         var result: Bool = False
         # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
@@ -3833,32 +3826,33 @@ struct DeviceContext:
             If there's an error enabling peer access or if peer access is not supported
             between the devices.
 
-        Note:
-            - It's recommended to call `can_access()` first to check if peer access is possible.
-            - Peer access is not always symmetric; you may need to enable access in both directions.
+        Notes:
+
+        - It's recommended to call `can_access()` first to check if peer access is possible.
+        - Peer access is not always symmetric; you may need to enable access in both directions.
 
         Example:
-            ```mojo
-            from gpu.host import DeviceContext
 
-            var ctx1 = DeviceContext(0)  # First GPU
-            var ctx2 = DeviceContext(1)  # Second GPU
+        ```mojo
+        from gpu.host import DeviceContext
 
-            try:
-                if ctx1.can_access(ctx2):
-                    ctx1.enable_peer_access(ctx2)
-                    print("Peer access enabled from device 0 to device 1")
+        var ctx1 = DeviceContext(0)  # First GPU
+        var ctx2 = DeviceContext(1)  # Second GPU
 
-                    # For bidirectional access
-                    if ctx2.can_access(ctx1):
-                        ctx2.enable_peer_access(ctx1)
-                        print("Peer access enabled from device 1 to device 0")
-                else:
-                    print("Peer access not supported between these devices")
-            except:
-                print("Failed to enable peer access")
-            ```
-            .
+        try:
+            if ctx1.can_access(ctx2):
+                ctx1.enable_peer_access(ctx2)
+                print("Peer access enabled from device 0 to device 1")
+
+                # For bidirectional access
+                if ctx2.can_access(ctx1):
+                    ctx2.enable_peer_access(ctx1)
+                    print("Peer access enabled from device 1 to device 0")
+            else:
+                print("Peer access not supported between these devices")
+        except:
+            print("Failed to enable peer access")
+        ```
         """
         # const char *AsyncRT_DeviceContext_enablePeerAccess(const DeviceContext *ctx, const DeviceContext *peer)
         _checked(
@@ -3915,16 +3909,15 @@ struct DeviceContext:
 
         Example:
 
-            ```mojo
-            from gpu.host import DeviceContext
+        ```mojo
+        from gpu.host import DeviceContext
 
-            # Get number of CUDA devices
-            var num_cuda_devices = DeviceContext.number_of_devices(api="cuda")
+        # Get number of CUDA devices
+        var num_cuda_devices = DeviceContext.number_of_devices(api="cuda")
 
-            # Get number of devices for the default API
-            var num_devices = DeviceContext.number_of_devices()
-            ```
-            .
+        # Get number of devices for the default API
+        var num_devices = DeviceContext.number_of_devices()
+        ```
         """
         # int32_t *AsyncRT_DeviceContext_numberOfDevices(const char* kind)
         return Int(

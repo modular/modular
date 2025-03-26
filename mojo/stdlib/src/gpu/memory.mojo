@@ -857,11 +857,12 @@ fn async_copy_commit_group():
     This function creates a new cp.async-group containing all previously initiated but uncommitted
     asynchronous copy operations. The group can then be waited on using async_copy_wait_group().
 
-    Note:
-        - Only supported on NVIDIA GPUs
-        - Maps to the cp.async.commit.group PTX instruction
-        - Used for managing asynchronous memory transfers
-        - Should be paired with async_copy_wait_group() or async_copy_wait_all()
+    Notes:
+
+    - Only supported on NVIDIA GPUs
+    - Maps to the cp.async.commit.group PTX instruction
+    - Used for managing asynchronous memory transfers
+    - Should be paired with async_copy_wait_group() or async_copy_wait_all()
     """
 
     @parameter
@@ -879,11 +880,12 @@ fn async_copy_wait_group(n: Int32):
     Args:
         n: The number of pending cp.async-groups to wait for. Must be > 0.
 
-    Note:
-        - Only supported on NVIDIA GPUs
-        - Maps to the cp.async.wait.group PTX instruction
-        - Provides fine-grained control over asynchronous transfer synchronization
-        - Can be used to implement a pipeline of asynchronous transfers
+    Notes:
+
+    - Only supported on NVIDIA GPUs.
+    - Maps to the cp.async.wait.group PTX instruction.
+    - Provides fine-grained control over asynchronous transfer synchronization.
+    - Can be used to implement a pipeline of asynchronous transfers.
     """
 
     @parameter
@@ -899,11 +901,12 @@ fn async_copy_wait_all():
     have completed their memory transfers. It provides a barrier to ensure all
     asynchronous copies are finished.
 
-    Note:
-        - Only supported on NVIDIA GPUs
-        - Maps to the cp.async.wait.all PTX instruction
-        - Ensures all outstanding asynchronous transfers are complete
-        - More coarse-grained than `async_copy_wait_group()`
+    Notes:
+
+    - Only supported on NVIDIA GPUs.
+    - Maps to the cp.async.wait.all PTX instruction.
+    - Ensures all outstanding asynchronous transfers are complete.
+    - More coarse-grained than `async_copy_wait_group()`.
     """
 
     @parameter
@@ -937,10 +940,11 @@ fn external_memory[
         specified address space.
 
     Note:
-        - The memory is not initialized and must be explicitly written before reading.
-        - The allocation size is determined at kernel launch time.
-        - The pointer is only valid within the GPU kernel execution context.
-        - Care must be taken to respect alignment requirements when accessing the memory.
+
+    - The memory is not initialized and must be explicitly written before reading.
+    - The allocation size is determined at kernel launch time.
+    - The pointer is only valid within the GPU kernel execution context.
+    - Care must be taken to respect alignment requirements when accessing the memory.
     """
     var extern_ptr_symbol = UnsafePointer[
         StaticTuple[type, 0], address_space=address_space, alignment=alignment
@@ -984,8 +988,9 @@ fn fence_proxy_tensormap_generic_sys_acquire[
         size: The size in bytes of the tensor map object being synchronized.
 
     Note:
-        This is a low-level synchronization primitive typically used in conjunction with
-        TMA (Tensor Memory Access) operations on NVIDIA GPUs.
+
+    This is a low-level synchronization primitive typically used in conjunction with
+    TMA (Tensor Memory Access) operations on NVIDIA GPUs.
     """
     llvm_intrinsic[
         "llvm.nvvm.fence.proxy.tensormap_generic.acquire.sys", NoneType
@@ -1001,8 +1006,9 @@ fn fence_proxy_tensormap_generic_sys_release():
     before proceeding.
 
     Note:
-        Should be called after tensor map operations are complete to maintain proper
-        memory ordering semantics.
+
+    Should be called after tensor map operations are complete to maintain proper
+    memory ordering semantics.
     """
     llvm_intrinsic[
         "llvm.nvvm.fence.proxy.tensormap_generic.release.sys", NoneType
@@ -1018,8 +1024,9 @@ fn tma_store_fence():
     begin. This is crucial for maintaining memory consistency in tensor operations.
 
     Note:
-        This fence specifically targets the CTA (Cooperative Thread Array) scope
-        and is used to synchronize async shared memory operations.
+
+    This fence specifically targets the CTA (Cooperative Thread Array) scope
+    and is used to synchronize async shared memory operations.
     """
     __mlir_op.`nvvm.fence.proxy`[
         _properties = __mlir_attr.`{ kind = #nvvm.proxy_kind<async.shared>, space = #nvvm.shared_space<cta>}`
@@ -1036,8 +1043,9 @@ fn fence_mbarrier_init():
     operations.
 
     Note:
-        Should be called immediately after mbarrier initialization to ensure proper
-        synchronization semantics.
+
+    Should be called immediately after mbarrier initialization to ensure proper
+    synchronization semantics.
     """
     __mlir_op.`nvvm.fence.mbarrier.init`[_type=None]()
 
@@ -1075,11 +1083,13 @@ fn cp_async_bulk_tensor_shared_cluster_global[
                this is a single coordinate. For rank-2 tensors, this contains both row and
                column coordinates.
 
-    Note:
-        - This operation is asynchronous - use appropriate memory barriers to ensure copy completion
-        - Only supports rank-1 and rank-2 tensors
-        - Requires NVIDIA GPU with TMA support
-        - The memory barrier should be properly initialized before use
+    Notes:
+
+    - This operation is asynchronous - use appropriate memory barriers to ensure
+      copy completion.
+    - Only supports rank-1 and rank-2 tensors.
+    - Requires NVIDIA GPU with TMA support.
+    - The memory barrier should be properly initialized before use.
     """
     constrained[rank <= 3, "Expecting rank-1 or rank-2 tensors"]()
 
@@ -1152,12 +1162,13 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
                        Set bits indicate which CTAs will receive a copy of the loaded data.
                        This enables efficient data sharing across multiple CTAs.
 
-    Note:
-        - This operation is asynchronous - use appropriate memory barriers to ensure copy completion
-        - Only supports rank-1 and rank-2 tensors
-        - Requires NVIDIA GPU with TMA support
-        - The memory barrier should be properly initialized before use
-        - The multicast_mask must be properly configured based on cluster size and desired distribution
+    Notes:
+
+    - This operation is asynchronous - use appropriate memory barriers to ensure copy completion.
+    - Only supports rank-1 and rank-2 tensors.
+    - Requires NVIDIA GPU with TMA support.
+    - The memory barrier should be properly initialized before use.
+    - The multicast_mask must be properly configured based on cluster size and desired distribution.
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
 
@@ -1218,12 +1229,13 @@ fn cp_async_bulk_tensor_global_shared_cta[
                this is a single coordinate. For rank-2 tensors, this contains both row and
                column coordinates.
 
-    Note:
-        - This operation is asynchronous - use appropriate memory barriers to ensure completion.
-        - Only supports rank-1 and rank-2 tensors.
-        - Requires NVIDIA GPU with TMA support.
-        - The source memory must be properly aligned for TMA operations.
-        - The TMA descriptor must be properly initialized before use.
+    Notes:
+
+    - This operation is asynchronous - use appropriate memory barriers to ensure completion.
+    - Only supports rank-1 and rank-2 tensors.
+    - Requires NVIDIA GPU with TMA support.
+    - The source memory must be properly aligned for TMA operations.
+    - The TMA descriptor must be properly initialized before use.
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
 
@@ -1286,13 +1298,14 @@ fn cp_async_bulk_tensor_reduce[
                tensors, this is a single coordinate. For rank-2 tensors, this contains both
                row and column coordinates.
 
-    Note:
-        - This operation is asynchronous - use appropriate memory barriers to ensure completion.
-        - Only supports rank-1 and rank-2 tensors.
-        - Requires NVIDIA GPU with TMA support.
-        - The source memory must be properly aligned for TMA operations.
-        - The TMA descriptor must be properly initialized before use.
-        - The reduction operation is performed atomically to ensure correctness.
+    Notes:
+
+    - This operation is asynchronous - use appropriate memory barriers to ensure completion.
+    - Only supports rank-1 and rank-2 tensors.
+    - Requires NVIDIA GPU with TMA support.
+    - The source memory must be properly aligned for TMA operations.
+    - The TMA descriptor must be properly initialized before use.
+    - The reduction operation is performed atomically to ensure correctness.
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
     alias cache_hint: Bool = eviction_policy is not CacheEviction.EVICT_NORMAL
@@ -1782,30 +1795,31 @@ fn multimem_st[
             parameter.
 
     Notes:
-        - Requires SM90+ GPU architecture (PTX ISA 8.1+).
-        - The address must be a valid multimem address.
-        - Supported type-width combinations must total 32/64/128 bits.
-        - Default memory semantics: weak consistency (when not specified).
-        - Vector stores (.v2/.v4) require matching total size constraints.
+
+    - Requires SM90+ GPU architecture (PTX ISA 8.1+).
+    - The address must be a valid multimem address.
+    - Supported type-width combinations must total 32/64/128 bits.
+    - Default memory semantics: weak consistency (when not specified).
+    - Vector stores (.v2/.v4) require matching total size constraints.
 
     Example:
 
-        ```mojo
-        from gpu.memory import *
+    ```mojo
+    from gpu.memory import *
 
-        # Store 2 float32 values to multimem address.
-        multimem_st[DType.float32, count=2, scope=Scope.CTA, consistency=Consistency.RELAXED](
-            addr, StaticTuple[DType.float32, 2](val1, val2)
-        )
+    # Store 2 float32 values to multimem address.
+    multimem_st[DType.float32, count=2, scope=Scope.CTA, consistency=Consistency.RELAXED](
+        addr, StaticTuple[DType.float32, 2](val1, val2)
+    )
 
-        # Vector store of 4 float16x2 values.
-        multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE, width=2](
-            addr, StaticTuple[DType.float16, 4](vec1, vec2, vec3, vec4)
-        )
-        ```
+    # Vector store of 4 float16x2 values.
+    multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE, width=2](
+        addr, StaticTuple[DType.float16, 4](vec1, vec2, vec3, vec4)
+    )
+    ```
 
     See Also:
-        PTX ISA Documentation: https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-multimem-ld-reduce-multimem-st-multimem-red
+        [PTX ISA Documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-multimem-ld-reduce-multimem-st-multimem-red).
     """
     constrained[count in (2, 4), "count must be 2 or 4"]()
 
