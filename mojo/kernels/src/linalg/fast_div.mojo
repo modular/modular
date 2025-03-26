@@ -21,10 +21,10 @@ fn _ceillog2(x: Scalar) -> Int32:
     """Computes ceil(log_2(d))."""
 
     @parameter
-    for i in range(bitwidthof[x.type]()):
+    for i in range(bitwidthof[x.dtype]()):
         if (__type_of(x)(1) << i) >= x:
             return i
-    return bitwidthof[x.type]()
+    return bitwidthof[x.dtype]()
 
 
 @register_passable("trivial")
