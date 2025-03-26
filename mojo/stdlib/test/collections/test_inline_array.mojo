@@ -106,8 +106,8 @@ def test_array_int():
                     ](Scalar[dts[current_type]].MAX)
 
     test_init_fill_scalars[
-        Int64.type,
-        Int8.type,
+        Int64.dtype,
+        Int8.dtype,
         sizes = List(1, 32, 64, 129, 256, 512, 768, 1000),
         batch_sizes = List(1, 8, 32, 64, 128),
     ]()
