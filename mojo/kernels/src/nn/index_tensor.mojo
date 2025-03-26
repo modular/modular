@@ -407,17 +407,19 @@ fn advanced_indexing_getitem[
     input_rank: Int,
     index_rank: Int,
     input_type: DType,
-    index_type: DType,
-    num_index_tensors: Int, //,
+    index_type: DType, //,
     start_axis: Int,
+    num_index_tensors: Int,
     target: StringLiteral,
     single_thread_blocking_override: Bool,
     trace_description: StringLiteral,
-](
-    input_tensor: NDBuffer[input_type, input_rank],
-    indices: StaticTuple[
-        NDBuffer[index_type, index_rank, MutableAnyOrigin], num_index_tensors
+    input_tensor_fn: fn[width: Int] (IndexList[input_rank]) capturing -> SIMD[
+        input_type, width
     ],
+    indices_fn: fn[indices_index: Int] (
+        IndexList[index_rank]
+    ) capturing -> SIMD[index_type, 1],
+](
     out_tensor: NDBuffer[
         mut=True, input_type, input_rank + index_rank - num_index_tensors
     ],
@@ -455,19 +457,19 @@ fn advanced_indexing_getitem[
         index_rank: The rank of the indexing tensors.
         input_type: The dtype of the input tensor.
         index_type: The dtype of the indexing tensors.
-        num_index_tensors: The number of indexing tensors.
         start_axis: The first dimension in input where the indexing tensors
             are applied. It is assumed the indexing tensors are applied in
             consecutive dimensions.
+        num_index_tensors: The number of indexing tensors.
         target: The target architecture to operation on.
         single_thread_blocking_override: If True, then the operation is run
             synchronously using a single thread.
         trace_description: For profiling, the trace name the operation will
             appear under.
+        input_tensor_fn: Fusion lambda for the input tensor.
+        indices_fn: Fusion lambda for the indices tensors.
 
     Args:
-        input_tensor: The input tensor being indexed into.
-        indices: The set of indexing tensors to apply to input.
         out_tensor: The output tensor to write to.
         ctx: The DeviceContextPtr as prepared by the graph compiler.
 
@@ -483,7 +485,7 @@ fn advanced_indexing_getitem[
     fn elementwise_fn_wrapper[
         width: Int, out_tensor_rank: Int
     ](output_index: IndexList[out_tensor_rank]) capturing:
-        input_index = IndexList[input_tensor.rank]()
+        input_index = IndexList[input_rank]()
 
         # Find the associated output index from input index
         @parameter
@@ -506,12 +508,12 @@ fn advanced_indexing_getitem[
                         offset + start_axis
                     ]
                 input_index[input_dim] = Int(
-                    indices[index_tensor_offset][index_tensor_indices]
+                    indices_fn[index_tensor_offset](index_tensor_indices)
                 )
 
         out_tensor.store[width=width](
             rebind[IndexList[out_tensor.rank]](output_index),
-            input_tensor.load[width=width](input_index),
+            input_tensor_fn[width=width](input_index),
         )
 
     # We can do further optimization, e.g. use a larger
@@ -570,18 +572,21 @@ fn advanced_indexing_setitem_inplace[
     index_rank: Int,
     updates_rank: Int,
     input_type: DType,
-    index_type: DType,
-    num_index_tensors: Int, //,
+    index_type: DType, //,
     start_axis: Int,
+    num_index_tensors: Int,
     target: StringLiteral,
     single_thread_blocking_override: Bool,
     trace_description: StringLiteral,
+    updates_tensor_fn: fn[width: Int] (
+        IndexList[updates_rank]
+    ) capturing -> SIMD[input_type, width],
+    indices_fn: fn[indices_index: Int] (
+        IndexList[index_rank]
+    ) capturing -> SIMD[index_type, 1],
 ](
     input_tensor: NDBuffer[mut=True, type=input_type, rank=input_rank],
-    updates: NDBuffer[type=input_type, rank=updates_rank],
-    indices: StaticTuple[
-        NDBuffer[index_type, index_rank, MutableAnyOrigin], num_index_tensors
-    ],
+    index_tensor_shape: IndexList[index_rank, **_],
     ctx: DeviceContextPtr,
 ) raises:
     """Implement basic numpy-style advanced indexing with assignment.
@@ -636,20 +641,21 @@ fn advanced_indexing_setitem_inplace[
         updates_rank: The rank of the updates tensor.
         input_type: The dtype of the input tensor.
         index_type: The dtype of the indexing tensors.
-        num_index_tensors: The number of indexing tensors.
         start_axis: The first dimension in input where the indexing tensors
             are applied. It is assumed the indexing tensors are applied in
             consecutive dimensions.
+        num_index_tensors: The number of indexing tensors.
         target: The target architecture to operation on.
         single_thread_blocking_override: If True, then the operation is run
             synchronously using a single thread.
         trace_description: For profiling, the trace name the operation will
             appear under.
+        updates_tensor_fn: Fusion lambda for the update tensor.
+        indices_fn: Fusion lambda for the indices tensors.
 
     Args:
         input_tensor: The input tensor being indexed into and modified in-place.
-        updates: The tensor containing updates for the indexed slice.
-        indices: The set of indexing tensors to apply to input.
+        index_tensor_shape: The shape of each index tensor.
         ctx: The DeviceContextPtr as prepared by the graph compiler.
 
     TODO(GEX-1951): Support boolean tensor mask support
@@ -676,7 +682,7 @@ fn advanced_indexing_setitem_inplace[
                 i - index_rank + num_index_tensors
             ]
         else:
-            iteration_shape[i] = indices[0].get_shape()[i - start_axis]
+            iteration_shape[i] = index_tensor_shape[i - start_axis]
 
     @parameter
     @always_inline
@@ -706,11 +712,14 @@ fn advanced_indexing_setitem_inplace[
             else:
                 alias index_tensor_offset = i - start_axis
                 input_tensor_indices[i] = Int(
-                    indices[index_tensor_offset][index_tensor_indices]
+                    indices_fn[index_tensor_offset](index_tensor_indices)
                 )
 
         input_tensor.store[width=width](
-            input_tensor_indices, updates.load[width=width](iteration_indices)
+            input_tensor_indices,
+            updates_tensor_fn[width=width](
+                rebind[IndexList[updates_rank]](iteration_indices)
+            ),
         )
 
     # We can do further optimization, e.g. use a larger

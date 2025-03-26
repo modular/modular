@@ -504,6 +504,9 @@ fn test_advanced_indexing_getitem() raises:
     for i in range(index_shape.flattened_length()):
         index_a.data[i] = i % 5
         index_b.data[i] = (i + 1) % 5
+    var indices = StaticTuple[
+        NDBuffer[index_type, index_rank, MutableAnyOrigin], 2
+    ](index_a, index_b)
 
     # Create output tensor
     alias output_rank = input_rank + index_rank - num_index_tensors
@@ -520,24 +523,40 @@ fn test_advanced_indexing_getitem() raises:
         output_data_stack, output_shape
     )
 
+    @parameter
+    @always_inline
+    fn input_tensor_fn[
+        width: Int
+    ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
+        return input_buffer.load[width=width](idx)
+
+    @always_inline
+    @parameter
+    fn indices_fn[
+        indices_index: Int,
+    ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+        return indices[indices_index].load[width=1](coordinates)
+
     advanced_indexing_getitem[
         input_rank=input_rank,
-        index_rank=index_rank,
         start_axis=start_axis,
+        num_index_tensors=num_index_tensors,
         target="cpu",
         single_thread_blocking_override=False,
         trace_description="test_advanced_indexing_getitem",
+        input_tensor_fn=input_tensor_fn,
+        indices_fn=indices_fn,
     ](
-        input_buffer,
-        StaticTuple[NDBuffer[index_type, index_rank, MutableAnyOrigin], 2](
-            index_a, index_b
-        ),
         output_data_buffer,
         DeviceContextPtr(),
     )
 
     # Print to filecheck
     print(output_data_buffer)
+
+    # Keep data alive
+    _ = (indices[0], indices[1])
+    _ = input_buffer
 
 
 # CHECK-LABEL: test_advanced_indexing_setitem_inplace
@@ -579,6 +598,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     # Create indexing tensors, ensure no pair of indices point to the same
     # location in `input` to avoid nondeterministic behavior.
     alias index_rank = 2
+    alias num_index_tensors = 2
     alias index_shape = IndexList[index_rank](2, 2)
     alias index_type = DType.uint64
 
@@ -593,6 +613,9 @@ fn test_advanced_indexing_setitem_inplace() raises:
     for i in range(index_shape.flattened_length()):
         index_a.data[i] = i % 4
         index_b.data[i] = (i + 1) % 4
+    var indices = StaticTuple[
+        NDBuffer[index_type, index_rank, MutableAnyOrigin], 2
+    ](index_a, index_b)
 
     # Create the updates list and set it sequential data to make it easy to read
     alias updates_rank = 4
@@ -606,24 +629,42 @@ fn test_advanced_indexing_setitem_inplace() raises:
     for i in range(updates_shape.flattened_length()):
         updates.data[i] = 1 + i
 
+    @parameter
+    @always_inline
+    fn updates_tensor_fn[
+        width: Int
+    ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
+        return updates.load[width=width](idx)
+
+    @always_inline
+    @parameter
+    fn indices_fn[
+        indices_index: Int,
+    ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+        return indices[indices_index].load[width=1](coordinates)
+
     alias start_axis = 2
     advanced_indexing_setitem_inplace[
         input_rank=input_rank,
         index_rank=index_rank,
         start_axis=start_axis,
+        num_index_tensors=num_index_tensors,
         target="cpu",
         single_thread_blocking_override=False,
         trace_description="test_advanced_indexing_setitem_inplace",
+        updates_tensor_fn=updates_tensor_fn,
+        indices_fn=indices_fn,
     ](
         input_buffer,
-        updates,
-        StaticTuple[NDBuffer[index_type, index_rank, MutableAnyOrigin], 2](
-            index_a, index_b
-        ),
+        indices[0].dynamic_shape,
         DeviceContextPtr(),
     )
 
     print(input_buffer)
+
+    # Keep data alive
+    _ = (indices[0], indices[1])
+    _ = updates
 
 
 def main():
