@@ -11,7 +11,7 @@ from sys import env_get_int, sizeof
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, HostBuffer
 from memory import UnsafePointer
 from testing import assert_almost_equal, assert_true
 
@@ -118,13 +118,15 @@ fn bench_memcpy(
     mut b: Bench, *, length: Int, config: Config, context: DeviceContext
 ) raises:
     alias dtype = DType.float32
-    var mem_host: UnsafePointer[Scalar[dtype]] = context.malloc_host[
-        Scalar[dtype]
-    ](length) if config.pinned_memory else UnsafePointer[Scalar[dtype]].alloc(
+    var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
         length
-    ).origin_cast[
-        origin=MutableAnyOrigin
-    ]()
+    ) if config.pinned_memory else DeviceContext(
+        api="cpu"
+    ).enqueue_create_host_buffer[
+        dtype
+    ](
+        length
+    )
 
     var mem_device = context.enqueue_create_buffer[dtype](length)
     var mem2_device = context.enqueue_create_buffer[dtype](length)
@@ -153,10 +155,8 @@ fn bench_memcpy(
     )
     context.synchronize()
 
-    if config.pinned_memory:
-        context.free_host(mem_host)
-    else:
-        mem_host.free()
+    # Ensure that we are not queuing any free operations during the timed block.
+    _ = mem_host
     _ = mem_device
     _ = mem2_device
 
