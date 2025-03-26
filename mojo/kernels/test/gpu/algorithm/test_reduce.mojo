@@ -28,6 +28,7 @@ fn fused_reduce_inner_test[
     expected_vals0: List[Float32],
     expected_vals1: List[Float32],
     ctx: DeviceContext,
+    offset: Int = 1,
 ) raises:
     var axis = rank - 1
     var out_shape = shape
@@ -48,7 +49,7 @@ fn fused_reduce_inner_test[
     var vec_device = ctx.enqueue_create_buffer[type](in_size)
     with vec_device.map_to_host() as vec_host:
         for i in range(in_size):
-            vec_host[i] = i // shape[axis] + 1
+            vec_host[i] = i // shape[axis] + offset
 
     var res_device0 = ctx.enqueue_create_buffer[type](out_size)
     var res_device1 = ctx.enqueue_create_buffer[type](out_size)
@@ -92,11 +93,17 @@ fn fused_reduce_inner_test[
 
     with res_device0.map_to_host() as res_host0:
         for i in range(out_shape.flattened_length()):
-            assert_equal(String(res_host0[i]), String(expected_vals0[i]))
+            assert_equal(
+                String(res_host0[i].cast[DType.float32]()),
+                String(expected_vals0[i]),
+            )
 
     with res_device1.map_to_host() as res_host1:
         for i in range(out_shape.flattened_length()):
-            assert_equal(String(res_host1[i]), String(expected_vals1[i]))
+            assert_equal(
+                String(res_host1[i].cast[DType.float32]()),
+                String(expected_vals1[i]),
+            )
 
     _ = vec_device
     _ = res_device0
@@ -115,6 +122,7 @@ fn reduce_inner_test[
     init: Scalar[type],
     expected_vals: List[Scalar[expected_vals_type]],
     ctx: DeviceContext,
+    offset: Int = 1,
 ) raises:
     alias num_reductions = 1
 
@@ -132,7 +140,7 @@ fn reduce_inner_test[
 
     with vec_device.map_to_host() as vec_host:
         for i in range(in_size):
-            vec_host[i] = i // shape[axis] + 1
+            vec_host[i] = i // shape[axis] + offset
 
     var res_device = ctx.enqueue_create_buffer[type](out_size)
     var input_buf_device = NDBuffer[type, rank](vec_device.unsafe_ptr(), shape)
@@ -286,6 +294,50 @@ def main():
             List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
             ctx,
+        )
+
+        # int64 tests
+        reduce_inner_test[reduce_max](
+            IndexList[2](5, 5),
+            Int64.MIN,
+            List[Int64](1, 2, 3, 4, 5),
+            ctx,
+        )
+        fused_reduce_inner_test[fused_reduce_add_max, 2, DType.int64](
+            IndexList[2](5, 3),
+            StaticTuple[Int64, 2](Int64.MIN, 0),
+            List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            ctx,
+        )
+        # Add offset to ensure upper and lower 32 bits of element are non-zero
+        var offset: Int = 0xDEADBEEF
+        reduce_inner_test[reduce_max](
+            IndexList[2](5, 5),
+            Int64.MIN,
+            List[Int64](offset, offset + 1, offset + 2, offset + 3, offset + 4),
+            ctx,
+            offset=offset,
+        )
+        fused_reduce_inner_test[fused_reduce_add_max, 2, DType.int64](
+            IndexList[2](5, 3),
+            StaticTuple[Int64, 2](Int64.MIN, 0),
+            List[Float32](
+                Float32(offset),
+                Float32(offset + 1.0),
+                Float32(offset + 2.0),
+                Float32(offset + 3.0),
+                Float32(offset + 4.0),
+            ),
+            List[Float32](
+                Float32(offset * 3 + 3.0),
+                Float32(offset * 3 + 6.0),
+                Float32(offset * 3 + 9.0),
+                Float32(offset * 3 + 12.0),
+                Float32(offset * 3 + 15.0),
+            ),
+            ctx,
+            offset=offset,
         )
 
         # bool tests
