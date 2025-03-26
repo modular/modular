@@ -13,8 +13,8 @@ from max.engine import InferenceSession
 
 # CHECK: user_invalid.mojo:{{.*}} error: call expansion failed
 # CHECK-NEXT: note: constraint failed: oops
-# CHECK: error: failed to run the pass manager
-# CHECK: model_invalid_op.mlir:{{.*}} error: KGEN elaboration failed
+# CHECK: error: Could not elaborate the provided code
+# CHECK: model_invalid_op.mlir:{{.*}} error: The graph compiler tried to JIT compile the provided kernels but failed during elaboration
 
 
 def main():
