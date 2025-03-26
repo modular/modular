@@ -32,6 +32,7 @@ from gpu.mma import (
 )
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
+from layout.swizzle import make_ldmatrix_swizzle
 from layout.layout_tensor import (
     copy_local_to_dram,
     LayoutTensorIter,
@@ -77,6 +78,7 @@ from .utils_gpu import block_swizzle, MatmulConfig
 from gpu.warp import broadcast
 from gpu.mma import st_matrix
 from memory import bitcast
+from stdlib.bit import log2_floor
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4
@@ -369,6 +371,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 write_pipeline_states.step()
 
     else:
+        var consumer_local_tid = thread_idx.x - 128
 
         @parameter
         if num_consumer == 1 or num_consumer == 2:
@@ -457,6 +460,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             linear_idx_type = DType.int32,
             bitwidth=32,
         ]()
+        alias st_matrix_swizzle = make_ldmatrix_swizzle[
+            c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
+        ]()
+        alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[c_type, WG_BN]()
 
         @parameter
         if use_stmatrix:
@@ -487,7 +494,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                             )
                         ](warp_group_thread_idx, i, m_mma, local_warp_group_idx)
                         var offset = c_smem_tile.ptr.offset(
-                            st_matrix_rt_layout(st_matrix_args)
+                            st_matrix_swizzle(
+                                st_matrix_rt_layout(st_matrix_args)
+                            )
                         )
                         var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
 
@@ -514,10 +523,14 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
                     var c_gmem_frag = c_gmem_wg_tile.vectorize[
                         1, simd_size
-                    ]().distribute[thread_layout](thread_idx.x - 128)
+                    ]().distribute[thread_layout](consumer_local_tid)
                     var c_smem_frag = c_smem_tile.vectorize[
                         1, simd_size
-                    ]().distribute[thread_layout](thread_idx.x - 128)
+                    ]().distribute[
+                        thread_layout, swizzle=st_matrix_vec_swizzle
+                    ](
+                        consumer_local_tid
+                    )
 
                     var thread_offset = c_gmem_frag.distance(c.ptr)
 
@@ -541,7 +554,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                             )
 
                 else:
-                    copy_sram_to_dram[thread_layout=thread_layout](
+                    copy_sram_to_dram[
+                        thread_layout=thread_layout, swizzle=st_matrix_swizzle
+                    ](
                         c_gmem_wg_tile.vectorize[1, simd_size](),
                         c_smem_tile.vectorize[1, simd_size](),
                     )
@@ -905,6 +920,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 work_info = scheduler.fetch_next_work()
 
     else:
+        var consumer_local_tid = thread_idx.x - 128
 
         @parameter
         if num_consumer == 1 or num_consumer == 2:
@@ -999,6 +1015,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 linear_idx_type = DType.int32,
                 bitwidth=32,
             ]()
+            alias st_matrix_swizzle = make_ldmatrix_swizzle[
+                c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
+            ]()
+            alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[c_type, WG_BN]()
 
             @parameter
             if use_stmatrix:
@@ -1036,7 +1056,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                                 local_warp_group_idx,
                             )
                             var offset = c_smem_tile.ptr.offset(
-                                st_matrix_rt_layout(st_matrix_args)
+                                st_matrix_swizzle(
+                                    st_matrix_rt_layout(st_matrix_args)
+                                )
                             )
                             var d_reg_f32_packed = bitcast[DType.float32, 4](
                                 d_reg
@@ -1065,10 +1087,14 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
                         var c_gmem_frag = c_gmem_wg_tile.vectorize[
                             1, simd_size
-                        ]().distribute[thread_layout](thread_idx.x - 128)
+                        ]().distribute[thread_layout](consumer_local_tid)
                         var c_smem_frag = c_smem_tile.vectorize[
                             1, simd_size
-                        ]().distribute[thread_layout](thread_idx.x - 128)
+                        ]().distribute[
+                            thread_layout, swizzle=st_matrix_vec_swizzle
+                        ](
+                            consumer_local_tid
+                        )
 
                         var thread_offset = c_gmem_frag.distance(c.ptr)
 
@@ -1092,7 +1118,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                                 )
 
                     else:
-                        copy_sram_to_dram[thread_layout=thread_layout](
+                        copy_sram_to_dram[
+                            thread_layout=thread_layout,
+                            swizzle=st_matrix_swizzle,
+                        ](
                             c_gmem_wg_tile.vectorize[1, simd_size](),
                             c_smem_tile.vectorize[1, simd_size](),
                         )
