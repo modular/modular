@@ -1227,12 +1227,12 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
                     g * F_per_group + f_tile_start
                 ) * C
 
-                for c in range(C):
+                for _ in range(C):
                     for f in range(f_tile_size):
                         packed_filter_ptr.store(
                             f,
                             filter_ptr.load(f * C).cast[
-                                packed_filter_ptr.type.type
+                                packed_filter_ptr.type.dtype
                             ](),
                         )
 
@@ -1263,12 +1263,12 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
                     g * F_per_group + F_round_by_simd
                 ) * C
 
-                for c in range(C):
+                for _ in range(C):
                     for f in range(residual):
                         packed_filter_ptr.store(
                             f,
                             filter_ptr.load(f * C).cast[
-                                packed_filter_ptr.type.type
+                                packed_filter_ptr.type.dtype
                             ](),
                         )
 

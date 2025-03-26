@@ -144,7 +144,7 @@ fn roi_align_nhwc[
         "ROI align input / output must be a floating point",
     ]()
     constrained[
-        in_spatial_scale.type.is_floating_point(),
+        in_spatial_scale.dtype.is_floating_point(),
         "the scale factor must be in floating point format",
     ]()
 

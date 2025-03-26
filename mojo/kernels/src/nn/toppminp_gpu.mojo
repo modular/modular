@@ -216,30 +216,30 @@ fn normalize(value: Float32) -> UInt32:
 @always_inline
 fn normalize(
     value: Scalar,
-    out result: Scalar[_uint_type_of_width[bitwidthof[value.type]()]()],
+    out result: Scalar[_uint_type_of_width[bitwidthof[value.dtype]()]()],
 ):
     """
     Normalize the value to the appropriate unsigned integer type. This is needed
     for radix sort to work correctly.
     """
-    alias type = value.type
+    alias dtype = value.dtype
 
     @parameter
-    if type is DType.int32:
-        return normalize(rebind[Int32](value)).cast[result.type]()
-    elif type is DType.uint32:
-        return normalize(rebind[UInt32](value)).cast[result.type]()
-    elif type is DType.float32:
-        return normalize(rebind[Float32](value)).cast[result.type]()
+    if dtype is DType.int32:
+        return normalize(rebind[Int32](value)).cast[result.dtype]()
+    elif dtype is DType.uint32:
+        return normalize(rebind[UInt32](value)).cast[result.dtype]()
+    elif dtype is DType.float32:
+        return normalize(rebind[Float32](value)).cast[result.dtype]()
     # TODO: These below don't return uint32 so must generalize and fix
-    elif type is DType.uint16:
+    elif dtype is DType.uint16:
         return normalize(rebind[Scalar[DType.uint16]](value)).cast[
-            result.type
+            result.dtype
         ]()
-    elif type is DType.float16:
-        return normalize(rebind[Float16](value)).cast[result.type]()
-    elif type is DType.bfloat16:
-        return normalize(rebind[BFloat16](value)).cast[result.type]()
+    elif dtype is DType.float16:
+        return normalize(rebind[Float16](value)).cast[result.dtype]()
+    elif dtype is DType.bfloat16:
+        return normalize(rebind[BFloat16](value)).cast[result.dtype]()
     else:
         constrained[False, "unhandled normalize type"]()
         return 0

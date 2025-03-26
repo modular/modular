@@ -42,7 +42,7 @@ fn arange_shape[
         raise Error("[range] step must be non-zero")
 
     @parameter
-    if start.type.is_integral():
+    if start.dtype.is_integral():
         if step > 0 and stop < start:
             raise Error("[range] requires (start <= stop) for positive step")
 
