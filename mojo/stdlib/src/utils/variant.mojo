@@ -66,6 +66,7 @@ struct Variant[*Ts: CollectionElement](
             - This currently does an extra copy/move until we have origins
             - It also temporarily requires the value to be mutable
         - use `set[T](owned new_value: T)` to reset the variant to a new value
+        - use `is_type_supported[T]` to check if the variant permits the type `T`
 
     Example:
     ```mojo
@@ -380,3 +381,33 @@ struct Variant[*Ts: CollectionElement](
             if _type_is_eq[Ts[i], T]():
                 return i
         return Self._sentinel
+
+    @staticmethod
+    fn is_type_supported[T: CollectionElement]() -> Bool:
+        """Check if a type can be used by the `Variant`.
+
+        Parameters:
+            T: The type of the value to check support for.
+
+        Returns:
+            `True` if type `T` is supported by the `Variant`.
+
+        Example:
+
+        ```mojo
+        from utils import Variant
+
+        def takes_variant(mut arg: Variant):
+            if arg.is_type_supported[Float64]():
+                arg = Float64(1.5)
+
+        def main():
+            var x = Variant[Int, Float64](1)
+            takes_variant(x)
+            if x.isa[Float64]():
+                print(x[Float64]) # 1.5
+        ```
+
+        For example, the `Variant[Int, Bool]` permits `Int` and `Bool`.
+        """
+        return Self._check[T]() != Self._sentinel

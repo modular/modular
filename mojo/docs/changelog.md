@@ -95,6 +95,20 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 - Removed deprecated `DeviceContext` methods `copy_sync` and `memset_sync`.
 
+- Add `Variant.is_type_supported` method. ([PR #4057](https://github.com/modular/max/pull/4057))
+  Example:
+
+  ```mojo
+    def takes_variant(mut arg: Variant):
+        if arg.is_type_supported[Float64]():
+            arg = Float64(1.5)
+    def main():
+        var x = Variant[Int, Float64](1)
+        takes_variant(x)
+        if x.isa[Float64]():
+            print(x[Float64]) # 1.5
+  ```
+
 ### Tooling changes
 
 ### ❌ Removed

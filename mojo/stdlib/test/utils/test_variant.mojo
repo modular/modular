@@ -184,6 +184,18 @@ def test_get_returns_mutable_reference():
     assert_equal(v2[String], "something else")
 
 
+def test_is_type_supported():
+    var x = Variant[Float64, Int32](Int32(0))
+    assert_equal(x.is_type_supported[Float64](), True)
+    assert_equal(x.is_type_supported[Int32](), True)
+    assert_equal(x.is_type_supported[Float32](), False)
+    assert_equal(x.is_type_supported[UInt32](), False)
+    var y: Variant[SIMD[DType.uint8, 2], SIMD[DType.uint8, 4]]
+    assert_equal(y.is_type_supported[SIMD[DType.uint8, 2]](), True)
+    assert_equal(y.is_type_supported[SIMD[DType.uint8, 4]](), True)
+    assert_equal(y.is_type_supported[SIMD[DType.uint8, 8]](), False)
+
+
 def main():
     test_basic()
     test_get_returns_mutable_reference()
@@ -194,3 +206,4 @@ def main():
     test_take_doesnt_call_deleter()
     test_set_calls_deleter()
     test_replace()
+    test_is_type_supported()
