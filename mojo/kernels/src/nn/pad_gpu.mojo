@@ -322,6 +322,7 @@ fn pad_constant[
         ctx: Device context for participating GPU.
 
     Example:
+        ```mojo
         var input_shape = (X, Y, Z)
         var paddings = [x0, x1, y0, y1, z0, z1]
 
@@ -330,6 +331,7 @@ fn pad_constant[
                                            y ∈ [y0, y0 + Y] &&
                                            z ∈ [z0, z0 + Z]
           else constant
+        ```
     """
     var constant_cast = rebind[Scalar[type]](constant[0])
 
