@@ -12,6 +12,7 @@ from sys import (
     env_get_int,
     env_get_string,
     has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
     sizeof,
 )
 
@@ -103,6 +104,8 @@ struct MatmulConfig[
 
     var partitioned_multicast: Bool
 
+    var scheduler_hint: IndexList[3]
+
     alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
 
     # MMA is typically accumulated in FP32. The reduction over partitions may be
@@ -131,6 +134,7 @@ struct MatmulConfig[
         num_warp_k_partitions: UInt = 1,
         num_consumer: UInt = 1,
         partitioned_multicast: Bool = False,
+        scheduler_hint: IndexList[3] = Index(2, 2, 2),
     ):
         self.block_tile_shape = block_tile_shape
         self.warp_tile_shape = warp_tile_shape
@@ -141,6 +145,7 @@ struct MatmulConfig[
         self.cluster_shape = cluster_shape
         self.num_consumer = num_consumer
         self.partitioned_multicast = partitioned_multicast
+        self.scheduler_hint = scheduler_hint
 
     fn num_warps_m(self) -> UInt:
         return self.block_tile_shape[0] // self.warp_tile_shape[0]
@@ -239,11 +244,16 @@ struct MatmulConfig[
 
 # Helper for choosing the base of BK based on type.
 # Actual BK should be multiple of BK_base.
-fn _bk_base[type: DType]() -> Int:
+fn _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
     if type in (DType.float8_e4m3fn, DType.float8_e5m2):
         return 64
     elif type.is_half_float():
-        return 32
+
+        @parameter
+        if amd_kernel:
+            return 64
+        else:
+            return 32
     else:
         return 16
 
@@ -300,9 +310,38 @@ struct MatmulKernels[
 
     # TODO: These will have to be tuned for various shapes
     alias mi300x_128x128_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, 128, 64),
-        warp_tile_shape=Index(64, 64, 64),
+        block_tile_shape=Index(128, 128, _bk_base[a_type, True]()),
+        warp_tile_shape=Index(64, 64, _bk_base[a_type, True]()),
         num_pipeline_stages=1,
+        scheduler_hint=Index(2, 2, 2),
+    )
+
+    alias mi300x_128x256_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(128, 256, _bk_base[a_type, True]()),
+        warp_tile_shape=Index(64, 128, _bk_base[a_type, True]()),
+        num_pipeline_stages=1,
+        scheduler_hint=Index(2, 4, 2),
+    )
+
+    alias mi300x_192x256_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(192, 256, _bk_base[a_type, True]()),
+        warp_tile_shape=Index(96, 128, _bk_base[a_type, True]()),
+        num_pipeline_stages=1,
+        scheduler_hint=Index(4, 6, 2),
+    )
+
+    alias mi300x_224x256_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(224, 256, _bk_base[a_type, True]()),
+        warp_tile_shape=Index(112, 128, _bk_base[a_type, True]()),
+        num_pipeline_stages=1,
+        scheduler_hint=Index(4, 7, 2),
+    )
+
+    alias mi300x_256x256_1 = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(256, 256, _bk_base[a_type, True]()),
+        warp_tile_shape=Index(128, 128, _bk_base[a_type, True]()),
+        num_pipeline_stages=1,
+        scheduler_hint=Index(4, 8, 2),
     )
 
     alias mi300x_128x128_2 = MatmulConfig[a_type, b_type, c_type, transpose_b](

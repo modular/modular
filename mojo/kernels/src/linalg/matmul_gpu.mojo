@@ -350,15 +350,16 @@ fn _matmul_gpu[
 
             @parameter
             if has_amd_gpu_accelerator():
+                alias amd_config = kernels.mi300x_128x128_1 if transpose_b else kernels.mi300x_128x128_2
                 multistage_gemm[
                     transpose_b=transpose_b,
-                    config = kernels.mi300x_128x128_1 if transpose_b else kernels.mi300x_128x128_2,
+                    config=amd_config,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    kernels.mi300x_128x128_1 if transpose_b else kernels.mi300x_128x128_2,
+                    amd_config,
                     ctx,
                 )
                 return

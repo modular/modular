@@ -110,7 +110,9 @@ struct MMATileBuffers[
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
-    var register_buffer: Self.RegisterTileType
+    var register_buffer: __type_of(
+        Self.RegisterTileType.stack_allocation().split[2]()
+    )
 
     @always_inline
     fn __init__(
@@ -132,7 +134,9 @@ struct MMATileBuffers[
             warp_idx, 0
         )
         self.load_tile = Self.LoadTileType.stack_allocation()
-        self.register_buffer = Self.RegisterTileType.stack_allocation()
+        self.register_buffer = Self.RegisterTileType.stack_allocation().split[
+            2
+        ]()
 
     @always_inline
     fn copy_to_shared(self):
@@ -171,16 +175,19 @@ struct MMATileBuffers[
 
     @always_inline
     fn get_register_tile[
-        mma_idx: Int, k: Int, elements_per_thread: Int
+        k_group: Int, mma_idx: Int, k: Int, elements_per_thread: Int
     ](
         self,
         out result: __type_of(
-            self.register_buffer.tile_type[num_mmas, elements_per_thread]()
+            self.register_buffer[k_group].tile_type[
+                num_mmas, elements_per_thread
+            ]()
         ),
     ):
         """Get a specific K-dimension tile from the register buffer.
 
         Parameters:
+            k_group: The K-dimension tile index.
             mma_idx: The MMA tile index in K dimension.
             k: The sub-tile index within the MMA tile.
             elements_per_thread: The number of elements per thread.
@@ -188,9 +195,10 @@ struct MMATileBuffers[
         Returns:
             A tile view for the specified location in the register buffer.
         """
-        return self.register_buffer.tile[num_mmas, elements_per_thread](
-            mma_idx, k
-        )
+
+        return self.register_buffer[k_group].tile[
+            num_mmas, elements_per_thread
+        ](mma_idx, k)
 
 
 struct AMD_MMA[
@@ -214,51 +222,50 @@ struct AMD_MMA[
 
     @always_inline
     @staticmethod
-    fn load_tiles(a_tiles: MMATileBuffers, b_tiles: MMATileBuffers):
-        @parameter
-        for mma_idx in range(k_tiles_count):
-            Self.mma_op.load_a[swizzle=True](
-                a_tiles.mma_tile,
-                a_tiles.register_buffer.tile[mmas_per_warp_m, simd_width](
-                    mma_idx, 0
-                ).vectorize[1, simd_width](),
-                mma_idx,
-            )
+    fn load_tiles[
+        k_group: Int
+    ](a_tiles: MMATileBuffers, b_tiles: MMATileBuffers):
+        Self.mma_op.load_a[swizzle=True](
+            a_tiles.mma_tile,
+            a_tiles.register_buffer[k_group]
+            .tile[mmas_per_warp_m, simd_width](k_group, 0)
+            .vectorize[1, simd_width](),
+            k_group,
+        )
 
-            Self.mma_op.load_b[swizzle=swizzle](
-                b_tiles.mma_tile,
-                b_tiles.register_buffer.tile[mmas_per_warp_n, simd_width](
-                    mma_idx, 0
-                ).vectorize[1, simd_width](),
-                mma_idx,
-            )
+        Self.mma_op.load_b[swizzle=swizzle](
+            b_tiles.mma_tile,
+            b_tiles.register_buffer[k_group]
+            .tile[mmas_per_warp_n, simd_width](k_group, 0)
+            .vectorize[1, simd_width](),
+            k_group,
+        )
 
     @always_inline
     @staticmethod
-    fn mma(
+    fn mma[
+        k_group: Int
+    ](
         a_tiles: MMATileBuffers,
         b_tiles: MMATileBuffers,
         c_reg_tile: LayoutTensor,
     ):
         @parameter
-        for mma_idx in range(k_tiles_count):
+        for k in range(k_group_size):
+            alias elements_per_thread = simd_width // k_group_size
 
-            @parameter
-            for k in range(k_group_size):
-                alias elements_per_thread = simd_width // k_group_size
+            var a_reg_tile = a_tiles.get_register_tile[
+                k_group, 0, k, elements_per_thread
+            ]()
+            var b_reg_tile = b_tiles.get_register_tile[
+                k_group, 0, k, elements_per_thread
+            ]()
 
-                var a_reg_tile = a_tiles.get_register_tile[
-                    mma_idx, k, elements_per_thread
-                ]()
-                var b_reg_tile = b_tiles.get_register_tile[
-                    mma_idx, k, elements_per_thread
-                ]()
-
-                Self.mma_op.mma(
-                    a_reg_tile.vectorize[1, elements_per_thread](),
-                    b_reg_tile.vectorize[1, elements_per_thread](),
-                    c_reg_tile.vectorize[1, 4](),
-                )
+            Self.mma_op.mma(
+                a_reg_tile.vectorize[1, elements_per_thread](),
+                b_reg_tile.vectorize[1, elements_per_thread](),
+                c_reg_tile.vectorize[1, 4](),
+            )
 
 
 @__llvm_metadata(
@@ -490,31 +497,47 @@ fn gemm_kernel[
     @always_inline
     @parameter
     fn amd_scheduling_hints():
-        # Calculate shared memory operations per block for scheduling purposes
-        alias sm_ops_per_row_n = block_n // 4
-        alias sm_ops_per_row_m = block_m // 4
-
-        # Total memory operations for the entire block
-        alias total_mem_ops_n = sm_ops_per_row_n * block_k
-        alias total_mem_ops_m = sm_ops_per_row_m * block_k
-        alias total_mem_ops = total_mem_ops_n + total_mem_ops_m
-
-        alias ops_per_warp_simd = WARP_SIZE * simd_width
-        alias scheduling_iterations = total_mem_ops // ops_per_warp_simd
+        alias threads_per_row = block_k // simd_width
+        alias rows_per_thread_block = config.num_threads() // threads_per_row
+        alias a_loads_per_thread = block_m // rows_per_thread_block
+        alias b_loads_per_thread = block_n // rows_per_thread_block
 
         @parameter
-        for _ in range(scheduling_iterations):
-            schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
-            schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, 0)
-            schedule_group_barrier(AMDScheduleBarrierMask.VMEM_READ, 1, 0)
-            schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 5, 0)
-
-        alias total_mma_ops = mmas_per_warp_n * k_tiles_count + mmas_per_warp_m * k_tiles_count
-
-        @parameter
-        for _ in range(total_mma_ops):
+        for i in range(
+            (
+                warp_tile_m_mmas * k_tiles_count
+                + warp_tile_n_mmas * k_tiles_count
+            )
+            // k_tiles_count
+        ):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
-            schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, 0)
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.MFMA, config.scheduler_hint[2], 0
+            )
+
+        @parameter
+        for i in range(a_loads_per_thread + b_loads_per_thread):
+            schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.MFMA, config.scheduler_hint[0], 0
+            )
+            schedule_group_barrier(AMDScheduleBarrierMask.VMEM_READ, 1, 0)
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.MFMA, config.scheduler_hint[1], 0
+            )
+
+        @parameter
+        for i in range(
+            (
+                warp_tile_m_mmas * k_tiles_count
+                + warp_tile_n_mmas * k_tiles_count
+            )
+            // k_tiles_count
+        ):
+            schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.MFMA, config.scheduler_hint[2], 0
+            )
 
     # GEMM Computation Pipeline
     # This kernel implements a pipelined approach optimized for AMD GPUs:
@@ -526,37 +549,66 @@ fn gemm_kernel[
     # Stage 1: Initial data loading - Global→Local→Shared memory transfer
     load_tiles_from_dram()
     copy_tiles_to_shared()
+
     barrier()
 
     # Stage 2: First tile preparation - Register loading and prefetching
-    mma.load_tiles(a_tiles, b_tiles)
     load_tiles_from_dram()
+    mma.load_tiles[0](a_tiles, b_tiles)
 
     amd_schedule_barrier()
 
     # Stage 3: Main computation loop - Pipelined execution with double buffering
     for _ in range(0, k_dim - 2 * block_k, block_k):
+
+        @parameter
+        for k_group in range(1, k_tiles_count):
+            mma.load_tiles[k_group](a_tiles, b_tiles)
+
+        mma.mma[0](a_tiles, b_tiles, c_reg_tile)
+
         barrier()
 
         copy_tiles_to_shared()
         load_tiles_from_dram()
-        mma.mma(a_tiles, b_tiles, c_reg_tile)
+
+        @parameter
+        for k_group in range(1, k_tiles_count):
+            mma.mma[k_group](a_tiles, b_tiles, c_reg_tile)
 
         barrier()
 
-        mma.load_tiles(a_tiles, b_tiles)
+        mma.load_tiles[0](a_tiles, b_tiles)
+
         amd_scheduling_hints()
 
     amd_schedule_barrier()
+
+    @parameter
+    for k_group in range(1, k_tiles_count):
+        mma.load_tiles[k_group](a_tiles, b_tiles)
+
     barrier()
 
-    # Stage 4: Final tiles processing - Complete remaining computations
     copy_tiles_to_shared()
-    mma.mma(a_tiles, b_tiles, c_reg_tile)
+
+    @parameter
+    for k_group in range(0, k_tiles_count):
+        mma.mma[k_group](a_tiles, b_tiles, c_reg_tile)
+
+    amd_schedule_barrier()
+
     barrier()
 
-    mma.load_tiles(a_tiles, b_tiles)
-    mma.mma(a_tiles, b_tiles, c_reg_tile)
+    @parameter
+    for k_group in range(0, k_tiles_count):
+        mma.load_tiles[k_group](a_tiles, b_tiles)
+
+    @parameter
+    for k_group in range(0, k_tiles_count):
+        mma.mma[k_group](a_tiles, b_tiles, c_reg_tile)
+
+    amd_schedule_barrier()
 
     # --- Write results to output tensor ---
     # Output stage: Transfer results from registers to global memory
