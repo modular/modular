@@ -22,7 +22,7 @@ from utils import IndexList, StaticTuple
 
 @value
 @register_passable("trivial")
-struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
+struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable, Indexer):
     """A static or dynamic dimension modeled with an optional integer.
 
     This class is meant to represent an optional static dimension. When a value
