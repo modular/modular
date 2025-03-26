@@ -14,7 +14,7 @@ from max.serve.kvcache_agent.kvcache_agent import (
     KVCacheAgentServerConfig,
     KVCacheChangeMessage,
 )
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (
+from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
     SubscriptionRequest,
     UpdateType,

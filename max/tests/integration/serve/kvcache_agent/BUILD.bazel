@@ -3,7 +3,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "tests",
     srcs = glob(["*.py"]),
-    tags = ["no-mypy"],
     deps = [
         "//SDK/lib/API/python/max/serve/kvcache_agent",
         requirement("grpcio"),
