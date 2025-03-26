@@ -8189,6 +8189,7 @@ struct IndexTensor:
 
 @compiler.register("advanced_indexing_getitem")
 struct AdvancedIndexingGetItem:
+    @always_inline
     @staticmethod
     fn execute[
         input_rank: Int,
@@ -8204,21 +8205,39 @@ struct AdvancedIndexingGetItem:
         out_tensor: OutputTensor[
             type=input_type, rank = input_rank + index_rank - num_index_tensors
         ],
-        input_tensor: InputTensor[type=input_type, rank=input_rank],
-        indices: InputVariadicTensors[
+        input_tensor: FusedInputTensor[type=input_type, rank=input_rank],
+        indices: FusedInputVariadicTensors[
             index_type, index_rank, size=num_index_tensors
         ],
         ctx: DeviceContextPtr,
     ) raises:
+        @parameter
+        @always_inline
+        fn input_tensor_fn[
+            width: Int
+        ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
+            return input_tensor._fused_load[width](idx)
+
+        @always_inline
+        @parameter
+        fn indices_fn[
+            indices_index: Int,
+        ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+            constrained[
+                indices_index < num_index_tensors, "tensor index out of bounds"
+            ]()
+            return indices[indices_index]._fused_load[width=1](coordinates)
+
         advanced_indexing_getitem[
             input_rank=input_rank,
             start_axis=start_axis,
+            num_index_tensors=num_index_tensors,
             target=target,
             single_thread_blocking_override=_synchronous,
             trace_description=_trace_name,
+            input_tensor_fn=input_tensor_fn,
+            indices_fn=indices_fn,
         ](
-            managed_tensor_slice_to_ndbuffer(input_tensor),
-            input_variadic_tensors_to_static_tuple_ndbuffer(indices),
             managed_tensor_slice_to_ndbuffer(out_tensor),
             ctx,
         )
@@ -8245,6 +8264,7 @@ struct AdvancedIndexingGetItem:
 
 @compiler.register("advanced_indexing_setitem_inplace")
 struct AdvancedIndexingSetItemInplace:
+    @always_inline
     @staticmethod
     fn execute[
         input_rank: Int,
@@ -8259,28 +8279,47 @@ struct AdvancedIndexingSetItemInplace:
         _trace_name: StringLiteral,
     ](
         input_tensor: MutableInputTensor[type=input_type, rank=input_rank],
-        updates: InputTensor[type=input_type, rank=updates_rank],
-        indices: InputVariadicTensors[
+        updates: FusedInputTensor[type=input_type, rank=updates_rank],
+        indices: FusedInputVariadicTensors[
             index_type, index_rank, size=num_index_tensors
         ],
         ctx: DeviceContextPtr,
     ) raises:
+        @parameter
+        @always_inline
+        fn updates_tensor_fn[
+            width: Int
+        ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
+            return updates._fused_load[width](idx)
+
+        @always_inline
+        @parameter
+        fn indices_fn[
+            indices_index: Int,
+        ](coordinates: IndexList[index_rank]) capturing -> SIMD[index_type, 1]:
+            constrained[
+                indices_index < num_index_tensors, "tensor index out of bounds"
+            ]()
+            return indices[indices_index]._fused_load[width=1](coordinates)
+
         advanced_indexing_setitem_inplace[
             start_axis=start_axis,
+            num_index_tensors=num_index_tensors,
             target=target,
             single_thread_blocking_override=_synchronous,
             trace_description=_trace_name,
+            updates_tensor_fn=updates_tensor_fn,
+            indices_fn=indices_fn,
         ](
             managed_tensor_slice_to_ndbuffer(input_tensor),
-            managed_tensor_slice_to_ndbuffer(updates),
-            input_variadic_tensors_to_static_tuple_ndbuffer(indices),
+            indices[0].shape(),
             ctx,
         )
 
 
 @compiler.register("advanced_indexing_setitem")
 struct AdvancedIndexingSetItem:
-    # TODO: implement view fusion on inputs
+    @always_inline
     @staticmethod
     fn execute[
         input_rank: Int,
@@ -8295,9 +8334,9 @@ struct AdvancedIndexingSetItem:
         _trace_name: StringLiteral,
     ](
         output_tensor: OutputTensor[type=input_type, rank=input_rank],
-        input_tensor: InputTensor[type=input_type, rank=input_rank],
-        updates: InputTensor[type=input_type, rank=updates_rank],
-        indices: InputVariadicTensors[
+        input_tensor: FusedInputTensor[type=input_type, rank=input_rank],
+        updates: FusedInputTensor[type=input_type, rank=updates_rank],
+        indices: FusedInputVariadicTensors[
             index_type, index_rank, size=num_index_tensors
         ],
         ctx: DeviceContextPtr,
