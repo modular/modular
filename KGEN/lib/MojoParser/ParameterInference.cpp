@@ -279,6 +279,32 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
         --paramIndexRefDepth;
         return success();
       }
+
+      // TODO(verdagon): This entire block is a temporary hack that's replaced
+      // in the next PR, so I can split PRs to be merciful to reviewers.
+      auto expectedPackArgIndexOpt = expected.findPackVarArgIndex();
+      if (expectedPackArgIndexOpt.has_value()) {
+        // The argument index that has the VariadicPack.
+        size_t expectedPackArgIndex = expectedPackArgIndexOpt.value();
+        ASTType expectedAstType =
+            expected.getIfVariadicPack(expectedPackArgIndex);
+        RefPackType refPackType = expectedAstType.getVariadicPackInfo(shared);
+        TypedAttr variadic = refPackType.getVariadic();
+        if (isa<ParamIndexRefAttr>(variadic)) {
+          // Make an empty variadic for now
+          Type variadicElType = refPackType.getVariadicElementType();
+          auto variadicType =
+              VariadicType::get(variadicElType, ArgConvention::ReadReg);
+          auto variadicAttr = VariadicAttr::get({}, variadicType);
+          ++paramIndexRefDepth;
+          if (failed(matchParams(variadicAttr, variadic))) {
+            assert(false);
+            return failure();
+          }
+          --paramIndexRefDepth;
+          return success();
+        }
+      }
     }
 
   // If the actual type is a reference to a parameter, it might be a local
@@ -994,7 +1020,6 @@ void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
 void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
                                     PogListAttr paramListAttr,
                                     bool hasArguments) {
-
   // If the parameter list has any inferred parameters, then we have to infer
   // against the provided binding list, since we might infer parameters from
   // other parameters. Otherwise, just exit early.

@@ -1298,6 +1298,16 @@ bool FnTypeGeneratorType::hasPackVarArgs() {
   return getBody().hasPackVarArgs();
 }
 
+std::optional<size_t> FnTypeGeneratorType::findPackVarArgIndex() {
+  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult();
+  if (numUserArgs == 0)
+    return std::nullopt;
+  size_t lastUserArgIndex = numUserArgs - 1;
+  if (isPackVarArg(lastUserArgIndex))
+    return std::make_optional(lastUserArgIndex);
+  return std::nullopt;
+}
+
 bool FnTypeGeneratorType::hasKwVarArgs() { return getBody().hasKwVarArgs(); }
 
 unsigned FnTypeGeneratorType::getErrorSlotOffset() {

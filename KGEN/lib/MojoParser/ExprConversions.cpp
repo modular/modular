@@ -35,8 +35,66 @@ using namespace LIT;
 // Function Conversions
 //===----------------------------------------------------------------------===//
 
-static bool canConvertFunctionTypes(FnTypeGeneratorType actual,
-                                    FnTypeGeneratorType expected) {
+// Strips references from the expected and actual types, reconciling allowed
+// differences and extracting the pointee types to compare.
+bool stripRefsForConversion(ASTType *resultExpectedAstValueType,
+                            ASTType *resultActualAstValueType,
+                            ASTType expectedAstType, ArgConvention expectedConv,
+                            ASTType actualAstType, ArgConvention actualConv) {
+  // Check the argument convention, reconciling allowed differences and
+  // extracting the actual type to compare. This also doesn't check for
+  // passing convention, since those are trivially convertible.
+  switch (expectedConv) {
+  case ArgConvention::OwnedReg:
+    llvm_unreachable("not used by the mojo parser");
+  case ArgConvention::ByRefError:
+    // We checked that the function effects line up, so if we see
+    // `byref_error`, then the other function must have it as well.
+    assert(actualConv == ArgConvention::ByRefError &&
+           "both functions must be throwing");
+    [[fallthrough]];
+  case ArgConvention::OwnedMem:
+  case ArgConvention::MutRef:
+  case ArgConvention::Ref:
+  case ArgConvention::Mut:
+    if (actualConv == ArgConvention::ReadMem) {
+      // If the actual function accepts a read reference, and we have an
+      // owned/mutref/ref/mut, we can make a thunk to convert those nicely.
+      actualAstType = actualAstType.getReferenceElementType();
+    } else if (actualConv == ArgConvention::ReadReg) {
+      // If the actual function accepts a register-passable read, and we have
+      // an owned/mutref/ref/mut, we can make a thunk to convert that nicely.
+    } else if (actualConv == expectedConv) {
+      // These conventions all take in references.
+      actualAstType = actualAstType.getReferenceElementType();
+    } else {
+      return false;
+    }
+    expectedAstType = expectedAstType.getReferenceElementType();
+    break;
+
+  case ArgConvention::ReadMem:
+  case ArgConvention::ReadReg:
+    if (!llvm::is_contained({ArgConvention::ReadMem, ArgConvention::ReadReg},
+                            actualConv))
+      return false;
+    actualAstType = getFunctionArgumentRValueType(actualAstType, actualConv);
+    expectedAstType =
+        getFunctionArgumentRValueType(expectedAstType, expectedConv);
+    break;
+
+  case ArgConvention::ByRefResult:
+    llvm_unreachable("`byref_result` was already handled");
+  }
+
+  *resultExpectedAstValueType = expectedAstType;
+  *resultActualAstValueType = actualAstType;
+  return true;
+}
+
+// TODO: Return more than a boolean, so we can have better error messages.
+bool canConvertFunctionTypes(SharedState &shared, FnTypeGeneratorType actual,
+                             FnTypeGeneratorType expected) {
   // We should have already checked that the function types are not
   // trivially-convertible between each other.
 
@@ -70,67 +128,89 @@ static bool canConvertFunctionTypes(FnTypeGeneratorType actual,
   // Functions with a different number of arguments cannot be converted between
   // each other.
   // TODO: Consider default argument values.
-  if (actualArgTypes.size() != expectedArgTypes.size())
-    return false;
 
-  // Function types are compatible if the arguments only differ in passing
-  // conventions due to register-passibility.
-  // TODO: Handle variadics and packs.
-  for (auto [actualConv, expectedConv, actualType, expectedType] :
-       llvm::zip(actual.getArgConventions().drop_back(actualMemResult),
-                 expected.getArgConventions().drop_back(expectedMemResult),
-                 actualArgTypes, expectedArgTypes)) {
-    ASTType lhs = actualType;
-    ASTType rhs = expectedType;
-
-    // Check the argument convention, reconciling allowed differences and
-    // extracting the actual type to compare. This also doesn't check for
-    // passing convention, since those are trivially convertible.
-    switch (expectedConv) {
-    case ArgConvention::OwnedReg:
-      llvm_unreachable("not used by the mojo parser");
-    case ArgConvention::ByRefError:
-      // We checked that the function effects line up, so if we see
-      // `byref_error`, then the other function must have it as well.
-      assert(actualConv == ArgConvention::ByRefError &&
-             "both functions must be throwing");
-      [[fallthrough]];
-    case ArgConvention::OwnedMem:
-    case ArgConvention::MutRef:
-    case ArgConvention::Ref:
-    case ArgConvention::Mut:
-      if (actualConv == ArgConvention::ReadMem) {
-        // If the actual function accepts a read reference, and we have an
-        // owned/mutref/ref/mut, we can make a thunk to convert those nicely.
-        lhs = lhs.getReferenceElementType();
-      } else if (actualConv == ArgConvention::ReadReg) {
-        // If the actual function accepts a register-passable read, and we have
-        // an owned/mutref/ref/mut, we can make a thunk to convert that nicely.
-      } else if (actualConv == expectedConv) {
-        // These conventions all take in references.
-        lhs = lhs.getReferenceElementType();
-      } else {
-        return false;
-      }
-      rhs = rhs.getReferenceElementType();
-      break;
-
-    case ArgConvention::ReadMem:
-    case ArgConvention::ReadReg:
-      if (!llvm::is_contained({ArgConvention::ReadMem, ArgConvention::ReadReg},
-                              actualConv))
-        return false;
-      lhs = getFunctionArgumentRValueType(actualType, actualConv);
-      rhs = getFunctionArgumentRValueType(expectedType, expectedConv);
-      break;
-
-    case ArgConvention::ByRefResult:
-      llvm_unreachable("`byref_result` was already handled");
-    }
-
-    // Now check that the argument types line up.
-    if (!lhs.isEqualCanon(rhs))
+  // Calculate which arguments will end up as part of the variadic arg.
+  std::optional<size_t> expectedVariadicArgIndexOpt =
+      expected.findPackVarArgIndex();
+  if (expectedVariadicArgIndexOpt.has_value()) {
+    size_t expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
+    if (actualArgTypes.size() < expectedVariadicArgIndex) {
+      // Caller didn't supply enough arguments.
       return false;
+    }
+  } else { // No variadic
+    if (actualArgTypes.size() != expectedArgTypes.size()) {
+      // Caller didn't supply the expected number of arguments.
+      return false;
+    }
+  }
+
+  for (size_t actualArgIndex = 0; actualArgIndex < actualArgTypes.size();
+       actualArgIndex++) {
+    auto actualConv = actual.getArgConvention(actualArgIndex);
+    ASTType actualAstType = actualArgTypes[actualArgIndex];
+
+    // The type the actual argument will be compared against. If the actual
+    // argument is going into a variadic, then this will be the variadic's
+    // element type, not the variadic's type itself.
+    ASTType expectedAstType;
+    ArgConvention expectedConv;
+    if (expectedVariadicArgIndexOpt.has_value() &&
+        actualArgIndex >= expectedVariadicArgIndexOpt.value()) {
+      auto expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
+      ASTType expectedArgVariadicPackType =
+          expected.getIfVariadicPack(expectedVariadicArgIndex);
+      RefPackType refPackType =
+          expectedArgVariadicPackType.getVariadicPackInfo(shared);
+      ASTType variadicElType = refPackType.getVariadicElementType();
+      ASTType variadicElRefType =
+          refPackType.getElementRefTypeFor(variadicElType);
+      expectedAstType = variadicElRefType;
+      expectedConv = expected.getArgConvention(expectedVariadicArgIndex);
+
+      ASTType expectedAstValueType, actualAstValueType;
+      if (!stripRefsForConversion(&expectedAstValueType, &actualAstValueType,
+                                  expectedAstType, expectedConv, actualAstType,
+                                  actualConv))
+        return false;
+
+      // Now check that the argument types line up.
+
+      // If the arguments are exactly equal, skip the more expensive checks.
+      if (actualAstValueType.isEqualCanon(expectedAstValueType))
+        continue;
+
+      // If we're trying to feed an e.g. `fn(Int,Bool)->None` into a
+      // `fn(*args:*T)->None` (where `T: AnyType`), then we need to check that
+      // Int and Bool conform to AnyType.
+      // In other words, we need to check that the arguments going into the
+      // variadic pack conform to the pack element type trait.
+      if (isa<LIT::StructType>(actualAstValueType.mlirType)) {
+        ASTDecl *actualStructDeclOp = actualAstValueType.getDecl(shared);
+        if (auto expectedTraitType =
+                dyn_cast<TraitType>(expectedAstValueType.mlirType)) {
+          std::optional<InflightDiag> x = std::nullopt;
+          if (!actualStructDeclOp->doesNominalTypeConformTo(expectedTraitType,
+                                                            x)) {
+            return false;
+          }
+        }
+      }
+    } else {
+      // These accesses should be okay because we checked the number of actual
+      // arguments above.
+      expectedAstType = expectedArgTypes[actualArgIndex];
+      expectedConv = expected.getArgConvention(actualArgIndex);
+      // Strip references from the types, as long as
+      ASTType expectedAstValueType, actualAstValueType;
+      if (!stripRefsForConversion(&expectedAstValueType, &actualAstValueType,
+                                  expectedAstType, expectedConv, actualAstType,
+                                  actualConv))
+        return false;
+      // Now check that the argument types line up.
+      if (!expectedAstValueType.isEqualCanon(actualAstValueType))
+        return false;
+    }
   }
 
   // The function types are convertible.
@@ -139,6 +219,8 @@ static bool canConvertFunctionTypes(FnTypeGeneratorType actual,
 
 static FnTypeGeneratorType getReducedFunctionType(FnTypeGeneratorType sig) {
   MLIRContext *ctx = sig.getContext();
+
+  auto origPogListAttr = sig.getArgListAttrs();
 
   SmallVector<PassingKind> passingKinds(sig.getNumArguments(),
                                         PassingKind::PosOnly);
@@ -150,9 +232,14 @@ static FnTypeGeneratorType getReducedFunctionType(FnTypeGeneratorType sig) {
   if (sig.isThrows())
     passingKinds.end()[-2] = PassingKind::Implicit;
 
+  auto newPogListAttr = PogListAttr::get(
+      ctx, names, passingKinds, {}, {}, {},
+      // Preserve the pack index and pack convention, so the reduced function
+      // can have a variadic pack in the same place.
+      origPogListAttr.getPackIndex(), origPogListAttr.getOrigPackConvention());
+
   auto metadata = FnMetadataAttr::get(
-      PogListAttr::get(ctx, names, passingKinds),
-      sig.getNumImplicitOriginDecls(), sig.getCaptureOrigins(),
+      newPogListAttr, sig.getNumImplicitOriginDecls(), sig.getCaptureOrigins(),
       sig.getIsNestedOriginExclusivityCheckingDisabled());
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
@@ -258,10 +345,61 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   CallOperands operands;
   SyntheticNode node(thunkDecl->getLoc());
 
-  for (auto [arg, conv] :
-       llvm::zip(thunk.getArguments(), thunkSignature.getArgConventions())) {
+  std::optional<size_t> thunkVariadicArgIndexOpt =
+      thunkSignature.findPackVarArgIndex();
+
+  bool actualMemResult = actualSignature.hasMemoryOnlyResult();
+  bool thunkMemResult = thunkSignature.hasMemoryOnlyResult();
+  ArrayRef<Type> actualArgTypes =
+      actualSignature.getArguments().drop_back(actualMemResult);
+  ArrayRef<Type> thunkArgTypes =
+      thunkSignature.getArguments().drop_back(thunkMemResult);
+
+  for (size_t actualArgIndex = 0; actualArgIndex < actualArgTypes.size();
+       actualArgIndex++) {
+    ASTType actualAstType = actualArgTypes[actualArgIndex];
+
+    bool actualArgIsForVariadic =
+        thunkVariadicArgIndexOpt.has_value() &&
+        actualArgIndex >= thunkVariadicArgIndexOpt.value();
+
+    ASTType thunkArgAstType;
+    Value argForActual;
+    KGEN::ArgConvention thunkArgConv;
+    if (actualArgIsForVariadic) {
+      size_t thunkVariadicArgIndex = thunkVariadicArgIndexOpt.value();
+      ASTType thunkAstType =
+          thunkSignature.getIfVariadicPack(thunkVariadicArgIndex);
+      assert(thunkAstType);
+      size_t indexInVariadic = actualArgIndex - thunkVariadicArgIndex;
+
+      auto index = IntegerAttr::get(IndexType::get(ctx), indexInVariadic);
+
+      ValueDest eltDest(actualAstType, EC_VarArgArgument);
+
+      SyntheticNode indexSynthNode(moduleDecl.getLoc(), PValue(index));
+
+      // Temporary placeholder, since __getitem__ calls don't work, we'll just
+      // call the default constructor for the type we want to send to the
+      // underlying function.
+      auto constructorResult = emitter.emitConstructorCall(
+          actualAstType, {}, indexSynthNode, CallSyntax::kTypeCall, eltDest);
+      assert(constructorResult);
+      argForActual = eltDest.getMLValueForResult(moduleDecl.getLoc(),
+                                                 actualAstType, emitter);
+      // TODO(verdagon): Call __getitem__ in next PR when StructEmitter works
+
+      thunkArgAstType = actualAstType;
+      // TODO(verdagon): Change to ReadReg in next PR when StructEmitter works
+      thunkArgConv = ArgConvention::OwnedMem;
+    } else {
+      thunkArgAstType = thunkArgTypes[actualArgIndex];
+      argForActual = thunk.getArguments()[actualArgIndex];
+      thunkArgConv = thunkSignature.getArgConvention(actualArgIndex);
+    }
+
     AnyValue value;
-    switch (conv) {
+    switch (thunkArgConv) {
     case ArgConvention::OwnedReg:
       llvm_unreachable("not used by the mojo parser");
     case ArgConvention::ByRefResult:
@@ -270,17 +408,17 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
     case ArgConvention::Mut:
     case ArgConvention::MutRef:
-      value = MLValue(arg);
+      value = MLValue(argForActual);
       break;
     case ArgConvention::OwnedMem:
-      value = MRValue(arg);
+      value = MRValue(argForActual);
       break;
     case ArgConvention::ReadReg:
-      value = SRValue(arg);
+      value = SRValue(argForActual);
       break;
     case ArgConvention::ReadMem:
     case ArgConvention::Ref:
-      value = MBValue(arg);
+      value = MBValue(argForActual);
       break;
     }
     operands.add({value, node});
@@ -1289,7 +1427,8 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (auto requiredFunction = dyn_cast<FnTypeGeneratorType>(requiredType)) {
     bool result = false;
     if (auto rvFunctionType = dyn_cast<FnTypeGeneratorType>(rvType))
-      result = canConvertFunctionTypes(rvFunctionType, requiredFunction);
+      result =
+          canConvertFunctionTypes(shared, rvFunctionType, requiredFunction);
     return cacheAndReturnVal(result);
   }
 
@@ -1379,7 +1518,7 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   // Support implicit conversions of function types.
   if (auto requiredFunction = dyn_cast<FnTypeGeneratorType>(requiredType)) {
     if (auto rvFunctionType = dyn_cast<FnTypeGeneratorType>(rvType))
-      if (canConvertFunctionTypes(rvFunctionType, requiredFunction))
+      if (canConvertFunctionTypes(shared, rvFunctionType, requiredFunction))
         return convertFunctionValue(value, expr, requiredFunction, *this, dest);
   }
 
