@@ -83,11 +83,37 @@ def test_array_int():
     var arr3 = InlineArray[Int, 1](5)
     assert_equal(arr3[0], 5)
 
-    var arr4 = InlineArray[UInt8, 1](42)
-    assert_equal(arr4[0], 42)
-    var a = InlineArray[UInt8, 1000](10)
-    for i in range(1000):
-        assert_equal(a[i], 10)
+    def test_init_fill[size: Int, batch_size: Int, dt: DType](arg: Scalar[dt]):
+        var arr = InlineArray[Scalar[dt], size].__init__[batch_size=batch_size](
+            fill=arg
+        )
+        for i in range(size):
+            assert_equal(arr[i], arg)
+
+    def test_init_fill_scalars[
+        *dts: DType, sizes: List[Int], batch_sizes: List[Int]
+    ]():
+        @parameter
+        for current_batch_size in range(len(batch_sizes)):
+
+            @parameter
+            for current_size in range(len(sizes)):
+
+                @parameter
+                for current_type in range(len(VariadicList(dts))):
+                    test_init_fill[
+                        sizes[current_size], batch_sizes[current_batch_size]
+                    ](Scalar[dts[current_type]].MAX)
+
+    test_init_fill_scalars[
+        Int64.type,
+        Int8.type,
+        sizes = List(1, 32, 64, 129, 256, 512, 768, 1000),
+        batch_sizes = List(1, 8, 32, 64, 128),
+    ]()
+
+    test_init_fill[2048, 512](Int64.MAX)
+    test_init_fill[2048, 1](Int64.MAX)
 
 
 def test_array_str():
