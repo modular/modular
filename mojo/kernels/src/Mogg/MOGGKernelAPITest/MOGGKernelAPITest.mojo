@@ -921,6 +921,7 @@ struct VariadicDeviceContext:
     fn execute[
         type: DType,
         rank: Int,
+        target: StringLiteral = "gpu",
     ](
         outputs: OutputVariadicTensors[type, rank, *_],
         inputs: InputVariadicTensors[type, rank, *_],
