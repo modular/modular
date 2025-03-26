@@ -33,10 +33,10 @@ fn kl_div(x: SIMD, y: __type_of(x)) -> __type_of(x):
     $$
     """
     return (isnan(x) or isnan(y)).select(
-        __type_of(x)(nan[x.type]()),
+        __type_of(x)(nan[x.dtype]()),
         (x > 0 and y > 0).select(
             x * log(x / y) - x + y,
-            (x == 0 and y >= 0).select(y, __type_of(x)(inf[x.type]())),
+            (x == 0 and y >= 0).select(y, __type_of(x)(inf[x.dtype]())),
         ),
     )
 
