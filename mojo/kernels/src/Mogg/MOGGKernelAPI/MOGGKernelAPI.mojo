@@ -109,6 +109,7 @@ from nn.index_tensor import (
     index_tensor,
     advanced_indexing_getitem,
     advanced_indexing_setitem_inplace,
+    advanced_indexing_getitem_shape,
 )
 from nn.kv_cache import (
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
@@ -8221,6 +8222,25 @@ struct AdvancedIndexingGetItem:
             managed_tensor_slice_to_ndbuffer(out_tensor),
             ctx,
         )
+
+    @always_inline
+    @staticmethod
+    fn shape[
+        input_rank: Int,
+        index_rank: Int,
+        input_type: DType,
+        index_type: DType,
+        num_index_tensors: Int, //,
+        start_axis: Int,
+    ](
+        input_tensor: InputTensor[type=input_type, rank=input_rank],
+        indices: InputVariadicTensors[
+            index_type, index_rank, size=num_index_tensors
+        ],
+    ) -> IndexList[input_rank + index_rank - num_index_tensors]:
+        return advanced_indexing_getitem_shape[
+            start_axis=start_axis, num_index_tensors=num_index_tensors
+        ](input_tensor.shape(), indices[0].shape())
 
 
 @compiler.register("advanced_indexing_setitem_inplace")
