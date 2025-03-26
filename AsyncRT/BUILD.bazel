@@ -111,7 +111,10 @@ modular_cc_library(
     deps = [
         ":DeviceContext.headers",
         ":RuntimeGlobals",
-    ],
+    ] + select({
+        "//:linux_x86_64": ["@nvptxcompiler"],
+        "//conditions:default": [],
+    }),
     alwayslink = True,
 )
 
