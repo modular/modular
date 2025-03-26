@@ -719,6 +719,20 @@ struct UInt(
         ](self.value, rhs.value)
 
     @always_inline("nodebug")
+    fn __lt__(self, rhs: Int) -> Bool:
+        """Compare this Int to the RHS using LT comparison.
+
+        Args:
+            rhs: The other Int to compare against.
+
+        Returns:
+            True if this Int is less-than the RHS Int and False otherwise.
+        """
+        return __mlir_op.`index.cmp`[
+            pred = __mlir_attr.`#index<cmp_predicate ult>`
+        ](self.value, rhs.value)
+
+    @always_inline("nodebug")
     fn __le__(self, rhs: UInt) -> Bool:
         """Compare this Int to the RHS using LE comparison.
 
