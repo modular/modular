@@ -30,7 +30,7 @@ from utils import Variant
 
 
 @register_passable("trivial")
-struct _NoneMarker(CollectionElementNew):
+struct _NoneMarker(CollectionElementNew, CollectionElement):
     """This is a trivial class to indicate that an object is `None`."""
 
     fn __init__(out self):

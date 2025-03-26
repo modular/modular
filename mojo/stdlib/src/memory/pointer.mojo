@@ -301,7 +301,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](CollectionElementNew, Stringable):
+](CollectionElementNew, Stringable, CollectionElement):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to

@@ -423,6 +423,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     EqualityComparable,
     Hashable,
     PathLike,
+    FloatableRaising,
+    Boolable,
+    IntableRaising,
+    RepresentableCollectionElement,
+    EqualityComparableCollectionElement,
+    _CurlyEntryFormattable,
 ):
     """A non-owning view to encoded string data.
 

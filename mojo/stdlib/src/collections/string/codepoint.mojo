@@ -37,7 +37,13 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
 
 
 @value
-struct Codepoint(CollectionElement, EqualityComparable, Intable, Stringable):
+struct Codepoint(
+    CollectionElement,
+    EqualityComparable,
+    Intable,
+    Stringable,
+    EqualityComparableCollectionElement,
+):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 

@@ -65,7 +65,7 @@ struct InlineArray[
     size: Int,
     *,
     run_destructors: Bool = False,
-](Sized, Movable, Copyable, ExplicitlyCopyable):
+](Sized, Movable, Copyable, ExplicitlyCopyable, CollectionElement):
     """A fixed-size sequence of homogeneous elements where size is a constant expression.
 
     InlineArray provides a fixed-size array implementation with compile-time size checking.

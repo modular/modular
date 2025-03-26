@@ -21,7 +21,7 @@ from ._macos import _getpw_macos
 
 
 @value
-struct Passwd(Stringable):
+struct Passwd(Stringable, Writable):
     """Represents user account information retrieved from the user password
     database related to a user ID."""
 

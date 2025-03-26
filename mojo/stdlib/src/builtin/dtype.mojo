@@ -34,6 +34,7 @@ struct DType(
     Representable,
     KeyElement,
     CollectionElementNew,
+    EqualityComparableCollectionElement,
     _HashableWithHasher,
 ):
     """Represents DType and provides methods for working with it."""

@@ -28,6 +28,8 @@ from sys.ffi import c_char
 
 from memory import Span, UnsafePointer, memcpy
 
+from os import PathLike
+
 from utils import Writable, Writer
 from utils._visualizers import lldb_formatter_wrapping_type
 from utils.write import _WriteBufferStack
@@ -51,6 +53,9 @@ struct StringLiteral(
     Stringable,
     FloatableRaising,
     _HashableWithHasher,
+    PathLike,
+    EqualityComparableCollectionElement,
+    _CurlyEntryFormattable,
 ):
     """This type represents a string literal.
 

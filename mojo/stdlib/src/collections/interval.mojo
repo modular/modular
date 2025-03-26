@@ -85,7 +85,7 @@ trait IntervalElement(
         ...
 
 
-struct Interval[T: IntervalElement](CollectionElement):
+struct Interval[T: IntervalElement](CollectionElement, Boolable, Writable):
     """A half-open interval [start, end) that represents a range of values.
 
     The interval includes the start value but excludes the end value.
@@ -335,7 +335,9 @@ struct Interval[T: IntervalElement](CollectionElement):
         return "Interval" + String.write(self) + ""
 
 
-struct _IntervalNode[T: IntervalElement, U: IntervalPayload](CollectionElement):
+struct _IntervalNode[T: IntervalElement, U: IntervalPayload](
+    CollectionElement, Stringable, Writable
+):
     """A node containing an interval and associated data.
 
     Parameters:
@@ -524,7 +526,7 @@ struct _IntervalNode[T: IntervalElement, U: IntervalPayload](CollectionElement):
         return self.interval > other.interval
 
 
-struct IntervalTree[T: IntervalElement, U: IntervalPayload]:
+struct IntervalTree[T: IntervalElement, U: IntervalPayload](Writable):
     """An interval tree data structure for efficient range queries.
 
     Parameters:

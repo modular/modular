@@ -22,6 +22,8 @@ from sys.ffi import c_char
 from memory import UnsafePointer, memcpy
 from memory.memory import _free
 
+from collections.string.format import _CurlyEntryFormattable
+
 from utils.write import write_buffered
 
 # ===-----------------------------------------------------------------------===#
@@ -37,6 +39,7 @@ struct Error(
     Writable,
     CollectionElement,
     CollectionElementNew,
+    _CurlyEntryFormattable,
 ):
     """This type represents an Error."""
 

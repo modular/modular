@@ -19,7 +19,12 @@ These are Mojo built-ins, so you don't need to import them.
 from math import ceildiv
 
 # FIXME(MOCO-658): Explicit conformance to these traits shouldn't be needed.
-from builtin._stubs import _IntIterable, _StridedIterable, _UIntStridedIterable
+from builtin._stubs import (
+    _IntIterable,
+    _StridedIterable,
+    _UIntStridedIterable,
+    _IntIter,
+)
 from python import (
     PythonObject,
 )  # TODO: remove this and fixup downstream imports
@@ -45,7 +50,9 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable):
+struct _ZeroStartingRange(
+    Sized, ReversibleRange, _IntIterable, CollectionElement
+):
     var curr: Int
     var end: Int
 
@@ -119,7 +126,7 @@ struct _SequentialRange(Sized, ReversibleRange, _IntIterable):
 
 @value
 @register_passable("trivial")
-struct _StridedRangeIterator(Sized):
+struct _StridedRangeIterator(Sized, _IntIter):
     var start: Int
     var end: Int
     var step: Int

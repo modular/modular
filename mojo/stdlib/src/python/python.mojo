@@ -43,14 +43,14 @@ fn _init_python_global() -> _PythonGlobal:
     return _PythonGlobal()
 
 
-struct _PythonGlobal:
+struct _PythonGlobal(Movable):
     var cpython: CPython
-
-    fn __moveinit__(out self, owned other: Self):
-        self.cpython = other.cpython^
 
     fn __init__(out self):
         self.cpython = CPython()
+
+    fn __moveinit__(out self, owned other: Self):
+        self.cpython = other.cpython^
 
     fn __del__(owned self):
         CPython.destroy(self.cpython)

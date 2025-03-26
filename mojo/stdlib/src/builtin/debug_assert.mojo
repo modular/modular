@@ -269,7 +269,7 @@ fn _debug_assert_msg[
 
 
 @value
-struct _GPUThreadInfo:
+struct _GPUThreadInfo(Writable):
     fn write_to[W: Writer](self, mut writer: W):
         writer.write(
             "block: [",

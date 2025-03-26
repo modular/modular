@@ -37,6 +37,7 @@ from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy
+from os import PathLike
 from python import PythonObject
 
 from utils import IndexList, Variant, Writable, Writer, write_args
@@ -540,6 +541,9 @@ struct String(
     CollectionElementNew,
     FloatableRaising,
     _HashableWithHasher,
+    WritableCollectionElement,
+    PathLike,
+    _CurlyEntryFormattable,
 ):
     """Represents a mutable string."""
 

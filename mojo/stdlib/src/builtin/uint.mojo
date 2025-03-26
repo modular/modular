@@ -15,19 +15,34 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from builtin.math import (
+    _CopyableGreaterThanComparable,
+    _CopyableLessThanComparable,
+)
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from hashlib.hash import _hash_simd
+from math import CeilDivable
 from sys import bitwidthof
 
 from documentation import doc_private
 
+from utils.write import Writable
 from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
 @value
 @register_passable("trivial")
-struct UInt(Indexer, _HashableWithHasher):
+struct UInt(
+    Indexer,
+    _HashableWithHasher,
+    Stringable,
+    _CopyableGreaterThanComparable,
+    _CopyableLessThanComparable,
+    CeilDivable,
+    Writable,
+    Boolable,
+):
     """This type represents an unsigned integer.
 
     An unsigned integer represents a positive integral number.

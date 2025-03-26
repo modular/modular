@@ -274,6 +274,8 @@ struct SIMD[type: DType, size: Int](
     Representable,
     Roundable,
     Sized,
+    RepresentableCollectionElement,
+    Stringable,
 ):
     """Represents a small vector that is backed by a hardware vector element.
 

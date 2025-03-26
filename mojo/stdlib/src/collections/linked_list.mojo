@@ -132,7 +132,7 @@ struct _LinkedListIter[
 
 struct LinkedList[
     ElementType: CollectionElement,
-]:
+](Sized):
     """A doubly-linked list implementation.
 
     A doubly-linked list is a data structure where each element points to both

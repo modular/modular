@@ -128,7 +128,7 @@ struct RTLD:
 alias DEFAULT_RTLD = RTLD.NOW | RTLD.GLOBAL
 
 
-struct _OwnedDLHandle:
+struct _OwnedDLHandle(Movable):
     """Represents an owned handle to a dynamically linked library that can be
     loaded and unloaded.
 

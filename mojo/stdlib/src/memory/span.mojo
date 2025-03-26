@@ -107,7 +107,7 @@ struct Span[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = _default_alignment[T](),
-](CollectionElementNew):
+](CollectionElementNew, CollectionElement, Sized):
     """A non-owning view of contiguous data.
 
     Parameters:

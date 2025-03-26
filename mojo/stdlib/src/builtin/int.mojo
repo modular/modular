@@ -15,8 +15,15 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from builtin.math import (
+    _CopyableGreaterThanComparable,
+    _CopyableLessThanComparable,
+    Powable,
+    Absable,
+)
 from collections import KeyElement
 from collections.string import StringSlice
+from collections.string.format import _CurlyEntryFormattable
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
@@ -323,6 +330,14 @@ struct Int(
     Roundable,
     _HashableWithHasher,
     ExplicitlyCopyable,
+    Writable,
+    ComparableCollectionElement,
+    _CopyableGreaterThanComparable,
+    Powable,
+    Absable,
+    _CurlyEntryFormattable,
+    _CopyableLessThanComparable,
+    EqualityComparableCollectionElement,
 ):
     """This type represents an integer value."""
 
