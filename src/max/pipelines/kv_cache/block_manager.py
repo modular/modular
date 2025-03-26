@@ -27,11 +27,17 @@ TODO E2EOPT-116: Port block_manager.py and block_utils.py to Mojo
 from __future__ import annotations
 
 import logging
+import multiprocessing
 from collections import defaultdict
 from typing import Iterable, Optional
 
 import numpy as np
 from max.profiler import traced
+from max.serve.kvcache_agent.kvcache_agent import KVCacheChangeMessage
+from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
+    MemoryTier,
+    UpdateType,
+)
 from max.support.math import ceildiv
 
 from .block_utils import (
@@ -107,6 +113,9 @@ class BlockManager:
 
         # Whether to enable runtime checks.
         self.enable_runtime_checks = enable_runtime_checks
+
+        # Queue for the KV Cache Agent updates
+        self.kv_cache_agent_queue: Optional[multiprocessing.Queue] = None
 
     @traced
     def fetch(
@@ -446,6 +455,17 @@ class BlockManager:
                 assert block.block_hash is None
                 block.block_hash = block_hash
                 self.committed_block_hash_to_block[block_hash] = block
+                if self.kv_cache_agent_queue is not None:
+                    logger.debug(
+                        f"Updating KV Cache Agent with block {block_hash.hash_value}, memory tier {MemoryTier.MEMORY_TIER_GPU}, update type {UpdateType.UPDATE_TYPE_ADDED}"
+                    )
+                    self.kv_cache_agent_queue.put(
+                        KVCacheChangeMessage(
+                            cache_id=str(block_hash.hash_value),
+                            memory_tier=MemoryTier.MEMORY_TIER_GPU,
+                            update_type=UpdateType.UPDATE_TYPE_ADDED,
+                        )
+                    )
 
                 parent_block_hash = ROOT_BLOCK_HASH
                 if block_idx > 0:
@@ -514,6 +534,18 @@ class BlockManager:
                 del self.parent_to_child_hash[parent_block_hash][
                     block_hash.token_ids
                 ]
+                if self.kv_cache_agent_queue is not None:
+                    logger.debug(
+                        f"Updating KV Cache Agent with block {block_hash.hash_value}, memory tier {MemoryTier.MEMORY_TIER_GPU}, update type {UpdateType.UPDATE_TYPE_ADDED}"
+                    )
+                    self.kv_cache_agent_queue.put(
+                        KVCacheChangeMessage(
+                            cache_id=str(block_hash.hash_value),
+                            memory_tier=MemoryTier.MEMORY_TIER_GPU,
+                            update_type=UpdateType.UPDATE_TYPE_REMOVED,
+                        )
+                    )
+
             curr_block.block_hash = None
 
         curr_block.ref_cnt += 1
