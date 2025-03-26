@@ -354,7 +354,6 @@ fn _apply_mask[
     seq_len: UInt32,
     max_seq_len: Int,
     q_tile_idx: UInt32,
-    kv_tile_start_row: Int,
     scale_log2e: Scalar[accum_type],
     mask: mask_t,
     mask_status: TileMaskStatus,
@@ -1152,14 +1151,9 @@ fn _mha_single_batch_sm90_fa3[
         @parameter
         @always_inline
         fn apply_mask(
-            kv_tile_start_row: Int,
             q_tile_idx: UInt32,
             mask_status: TileMaskStatus,
         ):
-            # we can read/modify P
-            # @parameter
-            # @always_inline
-            # fn __apply_mask[last_iter: Bool]():
             _apply_mask[
                 MMA_M,
                 MMA_N,
@@ -1178,7 +1172,6 @@ fn _mha_single_batch_sm90_fa3[
                 seq_len,
                 max_seq_len,
                 q_tile_idx,
-                kv_tile_start_row,
                 scale_log2e,
                 mask,
                 mask_status,
@@ -1186,7 +1179,6 @@ fn _mha_single_batch_sm90_fa3[
                 p_reg_tile,
             )
 
-            # unswitch[__apply_mask](kv_tile_start_row + BN > num_keys)
             # Increment mask to next BM x BN block.
             mask_warp_col += BN
 
@@ -1321,7 +1313,7 @@ fn _mha_single_batch_sm90_fa3[
         wait_for_q_mul_k[0](pipeline_stages - 1)
         # few_keys = num_keys <= BN
 
-        apply_mask(kv_tile_start_row, _q_tile_idx, mask_status)
+        apply_mask(_q_tile_idx, mask_status)
         rowmax.copy_from(
             _rowmax_online_softmax[
                 # threads layout by warp
@@ -1390,7 +1382,7 @@ fn _mha_single_batch_sm90_fa3[
             p_mul_v(read_idx_prev, read_phase_prev)  # can't rw output or pfrag
             wait_for_q_mul_k[1](read_idx_prev)  # can rw `p_reg_tile`
 
-            apply_mask(kv_tile_start_row, _q_tile_idx, mask_status)
+            apply_mask(_q_tile_idx, mask_status)
             score_frag_rowmax = _rowmax_online_softmax[
                 # threads layout by warp
                 Layout.row_major(num_warps_m, num_warps_n),
@@ -1965,7 +1957,6 @@ fn _mha_single_batch_sm90_fa2[
             seq_len,
             max_seq_len,
             q_tile_idx,
-            kv_tile_start_row,
             scale_log2e,
             mask,
             mask_status,
