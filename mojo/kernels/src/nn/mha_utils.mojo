@@ -240,7 +240,7 @@ struct MHAConfig:
             var bk_type_factor = 1 if type is DType.float32 else 2
             self.BK = BK.or_else(
                 16 * bk_arch_factor * bk_type_factor
-            ) if has_nvidia_gpu_accelerator() else depth
+            ) if has_nvidia_gpu_accelerator() else 32
         self.WM = WM.or_else(32 if type is DType.float32 else 16)
         self.WN = WN.or_else(32 if type is DType.float32 else depth)
         self.algorithm = algorithm

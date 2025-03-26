@@ -534,7 +534,7 @@ fn flash_attention_dispatch[
         elif q_half_float and is_token_generation:
             alias BM = 16
             alias BN = depth
-            alias BK = Int(depth) if has_amd_gpu_accelerator() else (
+            alias BK = 32 if has_amd_gpu_accelerator() else (
                 16 if q.type is DType.float32 else 32
             )
             alias WM = BM
