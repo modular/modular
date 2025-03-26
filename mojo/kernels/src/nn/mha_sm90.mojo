@@ -940,11 +940,7 @@ fn _mha_single_batch_sm90_fa3[
         # there isn't any memory we can throttle
         @parameter
         if num_heads_per_block > 1:
-            consumed_mbar_q[q_pipeline_state.index()].wait(
-                q_pipeline_state.phase()
-            )
             _ = produced_mbar_q[q_pipeline_state.index()].arrive()
-        consumed_mbar_k[write_idx].wait(write_phase)
         async_copy_arrive(produced_mbar_k + write_idx)
         _ = produced_mbar_k[write_idx].arrive()
         # the order of the consumer's arrivals determines the
@@ -953,7 +949,6 @@ fn _mha_single_batch_sm90_fa3[
 
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
-        # for _ in range(1):
         while True:
             # this loops over num_keys
             kv_tile_start_row += BN
@@ -984,12 +979,15 @@ fn _mha_single_batch_sm90_fa3[
             write_pipeline_states.step()
             write_idx = write_pipeline_states.index()
             write_phase = write_pipeline_states.phase()
-            produce_k[True](
+            consumed_mbar_k[write_idx_prev].wait(write_phase_prev)
+            produce_k[False](
                 write_idx,
                 write_phase,
                 kv_tile_start_row,
                 _head_idx,
             )
+            async_copy_arrive(produced_mbar_k + write_idx)
+            _ = produced_mbar_k[write_idx].arrive()
             produce_v(
                 write_idx_prev,
                 write_phase_prev,
@@ -1012,13 +1010,14 @@ fn _mha_single_batch_sm90_fa3[
 
                     # var q_idx_old: UInt32 = q_pipeline_state.index()
                     # var q_phase_old: UInt32 = q_pipeline_state.phase()
-                    q_pipeline_state.step()
                     # if few keys, the consumer arrives on the current Q
                     # after writing the output into it (before copying to gmem)
                     # otherwise, the consumer arrives at the previous Q
+                    var q_idx_old: UInt32 = q_pipeline_state.index()
+                    var q_phase_old: UInt32 = q_pipeline_state.phase()
+                    q_pipeline_state.step()
+                    consumed_mbar_q[q_idx_old].wait(q_phase_old)
                     var q_idx: UInt32 = q_pipeline_state.index()
-                    var q_phase: UInt32 = q_pipeline_state.phase()
-                    consumed_mbar_q[q_idx].wait(q_phase)
                     produce_q(_head_idx, _q_tile_idx, q_idx)
                     async_copy_arrive(produced_mbar_q + q_idx)
                     _ = produced_mbar_q[q_idx].arrive()
@@ -1031,20 +1030,15 @@ fn _mha_single_batch_sm90_fa3[
         warpgroup_reg_alloc[num_consumer_regs]()
 
         # arrive in order that that they're to be fetched.
-        _ = consumed_mbar_k[0].arrive()
-
         @parameter
         for i in range(pipeline_stages - 1):
-            _ = consumed_mbar_k[i + 1].arrive()
+            _ = consumed_mbar_k[i].arrive()
             _ = consumed_mbar_v[i].arrive()
         _ = consumed_mbar_v[pipeline_stages - 1].arrive()
 
         @parameter
         if num_heads_per_block > 1:
-
-            @parameter
-            for i in range(2):
-                _ = consumed_mbar_q[i].arrive()
+            _ = consumed_mbar_q[0].arrive()
 
         var local_warp_group_idx: UInt32 = warp_group_idx - 1
 
@@ -1324,7 +1318,7 @@ fn _mha_single_batch_sm90_fa3[
         # q_mul_k must wait on fetching q and k
         # therefore, we find `kv_tile_start_row` first.
         q_mul_k(read_idx, read_phase, q_pipeline_state.index())
-        wait_for_q_mul_k[0](read_idx)
+        wait_for_q_mul_k[0](pipeline_stages - 1)
         # few_keys = num_keys <= BN
 
         apply_mask(kv_tile_start_row, _q_tile_idx, mask_status)
@@ -1394,7 +1388,7 @@ fn _mha_single_batch_sm90_fa3[
                 read_idx, read_phase, q_pipeline_state.index()
             )  # can't rw `p_reg_tile`
             p_mul_v(read_idx_prev, read_phase_prev)  # can't rw output or pfrag
-            wait_for_q_mul_k[1](read_idx)  # can rw `p_reg_tile`
+            wait_for_q_mul_k[1](read_idx_prev)  # can rw `p_reg_tile`
 
             apply_mask(kv_tile_start_row, _q_tile_idx, mask_status)
             score_frag_rowmax = _rowmax_online_softmax[
@@ -1450,11 +1444,12 @@ fn _mha_single_batch_sm90_fa3[
                 write_output(
                     _head_idx + 1, q_tile_idx_prev, q_idx, score_frag_rowsum
                 )
+                var q_idx_new: UInt32 = q_pipeline_state.index()
 
-                _ = consumed_mbar_q[q_idx].arrive()
+                _ = consumed_mbar_q[q_idx_new].arrive()
                 q_tile_idx_prev = _q_tile_idx
                 _ = output_reg_tile.vectorize[accum_simd_width]().fill(0)
-                q_idx_old = q_pipeline_state.index()
+                q_idx_old = q_idx_new
                 q_phase_old = q_pipeline_state.phase()
             else:
                 score_frag_rowsum = rebind[__type_of(rowsum)](
