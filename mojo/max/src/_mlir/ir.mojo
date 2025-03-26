@@ -210,7 +210,7 @@ struct Context:
 
 @value
 @register_passable("trivial")
-struct Location(CollectionElement, Stringable):
+struct Location(CollectionElement, Stringable, Writable):
     alias cType = _c.IR.MlirLocation
     var c: Self.cType
 
@@ -674,7 +674,7 @@ struct Type(CollectionElement, Stringable, Writable):
 
 @value
 @register_passable("trivial")
-struct Value(CollectionElement, Stringable):
+struct Value(CollectionElement, Stringable, Writable):
     alias cType = _c.IR.MlirValue
     var c: Self.cType
 
@@ -728,7 +728,7 @@ struct Value(CollectionElement, Stringable):
 
 @value
 @register_passable("trivial")
-struct Attribute(CollectionElement, Stringable):
+struct Attribute(CollectionElement, Stringable, Writable):
     alias cType = _c.IR.MlirAttribute
     var c: Self.cType
 
@@ -761,7 +761,7 @@ struct Attribute(CollectionElement, Stringable):
 
 @value
 @register_passable("trivial")
-struct Block(CollectionElement, Stringable):
+struct Block(CollectionElement, Stringable, Writable):
     alias cType = _c.IR.MlirBlock
     var c: Self.cType
 
