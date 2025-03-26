@@ -260,7 +260,7 @@ fn shiftl(a: Int, s: Int) -> Int:
 
 
 @always_inline
-fn shiftr(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
+fn shiftr(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
     """Shift right/left based on sign of shift for scalars.
 
     Scalar version of `shiftr`.  Right shift if `s` is positive,
@@ -277,7 +277,7 @@ fn shiftr(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
 
 
 @always_inline
-fn shiftl(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
+fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
     """Shift left/right based on sign of shift for scalars.
 
     Scalar version of `shiftl`.  Left shift if `s` is positive,
@@ -404,7 +404,7 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
         return offset ^ shiftr(offset & self.yyy_mask, self.shift)
 
     @always_inline
-    fn __call__(self, offset: Scalar) -> Scalar[offset.type]:
+    fn __call__(self, offset: Scalar) -> Scalar[offset.dtype]:
         """Apply swizzle to a scalar offset.
 
         Scalar version of the swizzle operation.  Applies swizzle to
