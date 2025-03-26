@@ -176,6 +176,7 @@ struct IndexList[
     Stringable,
     Writable,
     Comparable,
+    CollectionElement,
 ):
     """A base struct that implements size agnostic index functions.
 

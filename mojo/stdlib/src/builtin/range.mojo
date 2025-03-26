@@ -92,7 +92,9 @@ struct _ZeroStartingRange(
 
 @value
 @register_passable("trivial")
-struct _SequentialRange(Sized, ReversibleRange, _IntIterable):
+struct _SequentialRange(
+    Sized, ReversibleRange, _IntIterable, CollectionElement
+):
     var start: Int
     var end: Int
 

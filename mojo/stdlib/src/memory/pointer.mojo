@@ -160,7 +160,13 @@ struct _GPUAddressSpace(EqualityComparable):
 
 @value
 @register_passable("trivial")
-struct AddressSpace(EqualityComparable, Stringable, Writable):
+struct AddressSpace(
+    EqualityComparable,
+    Stringable,
+    Writable,
+    CollectionElement,
+    EqualityComparableCollectionElement,
+):
     """Address space of the pointer."""
 
     var _value: Int
