@@ -1789,7 +1789,7 @@ fn variance(
     fn input_fn[
         _type: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_type, width]:
-        var mean_simd = SIMD[mean_value.type, width](mean_value).cast[_type]()
+        var mean_simd = SIMD[mean_value.dtype, width](mean_value).cast[_type]()
         var x = src.load[width=width](idx[0])
         var diff = x.cast[_type]() - mean_simd
         return rebind[SIMD[_type, width]](diff * diff)
@@ -1819,7 +1819,7 @@ fn variance(
         single_thread_blocking_override=True,
     ](
         shape,
-        init=Scalar[mean_value.type](0),
+        init=Scalar[mean_value.dtype](0),
         reduce_dim=0,
     )
 
