@@ -29,11 +29,7 @@ from gpu import (
     syncwarp,
     thread_idx,
 )
-from gpu.grid_controls import (
-    launch_dependent_grids,
-    wait_on_dependent_grids,
-    pdl_launch_attributes,
-)
+from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host.info import H100
 from gpu.host.launch_attribute import (
@@ -285,34 +281,37 @@ fn layer_norm_gpu_warp_tiling[
     var thread_m2 = Scalar[accum_type]()
     var thread_count = Scalar[accum_type]()
 
-    wait_on_dependent_grids()
+    with PDL():
+        if idx < num_cols:
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
-    if idx < num_cols:
-        vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            # every thread computes its own simd width of mean and variance
+            @parameter
+            for i in range(Int(simd_width)):
+                welford_update(
+                    vec_data[i], thread_mean, thread_m2, thread_count
+                )
 
-        # every thread computes its own simd width of mean and variance
-        @parameter
-        for i in range(Int(simd_width)):
-            welford_update(vec_data[i], thread_mean, thread_m2, thread_count)
+        # a whole block computes part of the row main and variance and broadcasts to
+        # thread_idx 0 to update the final row mean and variance
+        welford_block_all_reduce(
+            thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
+        )
 
-    # a whole block computes part of the row main and variance and broadcasts to
-    # thread_idx 0 to update the final row mean and variance
-    welford_block_all_reduce(
-        thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
-    )
+        var row_var = max(row_m2 / row_count, 0.0)
+        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
 
-    var row_var = max(row_m2 / row_count, 0.0)
-    var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
-
-    if idx < num_cols:
-        var gamma_val = gamma_fn[simd_width](Index(idx))
-        var beta_val = beta.load[width=simd_width, alignment=align](Index(idx))
-        var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
-            accum_type
-        ]() + beta_val.cast[accum_type]()
-        output.store[alignment=align](Index(row, idx), norm_val.cast[type]())
-
-    launch_dependent_grids()
+        if idx < num_cols:
+            var gamma_val = gamma_fn[simd_width](Index(idx))
+            var beta_val = beta.load[width=simd_width, alignment=align](
+                Index(idx)
+            )
+            var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
+                accum_type
+            ]() + beta_val.cast[accum_type]()
+            output.store[alignment=align](
+                Index(row, idx), norm_val.cast[type]()
+            )
 
 
 fn layer_norm_gpu_block[
@@ -341,53 +340,61 @@ fn layer_norm_gpu_block[
     var row_m2 = Scalar[accum_type]()
     var row_count = Scalar[accum_type]()
 
-    wait_on_dependent_grids()
+    with PDL():
+        # Every block has a single row to process
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var thread_mean = Scalar[accum_type]()
+            var thread_m2 = Scalar[accum_type]()
+            var thread_count = Scalar[accum_type]()
 
-    # Every block has a single row to process
-    for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-        var thread_mean = Scalar[accum_type]()
-        var thread_m2 = Scalar[accum_type]()
-        var thread_count = Scalar[accum_type]()
+            var offset = x * block_dim.x * simd_width + tid * simd_width
 
-        var offset = x * block_dim.x * simd_width + tid * simd_width
+            if offset < num_cols:
+                var vec_data = input_fn[simd_width](row, offset).cast[
+                    accum_type
+                ]()
 
-        if offset < num_cols:
-            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
+                @parameter
+                for i in range(Int(simd_width)):
+                    welford_update(
+                        vec_data[i], thread_mean, thread_m2, thread_count
+                    )
 
-            @parameter
-            for i in range(Int(simd_width)):
-                welford_update(
-                    vec_data[i], thread_mean, thread_m2, thread_count
-                )
-
-        # a whole block computes part of the row main and variance and broadcasts to
-        # thread_idx 0 to update the final row mean and variance
-        welford_block_all_reduce(
-            thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
-        )
-
-    var row_var = max(row_m2 / row_count, 0)
-    var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
-
-    # need a pass again to perform in place normalization
-    for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-        var offset = x * block_dim.x * simd_width + tid * simd_width
-
-        if offset < num_cols:
-            var gamma_val = gamma_fn[simd_width](Index(offset))
-            var beta_val = beta.load[width=simd_width, alignment=align](offset)
-
-            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
-            var norm_val = (
-                (vec_data - row_mean)
-                * norm_factor
-                * gamma_val.cast[accum_type]()
-            ) + beta_val.cast[accum_type]()
-            output.store[alignment=align](
-                Index(row, offset), norm_val.cast[type]()
+            # a whole block computes part of the row main and variance and broadcasts to
+            # thread_idx 0 to update the final row mean and variance
+            welford_block_all_reduce(
+                thread_mean,
+                thread_m2,
+                thread_count,
+                row_mean,
+                row_m2,
+                row_count,
             )
 
-    launch_dependent_grids()
+        var row_var = max(row_m2 / row_count, 0)
+        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+
+        # need a pass again to perform in place normalization
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
+
+            if offset < num_cols:
+                var gamma_val = gamma_fn[simd_width](Index(offset))
+                var beta_val = beta.load[width=simd_width, alignment=align](
+                    offset
+                )
+
+                var vec_data = input_fn[simd_width](row, offset).cast[
+                    accum_type
+                ]()
+                var norm_val = (
+                    (vec_data - row_mean)
+                    * norm_factor
+                    * gamma_val.cast[accum_type]()
+                ) + beta_val.cast[accum_type]()
+                output.store[alignment=align](
+                    Index(row, offset), norm_val.cast[type]()
+                )
 
 
 fn layer_norm_reshape[
@@ -749,29 +756,26 @@ fn rms_norm_gpu_warp_tiling[
     var idx = tid * simd_width
     var thread_m2 = Scalar[accum_type](0)
 
-    wait_on_dependent_grids()
+    with PDL():
+        # To utilize simd vector load
+        if idx < num_cols:
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            thread_m2 = (vec_data**2).reduce_add()
 
-    # To utilize simd vector load
-    if idx < num_cols:
-        vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
-        thread_m2 = (vec_data**2).reduce_add()
-
-    var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
-        thread_m2
-    )
-    var norm_factor = isqrt((row_m2 / num_cols) + eps_accum)
-
-    if idx < num_cols:
-        var gamma_val = gamma.load[width=simd_width, alignment=align](
-            Index(idx)
+        var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2
         )
-        var gamma_accum = gamma_val.cast[
-            accum_type
-        ]()  # Store gamma conversion in temporary variable
-        var norm_val = vec_data * norm_factor * gamma_accum
-        output_fn(row, idx, norm_val.cast[type]())
+        var norm_factor = isqrt((row_m2 / num_cols) + eps_accum)
 
-    launch_dependent_grids()
+        if idx < num_cols:
+            var gamma_val = gamma.load[width=simd_width, alignment=align](
+                Index(idx)
+            )
+            var gamma_accum = gamma_val.cast[
+                accum_type
+            ]()  # Store gamma conversion in temporary variable
+            var norm_val = vec_data * norm_factor * gamma_accum
+            output_fn(row, idx, norm_val.cast[type]())
 
 
 fn rms_norm_gpu_block[
@@ -797,36 +801,37 @@ fn rms_norm_gpu_block[
     var thread_m2 = Scalar[accum_type](0)
     var eps_accum = epsilon.cast[accum_type]()  # Precompute epsilon conversion
 
-    wait_on_dependent_grids()
+    with PDL():
+        # Every block has a single row to process
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
+            if offset < num_cols:
+                var vec_data = input_fn[simd_width](row, offset).cast[
+                    accum_type
+                ]()
+                thread_m2 += (vec_data**2).reduce_add()
 
-    # Every block has a single row to process
-    for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-        var offset = x * block_dim.x * simd_width + tid * simd_width
-        if offset < num_cols:
-            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
-            thread_m2 += (vec_data**2).reduce_add()
+        var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2
+        )
+        var norm_factor = isqrt((row_m2 / num_cols) + eps_accum)
 
-    var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
-        thread_m2
-    )
-    var norm_factor = isqrt((row_m2 / num_cols) + eps_accum)
+        # need a pass again to perform in place normalization
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
 
-    # need a pass again to perform in place normalization
-    for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
-        var offset = x * block_dim.x * simd_width + tid * simd_width
-
-        if offset < num_cols:
-            var gamma_val = gamma.load[width=simd_width, alignment=align](
-                Index(offset)
-            )
-            var gamma_accum = gamma_val.cast[
-                accum_type
-            ]()  # Store gamma conversion in temporary variable
-            var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
-            var norm_val = vec_data * norm_factor * gamma_accum
-            output_fn(row, offset, norm_val.cast[type]())
-
-    launch_dependent_grids()
+            if offset < num_cols:
+                var gamma_val = gamma.load[width=simd_width, alignment=align](
+                    Index(offset)
+                )
+                var gamma_accum = gamma_val.cast[
+                    accum_type
+                ]()  # Store gamma conversion in temporary variable
+                var vec_data = input_fn[simd_width](row, offset).cast[
+                    accum_type
+                ]()
+                var norm_val = vec_data * norm_factor * gamma_accum
+                output_fn(row, offset, norm_val.cast[type]())
 
 
 fn rms_norm_gpu[

@@ -26,11 +26,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.grid_controls import (
-    launch_dependent_grids,
-    wait_on_dependent_grids,
-    pdl_launch_attributes,
-)
+from gpu.grid_controls import PDL, pdl_launch_attributes
 import gpu.warp as warp
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.dim import Dim
@@ -623,40 +619,37 @@ fn _topk_stage1[
         alignment = alignof[TopK_2[T, largest]](),
     ]()
 
-    wait_on_dependent_grids()
-
-    # Pack the topk_vals and topk_idxs into shared memory
-    var block_offset = block_lane * block_size
-    var stride = block_size * num_blocks_per_input
-    topk_sram[tid] = TopK_2[T, largest]()
-    for i in range(tid + block_offset, num_elements, stride):
-        topk_sram[tid].insert(_in_buffer[i], i)
-
-    barrier()
-
-    # Prepare for K iterations to find the local top-K elements
-    for k in range(K):
-        # Initialize each thread with its own TopK_2 value and index
-        var partial = topk_sram[tid]
-
-        # Perform block-level reduction to find the maximum TopK_2
-        var total = _block_reduce_topk[T, largest](partial)
-
-        if tid == 0:
-            # Store the local top-K values and indices in global memory
-            var vector_idx = total.p
-            local_topk_vals[bid * K + k] = total.u
-            local_topk_idxs[bid * K + k] = Scalar[DType.index](vector_idx).cast[
-                out_idx_type
-            ]()
-
-            # Remove the found maximum from consideration in the next iteration
-            var orig_tid = (vector_idx - block_offset) % stride
-            topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
+    with PDL():
+        # Pack the topk_vals and topk_idxs into shared memory
+        var block_offset = block_lane * block_size
+        var stride = block_size * num_blocks_per_input
+        topk_sram[tid] = TopK_2[T, largest]()
+        for i in range(tid + block_offset, num_elements, stride):
+            topk_sram[tid].insert(_in_buffer[i], i)
 
         barrier()
 
-    launch_dependent_grids()
+        # Prepare for K iterations to find the local top-K elements
+        for k in range(K):
+            # Initialize each thread with its own TopK_2 value and index
+            var partial = topk_sram[tid]
+
+            # Perform block-level reduction to find the maximum TopK_2
+            var total = _block_reduce_topk[T, largest](partial)
+
+            if tid == 0:
+                # Store the local top-K values and indices in global memory
+                var vector_idx = total.p
+                local_topk_vals[bid * K + k] = total.u
+                local_topk_idxs[bid * K + k] = Scalar[DType.index](
+                    vector_idx
+                ).cast[out_idx_type]()
+
+                # Remove the found maximum from consideration in the next iteration
+                var orig_tid = (vector_idx - block_offset) % stride
+                topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
+
+            barrier()
 
 
 @always_inline("nodebug")
@@ -735,94 +728,93 @@ fn _topk_stage2[
     var s_val2 = UnsafePointer[Scalar[T], address_space = AddressSpace.SHARED]()
     var s_id = UnsafePointer[Int, address_space = AddressSpace.SHARED]()
 
-    wait_on_dependent_grids()
+    with PDL():
+        # Handle the case where stage 1 is executed with a single block
+        if num_blocks_per_input == 1:
+            if tid < K and not sampling:
+                batch_i_topk_vals[tid] = _local_topk_vals[tid]
+                # cast to out_idx_type
+                batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
+                return
 
-    # Handle the case where stage 1 is executed with a single block
-    if num_blocks_per_input == 1:
-        if tid < K and not sampling:
-            batch_i_topk_vals[tid] = _local_topk_vals[tid]
-            # cast to out_idx_type
-            batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
-            return
+        @parameter
+        if sampling:
+            # Storing the top-K logits in shmem for sampling
+            s_id = (idxs_sram + vals_smem_size).bitcast[Int]()
+            # The 2* below is for warp align safety
+            s_val2 = (s_id + 2 * K).bitcast[Scalar[T]]()
 
-    @parameter
-    if sampling:
-        # Storing the top-K logits in shmem for sampling
-        s_id = (idxs_sram + vals_smem_size).bitcast[Int]()
-        # The 2* below is for warp align safety
-        s_val2 = (s_id + 2 * K).bitcast[Scalar[T]]()
+        var s_sum = stack_allocation[
+            1, Scalar[T], address_space = AddressSpace.SHARED
+        ]()
+        s_sum[0] = Scalar[T](0)
+        var max_logit = Scalar[T](0)
 
-    var s_sum = stack_allocation[
-        1, Scalar[T], address_space = AddressSpace.SHARED
-    ]()
-    s_sum[0] = Scalar[T](0)
-    var max_logit = Scalar[T](0)
-
-    # Cache local top-K results from stage 1 into shared memory
-    for i in range(tid, num_elem_reduced, block_dim.x):
-        vals_sram[i] = _local_topk_vals[i]
-        idxs_sram[i] = i
-    barrier()
-
-    for k in range(K):
-        # Re-initialize partial for each thread
-        var partial = TopK_2[T, largest]()
-        # TODO: unroll this
+        # Cache local top-K results from stage 1 into shared memory
         for i in range(tid, num_elem_reduced, block_dim.x):
-            partial.insert(vals_sram[i], i)
-
-        barrier()
-        # Perform block-level reduction to find the maximum TopK_2
-        var total: TopK_2[T, largest] = _block_reduce_topk[T, largest](partial)
-
-        if tid == 0:
-
-            @parameter
-            if sampling:
-                if k == 0:
-                    max_logit = total.u
-
-            # Remove the found maximum from consideration in the next iteration
-            idxs_sram[total.p] = -1
-            vals_sram[total.p] = _topk_dead_val[T, largest]()
-
-            @parameter
-            if sampling:
-                batch_i_topk_vals[k] = total.u
-                s_id[k] = total.p
-                total.u = exp(total.u - max_logit)
-                s_val2[k] = total.u
-                s_sum[0] += total.u
-            else:
-                # Store the global top-K values and indices
-                batch_i_topk_vals[k] = total.u
-                batch_i_topk_idxs[k] = _local_topk_idxs[total.p]
-
-            # Early exit if no valid index
-            if total.p == -1:
-                break
+            vals_sram[i] = _local_topk_vals[i]
+            idxs_sram[i] = i
         barrier()
 
-    # do sampling
-    @parameter
-    if sampling:
-        if tid == 0:
-            var rng_state = Random(seed=SEED)
-            var rng = rng_state.step_uniform()
-            var softmax_norm = s_sum[0]
-            var r = softmax_norm * rng[0].cast[T]()
-            for ki in range(K):
-                var exp_logit = s_val2[ki]
+        for k in range(K):
+            # Re-initialize partial for each thread
+            var partial = TopK_2[T, largest]()
+            # TODO: unroll this
+            for i in range(tid, num_elem_reduced, block_dim.x):
+                partial.insert(vals_sram[i], i)
 
-                r -= exp_logit
-                if r <= 0.0 or ki == K - 1:
-                    # uncomment below to return prob of largest logit
-                    # batch_i_topk_vals[0] = exp_logit / softmax_norm
-                    var idx: Int = s_id[ki]
-                    batch_i_topk_idxs[0] = _local_topk_idxs[idx]
+            barrier()
+            # Perform block-level reduction to find the maximum TopK_2
+            var total: TopK_2[T, largest] = _block_reduce_topk[T, largest](
+                partial
+            )
+
+            if tid == 0:
+
+                @parameter
+                if sampling:
+                    if k == 0:
+                        max_logit = total.u
+
+                # Remove the found maximum from consideration in the next iteration
+                idxs_sram[total.p] = -1
+                vals_sram[total.p] = _topk_dead_val[T, largest]()
+
+                @parameter
+                if sampling:
+                    batch_i_topk_vals[k] = total.u
+                    s_id[k] = total.p
+                    total.u = exp(total.u - max_logit)
+                    s_val2[k] = total.u
+                    s_sum[0] += total.u
+                else:
+                    # Store the global top-K values and indices
+                    batch_i_topk_vals[k] = total.u
+                    batch_i_topk_idxs[k] = _local_topk_idxs[total.p]
+
+                # Early exit if no valid index
+                if total.p == -1:
                     break
+            barrier()
 
-    launch_dependent_grids()
+        # do sampling
+        @parameter
+        if sampling:
+            if tid == 0:
+                var rng_state = Random(seed=SEED)
+                var rng = rng_state.step_uniform()
+                var softmax_norm = s_sum[0]
+                var r = softmax_norm * rng[0].cast[T]()
+                for ki in range(K):
+                    var exp_logit = s_val2[ki]
+
+                    r -= exp_logit
+                    if r <= 0.0 or ki == K - 1:
+                        # uncomment below to return prob of largest logit
+                        # batch_i_topk_vals[0] = exp_logit / softmax_norm
+                        var idx: Int = s_id[ki]
+                        batch_i_topk_idxs[0] = _local_topk_idxs[idx]
+                        break
 
 
 fn _topk_gpu[
