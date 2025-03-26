@@ -784,8 +784,8 @@ fn _mha_single_batch_sm90_fa3[
     # alias num_consumer_regs = 256 if num_consumer == 1 else (
     #     (240 if USE_TMA else 232) if num_consumer == 2 else 160
     # )
-    alias num_producer_regs = 40
-    alias num_consumer_regs = 232
+    alias num_producer_regs = 56
+    alias num_consumer_regs = 224
 
     alias num_k_iters_0 = Int(depth // BK)
     alias num_k_iters_1 = Int(BN // BK)
