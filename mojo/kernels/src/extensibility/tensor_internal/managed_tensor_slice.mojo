@@ -8,7 +8,6 @@ Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
 import algorithm
-from bit import is_power_of_two
 from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_partially_static_index_list
 from collections import InlineArray, OptionalReg
@@ -44,7 +43,7 @@ from .io_spec import IOSpec, IO
 fn _gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
     constrained[
-        is_power_of_two(a) and is_power_of_two(b),
+        a.is_power_of_two() and b.is_power_of_two(),
         "a and b must be powers of 2",
     ]()
     return min(a, b)
