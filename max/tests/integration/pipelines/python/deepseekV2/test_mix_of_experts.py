@@ -7,7 +7,7 @@
 import pytest
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator
+from max.driver import Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -26,22 +26,25 @@ def generate_torch_outputs(
     dummy_moe_weight: torch.Tensor,
     expert_weights: list[dict[str, torch.Tensor]],
     shared_expert_weights: dict[str, torch.Tensor],
+    dtype: DType,
+    device: torch.device,
 ) -> torch.Tensor:
-    layer = DeepseekV2MoE(config).to(torch.bfloat16)
+    layer = DeepseekV2MoE(config).to(dtype).to(device)
     layer.training = False
 
+    input_tensor = input_tensor.to(device)
     # Update expert weights
     for i, expert in enumerate(layer.experts):
         if expert is not None:
             for name, param in expert.named_parameters():
-                param.data = expert_weights[i][name].to(torch.bfloat16)
+                param.data = expert_weights[i][name].to(dtype).to(device)
 
     # Update shared expert weights
     if layer.config.n_shared_experts is not None:
         for name, param in layer.shared_experts.named_parameters():
-            param.data = shared_expert_weights[name].to(torch.bfloat16)
+            param.data = shared_expert_weights[name].to(dtype).to(device)
 
-    layer.gate.weight.data = dummy_moe_weight
+    layer.gate.weight.data = dummy_moe_weight.to(device)
     return layer(input_tensor)
 
 
@@ -51,7 +54,12 @@ def generate_max_outputs(
     dummy_moe_weight: torch.Tensor,
     expert_weights: list[dict[str, torch.Tensor]],
     shared_expert_weights: dict[str, torch.Tensor],
+    dtype: DType,
+    device: Device,
 ) -> torch.Tensor:
+    is_gpu = isinstance(device, Accelerator)
+    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
+
     # TODO: .cpu()s added as workaround for GEX-1967
     state_dict = {"gate.gate_score.weight": dummy_moe_weight.cpu()}
 
@@ -76,7 +84,7 @@ def generate_max_outputs(
         "up_proj.weight"
     ].cpu()
 
-    moe = MoE()
+    moe = MoE(dtype=dtype)
     moe.load_state_dict(state_dict)
 
     session = InferenceSession(devices=[Accelerator(0)])
@@ -86,13 +94,13 @@ def generate_max_outputs(
         moe,
         input_types=(
             TensorType(
-                DType.bfloat16,
+                dtype,
                 (
                     input_tensor.shape[0],
                     input_tensor.shape[1],
                     config.hidden_size,
                 ),
-                device=DeviceRef.GPU(),
+                device=DeviceRef.GPU() if is_gpu else DeviceRef.CPU(),
             ),
         ),
     )
@@ -101,7 +109,7 @@ def generate_max_outputs(
     return compiled.execute(input_tensor)
 
 
-@pytest.mark.skip(reason="GPU kernel debugging in progress")
+@pytest.mark.skip(reason="Accuracy debugging in progress")
 def test_mix_of_experts(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
@@ -109,12 +117,16 @@ def test_mix_of_experts(
     expert_weights: list[dict[str, torch.Tensor]],
     shared_expert_weights: dict[str, torch.Tensor],
 ) -> None:
+    torch_dtype = torch.bfloat16
+    max_dtype = DType.bfloat16
     torch_output = generate_torch_outputs(
         config,
         input_tensor,
         dummy_moe_weight,
         expert_weights,
         shared_expert_weights,
+        torch_dtype,
+        "cuda",
     )
 
     max_output = generate_max_outputs(
@@ -123,11 +135,13 @@ def test_mix_of_experts(
         dummy_moe_weight,
         expert_weights,
         shared_expert_weights,
+        max_dtype,
+        Accelerator(),
     )
 
     torch.testing.assert_close(
         torch_output,
-        torch.from_dlpack(max_output[0]).to(torch.bfloat16),
+        torch.from_dlpack(max_output[0]).to(torch_dtype),
         rtol=1e-3,
         atol=1e-6,
     )
