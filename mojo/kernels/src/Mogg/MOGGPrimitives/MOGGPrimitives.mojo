@@ -150,6 +150,29 @@ fn create_non_tracked_buffer_ref_async(
     )
 
 
+@register_internal("builtin.create_non_tracked_tensor_async")
+@no_inline
+fn create_non_tracked_tensor_async[
+    tensor_rank: Int,
+    buffer_rank: Int,
+    type: DType,
+](
+    buffer: NDBuffer[type, buffer_rank, MutableAnyOrigin],
+    async_ptr: UnsafePointer[NoneType],
+):
+    constrained[
+        tensor_rank == buffer_rank or (tensor_rank == 0 and buffer_rank == 1)
+    ]()
+    external_call["KGEN_CompilerRT_CreateAsyncNonTrackedTensor", NoneType](
+        buffer.data,
+        bytecount_with_dtype(buffer.dynamic_shape, type),
+        tensor_rank,
+        UnsafePointer.address_of(buffer.dynamic_shape.data.array),
+        type,
+        async_ptr,
+    )
+
+
 @register_internal("builtin.create_buffer_ref_with_borrow_async")
 @no_inline
 fn create_buffer_ref_with_borrow_async[
