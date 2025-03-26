@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from typing import Any, Mapping, overload
 
 import max._core
+from max import mlir
 
 class FrameworkFormat(enum.Enum):
     max_graph = 0
@@ -42,6 +43,7 @@ class InferenceSession:
     def set_mojo_define(self, key: str, value: int) -> None: ...
     @overload
     def set_mojo_define(self, key: str, value: str) -> None: ...
+    def register_runtime_context(self, ctx: mlir.Context) -> None: ...
     @property
     def devices(self) -> list[max._core.driver.Device]: ...
 
