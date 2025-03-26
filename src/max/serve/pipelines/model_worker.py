@@ -299,6 +299,11 @@ def _create_token_generation_scheduler(
         and isinstance(pipeline._pipeline_model.kv_manager, PagedKVCacheManager)
     ):
         paged_manager = pipeline._pipeline_model.kv_manager
+        # If KV Cache Agent is enabled and the queue is provided, set it on the paged manager
+        if "KV_CACHE_AGENT" in queues:
+            paged_manager.block_manager.kv_cache_agent_queue = queues[
+                "KV_CACHE_AGENT"
+            ]  # type: ignore
 
     return TokenGenerationScheduler(
         process_control=pc,
