@@ -144,10 +144,12 @@ class MaxMeasurement:
             instrument = instrument._real_instrument
             # bail if there is no underlying instrument
             if instrument is None:
+                logger.error(f"instrument is None for {self.instrument_name}")
                 return
 
         # instrument should be one of the supported sdk types now
         if not isinstance(instrument, get_args(SDK_INSTRUMENTS)):
+            # If you're hitting this, metrics were likely not configured.
             return
 
         # convert to an otel measurement

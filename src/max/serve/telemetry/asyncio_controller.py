@@ -40,7 +40,9 @@ class AsyncioMetricClient(MetricClient):
         try:
             self.q.put_nowait(m)
         except queue.Full:
-            logger.error("Telemetry Queue is full.  Dropping data")
+            logger.error(
+                f"Telemetry Queue is full.  Dropping data for {m.instrument_name}"
+            )
 
 
 class AsyncioTelemetryController:
@@ -98,7 +100,9 @@ class AsyncioTelemetryController:
             except:
                 logger.exception("Failed to record telemetry")
 
-        logger.info("AsyncioTelemetryController consumer shut down")
+        logger.info(
+            f"AsyncioTelemetryController consumer shutdown complete. Residual queue size: {q.qsize()}"
+        )
 
     async def __aenter__(self):
         self.start()

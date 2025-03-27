@@ -210,6 +210,12 @@ def configure_metrics(settings: Settings):
         )
     set_meter_provider(MeterProvider(meterProviders, metrics_resource))
 
+    logger = logging.getLogger()
+    if settings.disable_telemetry:
+        logger.info("Metrics disabled.")
+    else:
+        logger.info("Metrics intialized.")
+
 
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK
 # (see MAXSERV-904)
