@@ -53,7 +53,7 @@ def top_idx(x, top_percentage=0.05):
 
 
 def replace_vals_snippet(p_spec, snippet_path, output_path):
-    with open(snippet_path, "r") as f:
+    with open(snippet_path) as f:
         c_init = f.read()
 
     c = c_init[:]

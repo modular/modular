@@ -19,7 +19,7 @@ from enum import Enum, auto
 from itertools import product
 from pathlib import Path
 from time import time
-from typing import Any, Optional, Union
+from typing import Any
 
 import click
 import numpy as np
@@ -92,7 +92,7 @@ class Param:
         return ["-D", f"{self.name}={self.value}"]
 
 
-def flatten(value: Union[int, object, Iterable]) -> list[Any]:
+def flatten(value: int | object | Iterable) -> list[Any]:
     """Flatten nested iterables into a single list."""
     if not isinstance(value, Iterable) or isinstance(value, str):
         return [value]
@@ -143,8 +143,8 @@ class ParamSpace:
 
 @dataclass
 class ProcessOutput:
-    stdout: Optional[str] = None
-    stderr: Optional[str] = None
+    stdout: str | None = None
+    stderr: str | None = None
 
 
 class KBENCH_MODE(Enum):
@@ -177,12 +177,12 @@ class KbenchCache:
         """Save cache to file."""
         store_pickle(self.path, self.data)
 
-    def query(self, key: str) -> Optional[str]:
+    def query(self, key: str) -> str | None:
         """Get cached path for given key if it exists."""
         obj_path = str(self.data.get(key))
         return obj_path if Path(obj_path).exists() else None
 
-    def store(self, key: str, obj_path: Path, tmp_dir: Path) -> Optional[Path]:
+    def store(self, key: str, obj_path: Path, tmp_dir: Path) -> Path | None:
         """Store object in cache and return its new path."""
         obj_cache_path = tmp_dir / "kbench_cache"
         obj_cache_path.mkdir(exist_ok=True)
@@ -197,7 +197,7 @@ class KbenchCache:
 class SpecInstance:
     name: str
     file: Path
-    executor: Optional[str] = None
+    executor: str | None = None
     params: list[Param] = field(default_factory=list)
 
     @functools.cached_property
@@ -214,12 +214,12 @@ class SpecInstance:
     def compile(
         self,
         *,
-        output_file: Optional[Path] = None,
+        output_file: Path | None = None,
         build_opts: list[str] = None,
         mode: KBENCH_MODE,
         dryrun: bool = False,
         verbose: bool = False,
-        obj_cache: Optional[KbenchCache] = None,
+        obj_cache: KbenchCache | None = None,
     ) -> ProcessOutput:
         """Compile the spec instance."""
         output_file = output_file or Path(tempfile.gettempdir()) / next(
@@ -365,7 +365,7 @@ class Spec:
     mesh: list[SpecInstance] = field(default_factory=list)
 
     @staticmethod
-    def load_yaml(file: Path) -> "Spec":
+    def load_yaml(file: Path) -> Spec:
         """
         Loads the spec from a YAML file
 
@@ -386,8 +386,8 @@ class Spec:
             raise ValueError(f"Could not load spec from {file}")
 
     @staticmethod
-    def load_yaml_list(yaml_path_list: list[str]) -> "Spec":
-        spec: "Spec" = None  # type: ignore
+    def load_yaml_list(yaml_path_list: list[str]) -> Spec:
+        spec: Spec = None  # type: ignore
         for i, yaml_path in enumerate(yaml_path_list):
             spec_ld = Spec.load_yaml(Path(yaml_path))
             if i == 0:
@@ -479,7 +479,7 @@ class Spec:
         logging.debug(f"dumped {len(self.mesh)} instances to [{out_path}]")
 
     @staticmethod
-    def loads(yaml_str: str) -> "Spec":
+    def loads(yaml_str: str) -> Spec:
         """
         Deserializes a Spec object from the given yaml string.
 
@@ -546,7 +546,7 @@ class Spec:
         self.mesh = GridSearchStrategy(self.name, self.file, self.params)
         return len(self.mesh)
 
-    def join(self, other: "Spec"):
+    def join(self, other: Spec):
         assert self.name == other.name
         assert self.file == other.file
         assert len(other.mesh) > 0
@@ -591,7 +591,7 @@ class Spec:
         self.iter_offset = 0
         return self
 
-    def __next__(self) -> "SpecInstance":
+    def __next__(self) -> SpecInstance:
         assert self.mesh != None, (
             "Should call self.init_mesh after loading or in postinit."
         )
