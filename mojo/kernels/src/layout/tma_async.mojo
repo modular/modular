@@ -689,11 +689,26 @@ struct TMATensorTile[
             __type_of(src).alignment % 128 == 0,
             "TMA requires 128B alignment in shared memory",
         ]()
-        cp_async_bulk_tensor_global_shared_cta(
-            src.ptr,
-            UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
-            Index(coords[0], coords[1]),
-        )
+
+        alias copy_dim0 = desc_layout.shape[0].value()
+        alias copy_dim1 = desc_layout.shape[1].value()
+        alias copy_size = desc_layout.size()
+        alias num_copies_dim0 = layout.shape[0].value() // copy_dim0
+        alias num_copies_dim1 = layout.shape[1].value() // copy_dim1
+
+        @parameter
+        for i in range(num_copies_dim0):
+
+            @parameter
+            for j in range(num_copies_dim1):
+                alias copy_offset = (i * num_copies_dim1 + j) * copy_size
+                cp_async_bulk_tensor_global_shared_cta(
+                    src.ptr + copy_offset,
+                    UnsafePointer.address_of(self.descriptor).bitcast[
+                        NoneType
+                    ](),
+                    Index(coords[0] + j * copy_dim1, coords[1] + i * copy_dim0),
+                )
 
     @always_inline
     fn async_reduce[
@@ -1258,6 +1273,20 @@ def create_tma_tile[
     """
     # Current impl limitations
     constrained[rank == 2 or rank == 3, "Only support 2D/3D TMA"]()
+
+    alias desc_bytes_size = __desc_layout.size() * sizeof[type]()
+    alias layout_size = __tile_layout.size() * sizeof[type]()
+
+    @parameter
+    if desc_bytes_size < layout_size:
+        # When we do multiple TMA copy, every address has to be align to 128.
+        constrained[
+            desc_bytes_size % 128 == 0,
+            (
+                "desc layout byte size has to be  align to 128 bytes for"
+                " multiple TMA copies"
+            ),
+        ]()
 
     @parameter
     if rank == 2:
