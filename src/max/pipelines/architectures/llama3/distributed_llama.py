@@ -33,6 +33,7 @@ from max.nn import (
     LinearV2,
     Llama3RotaryEmbedding,
     Module,
+    Signals,
     VocabParallelEmbedding,
 )
 from max.pipelines.kv_cache import (
@@ -51,7 +52,10 @@ from .model_config import Llama3Config
 class DistributedLlama3(DistributedTransformer):
     def __init__(self, config: Llama3Config):
         assert len(config.devices) > 1
+        # Set up
+        signals = Signals(config.devices)
 
+        # Set up distributed llama layers.
         rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
@@ -96,7 +100,7 @@ class DistributedLlama3(DistributedTransformer):
             )
             mlp_cls = StackedMLP
         else:
-            mlp_cls = DistributedMLP
+            mlp_cls = functools.partial(DistributedMLP, signals=signals)
 
         # Select attention class.
         attention_cls: Callable[..., AttentionWithRopeV2]
@@ -112,8 +116,8 @@ class DistributedLlama3(DistributedTransformer):
                 stacked_qkv=config.stacked_qkv,
                 scale=config.attention_multiplier,
                 clip_qkv=config.clip_qkv,
+                signals=signals,
             )
-
         layers = [
             DistributedTransformerBlock(
                 attention=attention_cls(
@@ -156,6 +160,7 @@ class DistributedLlama3(DistributedTransformer):
             config.hidden_size,
             embedding_output_dtype,
             config.devices,
+            signals=signals,
             quantization_encoding=embedding_output_quantization,
         )
         output = ColumnParallelLinear(

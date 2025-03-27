@@ -14,15 +14,17 @@
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Iterable
 
-from max.driver import Accelerator, Tensor
+import numpy as np
+from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import (
-    BufferType,
     BufferValue,
     DeviceKind,
     DeviceRef,
+    Graph,
     TensorValue,
     ops,
 )
@@ -42,11 +44,20 @@ class Allreduce(Module):
     devices: list[Accelerator]
     """List of accelerators involved in the allreduce operation."""
 
-    def __init__(self, num_accelerators: int) -> None:
+    signals: Signals
+    """Signals for device peer-to-peer communication."""
+
+    def __init__(
+        self, num_accelerators: int, signals: Signals | None = None
+    ) -> None:
         """Initialize the Allreduce layer with a specified number of accelerators.
 
         Args:
             num_accelerators: Number of accelerators to use for allreduce
+            signals: Optional `Signals` class which defines the buffers used to
+                communicate between devices. If your model contains multiple
+                `Allreduce` modules, you should create a single `Signals` class
+                and pass it to each `Allreduce`.
 
         Raises:
             ValueError: If num_accelerators is less than 1
@@ -56,21 +67,25 @@ class Allreduce(Module):
             raise ValueError("At least one accelerator required for Allreduce")
 
         self.devices = [Accelerator(id=id) for id in range(num_accelerators)]
+        if signals and not (len(signals.devices) == num_accelerators):
+            raise ValueError(
+                "Signals must contain the same number of devices "
+                "as this allreduce."
+            )
+        self.signals = signals or Signals(
+            DeviceRef.GPU(id) for id in range(num_accelerators)
+        )
 
-    def __call__(
-        self, inputs: Iterable[TensorValue], signal_buffers: list[BufferValue]
-    ) -> list[TensorValue]:
+    def __call__(self, inputs: Iterable[TensorValue]) -> list[TensorValue]:
         """Performs allreduce operation with automatic implementation selection.
 
         Args:
             inputs: Distributed tensor values to reduce
-            signal_buffers: Buffers for peer-to-peer communication when using
-                optimized allreduce.
 
         Returns:
             List of reduced tensors, one per device
         """
-        return ops.allreduce.sum(inputs, signal_buffers)
+        return ops.allreduce.sum(inputs, self.signals.buffers())
 
     def _p2p_available(self) -> bool:
         """Check if peer-to-peer communication is available between devices."""
@@ -108,22 +123,36 @@ class Signals:
 
         self.devices = devices
 
-    def buffers(self) -> list[Tensor]:
-        """Allocates and returns buffers used for communication in allreduce."""
-        return [
-            Tensor.zeros(
-                shape=(Signals.NUM_BYTES,),
-                dtype=DType.uint8,
-                device=Accelerator(id=dev.id),
-            )
-            for dev in self.devices
-        ]
+        # Cache the buffers created for each device and graph.
+        self._cached_buffers: weakref.WeakKeyDictionary[
+            weakref.ref[Graph], dict[DeviceRef, BufferValue]
+        ] = weakref.WeakKeyDictionary()
 
-    def input_types(self) -> list[BufferType]:
-        """Gets graph input types corresponding to these signal buffers."""
-        return [
-            BufferType(
-                dtype=DType.uint8, shape=(Signals.NUM_BYTES,), device=dev
-            )
-            for dev in self.devices
-        ]
+    def buffers(self) -> list[BufferValue]:
+        """Allocates and returns buffers used for communication in allreduce."""
+        # Find signals buffer from the cache or create and initialize new
+        # buffers.
+        graph = Graph.current
+        device_signal_buffers = self._cached_buffers.setdefault(graph, {})
+        signal_buffers = []
+        for device in self.devices:
+            if cached_buffer := device_signal_buffers.get(device):
+                signal_buffers.append(cached_buffer)
+            else:
+                buffer = ops.buffer_create(
+                    shape=(Signals.NUM_BYTES,),
+                    dtype=DType.uint8,
+                    device=device,
+                )
+                ops.buffer_store(
+                    buffer,
+                    # TODO(GEX-1988): Use Tensor instead of numpy here.
+                    ops.constant(
+                        np.zeros((Signals.NUM_BYTES,), dtype=np.uint8),
+                        DType.uint8,
+                    ).to(device),
+                )
+                signal_buffers.append(buffer)
+                device_signal_buffers[device] = buffer
+
+        return signal_buffers

@@ -18,7 +18,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from max.graph import (
-    BufferValue,
     TensorValue,
     TensorValueLike,
 )
@@ -127,7 +126,6 @@ class DistributedAttentionImpl(Module, ABC):
     def __call__(
         self,
         x: list[TensorValue],
-        signal_buffers: list[BufferValue],
         kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
