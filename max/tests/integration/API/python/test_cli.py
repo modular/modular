@@ -5,11 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 import pytest
 from click.testing import CliRunner
 from max.entrypoints.cli import pipeline_config_options
 from max.pipelines import PipelineConfig
+from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.pipeline_cli_utils import CLITestCommand
 
 
@@ -18,9 +21,6 @@ def cli():
     pass
 
 
-# TODO(AITLIB-277): Add back test coverage for kv_cache_config. These had to be removed
-# as the kv cache strategy changes within config right after the config is
-# initialized, which may not be what is provided in the command line.
 TEST_COMMANDS = [
     CLITestCommand(
         args=["--max-length", "10", "--devices", "cpu"],
@@ -77,6 +77,55 @@ TEST_COMMANDS = [
                 "trust_remote_code": False,
             },
             "max_length": 10,
+        },
+        valid=True,
+    ),
+    CLITestCommand(
+        args=[
+            "--model-path",
+            "modularai/llama-3.1",
+            "--weight-path",
+            "model1.safetensors",
+            "--weight-path",
+            "model2.safetensors",
+            "--weight-path",
+            "model3.safetensors",
+            "--devices",
+            "cpu",
+        ],
+        expected={
+            "model_config": {
+                "model_path": "modularai/llama-3.1",
+                "trust_remote_code": False,
+                "weight_path": [
+                    Path("model1.safetensors"),
+                    Path("model2.safetensors"),
+                    Path("model3.safetensors"),
+                ],
+                "kv_cache_config": {
+                    "cache_strategy": KVCacheStrategy.MODEL_DEFAULT,
+                },
+            },
+        },
+        valid=True,
+    ),
+    CLITestCommand(
+        args=[
+            "--model-path",
+            "modularai/llama-3.1",
+            "--cache-strategy",
+            "naive",
+            "--devices",
+            "cpu",
+        ],
+        expected={
+            "model_config": {
+                "model_path": "modularai/llama-3.1",
+                "trust_remote_code": False,
+                "kv_cache_config": {
+                    "cache_strategy": KVCacheStrategy.NAIVE,
+                },
+            },
         },
         valid=True,
     ),
