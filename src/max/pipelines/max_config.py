@@ -142,9 +142,6 @@ class MAXModelConfig(MAXModelConfigBase):
     model_path: str = ""
     """:obj:`repo_id` of a Hugging Face model repository to use."""
 
-    huggingface_repo_id: str = ""
-    """DEPRECATED: :obj:`repo_id` of a Hugging Face model repository to use. Use :obj:`model_path` instead."""
-
     weight_path: list[Path] = field(default_factory=list)
     """Optional path or url of the model weights to use."""
 
@@ -199,12 +196,6 @@ class MAXModelConfig(MAXModelConfigBase):
             msg = f"device specs provided ({self.device_specs}) do not exist."
             msg += f"\navailable devices: {available_devices}"
             raise ValueError(msg)
-
-        if self.huggingface_repo_id != "":
-            logger.warning(
-                "--huggingface-repo-id is deprecated, use `--model-path` instead. This setting will stop working in a future release."
-            )
-            self.model_path = self.huggingface_repo_id
 
         # Replit model_paths are kinda broken due to transformers
         # version mismatch. We manually update trust_remote_code to True
@@ -614,7 +605,6 @@ class MAXModelConfig(MAXModelConfigBase):
     def help() -> dict[str, str]:
         max_model_help = {
             "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
-            "huggingface_repo_id": "DEPRECATED: Use `model_path` instead.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
             "huggingface_revision": "Branch or Git revision of Hugging Face model repository to use.",
