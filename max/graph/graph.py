@@ -566,7 +566,7 @@ class Graph:
         # the passed device (for example default is GPU, passed weights on CPU).
         const_external_op = weight_tensor._mlir_value.owner
         const_external_op.attributes["device"] = (
-            device if device is not None else DeviceRef(DeviceKind.CPU, 0)
+            device or DeviceRef(DeviceKind.CPU, 0)
         ).to_mlir()
 
         self._weights[weight.name] = _GraphWeight(weight, weight_tensor)
