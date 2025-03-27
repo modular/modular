@@ -112,6 +112,42 @@ fn _shuffle[
         return 0
 
 
+@always_inline
+fn _shuffle_amd_helper[
+    type: DType, simd_width: Int
+](dst_lane: UInt32, val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    @parameter
+    if sizeof[SIMD[type, simd_width]]() == 4:
+        # Handle int32, float32, float16x2, etc.
+        var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
+            dst_lane * 4, bitcast[DType.int32, 1](val)
+        )
+        return bitcast[type, simd_width](result_packed)
+
+    constrained[simd_width == 1, "Unsupported simd width"]()
+
+    @parameter
+    if type is DType.bool:
+        return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
+            type
+        ]()
+    elif bitwidthof[type]() == 16:
+        var val_splatted = SIMD[type, 2](rebind[Scalar[type]](val))
+        return _shuffle_amd_helper(dst_lane, val_splatted)[0]
+    elif bitwidthof[type]() == 64:
+        var val_bitcast = bitcast[
+            new_type = DType.uint32, new_width = simd_width * 2
+        ](val)
+        val_half1, val_half2 = val_bitcast.deinterleave()
+        var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
+        var shuffle2 = _shuffle_amd_helper(dst_lane, val_half2)
+        var result = shuffle1.interleave(shuffle2)
+        return bitcast[type, simd_width](result)
+    else:
+        constrained[False, "unhandled shuffle type"]()
+        return 0
+
+
 # ===-----------------------------------------------------------------------===#
 # shuffle_idx
 # ===-----------------------------------------------------------------------===#
@@ -169,12 +205,8 @@ fn _shuffle_idx_amd[
     # The lane should not be > 64 so the upper 2 bits should always be zero.
     # Use -64 for now.
     var t0 = lane & -WARP_SIZE
-    var v = t0 | offset.cast[DType.int32]()
-    v <<= 2
-    var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
-        v, bitcast[DType.int32, 1](val)
-    )
-    return bitcast[type, simd_width](result_packed)
+    var dst_lane = t0 | offset.cast[DType.int32]()
+    return _shuffle_amd_helper(UInt32(dst_lane), val)
 
 
 @always_inline
@@ -275,13 +307,8 @@ fn _shuffle_up_amd[
     var lane: Int32 = lane_id()
     var t0 = lane - offset.cast[DType.int32]()
     var t1 = lane & -WARP_SIZE
-    var v = (t0 < t1).select(lane, t0)
-    # The address needs to be in bytes
-    v <<= 2
-    var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
-        v, bitcast[DType.int32, 1](val)
-    )
-    return bitcast[type, simd_width](result_packed)
+    var dst_lane = (t0 < t1).select(lane, t0)
+    return _shuffle_amd_helper(UInt32(dst_lane), val)
 
 
 @always_inline
@@ -323,13 +350,7 @@ fn shuffle_up[
             mask, val, offset
         )
     else:
-
-        @parameter
-        if bitwidthof[type]() == 16 and simd_width == 1:
-            var val_splatted = SIMD[type, 2](rebind[Scalar[type]](val))
-            return _shuffle_up_amd(mask, val_splatted, offset)[0]
-        else:
-            return _shuffle_up_amd(mask, val, offset)
+        return _shuffle_up_amd(mask, val, offset)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -376,14 +397,8 @@ fn _shuffle_down_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = lane_id()
     # set the offset to 0 if lane + offset >= WARP_SIZE
-    var v = (lane + offset > _WIDTH_MASK).select(0, offset)
-    v += lane
-    # The address needs to be in bytes
-    v <<= 2
-    var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
-        v, bitcast[DType.int32, 1](val)
-    )
-    return bitcast[type, simd_width](result_packed)
+    var dst_lane = (lane + offset > _WIDTH_MASK).select(0, offset) + lane
+    return _shuffle_amd_helper(dst_lane, val)
 
 
 @always_inline
@@ -424,17 +439,7 @@ fn shuffle_down[
     if is_nvidia_gpu():
         return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
     else:
-
-        @parameter
-        if bitwidthof[type]() == 16 and simd_width == 1:
-            var val_splatted = SIMD[type, 2](rebind[Scalar[type]](val))
-            return _shuffle_down_amd(mask, val_splatted, offset)[0]
-        elif type is DType.bool and simd_width == 1:
-            return _shuffle_down_amd(
-                mask, val.cast[DType.int32](), offset
-            ).cast[type]()
-        else:
-            return _shuffle_down_amd(mask, val, offset)
+        return _shuffle_down_amd(mask, val, offset)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -479,13 +484,8 @@ fn _shuffle_xor_amd[
     var t1 = lane & -WARP_SIZE
     # This needs to be "add nsw" = add no sign wrap
     var t2 = t1 + WARP_SIZE
-    var v = (t0 < t2).select(t0, lane)
-    # The address needs to be in bytes
-    v <<= 2
-    var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
-        v, bitcast[DType.int32, 1](val)
-    )
-    return bitcast[type, simd_width](result_packed)
+    var dst_lane = (t0 < t2).select(t0, lane)
+    return _shuffle_amd_helper(dst_lane, val)
 
 
 @always_inline
@@ -532,13 +532,7 @@ fn shuffle_xor[
     if is_nvidia_gpu():
         return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
     else:
-
-        @parameter
-        if bitwidthof[type]() == 16 and simd_width == 1:
-            var val_splatted = SIMD[type, 2](rebind[Scalar[type]](val))
-            return _shuffle_xor_amd(mask, val_splatted, offset)[0]
-        else:
-            return _shuffle_xor_amd(mask, val, offset)
+        return _shuffle_xor_amd(mask, val, offset)
 
 
 # ===-----------------------------------------------------------------------===#
