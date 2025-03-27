@@ -102,8 +102,8 @@ fn bench_dict_lookup[size: Int](mut b: Bencher) raises:
 @parameter
 fn bench_dict_lookup_types_that_allocates[size: Int](mut b: Bencher) raises:
     """Lookup size items."""
-    dict = Dict[String, String]()
-    keys = List[String](capacity=size)
+    var dict = Dict[String, String]()
+    var keys = List[String](capacity=size)
     for i in range(size):
         keys.append(String(i))
     for i in range(size):
@@ -112,7 +112,7 @@ fn bench_dict_lookup_types_that_allocates[size: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
-        res = 0
+        var res = 0
         for i in range(size):
             res += len(dict[keys[i]])
         keep(res)
@@ -165,11 +165,10 @@ def main():
         m.bench_function[bench_dict_lookup[size]](
             BenchId(String("bench_dict_lookup[", size, "]"))
         )
-        m.bench_function[bench_dict_lookup_types_that_allocates[size]](
-            BenchId(
-                String("bench_dict_lookup_types_that_allocates[", size, "]")
-            )
-        )
+
+    m.bench_function[bench_dict_lookup_types_that_allocates[256]](
+        BenchId(String("bench_dict_lookup_types_that_allocates[256]"))
+    )
 
     m.dump_report()
 
