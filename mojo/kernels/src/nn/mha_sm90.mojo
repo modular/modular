@@ -129,7 +129,7 @@ fn mha_sm90[
         end_of_seq = Int(valid_length[Int(batch_idx + 1)])
         seq_len = end_of_seq - start_of_seq
 
-        if seq_len < block_idx.x * config.block_m():
+        if seq_len <= block_idx.x * config.block_m():
             return
 
         @parameter
@@ -155,7 +155,7 @@ fn mha_sm90[
     else:
         seq_len = seq_len_arg
 
-        if seq_len < block_idx.x * config.block_m():
+        if seq_len <= block_idx.x * config.block_m():
             return
 
         max_seq_len = seq_len_arg
