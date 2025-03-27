@@ -141,10 +141,12 @@ class DistributedTransformer(Module):
                 **kwargs,
             )
 
-        last_logits = ops.gather(
-            ops.cast(self.lm_head(self.norm(h))[0], DType.float32),
-            input_row_offsets[1:] - 1,
-            axis=0,
+        h0 = h[0]
+        last_token_indices = input_row_offsets[1:] - 1
+        last_token_h = ops.gather(h0, last_token_indices, axis=0)
+        last_token_distributed = distribute_value(last_token_h, self.devices)
+        last_logits = ops.cast(
+            self.lm_head(self.norm(last_token_distributed))[0], DType.float32
         )
 
         logits = None
