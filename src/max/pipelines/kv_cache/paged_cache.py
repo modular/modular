@@ -376,6 +376,11 @@ class PagedKVCacheManager(KVCacheManager):
         # This is to reduce the number of allocations. This is NOT thread safe.
         self.tmp_data = PagedCacheMetadata(self.page_size, self.max_seq_len)
 
+        # Mapping from seq ID to blocks that have been prefetched prior to a
+        # fetch operation.
+        self.prefetched_blocks: dict[int, list[int]] = {}
+        self.prefetched_cow: dict[int, tuple[int, int, int]] = {}
+
     @classmethod
     def _block_size_per_token(
         cls, params: KVCacheParams, num_layers: int
@@ -467,64 +472,62 @@ class PagedKVCacheManager(KVCacheManager):
         ]
 
     @traced
-    def can_fetch(
-        self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
-    ) -> bool:
-        """Checks if there are sufficient KV pages to run `fetch` on given batch.
-
-        Sequences which have not been previously added to the cache can be handled
-        by this method. We assume the cache lengths are zero in those cases.
-        """
-
-        tot_new_pages_needed = 0
-        all_cache_hit_blocks: set[int] = set()
-
-        for seq_id, prompt in seq_ids_and_prompts.items():
-            prefix_blocks, _, new_pages_needed = self.query_fetch_stats(
-                seq_id, prompt, num_steps
-            )
-            tot_new_pages_needed += new_pages_needed
-            all_cache_hit_blocks.update(prefix_blocks)
-
-        num_free_blocks = len(self.free_blocks - all_cache_hit_blocks)
-
-        return tot_new_pages_needed <= num_free_blocks
-
-    @traced
-    def query_fetch_stats(
+    def reuse_blocks_from_prefix_cache(
         self, seq_id: int, prompt: np.ndarray, num_steps: int = 1
-    ) -> tuple[set[int], int, int]:
-        """Query about the stats about running the fetch operation for a given
-        sequence. It is OK if some seq_id are not in the cache.
+    ) -> np.ndarray:
+        """Reuse blocks from the prefix cache for a given sequence.
 
-        This method does not modify the state of the paged cache.
+        This must be followed by a call to `allocate_new_blocks`. Doing so will
+        prefetch the blocks used by a request during a later call to `fetch`.
 
         Returns:
-            - prefix_cache_blocks: Prefix cache blocks that would be reused for this seq.
-            - tokens_to_encode: Number of tokens in prompt we need to encode when running the fetch.
-            - new_pages_needed: Number of new pages we need to allocate when running the fetch.
+            The trimmed prompt tokens due to cache hits.
         """
-        reusing_tmp_data = False
-        if seq_id in self.active_requests:
-            data = self.active_requests[seq_id]
-        else:
-            reusing_tmp_data = True
-            data = self.tmp_data
+        assert seq_id not in self.prefetched_blocks
 
-        # write the prompt into the token array
+        data = self.active_requests[seq_id]
         data.fetch(prompt, num_steps)
+        assert data.seq_len <= self.max_seq_len
 
-        prefix_cache_blocks, tokens_to_encode, new_pages_needed = (
-            self.block_manager.query_fetch_stats(seq_id, data)
+        cow_args = self.block_manager.reuse_blocks_from_prefix_cache(
+            seq_id, data
         )
+        if cow_args is not None:
+            self.prefetched_cow[seq_id] = cow_args
 
-        # reverse the fetch operation so that this method does not mutate state
-        data.undo_fetch(prompt, num_steps)
+        return data.prompt_tokens
 
-        if reusing_tmp_data:
-            self.tmp_data.clear()
+    @traced
+    def allocate_new_blocks(
+        self, seq_id: int, prompt: np.ndarray, num_steps: int = 1
+    ) -> bool:
+        """Allocate new blocks for a given sequence.
 
-        return prefix_cache_blocks, tokens_to_encode, new_pages_needed
+        This must be preceded by a call to `reuse_blocks_from_prefix_cache`.
+
+        This call can fail if there are insufficient blocks to satisfy the request.
+        In this case, the request reset to original state and the method returns `False`.
+        """
+        assert seq_id not in self.prefetched_blocks
+
+        # TODO: This index math is very hairy and will be deleted after E2EOPT-113
+        data = self.active_requests[seq_id]
+        new_inflight_idx = data.cached_idx + len(prompt)
+        new_seq_len = new_inflight_idx + num_steps - 1
+        data.inflight_idx = new_inflight_idx
+        data.seq_len = new_seq_len
+
+        try:
+            self.block_manager.allocate_new_blocks(seq_id, data)
+            self.prefetched_blocks[seq_id] = self.block_manager.get_req_blocks(
+                seq_id
+            )
+            return True
+        except RuntimeError as e:
+            data.undo_fetch(prompt, num_steps)
+            if seq_id in self.prefetched_cow:
+                del self.prefetched_cow[seq_id]
+            return False
 
     @traced
     def _fetch(
@@ -547,9 +550,26 @@ class PagedKVCacheManager(KVCacheManager):
         ):
             # Validate there aren't other inflight requests for this sequence.
             assert seq_id not in self.fetch_metadata
-
             data = self.active_requests[seq_id]
-            data.fetch(prompt, num_steps)
+
+            # Prefetch blocks now for request if we have not done so prior to fetch.
+            if seq_id not in self.prefetched_blocks:
+                assert seq_id not in self.prefetched_cow
+                data.fetch(prompt, num_steps)
+                cow_args = self.block_manager.reuse_blocks_from_prefix_cache(
+                    seq_id, data
+                )
+                if cow_args is not None:
+                    self.prefetched_cow[seq_id] = cow_args
+
+                # We trim the prompt in place in the event of cache hits.
+                prompt = data.prompt_tokens
+                seq_ids_and_prompts[seq_id] = prompt
+
+                self.block_manager.allocate_new_blocks(seq_id, data)
+                self.prefetched_blocks[seq_id] = (
+                    self.block_manager.get_req_blocks(seq_id)
+                )
 
             # Compute the total sequence length
             assert data.seq_len <= self.max_seq_len
@@ -568,18 +588,25 @@ class PagedKVCacheManager(KVCacheManager):
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0
         max_cached_len = 0
-        for batch_idx, (seq_id, prompt) in enumerate(
-            seq_ids_and_prompts.items()
-        ):
+        for batch_idx, seq_id in enumerate(seq_ids_and_prompts):
             # Query prefix cache and allocate new blocks.
             data = self.active_requests[seq_id]
-            blocks, cow_args = self.block_manager.fetch(seq_id, data)
+
+            # Get the prefetched blocks for this request.
+            blocks = self.prefetched_blocks[seq_id]
+            del self.prefetched_blocks[seq_id]
+            cow_args = None
+            if seq_id in self.prefetched_cow:
+                cow_args = self.prefetched_cow[seq_id]
+                del self.prefetched_cow[seq_id]
+
+            # Sanity check that we have enough blocks.
+            num_required_blocks = ceildiv(data.seq_len, self.page_size)
+            assert len(blocks) >= num_required_blocks
+
+            # Enqueue COW op if we have a cow_args.
             if cow_args is not None:
                 self.cow_executor.enqueue_cow(*cow_args)
-
-            # We trim the prompt in place in the event of cache hits.
-            prompt = data.prompt_tokens
-            seq_ids_and_prompts[seq_id] = prompt
 
             # Populate the lookup table with the new pages.
             for i, block_idx in enumerate(blocks):
@@ -590,8 +617,9 @@ class PagedKVCacheManager(KVCacheManager):
             cache_lengths_np[batch_idx] = cache_length
 
             # Update the maximum lengths seen so far.
-            max_prompt_len = max(max_prompt_len, len(prompt))
-            max_cached_len = max(max_cached_len, cache_length + len(prompt))
+            prompt_tokens = data.num_prompt_tokens
+            max_prompt_len = max(max_prompt_len, prompt_tokens)
+            max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
 
         # Execute all COW memcpy operations.
         self.cow_executor.batch_async_execute()

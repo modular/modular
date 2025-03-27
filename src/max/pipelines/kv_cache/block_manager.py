@@ -118,37 +118,6 @@ class BlockManager:
         self.kv_cache_agent_queue: Optional[multiprocessing.Queue] = None
 
     @traced
-    def fetch(
-        self, seq_id: int, data: PagedCacheMetadata
-    ) -> tuple[list[int], Optional[tuple[int, int, int]]]:
-        """Fetch the block ids used by a request.
-
-        Args:
-            seq_id: The ID of the request.
-            data: The data of the request.
-
-        Returns:
-            A list of block IDs.
-        """
-        self.assert_runtime_invariants(seq_id, data)
-
-        cow_args = self.reuse_from_prefix_cache(seq_id, data)
-
-        # TODO E2EOPT-111:
-        # Commit the blocks whose hashes are known for prefix caching. This lets
-        # one request from a batch to write to a kv entry and other requests
-        # from the same batch can read from that same kv entry.
-        # if self.enable_prefix_caching:
-        #     self.commit_full_blocks(seq_id, data)
-
-        self.allocate_new_blocks(seq_id, data)
-
-        blocks = self.get_req_blocks(seq_id)
-
-        self.assert_runtime_invariants(seq_id, data)
-        return blocks, cow_args
-
-    @traced
     def step(self, seq_id: int, data: PagedCacheMetadata) -> None:
         """Step the block manager by committing blocks into prefix cache."""
         self.assert_runtime_invariants(seq_id, data)
@@ -164,57 +133,6 @@ class BlockManager:
         self.commit_to_prefix_cache(seq_id, data)
 
         self.assert_runtime_invariants(seq_id, data)
-
-    @traced
-    def query_fetch_stats(
-        self, seq_id: int, data: PagedCacheMetadata
-    ) -> tuple[set[int], int, int]:
-        """Query about the stats about running the fetch operation for a given
-        sequence. It is OK if some seq_id are not in the cache.
-
-        This method does not modify the state of the paged cache.
-
-        Returns:
-            - prefix_cache_blocks: Prefix cache blocks that would be reused for this seq.
-            - tokens_to_encode: Number of tokens in prompt we need to encode when running the fetch.
-            - new_pages_needed: Number of new pages we need to allocate when running the fetch.
-        """
-        prefix_cache_block_ids = []
-        if self.enable_prefix_caching:
-            # Compute block hashes. These hashes are used by the subsequent methods.
-            self.compute_block_hashes_for_request(seq_id, data)
-
-            # Query prefix cache for full blocks.
-            prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(
-                seq_id, data
-            )
-            for block in prefix_cache_blocks:
-                prefix_cache_block_ids.append(block.block_id)
-
-        # Determine number of new blocks to allocate.
-        num_required_blocks = ceildiv(data.seq_len, self.block_size)
-        req_blocks = self.req_to_blocks[seq_id]
-        num_new_blocks = (
-            num_required_blocks - len(req_blocks) - len(prefix_cache_block_ids)
-        )
-        assert num_new_blocks >= 0
-
-        # Determine the number of tokens to encode.
-        new_cached_idx = max(
-            data.cached_idx,
-            data.committed_idx + len(prefix_cache_block_ids) * self.block_size,
-        )
-        tokens_to_encode = data.inflight_idx - new_cached_idx
-
-        # Empty out the request info if this is not a real request.
-        if seq_id < 0:
-            if seq_id in self.req_to_blocks:
-                assert len(self.req_to_blocks[seq_id]) == 0
-                del self.req_to_blocks[seq_id]
-            if seq_id in self.req_to_block_hashes:
-                del self.req_to_block_hashes[seq_id]
-
-        return set(prefix_cache_block_ids), tokens_to_encode, num_new_blocks
 
     @traced
     def compute_block_hashes_for_request(
@@ -238,7 +156,7 @@ class BlockManager:
         block_hashes.extend(new_block_hashes)
 
     @traced
-    def reuse_from_prefix_cache(
+    def reuse_blocks_from_prefix_cache(
         self, seq_id: int, data: PagedCacheMetadata
     ) -> Optional[tuple[int, int, int]]:
         """Reuse blocks from prefix cache.
@@ -253,6 +171,8 @@ class BlockManager:
             (fresh_block_id, partial_block_id, tokens_matched) if a partial block is reused.
             None if no partial block is reused.
         """
+        self.assert_runtime_invariants(seq_id, data)
+
         req_blocks = self.req_to_blocks[seq_id]
 
         # Update cache hit rate metrics.
@@ -269,7 +189,6 @@ class BlockManager:
         prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(
             seq_id, data
         )
-
         orig_cached_idx = data.cached_idx
 
         if len(prefix_cache_blocks) > 0:
@@ -500,6 +419,8 @@ class BlockManager:
     def allocate_new_blocks(
         self, seq_id: int, data: PagedCacheMetadata
     ) -> None:
+        self.assert_runtime_invariants(seq_id, data)
+
         # Determine number of new blocks to allocate.
         req_blocks = self.req_to_blocks[seq_id]
         num_required_blocks = ceildiv(data.seq_len, self.block_size)
@@ -514,6 +435,8 @@ class BlockManager:
         for _ in range(num_new_blocks):
             new_block = self.alloc_block()
             req_blocks.append(new_block)
+
+        self.assert_runtime_invariants(seq_id, data)
 
     @traced
     def alloc_block(self) -> KVCacheBlock:

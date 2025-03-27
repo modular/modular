@@ -18,6 +18,7 @@ from __future__ import annotations
 import numpy as np
 
 
+# TODO: This entire class will be deleted after E2EOPT-113
 class PagedCacheMetadata:
     """Metadata for a single sequence in the paged KV cache.
 
@@ -97,6 +98,9 @@ class PagedCacheMetadata:
         assert self.num_prompt_tokens > 0, (
             "We could not have executed the model without at least one prompt token"
         )
+        # This is kinda sketchy but PagedCacheMetadata will be deleted soon in
+        # the next PR anyways.
+        self.seq_len = self.inflight_idx + len(new_tokens) - 1
         self.tokens[self.inflight_idx : self.seq_len] = new_tokens[:-1]
         self.cached_idx = self.seq_len
         self.inflight_idx = self.seq_len

@@ -338,6 +338,7 @@ class TextContext:
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
+        self.unassign_from_cache()
         self._start_idx = 0
 
         self.is_initial_prompt = True
