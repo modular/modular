@@ -17,6 +17,7 @@ load(
     "ASYNCRT_PROFILING_LOCAL_DEFINES",
     "CONFIG_SECTION_LOCAL_DEFINES",
 )
+load("//SDK/lib/API/python/bindings:tblgen.bzl", "mlir_nanobind")
 
 pkg_files(
     name = "docs",
@@ -100,6 +101,7 @@ td_library(
         ":InterpreterTdFiles",
         "//Support:MTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
     ],
 )
 
@@ -109,7 +111,6 @@ gentbl_mlir_dialect(
     td_file = "include/KGEN/HLCFDialect/HLCF.td",
     deps = [
         ":HLCFDialectTdFiles",
-        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
     ],
 )
 
@@ -200,10 +201,36 @@ td_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
+        ":HLCFDialectTdFiles",
         ":InterpreterTdFiles",
         "//Support:DebugInfoTdFiles",
         "//Support:MTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:FunctionInterfacesTdFiles",
+        "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
+    ],
+)
+
+mlir_nanobind(
+    name = "KGENDialectNanobindInc",
+    srcs = [
+        "//KGEN:include/KGEN/KGENDialect/KGEN.td",
+        # "//KGEN:include/KGEN/KGENDialect/KGENEnums.td",
+    ],
+    dialect = "KGENDialect",
+    exclude = [
+        # Both of these use an interior `Payload` struct.
+        "KGEN_ParamConstantOp",
+        # Uses `Res<AnyType, " ", [MemAlloc]>` which isn't implemented
+        # Also unclear what we would need this for yet :)
+        "KGEN_ParamMaterializeOp",
+        "KGEN_NoneAttr",  # Table flip
+        "KGEN_GlobalAddressOp",  # `global` is a python keyword
+    ],
+    output_dir = "include/KGEN/KGENDialect/Nanobind",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":KGENDialectTdFiles",
     ],
 )
 
