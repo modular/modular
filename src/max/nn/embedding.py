@@ -19,6 +19,7 @@ from typing import Optional
 
 from max.dtype import DType
 from max.graph import (
+    BufferValue,
     DeviceRef,
     TensorValue,
     TensorValueLike,
@@ -26,7 +27,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
-from max.nn.comm.allreduce import Allreduce, Signals
+from max.nn.comm.allreduce import Allreduce
 
 from .layer import Layer, Module
 
@@ -162,7 +163,6 @@ class VocabParallelEmbedding(Module):
         hidden_dim: int,
         dtype: DType,
         devices: list[DeviceRef],
-        signals: Signals,
         quantization_encoding: Optional[QuantizationEncoding] = None,
         name: Optional[str] = None,
     ):
@@ -193,16 +193,17 @@ class VocabParallelEmbedding(Module):
             device=DeviceRef.CPU(),
             quantization_encoding=quantization_encoding,
         )
-        self.allreduce = Allreduce(
-            num_accelerators=self.num_devices, signals=signals
-        )
+        self.allreduce = Allreduce(num_accelerators=self.num_devices)
 
-    def __call__(self, indices: TensorValueLike) -> list[TensorValue]:
+    def __call__(
+        self, indices: TensorValueLike, signal_buffers: list[BufferValue]
+    ) -> list[TensorValue]:
         """Embeds the input indices by looking up corresponding vectors.
 
         Args:
             indices: A tensor of integer indices to look up.
                 Each index must be in the range ``[0, vocab_size)``.
+            signal_buffers: Buffers for peer-to-peer communication in allreduce.
 
         Returns:
             A tensor containing the embeddings corresponding to the input
@@ -215,7 +216,7 @@ class VocabParallelEmbedding(Module):
             self._per_device_call(input, n) for n in range(self.num_devices)
         ]
 
-        return self.allreduce(outputs)
+        return self.allreduce(outputs, signal_buffers)
 
     def _per_device_call(
         self, indices: TensorValue, device_idx: int

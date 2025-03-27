@@ -23,7 +23,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import Module
+from max.nn import Module, Signals
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -67,10 +67,14 @@ class Llama3Inputs(ModelInputs):
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence."""
 
+    signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
+
     def __init__(
         self,
         tokens: np.ndarray | Tensor,
         input_row_offsets_or_attn_mask: np.ndarray | Tensor,
+        signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         """
@@ -78,9 +82,12 @@ class Llama3Inputs(ModelInputs):
             tokens: Input token IDs.
             input_row_offsets_or_attn_mask: Input row offsets (ragged tensors)
                 or attention mask (padded tensors).
+            signal_buffers: Device buffers used for synchronization in
+                communication collectives.
         """
         self.tokens = tokens
         self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
+        self.signal_buffers = signal_buffers
         self.kv_cache_inputs = kv_cache_inputs
 
     @property
@@ -95,6 +102,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
     model: Model
     """Compiled and initialized model ready for inference."""
+
+    signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
 
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
     """Normalization layer."""
@@ -138,6 +148,22 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
         self.model = self.load_model(session)
 
+        # Initialize state needed for communication collectives.
+        self.signal_buffers = (
+            [
+                Tensor.zeros(
+                    shape=(Signals.NUM_BYTES,),
+                    dtype=DType.uint8,
+                    device=dev,
+                )
+                for dev in self.devices
+            ]
+            if len(self.devices) > 1
+            # Skip creating buffers for single-device, where communication
+            # collectives shouldn't be called.
+            else []
+        )
+
     # TODO(zheng): Remove these wrappers once get_kv_params doesn't have to be
     # called from PipelineModel's infer_optimal_batch_size method.
     @classmethod
@@ -168,6 +194,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets_or_attn_mask,
+            *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
             copy_inputs_to_device=(
                 not self.kv_cache_config.cache_strategy.uses_opaque()
@@ -206,6 +233,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             input_row_offsets_or_attn_mask=Tensor.from_numpy(
                 input_row_offsets
             ).to(self.devices[0]),
+            signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
         )
 
@@ -229,6 +257,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         return Llama3Inputs(
             tokens=next_tokens_batch,
             input_row_offsets_or_attn_mask=attn_mask,
+            signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
         )
 
@@ -260,6 +289,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         return Llama3Inputs(
             tokens=next_tokens,
             input_row_offsets_or_attn_mask=next_row_offsets,
+            signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 
@@ -433,6 +463,11 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 kv_type for sublist in kv_cache_args for kv_type in sublist
             ]
 
+            # Create metadata for signal buffers.
+            signals = Signals(
+                devices=(DeviceRef(d.label, d.id) for d in self.devices)
+            )
+
             nn_model = DistributedLlama3(model_config)
 
             # Load weights. We allow the weight types to be overriden due to
@@ -448,18 +483,27 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 input_types=[
                     tokens_type,
                     input_row_offsets_type,
+                    *signals.input_types(),
                     *flattened_kv_types,
                 ],
             ) as graph:
                 tokens, input_row_offsets, *variadic_args = graph.inputs
 
+                # Multi-GPU passes a signal buffer per device: unmarshal those.
+                signal_buffers = [
+                    v.buffer for v in variadic_args[: len(self.devices)]
+                ]
+
                 # Unmarshal the remaining arguments, which are for KV cache.
-                kv_cache = [v.tensor for v in variadic_args]
+                kv_cache = [
+                    v.tensor for v in variadic_args[len(self.devices) :]
+                ]
 
                 kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
 
                 outputs = nn_model(
                     tokens.tensor,
+                    signal_buffers,
                     kv_caches_per_dev,
                     input_row_offsets=input_row_offsets,
                 )

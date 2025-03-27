@@ -21,6 +21,7 @@ from typing import Callable, Sequence
 import numpy as np
 from max.dtype import DType
 from max.graph import (
+    BufferValue,
     DeviceRef,
     TensorValue,
     TensorValueLike,
@@ -31,7 +32,7 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import Weights
 
 from .clamp import clamp
-from .comm import Allreduce, Signals
+from .comm import Allreduce
 from .kernels import swish_glu
 from .layer import Layer, Module
 
@@ -245,6 +246,7 @@ class ColumnParallelLinear(LinearV2):
             x: Input tensor of shape ``(..., in_dim)``.
                 The last dimension must match the layer's ``in_dim``.
                 The input tensor must reside on :obj:`device`.
+            signal_buffers: Buffers for peer-to-peer communication in allreduce.
 
         Returns:
             Output tensor of shape ``(..., out_dim)``.
@@ -712,7 +714,6 @@ class DistributedMLP(MLPV2):
     def __init__(
         self,
         *args,
-        signals: Signals,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -747,17 +748,18 @@ class DistributedMLP(MLPV2):
 
             self.list_of_mlps.append(layer)
 
-        self.allreduce = Allreduce(
-            num_accelerators=len(self.devices), signals=signals
-        )
+        self.allreduce = Allreduce(num_accelerators=len(self.devices))
 
-    def __call__(self, x: list[TensorValue]) -> list[TensorValue]:  # type: ignore[override]
+    def __call__(  # type: ignore[override]
+        self, x: list[TensorValue], signal_buffers: list[BufferValue]
+    ) -> list[TensorValue]:
         """Applies a linear transformation to the input data.
 
         Args:
             x: Input tensor of shape ``(..., in_dim)``.
                 The last dimension must match the layer's ``in_dim``.
                 The input tensor must reside on :obj:`device`.
+            signal_buffers: Buffers for peer-to-peer communication in allreduce.
 
         Returns:
             Output tensor of shape ``(..., out_dim)``.
@@ -767,4 +769,4 @@ class DistributedMLP(MLPV2):
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
         """
         mlp_outs = [self.list_of_mlps[i](x[i]) for i in range(self.num_devices)]
-        return self.allreduce(mlp_outs)
+        return self.allreduce(mlp_outs, signal_buffers)

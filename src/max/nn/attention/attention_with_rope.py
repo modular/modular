@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional, Union
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
@@ -28,7 +28,7 @@ from max.pipelines.kv_cache import (
 )
 
 from ..clamp import clamp
-from ..comm import Allreduce, Signals
+from ..comm import Allreduce
 from ..kernels import (
     MHAMaskVariant,
     flare_mla_decode_ragged,
@@ -988,7 +988,7 @@ def distribute_value(
 class DistributedAttentionWithRope(
     AttentionWithRopeV2, DistributedAttentionImpl
 ):
-    def __init__(self, signals: Signals, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if not self.devices or len(self.devices) < 2:
             raise ValueError(
@@ -996,7 +996,7 @@ class DistributedAttentionWithRope(
             )
         # Shard weights into separate AttentionWithRope layers.
         n_devices = len(self.devices)
-        self.allreduce = Allreduce(n_devices, signals)
+        self.allreduce = Allreduce(n_devices)
 
         def col_sharding_strategy(weight: Weight, i) -> TensorValue:
             col_size = int(weight.shape[1]) // n_devices
@@ -1032,6 +1032,7 @@ class DistributedAttentionWithRope(
     def __call__(  # type: ignore[override]
         self,
         x: List[TensorValue],
+        signal_buffers: List[BufferValue],
         kv_collections: List[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
@@ -1060,6 +1061,7 @@ class DistributedAttentionWithRope(
                 )
                 for i in range(len(self.devices))
             ],
+            signal_buffers=signal_buffers,
         )
 
 
