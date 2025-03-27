@@ -629,7 +629,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         Returns:
             True if there key exists in the dictionary, False otherwise.
         """
-        return self.find(key).__bool__()
+        return self.get_ptr(key).__bool__()
 
     fn __iter__(ref self) -> _DictKeyIter[K, V, __origin_of(self)]:
         """Iterate over the dict's keys as immutable references.
