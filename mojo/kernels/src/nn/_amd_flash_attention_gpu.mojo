@@ -898,6 +898,19 @@ fn mha_single_batch[
     fn loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
+        var mask_status = mask.status(
+            Index[element_bitwidth=32, unsigned=True](
+                Int(q_tile_idx * BM + start_pos),
+                Int(kv_tile_start_row),
+            ),
+            Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+        )
+
+        @parameter
+        if not token_gen:
+            if mask_status == TileMaskStatus.FULL_MASK:
+                return
+
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         var k_tile = gmem_manager.get_kv_tensor[not_last_iter=not_last_iter](
@@ -959,45 +972,47 @@ fn mha_single_batch[
 
         var p_reg_vectorized = p_reg_tile.vectorize[1, output_frag_size]()
 
-        # unswitch[_apply_mask](
-        #     mask.status(
-        #         Index[element_bitwidth=32, unsigned=True](
-        #             Int(q_tile_idx * BM + start_pos), kv_tile_start_row
-        #         ),
-        #         Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
-        #     )
-        #     == TileMaskStatus.PARTIAL_MASK
-        # )
-        # ^ this somehow does not give correct results
-
         alias use_exp2 = True
-        _apply_mask[
-            masked=True,
-            accum_type=accum_type,
-            token_gen=token_gen,
-            MMA_M=MMA_M,
-            MMA_N=MMA_N,
-            num_m_mmas=num_m_mmas,
-            num_n_mmas=num_n_mmas,
-            mask_t=mask_t,
-            not_last_iter=not_last_iter,
-            group=group,
-            fragment_layout=fragment_layout,
-            warp_layout=warp_layout,
-            use_exp2=use_exp2,
-        ](
-            kv_tile_start_row,
-            kv_tile_num_rows,
-            start_pos,
-            seq_len,
-            num_keys,
-            Int(mask_block_row),
-            Int(mask_warp_row),
-            mask_warp_col,
-            scale,
-            mask,
-            p_reg_vectorized,
-        )
+
+        @always_inline
+        @parameter
+        fn _apply_mask_impl[masked: Bool]():
+            _apply_mask[
+                masked=masked,
+                accum_type=accum_type,
+                token_gen=token_gen,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                num_m_mmas=num_m_mmas,
+                num_n_mmas=num_n_mmas,
+                mask_t=mask_t,
+                not_last_iter=not_last_iter,
+                group=group,
+                fragment_layout=fragment_layout,
+                warp_layout=warp_layout,
+                use_exp2=use_exp2,
+            ](
+                kv_tile_start_row,
+                kv_tile_num_rows,
+                start_pos,
+                seq_len,
+                num_keys,
+                Int(mask_block_row),
+                Int(mask_warp_row),
+                mask_warp_col,
+                scale,
+                mask,
+                p_reg_vectorized,
+            )
+
+        @parameter
+        if not token_gen:
+            unswitch[_apply_mask_impl](
+                mask_status == TileMaskStatus.PARTIAL_MASK
+            )
+        else:
+            _apply_mask_impl[masked=True]()
+
         mask_warp_col += BN
         alias reg_layout_by_mma_unit = Layout.row_major(
             num_m_mmas * num_n_mmas, output_frag_size
