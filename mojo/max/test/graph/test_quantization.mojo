@@ -8,6 +8,7 @@
 
 import sys
 from collections import InlineArray
+from random import randn
 from sys import sizeof
 
 from max.graph import Graph, TensorType, Type
@@ -53,9 +54,8 @@ def test_quantize_bfloat16():
         )
 
         # Generate normally-distributed random tensor to quantize.
-        f32_tensor = Tensor[DType.float32].randn(
-            TensorShape(num_tokens, channels)
-        )
+        f32_tensor = Tensor[DType.float32](TensorShape(num_tokens, channels))
+        randn(f32_tensor.unsafe_ptr(), f32_tensor.num_elements())
 
         # Quantize the float32 token embeddings to bfloat16.
         bfloat16_symbol = g.quantize[BFloat16Encoding](f32_tensor)
