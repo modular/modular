@@ -13,11 +13,11 @@ from max.driver import DeviceSpec
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
-    TextContext,
     TokenGeneratorRequest,
     TokenGeneratorRequestMessage,
     TokenGeneratorResponseFormat,
 )
+from max.pipelines.context import TextContext
 
 pytest_plugins = "test_common.registry"
 

@@ -8,15 +8,14 @@ import asyncio
 import pytest
 import requests
 from max.pipelines import (
-    TextAndVisionContext,
     TextAndVisionTokenizer,
-    TextContext,
     TextTokenizer,
     TokenGeneratorRequest,
     TokenGeneratorRequestFunction,
     TokenGeneratorRequestMessage,
     TokenGeneratorRequestTool,
 )
+from max.pipelines.context import TextAndVisionContext, TextContext
 
 
 def convert_image_url_to_base64(image_url):

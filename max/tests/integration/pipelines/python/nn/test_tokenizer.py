@@ -6,7 +6,8 @@
 
 import numpy as np
 import pytest
-from max.pipelines import SupportedEncoding, TextContext, TextTokenizer
+from max.pipelines import SupportedEncoding, TextTokenizer
+from max.pipelines.context import TextContext
 
 
 @pytest.mark.asyncio

@@ -11,12 +11,8 @@ import string
 from typing import Sequence, TypeVar, Union
 
 import numpy as np
-from max.pipelines import (
-    InputContext,
-    PipelineTokenizer,
-    TextContext,
-    TokenGeneratorRequest,
-)
+from max.pipelines import PipelineTokenizer, TokenGeneratorRequest
+from max.pipelines.context import InputContext, TextContext
 
 T = TypeVar("T", bound=InputContext)
 

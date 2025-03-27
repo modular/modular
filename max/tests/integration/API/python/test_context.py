@@ -6,7 +6,7 @@
 
 import numpy as np
 import pytest
-from max.pipelines import TextContext
+from max.pipelines.context import TextContext
 
 
 def test_context__current_length():

@@ -17,9 +17,9 @@ from max.pipelines import (
     ProfilingConfig,
     SamplingConfig,
     SupportedEncoding,
-    TextContext,
     TextGenerationPipeline,
 )
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import KVCacheStrategy
 
 from .pipeline_model import MockPipelineModel
