@@ -12,7 +12,7 @@ from sys._assembly import inlined_assembly
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, bitcast
-
+from collections import InlineArray
 from utils import StaticTuple
 from utils.index import Index
 from builtin.string_literal import get_string_literal_slice
@@ -861,6 +861,156 @@ fn wgmma_wait_group_sync[group: Int = 0]():
     inlined_assembly[
         "wgmma.wait_group.sync.aligned $0;", NoneType, constraints="n"
     ](group)
+
+
+@always_inline
+fn wgmma_async[
+    m: Int,
+    n: Int,
+    k: Int,
+    c_dtype: DType,
+    width: Int,
+    /,
+    *,
+    a_type: DType,
+    b_type: DType,
+    accum_type: DType = c_dtype,
+    layout_a: StaticString = "row",
+    layout_b: StaticString = "col",
+    scale_d: Int = 1,
+    scale_a: Int = 1,
+    scale_b: Int = 1,
+](
+    mat_a_desc: WGMMADescriptor,
+    mat_b_desc: WGMMADescriptor,
+    c_reg: StaticTuple[Scalar[c_dtype], width],
+) -> __type_of(c_reg):
+    """Performs warp group async Matrix-multiply and accumulate (WGMMA) operation.
+
+    This function executes an asynchronous matrix multiplication using warp group MMA instructions.
+    It supports various data types including tensor float32, bfloat16, float16, float8, int8, and uint8.
+
+    Parameters:
+        m: Number of rows in matrix A and output matrix.
+        n: Number of columns in matrix B and output matrix.
+        k: Number of columns in matrix A / rows in matrix B.
+        c_dtype: Data type of the output matrix C.
+        width: Width of the InlineArray register for matrix C.
+        a_type: Data type of matrix A.
+        b_type: Data type of matrix B.
+        accum_type: Accumulation data type (defaults to c_dtype).
+        layout_a: Memory layout for matrix A ("row" or "col").
+        layout_b: Memory layout for matrix B ("row" or "col").
+        scale_d: Scale factor for matrix C.
+        scale_a: Scale factor for matrix A.
+        scale_b: Scale factor for matrix B.
+
+    Args:
+        mat_a_desc: WGMMA descriptor for matrix A.
+        mat_b_desc: WGMMA descriptor for matrix B.
+        c_reg: StaticTuple containing matrix C values.
+
+    Returns:
+        `StaticTuple` containing the result of the matrix multiplication.
+
+    Constraints:
+        - The number of output registers must match the instruction shape:
+          `(m * n // 128) * sizeof(accum_type) == width * sizeof(c_dtype)`.
+        - Data type combinations must be compatible with hardware WGMMA instructions.
+    """
+
+    constrained[
+        (m * n // 128) * sizeof[accum_type]() == width * sizeof[c_dtype](),
+        String(
+            "Number of output registers ",
+            width,
+            " don't match the instruction shape ",
+            Index(m, n, k),
+        ),
+    ]()
+
+    constrained[
+        scale_d == 1 or scale_d == 0,
+        String(
+            "Invalid scale in value of scaled_d '",
+            scale_d,
+            (
+                "' which is not supported. Only 1 or 0 is supported as the"
+                " scale in values.."
+            ),
+        ),
+    ]()
+
+    constrained[
+        scale_a == 1 or scale_a == -1,
+        String(
+            "Invalid scale in value of scaled_a '",
+            scale_a,
+            (
+                "' which is not supported. Only 1 or -1 is supported as the"
+                " scale in values."
+            ),
+        ),
+    ]()
+
+    constrained[
+        scale_b == 1 or scale_b == -1,
+        String(
+            "Invalid scale in value of scaled_b '",
+            scale_b,
+            (
+                "' which is not supported. Only 1 or -1 is supported as the"
+                " scale in values."
+            ),
+        ),
+    ]()
+
+    var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+        mat_a_desc.desc.value
+    )
+    var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
+        mat_b_desc.desc.value
+    )
+
+    alias layout_a_value = get_string_literal_slice[layout_a]().value
+    alias layout_b_value = get_string_literal_slice[layout_b]().value
+
+    @parameter
+    if (
+        a_type is DType.bfloat16
+        and b_type is DType.bfloat16
+        and c_dtype == accum_type == DType.float32
+    ):
+        var res = __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
+            shape_m = m.value,
+            shape_n = n.value,
+            shape_k = k.value,
+            type_a = __mlir_attr.`bf16`,
+            type_b = __mlir_attr.`bf16`,
+            type_c = __mlir_attr.`f32`,
+            layout_a=layout_a_value,
+            layout_b=layout_b_value,
+            scale_d = scale_d.value,
+            scale_a = scale_a.value,
+            scale_b = scale_b.value,
+            _type = c_reg.type,
+        ](desc_a_value, desc_b_value, c_reg.array)
+
+        return rebind[StaticTuple[Scalar[c_dtype], width]](res)
+    else:
+        constrained[
+            False,
+            String(
+                "Unsupported data type combination: ",
+                a_type,
+                " and ",
+                b_type,
+                " with accum_type ",
+                accum_type,
+            ),
+        ]()
+
+        return c_reg
 
 
 @always_inline
