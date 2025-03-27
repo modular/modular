@@ -54,6 +54,9 @@ class InputContext(Protocol):
     def end_idx(self) -> int: ...
 
     @property
+    def committed_idx(self) -> int: ...
+
+    @property
     def current_length(self) -> int:
         """The current length of the sequence, including completed and active tokens."""
         ...
@@ -91,6 +94,11 @@ class InputContext(Protocol):
         """
         ...
 
+    @property
+    def tokens(self) -> np.ndarray:
+        """All tokens in the context."""
+        ...
+
     def update(
         self,
         new_token: int,
@@ -109,8 +117,19 @@ class InputContext(Protocol):
         start_idx: Optional[int] = None,
         active_idx: Optional[int] = None,
         end_idx: Optional[int] = None,
+        committed_idx: Optional[int] = None,
     ) -> None:
         """Update the start_idx, active_idx and end_idx without manipulating the token array."""
+        ...
+
+    def set_token_indices(
+        self,
+        start_idx: Optional[int] = None,
+        active_idx: Optional[int] = None,
+        end_idx: Optional[int] = None,
+        committed_idx: Optional[int] = None,
+    ) -> None:
+        """Set the token indices without manipulating the token array."""
         ...
 
     @property
@@ -195,14 +214,19 @@ class TextContext:
         # another array in the caller, which prevents us from resizing it directly.
         # The extra space is initialized to zero and will be filled with generated tokens.
         assert len(tokens) <= self.size
-        self.tokens = np.zeros(self.size, dtype=tokens.dtype)
-        self.tokens[: len(tokens)] = tokens
+        self._tokens = np.zeros(self.size, dtype=tokens.dtype)
+        self._tokens[: len(tokens)] = tokens
 
         self._active_idx = len(tokens)
         self._start_idx = 0
         self._end_idx = self._active_idx
         self._completion_start_idx = self._active_idx
         self._completion_end_idx = self._active_idx
+
+        # Which prefix of tokens have been committed into the prefix cache.
+        # This should be a multiple of page_size and less than start_idx.
+        # When prefix caching is disabled, this should be 0.
+        self._committed_idx = 0
 
         self.log_probabilities = log_probabilities
         self.log_probabilities_echo = log_probabilities_echo
@@ -224,6 +248,10 @@ class TextContext:
     @property
     def end_idx(self) -> int:
         return self._end_idx
+
+    @property
+    def committed_idx(self) -> int:
+        return self._committed_idx
 
     def set_matcher(self, matcher: "xgr.GrammarMatcher") -> None:  # type: ignore
         self.matcher = matcher
@@ -247,11 +275,44 @@ class TextContext:
         start_idx: Optional[int] = None,
         active_idx: Optional[int] = None,
         end_idx: Optional[int] = None,
+        committed_idx: Optional[int] = None,
     ) -> None:
         """Update the start_idx, active_idx and end_idx without manipulating the token array."""
         new_start_idx = (start_idx if start_idx else 0) + self._start_idx
         new_active_idx = (active_idx if active_idx else 0) + self._active_idx
         new_end_idx = (end_idx if end_idx else 0) + self._end_idx
+        new_committed_idx = (
+            committed_idx if committed_idx else 0
+        ) + self._committed_idx
+
+        self.set_token_indices(
+            start_idx=new_start_idx,
+            active_idx=new_active_idx,
+            end_idx=new_end_idx,
+            committed_idx=new_committed_idx,
+        )
+
+    def set_token_indices(
+        self,
+        start_idx: Optional[int] = None,
+        active_idx: Optional[int] = None,
+        end_idx: Optional[int] = None,
+        committed_idx: Optional[int] = None,
+    ) -> None:
+        """Set the token indices without manipulating the token array."""
+        new_start_idx = start_idx if start_idx else self._start_idx
+        new_active_idx = active_idx if active_idx else self._active_idx
+        new_end_idx = end_idx if end_idx else self._end_idx
+        new_committed_idx = (
+            committed_idx if committed_idx else self._committed_idx
+        )
+
+        if new_committed_idx > new_start_idx:
+            msg = f"""
+            committed_idx must always be at most start_idx, unable to bump token indices
+            as new committed_idx ({new_committed_idx}) is greater than new start_idx ({new_start_idx}).
+            """
+            raise ValueError(msg)
 
         if new_start_idx >= new_active_idx:
             msg = f"""
@@ -270,15 +331,20 @@ class TextContext:
         self._start_idx = new_start_idx
         self._active_idx = new_active_idx
         self._end_idx = new_end_idx
+        self._committed_idx = new_committed_idx
 
     @property
     def next_tokens(self) -> np.ndarray:
-        return self.tokens[self._start_idx : self._active_idx]
+        return self._tokens[self._start_idx : self._active_idx]
+
+    @property
+    def tokens(self) -> np.ndarray:
+        return self._tokens[: self._end_idx]
 
     def _upsize(self) -> None:
         if self._end_idx >= self.size:
             self.size += CHUNK_SIZE
-            self.tokens = np.resize(self.tokens, self.size)
+            self._tokens = np.resize(self._tokens, self.size)
 
     def update(
         self,
@@ -298,7 +364,7 @@ class TextContext:
 
         # Update tokens and log probabilities data
         self._upsize()
-        self.tokens[self._active_idx] = new_token
+        self._tokens[self._active_idx] = new_token
         if log_probabilities:
             self._log_probabilities_data[self._active_idx] = log_probabilities
 
@@ -322,7 +388,7 @@ class TextContext:
         self._upsize()
 
         # Update tokens
-        self.tokens[self._active_idx] = new_token
+        self._tokens[self._active_idx] = new_token
 
         # Bump Indices
         self._active_idx += 1
@@ -339,6 +405,7 @@ class TextContext:
         """Resets the context's state by combining all tokens into a new prompt."""
         self.unassign_from_cache()
         self._start_idx = 0
+        self._committed_idx = 0
 
         self.is_initial_prompt = True
 
@@ -356,7 +423,7 @@ class TextContext:
             # this method never returns the same tokens more than once.
             res.append(
                 (
-                    self.tokens[token_idx],
+                    self._tokens[token_idx],
                     self._log_probabilities_data.pop(token_idx, None),
                 )
             )
