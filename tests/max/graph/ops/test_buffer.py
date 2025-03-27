@@ -6,7 +6,7 @@
 """mutable ops tests."""
 
 import pytest
-from conftest import buffer_types, shapes, static_dims, tensor_types
+from conftest import buffer_types, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
@@ -15,9 +15,7 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
-    DeviceRef,
     Graph,
-    Shape,
     TensorType,
     TensorValue,
     Value,
@@ -30,7 +28,6 @@ shared_dtypes = st.shared(st.from_type(DType))
 shared_shapes = st.shared(shapes().filter(lambda shape: 0 not in shape))
 tensor_type = tensor_types(shapes=shared_shapes, dtypes=shared_dtypes)
 buffer_type = buffer_types(shapes=shared_shapes, dtypes=shared_dtypes)
-shared_static_shapes = st.shared(shapes(dims=static_dims()))
 
 
 @given(buffer_type=...)
@@ -103,22 +100,6 @@ def test_value_constructor(tensor_type: TensorType, buffer_type: BufferType):
 
         with pytest.raises(TypeError):
             BufferValue(0)
-
-
-@given(shape=shared_static_shapes, dtype=shared_dtypes)
-def test_create(shape: Shape, dtype: DType):
-    with Graph(
-        "buffer_store",
-        input_types=[],
-    ) as graph:
-        device = DeviceRef.CPU(0)
-        buffer = ops.buffer_create(shape, dtype, device)
-        assert buffer.shape == shape
-        assert buffer.dtype == dtype
-        assert buffer.device == device
-        graph.output(buffer)
-        graph._mlir_op.verify()
-        assert "mo.buffer.create" in str(graph)
 
 
 # buffer and tensor inputs share dtype and shape

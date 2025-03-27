@@ -26,7 +26,7 @@ from . import allreduce
 from .allgather import allgather
 from .band_part import band_part
 from .broadcast_to import broadcast_to
-from .buffer import buffer_create, buffer_load, buffer_store, buffer_store_slice
+from .buffer import buffer_load, buffer_store, buffer_store_slice
 from .cast import cast
 from .chunk import chunk
 from .complex import as_interleaved_complex

@@ -5,50 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for load_buffer."""
 
-from __future__ import annotations
-
-from max.dtype import DType
-from max.mlir.dialects import mo, rmo
+from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import (
-    BufferType,
-    DeviceRef,
-    ShapeLike,
-    TensorType,
-    _ChainType,
-)
+from ..type import TensorType, _ChainType
 from ..value import BufferValue, TensorValue
 from .slice_tensor import SliceIndices, _slice_and_output_tensors
-
-
-def buffer_create(
-    shape: ShapeLike, dtype: DType, device: DeviceRef
-) -> BufferValue:
-    """Creates an uninitialized buffer on a specific device.
-
-    This operation creates an uninitialized buffer with the specified shape and
-    data type on a given device. The buffer is not initialized with any values,
-    and the operation is intended for use cases where the buffer will be filled
-    with data later in the computation.
-
-    Buffers are mutable tensors that can be used like regular `TensorValues`.
-    The memory can be updated using `ops.buffer_store` and
-    `ops.buffer_store_slice`, or copied into an immutable tensor using
-    `ops.buffer_load`.
-
-    Args:
-        shape: Buffer shape.
-        dtype: Buffer dtype.
-        device: Device to create the buffer on.
-
-    Returns:
-        Uninitialized buffer value.
-    """
-    return Graph.current._add_op(
-        mo.buffer_create,
-        BufferType(dtype=dtype, shape=shape, device=device).to_mlir(),
-    )[0]
 
 
 def buffer_load(

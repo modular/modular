@@ -23,13 +23,14 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Allreduce, Module
+from max.nn import Allreduce, Module, Signals
 
 M = 512
 N = 1024
 
 
-def allreduce_graph(devices: list[DeviceRef]) -> Graph:
+def allreduce_graph(signals: Signals) -> Graph:
+    devices = signals.devices
     with Graph(
         "allreduce",
         input_types=[
@@ -37,6 +38,7 @@ def allreduce_graph(devices: list[DeviceRef]) -> Graph:
             TensorType(dtype=DType.float32, shape=[M, N], device=devices[1]),
             TensorType(dtype=DType.float32, shape=[M, N], device=devices[2]),
             TensorType(dtype=DType.float32, shape=[M, N], device=devices[3]),
+            *signals.input_types(),
         ],
     ) as graph:
         assert isinstance(graph.inputs[0], TensorValue)
@@ -49,7 +51,10 @@ def allreduce_graph(devices: list[DeviceRef]) -> Graph:
         add3 = graph.inputs[3] * 4
 
         allreduce = Allreduce(num_accelerators=len(devices))
-        allreduce_outputs = allreduce([add0, add1, add2, add3])
+        allreduce_outputs = allreduce(
+            [add0, add1, add2, add3],
+            [inp.buffer for inp in graph.inputs[4:]],
+        )
 
         graph.output(
             allreduce_outputs[0],
@@ -63,7 +68,8 @@ def allreduce_graph(devices: list[DeviceRef]) -> Graph:
 def test_allreduce_execution() -> None:
     """Tests multi-device allreduce execution."""
     num_gpus = 4
-    graph = allreduce_graph([DeviceRef.GPU(id=id) for id in range(num_gpus)])
+    signals = Signals(devices=[DeviceRef.GPU(id=id) for id in range(num_gpus)])
+    graph = allreduce_graph(signals)
     host = CPU()
     device0 = Accelerator(0)
     device1 = Accelerator(1)
@@ -84,7 +90,7 @@ def test_allreduce_execution() -> None:
     for dev in (device0, device1, device2, device3):
         dev.synchronize()
 
-    output = compiled.execute(a, b, c, d)
+    output = compiled.execute(a, b, c, d, *signals.buffers())
 
     # Check Executed Graph
     assert isinstance(output[0], Tensor)
@@ -123,8 +129,12 @@ class AllreduceAdd(Module):
         # Split args into tensor inputs and signal buffers
         # The number of tensor inputs should match the number of devices
         inputs = [cast(TensorValue, arg) for arg in args[: self.num_devices]]
+        signal_buffers = [
+            cast(BufferValue, arg) for arg in args[self.num_devices :]
+        ]
+
         # Fused Mojo kernel allreduce implementation.
-        results = self.allreduce(inputs)
+        results = self.allreduce(inputs, signal_buffers)
 
         biases = [
             ops.constant(42, dtype=DType.float32).to(DeviceRef.GPU(id))
@@ -139,6 +149,7 @@ class AllreduceAdd(Module):
 def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
     """Tests that an elementwise add correctly follows an allreduce operation."""
     graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
 
     host = CPU()
     devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
@@ -153,6 +164,7 @@ def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
                 TensorType(DType.float32, shape=[M, N], device=graph_devices[i])
                 for i in range(num_gpus)
             ],
+            *signals.input_types(),
         ],
     )
 
@@ -166,7 +178,7 @@ def test_allreduce_epilogue_fusion(num_gpus: int) -> None:
     for dev in devices:
         dev.synchronize()
 
-    outputs = compiled.execute(*inputs)
+    outputs = compiled.execute(*inputs, *signals.buffers())
 
     expected = np.full((M, N), num_gpus + 42.0, dtype=np.float32)
 
