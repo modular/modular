@@ -1307,3 +1307,159 @@ struct OwnedKwargsDict[V: CollectionElement](
     @always_inline
     fn _insert(mut self, key: StringLiteral, owned value: V):
         self._insert(String(key), value^)
+
+
+@value
+struct ParamKVCache[
+    K: KeyElement, V: CollectionElement, O: MutableOrigin, //, Keys: List[K]
+]:
+    """A meta-programmed `__getitem__[k: K]->Pointer[V]` for each `K` in `List[K]`.
+
+    Parameters:
+        K: The key type of the `Dict[K,V]` (inferred from `Keys` parameter).
+        V: The value type of the `Dict[K,V]` (inferred from `dict` argument).
+        O: The Origin of the `Dict[K,V]` (inferred from `dict` argument).
+        Keys: A list of keys `K` to cache the value `Pointer` for.
+
+    Any values can be mutated.
+    If any Key is appended or removed, then it is necessary to `update_cache()`.
+
+    Example:
+
+    ```mojo
+    dict = Dict[Int, Float32]()
+    dict[1] = 1.0
+    dict[2] = 2.0
+    dict[3] = 3.0
+    # Cache for keys 1 and 2:
+    y = ParamKVCache[List(1, 2)](dict)
+    y.get_ref[1]() = 1.5 #Pointer
+    dict[3] = 4.5 #Normal
+    dict[4] = 5.0 #Insert new value
+    y.update_cache() #Update cache
+    y.get_ref[1]() = 1.5 #Pointer
+    ```
+
+    Note: `get_ref` takes the key as a `Parameter`.
+    """
+
+    # --------------------
+    # How the struct works
+    # --------------------
+    # This is possible, because mojo's meta-programming is amazing:
+
+    # The struct takes a `Keys: List[K]` as a parameter.
+    # Pointers to the values of `Keys` are retrieved during `Self.__init__`.
+    # They are stored in an `InlineArray`, logically mapped to the Keys:
+    #   - for i in range(len(Keys)): value_pointers[i] = dict[Keys[i]]
+
+    # The `get_ref()` method takes a `Key: K` as a parameter.
+    # If that key is not in the `List[K]` struct parameter, an error is raised.
+    # If it is, the Pointer[V] mapped to it on `__init__` is returned.
+
+    # The cache can be updated with the method `update_cache`. has to if:
+    #   - values are removed from the dict.
+    #   - after the dict got resized. (usually on insertion, pop, ..)
+
+    # ----------
+    # Invariants
+    # ----------
+    # 1. len(Keys) == Len(value_pointers).
+    # 2. All keys are cached in value_pointers or error.
+    # 3. update_cache if dict move any value in or out.
+    #    - pop,..: entries can moved around on _compact
+    #    - append,..: entries could realloc (dict grow)
+    #      (note: Dict.__setitem__ can insert new values)
+
+    # Fields
+    var value_pointers: InlineArray[
+        Pointer[V, O], len(Keys), run_destructors=True
+    ]
+    var dict: Pointer[Dict[K, V], O]
+
+    # ===-------------------------------------------------------------------===#
+    # Life cycle methods
+    # ===-------------------------------------------------------------------===#
+
+    fn __init__(out self, ref [O]dict: Dict[K, V]) raises:
+        """Initializes the `Key` cache for `dict`.
+
+        Args:
+            dict: The dictionnary to initialize the cache for.
+
+        If the dictionnary does not `__contains__` any of the key in `Keys`,
+        an `Error` is raised (`KeyError`).
+
+        Notes: The cache only supports keys as parameters.
+        The `Keys` to cache have to be manually defined in the struct parameter.
+        """
+        self.value_pointers = __type_of(self.value_pointers)(uninitialized=True)
+        self.dict = Pointer.address_of(dict)
+
+        @parameter
+        for i in range(len(Keys)):
+            var tmp = dict.get_ptr(Keys[i])
+            if tmp:
+                self.value_pointers.unsafe_ptr().offset(i).init_pointee_move(
+                    Pointer.address_of(
+                        UnsafePointer.address_of(
+                            tmp.unsafe_value()[]
+                        ).origin_cast[origin=O]()[]
+                    )
+                )
+            else:
+                raise "KeyError"
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    def get_ref[K_attr: K](self) -> ref [O] V:
+        """Returns the cached pointer to `V` for key `K_attr`.
+
+        Parameters:
+            K_attr: A key of type `K` that is in List `Keys`.
+
+        Returns:
+            The cached `Pointer` to `V` for `K_attr`.
+
+        If `K_attr` is not in `List` `Keys`, an `Error`(`KeyError`) is raised.
+        """
+
+        @parameter
+        for i in range(len(Keys)):
+
+            @parameter
+            if Keys[i] == K_attr:
+                return self.value_pointers[i][]
+        raise "KeyError"
+
+    def update_cache(mut self):
+        """Updates the cache for `Keys`.
+
+        After a dictionnary has resized (Inserted or removed values),
+        it is necessary to use this method to update the cache.
+
+        It includes methods like `clear()`, `pop`, `insert`, `__setitem__`, ect.
+
+        If the dictionnary does not `__contains__` any of the key in `Keys`,
+        an `Error` is raised (`KeyError`).
+        """
+
+        @parameter
+        for i in range(len(Keys)):
+            var tmp = self.dict[].get_ptr(Keys[i])
+            if tmp:
+                self.value_pointers.unsafe_ptr().offset(
+                    i
+                )[] = Pointer.address_of(
+                    UnsafePointer.address_of(tmp.unsafe_value()[]).origin_cast[
+                        origin=O
+                    ]()[]
+                )
+            else:
+                raise Error("KeyError")
+
+        @parameter
+        if len(Keys) == 0:
+            raise Error("KeyError")
