@@ -67,6 +67,7 @@ modular_py_test(
         "@llvm-project//compiler-rt:orc_rt",
     ],
     tags = [
+        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],
@@ -93,6 +94,7 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
+        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],
@@ -196,6 +198,7 @@ modular_py_test(
     ignore_collisions = True,
     tags = [
         "gpu",
+        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],
@@ -251,6 +254,7 @@ modular_py_test(
     ],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     tags = [
+        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],
