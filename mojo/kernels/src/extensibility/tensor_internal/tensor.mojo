@@ -9,7 +9,6 @@ Implements the `Tensor` type - a tensor type which owns its underlying data.
 
 from collections import List
 from pathlib import Path
-from random import rand, randn
 from sys import simdwidthof, sizeof
 
 from algorithm.functional import elementwise, vectorize
@@ -45,6 +44,7 @@ struct Tensor[type: DType](
     ```mojo
     from max.tensor import Tensor, TensorSpec, TensorShape
     from utils.index import Index
+    from random import rand
 
     def main():
         height = 256
@@ -53,7 +53,8 @@ struct Tensor[type: DType](
 
         # Create the tensor of dimensions height, width, channels
         # and fill with random values.
-        image = Tensor[DType.float32].rand(TensorShape(height, width, channels))
+        image = Tensor[DType.float32](TensorShape(height, width, channels))
+        rand(image.unsafe_ptr(), image.num_elements())
 
         # Declare the grayscale image.
         spec = TensorSpec(DType.float32, height, width)
@@ -255,45 +256,6 @@ struct Tensor[type: DType](
         self._spec = other._spec
         self._ptr = UnsafePointer[Scalar[type]].alloc(num_elements)
         memcpy(self._ptr, other._ptr, num_elements)
-
-    @staticmethod
-    fn rand(owned shape: TensorShape) -> Tensor[type]:
-        """Constructs a new tensor with the specified shape and fills it with
-        random elements.
-
-        Args:
-            shape: The tensor shape.
-
-        Returns:
-            A new tensor of specified shape and filled with random elements.
-        """
-        var tensor = Tensor[type](shape^)
-        rand(tensor.unsafe_ptr(), tensor.num_elements())
-        return tensor
-
-    @staticmethod
-    fn randn(
-        owned shape: TensorShape, mean: Float64 = 0.0, variance: Float64 = 1.0
-    ) -> Tensor[type]:
-        """Constructs a new Tensor from the shape and fills it with random
-        values from a Normal(mean, variance) distribution.
-
-        Constraints:
-            The type should be floating point.
-
-        Args:
-            shape: The shape of the Tensor to fill with random values.
-            mean: Normal distribution mean.
-            variance: Normal distribution variance.
-
-        Returns:
-            A Tensor filled with random dtype samples from Normal(mean,
-            variance).
-        """
-
-        var tensor = Tensor[type](shape^)
-        randn(tensor.unsafe_ptr(), tensor.num_elements(), mean, variance)
-        return tensor
 
     fn _take_data_ptr(mut self) -> UnsafePointer[Scalar[type]]:
         """Return ownership of the data pointer from within the Tensor.
