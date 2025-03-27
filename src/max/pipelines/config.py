@@ -299,6 +299,10 @@ class PipelineConfig(MAXConfig):
             msg = f"tokenizer for draft_model ({self.draft_model}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
             raise ValueError(msg)
 
+        if self.enable_echo:
+            msg = "enable_echo not currently supported with speculative decoding enabled"
+            raise ValueError(msg)
+
     def _validate_and_resolve_remaining_pipeline_config(self) -> None:
         """Update remaining pipeline config fields with appropriate values
         if not provided. If invalid config is provided, error out with detailed
