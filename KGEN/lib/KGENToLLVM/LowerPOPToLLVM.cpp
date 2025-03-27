@@ -1880,6 +1880,108 @@ private:
     return scaleIn;
   }
 };
+
+struct ConvertPoPNVVMWGMAMMAAsyncInlineArray
+    : public ConvertPOPToLLVMPattern<NVVMWGMAMMAAsyncOpInlineArray> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(NVVMWGMAMMAAsyncOpInlineArray mmaOp,
+                                NVVMWGMAMMAAsyncOpInlineArrayAdaptor adaptor,
+                                ConversionPatternRewriter &b) const override {
+
+    MLIRContext *ctx = mmaOp.getContext();
+    Location loc = mmaOp->getLoc();
+
+    int64_t shapeM = cast<IntegerAttr>(mmaOp.getShapeM()).getInt();
+    int64_t shapeN = cast<IntegerAttr>(mmaOp.getShapeN()).getInt();
+    int64_t shapeK = cast<IntegerAttr>(mmaOp.getShapeK()).getInt();
+
+    Type elementType = convertType(mmaOp.getRegC().getType().getElementType());
+    if (!elementType)
+      return failure();
+    std::optional<int64_t> numElements =
+        mmaOp.getRegC().getType().getResolvedSize();
+    if (!numElements)
+      return failure();
+
+    auto regStructType = LLVM::LLVMStructType::getLiteral(
+        ctx, SmallVector<Type>(*numElements, elementType));
+
+    Value inputOperand = b.create<LLVM::UndefOp>(loc, regStructType);
+
+    // Insert elements in the struct
+    for (int i = 0, e = *numElements; i < e; ++i) {
+      Value element =
+          b.create<LLVM::ExtractValueOp>(mmaOp.getLoc(), adaptor.getRegC(), i);
+      inputOperand =
+          b.create<LLVM::InsertValueOp>(loc, inputOperand, element, i);
+    }
+
+    int64_t scaleD = resolveScaleOut(mmaOp.getScaleD());
+    int64_t scaleA = resolveScaleIn(mmaOp.getScaleA());
+    int64_t scaleB = resolveScaleIn(mmaOp.getScaleB());
+
+    auto scaleDAttr = NVVM::WGMMAScaleOutAttr::get(
+        ctx,
+        scaleD == 0 ? NVVM::WGMMAScaleOut::zero : NVVM::WGMMAScaleOut::one);
+    auto scaleAAttr = NVVM::WGMMAScaleInAttr::get(
+        ctx, scaleA == -1 ? NVVM::WGMMAScaleIn::neg : NVVM::WGMMAScaleIn::one);
+    auto scaleBAttr = NVVM::WGMMAScaleInAttr::get(
+        ctx, scaleB == -1 ? NVVM::WGMMAScaleIn::neg : NVVM::WGMMAScaleIn::one);
+    auto overflowAttr =
+        NVVM::MMAIntOverflowAttr::get(ctx, NVVM::MMAIntOverflow::wrapped);
+
+    FailureOr<NVVM::WGMMATypesAttr> typeA = getMMAType(ctx, mmaOp.getTypeA());
+    FailureOr<NVVM::WGMMATypesAttr> typeB = getMMAType(ctx, mmaOp.getTypeB());
+    FailureOr<NVVM::WGMMATypesAttr> typeC = getMMAType(ctx, mmaOp.getTypeC());
+
+    assert((!failed(typeA) || !failed(typeB) || !failed(typeC)) &&
+           "Unsupported operand types");
+
+    FailureOr<NVVM::MMALayoutAttr> layoutA =
+        getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutA()));
+    FailureOr<NVVM::MMALayoutAttr> layoutB =
+        getMMALayout(ctx, cast<StringAttr>(adaptor.getLayoutB()));
+
+    assert((!failed(layoutA) || !failed(layoutB)) &&
+           "Unsupported operand layouts");
+
+    Value descA = mmaOp.getDescriptorA();
+    Value descB = mmaOp.getDescriptorB();
+
+    auto instShape = NVVM::MMAShapeAttr::get(ctx, shapeM, shapeN, shapeK);
+    Value resStruct = b.create<NVVM::WgmmaMmaAsyncOp>(
+        mmaOp.getLoc(), inputOperand.getType(), inputOperand, descA, descB,
+        instShape, typeA.value(), typeB.value(), typeC.value(), scaleDAttr,
+        scaleAAttr, scaleBAttr, layoutA.value(), layoutB.value(), overflowAttr);
+
+    auto arrayType = convertType(mmaOp.getRegC().getType());
+    Value resultArray = b.create<LLVM::UndefOp>(mmaOp.getLoc(), arrayType);
+
+    for (int i = 0, e = *numElements; i < e; ++i) {
+      auto val = b.create<LLVM::ExtractValueOp>(loc, resStruct, i);
+      resultArray = b.create<LLVM::InsertValueOp>(loc, resultArray, val, i);
+    }
+
+    b.replaceOp(mmaOp, resultArray);
+
+    return success();
+  }
+
+private:
+  int64_t resolveScaleOut(TypedAttr scaleOutAttr) const {
+    int64_t scaleOut = cast<IntegerAttr>(scaleOutAttr).getInt();
+    assert(scaleOut == 0 || scaleOut == 1 && "Invalid scale out value");
+    return scaleOut;
+  }
+
+  int64_t resolveScaleIn(TypedAttr scaleInAttr) const {
+    int64_t scaleIn = cast<IntegerAttr>(scaleInAttr).getInt();
+    assert(scaleIn == -1 || scaleIn == 1 && "Invalid scale in value");
+    return scaleIn;
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -1943,7 +2045,8 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPVariadicGet,
       ConvertPOPVariadicSize,
       ConvertPOPXOr,
-      ConvertPoPNVVMWGMAMMAAsync
+      ConvertPoPNVVMWGMAMMAAsync,
+      ConvertPoPNVVMWGMAMMAAsyncInlineArray
       // clang-format on
       >(typeConverter);
 }

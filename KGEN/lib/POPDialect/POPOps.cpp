@@ -841,6 +841,21 @@ LogicalResult NVVMWGMAMMAAsyncOp::verify() {
   return success();
 }
 
+LogicalResult NVVMWGMAMMAAsyncOpInlineArray::verify() {
+  if (!isValidInputOperandType(getTypeA()) ||
+      !isValidInputOperandType(getTypeB()) ||
+      !isValidOutputOperandType(getTypeC()))
+    return emitOpError("Unsupported operand type");
+
+  if (!isValidLayout(getLayoutAAttr()))
+    return emitOpError("Unsupported layout for operandA");
+
+  if (!isValidLayout(getLayoutBAttr()))
+    return emitOpError("Unsupported layout for operandB");
+
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
