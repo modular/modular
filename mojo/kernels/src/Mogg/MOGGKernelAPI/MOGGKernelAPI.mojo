@@ -8239,6 +8239,7 @@ struct AdvancedIndexingGetItem:
             indices_fn=indices_fn,
         ](
             managed_tensor_slice_to_ndbuffer(out_tensor),
+            input_tensor.strides(),
             ctx,
         )
 
@@ -8313,6 +8314,7 @@ struct AdvancedIndexingSetItemInplace:
         ](
             managed_tensor_slice_to_ndbuffer(input_tensor),
             indices[0].shape(),
+            updates.strides(),
             ctx,
         )
 
