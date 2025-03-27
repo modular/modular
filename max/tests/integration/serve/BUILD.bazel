@@ -29,6 +29,7 @@ modular_py_test(
         "//SDK/lib/API/python/max/serve/schemas",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
+        requirement("sse-starlette"),
     ],
 )
 
@@ -59,7 +60,6 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
-        "manual",  # TODO(MAXSERV-910): Re-enable once tests aren't all skipped
         "no-sandbox",
         "requires-network",
     ],
@@ -70,6 +70,7 @@ modular_py_test(
         "//SDK/lib/API/python/max/serve",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
+        requirement("sse-starlette"),
         requirement("transformers"),
     ],
 )

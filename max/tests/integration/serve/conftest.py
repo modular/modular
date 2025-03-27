@@ -93,3 +93,16 @@ def app(pipeline_config):
     settings = Settings(MAX_SERVE_USE_HEARTBEAT=True)
     app = fastapi_app(settings, serving_settings)
     return app
+
+
+@pytest.fixture()
+def reset_sse_starlette_appstatus_event():
+    """
+    Fixture that resets the appstatus event in the sse_starlette app.
+
+    Should be used on any test that uses sse_starlette to stream events.
+    """
+    # See https://github.com/sysid/sse-starlette/issues/59
+    from sse_starlette.sse import AppStatus
+
+    AppStatus.should_exit_event = None

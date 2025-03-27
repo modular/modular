@@ -11,7 +11,7 @@ import json
 import pytest
 from async_asgi_testclient import TestClient
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig, PipelineEngine, SupportedEncoding
+from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import (  # type: ignore
@@ -23,12 +23,6 @@ from test_common.evaluate import PROMPTS
 MAX_READ_SIZE = 10 * 1024
 
 
-@pytest.mark.skip(
-    reason=(
-        "app fixture crashes when reused with 'is bound to a different event"
-        " loop'"
-    )
-)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -52,7 +46,12 @@ async def test_smollm_serve_gpu(app):
 
     async with TestClient(app) as client:
         tasks = [
-            client.post("/v1/chat/completions", json=simple_openai_request())
+            client.post(
+                "/v1/chat/completions",
+                json=simple_openai_request(
+                    model_name="HuggingFaceTB/SmolLM2-135M"
+                ),
+            )
             for _ in range(N_REQUESTS)
         ]
 
@@ -62,8 +61,8 @@ async def test_smollm_serve_gpu(app):
             print(raw_response)
 
             # This is not a streamed completion - There is no [DONE] at the end.
-            response = CreateChatCompletionResponse.parse_raw(
-                raw_response.json()
+            response = CreateChatCompletionResponse.model_validate_json(
+                raw_response.text
             )
             print(response)
 
@@ -71,12 +70,6 @@ async def test_smollm_serve_gpu(app):
             assert response.choices[0].finish_reason == "stop"
 
 
-@pytest.mark.skip(
-    reason=(
-        "app fixture crashes when reused with 'is bound to a different event"
-        " loop'"
-    )
-)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -89,22 +82,23 @@ async def test_smollm_serve_gpu(app):
             quantization_encoding=SupportedEncoding.bfloat16,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             max_batch_size=16,
-            engine=PipelineEngine.MAX,
         )
     ],
     indirect=True,
 )
 @pytest.mark.parametrize(
-    "prompt",
+    "prompt,expected_choices",
     [
-        "Hello world",
-        ["Hello world"],
-        ["Hello world", "Why hello"],
-        [1, 2, 3],
-        [[1, 2, 3]],
+        ("Hello world", 1),
+        (["Hello world"], 1),
+        (["Hello world", "Why hello"], 2),
+        ([1, 2, 3], 1),
+        ([[1, 2, 3]], 1),
     ],
 )
-async def test_smollm_serve_gpu_nonchat_completions(app, prompt):
+async def test_smollm_serve_gpu_nonchat_completions(
+    app, prompt, expected_choices
+):
     async with TestClient(app, timeout=90.0) as client:
         # Completions endpoint instead of chat completions
         raw_response = await client.post(
@@ -112,7 +106,8 @@ async def test_smollm_serve_gpu_nonchat_completions(app, prompt):
             json={"model": "HuggingFaceTB/SmolLM2-135M", "prompt": prompt},
         )
         response = CreateCompletionResponse.model_validate(raw_response.json())
-        assert len(response.choices) == 1
+
+        assert len(response.choices) == expected_choices
         assert response.choices[0].finish_reason == "stop"
 
 
@@ -128,7 +123,6 @@ async def test_smollm_serve_gpu_nonchat_completions(app, prompt):
             quantization_encoding=SupportedEncoding.bfloat16,
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             max_batch_size=16,
-            engine=PipelineEngine.MAX,
         )
     ],
     indirect=True,

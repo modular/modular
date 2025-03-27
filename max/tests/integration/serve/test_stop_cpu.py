@@ -5,11 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import json
-import logging
 
-logging.basicConfig(
-    level=logging.DEBUG,
-)
 import pytest
 from async_asgi_testclient import TestClient
 
@@ -46,7 +42,9 @@ async def test_stop_sequence(echo_app):
 
 
 @pytest.mark.asyncio
-async def test_stop_sequence_streaming(echo_app):
+async def test_stop_sequence_streaming(
+    echo_app, reset_sse_starlette_appstatus_event
+):
     async with TestClient(echo_app, timeout=720.0) as client:
         # Test with streaming set to False
         raw_response = await client.post(
