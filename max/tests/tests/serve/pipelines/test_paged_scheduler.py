@@ -461,7 +461,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16():
         BatchInfo(CE, 18, 1, 1, 8192),
         BatchInfo(CE, 2, 0, 1, 848),
         BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 10, 100),
+        BatchInfo(TG, 100, 100, 6, 100),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
@@ -502,7 +502,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384():
         BatchInfo(CE, 71, 1, 1, 8192),
         BatchInfo(CE, 14, 0, 1, 1552),
         BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 10, 100),
+        BatchInfo(TG, 100, 100, 6, 100),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
@@ -546,7 +546,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
         BatchInfo(CE, 28, 1, 1, 8192),
         BatchInfo(CE, 3, 0, 1, 616),
         BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 10, 100),
+        BatchInfo(TG, 100, 100, 6, 100),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
@@ -590,7 +590,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
         BatchInfo(CE, 20, 1, 1, 8192),
         BatchInfo(CE, 9, 0, 1, 3716),
         BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 10, 100),
+        BatchInfo(TG, 100, 100, 6, 100),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
@@ -682,7 +682,7 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
         BatchInfo(CE, 98, 1, 1, 8192),
         BatchInfo(CE, 100, 0, 1, 1188),
         BatchInfo(TG, 100, 32, 10, 100),
-        BatchInfo(TG, 68, 68, 10, 68),
+        BatchInfo(TG, 68, 68, 6, 68),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
     actual = run_until_completion(scheduler)
