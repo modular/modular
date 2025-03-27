@@ -45,12 +45,11 @@ def test_allreduce_no_device() -> None:
                 TensorType(
                     dtype=DType.float32, shape=[6, 5], device=devices[3]
                 ),
-                *signals.input_types(),
             ],
         ) as graph:
             allreduce_outputs = ops.allreduce.sum(
                 inputs=(v.tensor for v in graph.inputs[: len(devices)]),
-                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+                signal_buffers=signals.buffers(),
             )
             graph.output(
                 allreduce_outputs[0],
@@ -92,12 +91,11 @@ def test_allreduce_rep_device() -> None:
                 TensorType(
                     dtype=DType.float32, shape=[6, 5], device=devices[3]
                 ),
-                *signals.input_types(),
             ],
         ) as graph:
             allreduce_outputs = ops.allreduce.sum(
                 inputs=(v.tensor for v in graph.inputs[: len(devices)]),
-                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+                signal_buffers=signals.buffers(),
             )
             graph.output(
                 allreduce_outputs[0],
@@ -139,12 +137,11 @@ def test_allreduce_wrong_shape() -> None:
                 TensorType(
                     dtype=DType.float32, shape=[6, 5], device=devices[3]
                 ),
-                *signals.input_types(),
             ],
         ) as graph:
             allreduce_outputs = ops.allreduce.sum(
                 inputs=(v.tensor for v in graph.inputs[: len(devices)]),
-                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+                signal_buffers=signals.buffers(),
             )
             graph.output(
                 allreduce_outputs[0],
@@ -171,12 +168,11 @@ def test_allreduce_basic() -> None:
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[1]),
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[2]),
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[3]),
-            *signals.input_types(),
         ],
     ) as graph:
         allreduce_outputs = ops.allreduce.sum(
             inputs=(v.tensor for v in graph.inputs[: len(devices)]),
-            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            signal_buffers=signals.buffers(),
         )
         graph.output(
             allreduce_outputs[0],

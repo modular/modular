@@ -567,6 +567,9 @@ class DeviceRef:
         """Returns true if devices are equal."""
         return self.device_type is other.device_type and self.id == other.id
 
+    def __hash__(self) -> int:
+        return hash((self.device_type, self.id))
+
     def to_mlir(self) -> mlir.Attribute:
         """Returns a mlir attribute representing device."""
         return _graph.device_attr(
