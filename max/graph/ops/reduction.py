@@ -121,6 +121,10 @@ def argmin(x: TensorValueLike, axis=-1) -> TensorValue:
     """
     Reduces a symbolic tensor using an argmin operation.
 
+    When provided with a tensor with all identical elements,
+    on CPU this will return the first element index in the tensor,
+    on GPU this will return an arbitrary index.
+
     Args:
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
@@ -138,6 +142,10 @@ def argmin(x: TensorValueLike, axis=-1) -> TensorValue:
 def argmax(x: TensorValueLike, axis=-1) -> TensorValue:
     """
     Reduces a symbolic tensor using an argmax operation.
+
+    When provided with a tensor with all identical elements,
+    on CPU this will return the first element index in the tensor,
+    on GPU this will return an arbitrary index.
 
     Args:
         x: The input tensor for the operation.
