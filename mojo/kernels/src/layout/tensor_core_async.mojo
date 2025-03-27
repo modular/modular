@@ -146,15 +146,36 @@ from utils import Index, IndexList
 #
 # `2/4/8 * T` is generalized as `swizzle.bytes() // sizeof[type]()`.
 
-alias supported_mma_shape = (
-    Index(64, 8, 8),
-    Index(64, 8, 16),
-    Index(64, 16, 16),
-    Index(64, 32, 16),
-    Index(64, 64, 16),
-    Index(64, 128, 16),
-    Index(64, 256, 16),
-)
+
+@always_inline
+fn supported_mma_shape[
+    mma_shape: IndexList[3],
+]() -> Bool:
+    """Checks if a given MMA shape is supported for tensor core operations.
+
+    This function validates the dimensions of the MMA shape against known tensor core
+    operation constraints. It ensures that the shape is compatible with the expected
+    dimensions for tensor core operations.
+
+    Parameters:
+        mma_shape: The shape of the MMA operation.
+
+    Returns:
+        `Bool` - True if the MMA shape is supported, False otherwise.
+    """
+
+    # Ideally this check should be input/output type dependent as mma_shape depends on input/output types
+    # (https://mlir.llvm.org/docs/Dialects/NVVMDialect/#nvvmwgmmamma_async-nvvmwgmmammaasyncop).
+    @parameter
+    if mma_shape[0] == 64 and mma_shape[2] == 8:
+        return mma_shape[1] in (8,)
+    elif mma_shape[0] == 64 and mma_shape[2] == 16:
+        return (
+            mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
+        )
+    else:
+        return False
+
 
 # Core matrix dimensions
 # Each core matix has 8 rows and 16 bytes per row.
@@ -530,7 +551,7 @@ fn _lhs_descriptor[
     tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
-        mma_shape in supported_mma_shape,
+        supported_mma_shape[mma_shape](),
         String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
 
@@ -583,7 +604,7 @@ fn _rhs_descriptor[
     tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
-        mma_shape in supported_mma_shape,
+        supported_mma_shape[mma_shape](),
         String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
 
@@ -611,7 +632,7 @@ fn _rhs_descriptor[
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
 fn _output_register_size[mma_shape: IndexList[3]]() -> Int:
     constrained[
-        mma_shape in supported_mma_shape,
+        supported_mma_shape[mma_shape](),
         String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
     return mma_shape[0] * mma_shape[1] // 128
@@ -653,7 +674,7 @@ struct TensorCoreAsync[
             Fails to compile if `mma_shape` is not supported.
         """
         constrained[
-            mma_shape in supported_mma_shape,
+            supported_mma_shape[mma_shape](),
             String(
                 "WGMMA operation of shape '", mma_shape, "' is not supported"
             ),
