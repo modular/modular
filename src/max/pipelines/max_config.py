@@ -700,6 +700,11 @@ def repo_exists_with_retry(repo_id: str) -> bool:
             logger.error(f"Hugging Face repository error: {str(e)}")
             raise
         except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
+            # Do not retry if Too Many Requests error received
+            if e.response.status_code == 429:
+                logger.error(e)
+                raise
+
             if attempt == max_attempts - 1:
                 logger.error(
                     f"Failed to connect to Hugging Face Hub after {max_attempts} attempts: {str(e)}"
