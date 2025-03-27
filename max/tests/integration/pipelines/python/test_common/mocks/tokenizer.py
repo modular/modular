@@ -26,7 +26,7 @@ class MockTextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
 
     def __init__(
         self,
-        huggingface_repo_id: str = "testing/testing",
+        model_path: str = "testing/testing",
         max_length: Union[int, None] = None,
         max_new_tokens: Union[int, None] = None,
         seed: int = 42,
