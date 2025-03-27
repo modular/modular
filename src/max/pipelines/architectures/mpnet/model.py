@@ -34,9 +34,9 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    TextContext,
     upper_bounded_default,
 )
+from max.pipelines.context import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams
 from transformers import AutoConfig

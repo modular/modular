@@ -31,8 +31,8 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    TextContext,
 )
+from max.pipelines.context import TextContext
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
 from max.pipelines.interfaces import LogProbabilities
 from max.pipelines.kv_cache import (

@@ -27,12 +27,12 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    TextAndVisionContext,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     get_window_index,
     mrope_pos_ids_3d,
 )
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from transformers import AutoConfig
 

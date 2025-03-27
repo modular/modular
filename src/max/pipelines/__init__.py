@@ -18,7 +18,6 @@ from typing import Union as _Union
 
 from .config import PipelineConfig
 from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
-from .context import InputContext, TextAndVisionContext, TextContext
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceFile, download_weight_files
 from .interfaces import (
@@ -84,9 +83,6 @@ __all__ = [
     "TokenGeneratorResponseFormat",
     "TokenGeneratorRequestFunction",
     "IdentityPipelineTokenizer",
-    "InputContext",
-    "TextContext",
-    "TextAndVisionContext",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "TextTokenizer",

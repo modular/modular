@@ -31,9 +31,9 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    TextContext,
     upper_bounded_default,
 )
+from max.pipelines.context import TextContext
 from max.pipelines.interfaces import LogProbabilities
 from max.pipelines.kv_cache import (
     KVCacheInputs,

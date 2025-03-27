@@ -18,8 +18,7 @@ from __future__ import annotations
 from typing import Any, Optional, Protocol, Sequence, Union, runtime_checkable
 
 import numpy as np
-
-from .interfaces import LogProbabilities
+from max.pipelines.interfaces import LogProbabilities
 
 CHUNK_SIZE = 128
 

@@ -35,9 +35,9 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    TextAndVisionContext,
     upper_bounded_default,
 )
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     KVCacheInputs,
