@@ -653,6 +653,87 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_b
     assert len(actual) == len(expected) and actual == expected
 
 
+def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_prefix_caching():
+    num_prompts = 10
+    prompt_len = 100
+    output_tokens = 100
+    prefix_len = 64
+
+    page_size = 10
+    num_blocks = 50  # this is enough for 500 tokens
+
+    scheduler = create_paged_scheduler(
+        max_seq_len=num_blocks * page_size,
+        page_size=page_size,
+        num_blocks=num_blocks,
+        enable_chunked_prefill=True,
+        enable_in_flight_batching=False,
+        enable_prefix_caching=True,
+    )
+
+    # set seed for reproducibility
+    np.random.seed(42)
+    shared_prefix = rand(prefix_len)
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            scheduler,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+            shared_prefix=shared_prefix,
+        )
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        #
+        # Can only schedule 5 of 10 reqs bc of 500 token limit due to limited blocks
+        BatchInfo(CE, 5, 0, 1, 500),
+        # Due to shared prefix, we can use same first 6 blocks for all 10 reqs!
+        # This means we use 6 blocks + 4 * n_req == 100 blocks.
+        # This means we can schedule the remaining 5 reqs :D.
+        BatchInfo(CE, 5, 0, 1, 180),
+        # Because we are so constrained on memory, we see many preemptions :(.
+        # To run TG on 8 reqs, we need 8 blocks. To free up 8 blocks, we preempt
+        # 2 reqs since each req has 4 uncommitted blocks to release.
+        BatchInfo(TG, 8, 0, 10, 8),
+        BatchInfo(TG, 7, 0, 10, 7),
+        BatchInfo(TG, 6, 0, 10, 6),
+        BatchInfo(TG, 5, 0, 10, 5),
+        BatchInfo(TG, 4, 0, 10, 4),
+        BatchInfo(TG, 4, 0, 10, 4),
+        BatchInfo(TG, 4, 0, 10, 4),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 3, 10, 3),
+        BatchInfo(CE, 5, 0, 1, 339),
+        BatchInfo(TG, 4, 0, 10, 4),
+        BatchInfo(TG, 4, 0, 10, 4),
+        BatchInfo(TG, 3, 1, 10, 3),
+        BatchInfo(CE, 3, 0, 1, 107),
+        BatchInfo(TG, 4, 0, 10, 4),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 1, 10, 3),
+        BatchInfo(CE, 3, 0, 1, 108),
+        BatchInfo(TG, 4, 1, 10, 4),
+        # Notice how 22 << 100 tokens of original prompt.
+        # Prefix caching allows us to encode fewer number of tokens after preemption.
+        BatchInfo(CE, 1, 0, 1, 22),
+        BatchInfo(TG, 4, 0, 10, 4),
+        BatchInfo(TG, 4, 1, 10, 4),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 0, 10, 3),
+        BatchInfo(TG, 3, 1, 10, 3),
+        BatchInfo(TG, 2, 0, 10, 2),
+        BatchInfo(TG, 2, 1, 10, 2),
+        BatchInfo(TG, 1, 1, 8, 1),
+        BatchInfo(TG, 0, 0, 0, 0),
+    ]
+    actual = run_until_completion(scheduler)
+    assert len(actual) == len(expected) and actual == expected
+
+
 def test_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching():
     num_prompts = 100
     prompt_len = 500
