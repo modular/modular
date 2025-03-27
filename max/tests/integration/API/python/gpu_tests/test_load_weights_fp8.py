@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
@@ -53,7 +53,7 @@ def test_load_safetensors(
         compiled = gpu_session.load(
             graph,
             weights_registry={
-                k: Tensor.from_numpy(v).to(Accelerator())
+                k: Tensor.from_numpy(v)
                 for k, v in weights.allocated_weights.items()
             },
         )
