@@ -12,7 +12,7 @@ from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.schemas.openai import ListModelsResponse, Model  # type: ignore
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 @pytest.mark.parametrize(
     "pipeline_config",
     [

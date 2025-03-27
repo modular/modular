@@ -22,6 +22,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipelineConfig,
     batch_config_from_pipeline_config,
 )
+from max.serve.telemetry.common import configure_metrics
 
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
@@ -91,6 +92,7 @@ def app(pipeline_config):
     )
 
     settings = Settings(MAX_SERVE_USE_HEARTBEAT=True)
+    configure_metrics(settings)
     app = fastapi_app(settings, serving_settings)
     return app
 
