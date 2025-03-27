@@ -709,6 +709,9 @@ class InferenceSession:
             RuntimeError: If the path provided is invalid.
         """
         options_dict: dict[str, Any] = {}
+        weights_registry_real: Mapping[str, DLPackCompatible] = (
+            weights_registry or {}
+        )
 
         if custom_extensions is not None:
             options_dict["custom_extensions"] = (
@@ -730,6 +733,29 @@ class InferenceSession:
             _model = self._impl.compile_from_path(model, options_dict)
         elif _is_max_graph(model):
             options_dict["pipeline_name"] = model.name
+
+            # TODO: if the model has been loaded from a serialized MLIR file, we don't have
+            # the _weights attribute available to us
+            if hasattr(model, "_weights"):
+                for weight_name, weight in model._weights.items():
+                    if weight_name not in weights_registry_real:
+                        raise ValueError(
+                            f"Weight '{weight_name}' is not in the weights registry."
+                        )
+
+                    registered_weight = weights_registry_real[weight_name]
+                    expected_device = weight.value.device
+                    if (
+                        expected_device is None
+                        or expected_device.device_type.value == "cpu"
+                    ) != (
+                        # 1 is the value of DLDeviceType::kDLCPU
+                        registered_weight.__dlpack_device__()[0] == 1
+                    ):
+                        raise ValueError(
+                            f"Mismatch in device type for weight '{weight_name}'."
+                        )
+
             _model = self._impl.compile_from_object(
                 model._module._CAPIPtr, _FrameworkFormat.max_graph, options_dict
             )
@@ -758,16 +784,15 @@ class InferenceSession:
                     " torch.jit.ScriptModule or MlirModule."
                 )
 
-        if weights_registry is not None:
-            for weight_name, weight in weights_registry.items():
-                try:
-                    _raise_if_not_contiguous(weight)
-                except ValueError as e:
-                    raise ValueError(
-                        f"Weight '{weight_name}' is not contiguous: {str(e)}"
-                    ) from e
+        for weight_name, weight in weights_registry_real.items():
+            try:
+                _raise_if_not_contiguous(weight)
+            except ValueError as e:
+                raise ValueError(
+                    f"Weight '{weight_name}' is not contiguous: {str(e)}"
+                ) from e
 
-        _model.load(weights_registry if weights_registry else {})
+        _model.load(weights_registry_real)
         return Model._init(_model)
 
     def _get_torch_custom_op_schemas(self):
