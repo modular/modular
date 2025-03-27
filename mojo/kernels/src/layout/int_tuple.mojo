@@ -65,16 +65,7 @@ alias INT_TUPLE_VALIDATION = False
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:
-    """Determines the appropriate index type based on address space.
-
-    Returns `DType.int32` for shared or constant GPU memory, and `DType.index` otherwise.
-
-    Args:
-        address_space: The address space to determine the index type for.
-
-    Returns:
-        The appropriate `DType` for indexing in the given address space.
-    """
+    """Returns int32 for shared/constant GPU memory, index otherwise."""
     if address_space in (
         _GPUAddressSpace.SHARED,
         _GPUAddressSpace.CONSTANT,
@@ -85,16 +76,7 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
 
 
 fn _get_index_type(layout: Layout) -> DType:
-    """Determines the appropriate index type based on layout size.
-
-    Returns `DType.int32` for layout size fits within int32 range, and `DType.index` otherwise.
-
-    Args:
-        layout: The layout to determine the index type for.
-
-    Returns:
-        The appropriate `DType` for indexing in the given address space.
-    """
+    """Returns int32 if layout size fits in int32 range, int64 otherwise."""
     if layout.cosize() < Int(max_finite[DType.int32]()):
         return DType.int32
 
@@ -102,18 +84,7 @@ fn _get_index_type(layout: Layout) -> DType:
 
 
 fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
-    """Determines the appropriate index type based on layout and address space.
-
-    Uses `DType.int32` if the layout size fits within int32 range, otherwise uses the
-    address space's default index type.
-
-    Args:
-        layout: The layout to determine the index type for.
-        address_space: The address space to determine the index type for.
-
-    Returns:
-        The appropriate `DType` for indexing with the given layout and address space.
-    """
+    """Selects index type based on layout and address space."""
     if layout.all_dims_known():
         return _get_index_type(layout)
     else:
@@ -121,17 +92,7 @@ fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
 
 
 fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
-    """Determines the appropriate unsigned index type for a layout and address space.
-
-    Uses `DType.uint32` if the layout size fits within uint32 range or if the index type
-    is int32, otherwise uses the unsigned index type.
-
-    Args:
-        layout: The layout to determine the unsigned type for.
-        address_space: The address space to determine the unsigned type for.
-
-    Returns:
-        The appropriate unsigned DType for the given layout and address space.
+    """Returns uint32 if layout fits in uint32 range or index type is int32, otherwise index.
     """
     if layout.all_dims_known() and layout.cosize() < Int(
         max_finite[DType.uint32]()
@@ -306,75 +267,37 @@ that are not known at compile time or have not been specified.
 
 @register_passable("trivial")
 struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin]:
-    """Iterator for traversing elements of an `IntTuple`.
-
-    This is an internal implementation detail that provides the iteration
-    functionality for `IntTuple` objects. It maintains the current position
-    and provides standard iterator methods.
-
-    Parameters:
-        origin: The origin tracking for memory safety of the iterator.
-        tuple_origin: The origin tracking for the `IntTuple` being iterated.
-
-    Attributes:
-        src: Pointer to the source `IntTuple` being iterated.
-        idx: Current position in the iteration.
-    """
+    """Iterator for traversing elements of an IntTuple."""
 
     var src: Pointer[IntTuple[tuple_origin], origin]
-    """Pointer to the source `IntTuple` being iterated.
-
-    This field stores a reference to the `IntTuple` collection that this iterator
-    is traversing. The pointer uses origin tracking for memory safety.
-    """
+    """Pointer to the source IntTuple being iterated."""
 
     var idx: Int
-    """Current position in the iteration sequence.
-
-    This field tracks the current index within the `IntTuple` collection,
-    starting at `0` and incrementing with each call to `__next__()`.
-    """
+    """Current position in the iteration."""
 
     @always_inline("nodebug")
     fn __init__(
         out self, src: Pointer[IntTuple[tuple_origin], origin], idx: Int
     ):
-        """Initialize the iterator with a source `IntTuple` and starting index.
-
-        Args:
-            src: Pointer to the `IntTuple` to iterate over.
-            idx: Starting index for the iteration.
-        """
+        """Initialize the iterator with a source IntTuple and starting index."""
         self.src = src
         self.idx = idx
 
     @always_inline("nodebug")
     fn __next__(mut self) -> IntTuple[origin]:
-        """Get the next element and advance the iterator.
-
-        Returns:
-            The next `IntTuple` element in the sequence.
-        """
+        """Get the next element and advance the iterator."""
         var idx = self.idx
         self.idx += 1
         return self.src[][idx]
 
     @always_inline("nodebug")
     fn __has_next__(self) -> Bool:
-        """Check if there are more elements to iterate.
-
-        Returns:
-            True if there are more elements, False otherwise.
-        """
+        """Check if there are more elements to iterate."""
         return self.__len__() > 0
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
-        """Get the number of remaining elements in the iteration.
-
-        Returns:
-            The count of elements not yet iterated.
-        """
+        """Get the number of remaining elements in the iteration."""
         return len(self.src[]) - self.idx
 
 
@@ -1481,15 +1404,7 @@ fn is_tuple(t: IntTuple) -> Bool:
 
 @value
 struct _ZipIter[origin: ImmutableOrigin, n: Int]:
-    """Iterator for zipped `IntTuple` collections.
-
-    This iterator allows simultaneous traversal of multiple `IntTuple` collections,
-    yielding tuples of corresponding elements from each collection.
-
-    Parameters:
-        origin: The origin tracking parameter for memory safety.
-        n: The number of `IntTuple` collections being zipped together.
-    """
+    """Iterator for zipped `IntTuple` collections."""
 
     var index: Int
     var ts: InlineArray[Pointer[IntTuple, origin], n]
@@ -1499,12 +1414,7 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int]:
     fn __init__(
         out self, index: Int, ts: InlineArray[Pointer[IntTuple, origin], n]
     ):
-        """Initialize a zip iterator.
-
-        Args:
-            index: The starting index for iteration.
-            ts: Array of pointers to the `IntTuple` collections being zipped.
-        """
+        """Initialize a zip iterator."""
         self.index = index
         self.ts = ts
 
@@ -1517,11 +1427,7 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int]:
 
     @always_inline("nodebug")
     fn __next__(mut self) -> IntTuple[origin]:
-        """Get the next tuple of elements from the zipped collections.
-
-        Returns:
-            An `IntTuple` containing corresponding elements from each collection.
-        """
+        """Get the next tuple of elements."""
         var idx = self.index
         self.index += 1
 
@@ -1547,53 +1453,29 @@ struct _ZipIter[origin: ImmutableOrigin, n: Int]:
 
     @always_inline("nodebug")
     fn __has_next__(self) -> Bool:
-        """Check if there are more elements to iterate over.
-
-        Returns:
-            True if there are more elements, False otherwise.
-        """
+        """Check if there are more elements to iterate over."""
         return self.__len__() > 0
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
-        """Get the number of remaining elements in the iterator.
-
-        Returns:
-            The count of remaining elements to iterate over.
-        """
+        """Get the number of remaining elements."""
         return self.len - self.index
 
 
 @value
 struct _zip[origin: ImmutableOrigin, n: Int]:
-    """Container for zipped `IntTuple` collections.
-
-    This struct holds references to multiple `IntTuple` collections and provides
-    iteration over corresponding elements from each collection.
-
-    Parameters:
-        origin: The origin tracking parameter for memory safety.
-        n: The number of `IntTuple` collections being zipped together.
-    """
+    """Container for zipped `IntTuple` collections."""
 
     var ts: InlineArray[Pointer[IntTuple, origin], n]
 
     @always_inline("nodebug")
     fn __iter__(self) -> _ZipIter[origin, n]:
-        """Create an iterator for the zipped collections.
-
-        Returns:
-            A `_ZipIter` that iterates over tuples of corresponding elements.
-        """
+        """Create an iterator for the zipped collections."""
         return _ZipIter[origin, n](0, self.ts)
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
-        """Get the length of the zipped collection.
-
-        Returns:
-            The minimum length among all zipped collections.
-        """
+        """Get the minimum length among all zipped collections."""
         var min_len = len(self.ts[0][])
 
         @parameter
@@ -2434,23 +2316,13 @@ fn prefix_product(a: IntTuple, init: Int) -> IntTuple:
 
 
 fn _prefix_product2(a: IntTuple, init: IntTuple) -> IntTuple:
-    """Implementation of exclusive prefix product computation.
+    """Internal implementation of exclusive prefix product computation.
 
-    Computes the exclusive prefix product of elements in the input `IntTuple`.
-    For nested tuples, the function is applied recursively.
-
-    The function handles four cases:
-    1. tuple-tuple: Apply `prefix_product2` element-wise when dimensions match
-    2. tuple-int: Apply `prefix_product2` to each element with updated init value.
-    3. int-tuple: Not allowed, will abort
+    Handles four cases:
+    1. tuple-tuple: Apply recursively element-wise
+    2. tuple-int: Apply to each element with updated init
+    3. int-tuple: Not allowed (aborts)
     4. int-int: Return the init value
-
-    Args:
-        a: The input `IntTuple` to compute the prefix product for.
-        init: The initial value(s) for the prefix product.
-
-    Returns:
-        A new `IntTuple` containing the exclusive prefix product of the input.
 
     Note:
         If dimensions of tuple inputs don't match or if int-tuple case is
