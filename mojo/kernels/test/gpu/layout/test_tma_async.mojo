@@ -25,6 +25,7 @@ from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_not_equal
 from memory import stack_allocation
 from utils.static_tuple import StaticTuple
+from utils.index import Index
 
 
 # Test loading a single 2d tile.
@@ -194,9 +195,13 @@ def test_tma_load_row_major[
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_async_store_kernel[
-    dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
+    dtype: DType,
+    tile_layout: Layout,
+    desc_layout: Layout,
+    thread_layout: Layout,
+    layout: Layout,
 ](
-    tma_tile: TMATensorTile[dtype, tile_layout],
+    tma_tile: TMATensorTile[dtype, tile_layout, desc_layout],
     src: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
     alias tileM = tile_layout.shape[0].value()
@@ -295,6 +300,7 @@ def test_tma_async_store[
         alias kernel = test_tma_async_store_kernel[
             __type_of(tma_tensor).dtype,
             __type_of(tma_tensor).layout,
+            __type_of(tma_tensor).desc_layout,
             __type_of(tma_tensor).layout,
             src_layout,
         ]
@@ -616,15 +622,17 @@ fn test_tma_loads_and_store_two_buffers_kernel[
     dtype: DType,
     a_tile_layout: Layout,
     b_tile_layout: Layout,
+    a_desc_layout: Layout,
+    b_desc_layout: Layout,
     /,
     *,
     a_layout: Layout,
     b_layout: Layout,
 ](
-    a_tma_dst_tile: TMATensorTile[dtype, a_tile_layout],
-    b_tma_dst_tile: TMATensorTile[dtype, b_tile_layout],
-    a_tma_src_tile: TMATensorTile[dtype, a_tile_layout],
-    b_tma_src_tile: TMATensorTile[dtype, b_tile_layout],
+    a_tma_dst_tile: TMATensorTile[dtype, a_tile_layout, a_desc_layout],
+    b_tma_dst_tile: TMATensorTile[dtype, b_tile_layout, b_desc_layout],
+    a_tma_src_tile: TMATensorTile[dtype, a_tile_layout, a_desc_layout],
+    b_tma_src_tile: TMATensorTile[dtype, b_tile_layout, b_desc_layout],
 ):
     alias tileM = a_tile_layout.shape[0].value()
     alias tileN = a_tile_layout.shape[1].value()
@@ -708,24 +716,26 @@ def test_tma_load_and_store_two_buffers_row_major[
 
     arange(a_src.tensor(), 1)
     arange(b_src.tensor(), 1)
-    var a_tma_src_tensor = create_tma_tile[tileM, tileN](
-        ctx, a_src.device_tensor()
-    )
-    var b_tma_src_tensor = create_tma_tile[tileM, tileN](
-        ctx, b_src.device_tensor()
-    )
-    var a_tma_dst_tensor = create_tma_tile[tileM, tileN](
-        ctx, a_dst.device_tensor()
-    )
-    var b_tma_dst_tensor = create_tma_tile[tileM, tileN](
-        ctx, b_dst.device_tensor()
-    )
+    var a_tma_src_tensor = create_tma_tile[
+        DType.float32, 2, Index(tileM, tileN)
+    ](ctx, a_src.device_tensor())
+    var b_tma_src_tensor = create_tma_tile[
+        DType.float32, 2, Index(tileM, tileN)
+    ](ctx, b_src.device_tensor())
+    var a_tma_dst_tensor = create_tma_tile[
+        DType.float32, 2, Index(tileM, tileN)
+    ](ctx, a_dst.device_tensor())
+    var b_tma_dst_tensor = create_tma_tile[
+        DType.float32, 2, Index(tileM, tileN)
+    ](ctx, b_dst.device_tensor())
     ctx.synchronize()
 
     alias kernel = test_tma_loads_and_store_two_buffers_kernel[
         __type_of(a_tma_src_tensor).dtype,
         __type_of(a_tma_src_tensor).layout,  # smem layout
         __type_of(a_tma_src_tensor).layout,  # smem layout
+        __type_of(a_tma_src_tensor).desc_layout,
+        __type_of(b_tma_src_tensor).desc_layout,
         a_layout=dst_layout,  # dst layout
         b_layout=dst_layout,  # dst layout
     ]
@@ -821,9 +831,9 @@ def main():
             dst_layout = Layout.row_major(8, 8),
         ](ctx)
         test_tma_async_store[
-            src_layout = Layout.row_major(9, 24),
-            tile_layout = Layout.row_major(3, 8),
-            dst_layout = Layout.row_major(9, 24),
+            src_layout = Layout.row_major(32, 24),
+            tile_layout = Layout.row_major(16, 8),
+            dst_layout = Layout.row_major(32, 24),
         ](ctx)
 
         print("test_tma_multiple_async_store")
@@ -927,6 +937,6 @@ def main():
         ](ctx)
         test_tma_load_and_store_two_buffers_row_major[
             src_layout = Layout.row_major(32, 64),
-            tile_layout = Layout.row_major(10, 16),
+            tile_layout = Layout.row_major(16, 16),
             dst_layout = Layout.row_major(40, 64),
         ](ctx)
