@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import random
 from collections import defaultdict
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import numpy as np
 import pytest
@@ -16,7 +16,6 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.kv_cache.manager import KVCacheInputs
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 
 FAKE_TOKEN = 999
@@ -82,79 +81,6 @@ def create_paged_manager(
         enable_runtime_checks=True,
     )
 
-    # define a new fetch method that verifies that the query_fetch_stats
-    # operation is consistent with the results of the fetch operation.
-    def new_fetch_method(
-        self: PagedKVCacheManager,
-        seq_ids_and_prompts: dict[int, np.ndarray],
-        num_steps: int = 1,
-    ) -> List[KVCacheInputs]:
-        num_pages_by_seq = {}
-        prefix_blocks_by_seq = {}
-        tokens_to_encode_by_seq = {}
-        new_pages_by_seq = {}
-
-        # predict various stats about each request prior to fetch
-        for seq_id, prompt in seq_ids_and_prompts.items():
-            blocks = self.get_req_blocks(seq_id)
-            num_pages_by_seq[seq_id] = len(blocks)
-            prefix_blocks, tokens_to_encode, new_pages_needed = (
-                self.query_fetch_stats(seq_id, prompt, num_steps=num_steps)
-            )
-            blocks = self.get_req_blocks(seq_id)
-            num_pages = len(blocks)
-            assert num_pages == num_pages_by_seq[seq_id], (
-                "Querying should not mutate the state of the cache"
-            )
-            # blocks reused from prefix cache should not already be assigned to seq
-            for b in prefix_blocks:
-                assert b not in blocks
-
-            tokens_to_encode_by_seq[seq_id] = tokens_to_encode
-            new_pages_by_seq[seq_id] = new_pages_needed
-            prefix_blocks_by_seq[seq_id] = prefix_blocks
-
-        # run original fetch operation
-        assert hasattr(self, "orig_fetch")
-        fetch_kv_tuple = self.orig_fetch(
-            seq_ids_and_prompts, num_steps=num_steps
-        )
-
-        # check state of each request after fetch matches what we predicted before
-        for seq_id in seq_ids_and_prompts:
-            prev_num_pages = num_pages_by_seq[seq_id]
-            prefix_blocks = prefix_blocks_by_seq[seq_id]
-            blocks = self.get_req_blocks(seq_id)
-            curr_num_pages = len(blocks)
-            num_new_pages_needed = new_pages_by_seq[seq_id]
-            # check that we correctly predicted the number of pages we needed to
-            # allocate
-            assert (
-                curr_num_pages
-                == prev_num_pages + len(prefix_blocks) + num_new_pages_needed
-            )
-
-            # check that the blocks we retrieved from prefix cache were assigned
-            # the the sequence
-            for b in prefix_blocks_by_seq[seq_id]:
-                assert b in blocks
-
-            # check that the number of tokens we predicted to encode is correct
-            # up to an error of page_size due to query_fetch_stats not considering COW
-            trimmed_prompt = seq_ids_and_prompts[seq_id]
-            actual_tokens_to_encode = len(trimmed_prompt)
-            predicted_tokens_to_encode = tokens_to_encode_by_seq[seq_id]
-            assert actual_tokens_to_encode <= predicted_tokens_to_encode
-            diff = abs(actual_tokens_to_encode - predicted_tokens_to_encode)
-            assert diff < page_size
-
-        return fetch_kv_tuple
-
-    # monkey patch the fetch method
-    # see: https://stackoverflow.com/a/28127947/22159774
-    kv_manager.orig_fetch = kv_manager.fetch  # type: ignore
-    kv_manager.fetch = new_fetch_method.__get__(kv_manager)  # type: ignore
-
     return kv_manager
 
 
@@ -169,12 +95,6 @@ async def test_prefix_caching_basic() -> None:
 
     # Seq 1: Prefill 10 - 14
     seq_ids_and_prompts = {seq_id_1: np.array(initial_prompt_1)}
-    prefix_blocks, tokens_to_encode, new_pages_needed = (
-        kv_manager.query_fetch_stats(seq_id_1, np.array(initial_prompt_1))
-    )
-    assert prefix_blocks == set()
-    assert tokens_to_encode == 5
-    assert new_pages_needed == 5
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
         len(initial_prompt_1),
@@ -190,12 +110,6 @@ async def test_prefix_caching_basic() -> None:
     toks = [15, 16, 17, 18, 19]
     for i, tok in enumerate(toks[:-1]):
         seq_ids_and_prompts = {seq_id_1: np.array([tok])}
-        prefix_blocks, tokens_to_encode, new_pages_needed = (
-            kv_manager.query_fetch_stats(seq_id_1, np.array([tok]))
-        )
-        assert prefix_blocks == set()
-        assert tokens_to_encode == 1
-        assert new_pages_needed == 1
         kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
@@ -214,12 +128,6 @@ async def test_prefix_caching_basic() -> None:
 
     # Seq 2: Prefill 10 - 13
     seq_ids_and_prompts = {seq_id_2: np.array(initial_prompt_2)}
-    prefix_blocks, tokens_to_encode, new_pages_needed = (
-        kv_manager.query_fetch_stats(seq_id_2, np.array(initial_prompt_2))
-    )
-    assert prefix_blocks == set([0, 1, 2])
-    assert tokens_to_encode == 1
-    assert new_pages_needed == 1
     kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
         1,
@@ -236,12 +144,6 @@ async def test_prefix_caching_basic() -> None:
     toks = [14, 15, 99, 100, 101]
     for i, tok in enumerate(toks[:-1]):
         seq_ids_and_prompts = {seq_id_2: np.array([tok])}
-        prefix_blocks, tokens_to_encode, new_pages_needed = (
-            kv_manager.query_fetch_stats(seq_id_2, np.array([tok]))
-        )
-        assert prefix_blocks == set()
-        assert tokens_to_encode == 1
-        assert new_pages_needed == 1
         kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
@@ -756,6 +658,16 @@ def run_forward(
     orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
     new_toks = {seq_id: np.array([next_tok])}
     if run_fetch:
+        for seq_id, prompt in seq_ids_and_prompts.items():
+            prompt = kv_manager.reuse_blocks_from_prefix_cache(
+                seq_id, prompt, num_steps=1
+            )
+            seq_ids_and_prompts[seq_id] = prompt
+            scheduled = kv_manager.allocate_new_blocks(
+                seq_id, prompt, num_steps=1
+            )
+            assert scheduled
+
         fetch_kv_tuple = kv_manager.fetch(seq_ids_and_prompts, num_steps=1)
         _ = model.run(
             orig_seq_ids_and_prompts,
