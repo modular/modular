@@ -89,7 +89,7 @@ def create_mock_request(
     context = TextContext(
         cache_seq_id=cache_seq_id,
         prompt=tokens.tolist(),
-        max_length=seq_len,
+        max_length=None,
         tokens=tokens,
     )
     context.bump_token_indices(start_idx=start_idx)

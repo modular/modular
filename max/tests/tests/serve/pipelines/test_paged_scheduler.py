@@ -299,7 +299,6 @@ def create_batch_and_execute(
     scheduler._schedule(batch_to_execute)
     terminated_reqs = batch_to_execute.num_terminated
 
-    # get prev num steps
     assert isinstance(scheduler.pipeline, FakeTokenGeneratorPipeline)
 
     # Pipelines should use whatever num_steps that the scheduler computed.
@@ -534,18 +533,18 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200():
             shared_prefix=shared_prefix,
         )
 
-    # Since we don't consider COW, we predict 128 tokens to be cache hit.
-    # This means we encode 500 - 128 = 372 tokens per CE batch.
-    # Hence, we will schedule approx 8192 / 372 = 22.02 CE req per batch.
-    # This is rounded up to 23 due to chunked prefill.
+    # We predict 200 tokens to be cache hit.
+    # This means we encode 500 - 200 = 300 tokens per CE request.
+    # Hence, we will schedule approx 8192 / 300 = 27.31 CE req per batch.
+    # This is rounded up to 28 due to chunked prefill.
     # The first batch doesn't get cache hits so it is smaller.
     expected = [
         # batch_type, batch_size, terminated, num_steps, tokens_to_encode
         BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 23, 1, 1, 8192),
-        BatchInfo(CE, 23, 1, 1, 8192),
-        BatchInfo(CE, 23, 1, 1, 8192),
-        BatchInfo(CE, 18, 0, 1, 6608),
+        BatchInfo(CE, 28, 1, 1, 8192),
+        BatchInfo(CE, 28, 1, 1, 8192),
+        BatchInfo(CE, 28, 1, 1, 8192),
+        BatchInfo(CE, 3, 0, 1, 616),
         BatchInfo(TG, 100, 0, 10, 100),
         BatchInfo(TG, 100, 100, 10, 100),
         BatchInfo(TG, 0, 0, 0, 0),
@@ -578,18 +577,18 @@ def test_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64():
             shared_prefix=shared_prefix,
         )
 
-    # Since we don't consider COW, we predict 0 tokens to be cache hit.
-    # Hence, we will schedule approx 8192 / 500 = 16.38 CE req per batch.
-    # This is rounded up to 17 due to chunked prefill.
+    # We predict 64 tokens to be cache hit.
+    # This means we encode 500 - 64 = 436 tokens per CE request.
+    # Hence, we will schedule approx 8192 / 436 = 18.79 CE req per batch.
+    # This is rounded up to 19 due to chunked prefill.
     expected = [
         # batch_type, batch_size, terminated, num_steps, tokens_to_encode
         BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 18, 1, 1, 8192),
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 17, 1, 1, 8192),
-        BatchInfo(CE, 18, 1, 1, 8192),
-        BatchInfo(CE, 2, 0, 1, 848),
+        BatchInfo(CE, 20, 1, 1, 8192),
+        BatchInfo(CE, 19, 1, 1, 8192),
+        BatchInfo(CE, 20, 1, 1, 8192),
+        BatchInfo(CE, 20, 1, 1, 8192),
+        BatchInfo(CE, 9, 0, 1, 3716),
         BatchInfo(TG, 100, 0, 10, 100),
         BatchInfo(TG, 100, 100, 10, 100),
         BatchInfo(TG, 0, 0, 0, 0),
