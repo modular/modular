@@ -14,7 +14,7 @@ from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn import Allreduce, Linear
+from max.nn import Allreduce, Linear, Signals
 from max.nn.attention import Attention
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
@@ -179,6 +179,8 @@ def _attention_layer(
         inp for device_inputs in kv_inputs_all for inp in device_inputs
     ]  # flatten list of tuples to list of elements
 
+    signals = Signals(devices=(DeviceRef(d.label, d.id) for d in devices))
+
     with Graph(
         "vanilla_opaque_attn",
         # TODO: Clean this up so we don't need to manually iterate types per device
@@ -191,9 +193,16 @@ def _attention_layer(
             wo_type,  # 5
             valid_lengths_type,  # 6
             *kv_input_types,
+            *signals.input_types(),
         ],
     ) as graph:
-        (x, attn_mask, wq, wk, wv, wo, valid_lengths, *kv_inputs) = graph.inputs
+        (x, attn_mask, wq, wk, wv, wo, valid_lengths, *variadic_args) = (
+            graph.inputs
+        )
+
+        num_kv_inputs = len(variadic_args) - len(devices)
+        kv_inputs = variadic_args[:num_kv_inputs]
+        signal_buffers = [v.buffer for v in variadic_args[num_kv_inputs:]]
 
         blocks_all = [
             kv_inputs[i * 4 + 0] for i in range(len(devices))
@@ -236,7 +245,7 @@ def _attention_layer(
         ]
 
         allreduce = Allreduce(num_accelerators=len(devices))
-        graph.output(*allreduce(attn_out))
+        graph.output(*allreduce(attn_out, signal_buffers))
 
         return graph, kv_params, kv_manager
 
@@ -266,9 +275,19 @@ def execute_attn_for_devices(
     ]
     model = session.load(graph)
 
+    signal_buffers = [
+        Tensor.zeros(
+            shape=(Signals.NUM_BYTES,),
+            dtype=DType.uint8,
+            device=dev,
+        )
+        for dev in devices
+    ]
+
     all_inputs = [
         *inputs,
         *flattened_kv_cache_inputs,
+        *signal_buffers,
     ]
     return model.execute(*all_inputs, copy_inputs_to_device=False)
 
