@@ -548,6 +548,7 @@ fn test_advanced_indexing_getitem() raises:
         indices_fn=indices_fn,
     ](
         output_data_buffer,
+        input_buffer.get_strides(),
         DeviceContextPtr(),
     )
 
@@ -657,6 +658,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     ](
         input_buffer,
         indices[0].dynamic_shape,
+        updates.get_strides(),
         DeviceContextPtr(),
     )
 

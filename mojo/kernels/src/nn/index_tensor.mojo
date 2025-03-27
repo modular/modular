@@ -400,6 +400,34 @@ fn _index_tensor_impl[
 # ===-----------------------------------------------------------------------===#
 # Advanced Indexing
 # ===-----------------------------------------------------------------------===#
+@always_inline
+fn _advanced_indexing_use_simd[
+    start_axis: Int, num_index_tensors: Int, input_rank: Int
+](read_strides: IndexList, write_strides: IndexList) -> Bool:
+    """Return whether we can use vectorized loads/stores for advanced indexing
+
+    Parameters:
+        start_axis: The first dimension in input where the indexing tensors
+            are applied. It is assumed the indexing tensors are applied in
+            consecutive dimensions.
+        num_index_tensors: The number of indexing tensors.
+        input_rank: The rank of the tensor being indexed.
+
+    Args:
+        read_strides: The stride of the tensor being read from in advanced indexing.
+            In `getitem` this is `input_tensor`, in `setitem` it is `update_tensor`.
+        write_strides: The strides of the tensor being written to in advanced indexing.
+            In `getitem` this is `out_tensor`, in `setitem` it is `input_tensor`
+    """
+    # We can vectorize the assignment only if:
+    # - The tensors we are reading and writing to are contiguous in inner dimension
+    # - We are not directly indexing the inner dimension of input
+    alias inner_dim_not_indexed = (start_axis + num_index_tensors - 1) < (
+        input_rank - 1
+    )
+    var read_contiguous = read_strides[read_strides.size - 1] == 1
+    var write_contiguous = write_strides[write_strides.size - 1] == 1
+    return inner_dim_not_indexed and read_contiguous and write_contiguous
 
 
 @always_inline
@@ -423,6 +451,7 @@ fn advanced_indexing_getitem[
     out_tensor: NDBuffer[
         mut=True, input_type, input_rank + index_rank - num_index_tensors
     ],
+    in_tensor_strides: IndexList[input_rank],
     ctx: DeviceContextPtr,
 ) raises:
     """Implement basic numpy-style advanced indexing.
@@ -471,6 +500,7 @@ fn advanced_indexing_getitem[
 
     Args:
         out_tensor: The output tensor to write to.
+        in_tensor_strides: The strides of the input tensor.
         ctx: The DeviceContextPtr as prepared by the graph compiler.
 
     TODO(GEX-1951): Support boolean tensor mask support
@@ -516,15 +546,29 @@ fn advanced_indexing_getitem[
             input_tensor_fn[width=width](input_index),
         )
 
-    # We can do further optimization, e.g. use a larger
-    # simd_width in certain scenarios though this is future work.
-    elementwise[
-        elementwise_fn_wrapper,
-        1,
-        use_blocking_impl=single_thread_blocking_override,
-        target=target,
-        _trace_description=trace_description,
-    ](out_tensor.get_shape(), ctx)
+    alias compile_target = _current_target() if is_cpu[
+        target
+    ]() else _get_gpu_target()
+    alias target_simd_width = simdwidthof[input_type, target=compile_target]()
+    var use_simd = _advanced_indexing_use_simd[
+        start_axis, num_index_tensors, input_rank
+    ](read_strides=in_tensor_strides, write_strides=out_tensor.get_strides())
+    if use_simd:
+        elementwise[
+            elementwise_fn_wrapper,
+            target_simd_width,
+            use_blocking_impl=single_thread_blocking_override,
+            target=target,
+            _trace_description=trace_description,
+        ](out_tensor.get_shape(), ctx)
+    else:
+        elementwise[
+            elementwise_fn_wrapper,
+            1,
+            use_blocking_impl=single_thread_blocking_override,
+            target=target,
+            _trace_description=trace_description,
+        ](out_tensor.get_shape(), ctx)
 
 
 @always_inline
@@ -587,6 +631,7 @@ fn advanced_indexing_setitem_inplace[
 ](
     input_tensor: NDBuffer[mut=True, type=input_type, rank=input_rank],
     index_tensor_shape: IndexList[index_rank, **_],
+    updates_tensor_strides: IndexList[updates_rank],
     ctx: DeviceContextPtr,
 ) raises:
     """Implement basic numpy-style advanced indexing with assignment.
@@ -656,6 +701,7 @@ fn advanced_indexing_setitem_inplace[
     Args:
         input_tensor: The input tensor being indexed into and modified in-place.
         index_tensor_shape: The shape of each index tensor.
+        updates_tensor_strides: The strides of the update tensor.
         ctx: The DeviceContextPtr as prepared by the graph compiler.
 
     TODO(GEX-1951): Support boolean tensor mask support
@@ -722,12 +768,32 @@ fn advanced_indexing_setitem_inplace[
             ),
         )
 
-    # We can do further optimization, e.g. use a larger
-    # simd_width in certain scenarios though this is future work.
-    elementwise[
-        elementwise_fn_wrapper,
-        1,
-        use_blocking_impl=single_thread_blocking_override,
-        target=target,
-        _trace_description=trace_description,
-    ](iteration_shape, ctx)
+    # We can vectorize the assignment only if we are
+    # not indexing in the last dimension of input.
+    alias last_indexed_dim = start_axis + num_index_tensors - 1
+    alias compile_target = _current_target() if is_cpu[
+        target
+    ]() else _get_gpu_target()
+    alias target_simd_width = simdwidthof[input_type, target=compile_target]()
+    var use_simd = _advanced_indexing_use_simd[
+        start_axis, num_index_tensors, input_rank
+    ](
+        read_strides=updates_tensor_strides,
+        write_strides=input_tensor.get_strides(),
+    )
+    if use_simd:
+        elementwise[
+            elementwise_fn_wrapper,
+            target_simd_width,
+            use_blocking_impl=single_thread_blocking_override,
+            target=target,
+            _trace_description=trace_description,
+        ](iteration_shape, ctx)
+    else:
+        elementwise[
+            elementwise_fn_wrapper,
+            1,
+            use_blocking_impl=single_thread_blocking_override,
+            target=target,
+            _trace_description=trace_description,
+        ](iteration_shape, ctx)
