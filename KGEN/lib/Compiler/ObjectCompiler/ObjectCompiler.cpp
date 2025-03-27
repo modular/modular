@@ -32,6 +32,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -1530,6 +1531,24 @@ compilePTXToCUBINViaPTXAS(AsyncRT::DeviceContextRef &ctx,
   return M::Buffer::get((*binaryBuffer)->getBuffer());
 }
 
+static std::string getNVGPUName(StringRef targetAccelerator) {
+  std::pair<StringRef, StringRef> s = targetAccelerator.rsplit(":");
+  if (s.second.starts_with("sm_"))
+    return s.second.str();
+  StringRef versionString =
+      s.second.starts_with("sm") ? s.second.substr(2) : s.second;
+  int version;
+  if (llvm::to_integer(versionString, version)) {
+    std::string result = "sm_" + std::to_string(version);
+    if (version >= 90)
+      return result + "a";
+    return result;
+  }
+  // Set default to sm_52 as what NVPTX lib does.
+  // https://docs.nvidia.com/cuda/ptx-compiler-api/index.html
+  return "sm_52";
+}
+
 static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
                                             llvm::Module &inputModule,
                                             StringRef ptx,
@@ -1548,6 +1567,23 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
     });
     return ctx->compileFunction(ptx, options.getDebugLevelString(),
                                 options.optimizationLevel);
+  }
+
+  // If the environment variable MODULAR_USE_DRIVER_NVPTX_COMPILER is set, we
+  // use the driver's nvptxcompiler. This allows for temporary experimentation.
+  // If this pathway is always benificial, then we will stop checking the env
+  // var.
+  if (llvm::sys::Process::GetEnv("MODULAR_USE_DRIVER_NVPTX_COMPILER")) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
+    KGEN_DEBUG(0, {
+      llvm::dbgs() << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n";
+    });
+    // FIXME: Will clean this _v2 up once we decide which compiler to use to get
+    // to cubin.
+    return ctx->compileFunction_v2(ptx, options.getDebugLevelString(),
+                                   options.optimizationLevel,
+                                   getNVGPUName(options.targetAccelerator));
   }
 
   ErrorOr<MojoConfig> cfg = MojoConfig::open();
