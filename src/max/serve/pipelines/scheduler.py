@@ -536,6 +536,37 @@ class TokenGenerationScheduler(Scheduler):
 
         # We successfully created a TG batch
         if len(self.active_batch) > 0:
+            # Truncate num_steps based on the maximum of num_available_steps
+            # calculated using the max_length request parameter. This differs from
+            # the max_seq_len of the pipeline model which is a hard limit that
+            # cannot ever be exceeded.
+            # e.g:
+            #   - num_steps = 10
+            #   - request 1 has 3 num_available_steps
+            #   - request 2 has 9 num_available_steps
+            #   - request 3 has 8 num_available_steps
+            #   => new_num_steps should be 9
+            # Note that some tokens for req 1 and 3 will be generated but discarded.
+            # This is intentional in order to prevent a single short request from
+            # limiting the num_steps for performance reasons.
+            num_available_steps_req: Optional[int] = None
+            for data in self.active_batch.values():
+                # If any request has no max_length, we should not change num_steps
+                if data.max_length is None:
+                    num_available_steps_req = None
+                    break
+                steps = data.compute_num_available_steps(data.max_length)
+                if num_available_steps_req is None:
+                    num_available_steps_req = steps
+                elif steps > num_available_steps_req:
+                    num_available_steps_req = steps
+
+            if (
+                num_available_steps_req is not None
+                and num_available_steps_req < num_steps
+            ):
+                num_steps = num_available_steps_req
+
             return SchedulerOutput(
                 batch_type=BatchType.TokenGeneration,
                 batch_inputs=self.active_batch.copy(),
