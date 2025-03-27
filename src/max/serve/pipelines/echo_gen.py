@@ -7,6 +7,7 @@
 from dataclasses import dataclass
 from typing import Sequence, Union, cast
 
+import numpy as np
 from max.pipelines.interfaces import (
     TextGenerationResponse,
     TextGenerationStatus,
@@ -43,6 +44,11 @@ class EchoTokenGeneratorContext:
     def is_assigned_to_cache(self) -> bool:
         """Returns True if input is assigned to a cache slot, False otherwise."""
         return self.cache_seq_id != -1
+
+    @property
+    def next_tokens(self) -> np.ndarray:
+        """Returns the next tokens to be generated."""
+        return np.array([], dtype=np.int32)
 
 
 @dataclass

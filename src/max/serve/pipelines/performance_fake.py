@@ -55,6 +55,11 @@ class PerformanceFakingContext:
         """Returns True if input is assigned to a cache slot, False otherwise."""
         return self.cache_seq_id != -1
 
+    @property
+    def next_tokens(self) -> np.ndarray:
+        """Returns the next tokens to be generated."""
+        return np.array([], dtype=np.int32)
+
 
 @dataclasses.dataclass
 class BatchInfo:

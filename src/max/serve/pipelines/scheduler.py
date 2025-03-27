@@ -8,6 +8,7 @@ import logging
 import queue
 import time
 from abc import ABC, abstractmethod
+from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping, Optional
@@ -28,6 +29,16 @@ from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 logger = logging.getLogger("max.serve")
+
+
+# TODO: This will be deleted after E2EOPT-113
+def _trim_prompt(data: InputContext, new_length: int) -> None:
+    untrimmed_length = data.active_length
+    trimmed_length = new_length
+    bump_length = untrimmed_length - trimmed_length
+    assert bump_length >= 0
+    if bump_length > 0:
+        data.bump_token_indices(start_idx=bump_length)
 
 
 class BatchType(Enum):
@@ -187,6 +198,7 @@ class TokenGenerationSchedulerConfig:
             logger.info(
                 "Prefill does not support multistep inference, overriding max_forward_steps_ce to 1."
             )
+            self.max_forward_steps_ce = 1
 
         if self.enable_in_flight_batching and not self.enable_chunked_prefill:
             msg = "Requires chunked prefill for in-flight batching."
@@ -276,6 +288,37 @@ class TokenGenerationScheduler(Scheduler):
         return True
 
     @traced
+    def _maybe_chunk_prefill_request(
+        self, data: InputContext, tot_tokens_to_encode: int
+    ) -> int:
+        """Chunks a prefill request if it exceeds the target tokens per batch."""
+        if not (
+            self.scheduler_config.enable_chunked_prefill
+            and self.scheduler_config.target_tokens_per_batch_ce is not None
+        ):
+            return 0
+
+        tokens_to_encode = data.active_length
+        if (
+            tot_tokens_to_encode + tokens_to_encode
+            <= self.scheduler_config.target_tokens_per_batch_ce
+        ):
+            return 0
+
+        # We can only schedule part of the prompt.
+        # We achieve this by decreasing the active_idx of the context class.
+        token_num_diff = (
+            tot_tokens_to_encode
+            + tokens_to_encode
+            - self.scheduler_config.target_tokens_per_batch_ce
+        )
+        tokens_to_encode -= token_num_diff
+        assert tokens_to_encode > 0
+        assert token_num_diff > 0
+        data.bump_token_indices(active_idx=-token_num_diff)
+        return token_num_diff
+
+    @traced
     def _try_create_ce_batch(self) -> SchedulerOutput:
         """Try to create a context encoding batch"""
         max_batch_size_to_create = min(
@@ -305,16 +348,11 @@ class TokenGenerationScheduler(Scheduler):
             if self.active_batch:
                 tg_batch = self._create_tg_batch()
                 ce_batch = tg_batch.batch_inputs
-                tot_tokens_to_encode = tg_batch.prompt_tokens
+                tot_tokens_to_encode = tg_batch.tokens_to_encode
                 tot_prompt_tokens = tg_batch.prompt_tokens
             for data in ce_batch.values():
                 # active length should be 1 for TG requests
                 assert data.active_length == 1
-
-        tot_new_pages_needed = 0
-        free_blocks: set[int] = set()
-        if self.paged_manager is not None:
-            free_blocks = self.paged_manager.free_blocks.copy()
 
         for _ in range(max_batch_size_to_create):
             if (
@@ -326,72 +364,64 @@ class TokenGenerationScheduler(Scheduler):
 
             try:
                 req_id, data = self.request_q.get_nowait()
-                # This is a partly encoded request if the start_idx !=0.
-                # In this scenario, we already allocated a cache slot to it.
+                # Unfortunately, when we create a new context we set the cache_seq_id
+                # to be the req idx in tokenizer.py. We probably should not do
+                # this. (TODO: E2EOPT-138)
+                #
+                # We want to ignore the existing cache_seq_id, UNLESS this request
+                # is a partially encoded request due to chunked prefill.
                 if data.start_idx == 0:
                     data.unassign_from_cache()
+                # Lets assign a new cache slot to this request if it doesn't have one yet.
+                if not data.is_assigned_to_cache:
+                    data.assign_to_cache(self.available_cache_indices.pop())
+                    if self.paged_manager is not None:
+                        self.paged_manager.external_claim([data.cache_seq_id])
             except queue.Empty:
                 break
 
-            has_insufficient_kv_blocks = False
-            tokens_to_encode = data.active_length
-            new_pages_needed = 0
-            cache_hit_blocks: set[int] = set()
-            if self.paged_manager:
-                # If the request is not assigned, we use a negative seq_id to
-                # explicitly indicate that it is not present in the cache.
-                seq_id = -1
-                if data.is_assigned_to_cache:
-                    seq_id = data.cache_seq_id
-                cache_hit_blocks, tokens_to_encode, new_pages_needed = (
-                    self.paged_manager.query_fetch_stats(
-                        seq_id, data.next_tokens, num_steps_with_headroom
-                    )
+            orig_prompt_length = data.active_length
+            cache_seq_id = data.cache_seq_id
+            num_steps = self.scheduler_config.max_forward_steps_ce
+
+            if self.paged_manager is not None:
+                max_seq_len = self.paged_manager.max_seq_len
+                num_available_steps = data.compute_num_available_steps(
+                    max_seq_len
+                )
+                num_steps = min(num_steps, num_available_steps)
+                prompt = data.next_tokens
+
+                # Lookup blocks to reuse from prefix cache
+                prompt = self.paged_manager.reuse_blocks_from_prefix_cache(
+                    cache_seq_id, prompt, num_steps=num_steps
+                )
+                _trim_prompt(data, len(prompt))
+
+            # Chunk the request if it exceeds the token budget
+            tokens_trimmed = self._maybe_chunk_prefill_request(
+                data, tot_tokens_to_encode
+            )
+            orig_prompt_length -= tokens_trimmed
+            prompt = data.next_tokens
+
+            if self.paged_manager is not None:
+                # Allocate new blocks for shortened prompt
+                scheduled = self.paged_manager.allocate_new_blocks(
+                    cache_seq_id, prompt, num_steps=num_steps
                 )
 
-                # Add this additional request to the ce batch if it leaves
-                # sufficient kv blocks to run several token gen steps without
-                # causing preemptions.
-                has_insufficient_kv_blocks = (
-                    tot_new_pages_needed + new_pages_needed
-                    > len(free_blocks - cache_hit_blocks)
-                )
-
-            if has_insufficient_kv_blocks:
-                # we cannot schedule this request so return it to the head of
-                # the request queue
-                self.request_q.put_front_nowait((req_id, data))
-                break
-
-            if (
-                self.scheduler_config.target_tokens_per_batch_ce is not None
-                and self.scheduler_config.enable_chunked_prefill
-                and (tot_tokens_to_encode + tokens_to_encode)
-                > self.scheduler_config.target_tokens_per_batch_ce
-            ):
-                # We can only schedule part of the prompt.
-                # We achieve this by decreasing the active_idx of the context class.
-                token_num_diff = (
-                    tot_tokens_to_encode
-                    + tokens_to_encode
-                    - self.scheduler_config.target_tokens_per_batch_ce
-                )
-                tokens_to_encode -= token_num_diff
-                assert tokens_to_encode > 0
-                assert token_num_diff > 0
-                data.bump_token_indices(active_idx=-token_num_diff)
+                # We were able to schedule this request
+                if not scheduled:
+                    self.available_cache_indices.add(data.cache_seq_id)
+                    self.pipeline.release(data)
+                    data.reset()
+                    self.request_q.put_front_nowait((req_id, data))
+                    break
 
             # Schedule the requests as it fits in KVCache and token limit
-            tot_new_pages_needed += new_pages_needed
-            free_blocks -= cache_hit_blocks
-            tot_tokens_to_encode += tokens_to_encode
-
-            # update prompt cache hit info
-            tot_prompt_tokens += data.active_length
-
-            # We will allocate cache if this is a new request
-            if not data.is_assigned_to_cache:
-                data.assign_to_cache(self.available_cache_indices.pop())
+            tot_tokens_to_encode += data.active_length
+            tot_prompt_tokens += orig_prompt_length
             ce_batch[req_id] = data
 
         return SchedulerOutput(
@@ -403,12 +433,10 @@ class TokenGenerationScheduler(Scheduler):
         )
 
     @traced
-    def _preempt_request(self):
+    def _preempt_request(self, req_id: Any, data: InputContext):
         """Preempts the most recently received request from active batch"""
-        assert self.active_batch
         # dicts in python pop the last inserted item
         # this corresponds to the most recently received request
-        req_id, data = self.active_batch.popitem()
         self.available_cache_indices.add(data.cache_seq_id)
         self.pipeline.release(data)
         data.reset()
@@ -437,49 +465,77 @@ class TokenGenerationScheduler(Scheduler):
                 num_steps=self.scheduler_config.max_forward_steps_tg,
             )
 
-        # Keep preempting requests until we can schedule the entire active batch
         num_steps = self.scheduler_config.max_forward_steps_tg
         max_seq_len = self.paged_manager.max_seq_len
-        while len(self.active_batch) > 1:
-            # Compute the number of steps available for the active batch
-            for context in self.active_batch.values():
-                num_available_steps = context.compute_num_available_steps(
-                    max_seq_len
-                )
-                num_steps = min(num_steps, num_available_steps)
-            assert num_steps > 0
 
-            seq_ids_and_prompts = {
-                data.cache_seq_id: data.next_tokens
-                for data in self.active_batch.values()
-            }
-            if self.paged_manager.can_fetch(
-                seq_ids_and_prompts,
-                num_steps=num_steps,
-            ):
-                return SchedulerOutput(
-                    batch_type=BatchType.TokenGeneration,
-                    batch_inputs=self.active_batch.copy(),
-                    num_steps=num_steps,
-                )
-            self._preempt_request()
+        # Assume this is sorted by request arrival time where the leftmost request
+        # is the oldest and the rightmost request is the newest.
+        candidate_reqs = deque(
+            (req_id, data) for req_id, data in self.active_batch.items()
+        )
+        _, first_req_data = candidate_reqs[0]
+        self.active_batch.clear()
+        while len(candidate_reqs) > 0:
+            # Get the oldest request
+            req_id, data = candidate_reqs.popleft()
+            cache_seq_id = data.cache_seq_id
+            prompt = data.next_tokens
 
-        # There is one non-preempted request left in the active batch
-        assert len(self.active_batch) == 1
-        seq_ids_and_prompts = {
-            data.cache_seq_id: data.next_tokens
-            for data in self.active_batch.values()
-        }
-        last_req = next(iter(self.active_batch.values()))
-        if last_req.max_length is not None:
-            num_available_steps = last_req.compute_num_available_steps(
-                last_req.max_length
-            )
+            # Determine the number of steps to schedule based on the max_seq_len
+            # of the pipeline model.
+            num_available_steps = data.compute_num_available_steps(max_seq_len)
             num_steps = min(num_steps, num_available_steps)
-        if self.paged_manager.can_fetch(
-            seq_ids_and_prompts,
-            num_steps=num_steps,
-        ):
+
+            scheduled = False
+            while not scheduled:
+                # If this is the only request, we should not exceed the max_length
+                # specified in its request parameter.
+                if (
+                    len(self.active_batch) == 0
+                    and len(candidate_reqs) == 0
+                    and data.max_length is not None
+                ):
+                    num_available_steps = data.compute_num_available_steps(
+                        data.max_length
+                    )
+                    num_steps = min(num_steps, num_available_steps)
+
+                # Attempt to schedule this request
+                prompt = self.paged_manager.reuse_blocks_from_prefix_cache(
+                    cache_seq_id, prompt, num_steps=num_steps
+                )
+                _trim_prompt(data, len(prompt))
+                scheduled = self.paged_manager.allocate_new_blocks(
+                    cache_seq_id, prompt, num_steps=num_steps
+                )
+
+                # We were able to schedule this request
+                if scheduled:
+                    break
+
+                # We were not able to schedule this request but there is nothing
+                # to preempt
+                if len(candidate_reqs) == 0:
+                    break
+
+                # We were unable to schedule this request so we will try again
+                # after preempting the newest request
+                req_id_preempt, data_preempt = candidate_reqs.pop()
+                self._preempt_request(req_id_preempt, data_preempt)
+
+                # Reset the prompt in case it was trimmed
+                prompt = data.next_tokens
+
+            # If we still can't schedule the request, we preempt it
+            if not scheduled:
+                self._preempt_request(req_id, data)
+                break
+
+            # Add the request to the batch
+            self.active_batch[req_id] = data
+
+        # We successfully created a TG batch
+        if len(self.active_batch) > 0:
             return SchedulerOutput(
                 batch_type=BatchType.TokenGeneration,
                 batch_inputs=self.active_batch.copy(),
@@ -489,7 +545,7 @@ class TokenGenerationScheduler(Scheduler):
         # We have utterly failed to construct a TG batch.
         # This should literally never happen unless the user sets an absurdly
         # large max seq len or the KV cache is very small.
-        current_len = last_req.current_length
+        current_len = first_req_data.current_length
         page_size = self.paged_manager.page_size
         total_num_blocks = self.paged_manager.total_num_pages
         max_seq_len = total_num_blocks * page_size
@@ -515,6 +571,7 @@ class TokenGenerationScheduler(Scheduler):
             return SchedulerOutput(
                 batch_type=BatchType.TokenGeneration,
                 batch_inputs={},
+                num_steps=0,
             )
 
         tg_batch = self._create_tg_batch()
