@@ -8,15 +8,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Mapping
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
 from typing import (
     Any,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
     Optional,
     Union,
     cast,
@@ -39,9 +36,9 @@ from max.profiler import Tracer, traced
 # Manually define dlpack compatible types since MyPy isn't aware that ndarray
 # implements the protocol.
 DLPackCompatible = Union[DLPackArray, npt.NDArray]
-InputShape = Optional[List[Union[int, str, None]]]
+InputShape = Optional[list[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
-CustomExtensionsType = Union[List[CustomExtensionType], CustomExtensionType]
+CustomExtensionsType = Union[list[CustomExtensionType], CustomExtensionType]
 # Need to use tuple instead of Union to ensure that Python 3.9 support works.
 ScalarType = (int, float, bool, np.generic)
 InputType = Union[
@@ -321,7 +318,7 @@ class Model:
     def execute_legacy(
         self,
         **kwargs: Any,
-    ) -> Dict[str, Union[np.ndarray, dict, list, tuple]]:
+    ) -> dict[str, Union[np.ndarray, dict, list, tuple]]:
         """Executes the model with a set of named tensors. This API is maintained
         primarily to support frameworks that require named inputs (i.e. ONNX).
 
@@ -412,13 +409,13 @@ class Model:
         return self._impl.devices
 
     @property
-    def input_devices(self) -> List[Device]:
+    def input_devices(self) -> list[Device]:
         """Device of the model's input tensors, as a list of
         :obj:`Device` objects."""
         return self._impl.input_devices
 
     @property
-    def output_devices(self) -> List[Device]:
+    def output_devices(self) -> list[Device]:
         """Device of the model's output tensors, as a list of
         :obj:`Device` objects."""
         return self._impl.output_devices
@@ -935,7 +932,7 @@ class InferenceSession:
         self._impl.set_mojo_define(key, value)
 
     @property
-    def stats_report(self) -> Dict[str, Any]:
+    def stats_report(self) -> dict[str, Any]:
         """Metadata about model compilation (PyTorch only).
 
         Prints a list of "fallback ops", which are ops that could not be lowered
@@ -950,6 +947,6 @@ class InferenceSession:
         self._impl.reset_stats_report()
 
     @property
-    def devices(self) -> List[Device]:
+    def devices(self) -> list[Device]:
         """A list of available devices."""
         return self._impl.devices
