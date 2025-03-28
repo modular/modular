@@ -18,9 +18,10 @@ from __future__ import annotations
 import asyncio
 import queue
 import threading
+from collections.abc import Sequence
 from queue import Queue
 from threading import Thread
-from typing import Optional, Sequence
+from typing import Optional
 
 import tqdm
 from max.pipelines.config import PipelineConfig

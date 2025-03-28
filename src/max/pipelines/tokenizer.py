@@ -20,7 +20,8 @@ import functools
 import io
 import json
 import logging
-from typing import Optional, Sequence, Union, cast
+from collections.abc import Sequence
+from typing import Optional, Union, cast
 
 import numpy as np
 import torch

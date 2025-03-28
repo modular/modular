@@ -16,7 +16,7 @@
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, List, cast
+from typing import Any, cast
 
 from max.driver import Device, Tensor
 from max.dtype import DType
@@ -48,7 +48,7 @@ class NaiveKVCacheManager(KVCacheManager):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: List[Device],
+        devices: list[Device],
         session: InferenceSession,
     ) -> None:
         assert len(devices) == 1, "Naive caching only supports a single device."
@@ -87,7 +87,7 @@ class NaiveKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         return (
@@ -108,7 +108,7 @@ class NaiveKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         cache_size_per_sequence = (
@@ -149,7 +149,7 @@ class NaiveKVCacheManager(KVCacheManager):
         self,
         batch: list[InputContext],
         num_steps: int = 1,
-    ) -> List[KVCacheInputs]:
+    ) -> list[KVCacheInputs]:
         existing_keys = list(self.cache_lengths.keys())
         for i, ctx in enumerate(batch):
             seq_id = ctx.cache_seq_id
@@ -184,11 +184,11 @@ class NaiveKVCacheManager(KVCacheManager):
                 ),
             )
         ]
-        return cast(List[KVCacheInputs], padded_kv_cache_inputs)
+        return cast(list[KVCacheInputs], padded_kv_cache_inputs)
 
     def input_symbols(
         self,
-    ) -> List[NaiveKVCacheInputSymbols]:
+    ) -> list[NaiveKVCacheInputSymbols]:
         return [
             NaiveKVCacheInputSymbols(
                 k_cache=BufferType(

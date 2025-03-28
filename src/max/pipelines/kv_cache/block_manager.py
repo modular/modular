@@ -29,7 +29,8 @@ from __future__ import annotations
 import logging
 import multiprocessing
 from collections import defaultdict
-from typing import Iterable, Optional
+from collections.abc import Iterable
+from typing import Optional
 
 import numpy as np
 from max.pipelines.context import InputContext

@@ -13,15 +13,14 @@
 
 """Interfaces for text generation pipeline behaviors."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
     Any,
     Generic,
-    List,
     Literal,
     Optional,
     Protocol,
-    Sequence,
     TypedDict,
     TypeVar,
     Union,
@@ -162,7 +161,7 @@ class TokenGeneratorRequest:
     generated output. This can be useful for debugging or when you want to see how
     the input relates to the output.
     """
-    stop: Optional[Union[str, List[str]]] = None
+    stop: Optional[Union[str, list[str]]] = None
     """
     Optional list of stop expressions (see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
     """

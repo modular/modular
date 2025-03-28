@@ -13,14 +13,12 @@
 
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 from max.graph import TensorValue, ops
 
 
 def causal_attention_mask_2d_from_imgs(
-    imgs: List[np.ndarray],
+    imgs: list[np.ndarray],
     patch_size: int,
     batch_size: int,
     fill_val: float = -10000.0,

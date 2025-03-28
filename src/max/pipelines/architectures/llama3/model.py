@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, List, Literal, Optional, Sequence, cast
+from collections.abc import Sequence
+from typing import Any, Callable, Literal, Optional, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -349,7 +350,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         cls,
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
@@ -400,7 +401,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[TensorValue]
-    ) -> List[tuple[TensorValue, ...]]:
+    ) -> list[tuple[TensorValue, ...]]:
         kv_params = Llama3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),

@@ -15,8 +15,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable
 
 import numpy as np
 from max.dtype import DType
@@ -293,7 +294,7 @@ class Linear(Layer):
         weights: Weights | Weight,
         bias: Weights | Weight | None = None,
         quantization_config: QuantizationConfig | None = None,
-    ) -> "Linear":
+    ) -> Linear:
         """Factory method to create a Linear layer with appropriate implementation."""
         if not quantization_encoding:
             weight = _allocate_if_needed(
@@ -334,7 +335,7 @@ class QLinear(Linear):
         weights: Weights | Weight,
         bias: Weights | Weight | None,
         quantization_config: QuantizationConfig | None,
-    ) -> "Linear":
+    ) -> Linear:
         if quantization_encoding != QuantizationEncoding.GPTQ:
             weight = _allocate_if_needed(
                 weights, dtype, [in_features, out_features]
@@ -393,7 +394,7 @@ class GPTQLinear(QLinear):
         weights: Weights | Weight,
         bias: Weights | Weight | None,
         quantization_config: QuantizationConfig | None,
-    ) -> "Linear":
+    ) -> Linear:
         """Internal method to create a Linear layer from GPTQ weights."""
 
         assert quantization_config, (

@@ -15,7 +15,7 @@
 import math
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Optional, Tuple
+from typing import Optional
 
 from max.dtype import DType
 from max.graph import Dim, TensorValue, TensorValueLike, ops
@@ -271,7 +271,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
 
     def _compute_yarn_freqs(
         self, x: TensorValue
-    ) -> Tuple[TensorValue, TensorValue]:
+    ) -> tuple[TensorValue, TensorValue]:
         if self.scaling_params is None:
             raise ValueError("scaling_params must be provided")
 
@@ -356,7 +356,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         dim: int,
         base: float,
         max_position_embeddings: int,
-    ) -> Tuple[TensorValue, TensorValue]:
+    ) -> tuple[TensorValue, TensorValue]:
         """
         Find the correction range for the rotary embeddings.
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 from max.graph import TensorValue, TensorValueLike, Weight, ops
 
@@ -39,9 +39,9 @@ class Conv2D(Layer):
     filter: TensorValueLike
     bias: Optional[TensorValueLike] = None
 
-    stride: Union[int, Tuple[int, int]] = (1, 1)
-    padding: Union[int, Tuple[int, int, int, int]] = (0, 0, 0, 0)
-    dilation: Union[int, Tuple[int, int]] = (1, 1)
+    stride: Union[int, tuple[int, int]] = (1, 1)
+    padding: Union[int, tuple[int, int, int, int]] = (0, 0, 0, 0)
+    dilation: Union[int, tuple[int, int]] = (1, 1)
     groups: int = 1
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -153,8 +153,8 @@ class Conv3D(Layer):
     filter: TensorValueLike  # [depth, height, width, in_channels / num_groups, out_channels]
     bias: Optional[TensorValueLike] = None  # [out_channels]
 
-    stride: Union[int, Tuple[int, int, int]] = (1, 1, 1)
-    padding: Union[int, Tuple[int, int, int, int, int, int]] = (
+    stride: Union[int, tuple[int, int, int]] = (1, 1, 1)
+    padding: Union[int, tuple[int, int, int, int, int, int]] = (
         0,
         0,
         0,
@@ -162,7 +162,7 @@ class Conv3D(Layer):
         0,
         0,
     )
-    dilation: Union[int, Tuple[int, int, int]] = (1, 1, 1)
+    dilation: Union[int, tuple[int, int, int]] = (1, 1, 1)
     groups: int = 1
 
     def __call__(self, x: TensorValueLike) -> TensorValue:

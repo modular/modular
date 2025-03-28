@@ -14,7 +14,6 @@ import argparse
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import DefaultDict
 
 import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
@@ -46,7 +45,7 @@ class NextWordFrequency:
     def __init__(self, text):
         # nested `DefaultDict` to create the keys when first indexed
         # Structure looks like: {"word": {"next_word": count}}
-        self.word_frequencies: DefaultDict[str, DefaultDict[str, int]] = (
+        self.word_frequencies: defaultdict[str, defaultdict[str, int]] = (
             defaultdict(lambda: defaultdict(int))
         )
 

@@ -17,14 +17,13 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Generic,
     Optional,
     Protocol,
-    Sequence,
-    Type,
     TypeVar,
     cast,
     runtime_checkable,
@@ -422,7 +421,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: Type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         # TODO: This should be removed.
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],

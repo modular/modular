@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Type, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from max.driver import load_devices
 from max.engine import InferenceSession
@@ -41,7 +41,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: Type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         **unused_kwargs,
     ) -> None:
         self._pipeline_config = pipeline_config

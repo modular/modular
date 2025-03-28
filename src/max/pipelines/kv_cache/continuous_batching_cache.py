@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, List, cast
+from typing import Any, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -152,7 +152,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: List[Device],
+        devices: list[Device],
         session: InferenceSession,
     ) -> None:
         super().__init__(
@@ -166,7 +166,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         )
 
         # Allocate memory for the KV cache blocks.
-        self.blocks: List[Tensor] = []
+        self.blocks: list[Tensor] = []
         for i in range(len(self.devices)):
             self.blocks.append(
                 Tensor.zeros(
@@ -184,7 +184,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         cache_size = (
@@ -208,7 +208,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         cache_size_per_sequence = (
@@ -224,7 +224,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         self,
         batch: list[InputContext],
         num_steps: int = 1,
-    ) -> List[KVCacheInputs]:
+    ) -> list[KVCacheInputs]:
         """Fetches the KV cache state for the given sequence IDs.
 
         This method retrieves the current cache state for a batch of sequences, including their
@@ -309,7 +309,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
             )
             for i in range(len(self.devices))
         ]
-        return cast(List[KVCacheInputs], result)
+        return cast(list[KVCacheInputs], result)
 
     def block_shape(self, n_sequences: int) -> list[int]:
         """Returns the shape of the KV cache blocks for the given number of sequences.
@@ -351,7 +351,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
 
     def input_symbols(
         self,
-    ) -> List[ContinuousBatchingKVCacheInputSymbols]:
+    ) -> list[ContinuousBatchingKVCacheInputSymbols]:
         """Returns the expected input tensor types for `fetch` on each device.
 
         Defines the tensor specifications needed by the cache implementation,

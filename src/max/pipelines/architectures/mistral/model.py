@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Optional, Sequence, cast
+from collections.abc import Sequence
+from typing import Optional, cast
 
 import numpy as np
 from max.driver import Device, Tensor

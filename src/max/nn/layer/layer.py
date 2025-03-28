@@ -17,15 +17,12 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Iterable, Mapping
 from functools import wraps
 from inspect import signature
 from typing import (
     Any,
     Callable,
-    Dict,
-    Iterable,
-    Mapping,
-    Tuple,
     Union,
     get_args,
 )
@@ -393,7 +390,7 @@ _LAYER_HOOKS = _LOCAL._layer_hooks = []
 
 
 def add_layer_hook(
-    fn: Callable[[Layer, Tuple[Any, ...], Dict[str, Any], Any], Any],
+    fn: Callable[[Layer, tuple[Any, ...], dict[str, Any], Any], Any],
 ) -> None:
     """Adds a hook to call a function after each layer's `__call__`.
 

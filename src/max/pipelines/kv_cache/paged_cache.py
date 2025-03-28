@@ -20,7 +20,7 @@ import math
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, List, cast
+from typing import Any, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -507,7 +507,7 @@ class PagedKVCacheManager(KVCacheManager):
 
     def fetch(
         self, batch: list[InputContext], num_steps: int = 1
-    ) -> List[KVCacheInputs]:
+    ) -> list[KVCacheInputs]:
         """Reuses blocks from prefix cache and allocates new blocks for requests in batch.
 
         On cache hits, the input context may have their start_idx bumped upwards in order
@@ -524,7 +524,7 @@ class PagedKVCacheManager(KVCacheManager):
     @traced
     def _fetch(
         self, batch: list[InputContext], num_steps: int = 1
-    ) -> List[KVCacheInputs]:
+    ) -> list[KVCacheInputs]:
         """This is separate from the public `fetch` method so that the @traced
         decorator can be used since `fetch` is a abstract method in the base class.
         """
@@ -623,7 +623,7 @@ class PagedKVCacheManager(KVCacheManager):
                 )
             )
 
-        return cast(List[KVCacheInputs], ret_list)
+        return cast(list[KVCacheInputs], ret_list)
 
     def input_symbols(
         self,

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Optional
 
 from max.driver import Device
 from max.dtype import DType
@@ -47,7 +47,7 @@ from .paged_cache import (
     PagedKVCacheType,
 )
 
-CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, Type[KVCacheManager]] = {
+CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[KVCacheManager]] = {
     KVCacheStrategy.CONTINUOUS: ContinuousBatchingKVCacheManager,
     KVCacheStrategy.NAIVE: NaiveKVCacheManager,
     KVCacheStrategy.PAGED: PagedKVCacheManager,
@@ -60,7 +60,7 @@ def load_kv_manager(
     max_batch_size: Optional[int],
     max_seq_len: int,
     num_layers: int,
-    devices: List[Device],
+    devices: list[Device],
     session: InferenceSession,
     available_cache_memory: Optional[int] = None,
     page_size: Optional[int] = 512,
@@ -131,7 +131,7 @@ def estimate_kv_cache_size(
     max_seq_len: int,
     num_layers: int,
     available_cache_memory: int,
-    devices: List[Device],
+    devices: list[Device],
     **kwargs: Any,
 ) -> int:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
@@ -156,7 +156,7 @@ def infer_optimal_batch_size(
     max_seq_len: int,
     num_layers: int,
     available_cache_memory: int,
-    devices: List[Device],
+    devices: list[Device],
     **kwargs: Any,
 ) -> int:
     return CACHE_MANAGER_REGISTRY[

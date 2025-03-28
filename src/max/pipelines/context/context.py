@@ -15,7 +15,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol, Sequence, Union, runtime_checkable
+from collections.abc import Sequence
+from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
 from max.pipelines.interfaces import LogProbabilities
@@ -133,7 +134,7 @@ class InputContext(Protocol):
         ...
 
     @property
-    def matcher(self) -> Optional["xgr.GrammarMatcher"]:  # type: ignore
+    def matcher(self) -> Optional[xgr.GrammarMatcher]:  # type: ignore
         """An optional xgr Grammar Matcher provided when using structured output."""
         ...
 
@@ -142,7 +143,7 @@ class InputContext(Protocol):
         """A json schema to use during constrained decoding."""
         ...
 
-    def set_matcher(self, matcher: "xgr.GrammarMatcher") -> None:  # type: ignore
+    def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
         """Set a grammar matcher for use during constrained decoding."""
         ...
 
@@ -253,7 +254,7 @@ class TextContext:
     def committed_idx(self) -> int:
         return self._committed_idx
 
-    def set_matcher(self, matcher: "xgr.GrammarMatcher") -> None:  # type: ignore
+    def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
         self.matcher = matcher
 
     @property

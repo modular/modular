@@ -16,13 +16,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import (
     Any,
-    Iterator,
-    List,
-    Sequence,
-    Type,
     TypeVar,
     cast,
     overload,
@@ -40,7 +37,7 @@ from .cache_params import KVCacheParams
 _T = TypeVar("_T")
 
 
-def _is_sequence_of(x: Any, ty: Type[_T]) -> TypeGuard[Sequence[_T]]:
+def _is_sequence_of(x: Any, ty: type[_T]) -> TypeGuard[Sequence[_T]]:
     return isinstance(x, Sequence) and all(isinstance(item, ty) for item in x)
 
 
@@ -169,7 +166,7 @@ class KVCacheManager(ABC):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: List[Device],
+        devices: list[Device],
         session: InferenceSession,
         is_ragged: bool = False,
     ) -> None:
@@ -201,7 +198,7 @@ class KVCacheManager(ABC):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         """Returns the estimated total memory usage of the kv cache."""
@@ -215,7 +212,7 @@ class KVCacheManager(ABC):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         """Returns the estimated optimal batch size for the kv cache."""
@@ -226,7 +223,7 @@ class KVCacheManager(ABC):
         self,
         batch: list[InputContext],
         num_steps: int = 1,
-    ) -> List[KVCacheInputs]:
+    ) -> list[KVCacheInputs]:
         """Returns blocks and other inputs to kv cache kernel for given
         sequence ids and prompts."""
         ...
@@ -238,7 +235,7 @@ class KVCacheManager(ABC):
         """Returns the input symbols for the kv cache manager."""
         ...
 
-    def claim(self, n: int) -> List[int]:
+    def claim(self, n: int) -> list[int]:
         """Claims `n` blocks of memory in the cache for incoming requests.
 
         This returns a list of sequence ids, which identify a sequence's
@@ -256,7 +253,7 @@ class KVCacheManager(ABC):
 
         return seq_ids
 
-    def external_claim(self, seq_ids: List[int]) -> None:
+    def external_claim(self, seq_ids: list[int]) -> None:
         """Variant of the above where sequence ids are reserved externally."""
         for seq_id in seq_ids:
             self.available.remove(seq_id)
@@ -321,9 +318,9 @@ class KVCacheManager(ABC):
 
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: List[RaggedKVCacheInputs] | List[PaddedKVCacheInputs],
+        kv_cache_inputs: list[RaggedKVCacheInputs] | list[PaddedKVCacheInputs],
         prev_model_inputs: Any,
-    ) -> List[RaggedKVCacheInputs] | List[PaddedKVCacheInputs]:
+    ) -> list[RaggedKVCacheInputs] | list[PaddedKVCacheInputs]:
         """
         Prepare the inputs for a multistep execution, generally by incrementing
         the cache lengths. This should not require a device synchronization,
@@ -347,9 +344,9 @@ class KVCacheManager(ABC):
 
     def _increment_cache_lengths_ragged(
         self,
-        kv_cache_inputs: List[RaggedKVCacheInputs],
+        kv_cache_inputs: list[RaggedKVCacheInputs],
         prev_model_inputs: Any,
-    ) -> List[RaggedKVCacheInputs]:
+    ) -> list[RaggedKVCacheInputs]:
         """Prepares cache inputs for the next token in multistep execution.
 
         Updates the cache lengths for the next inference step without requiring device
@@ -396,9 +393,9 @@ class KVCacheManager(ABC):
 
     def _increment_cache_lengths_padded(
         self,
-        kv_cache_inputs: List[PaddedKVCacheInputs],
+        kv_cache_inputs: list[PaddedKVCacheInputs],
         prev_model_inputs: Any,
-    ) -> List[PaddedKVCacheInputs]:
+    ) -> list[PaddedKVCacheInputs]:
         """
         Prepare the inputs for a multistep execution, generally by incrementing
         the cache lengths. This should not require a device synchronization,

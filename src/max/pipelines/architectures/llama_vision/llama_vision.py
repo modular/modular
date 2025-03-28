@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Iterable, Optional, cast, final
+from typing import Any, Optional, cast, final
 
 import numpy as np
 from max.driver import Device, Tensor

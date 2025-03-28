@@ -13,7 +13,8 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Optional
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -355,7 +356,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
         cls,
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         huggingface_config: AutoConfig,
     ) -> int:
         raise NotImplementedError

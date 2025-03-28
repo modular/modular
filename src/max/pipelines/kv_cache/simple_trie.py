@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any, Optional
 
 Key = Any
 
@@ -45,7 +46,7 @@ class SimpleTrie:
             curr = curr.children[ch]
         curr.is_eow = True
 
-    def _search(self, s: Sequence[Key]) -> Tuple[SimpleNode, list[Key]]:
+    def _search(self, s: Sequence[Key]) -> tuple[SimpleNode, list[Key]]:
         """Internal helper method to search for a sequence in the trie.
 
         Args:
@@ -67,7 +68,7 @@ class SimpleTrie:
 
     def find_string_with_largest_common_prefix(
         self, target: Sequence[Key]
-    ) -> Optional[Tuple[Sequence[Key], int]]:
+    ) -> Optional[tuple[Sequence[Key], int]]:
         """Returns a sequence in the trie that shares the longest common prefix
         with the target.
 

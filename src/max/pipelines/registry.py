@@ -18,7 +18,7 @@ from __future__ import annotations
 import functools
 import logging
 from io import StringIO
-from typing import TYPE_CHECKING, Callable, Optional, Type, Union, cast
+from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 
 import torch
 from max.driver import Device, load_devices
@@ -86,9 +86,9 @@ class SupportedArchitecture:
         example_repo_ids: list[str],
         default_encoding: SupportedEncoding,
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
-        pipeline_model: Type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         task: PipelineTask,
-        tokenizer: Type[Union[TextTokenizer, TextAndVisionTokenizer]],
+        tokenizer: type[Union[TextTokenizer, TextAndVisionTokenizer]],
         default_weights_format: WeightsFormat,
         multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
@@ -363,7 +363,7 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         user_provided_max_length: bool,
         user_provided_max_batch_size: bool,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         total_size: int,
         original_free_memory: int,
         available_kv_cache_memory: int,
@@ -438,7 +438,7 @@ class PipelineRegistry:
     def _find_valid_max_length(
         self,
         pipeline_config: PipelineConfig,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         available_kv_cache_memory: int,
         user_provided_max_batch_size: bool,
         huggingface_config: AutoConfig,
@@ -510,7 +510,7 @@ class PipelineRegistry:
     def _find_valid_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         available_kv_cache_memory: int,
         original_max_length: int,
         user_provided_max_batch_size: bool,
@@ -571,7 +571,7 @@ class PipelineRegistry:
 
     def _calculate_kv_cache_size(
         self,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         pipeline_config: PipelineConfig,
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
@@ -746,7 +746,7 @@ class PipelineRegistry:
     def _infer_optimal_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
         devices: list[Device],
@@ -765,7 +765,7 @@ class PipelineRegistry:
     def _load_logging_message(
         self,
         pipeline_config: PipelineConfig,
-        tokenizer_type: Type[PipelineTokenizer],
+        tokenizer_type: type[PipelineTokenizer],
         pipeline_name: str,
         pipeline_model: str,
         factory: bool,
@@ -873,7 +873,7 @@ class PipelineRegistry:
                 arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
                 and arch.tokenizer is TextTokenizer
             ):
-                text_tokenizer = cast(Type[TextTokenizer], arch.tokenizer)
+                text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
                 tokenizer = text_tokenizer(
                     pipeline_config.model_config.model_path,
                     revision=pipeline_config.model_config.huggingface_revision,

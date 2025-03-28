@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import deque
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 from max.graph import TensorValue
 from max.nn._identity import IdentitySet
@@ -76,7 +76,7 @@ def _walk_layers(model):
     """Walks through model and yields all layers with generated names."""
     seen = IdentitySet()
     seen.add(model)
-    queue: deque[Tuple[Any, str]] = deque([(model, "model")])
+    queue: deque[tuple[Any, str]] = deque([(model, "model")])
 
     while queue:
         obj, name = queue.popleft()

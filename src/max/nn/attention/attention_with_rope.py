@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Union
+from typing import Callable, Optional, Union
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
@@ -469,7 +469,7 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
         )
 
     @property
-    def w_uk_uv(self) -> List[TensorValue]:
+    def w_uk_uv(self) -> list[TensorValue]:
         """The concatenation of q, k, and v weight vectors."""
         kv_b_proj_weight: TensorValue = self.kv_b_proj.transpose(0, 1)
 
@@ -980,8 +980,8 @@ class GPTQAttentionWithRope(AttentionWithRopeV2):
 
 
 def distribute_value(
-    v: TensorValue, devices: List[DeviceRef]
-) -> List[TensorValue]:
+    v: TensorValue, devices: list[DeviceRef]
+) -> list[TensorValue]:
     return [v.to(device) for device in devices]
 
 
@@ -1031,13 +1031,13 @@ class DistributedAttentionWithRope(
 
     def __call__(  # type: ignore[override]
         self,
-        x: List[TensorValue],
-        signal_buffers: List[BufferValue],
-        kv_collections: List[
+        x: list[TensorValue],
+        signal_buffers: list[BufferValue],
+        kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
         **kwargs,
-    ) -> List[TensorValue]:
+    ) -> list[TensorValue]:
         input_row_offsets = kwargs["input_row_offsets"]
         assert isinstance(input_row_offsets, TensorValue)
         assert self.devices

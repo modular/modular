@@ -26,9 +26,10 @@ import time
 import traceback
 import warnings
 from argparse import ArgumentParser as FlexibleArgumentParser
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import aiohttp
 import numpy as np
@@ -65,7 +66,7 @@ class RequestFuncOutput:
     success: bool = False
     latency: float = 0.0
     ttft: float = 0.0  # Time to first token
-    itl: List[float] = field(
+    itl: list[float] = field(
         default_factory=list
     )  # List of inter-token latencies
     prompt_len: int = 0
@@ -404,7 +405,7 @@ def sample_sharegpt_requests(
     num_requests: int,
     tokenizer: PreTrainedTokenizerBase,
     fixed_output_len: Optional[int] = None,
-) -> List[Tuple[str, int, int]]:
+) -> list[tuple[str, int, int]]:
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
     # Load the dataset.
@@ -422,7 +423,7 @@ def sample_sharegpt_requests(
     random.shuffle(dataset)
 
     # Filter out sequences that are too long or too short
-    filtered_dataset: List[Tuple[str, int, int]] = []
+    filtered_dataset: list[tuple[str, int, int]] = []
     for i in range(len(dataset)):
         if len(filtered_dataset) == num_requests:
             break
@@ -456,7 +457,7 @@ def sample_sonnet_requests(
     output_len: int,
     prefix_len: int,
     tokenizer: PreTrainedTokenizerBase,
-) -> List[Tuple[str, str, int, int]]:
+) -> list[tuple[str, str, int, int]]:
     assert input_len > prefix_len, (
         "'args.sonnet-input-len' must be greater than 'args.prefix-input-len'."
     )
@@ -501,7 +502,7 @@ def sample_sonnet_requests(
     prefix_lines = poem_lines[:num_prefix_lines]
 
     # Sample the rest of lines per request.
-    sampled_requests: List[Tuple[str, str, int, int]] = []
+    sampled_requests: list[tuple[str, str, int, int]] = []
     for _ in range(num_requests):
         sampled_lines = "".join(
             prefix_lines
@@ -532,7 +533,7 @@ def sample_random_requests(
     num_prompts: int,
     range_ratio: float,
     tokenizer: PreTrainedTokenizerBase,
-) -> List[Tuple[str, int, int]]:
+) -> list[tuple[str, int, int]]:
     input_lens = np.random.randint(
         int(input_len * range_ratio),
         input_len + 1,
@@ -588,14 +589,14 @@ def sample_longcontext_requests(
     num_requests: int,
     tokenizer: PreTrainedTokenizerBase,
     fixed_output_len: Optional[int] = None,
-) -> List[Tuple[str, int, int]]:
+) -> list[tuple[str, int, int]]:
     """
     The Long-Context dataset workload is based on InfiniteBench Code.debug
     """
     if fixed_output_len is not None and fixed_output_len < 4:
         raise ValueError("output_len too small")
 
-    with open(dataset_path, "r") as jsonl_file:
+    with open(dataset_path) as jsonl_file:
         json_list = list(jsonl_file)
     dataset = [json.loads(json_str) for json_str in json_list]
 
@@ -612,7 +613,7 @@ def sample_longcontext_requests(
     random.shuffle(dataset)
 
     # Filter out sequences that are too long or too short
-    filtered_dataset: List[Tuple[str, int, int]] = []
+    filtered_dataset: list[tuple[str, int, int]] = []
     model_max_length = tokenizer.model_max_length
     for i in range(len(dataset)):
         if len(filtered_dataset) == num_requests:
@@ -654,9 +655,9 @@ def sample_longcontext_requests(
 
 
 async def get_request(
-    input_requests: List[Tuple[str, int, int]],
+    input_requests: list[tuple[str, int, int]],
     request_rate: float,
-) -> AsyncGenerator[Tuple[str, int, int], None]:
+) -> AsyncGenerator[tuple[str, int, int], None]:
     for request in input_requests:
         yield request
 
@@ -671,13 +672,13 @@ async def get_request(
 
 
 def calculate_metrics(
-    input_requests: List[Tuple[str, int, int]],
-    outputs: List[RequestFuncOutput],
+    input_requests: list[tuple[str, int, int]],
+    outputs: list[RequestFuncOutput],
     dur_s: float,
     tokenizer: PreTrainedTokenizerBase,
-    gpu_metrics: Dict[str, Any],
-) -> Tuple[BenchmarkMetrics, List[int]]:
-    actual_output_lens: List[int] = []
+    gpu_metrics: dict[str, Any],
+) -> tuple[BenchmarkMetrics, list[int]]:
+    actual_output_lens: list[int] = []
     total_input = 0
     completed = 0
     max_input = 0
@@ -685,9 +686,9 @@ def calculate_metrics(
     max_total = 0
     failures = 0
     failed_responses = []
-    itls: List[float] = []
-    tpots: List[float] = []
-    ttfts: List[float] = []
+    itls: list[float] = []
+    tpots: list[float] = []
+    ttfts: list[float] = []
     for i in range(len(outputs)):
         if outputs[i].success:
             # We use the tokenizer to count the number of output tokens for all
@@ -775,7 +776,7 @@ async def benchmark(
     base_url: str,
     model_id: str,
     tokenizer: PreTrainedTokenizerBase,
-    input_requests: List[Tuple[str, int, int]],
+    input_requests: list[tuple[str, int, int]],
     request_rate: float,
     disable_tqdm: bool,
     do_test_prompt: bool,
@@ -821,7 +822,7 @@ async def benchmark(
         collector.start("benchmark")
 
     benchmark_start_time = time.perf_counter_ns()
-    tasks: List[asyncio.Task] = []
+    tasks: list[asyncio.Task] = []
     async for request in get_request(input_requests, request_rate):
         prompt, prompt_len, output_len = request
         request_func_input = RequestFuncInput(
@@ -839,7 +840,7 @@ async def benchmark(
                 )
             )
         )
-    outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
+    outputs: list[RequestFuncOutput] = await asyncio.gather(*tasks)
 
     if pbar is not None:
         pbar.close()
@@ -1118,7 +1119,7 @@ def main(args: argparse.Namespace):
     # Save config and results to json
     if args.save_result:
         logger.info("saving results")
-        result_json: Dict[str, Any] = {}
+        result_json: dict[str, Any] = {}
 
         # Setup
         current_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
