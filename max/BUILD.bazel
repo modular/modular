@@ -130,9 +130,6 @@ modular_python_binding_py_library(
 modular_py_library(
     name = "max",
     srcs = [],
-    data = [
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
     deps = [
         ":_core",
         "//SDK/lib/API/python/max/driver",
