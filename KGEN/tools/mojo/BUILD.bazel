@@ -152,13 +152,11 @@ pkg_files(
         (
             "mojo",
             [
-                "//KGEN:CompilerRT",
                 "//KGEN:MojoLLDB",
                 "//KGEN:gdb-server",
                 "//KGEN:mojo-lldb",
                 "//KGEN/tools/mojo-repl-entry-point",
                 "//KGEN/tools/mojo-test-executor",
-                "@llvm-project//compiler-rt:orc_rt",
                 "@llvm-project//lldb:lldb-argdumper",
             ],
         ),

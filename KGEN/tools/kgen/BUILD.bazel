@@ -3,10 +3,6 @@ load("//bazel:api.bzl", "modular_cc_binary")
 modular_cc_binary(
     name = "kgen",
     srcs = glob(["*.cpp"]),
-    data = [
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
     linkopts = select({
         "@platforms//os:linux": [
             "-Wl,--export-dynamic-symbol=__jit_debug_*",
