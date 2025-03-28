@@ -130,10 +130,10 @@ def inplace_custom(
     graph = Graph.current
     current_chain = graph._current_chain
 
-    (*results, out_chain), custom_op = graph._add_op_get_op_with_results(
+    (out_chain, *results), custom_op = graph._add_op_get_op_with_results(
         mo.custom,
-        results_=[*out_mlir_types, _ChainType().to_mlir()],
-        operands_=[*values, current_chain],
+        results_=[_ChainType().to_mlir(), *out_mlir_types],
+        operands_=[current_chain, *values],
         symbol=StringAttr.get(name, graph._context),
     )
     graph._update_chain(out_chain)
