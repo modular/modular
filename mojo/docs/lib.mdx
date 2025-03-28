@@ -1,16 +1,127 @@
 ---
-title: Mojo🔥 modules
-sidebar_label: Module index
-hide_table_of_contents: true
-description: A list of all modules in the Mojo standard library.
+title: APIs and reference
+sidebar_label: Overview
+hide_table_of_contents: false
+description: Mojo standard library and other references
 listing:
   - id: stdlib
-    contents: 'stdlib/*/*/index.md'
+    contents: 'stdlib/*/index.md'
     type: grid
     page-size: 99
+  - id: decorators
+    contents: 'manual/decorators/*.md'
+    type: grid
+    page-size: 20
+  - id: cli
+    contents: 'cli/*.md'
+    type: grid
+    page-size: 20
 ---
 
-These are all the modules in the Mojo standard library.
+This section includes the API reference for the Mojo standard library, as well
+as a reference for Mojo decorators and the Mojo CLI.
+
+## Mojo standard library
+
+The Mojo standard library provides nearly everything you'll need for
+writing Mojo programs, including basic data types like
+[`Int`](/mojo/stdlib/builtin/int/Int) and
+[`SIMD`](/mojo/stdlib/builtin/simd/SIMD), collection types like
+[`List`](/mojo/stdlib/collections/list/List), reusable
+[algorithms](/mojo/stdlib/algorithm/) and modules to support
+[GPU programming](/mojo/stdlib/gpu).
+
+### How to read the Mojo API docs
+
+Mojo syntax is covered in detail in the [Mojo manual](/mojo/manual/). Here's a
+quick cheat-sheet on reading struct and function signatures.
+
+#### Arguments
+
+Function arguments appear in parentheses after the function name:
+
+```mojo
+fn example_fn(pos: Int, /, pos_or_kw: Int, *, kw_only: Bool = False):
+    ...
+```
+
+Here's a quick overview of some special syntax in the argument list:
+
+- Slash (`/`): arguments declared before a slash are
+  [positional-only arguments](/mojo/manual/functions#positional-only-and-keyword-only-arguments).
+
+- Star (`*`): a star by itself in place of an argument indicates that the
+  arguments after the star are
+  [keyword-only](/mojo/manual/functions#positional-only-and-keyword-only-arguments).
+
+- An equals sign (`=`) introduces a default value for an
+  [optional argument](/mojo/manual/functions#optional-arguments).
+
+You may also see argument names prefixed with one or two stars (`*`):
+
+```mojo
+def myfunc2(*names, **attributes):
+```
+
+- An argument name prefixed by a single star character, like `*names` identifies
+  a [variadic argument](/mojo/manual/functions/#variadic-arguments).
+
+- An argument name prefixed with a double star, like `**attributes` identifies a
+  [variadic keyword-only argument](/mojo/manual/functions/#variadic-keyword-arguments).
+
+An argument may also be preceded by an _argument convention_, which indicates
+how the value is passed:
+
+```mojo
+fn sort(mut List[String]):
+```
+
+The most common conventions are:
+
+- `read`(default): the callee receives an **immutable reference** to the value.
+- `mut`: the callee receives a **mutable reference** to the value.
+- `owned`: the callee receives ownership of a value.
+
+For details and a complete list of argument conventions, see
+[Argument conventions](/mojo/manual/values/ownership#argument-conventions).
+
+#### Parameters
+
+Mojo structs and functions can take parameters. Parameters are evaluated
+at compilation time, and act as constants at runtime. Parameter lists are
+enclosed in square brackets:
+
+```mojo
+struct ExampleStruct[size: Int, //, thing: Thing[size]]:
+```
+
+Parameters that occur before a double-slash (`//`) in the parameter list are
+[infer-only parameters](/mojo/manual/parameters/#infer-only-parameters). You
+usually don't need to specify infer-only parameters; as the name suggests,
+they're usually inferred.
+
+Like arguments, parameters can be positional-only, keyword-or-positional, or
+keyword-only, and they can be required or optional. The `/`, `*`, and `=`
+characters have the same meaning in parameter lists as they do in argument lists.
+
+### Top-level packages
 
 :::🔥#stdlib
+:::
+
+## Mojo decorators
+
+A Mojo decorator is a higher-order function that modifies or extends the
+behavior of a struct, a function, or some other code. You'll find a list
+of built-in Mojo decorators here.
+
+:::🔥#decorators
+:::
+
+## Mojo CLI reference
+
+The Mojo CLI provides commands to help you develop, run, build,
+and debug Mojo programs.
+
+:::🔥#cli
 :::
