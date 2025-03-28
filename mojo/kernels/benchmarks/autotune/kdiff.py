@@ -16,13 +16,12 @@ import yaml
 def shell(arg_str: str, check: bool = False, verbose=True):
     if not arg_str:
         return None
-    print("$ [%s]" % (arg_str))
+    print(f"$ [{arg_str}]")
     p = subprocess.run(
         arg_str,
         shell=True,
         check=check,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         encoding="utf-8",
     )
     if verbose and p.stderr:

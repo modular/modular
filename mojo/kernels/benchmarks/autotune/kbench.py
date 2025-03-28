@@ -807,7 +807,7 @@ def run(
             output_lines += [LINE]
         ########################################################
 
-    output_lines += ["Total elapsed running time: %.3f (s)" % (t_elapsed_total)]
+    output_lines += [f"Total elapsed running time: {t_elapsed_total:.3f} (s)"]
     output_str = "\n".join([str(x) for x in output_lines])
     print(output_str)
 

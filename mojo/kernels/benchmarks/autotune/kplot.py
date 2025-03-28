@@ -5,9 +5,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Optional
 
 import click
 import numpy as np
@@ -222,7 +223,7 @@ def extract_pivots(x_labels):
     return pivot_columns, non_pivot_columns
 
 
-def append_wrap_fixed_width(lst: List, sep: str, num_lines: int = 2):
+def append_wrap_fixed_width(lst: list, sep: str, num_lines: int = 2):
     s = []
     result = []
     current_len = 0
@@ -239,12 +240,12 @@ def append_wrap_fixed_width(lst: List, sep: str, num_lines: int = 2):
 
 
 def parse_and_plot(
-    path_list: List[Path],
-    label_list: List[str],
+    path_list: list[Path],
+    label_list: list[str],
     key_col: str,
     target_col: str = "1",
     compare: bool = False,
-    pivots: List[str] = [],
+    pivots: list[str] = [],
     cfg: PlotConfig = PlotConfig(),
     force: bool = False,
 ) -> None:
@@ -449,7 +450,7 @@ def parse_and_plot(
 @click.argument("input_files", nargs=-1, type=click.UNPROCESSED)
 def cli(
     input_files: click.UNPROCESSED,
-    label_list: List[str],
+    label_list: list[str],
     output_prefix: Optional[str],
     plot_col: str,
     key: str,
