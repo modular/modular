@@ -193,7 +193,7 @@ def link_mojo_archive_to_dylib(
     clang_cmd = [
         "clang++",
         "-shared",
-        "-Wl,-rpath,{}".format(os.path.dirname(mojo_libs)),
+        f"-Wl,-rpath,{os.path.dirname(mojo_libs)}",
     ]
     if platform.system() == "Linux":
         clang_cmd.extend(

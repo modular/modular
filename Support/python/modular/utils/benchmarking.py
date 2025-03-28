@@ -8,9 +8,10 @@ __doc__ = """"
 Benchmarking Utility Library
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Optional
 
 
 @dataclass
@@ -40,7 +41,7 @@ class CompilePerfDetails:
         if not time_profile or not time_profile.exists():
             return CompilePerfDetails()
 
-        with open(time_profile, "r") as profile:
+        with open(time_profile) as profile:
             return CompilePerfDetails.from_lines(profile)
 
     @classmethod
@@ -82,7 +83,7 @@ class BenchmarkResult:
         Args:
             summary_path (Path): Path to logfile to be parsed.
         """
-        with open(summary_path, "r") as summary:
+        with open(summary_path) as summary:
             return BenchmarkResult.from_lines(summary)
 
     @classmethod
@@ -121,6 +122,6 @@ class BenchmarkResult:
                 result.percentile_9990 = get_value(line)
         return result
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Return dictionary representation of dataclass"""
         return {x.name: getattr(self, x.name) for x in fields(self)}

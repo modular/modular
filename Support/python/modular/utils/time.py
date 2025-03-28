@@ -8,10 +8,11 @@ __doc__ = """
 Utility Library for Parsing Output from /usr/bin/time
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from platform import system
-from typing import Iterable, Optional
+from typing import Optional
 
 THIS_OS = system()
 
@@ -39,7 +40,7 @@ class RUsageResult:
             time_log_path (Path): Path to logfile to be parsed.
             os (str): name of operating system (indicates log format).
         """
-        with open(time_log_path, "r") as log:
+        with open(time_log_path) as log:
             return RUsageResult.from_lines(log, os)
 
     @classmethod

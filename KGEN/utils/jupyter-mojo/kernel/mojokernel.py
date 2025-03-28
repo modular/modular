@@ -20,7 +20,7 @@ import traceback
 from configparser import ConfigParser
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from ipykernel.kernelapp import IPKernelApp
 from ipykernel.kernelbase import Kernel
@@ -183,7 +183,7 @@ class MojoKernel(Kernel):
         }
         self.banner = ""
         self.auto_gen_cell_id_count = 0
-        super(MojoKernel, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         # Load the MojoJupyter library, and initialize the result types of the
         # functions we use.
@@ -265,7 +265,7 @@ class MojoKernel(Kernel):
         code: str,
         silent: bool = False,
         store_history: bool = True,
-        user_expressions: Optional[Dict[str, Any]] = None,
+        user_expressions: Optional[dict[str, Any]] = None,
         allow_stdin: bool = False,
         *,
         cell_id: Optional[str] = None,

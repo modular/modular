@@ -17,7 +17,7 @@ of third-party libraries (e.g. TensorFlow).
 from logging import *  # noqa: F403
 from logging import getLogger as _getLogger
 from types import TracebackType
-from typing import Any, Optional, Type
+from typing import Any, Optional
 
 
 def getLogger(name: Optional[str] = None) -> Logger:  # type: ignore
@@ -72,7 +72,7 @@ class LoggingContext:
 
     def __exit__(
         self,
-        exception_type: Optional[Type[BaseException]],
+        exception_type: Optional[type[BaseException]],
         exception_value: Optional[BaseException],
         traceback: Optional[TracebackType],
     ) -> None:
@@ -84,4 +84,4 @@ class LoggingContext:
             self.handler.close()
 
 
-del Any, Optional, TracebackType, Type
+del Any, Optional, TracebackType

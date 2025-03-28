@@ -15,7 +15,6 @@ import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Tuple
 from zipfile import ZipFile
 
 extension_dir = Path(__file__).parent.parent
@@ -71,8 +70,7 @@ def get_current_version(extension_name: str) -> str:
     # Grab the currently released version from the marketplace.
     vsce_output: str = subprocess.run(
         ["vsce", "show", extension_name],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=True,
     ).stdout.decode("utf-8")
 
@@ -83,9 +81,9 @@ def get_current_version(extension_name: str) -> str:
     return m.group(1)
 
 
-def get_publisher_and_extension_name() -> Tuple[str, str]:
+def get_publisher_and_extension_name() -> tuple[str, str]:
     """Grab the extension name and publisher from the package.json."""
-    with open(f"{extension_dir}/package.json", "r") as f:
+    with open(f"{extension_dir}/package.json") as f:
         package_json = f.read()
 
     # Grab the publisher.

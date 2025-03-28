@@ -4,14 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Iterable
 from pathlib import Path, PosixPath, WindowsPath
 from typing import (
     IO,
     Any,
     BinaryIO,
-    Iterable,
     Optional,
-    Type,
     TypeVar,
     Union,
 )
@@ -86,8 +85,8 @@ class YAML(yaml.YAML):
 
 
 def represent_as_string(
-    classes: Iterable[Type[Any]],
-    representer: Type[yaml.BaseRepresenter] = NoAliasRepresenter,
+    classes: Iterable[type[Any]],
+    representer: type[yaml.BaseRepresenter] = NoAliasRepresenter,
 ):
     """Configure the yaml parser to serialize classes as strings.
 

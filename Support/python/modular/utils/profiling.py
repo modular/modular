@@ -16,14 +16,14 @@ from copy import deepcopy as dcopy
 from functools import cached_property
 from pathlib import Path
 from re import sub
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 from modular.utils.logging import warning
 
-EventDict = Dict[str, Any]
-TraceDict = Dict[str, Any]
-VersionInfoDict = Dict[str, Any]
-EventList = List[EventDict]
+EventDict = dict[str, Any]
+TraceDict = dict[str, Any]
+VersionInfoDict = dict[str, Any]
+EventList = list[EventDict]
 
 # Perfetto Trace Event Format doc:
 # https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
@@ -93,7 +93,7 @@ class TimeTrace:
         Returns:
             The constructed TimeTrace.
         """
-        with open(tracefile, "r") as infile:
+        with open(tracefile) as infile:
             trace = json.load(infile)
         trace.update({"filename": tracefile})
         return cls.from_dict(trace, **kwargs)
@@ -164,7 +164,7 @@ class TimeTrace:
         return self
 
     def annotate(
-        self, func: Callable[[EventDict], Dict[str, Any]]
+        self, func: Callable[[EventDict], dict[str, Any]]
     ) -> "TimeTrace":
         """Apply a function and inline outputs into 'args'."""
         for ev in self.trace["traceEvents"]:
@@ -174,8 +174,8 @@ class TimeTrace:
 
     def filter_events(
         self,
-        include_fragments: Optional[List[str]] = None,
-        exclude_fragments: Optional[List[str]] = None,
+        include_fragments: Optional[list[str]] = None,
+        exclude_fragments: Optional[list[str]] = None,
     ) -> "TimeTrace":
         """Select and remove events with names that match the given fragments."""
         local_include = (
@@ -214,7 +214,7 @@ class TimeTrace:
         return self.get_process_name_event()["pid"]
 
     @classmethod
-    def _get_level_list(cls, level_string: str) -> List[int]:
+    def _get_level_list(cls, level_string: str) -> list[int]:
         """
         Convert given level string to level list.
         Args:
@@ -306,7 +306,7 @@ class TimeTrace:
         return (start_time, end_time)
 
     @staticmethod
-    def parse_details(as_str: str) -> Dict[str, str]:
+    def parse_details(as_str: str) -> dict[str, str]:
         """Parse the details string into a (possibly empty) dict."""
         if as_str is None:
             return {}
@@ -323,7 +323,7 @@ class TimeTrace:
         return {kv[0]: kv[1] for kv in items if len(kv) == 2}
 
     @staticmethod
-    def parse_name(event_name: str) -> Dict[str, Any]:
+    def parse_name(event_name: str) -> dict[str, Any]:
         """Parse the kernel name to extract the kernel type."""
         # tasks have the format /task:{id}
         parent_name = event_name.split("/")[0]
