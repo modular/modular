@@ -1437,7 +1437,11 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   FailureOr<PValue> result = OverloadSet::canConstructType(
       requiredType, {{value}}, value.expr, declScope,
       /*isImplicitConversion=*/true);
-  return cacheAndReturnVal(succeeded(result) && result.value());
+  bool isConvertible = succeeded(result) && result.value();
+  // Must cache the overall value type, not just its stripped down rvType.
+  shared.cacheImplicitConvertibility(value.ir.getType(), requiredType,
+                                     isConvertible);
+  return isConvertible;
 }
 
 /// This emits an implicit conversion to the specified type if the types
