@@ -30,7 +30,7 @@ from typing import (
 )
 
 import torch
-from max.driver import CPU, Device, Tensor, load_devices
+from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import (
@@ -470,8 +470,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             self._grammar_compiler = xgr.GrammarCompiler(tokenizer_info)
 
         # Initialize Session.
-        session_devices = list(set(self._devices + [CPU()]))
-        session = InferenceSession(devices=session_devices)
+        session = InferenceSession(devices=self._devices)
 
         # Enable profiling if enabled.
         session.gpu_profiling(
