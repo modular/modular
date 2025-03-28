@@ -190,37 +190,22 @@ alias NoGPU = Info(
 # https://developer.nvidia.com/cuda-toolkit-archive.
 
 
-fn _get_a100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+fn _get_a100_target() -> __mlir_type.`!kgen.target`:
     """
     Creates an MLIR target configuration for NVIDIA A100 GPU.
-
-    Parameters:
-        index_bit_width: The bit width for indices (32 or 64).
 
     Returns:
         MLIR target configuration for A100.
     """
 
-    @parameter
-    if index_bit_width == 64:
-        return __mlir_attr[
-            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-            `arch = "sm_80", `,
-            `features = "+ptx81,+sm_80", `,
-            `tune_cpu = "sm_80", `,
-            `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-            `simd_bit_width = 128,`,
-            `index_bit_width = 64`,
-            `> : !kgen.target`,
-        ]
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_80", `,
         `features = "+ptx81,+sm_80", `,
         `tune_cpu = "sm_80", `,
-        `data_layout="e-p:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
-        `index_bit_width = 32`,
+        `index_bit_width = 64`,
         `> : !kgen.target`,
     ]
 
@@ -258,37 +243,22 @@ alias A100 = Info(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_a10_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+fn _get_a10_target() -> __mlir_type.`!kgen.target`:
     """
     Creates an MLIR target configuration for NVIDIA A10 GPU.
-
-    Parameters:
-        index_bit_width: The bit width for indices (32 or 64).
 
     Returns:
         MLIR target configuration for A10.
     """
 
-    @parameter
-    if index_bit_width == 64:
-        return __mlir_attr[
-            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-            `arch = "sm_86", `,
-            `features = "+ptx81,+sm_86", `,
-            `tune_cpu = "sm_86", `,
-            `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-            `simd_bit_width = 128,`,
-            `index_bit_width = 64`,
-            `> : !kgen.target`,
-        ]
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_86", `,
         `features = "+ptx81,+sm_86", `,
         `tune_cpu = "sm_86", `,
-        `data_layout="e-p:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
-        `index_bit_width = 32`,
+        `index_bit_width = 64`,
         `> : !kgen.target`,
     ]
 
@@ -326,37 +296,22 @@ alias A10 = Info(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_orin_nano_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+fn _get_orin_nano_target() -> __mlir_type.`!kgen.target`:
     """
     Creates an MLIR target configuration for NVIDIA Jetson Orin Nano GPU.
-
-    Parameters:
-        index_bit_width: The bit width for indices (32 or 64).
 
     Returns:
         MLIR target configuration for Orin Nano.
     """
 
-    @parameter
-    if index_bit_width == 64:
-        return __mlir_attr[
-            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-            `arch = "sm_87", `,
-            `features = "+ptx81,+sm_87", `,
-            `tune_cpu = "sm_87", `,
-            `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-            `simd_bit_width = 128,`,
-            `index_bit_width = 64`,
-            `> : !kgen.target`,
-        ]
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_87", `,
         `features = "+ptx81,+sm_87", `,
         `tune_cpu = "sm_87", `,
-        `data_layout="e-p:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
-        `index_bit_width = 32`,
+        `index_bit_width = 64`,
         `> : !kgen.target`,
     ]
 
@@ -395,37 +350,22 @@ alias OrinNano = Info(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_l4_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+fn _get_l4_target() -> __mlir_type.`!kgen.target`:
     """
     Creates an MLIR target configuration for NVIDIA L4 GPU.
-
-    Parameters:
-        index_bit_width: The bit width for indices (32 or 64).
 
     Returns:
         MLIR target configuration for L4.
     """
 
-    @parameter
-    if index_bit_width == 64:
-        return __mlir_attr[
-            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-            `arch = "sm_89", `,
-            `features = "+ptx81,+sm_89", `,
-            `tune_cpu = "sm_89", `,
-            `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-            `simd_bit_width = 128,`,
-            `index_bit_width = 64`,
-            `> : !kgen.target`,
-        ]
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_89", `,
         `features = "+ptx81,+sm_89", `,
         `tune_cpu = "sm_89", `,
-        `data_layout="e-p:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
-        `index_bit_width = 32`,
+        `index_bit_width = 64`,
         `> : !kgen.target`,
     ]
 
@@ -463,37 +403,22 @@ alias L4 = Info(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+fn _get_h100_target() -> __mlir_type.`!kgen.target`:
     """
     Creates an MLIR target configuration for NVIDIA H100 GPU.
-
-    Parameters:
-        index_bit_width: The bit width for indices (32 or 64).
 
     Returns:
         MLIR target configuration for H100.
     """
 
-    @parameter
-    if index_bit_width == 64:
-        return __mlir_attr[
-            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-            `arch = "sm_90a", `,
-            `features = "+ptx85,+sm_90a", `,
-            `tune_cpu = "sm_90a", `,
-            `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-            `index_bit_width = 64,`,
-            `simd_bit_width = 128`,
-            `> : !kgen.target`,
-        ]
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_90a", `,
         `features = "+ptx85,+sm_90a", `,
         `tune_cpu = "sm_90a", `,
-        `data_layout="e-p:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
-        `simd_bit_width = 128,`,
-        `index_bit_width = 32`,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
@@ -532,30 +457,23 @@ alias H100 = Info(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+fn _get_mi300x_target() -> __mlir_type.`!kgen.target`:
     """
     Creates an MLIR target configuration for AMD MI300X GPU.
-
-    Parameters:
-        index_bit_width: The bit width for indices (32 or 64).
 
     Returns:
         MLIR target configuration for MI300X.
     """
 
-    @parameter
-    if index_bit_width == 64:
-        return __mlir_attr[
-            `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
-            `arch = "gfx942", `,
-            `features = "", `,
-            `data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
-            `index_bit_width = 64,`,
-            `simd_bit_width = 128`,
-            `> : !kgen.target`,
-        ]
-    debug_assert(False, "mi300x with 32bit config is not currently supported")
-    return _get_mi300x_target[64]()
+    return __mlir_attr[
+        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `arch = "gfx942", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
 
 
 alias MI300X = Info(
@@ -778,29 +696,26 @@ struct Info(Writable):
     var flops: Flops
     """Floating-point operations per second capabilities for different precisions."""
 
-    fn target[index_bit_width: Int = 64](self) -> __mlir_type.`!kgen.target`:
+    fn target(self) -> __mlir_type.`!kgen.target`:
         """
         Gets the MLIR target configuration for this GPU.
-
-        Parameters:
-            index_bit_width: The bit width for indices (default: 64).
 
         Returns:
             MLIR target configuration for the GPU.
         """
         if self.name == "A100":
-            return _get_a100_target[index_bit_width]()
+            return _get_a100_target()
         if self.name == "A10":
-            return _get_a10_target[index_bit_width]()
+            return _get_a10_target()
         if self.name == "L4":
-            return _get_l4_target[index_bit_width]()
+            return _get_l4_target()
         if self.name == "H100":
-            return _get_h100_target[index_bit_width]()
+            return _get_h100_target()
         if self.name == "MI300X":
-            return _get_mi300x_target[index_bit_width]()
+            return _get_mi300x_target()
         if self.name == "":
             return _get_empty_target()
-        return _get_a100_target[index_bit_width]()
+        return _get_a100_target()
 
     @staticmethod
     fn from_target[target: __mlir_type.`!kgen.target`]() -> Self:
