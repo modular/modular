@@ -322,6 +322,75 @@ alias A10 = Info(
 )
 
 # ===-----------------------------------------------------------------------===#
+# Jetson Orin Nano
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_orin_nano_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA Jetson Orin Nano GPU.
+
+    Parameters:
+        index_bit_width: The bit width for indices (32 or 64).
+
+    Returns:
+        MLIR target configuration for Orin Nano.
+    """
+
+    @parameter
+    if index_bit_width == 64:
+        return __mlir_attr[
+            `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+            `arch = "sm_87", `,
+            `features = "+ptx81,+sm_87", `,
+            `tune_cpu = "sm_87", `,
+            `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+            `simd_bit_width = 128,`,
+            `index_bit_width = 64`,
+            `> : !kgen.target`,
+        ]
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_87", `,
+        `features = "+ptx81,+sm_87", `,
+        `tune_cpu = "sm_87", `,
+        `data_layout="e-p:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `simd_bit_width = 128,`,
+        `index_bit_width = 32`,
+        `> : !kgen.target`,
+    ]
+
+
+alias OrinNano = Info(
+    name="Orin Nano",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="ampere",
+    compile_options="nvptx-short-ptr=true",
+    compute=8.7,
+    version="sm_87",
+    sm_count=8,
+    warp_size=32,
+    threads_per_sm=1536,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=167936,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=16,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+    flops=Flops(fp16=19, tf32=10.5, i8=38, i4=77),
+)
+
+
+# ===-----------------------------------------------------------------------===#
 # L4
 # ===-----------------------------------------------------------------------===#
 
@@ -1195,7 +1264,7 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
         Info instance for the specified compute capability.
     """
     constrained[
-        compute_capability in (0, 80, 86, 89, 90, 94),
+        compute_capability in (0, 80, 86, 87, 89, 90, 94),
         "invalid compute capability",
     ]()
 
@@ -1206,6 +1275,8 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
         return A100
     elif compute_capability == 86:
         return A10
+    elif compute_capability == 87:
+        return OrinNano
     elif compute_capability == 89:
         return L4
     elif compute_capability == 90:
@@ -1235,6 +1306,8 @@ fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
         return _get_info_from_compute_capability[80]()
     if compute_capability == 86:
         return _get_info_from_compute_capability[86]()
+    if compute_capability == 87:
+        return _get_info_from_compute_capability[87]()
     if compute_capability == 89:
         return _get_info_from_compute_capability[89]()
     if compute_capability == 90:
@@ -1268,11 +1341,13 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
             "cuda",
             "80",
             "86",
+            "87",
             "89",
             "90",
             "90a",
             "nvidia:80",
             "nvidia:86",
+            "nvidia:87",
             "nvidia:89",
             "nvidia:90",
             "nvidia:90a",
@@ -1289,6 +1364,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
         return A100
     elif target_arch in ("86", "nvidia:86"):
         return A10
+    elif target_arch in ("87", "nvidia:87"):
+        return OrinNano
     elif target_arch in ("89", "nvidia:89"):
         return L4
     elif target_arch in ("90", "90a", "nvidia:90", "nvidia:90a"):
