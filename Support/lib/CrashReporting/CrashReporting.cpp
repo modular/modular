@@ -7,8 +7,8 @@
 #include "Support/CrashReporting/CrashReporting.h"
 
 #include "Config/Version.h"
+#include "Support/Configuration.h"
 #include "Support/ErrorOr.h"
-#include "Support/Settings/Settings.h"
 
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
@@ -26,22 +26,20 @@ static constexpr llvm::StringLiteral kDefaultURL =
     "https://crash-reporting.modular.com";
 
 std::filesystem::path
-M::getCrashDatabasePath(Settings *settings,
+M::getCrashDatabasePath(Config *settings,
                         const std::filesystem::path &dataFolder) {
   if (settings) {
-    auto *setting = settings->get("crash_reporting.database_path");
-    auto path = llvm::dyn_cast_if_present<StringRef>(setting);
+    auto path = settings->getValue("crash_reporting.database_path");
     if (!path.empty())
       return std::string_view(path);
   }
   return dataFolder / "crashdb";
 }
 
-ErrorOr<std::filesystem::path> M::getCrashpadHandlerPath(Settings *settings) {
+ErrorOr<std::filesystem::path> M::getCrashpadHandlerPath(Config *settings) {
   StringRef program("");
   if (settings) {
-    auto *handlerPath = settings->get("crash_reporting.handler_path");
-    program = llvm::dyn_cast_if_present<StringRef>(handlerPath);
+    program = settings->getValue("crash_reporting.handler_path");
   }
   std::string foundProgram;
   if (program.empty()) {
@@ -58,9 +56,9 @@ ErrorOr<std::filesystem::path> M::getCrashpadHandlerPath(Settings *settings) {
   return std::string_view(program);
 }
 
-static ErrorOrSuccess tryInitCrashpad(StringRef program, Settings *settings) {
+static ErrorOrSuccess tryInitCrashpad(StringRef program, Config *settings) {
   if (settings) {
-    bool enabled = settings->getBool("crash_reporting.enabled", true);
+    bool enabled = settings->getValueAsBool("crash_reporting.enabled", true);
     if (!enabled)
       return success();
   }
@@ -84,8 +82,7 @@ static ErrorOrSuccess tryInitCrashpad(StringRef program, Settings *settings) {
   std::filesystem::path handlerPath = std::move(*handlerPathOr);
   StringRef url("");
   if (settings) {
-    auto *urlSetting = settings->get("crash_reporting.url");
-    url = llvm::dyn_cast_if_present<StringRef>(urlSetting);
+    url = settings->getValue("crash_reporting.url");
   }
   std::string defaultURL;
 
@@ -127,7 +124,7 @@ static ErrorOrSuccess tryInitCrashpad(StringRef program, Settings *settings) {
   return success();
 }
 
-void M::initCrashpadForProgram(StringRef program, Settings *settings) {
+void M::initCrashpadForProgram(StringRef program, Config *settings) {
   if (auto error = tryInitCrashpad(program, settings))
     llvm::errs() << "Failed to initialize Crashpad.  "
                     "Crash reporting will not be available.  "

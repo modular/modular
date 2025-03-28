@@ -13,8 +13,8 @@
 #ifndef SUPPORT_CRASHREPORTING_H
 #define SUPPORT_CRASHREPORTING_H
 
+#include "Support/Configuration.h"
 #include "Support/ForwardDecls.h"
-#include "Support/Settings/Settings.h"
 #include <filesystem>
 
 namespace M {
@@ -26,7 +26,7 @@ class Config;
 /// If specified in the configuration, that takes precedence.  Otherwise, we
 /// look alongside the running executable, or failing that, anywhere on the
 /// PATH.
-ErrorOr<std::filesystem::path> getCrashpadHandlerPath(Settings *settings);
+ErrorOr<std::filesystem::path> getCrashpadHandlerPath(Config *settings);
 
 /// Pick a location to store crash data in.
 ///
@@ -34,7 +34,7 @@ ErrorOr<std::filesystem::path> getCrashpadHandlerPath(Settings *settings);
 /// option, but will fall back to a "crashdb" directory inside of the modular
 /// home directory.
 std::filesystem::path
-getCrashDatabasePath(Settings *settings, const std::filesystem::path &dataPath);
+getCrashDatabasePath(Config *settings, const std::filesystem::path &dataPath);
 
 /// Initialize crash reporting for currently running executable.
 ///
@@ -50,7 +50,7 @@ getCrashDatabasePath(Settings *settings, const std::filesystem::path &dataPath);
 /// configuration). The program parameter is used for metadata when posting to
 /// the crashpad API, which allows for clustering crashes server-side for
 /// analysis; this should be simple and fixed (e.g. "mojo" is a good name).
-void initCrashpadForProgram(StringRef program, Settings *settings = nullptr);
+void initCrashpadForProgram(StringRef program, Config *settings = nullptr);
 
 /// Generate a crash dump with the current state of the process, without
 /// actually causing the current process to crash and terminate.

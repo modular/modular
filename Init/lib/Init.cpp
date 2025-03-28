@@ -11,8 +11,8 @@
 #include "Support/Context.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/Frameworks/StatsReport.h"
+#include "Support/HTTP/HTTPClient.h"
 #include "Support/MArchTarget/Host.h"
-#include "Support/Settings/Settings.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/Threading.h"
@@ -76,19 +76,19 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
 
   // Create the settings object. This will refresh the underlying entitlement
   // store if required by the provided policy.
-  auto settingsOr = Settings::open();
+  auto settingsOr = Config::open();
   if (settingsOr.isError())
     return settingsOr.takeError();
-  Settings settings = std::move(*settingsOr);
+  Config settings = std::move(*settingsOr);
 
   // If we have a certificate authority, set that on the HTTPContext.
-  StringRef caInfo = settings.get<StringRef>("ssl.cainfo");
+  StringRef caInfo = settings.getValue("ssl.cainfo");
   if (!caInfo.empty())
     httpCtx->setCAInfo(std::string(caInfo));
 
   // Enable crash logging, if appropriate.
   if (!options.forceDisableCrashReporting &&
-      settings.getBool("crash_reporting.enabled", true)) {
+      settings.getValueAsBool("crash_reporting.enabled", true)) {
     initCrashpadForProgram(programName, &settings);
     registerSignalHandler(programName);
   }
@@ -130,7 +130,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   }
 
   // Finally move the settings.
-  ctx->emplace<Settings>(std::move(settings));
+  ctx->emplace<Config>(std::move(settings));
 
   // Return the useable context.
   return std::move(ctx);

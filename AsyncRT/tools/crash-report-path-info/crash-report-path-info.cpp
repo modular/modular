@@ -52,13 +52,13 @@ int main(int argc, char **argv) {
 
   switch (clOptions.property) {
   case Property::CrashDBPath: {
-    auto path = getCrashDatabasePath((*ctxOr)->get<Settings>(), *modularHomeOr);
+    auto path = getCrashDatabasePath((*ctxOr)->get<Config>(), *modularHomeOr);
     llvm::outs() << path.native() << '\n';
     break;
   }
   case Property::HandlerPath:
     std::filesystem::path path;
-    if (auto pathOr = getCrashpadHandlerPath((*ctxOr)->get<Settings>())) {
+    if (auto pathOr = getCrashpadHandlerPath((*ctxOr)->get<Config>())) {
       llvm::errs() << "could not determine crashpad handler path: "
                    << pathOr.getError() << '\n';
       return EXIT_FAILURE;

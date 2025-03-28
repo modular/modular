@@ -14,7 +14,7 @@
 #include <filesystem>
 
 namespace M {
-class Settings;
+class Config;
 } // namespace M
 
 namespace M::KGEN {
@@ -117,11 +117,13 @@ public:
 
 private:
   MojoConfig(Config config) : configSource(std::move(config)) {}
-  MojoConfig(Settings *settings) : configSource(settings) {}
+  MojoConfig(Config *settings) : configSource(settings) {}
 
   StringRef getValue(StringLiteral key);
 
-  std::variant<Config, Settings *> configSource;
+  // This is a little silly, but currently it's used to represent owned vs
+  // shared config.
+  std::variant<Config, Config *> configSource;
 };
 } // namespace M::KGEN
 

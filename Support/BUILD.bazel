@@ -236,7 +236,6 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Configuration",
-        ":Settings",
         "@crashpad//:client",
     ],
 )
@@ -480,7 +479,6 @@ modular_cc_library(
         ":Filesystem",
         ":HTTP",
         ":MArchTarget",
-        ":Settings",
         "@io_opentelemetry_cpp//api",
         "@io_opentelemetry_cpp//exporters/ostream:ostream_log_record_exporter",
         "@io_opentelemetry_cpp//exporters/ostream:ostream_metric_exporter",
@@ -699,16 +697,6 @@ modular_cc_library(
         ":DebugInfoTypeInterfaces",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//mlir:FunctionInterfaces",
-    ],
-)
-
-modular_cc_library(
-    name = "Settings",
-    srcs = glob(["lib/Settings/*.cpp"]),
-    hdrs = glob(["include/Support/Settings/*.h"]),
-    deps = [
-        ":Configuration",
-        ":HTTP",
     ],
 )
 

@@ -202,7 +202,7 @@ key3 = value
 }
 
 TEST(Configuration, BooleanValues) {
-  using R = ErrorOr<bool>;
+  using R = bool;
   Config cfg;
   EXPECT_EQ(R(false), cfg.getValueAsBool("example", false));
   EXPECT_EQ(R(true), cfg.getValueAsBool("example", true));
@@ -217,9 +217,6 @@ TEST(Configuration, BooleanValues) {
     EXPECT_EQ(R(true), cfg.getValueAsBool("example", true));
   }
   cfg.setValue("example", "maybe");
-  auto result = cfg.getValueAsBool("example", false);
-  EXPECT_TRUE(result.isError());
-  EXPECT_STREQ("Unable to interpret configuration key 'example' with value "
-               "'maybe' as boolean",
-               result.getError());
+  bool result = cfg.getValueAsBool("example", false);
+  EXPECT_FALSE(result);
 }

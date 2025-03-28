@@ -8,9 +8,9 @@
 #define ASYNCRT_INIT_INIT_H
 
 #include "AsyncRT/Runtime/Runtime.h"
+#include "Support/Configuration.h"
 #include "Support/Context.h"
 #include "Support/ErrorOr.h"
-#include "Support/Settings/Setting.h"
 #include "Support/Telemetry/Telemetry.h"
 
 namespace M {
@@ -47,7 +47,7 @@ private:
 /// save them in the context and return. This is expected to be the normal
 /// path for context creation.
 ///
-/// The context will come loaded with a TelemetryContext, Settings and other
+/// The context will come loaded with a TelemetryContext, Config and other
 /// basic common functionality. The function will also initialize crash
 /// reporting with the given programName.
 ErrorOr<ContextRef> createContext(StringRef programName,
