@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# UNSUPPORTED: H100-GPU
 # RUN: not --crash %mojo-no-debug %s
 
 from gpu.host import DeviceContext
