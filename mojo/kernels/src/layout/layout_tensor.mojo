@@ -5848,18 +5848,29 @@ fn copy_local_to_dram[
             src.ptr.offset(src_idx),
             src.runtime_element_layout,
         )
+
         alias dst_element_type = Element[dst.dtype, dst.element_layout]
 
-        @parameter
-        for i in range(dst_fragments.element_layout.size()):
-            alias element_offset = dst_fragments.element_layout(i)
-            var src = src_element.element_data[i].cast[dst.dtype]()
+        alias element_stride = dst_fragments.element_layout.stride[1].value()
 
+        @parameter
+        if element_stride == 1:
             buffer_store(
                 descriptor,
-                Int32(dst_idx + element_offset),
-                src,
+                Int32(dst_idx),
+                src_element.element_data.cast[dst.dtype](),
             )
+        else:
+
+            @parameter
+            for i in range(dst_fragments.element_layout.size()):
+                alias element_offset = dst_fragments.element_layout(i)
+                var src = src_element.element_data[i].cast[dst.dtype]()
+                buffer_store(
+                    descriptor,
+                    Int32(dst_idx + element_offset),
+                    src,
+                )
 
 
 @always_inline("nodebug")
