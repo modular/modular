@@ -2096,7 +2096,6 @@ struct DeviceContext(CollectionElement):
         device_id: Int = 0,
         *,
         api: String = String(Self.device_api),
-        buffer_cache_size: UInt = 0,
     ) raises:
         """Constructs a `DeviceContext` for the specified device.
 
@@ -2109,9 +2108,6 @@ struct DeviceContext(CollectionElement):
                 the default accelerator (device 0).
             api: Requested device API (for example, "cuda" or "hip"). Defaults to the
                 device API specified by the DeviceContext class.
-            buffer_cache_size: Amount of space to pre-allocate for device buffers,
-                in bytes. Setting this to a non-zero value can improve performance
-                by reducing allocation overhead for frequently used buffer sizes.
 
         Raises:
             If device initialization fails or the specified device is not available.
@@ -2124,8 +2120,8 @@ struct DeviceContext(CollectionElement):
         # Create a context for the default GPU
         var ctx = DeviceContext()
 
-        # Create a context for a specific GPU (device 1) with buffer caching
-        var ctx2 = DeviceContext(1, buffer_cache_size=1024*1024)
+        # Create a context for a specific GPU (device 1)
+        var ctx2 = DeviceContext(1)
         ```
         """
         # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *api, int id)
@@ -2137,12 +2133,10 @@ struct DeviceContext(CollectionElement):
                 UnsafePointer[_DeviceContextPtr],
                 _CharPtr,
                 Int32,
-                _SizeT,
             ](
                 UnsafePointer.address_of(result),
                 api.unsafe_ptr(),
                 device_id,
-                buffer_cache_size,
             )
         )
         self._handle = result
