@@ -43,11 +43,9 @@ modular_py_binary(
         ],
         data = [
             "//GenericML:MGPRT",
-            "//KGEN:CompilerRT",
             "//ModularFramework/tools/mof",
             "//SDK/integration-test/pipelines/python/llama3/testdata",
             "//Support/tools/system-info",
-            "@llvm-project//compiler-rt:orc_rt",
             "@test_llama_golden",
         ],
         env = {
@@ -103,12 +101,10 @@ modular_py_test(
     ],
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//ModularFramework/tools/mof",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "//Support/tools/system-info",
-        "@llvm-project//compiler-rt:orc_rt",
         "@test_llama_golden",
         "@torch_llama_golden",
     ],

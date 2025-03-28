@@ -44,7 +44,6 @@ modular_py_test(
     srcs = glob(["gpu_tests/**/*.py"]),
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:ATenRT",
@@ -54,7 +53,6 @@ modular_py_test(
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
         "//SDK/lib/API/python/tests/graph/testdata",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
@@ -87,7 +85,6 @@ modular_py_test(
     srcs = glob(["multi_gpu_tests/**/*.py"]),
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:ATenRT",
@@ -97,7 +94,6 @@ modular_py_test(
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
         "//SDK/lib/API/python/tests/graph/testdata",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",

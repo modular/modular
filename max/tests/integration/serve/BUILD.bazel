@@ -9,9 +9,7 @@ modular_py_test(
     ] + glob(["*_cpu.py"]),
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
-        "@llvm-project//compiler-rt:orc_rt",
         "@test_llama_golden",
     ],
     env = {
@@ -43,10 +41,8 @@ modular_py_test(
     ],
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
-        "@llvm-project//compiler-rt:orc_rt",
         "@test_llama_golden",
     ],
     env = {

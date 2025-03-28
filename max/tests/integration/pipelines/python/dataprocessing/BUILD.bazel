@@ -6,11 +6,7 @@ modular_py_test(
     name = "tests",
     size = "large",
     srcs = glob(["**/*.py"]),
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
+    data = ["//GenericML:MGPRT"],
     deps = [
         "//SDK/lib/API/python/max/pipelines/dataprocessing",
         requirement("hypothesis"),

@@ -12,9 +12,7 @@ modular_py_test(
     srcs = glob(["**/test_*.py"]),
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     tags = [
         "manual",  # TODO(AITLIB-293)

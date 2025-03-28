@@ -26,11 +26,9 @@ modular_py_binary(
     srcs = ["verify_pipelines.py"],
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3:verify",
-        "@llvm-project//compiler-rt:orc_rt",
         "@torch_llama-gptq_golden",
         "@torch_llama3-vision_golden",
         "@torch_llama_golden",
@@ -61,11 +59,7 @@ modular_py_test(
     name = "test_pipelines_cli",
     size = "enormous",
     srcs = ["test_pipelines_cli.py"],
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
+    data = ["//GenericML:MGPRT"],
     tags = [
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",
@@ -82,11 +76,7 @@ modular_py_test(
     name = "test_pipelines_cli_gpu",
     size = "enormous",
     srcs = ["test_pipelines_cli_gpu.py"],
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
+    data = ["//GenericML:MGPRT"],
     exec_properties = {
         # Ensure the test has at least 24GB of GPU memory available.
         "resources:gpu-memory": "24",
@@ -139,12 +129,10 @@ modular_py_binary(
     ],
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "//Support/tools/system-info",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
@@ -185,11 +173,7 @@ modular_py_test(
     name = "test_generate_llm_logits_gpu",
     size = "medium",
     srcs = ["test_generate_llm_logits_gpu.py"],
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
+    data = ["//GenericML:MGPRT"],
     exec_properties = {
         # Ensure the test has at least 24GB of GPU memory available.
         "resources:gpu-memory": "24",
@@ -224,11 +208,9 @@ modular_py_binary(
     data = [
         "run_lm_eval.py",
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//KGEN:ptxas",
         "//SDK/integration-test/pipelines/python/eval_tasks",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
-        "@llvm-project//compiler-rt:orc_rt",
         "@mistral-evals//:evaluate",
     ],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
@@ -247,11 +229,7 @@ modular_py_test(
     name = "test_pipelines_lm_eval",
     size = "medium",
     srcs = ["test_pipelines_lm_eval.py"],
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
+    data = ["//GenericML:MGPRT"],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     tags = [
         "manual",  # TODO(AITLIB-293)
@@ -269,9 +247,7 @@ modular_py_binary(
     srcs = ["pipelines_mteb.py"],
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     ignore_collisions = True,  # duplicate scripts/__init__.py from deps
     deps = [

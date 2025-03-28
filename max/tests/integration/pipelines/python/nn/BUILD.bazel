@@ -52,10 +52,8 @@ modular_py_test(
     ),
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
@@ -89,10 +87,8 @@ modular_py_test(
     ),
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     gpu_constraints = ["//:has_gpu"],
     tags = [
@@ -121,10 +117,8 @@ modular_py_test(
     srcs = glob(["**/*_distributed_gpu.py"]),
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     exec_properties = {
         # 2 here means *at least* 2 GPUs, in practice CI will have 4
@@ -161,11 +155,9 @@ modular_py_test(
     ),
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@flash_attn",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "BAZEL": "true",

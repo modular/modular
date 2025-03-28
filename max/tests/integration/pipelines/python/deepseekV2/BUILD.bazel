@@ -31,10 +31,8 @@ modular_py_test(
     srcs = glob(["**/test_*.py"]) + ["conftest.py"],
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         "//SDK/integration-test/pipelines/python/deepseekV2/testdata",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {
         "PIPELINES_TESTDATA": (
