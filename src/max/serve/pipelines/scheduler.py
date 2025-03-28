@@ -31,16 +31,6 @@ from max.support.human_readable_formatter import to_human_readable_latency
 logger = logging.getLogger("max.serve")
 
 
-# TODO: This will be deleted after E2EOPT-113
-def _trim_prompt(data: InputContext, new_length: int) -> None:
-    untrimmed_length = data.active_length
-    trimmed_length = new_length
-    bump_length = untrimmed_length - trimmed_length
-    assert bump_length >= 0
-    if bump_length > 0:
-        data.bump_token_indices(start_idx=bump_length)
-
-
 class BatchType(Enum):
     ContextEncoding = 1
     TokenGeneration = 2
@@ -381,7 +371,6 @@ class TokenGenerationScheduler(Scheduler):
                 break
 
             orig_prompt_length = data.active_length
-            cache_seq_id = data.cache_seq_id
             num_steps = self.scheduler_config.max_forward_steps_ce
 
             if self.paged_manager is not None:
@@ -390,25 +379,20 @@ class TokenGenerationScheduler(Scheduler):
                     max_seq_len
                 )
                 num_steps = min(num_steps, num_available_steps)
-                prompt = data.next_tokens
 
                 # Lookup blocks to reuse from prefix cache
-                prompt = self.paged_manager.reuse_blocks_from_prefix_cache(
-                    cache_seq_id, prompt, num_steps=num_steps
-                )
-                _trim_prompt(data, len(prompt))
+                self.paged_manager.reuse_blocks_from_prefix_cache(data)
 
             # Chunk the request if it exceeds the token budget
             tokens_trimmed = self._maybe_chunk_prefill_request(
                 data, tot_tokens_to_encode
             )
             orig_prompt_length -= tokens_trimmed
-            prompt = data.next_tokens
 
             if self.paged_manager is not None:
                 # Allocate new blocks for shortened prompt
                 scheduled = self.paged_manager.allocate_new_blocks(
-                    cache_seq_id, prompt, num_steps=num_steps
+                    data, num_steps=num_steps
                 )
 
                 # We were able to schedule this request
@@ -478,8 +462,6 @@ class TokenGenerationScheduler(Scheduler):
         while len(candidate_reqs) > 0:
             # Get the oldest request
             req_id, data = candidate_reqs.popleft()
-            cache_seq_id = data.cache_seq_id
-            prompt = data.next_tokens
 
             # Determine the number of steps to schedule based on the max_seq_len
             # of the pipeline model.
@@ -501,12 +483,9 @@ class TokenGenerationScheduler(Scheduler):
                     num_steps = min(num_steps, num_available_steps)
 
                 # Attempt to schedule this request
-                prompt = self.paged_manager.reuse_blocks_from_prefix_cache(
-                    cache_seq_id, prompt, num_steps=num_steps
-                )
-                _trim_prompt(data, len(prompt))
+                self.paged_manager.reuse_blocks_from_prefix_cache(data)
                 scheduled = self.paged_manager.allocate_new_blocks(
-                    cache_seq_id, prompt, num_steps=num_steps
+                    data, num_steps=num_steps
                 )
 
                 # We were able to schedule this request
@@ -522,9 +501,6 @@ class TokenGenerationScheduler(Scheduler):
                 # after preempting the newest request
                 req_id_preempt, data_preempt = candidate_reqs.pop()
                 self._preempt_request(req_id_preempt, data_preempt)
-
-                # Reset the prompt in case it was trimmed
-                prompt = data.next_tokens
 
             # If we still can't schedule the request, we preempt it
             if not scheduled:
