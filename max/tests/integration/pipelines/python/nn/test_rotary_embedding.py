@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import torch
+from context_utils import create_text_context
 from hypothesis import assume
 from max.driver import CPU, Tensor
 from max.dtype import DType
@@ -31,7 +32,6 @@ from modular_graph_test import are_all_tensor_values, modular_graph_test
 MAX_SEQ_LEN = 2**16
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-7
-FAKE_TOKEN = 999
 
 
 def torch_freqs_cis(dim: int, theta: float):
@@ -367,12 +367,12 @@ def test_kv_cache_ragged_rope(session):
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    cache_lengths_in = {
-        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
         for i, s in enumerate(seq_ids)
-    }
+    ]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_lengths_in)[0]
+        kv_manager.fetch(batch)[0]
     )
 
     @modular_graph_test(

@@ -17,8 +17,7 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
-
-FAKE_TOKEN = 999
+from test_common.context_utils import create_text_context
 
 
 def test_kv_cache_gpu():
@@ -48,8 +47,8 @@ async def _test_kv_cache_gpu():
         )
         seq_id = kv_manager.claim(n=1)[0]
 
-        seq_ids_and_prompts = {seq_id: np.array([FAKE_TOKEN])}
-        list_of_kv_tuples = kv_manager.fetch(seq_ids_and_prompts)
+        batch = [create_text_context(seq_id, np.empty(1))]
+        list_of_kv_tuples = kv_manager.fetch(batch)
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
             assert isinstance(kv_tuple, KVCacheInputs)

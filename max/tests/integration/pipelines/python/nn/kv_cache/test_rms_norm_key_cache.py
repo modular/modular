@@ -9,6 +9,7 @@ from typing import Optional
 
 import numpy as np
 import pytest
+from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -21,8 +22,6 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     RaggedKVCacheInputs,
 )
-
-FAKE_TOKEN = 999
 
 
 @dataclass(frozen=True)
@@ -112,10 +111,11 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     # Claim seq_ids in cache.
     seq_ids = kv_manager.claim(n=batch_size)
 
-    seq_ids_to_prompts = {
-        s: np.array([FAKE_TOKEN] * seq_lens[i]) for i, s in enumerate(seq_ids)
-    }
-    fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
+    batch = [
+        create_text_context(s, np.empty(seq_lens[i]))
+        for i, s in enumerate(seq_ids)
+    ]
+    fetch_args = kv_manager.fetch(batch)[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = fetch_args[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
@@ -187,10 +187,11 @@ def test_partial_rms_norm_key_cache(
     # Claim seq_ids in cache.
     seq_ids = kv_manager.claim(n=batch_size)
 
-    seq_ids_to_prompts = {
-        s: np.array([FAKE_TOKEN] * seq_lens[i]) for i, s in enumerate(seq_ids)
-    }
-    fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
+    batch = [
+        create_text_context(s, np.empty(seq_lens[i]))
+        for i, s in enumerate(seq_ids)
+    ]
+    fetch_args = kv_manager.fetch(batch)[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = fetch_args[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
@@ -275,18 +276,18 @@ def test_rms_norm_new_key_cache(
     # Claim seq_ids in cache.
     seq_ids = kv_manager.claim(n=batch_size)
 
-    seq_ids_to_prompts = {
-        s: np.array([FAKE_TOKEN] * seq_lens[i]) for i, s in enumerate(seq_ids)
-    }
+    batch = [
+        create_text_context(s, np.empty(seq_lens[i]))
+        for i, s in enumerate(seq_ids)
+    ]
 
     # note that unlike previous tests, we step the kv cache by 10 tokens
     # this is to test that we only operate on the new tokens
-    fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
-    generated_tokens = {
-        s: np.array([FAKE_TOKEN] * 1) for i, s in enumerate(seq_ids)
-    }
-    kv_manager.step(generated_tokens)
-    fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
+    fetch_args = kv_manager.fetch(batch)[0]
+    for ctx in batch:
+        ctx.update(42)
+    kv_manager.step(batch)
+    fetch_args = kv_manager.fetch(batch)[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = fetch_args[0]

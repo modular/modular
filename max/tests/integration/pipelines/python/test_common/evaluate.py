@@ -156,15 +156,8 @@ def next_token_with_logits(
         if not model.kv_manager.contains(context.cache_seq_id):
             model.kv_manager.external_claim([context.cache_seq_id])
 
-    # Get prompts for each seq_id in batch.
-    seq_ids_and_prompts = {}
-    for ctx in context_batch:
-        prompt = ctx.next_tokens
-        assert len(prompt) == ctx.active_length
-        seq_ids_and_prompts[ctx.cache_seq_id] = prompt
-
     # Fetch kv inputs.
-    kv_cache_inputs = model.kv_manager.fetch(seq_ids_and_prompts)
+    kv_cache_inputs = model.kv_manager.fetch(context_batch)
 
     # Get Model inputs
     model_inputs = model.prepare_initial_token_inputs(
@@ -179,12 +172,7 @@ def next_token_with_logits(
     logits = model_outputs.next_token_logits.to_numpy()
     next_tokens = [req_logits.argmax(axis=-1) for req_logits in logits]
 
-    seq_ids_and_new_tokens = {
-        ctx.cache_seq_id: np.array([next_tokens[i]])
-        for i, ctx in enumerate(context_batch)
-    }
-    model.kv_manager.step(seq_ids_and_new_tokens)
-
+    has_eos = False
     for req_id, req_logits, next_token in zip(
         req_to_context_dict, logits, next_tokens
     ):
@@ -198,8 +186,11 @@ def next_token_with_logits(
         # Update the context for the next input.
         req_to_context_dict[req_id].update(int(next_token))
         if next_token == eos_token:
-            return True
-    return False
+            has_eos = True
+            break
+
+    model.kv_manager.step(context_batch)
+    return has_eos
 
 
 def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):

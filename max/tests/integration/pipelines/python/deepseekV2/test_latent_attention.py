@@ -7,6 +7,7 @@
 import numpy as np
 import pytest
 import torch
+from context_utils import create_text_context
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
@@ -129,7 +130,6 @@ def generate_max_outputs(
     compiled = session.load(g, weights_registry=latent_attention.state_dict())
 
     batch_size = 1
-    FAKE_TOKEN = 999
     prompt_lens = [1]
 
     # Claim seq_ids in cache.
@@ -146,10 +146,10 @@ def generate_max_outputs(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    seq_ids_to_prompts = {
-        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
         for i, s in enumerate(seq_ids)
-    }
+    ]
 
     all_outputs = []
 
@@ -157,7 +157,7 @@ def generate_max_outputs(
     # so we need to loop through the tokens
     for tok_idx in range(input_tensor.shape[1]):
         # prepare current token's inputs
-        fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
+        fetch_args = kv_manager.fetch(batch)[0]
         input_tensor_device = (
             Tensor.from_numpy(
                 input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -173,7 +173,10 @@ def generate_max_outputs(
             copy_inputs_to_device=False,
         )
 
-        kv_manager.step(seq_ids_to_prompts)
+        for ctx in batch:
+            ctx.update(42)
+
+        kv_manager.step(batch)
         torch_output = from_dlpack(max_output[0]).to(torch.bfloat16)
         all_outputs.append(torch_output[:, None, :].to("cpu"))
 

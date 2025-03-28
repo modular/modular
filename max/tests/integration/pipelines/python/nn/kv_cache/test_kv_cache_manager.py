@@ -6,6 +6,7 @@
 
 import numpy as np
 import pytest
+from context_utils import create_text_context
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -14,8 +15,6 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
-
-FAKE_TOKEN = 999
 
 
 @pytest.mark.asyncio
@@ -41,23 +40,27 @@ async def test_step():
     for seq_id in seq_ids:
         assert kv_manager.cache_lengths[seq_id] == 0
 
-    # Update these values a few times
     prompt_lens = [3, 4, 7]
-    for j in range(3):
-        seq_ids_and_prompts = {}
-        for i, seq_id in enumerate(seq_ids):
-            seq_ids_and_prompts[seq_id] = np.array(
-                [FAKE_TOKEN] * prompt_lens[i]
-            )
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
+        for i, s in enumerate(seq_ids)
+    ]
 
-        kv_manager.fetch(seq_ids_and_prompts)
-        seq_ids_and_new_tokens = {
-            seq_id: np.array([FAKE_TOKEN]) for seq_id in seq_ids
-        }
-        kv_manager.step(seq_ids_and_new_tokens)
+    # Update these values a few times
+    for j in range(3):
+        kv_manager.fetch(batch)
+        for ctx in batch:
+            ctx.update(42)
+        kv_manager.step(batch)
 
         for i, seq_id in enumerate(seq_ids):
             assert kv_manager.cache_lengths[seq_id] == prompt_lens[i] * (j + 1)
+
+        for i, ctx in enumerate(batch):
+            orig_start_idx = ctx.start_idx
+            for _ in range(prompt_lens[i] - 1):
+                ctx.update(42)
+            ctx.set_token_indices(start_idx=orig_start_idx)
 
 
 @pytest.mark.asyncio
@@ -123,7 +126,7 @@ async def test_fetch_continuous():
     with pytest.raises(ValueError):
         bogus_seq_id = 100
         kv_collection = kv_manager.fetch(
-            {bogus_seq_id: np.array([FAKE_TOKEN])}
+            [create_text_context(bogus_seq_id, np.empty(1))]
         )[0]
 
     # Claim 5 items
@@ -131,6 +134,6 @@ async def test_fetch_continuous():
 
     # Fetch 3 of the 5 ids
     kv_collection = kv_manager.fetch(
-        {s: np.array([FAKE_TOKEN]) for s in seq_ids[:3]}
+        [create_text_context(s, np.empty(1)) for s in seq_ids[:3]]
     )[0]
     assert kv_collection is not None

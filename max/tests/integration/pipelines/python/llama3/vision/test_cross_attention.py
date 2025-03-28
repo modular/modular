@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -28,8 +29,6 @@ from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (
     MllamaTextCrossSdpaAttention,
 )
-
-FAKE_TOKEN = 999
 
 
 class CrossAttentionModel:
@@ -217,10 +216,8 @@ def test_cross_attention(
     seq_ids = kv_manager.claim(n=batch_size)
     # Use cross states sequence length when fetching from the KV manager since
     # KV are cross states.
-    seq_ids_and_prompts = {
-        s: np.array([FAKE_TOKEN] * cross_seq_len) for i, s in enumerate(seq_ids)
-    }
-    kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
+    batch = [create_text_context(s, np.empty(cross_seq_len)) for s in seq_ids]
+    kv_cache_inputs = kv_manager.fetch(batch)[0]
 
     # Initialize model inputs.
     total_seq_len = sum(hidden_seq_lens)

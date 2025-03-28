@@ -22,6 +22,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/nn",

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 import torch
+from context_utils import create_text_context
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -28,8 +29,6 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManager,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
-
-FAKE_TOKEN = 999
 
 
 def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
@@ -131,12 +130,12 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
 
-    cache_lengths_in = {
-        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
         for i, s in enumerate(seq_ids)
-    }
+    ]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_lengths_in)[0]
+        kv_manager.fetch(batch)[0]
     )
 
     @modular_graph_test(
@@ -275,11 +274,11 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
 
-    seq_ids_to_prompts = {
-        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
         for i, s in enumerate(seq_ids)
-    }
-    fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
+    ]
+    fetch_args = kv_manager.fetch(batch)[0]
     kv_blocks = fetch_args[0]
     # First check that the KV cache was zeroed out on initialization.
     assert not kv_blocks.to_numpy().any()
@@ -409,11 +408,11 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    seq_ids_to_prompts = {
-        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
         for i, s in enumerate(seq_ids)
-    }
-    fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
+    ]
+    fetch_args = kv_manager.fetch(batch)[0]
     kv_blocks = fetch_args[0]
     # First check that the KV cache was zeroed out on initialization.
     assert not kv_blocks.to_numpy().any()

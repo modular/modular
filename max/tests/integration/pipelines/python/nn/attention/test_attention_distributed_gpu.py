@@ -23,13 +23,13 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
+from test_common.context_utils import create_text_context
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
 NUM_LAYERS = 1
 LAYER_IDX = 0
 BATCH_SIZE = 4
-FAKE_TOKEN = 999
 
 
 def _attention_block(params, inputs):
@@ -268,8 +268,8 @@ def execute_attn_for_devices(
     )
     # Claim seq_ids in cache
     seq_ids = kv_manager.claim(BATCH_SIZE)
-    seq_ids_and_prompts = {s: np.array([FAKE_TOKEN] * seq_len) for s in seq_ids}
-    kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)
+    batch = [create_text_context(s, np.empty(seq_len)) for s in seq_ids]
+    kv_cache_inputs = kv_manager.fetch(batch)
     flattened_kv_cache_inputs = [
         inp for device_inputs in kv_cache_inputs for inp in device_inputs
     ]

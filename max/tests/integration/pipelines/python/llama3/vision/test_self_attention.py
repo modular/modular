@@ -11,15 +11,12 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
+from context_utils import create_text_context
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
-from max.nn import (
-    AttentionWithRopeQKV,
-    Linear,
-    OptimizedRotaryEmbedding,
-)
+from max.nn import AttentionWithRopeQKV, Linear, OptimizedRotaryEmbedding
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
@@ -36,8 +33,6 @@ from transformers.models.mllama.modeling_mllama import (
 BATCH_SIZE = 1
 ACCURACY_RTOL = 1e-10
 ACCURACY_ATOL = 1e-10
-
-FAKE_TOKEN = 999
 
 
 class TorchAttention(nn.Module):
@@ -111,10 +106,8 @@ def _attention_layer(
     )
 
     seq_ids = kv_manager.claim(n=BATCH_SIZE)
-    seq_ids_and_prompts = {
-        s: np.array([FAKE_TOKEN] * seq_len) for i, s in enumerate(seq_ids)
-    }
-    kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
+    batch = [create_text_context(s, np.empty(seq_len)) for s in seq_ids]
+    kv_cache_inputs = kv_manager.fetch(batch)[0]
 
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
     kv_cache_types = [

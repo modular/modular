@@ -13,6 +13,7 @@ modular_py_library(
     deps = [
         requirement("pytest"),
         requirement("numpy"),
+        ":context_utils",
         ":distance_metrics",
         ":evaluate",
         ":evaluate_embeddings",
@@ -84,6 +85,16 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/pipelines/architectures",
         "@rules_python//python/runfiles",
+    ],
+)
+
+modular_py_library(
+    name = "context_utils",
+    srcs = ["context_utils.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        "//SDK/lib/API/python/max/pipelines/context",
     ],
 )
 

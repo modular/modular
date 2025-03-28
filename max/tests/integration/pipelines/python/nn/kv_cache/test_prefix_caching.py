@@ -12,13 +12,18 @@ from typing import Any, Optional
 
 import numpy as np
 import pytest
-from max.driver import CPU, Tensor
+from context_utils import create_text_context
+from max.driver import CPU
+from max.driver.tensor import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.pipelines.context import InputContext
 from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 
-FAKE_TOKEN = 999
+
+def rand(length: int) -> np.ndarray:
+    return np.random.randint(0, 256, size=length)
 
 
 def gen_prompt(length: int) -> np.ndarray:
@@ -94,14 +99,14 @@ async def test_prefix_caching_basic() -> None:
     kv_manager.external_claim([seq_id_1])
 
     # Seq 1: Prefill 10 - 14
-    seq_ids_and_prompts = {seq_id_1: np.array(initial_prompt_1)}
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
+    batch = [create_text_context(seq_id_1, np.array(initial_prompt_1))]
+    kv_tuple_list = kv_manager.fetch(batch)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
         len(initial_prompt_1),
         len(initial_prompt_1),
     ]
-    seq_ids_and_new_tokens = {seq_id_1: np.array([15])}
-    kv_manager.step(seq_ids_and_new_tokens)
+    batch[0].update(15)
+    kv_manager.step(batch)
 
     # Check that we got new blocks
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3, 4]
@@ -109,32 +114,30 @@ async def test_prefix_caching_basic() -> None:
     # Seq 1: Token gen 15 - 18
     toks = [15, 16, 17, 18, 19]
     for i, tok in enumerate(toks[:-1]):
-        seq_ids_and_prompts = {seq_id_1: np.array([tok])}
-        kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
+        kv_tuple_list = kv_manager.fetch(batch)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
         ] == [
             1,
             5 + i + 1,
         ]
-        new_tok = toks[i + 1]
-        seq_ids_and_new_tokens = {seq_id_1: np.array([new_tok])}
-        kv_manager.step(seq_ids_and_new_tokens)
+        batch[0].update(toks[i + 1])
+        kv_manager.step(batch)
 
     # Seq 2: Claim
     seq_id_2 = 2
     initial_prompt_2 = [10, 11, 12, 13]
+    batch = [create_text_context(seq_id_2, np.array(initial_prompt_2))]
     kv_manager.external_claim([seq_id_2])
 
     # Seq 2: Prefill 10 - 13
-    seq_ids_and_prompts = {seq_id_2: np.array(initial_prompt_2)}
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
+    kv_tuple_list = kv_manager.fetch(batch)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[0] == [
         1,
         len(initial_prompt_2),
     ]
-    seq_ids_and_new_tokens = {seq_id_2: np.array([14])}
-    kv_manager.step(seq_ids_and_new_tokens)
+    batch[0].update(14)
+    kv_manager.step(batch)
 
     # Check that we got cached blocks, except for last token in prompt
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:3] == [0, 1, 2]
@@ -143,8 +146,7 @@ async def test_prefix_caching_basic() -> None:
     # Seq 2: Token gen 14 - 17
     toks = [14, 15, 99, 100, 101]
     for i, tok in enumerate(toks[:-1]):
-        seq_ids_and_prompts = {seq_id_2: np.array([tok])}
-        kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
+        kv_tuple_list = kv_manager.fetch(batch)
         assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0])[
             0
         ] == [
@@ -152,9 +154,8 @@ async def test_prefix_caching_basic() -> None:
             len(initial_prompt_2) + i + 1,
         ]
         assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:4] == [0, 1, 2, 3]
-        new_tok = toks[i + 1]
-        seq_ids_and_new_tokens = {seq_id_2: np.array([new_tok])}
-        kv_manager.step(seq_ids_and_new_tokens)
+        batch[0].update(toks[i + 1])
+        kv_manager.step(batch)
 
     # first and second ce have 4 + 3 tokens
     assert kv_manager.block_manager.prompt_tokens == 7
@@ -179,8 +180,8 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         kv_manager.external_claim([seq_id])
         # We reuse the same prompt each time, allowing for prefix sharing.
         prompt = np.array([100, 101, 102, 103, 104])
-        seq_ids_and_prompts = {seq_id: prompt}
-        _ = kv_manager.fetch(seq_ids_and_prompts)
+        batch = [create_text_context(seq_id, prompt)]
+        _ = kv_manager.fetch(batch)
 
         if seq_id == 0:
             # During first fetch, we do not get a cache hit so we use 5 blocks.
@@ -189,8 +190,8 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
             # During later fetches, we get a cache hit so we use 1 block.
             available_blocks -= 1
 
-        seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
-        kv_manager.step(seq_ids_and_new_tokens)
+        batch[0].update(42)
+        kv_manager.step(batch)
 
         if i != 0:
             # During later fetches, we will just release the block we wrote to
@@ -215,10 +216,10 @@ async def test_prefix_caching_with_no_release() -> None:
             seq_id = i % kv_manager.max_batch_size
             kv_manager.external_claim([seq_id])
             prompt = gen_prompt(16)
-            seq_ids_and_prompts = {seq_id: prompt}
-            _ = kv_manager.fetch(seq_ids_and_prompts)
-            seq_ids_and_new_tokens = {seq_id: np.array([FAKE_TOKEN])}
-            kv_manager.step(seq_ids_and_new_tokens)
+            batch = [create_text_context(seq_id, prompt)]
+            _ = kv_manager.fetch(batch)
+            batch[0].update(42)
+            kv_manager.step(batch)
 
             # We intentionally do not release the sequence here!
 
@@ -258,10 +259,13 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
         # Picking random prompts.
         prompt_len = np.random.randint(1, 64)
         prompt = gen_prompt(prompt_len)
+        batch = [create_text_context(seq_id, prompt)]
         # This fetch can trigger evictions from the tree.
-        _ = kv_manager.fetch({seq_id: prompt}, num_steps=num_steps)
+        _ = kv_manager.fetch(batch, num_steps=num_steps)
         new_tokens = gen_prompt(num_steps)
-        kv_manager.step({seq_id: new_tokens})
+        for tok in new_tokens:
+            batch[0].update(tok)
+        kv_manager.step(batch)
 
         slots_used_in_curr_iter = prompt_len + num_steps - 1
         slots_used += slots_used_in_curr_iter
@@ -269,7 +273,6 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
         # Perform some number of token generation steps.
         num_of_tg_steps = np.random.randint(0, 20)
         for _ in range(num_of_tg_steps):
-            last_token = new_tokens[-1]
             prompt_len = np.random.randint(1, 4)
 
             # If this single sequence will exceed the total number of slots,
@@ -278,11 +281,19 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
             if slots_used + slots_used_in_curr_iter > available_slots:
                 break
 
-            prompt = np.concatenate([[last_token], gen_prompt(prompt_len - 1)])
+            prompt = gen_prompt(prompt_len - 1)
+
+            orig_start_idx = batch[0].start_idx
+            for tok in prompt:
+                batch[0].update(tok)
+            batch[0].set_token_indices(start_idx=orig_start_idx)
+
             # This fetch can trigger evictions from the tree.
-            _ = kv_manager.fetch({seq_id: prompt}, num_steps=num_steps)
+            _ = kv_manager.fetch(batch, num_steps=num_steps)
             new_tokens = gen_prompt(num_steps)
-            kv_manager.step({seq_id: new_tokens})
+            for tok in new_tokens:
+                batch[0].update(tok)
+            kv_manager.step(batch)
 
             slots_used += slots_used_in_curr_iter
 
@@ -304,27 +315,28 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
     kv_manager.external_claim([seq_id_1])
 
     # Seq 1: Prefill 10 - 14 and generate 15 - 17 in one pass
-    seq_ids_and_prompts = {seq_id_1: np.array(initial_prompt_1)}
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=3)
+    batch = [create_text_context(seq_id_1, np.array(initial_prompt_1))]
+    kv_tuple_list = kv_manager.fetch(batch, num_steps=3)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
         [5, 5],
         [1, 6],
         [1, 7],
     ]
 
-    seq_ids_and_new_tokens = {seq_id_1: np.array([15, 16, 17])}
-    kv_manager.step(seq_ids_and_new_tokens)
+    for tok in [15, 16, 17]:
+        batch[0].update(tok)
+    kv_manager.step(batch)
 
     # Seq 1: Token gen 18 - 19 in one pass
-    seq_ids_and_prompts = {seq_id_1: np.array([17])}
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=2)
+    kv_tuple_list = kv_manager.fetch(batch, num_steps=2)
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
         [1, 8],
         [1, 9],
     ]
 
-    seq_ids_and_new_tokens = {seq_id_1: np.array([18, 19])}
-    kv_manager.step(seq_ids_and_new_tokens)
+    for tok in [18, 19]:
+        batch[0].update(tok)
+    kv_manager.step(batch)
 
     assert kv_manager.cache_hit_rate == 0.0
 
@@ -335,41 +347,38 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
 
     # Reserve a slot in the KV cache manager.
     seq_id_1 = 1
-    initial_prompt_1 = [10, 11, 12, 13, 14]
     kv_manager.external_claim([seq_id_1])
 
     # Seq 1: Prefill 10 - 14
-    seq_ids_and_prompts = {seq_id_1: np.array(initial_prompt_1)}
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
+    batch = [create_text_context(seq_id_1, np.array([10, 11, 12, 13, 14]))]
+    kv_tuple_list = kv_manager.fetch(batch)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
         [5, 5],
     ]
 
-    seq_ids_and_new_tokens = {seq_id_1: np.array([15])}
-    kv_manager.step(seq_ids_and_new_tokens)
+    batch[0].update(15)
+    kv_manager.step(batch)
 
     # Seq 1: Token gen 15
-    seq_ids_and_prompts = {seq_id_1: np.array([15])}
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
+    kv_tuple_list = kv_manager.fetch(batch)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
         [1, 6],
     ]
 
-    seq_ids_and_new_tokens = {seq_id_1: np.array([16])}
-    kv_manager.step(seq_ids_and_new_tokens)
+    batch[0].update(16)
+    kv_manager.step(batch)
 
     # Seq 1: Token gen 16
-    seq_ids_and_prompts = {seq_id_1: np.array([16])}
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
+    kv_tuple_list = kv_manager.fetch(batch)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
         [1, 7],
     ]
 
-    seq_ids_and_new_tokens = {seq_id_1: np.array([17])}
-    kv_manager.step(seq_ids_and_new_tokens)
+    batch[0].update(17)
+    kv_manager.step(batch)
 
     assert kv_manager.cache_hit_rate == 0.0
 
@@ -380,12 +389,11 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
 
     # Reserve a slot in the KV cache manager.
     seq_id_1 = 1
-    initial_prompt_1 = [10, 11, 12, 13, 14]
     kv_manager.external_claim([seq_id_1])
 
     # Seq 1: Prefill 10 - 14 and generate 15 - 17 in one pass
-    seq_ids_and_prompts = {seq_id_1: np.array(initial_prompt_1)}
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=3)
+    batch = [create_text_context(seq_id_1, np.array([10, 11, 12, 13, 14]))]
+    kv_tuple_list = kv_manager.fetch(batch, num_steps=3)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
         [5, 5],
@@ -393,20 +401,21 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
         [1, 7],
     ]
 
-    seq_ids_and_new_tokens = {seq_id_1: np.array([15, 16, 17])}
-    kv_manager.step(seq_ids_and_new_tokens)
+    for tok in [15, 16, 17]:
+        batch[0].update(tok)
+    kv_manager.step(batch)
 
     # Seq 1: Token gen 18 - 19 in one pass
-    seq_ids_and_prompts = {seq_id_1: np.array([17])}
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts, num_steps=2)
+    kv_tuple_list = kv_manager.fetch(batch, num_steps=2)
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3, 4]
     assert get_uncommitted_and_committed_block_counts(kv_tuple_list[0]) == [
         [1, 8],
         [1, 9],
     ]
 
-    seq_ids_and_new_tokens = {seq_id_1: np.array([18, 19])}
-    kv_manager.step(seq_ids_and_new_tokens)
+    for tok in [18, 19]:
+        batch[0].update(tok)
+    kv_manager.step(batch)
 
 
 class FakeModel:
@@ -583,92 +592,99 @@ async def test_prefix_caching_grouped_prefixes(
 
     # run CE on 15 batches of batch_size requests each
     num_batches = 15
-    seq_ids_and_new_tokens: dict[int, np.ndarray] = {}
+    batch: dict[int, InputContext] = {}
     for b in range(num_batches):
-        seq_ids_and_prompts: dict[int, np.ndarray] = {}
         for r in range(batch_size):
             seq_id = b * batch_size + r
             kv_manager.external_claim([seq_id])
             group_prefix = group_prefixes[seq_id % len(group_prefixes)]
             random_len = np.random.randint(0, 10)
             prompt = np.concatenate([group_prefix, gen_prompt(random_len)])
-            seq_ids_and_prompts[seq_id] = prompt
+            ctx = create_text_context(seq_id, prompt)
+            batch[seq_id] = ctx
 
-        orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
-        fetch_kv_tuple = kv_manager.fetch(
-            seq_ids_and_prompts, num_steps=num_steps
-        )
+        ctxs = list(batch.values())
+        seq_ids_and_prompts = {
+            seq_id: batch[seq_id].next_tokens for seq_id in batch
+        }
+        fetch_kv_tuple = kv_manager.fetch(ctxs, num_steps=num_steps)
         seq_ids_and_new_tokens_batch = model.run(
-            orig_seq_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
+            seq_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
         )
-        seq_ids_and_new_tokens |= seq_ids_and_new_tokens_batch
-        kv_manager.step(seq_ids_and_new_tokens_batch)
+        for seq_id in seq_ids_and_new_tokens_batch:
+            ctx = batch[seq_id]
+            for tok in seq_ids_and_new_tokens_batch[seq_id]:
+                ctx.update(tok)
+        kv_manager.step(ctxs)
 
     # Since our prompts have large grouped prefixes, we should have a high cache
     # hit rate.
     cache_hit_rate = kv_manager.cache_hit_rate
     if shared_prefix_len > 0:
-        assert cache_hit_rate > 0.45
+        assert cache_hit_rate > 0.45, breakpoint()  # type: ignore
 
     # run TG on all requests for num_tg_steps steps
     # we terminate requests with probability 10% each iteration
     num_tg_steps = 100
     for _ in range(num_tg_steps):
-        seq_ids_and_prompts = seq_ids_and_new_tokens
-
-        for seq_id in seq_ids_and_prompts:
-            seq_ids_and_prompts[seq_id] = seq_ids_and_prompts[seq_id][-1:]
+        for seq_id in batch:
             extended = gen_prompt(np.random.randint(0, 10))
-            seq_ids_and_prompts[seq_id] = np.concatenate(
-                [seq_ids_and_prompts[seq_id], extended]
-            )
+            orig_start_idx = batch[seq_id].start_idx
+            for tok in extended:
+                batch[seq_id].update(tok)
+            batch[seq_id].set_token_indices(start_idx=orig_start_idx)
 
-        orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
-        fetch_kv_tuple = kv_manager.fetch(
-            seq_ids_and_prompts, num_steps=num_steps
-        )
+        ctxs = list(batch.values())
+        orig_seq_ids_and_prompts = {
+            seq_id: batch[seq_id].next_tokens for seq_id in batch
+        }
+        fetch_kv_tuple = kv_manager.fetch(ctxs, num_steps=num_steps)
         seq_ids_and_new_tokens_subset = model.run(
             orig_seq_ids_and_prompts, fetch_kv_tuple, num_steps=num_steps
         )
 
-        kv_manager.step(seq_ids_and_new_tokens_subset)
+        for seq_id in seq_ids_and_new_tokens_subset:
+            ctx = batch[seq_id]
+            for tok in seq_ids_and_new_tokens_subset[seq_id]:
+                ctx.update(tok)
+        kv_manager.step(ctxs)
 
-        terminated_seq_ids = []
-        for seq_id in list(seq_ids_and_new_tokens.keys()):
+        # copying keys so we don't iterate over dict while deleting things
+        copied_seq_ids = list(batch.keys())
+        for seq_id in copied_seq_ids:
             # terminate requests with probability 10%
-            if len(seq_ids_and_new_tokens) > 1 and np.random.rand() < 0.1:
-                terminated_seq_ids.append(seq_id)
+            if len(batch) > 1 and np.random.rand() < 0.1:
                 kv_manager.release(seq_id)
-                del seq_ids_and_new_tokens[seq_id]
+                del batch[seq_id]
 
-    for seq_id in seq_ids_and_new_tokens:
+    for seq_id in batch:
         kv_manager.release(seq_id)
 
 
 def run_forward(
     model: FakeModel,
     kv_manager: PagedKVCacheManager,
-    seq_id: int,
+    ctx: InputContext,
     prompt: np.ndarray,
     next_tok: int,
     run_fetch: bool = True,
     run_step: bool = True,
 ) -> None:
+    seq_id = ctx.cache_seq_id
+    orig_start_idx = ctx.start_idx
+    for tok in prompt:
+        ctx.update(tok)
+    ctx.set_token_indices(start_idx=orig_start_idx)
+    batch = [ctx]
     seq_ids_and_prompts = {seq_id: prompt}
     orig_seq_ids_and_prompts = seq_ids_and_prompts.copy()
     new_toks = {seq_id: np.array([next_tok])}
     if run_fetch:
-        for seq_id, prompt in seq_ids_and_prompts.items():
-            prompt = kv_manager.reuse_blocks_from_prefix_cache(
-                seq_id, prompt, num_steps=1
-            )
-            seq_ids_and_prompts[seq_id] = prompt
-            scheduled = kv_manager.allocate_new_blocks(
-                seq_id, prompt, num_steps=1
-            )
-            assert scheduled
+        kv_manager.reuse_blocks_from_prefix_cache(ctx)
+        scheduled = kv_manager.allocate_new_blocks(ctx, num_steps=1)
+        assert scheduled
 
-        fetch_kv_tuple = kv_manager.fetch(seq_ids_and_prompts, num_steps=1)
+        fetch_kv_tuple = kv_manager.fetch(batch, num_steps=1)
         _ = model.run(
             orig_seq_ids_and_prompts,
             fetch_kv_tuple,
@@ -676,7 +692,8 @@ def run_forward(
             seq_ids_and_new_tokens=new_toks,
         )
     if run_step:
-        kv_manager.step(new_toks)
+        ctx.update(next_tok)
+        kv_manager.step(batch)
 
 
 @pytest.mark.asyncio
@@ -688,26 +705,25 @@ async def test_prefix_caching_chunked_prefill() -> None:
     seq_id_2 = 2
     kv_manager.external_claim([seq_id_1, seq_id_2])
 
+    ctx_1 = create_text_context(seq_id_1, np.array([]))
+    ctx_2 = create_text_context(seq_id_2, np.array([]))
+
     prompt_1_part_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
     prompt_1_part_2 = np.array([18, 19, 20, 21, 22])
 
     prompt_2_part_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
     prompt_2_part_2 = np.array([16, 17, 18, 998, 999])
 
-    run_forward(
-        model, kv_manager, seq_id_1, prompt_1_part_1, prompt_1_part_2[0]
-    )
-    run_forward(
-        model, kv_manager, seq_id_2, prompt_2_part_1, prompt_2_part_2[0]
-    )
-    run_forward(model, kv_manager, seq_id_1, prompt_1_part_2, FAKE_TOKEN)
+    run_forward(model, kv_manager, ctx_1, prompt_1_part_1, prompt_1_part_2[0])
+    run_forward(model, kv_manager, ctx_2, prompt_2_part_1, prompt_2_part_2[0])
+    run_forward(model, kv_manager, ctx_1, prompt_1_part_2, 42)
 
     # Make sure that we don't return block 2 for seq_id_2 since its last KV
     # projection differs.
     # block 2 holds projections for [..., 16, 17, 18]
     # seq_id_2 needs projections for [..., 16, 17, 16]
-    run_forward(model, kv_manager, seq_id_2, prompt_2_part_2, FAKE_TOKEN)
-    blocks = kv_manager.get_req_blocks(seq_id_2)
+    run_forward(model, kv_manager, ctx_2, prompt_2_part_2, 42)
+    blocks = kv_manager.get_req_blocks(ctx_2.cache_seq_id)
     assert 2 not in blocks
 
     assert kv_manager.block_manager.cached_prompt_tokens == 6
@@ -719,23 +735,24 @@ async def test_prefix_caching_cow() -> None:
     kv_manager = create_paged_manager(num_blocks=128, page_size=3)
     model = FakeModel(kv_manager)
 
+    ctx = create_text_context(0, np.array([]))
     kv_manager.external_claim([0])
     prompt_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
-    seq_id = 0
-    run_forward(model, kv_manager, seq_id, prompt_1, FAKE_TOKEN)
+    run_forward(model, kv_manager, ctx, prompt_1, 42)
 
     def run_forward_cow(seq_id, prompt, cache_idx):
         kv_manager.external_claim([seq_id])
+        ctx = create_text_context(seq_id, np.array([]))
         run_forward(
             model,
             kv_manager,
-            seq_id,
+            ctx,
             prompt,
-            FAKE_TOKEN,
+            42,
             run_fetch=True,
             run_step=False,
         )
-        assert kv_manager.active_requests[seq_id].cached_idx == cache_idx
+        assert ctx.start_idx == cache_idx, breakpoint()  # type: ignore
 
     run_forward_cow(
         seq_id=1, prompt=np.array([10, 11, 12, 13, 14, 22]), cache_idx=5

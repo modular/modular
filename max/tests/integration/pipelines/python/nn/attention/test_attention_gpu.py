@@ -10,6 +10,7 @@ import math
 import numpy as np
 import pytest
 import torch
+from context_utils import create_text_context
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -47,7 +48,6 @@ MAX_SEQ_LEN = 512
 NUM_LAYERS = 10
 LAYER_IDX = 0
 BATCH_SIZE = 4
-FAKE_TOKEN = 999
 
 
 def is_h100() -> bool:
@@ -192,11 +192,9 @@ def test_attention_gpu(start_pos, seq_len):
         seq_id = kv_manager.claim(1)
         seq_ids.append(seq_id[0])
 
-    seq_ids_and_prompts = {
-        s: np.array([FAKE_TOKEN] * seq_len) for i, s in enumerate(seq_ids)
-    }
+    batch = [create_text_context(s, np.empty(seq_len)) for s in seq_ids]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(seq_ids_and_prompts)[0]
+        kv_manager.fetch(batch)[0]
     )
 
     hidden_states = Tensor.from_numpy(
@@ -448,10 +446,8 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
     seq_ids = kv_manager.claim(n=batch_size)
     # Use cross states sequence length when fetching from the KV manager since
     # KV are cross states.
-    seq_ids_and_prompts = {
-        s: np.array([FAKE_TOKEN] * cross_seq_len) for i, s in enumerate(seq_ids)
-    }
-    kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
+    batch = [create_text_context(s, np.empty(cross_seq_len)) for s in seq_ids]
+    kv_cache_inputs = kv_manager.fetch(batch)[0]
 
     # Initialize model inputs.
     total_seq_len = sum(hidden_seq_lens)
@@ -630,12 +626,12 @@ def test_kv_cache_paged_fa3_fallback():
     input_row_offsets[batch_size] = running_sum
     input_row_offsets = input_row_offsets.to(cuda)
 
-    cache_lengths_in = {
-        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
         for i, s in enumerate(seq_ids)
-    }
+    ]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_lengths_in)[0]
+        kv_manager.fetch(batch)[0]
     )
     model = session.load(g)
 

@@ -19,9 +19,11 @@ modular_py_test(
     ],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/pipelines/context",
         "//SDK/lib/API/python/max/pipelines/dataprocessing",
         "//SDK/lib/API/python/max/pipelines/kv_cache",
         "//SDK/lib/API/python/max/serve",
@@ -135,6 +137,7 @@ modular_py_test(
     ],
     deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",

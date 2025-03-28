@@ -9,6 +9,7 @@ import math
 
 import numpy as np
 import pytest
+from context_utils import create_text_context
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -38,7 +39,6 @@ MAX_SEQ_LEN = 512
 NUM_LAYERS = 10
 LAYER_IDX = 0
 BATCH_SIZE = 4
-FAKE_TOKEN = 999
 
 
 def _attention_layer(
@@ -213,11 +213,9 @@ def test_attention__valid_logits(session, start_pos, seq_len):
         np.full((BATCH_SIZE), seq_len, dtype=np.uint32)
     )
 
-    cache_lengths_in = {
-        s: np.array([FAKE_TOKEN] * seq_len) for i, s in enumerate(seq_ids)
-    }
+    batch = [create_text_context(s, np.empty(seq_len)) for s in seq_ids]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_lengths_in)[0]
+        kv_manager.fetch(batch)[0]
     )
 
     @modular_graph_test(
@@ -352,12 +350,12 @@ def test_kv_cache_ragged_attention(session, cache_strategy):
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    cache_lengths_in = {
-        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
         for i, s in enumerate(seq_ids)
-    }
+    ]
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_lengths_in)[0]
+        kv_manager.fetch(batch)[0]
     )
 
     @modular_graph_test(
