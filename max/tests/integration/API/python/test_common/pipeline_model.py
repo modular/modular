@@ -320,6 +320,27 @@ REPLIT_ARCH = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
 )
 
+DUMMY_GPTQ_ARCH = SupportedArchitecture(
+    name="LlamaForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=[
+        "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
+        "jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
+    ],
+    default_encoding=SupportedEncoding.float32,
+    supported_encodings={
+        SupportedEncoding.gptq: [
+            KVCacheStrategy.PAGED,
+        ],
+        SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
+    },
+    pipeline_model=DummyLlamaPipelineModel,
+    tokenizer=TextTokenizer,
+    multi_gpu_supported=True,
+    default_weights_format=WeightsFormat.gguf,
+)
+
 
 def prepare_registry(func):
     @wraps(func)
