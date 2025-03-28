@@ -40,8 +40,8 @@ class AsyncioMetricClient(MetricClient):
         try:
             self.q.put_nowait(m)
         except queue.Full:
-            logger.error(
-                f"Telemetry Queue is full.  Dropping data for {m.instrument_name}"
+            logger.warning(
+                "Telemetry Queue is full. Dropping data for {m.instrument_name}"
             )
 
 
@@ -71,7 +71,7 @@ class AsyncioTelemetryController:
         try:
             await asyncio.wait_for(self.task, timeout_s)
         except asyncio.TimeoutError:
-            logger.error(
+            logger.warning(
                 "AsyncioTelemetryController timeout out while stopping"
             )
         finally:
@@ -92,16 +92,16 @@ class AsyncioTelemetryController:
             except QueueShutDown:
                 break
             except asyncio.CancelledError:
-                logger.info("AsyncioTelemetryController cancelled")
+                logger.debug("AsyncioTelemetryController cancelled")
                 break
 
             try:
                 m.commit()
             except:
-                logger.exception("Failed to record telemetry")
+                logger.warning("Failed to record telemetry", exc_info=True)
 
-        logger.info(
-            f"AsyncioTelemetryController consumer shutdown complete. Residual queue size: {q.qsize()}"
+        logger.debug(
+            "AsyncioTelemetryController consumer shut down. Residual queue size: {q.qsize()}"
         )
 
     async def __aenter__(self):
