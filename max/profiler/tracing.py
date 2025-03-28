@@ -87,7 +87,7 @@ def traced(
     return wrapper
 
 
-class Tracer(object):
+class Tracer:
     """
     A stack of Trace objects that allows for nested tracing spans
     without having to indent code via nested `with Trace(name):` statements.

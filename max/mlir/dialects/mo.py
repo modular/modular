@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from max._mlir.dialects import _ods_common
 from max._mlir.dialects.mo import *
