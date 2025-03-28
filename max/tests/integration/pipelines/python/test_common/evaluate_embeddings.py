@@ -7,7 +7,8 @@
 
 import asyncio
 import uuid
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from max.pipelines import EmbeddingsPipeline
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest

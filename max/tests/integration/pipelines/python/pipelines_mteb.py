@@ -24,8 +24,9 @@ import asyncio
 import logging
 import os
 import sys
+from collections.abc import Sequence
 from functools import cached_property
-from typing import Optional, Sequence
+from typing import Optional
 
 import click
 import mteb
@@ -210,7 +211,7 @@ def main(
     pipeline_config = PipelineConfig(**config_kwargs)
 
     model: EmbeddingModel | mteb.encoder_interface.Encoder
-    logging.info("Loading model with %s library." % model_library)
+    logging.info(f"Loading model with {model_library} library.")
     if model_library == "mteb":
         model = mteb.get_model(pipeline_config.model_config.model_path)
     else:

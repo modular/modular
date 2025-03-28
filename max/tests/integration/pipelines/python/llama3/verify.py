@@ -20,9 +20,10 @@ ENCODING=float32
 ```
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Literal, Optional, Sequence, TypedDict, TypeVar
+from typing import Literal, Optional, TypedDict, TypeVar
 
 import click
 import numpy as np
@@ -52,7 +53,7 @@ class ModelOutput(TypedDict):
 
     prompt: str
     """The prompt that was used to generate the output."""
-    values: NotRequired[List[TokenInfo]]
+    values: NotRequired[list[TokenInfo]]
     """Outputs from a text generation model."""
     embeddings: NotRequired[np.ndarray]
     """Outputs from a text embedding model."""
@@ -173,13 +174,13 @@ class DiscrepancyReport:
     model_modality: Literal["logit", "embedding"]
     """Type of model output modality being compared ('logit' or 'embedding')."""
 
-    mae_per_prompt: List[float]
+    mae_per_prompt: list[float]
     """Mean absolute error for each prompt."""
 
-    rmse_per_prompt: List[float]
+    rmse_per_prompt: list[float]
     """Root mean square error for each prompt."""
 
-    kl_div_per_prompt: Optional[List[float]] = None
+    kl_div_per_prompt: Optional[list[float]] = None
     """KL divergence for each prompt (only for logit outputs)."""
 
     @property
@@ -270,10 +271,10 @@ def verify(
         kl_div_threshold=kl_div_threshold,
     )
 
-    pipeline_results: List[ModelOutput] = NumpyDecoder().decode(
+    pipeline_results: list[ModelOutput] = NumpyDecoder().decode(
         pipeline_outputs.read_text()
     )
-    torch_results: List[ModelOutput] = NumpyDecoder().decode(
+    torch_results: list[ModelOutput] = NumpyDecoder().decode(
         torch_outputs.read_text()
     )
 
@@ -347,7 +348,7 @@ def verify(
 
 
 def compute_discrepancy_report(
-    results: List[ModelOutput], references: List[ModelOutput]
+    results: list[ModelOutput], references: list[ModelOutput]
 ) -> DiscrepancyReport:
     """Calculate discrepancy metrics between outputs from two model runs.
 
@@ -434,7 +435,7 @@ def calculate_mae_and_rmse(
 
 
 def calculate_logit_discrepancies(
-    result_values: List[TokenInfo], reference_values: List[TokenInfo]
+    result_values: list[TokenInfo], reference_values: list[TokenInfo]
 ) -> tuple[float, float, float]:
     """Calculate MAE, RMSE and KL Divergence between result and reference logits.
 

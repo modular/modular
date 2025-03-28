@@ -8,7 +8,8 @@
 import json
 import random
 import string
-from typing import Sequence, TypeVar, Union
+from collections.abc import Sequence
+from typing import TypeVar, Union
 
 import numpy as np
 from max.pipelines import PipelineTokenizer, TokenGeneratorRequest

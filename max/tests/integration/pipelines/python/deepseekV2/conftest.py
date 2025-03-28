@@ -24,7 +24,7 @@ def config() -> DeepseekV2Config:
     config = DeepseekV2Config()
     path = os.getenv("PIPELINES_TESTDATA")
     config_path = Path(path) / "config.json"  # type: ignore
-    with open(config_path, "r") as file:
+    with open(config_path) as file:
         data = json.load(file)
     config.update(data)
     return config

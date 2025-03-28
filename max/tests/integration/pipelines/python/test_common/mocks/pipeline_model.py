@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for working with mock pipeline_model for unit testing"""
 
-from typing import Optional, Sequence, cast
+from collections.abc import Sequence
+from typing import Optional, cast
 from unittest.mock import MagicMock
 
 import numpy as np

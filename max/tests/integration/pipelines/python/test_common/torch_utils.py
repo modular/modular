@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for running torch models for testing."""
 
-from typing import Iterable, List, Optional, Union
+from collections.abc import Iterable
+from typing import Optional, Union
 
 import requests
 import torch
@@ -20,7 +21,7 @@ from transformers import (
 )
 
 
-def _process_images(images: Iterable[str]) -> List[Image.Image]:
+def _process_images(images: Iterable[str]) -> list[Image.Image]:
     return [
         Image.open(requests.get(image, stream=True).raw) for image in images
     ]

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import csv
 import functools
+from collections.abc import Mapping
 from importlib import resources
-from typing import Mapping
 
 import huggingface_hub
 from max import pipelines

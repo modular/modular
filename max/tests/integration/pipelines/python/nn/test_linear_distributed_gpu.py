@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
@@ -16,7 +14,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.nn import ColumnParallelLinear, LinearV2
 
 
-def _distribute_value(v, devices: List[Device]):
+def _distribute_value(v, devices: list[Device]):
     return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 

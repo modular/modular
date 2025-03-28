@@ -6,7 +6,6 @@
 """Test pipelines attention layer."""
 
 import math
-from typing import List
 
 import numpy as np
 import pytest
@@ -76,11 +75,11 @@ def _attention_block(params, inputs):
     )
 
 
-def distribute_value(v, devices: List[Device]):
+def distribute_value(v, devices: list[Device]):
     return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 
-def shard_attn_mask_value(v, devices: List[Device]):
+def shard_attn_mask_value(v, devices: list[Device]):
     n_devices = len(devices)
     size = v.shape[1] // n_devices
     return [
@@ -91,7 +90,7 @@ def shard_attn_mask_value(v, devices: List[Device]):
     ]
 
 
-def shard_col_value(v, devices: List[Device]):
+def shard_col_value(v, devices: list[Device]):
     n_devices = len(devices)
     col_size = v.shape[1].dim // n_devices
     return [
@@ -102,7 +101,7 @@ def shard_col_value(v, devices: List[Device]):
     ]
 
 
-def shard_row_value(v, devices: List[Device]):
+def shard_row_value(v, devices: list[Device]):
     n_devices = len(devices)
     row_size = v.shape[0].dim // n_devices
     return [
@@ -118,7 +117,7 @@ def _attention_layer(
     mask_dtype: DType,
     cache_strategy: KVCacheStrategy,
     session: InferenceSession,
-    devices: List[Device],
+    devices: list[Device],
     model_parameters,
 ) -> tuple[Graph, KVCacheParams, KVCacheManager]:
     (
@@ -253,7 +252,7 @@ def _attention_layer(
 def execute_attn_for_devices(
     inputs,
     session,
-    devices: List[Device],
+    devices: list[Device],
     model_parameters,
     seq_len: int,
 ):

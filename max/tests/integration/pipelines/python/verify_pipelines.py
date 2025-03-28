@@ -13,10 +13,11 @@ import os
 import sys
 import time
 import traceback
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence, TextIO, TypeVar, Union
+from typing import Callable, Optional, TextIO, TypeVar, Union
 
 import click
 from generate_llm_logits import Flake, generate_llm_logits

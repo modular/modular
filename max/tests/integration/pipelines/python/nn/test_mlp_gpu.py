@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from typing import List
 
 import numpy as np
 import pytest
@@ -35,7 +34,7 @@ class TorchMLP(nn.Module):
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
-def mlp_graph(types: List[TensorType]) -> Graph:
+def mlp_graph(types: list[TensorType]) -> Graph:
     (input_type, w1_type, w2_type, w3_type) = types
     with Graph(
         "mlp", input_types=[input_type, w1_type, w2_type, w3_type]
@@ -72,7 +71,7 @@ def test_mlp(input_type: TensorType):
     graph = mlp_graph([input_type, w1_type, w2_type, w3_type])
     compiled = session.load(graph)
     if input_type.rank == 1:
-        x_np = np.ones((128)).astype(np.float32)
+        x_np = np.ones(128).astype(np.float32)
     else:
         x_np = np.ones((32, 128)).astype(np.float32)
     w1_np = np.ones((16, 128)).astype(np.float32)

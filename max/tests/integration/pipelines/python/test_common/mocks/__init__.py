@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for working with mocks for unit testing"""
 
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator, Optional, Tuple, Union
+from typing import Optional, Union
 from unittest.mock import MagicMock, PropertyMock, patch
 
 from max.driver import DeviceSpec, scan_available_devices
@@ -35,7 +36,7 @@ def retrieve_mock_text_generation_pipeline(
     max_length: Optional[int] = None,
     max_new_tokens: Union[int, None] = None,
     device_specs: Optional[list[DeviceSpec]] = None,
-) -> Generator[Tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:
+) -> Generator[tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:
     if eos_token > vocab_size:
         msg = f"eos_token provided '{eos_token}' must be less than vocab_size provided '{vocab_size}'"
         raise ValueError(msg)

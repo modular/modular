@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from typing import List
 
 import numpy as np
 import pytest
@@ -35,11 +34,11 @@ class TorchMLP(nn.Module):
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
-def distribute_value(v, devices: List[Device]):
+def distribute_value(v, devices: list[Device]):
     return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 
-def shard_col_value(v, devices: List[Device]):
+def shard_col_value(v, devices: list[Device]):
     n_devices = len(devices)
     col_size = v.shape[1].dim // n_devices
     return [
@@ -50,7 +49,7 @@ def shard_col_value(v, devices: List[Device]):
     ]
 
 
-def shard_row_value(v, devices: List[Device]):
+def shard_row_value(v, devices: list[Device]):
     n_devices = len(devices)
     row_size = v.shape[0].dim // n_devices
     return [
@@ -61,7 +60,7 @@ def shard_row_value(v, devices: List[Device]):
     ]
 
 
-def distributed_mlp_graph(devices: List[Device], model_parameters) -> Graph:
+def distributed_mlp_graph(devices: list[Device], model_parameters) -> Graph:
     (batch_size, intermediate_size, hidden_dim) = model_parameters
 
     input_type: TensorType = TensorType(

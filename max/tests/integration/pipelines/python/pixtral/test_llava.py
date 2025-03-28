@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 import math
-from typing import Tuple, Type, TypeVar
+from typing import TypeVar
 
 import numpy as np
 import pytest
@@ -146,7 +146,7 @@ def size():
 
 
 @pytest.fixture
-def img_features(size: Tuple, img_dtype: torch.dtype):
+def img_features(size: tuple, img_dtype: torch.dtype):
     # Gnerate imgs of shape (batch_size, seq_len=num_patches, hidden_size).
     return torch.randint(low=0, high=1, size=size).to(img_dtype)
 
@@ -302,7 +302,7 @@ def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):
 T = TypeVar("T")
 
 
-def missing_value(t: Type[T]) -> T:
+def missing_value(t: type[T]) -> T:
     # TODO: Remove this function and replace the call site with a real value
     raise NotImplementedError
 
@@ -464,7 +464,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
 
 @pytest.fixture
 def graph_api_pixtral(
-    pytorch_pixtral, graph_api_connector: Tuple[LlavaMultiModalConnector, dict]
+    pytorch_pixtral, graph_api_connector: tuple[LlavaMultiModalConnector, dict]
 ):
     weights_registry: dict = {}
     # Create a vision encoder with the weights of pytorch_pixtral.vision_tower
@@ -502,8 +502,8 @@ def graph_api_pixtral(
 def test_connector(
     img_features: torch.Tensor,
     pytorch_connector: LlavaMultiModalProjector,
-    graph_api_connector: Tuple[LlavaMultiModalConnector, dict],
-    size: Tuple,
+    graph_api_connector: tuple[LlavaMultiModalConnector, dict],
+    size: tuple,
 ):
     weights_registry: dict = {}
     connector = graph_api_connector[0]
@@ -532,7 +532,7 @@ def test_connector(
     )
 
 
-def test_processor(img_urls_and_prompt: Tuple, pytorch_pixtral_processor):
+def test_processor(img_urls_and_prompt: tuple, pytorch_pixtral_processor):
     IMG_URLS, PROMPT = img_urls_and_prompt
     pytorch_inputs = pytorch_pixtral_processor(
         text=PROMPT, images=IMG_URLS, return_tensors="pt"
@@ -544,10 +544,10 @@ def test_processor(img_urls_and_prompt: Tuple, pytorch_pixtral_processor):
 
 @pytest.mark.skip(reason="no way of currently testing this")
 def test_pixtral(
-    img_urls_and_prompt: Tuple,
+    img_urls_and_prompt: tuple,
     pytorch_pixtral_processor: PixtralProcessor,
     pytorch_pixtral: LlavaForConditionalGeneration,
-    graph_api_pixtral: Tuple[LlavaConditionalGeneration, dict],
+    graph_api_pixtral: tuple[LlavaConditionalGeneration, dict],
 ):
     IMG_URLS, PROMPT = img_urls_and_prompt
     pytorch_inputs = pytorch_pixtral_processor(

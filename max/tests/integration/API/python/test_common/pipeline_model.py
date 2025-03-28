@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import wraps
-from typing import Any, Sequence, cast
+from typing import Any, cast
 
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType

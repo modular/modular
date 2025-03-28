@@ -9,7 +9,6 @@ import os
 from dataclasses import dataclass
 from math import isclose
 from pathlib import Path
-from typing import Tuple
 
 import numpy as np
 import pytest
@@ -524,7 +523,7 @@ def test_devices(session: InferenceSession) -> None:
 
 
 @pytest.fixture
-def call_inputs() -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+def call_inputs() -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
     # Fixture for inputs to __call__ tests.
     a = Tensor.from_numpy(np.arange(0, 5, dtype=np.int32))
     b = Tensor.from_numpy(np.arange(5, 10, dtype=np.int32))
@@ -547,7 +546,7 @@ def call_model(session: InferenceSession, named_inputs_path: Path) -> Model:
 
 
 def test_positional_call(
-    call_inputs: Tuple, call_output: np.ndarray, call_model: Model
+    call_inputs: tuple, call_output: np.ndarray, call_model: Model
 ) -> None:
     # Calling a model with strictly positional inputs should work.
     a, b, c, d, e = call_inputs
@@ -557,7 +556,7 @@ def test_positional_call(
 
 
 def test_named_call(
-    call_inputs: Tuple, call_output: np.ndarray, call_model: Model
+    call_inputs: tuple, call_output: np.ndarray, call_model: Model
 ) -> None:
     # Calling a model with strictly named inputs should work.
     a, b, c, d, e = call_inputs
@@ -567,7 +566,7 @@ def test_named_call(
 
 
 def test_mixed_positional_named_call(
-    call_inputs: Tuple, call_output: np.ndarray, call_model: Model
+    call_inputs: tuple, call_output: np.ndarray, call_model: Model
 ) -> None:
     # Calling a model with a mixture of named and positional inputs should also work (even if named
     # inputs are not ordered).
@@ -577,14 +576,14 @@ def test_mixed_positional_named_call(
     assert np.array_equal(call_output, output.to_numpy())
 
 
-def test_too_few_inputs_call(call_inputs: Tuple, call_model: Model) -> None:
+def test_too_few_inputs_call(call_inputs: tuple, call_model: Model) -> None:
     # Calling a model with less inputs than expected should not work.
     a, b, c, _, e = call_inputs
     with pytest.raises(TypeError):
         call_model(a, b, e=e, c=c)
 
 
-def test_too_many_inputs_call(call_inputs: Tuple, call_model: Model) -> None:
+def test_too_many_inputs_call(call_inputs: tuple, call_model: Model) -> None:
     # Calling a model with more inputs than expected should not work.
     a, b, c, d, e = call_inputs
     with pytest.raises(TypeError):
@@ -592,7 +591,7 @@ def test_too_many_inputs_call(call_inputs: Tuple, call_model: Model) -> None:
 
 
 def test_already_specified_input_call(
-    call_inputs: Tuple, call_model: Model
+    call_inputs: tuple, call_model: Model
 ) -> None:
     # Calling a model with inputs that correspond to indexes already occupied by
     # positional inputs should not work.
@@ -601,7 +600,7 @@ def test_already_specified_input_call(
         call_model(a, b, b=b, c=c, d=d)
 
 
-def test_unrecognized_name_call(call_inputs: Tuple, call_model: Model) -> None:
+def test_unrecognized_name_call(call_inputs: tuple, call_model: Model) -> None:
     # Calling model with unrecognized names should not work.
     a, b, c, d, e = call_inputs
     with pytest.raises(TypeError):

@@ -10,8 +10,9 @@ import logging
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal, Optional, Sequence
+from typing import Any, Literal, Optional
 
 import click
 import python.runfiles

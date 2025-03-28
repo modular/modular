@@ -7,7 +7,8 @@
 
 import asyncio
 import uuid
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any, Optional
 
 import numpy as np
 import requests
