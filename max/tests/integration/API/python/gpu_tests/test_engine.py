@@ -3,15 +3,18 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+import re
 from dataclasses import dataclass, field
 from math import isclose
 from pathlib import Path
 
 import numpy as np
+import pytest
+import torch
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType, Value, Weight
 from max.mlir.dialects import mo
 
 
@@ -234,3 +237,121 @@ def test_aliasing_outputs(
 def test_devices(gpu_session: InferenceSession) -> None:
     device = Accelerator()
     assert str(device) == str(gpu_session.devices[0])
+
+
+def test_input_device_missing_from_session():
+    cuda = Accelerator()
+    session = InferenceSession(devices=[cuda])
+
+    # Create graph with CPU-based weight
+    with Graph(
+        "test_device_validation",
+        input_types=[
+            TensorType(DType.float32, (10, 10), device=DeviceRef.CPU())
+        ],
+    ) as g:
+        x = g.inputs[0].tensor
+        weight = Weight("w", DType.float32, (10, 10))
+        y = x @ weight
+        g.output(y)
+
+    # Create GPU tensor that should be on CPU
+    device_weight = torch.tensor(np.ones((10, 10), dtype=np.float32))
+
+    # Create test input on GPU
+    input_tensor = Tensor.from_numpy(np.ones((10, 10), dtype=np.float32)).to(
+        cuda
+    )
+
+    # This will load but set up invalid device configuration
+    model = session.load(
+        g,
+        weights_registry={"w": device_weight},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Loaded Model input idx=0 uses device=cpu:0 which was not set up in InferenceSession",
+    ):
+        model.execute(input_tensor, copy_inputs_to_device=False)
+
+
+def test_input_device_mismatch():
+    cuda = Accelerator()
+    session = InferenceSession(devices=[cuda, CPU()])
+
+    # Create graph with CPU-based weight
+    with Graph(
+        "test_device_validation",
+        input_types=[
+            TensorType(DType.float32, (10, 10), device=DeviceRef.CPU())
+        ],
+    ) as g:
+        x = g.inputs[0].tensor
+        weight = Weight("w", DType.float32, (10, 10))
+        y = x @ weight
+        g.output(y)
+
+    # Create GPU tensor that should be on CPU
+    device_weight = torch.tensor(np.ones((10, 10), dtype=np.float32))
+
+    # Create test input on GPU
+    input_tensor = Tensor.from_numpy(np.ones((10, 10), dtype=np.float32)).to(
+        cuda
+    )
+
+    # This will load but set up invalid device configuration
+    model = session.load(
+        g,
+        weights_registry={"w": device_weight},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "Model execution input at index 0 device (Device(type=gpu,id=0)) does not match expected device (Device(type=cpu,id=0))"
+        ),
+    ):
+        model.execute(input_tensor, copy_inputs_to_device=False)[0]
+
+
+def test_multiple_input_device_mismatch():
+    cuda = Accelerator()
+    session = InferenceSession(devices=[cuda, CPU()])
+
+    # Create graph with CPU-based weight
+    with Graph(
+        "test_device_validation",
+        input_types=[
+            TensorType(DType.float32, (10, 10), device=DeviceRef.CPU()),
+            TensorType(DType.float32, (10, 10), device=DeviceRef.GPU()),
+        ],
+    ) as g:
+        x1 = g.inputs[0].tensor
+        x2 = g.inputs[1].tensor
+        weight = Weight("w", DType.float32, (10, 10))
+        y = (x1 @ weight).to(DeviceRef.GPU()) + x2
+        g.output(y)
+
+    # Create GPU tensor that should be on CPU
+    device_weight = torch.tensor(np.ones((10, 10), dtype=np.float32))
+
+    # Create test input on GPU
+    input_tensor1 = Tensor.from_numpy(np.ones((10, 10), dtype=np.float32)).to(
+        cuda
+    )
+    input_tensor2 = Tensor.from_numpy(np.ones((10, 10), dtype=np.float32))
+
+    # This will load but set up invalid device configuration
+    model = session.load(
+        g,
+        weights_registry={"w": device_weight},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "Model execution input at index 0 device (Device(type=gpu,id=0)) does not match expected device (Device(type=cpu,id=0))"
+        ),
+    ):
+        model.execute(input_tensor1, input_tensor2, copy_inputs_to_device=False)

@@ -257,7 +257,6 @@ def execute_attn_for_devices(
     model_parameters,
     seq_len: int,
 ):
-    session = InferenceSession(devices=devices)
     graph, _, kv_manager = _attention_layer(
         DType.float32,
         DType.float32,

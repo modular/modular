@@ -174,7 +174,7 @@ def test_attention_gpu(start_pos, seq_len):
     # It does not test that these logits match a reference implementation.
     host = CPU(0)
     device0 = Accelerator(0)
-    devices = [device0]
+    devices = [host, device0]
     session = InferenceSession(devices=devices)
     # Get Graph
     graph, _, kv_manager = _attention_layer(
@@ -361,7 +361,8 @@ class CrossAttentionModel:
 )
 def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
     cuda = Accelerator()
-    session = InferenceSession(devices=[cuda])
+    host = CPU()
+    session = InferenceSession(devices=[host, cuda])
     session.set_debug_print_options("COMPACT")
 
     # Globally disable saving activations for backprop.
