@@ -191,8 +191,7 @@ protected:
   }
 
   // N.B. Initialize the underlying telemetry with empty settings.
-  Settings empty =
-      Settings(Config(), EntitlementStore::alwaysOpen(llvm::errs()));
+  Settings empty = Settings(Config());
   NiceMock<MockTelemetryContext> mockTelemetryCtx =
       NiceMock<MockTelemetryContext>(empty);
   std::unique_ptr<MeteringContext> context;

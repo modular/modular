@@ -161,8 +161,7 @@ static void iterateMessages(StringRef log,
 TEST(Telemetry, Counter) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("counter", "0");
-  Settings settings(logFileSetup.getConfig(),
-                    EntitlementStore::alwaysOpen(llvm::errs()));
+  Settings settings(logFileSetup.getConfig());
   TelemetryContext ctx(settings);
 
   auto counter = ctx.createUInt64Counter("basic.test.counter", Level::L0);
@@ -213,8 +212,7 @@ TEST(Telemetry, Counter) {
 TEST(Telemetry, DISABLED_Histogram) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("histogram", "1");
-  Settings settings(logFileSetup.getConfig(),
-                    EntitlementStore::alwaysOpen(llvm::errs()));
+  Settings settings(logFileSetup.getConfig());
   TelemetryContext ctx(settings);
 
   std::string value = "ATTRIBUTE";
@@ -287,8 +285,7 @@ TEST(Telemetry, DISABLED_Histogram) {
 TEST(Telemetry, HistogramL1) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("histogram", "0");
-  Settings settings(logFileSetup.getConfig(),
-                    EntitlementStore::alwaysOpen(llvm::errs()));
+  Settings settings(logFileSetup.getConfig());
   TelemetryContext ctx(settings);
 
   auto hist = ctx.createUInt64Histogram("optional.histogram", Level::L1);
@@ -320,8 +317,7 @@ TEST(Telemetry, HistogramL1) {
 TEST(Telemetry, Timer) {
   LogFileSetup logFileSetup("metrics");
   TempFile tmpFile = logFileSetup.getLogFile("timer", "0");
-  Settings settings(logFileSetup.getConfig(),
-                    EntitlementStore::alwaysOpen(llvm::errs()));
+  Settings settings(logFileSetup.getConfig());
   TelemetryContext ctx(settings);
 
   auto lambdaTest = [&]() {
@@ -380,8 +376,7 @@ TEST(Telemetry, Timer) {
 TEST(Telemetry, Logger) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "1");
-  Settings settings(logFileSetup.getConfig(),
-                    EntitlementStore::alwaysOpen(llvm::errs()));
+  Settings settings(logFileSetup.getConfig());
   TelemetryContext ctx(settings);
 
   auto logger = ctx.getLogger("basic.log");
@@ -437,8 +432,7 @@ TEST(Telemetry, Logger) {
 TEST(Telemetry, LoggerL2) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "1");
-  Settings settings(logFileSetup.getConfig(),
-                    EntitlementStore::alwaysOpen(llvm::errs()));
+  Settings settings(logFileSetup.getConfig());
   TelemetryContext ctx(settings);
 
   auto logger = ctx.getLogger("basic.log");
@@ -466,8 +460,7 @@ TEST(Telemetry, LoggerL2) {
 TEST(Telemetry, Resources) {
   LogFileSetup logFileSetup("logs");
   TempFile tmpFile = logFileSetup.getLogFile("log", "1");
-  Settings settings(logFileSetup.getConfig(),
-                    EntitlementStore::alwaysOpen(llvm::errs()));
+  Settings settings(logFileSetup.getConfig());
 
   llvm::StringMap<Telemetry::TelemetryContext::AttributeValue> extras;
   StringRef resourceVal = "aResource value here";
@@ -558,8 +551,7 @@ TEST(Telemetry, ModularEmployee) {
   auto checkTelemetry = [&](bool expectedValue) {
     LogFileSetup logFileSetup("logs");
     TempFile tmpFile = logFileSetup.getLogFile("log", "1");
-    Settings settings(logFileSetup.getConfig(),
-                      EntitlementStore::alwaysOpen(llvm::errs()));
+    Settings settings(logFileSetup.getConfig());
 
     TelemetryContext ctx(settings, {});
 

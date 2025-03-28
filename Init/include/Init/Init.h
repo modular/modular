@@ -21,11 +21,6 @@ using namespace M::Telemetry;
 class Options {
 public:
   Options() = default;
-  Options &withEntitlementPolicy(
-      Settings::EntitlementPolicy v = Settings::kRequiredNoPrompt) {
-    entitlementPolicy = v;
-    return *this;
-  }
   Options &withForceDisableCrashReporting(bool v = true) {
     forceDisableCrashReporting = v;
     return *this;
@@ -39,17 +34,11 @@ public:
     runtimeOptions.emplace(v);
     return *this;
   }
-  Options &withRefreshPolicy(const Settings::RefreshPolicy &v) {
-    refreshPolicy = v;
-    return *this;
-  }
 
 private:
-  Settings::EntitlementPolicy entitlementPolicy = Settings::kAlwaysSucceed;
   bool forceDisableCrashReporting = false;
   llvm::StringMap<TelemetryContext::AttributeValue> resources = {};
   std::optional<AsyncRT::RuntimeOptions> runtimeOptions;
-  Settings::RefreshPolicy refreshPolicy;
 
   friend ErrorOr<ContextRef> createContext(StringRef, const Options &);
 };

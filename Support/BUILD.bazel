@@ -11,7 +11,6 @@ load(
     "td_library",
 )
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
-load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 
 exports_files(["include/Support/Driver/DriverCommand.td"])
 
@@ -256,38 +255,6 @@ modular_cc_library(
     ],
 )
 
-expand_root_cert_inc(
-    name = "CertificatesHeader",
-    cert_pem = select({
-        "//:dev_build": "lib/Entitlements/RootCertificates/local/cert.pem",
-        "//:production_build": "lib/Entitlements/RootCertificates/prod/cert.pem",
-    }),
-    endpoint = select({
-        "//:dev_build": "lib/Entitlements/RootCertificates/local/endpoint.txt",
-        "//:production_build": "lib/Entitlements/RootCertificates/prod/endpoint.txt",
-    }),
-    key_pem = select({
-        "//:dev_build": "lib/Entitlements/RootCertificates/local/key.pem",
-        "//:production_build": "lib/Entitlements/RootCertificates/prod/key.pem",
-    }),
-    source = "lib/Entitlements/RootCertificates/RootCert.inc.in",
-    visibility = [":__subpackages__"],
-)
-
-modular_cc_library(
-    name = "Entitlements",
-    srcs = [":CertificatesHeader"] + glob(["lib/Entitlements/*.cpp"]),
-    hdrs = glob(["include/Support/Entitlements/*.h"]),
-    copts = ["-I$(GENDIR)/Support"],
-    deps = [
-        ":ASN1",
-        ":Base",
-        ":Configuration",
-        ":Cryptography",
-        ":HTTP",
-    ],
-)
-
 modular_cc_library(
     name = "Filesystem",
     srcs = [
@@ -510,7 +477,6 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Configuration",
-        ":Entitlements",
         ":Filesystem",
         ":HTTP",
         ":MArchTarget",
@@ -742,7 +708,7 @@ modular_cc_library(
     hdrs = glob(["include/Support/Settings/*.h"]),
     deps = [
         ":Configuration",
-        ":Entitlements",
+        ":HTTP",
     ],
 )
 

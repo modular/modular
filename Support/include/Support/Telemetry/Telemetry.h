@@ -8,7 +8,6 @@
 #define SUPPORT_TELEMETRY_H
 
 #include "Support/Configuration.h"
-#include "Support/Entitlements/EntitlementStore.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Settings/Settings.h"
 #include "Support/Telemetry/Common.h"

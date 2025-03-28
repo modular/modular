@@ -8,10 +8,10 @@
 #define SUPPORT_SETTINGS_SETTINGS_H
 
 #include "Support/Configuration.h"
-#include "Support/Entitlements/EntitlementStore.h"
 #include "Support/ErrorOr.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "Support/Settings/Setting.h"
+#include "llvm/ADT/StringSwitch.h"
 
 #include <filesystem>
 #include <mutex>
@@ -36,7 +36,7 @@ public:
 
   /// Create new settings. Note that this should be used for tests only,
   /// all regular code paths should use Settings::open.
-  Settings(Config &&cfg, EntitlementStore &&store);
+  Settings(Config &&cfg);
 
   /// Get a setting by its key. This corresponds to Config::getValue.
   const Setting *get(StringRef key);
@@ -82,56 +82,16 @@ public:
     return s != nullptr;
   }
 
-  /// Return the current userID.
-  ErrorOr<StringRef> userID() const;
-
-  /// PEM-encoded client private key (not a path).
-  const std::string clientKeyPriv();
-
-  /// PEM-encoded client certificate (not a path).
-  const std::string clientCert();
-
-  /// Refresh the settings if it's necessary to do so. This will refresh all
-  /// configurations and the entitlement store. The user can configure a policy
-  /// on when a refresh is 'necessary', using the validFrom and validTo values
-  /// of the certificate, converted to system clock time points. If no policy is
-  /// provided, a default of 'halfway between from and to' is used.
-  using RefreshPolicy =
-      llvm::function_ref<bool(std::chrono::system_clock::time_point from,
-                              std::chrono::system_clock::time_point to)>;
-
-  enum EntitlementPolicy {
-    /// Always succeed regardless of underlying entitlements.
-    kAlwaysSucceed = 0,
-
-    /// Fail if no entitlement store is available (returning an error).
-    kRequiredNoPrompt = 1,
-
-    /// Prompt for authentication, prompting if this fails. Will open web
-    /// browser with auth link.
-    kRequiredWithPrompt = 2,
-
-    /// Prompt for authentication without opening a browser window.
-    kRequiredWithPromptNoBrowser = 3,
-  };
-
   /// Open the current configuration and entitlement store, refreshing if
   /// needed, and return a Settings object.
   ///
   /// This function will open and parse the local configuration, and may
   /// refresh the local entitlement store. It should only be called once
   /// at start-up, and then stored in a context for future reference.
-  static ErrorOr<Settings> open(HTTPContextRef httpCtx,
-                                EntitlementPolicy entitlements = kAlwaysSucceed,
-                                RefreshPolicy policy = nullptr);
+  static ErrorOr<Settings> open();
 
 private:
-  /// Used internally on creation.
-  ErrorOrSuccess refresh(HTTPContextRef httpCtx,
-                         RefreshPolicy shouldRefreshEntitlements);
-
   Config config;
-  EntitlementStore entitlementStore;
   struct impl {
     std::mutex mu;
     llvm::StringMap<Setting> map;
