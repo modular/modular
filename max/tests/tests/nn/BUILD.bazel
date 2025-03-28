@@ -3,11 +3,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "tests",
     srcs = glob(["**/*.py"]),
-    data = [
-        "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
-        "@llvm-project//compiler-rt:orc_rt",
-    ],
+    data = ["//GenericML:MGPRT"],
     imports = ["pytests"],
     deps = [
         "//SDK/lib/API/python/max/dtype",
