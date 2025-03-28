@@ -10,10 +10,10 @@
 
 #include "Config/Version.h"
 #include "Support/Base64.h"
+#include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Random.h"
-#include "Support/Settings/Settings.h"
 #include "Support/Telemetry/Exporters/FileLogExporter.h"
 #include "Support/Telemetry/Exporters/FileMetricExporter.h"
 #include "Support/Threading/HWInfo.h"
@@ -218,7 +218,7 @@ void TelemetryContext::flush(std::chrono::microseconds timeout) {
 }
 
 TelemetryContext::TelemetryContext(
-    Settings &settings, const llvm::StringMap<AttributeValue> &resources) {
+    Config &settings, const llvm::StringMap<AttributeValue> &resources) {
   [[maybe_unused]] bool isProdBuild = false;
 #ifdef MODULAR_PRODUCTION
   isProdBuild = true;
@@ -274,7 +274,7 @@ TelemetryContext::TelemetryContext(
   attrs.SetAttribute("sessionid", localIDs.second);
   machineId = localIDs.first;
 
-  auto webId = dyn_cast_if_present<StringRef>(settings.get("web.id"));
+  auto webId = settings.getValue("web.id");
   if (webId.empty()) {
     auto homeDir = llvm::sys::Process::GetEnv("HOME");
     if (homeDir) {
@@ -306,22 +306,20 @@ TelemetryContext::TelemetryContext(
 
   // Check if telemetry is enabled. Note that currently users have to opt out
   // of telemetry, so it is enabled unless the user explicitly disables.
-  bool enabled = settings.getBool("telemetry.enabled", true);
+  bool enabled = settings.getValueAsBool("telemetry.enabled", true);
 
   // Get telemetry level.
-  auto *cfgLevel = settings.get("telemetry.level");
-  auto level = llvm::dyn_cast_if_present<StringRef>(cfgLevel);
+  auto level = settings.getValue("telemetry.level");
   telemetryLevel = levelFromString(level);
 
   // Configure OTel internal logging.
   static llvm::once_flag flag;
   llvm::call_once(flag, [&]() {
-    configureInternalLogging(
-        dyn_cast_if_present<StringRef>(settings.get("telemetry.internal_log")));
+    configureInternalLogging(settings.getValue("telemetry.internal_log"));
   });
 
   // Get the user ID if we have one.
-  attrs.SetAttribute("enduser.id", settings.get<StringRef>("user.id"));
+  attrs.SetAttribute("enduser.id", settings.getValue("user.id"));
 
   // Get the resource object we can give to OTel.
   auto otelResources = Resource::Create(attrs).Merge(Resource::GetDefault());
@@ -358,11 +356,11 @@ TelemetryContext::TelemetryContext(
 
   // Get metrics exporter config.
   auto httpEndpoint =
-      settings.get<StringRef>("telemetry.exporters.metrics.http_endpoint");
+      settings.getValue("telemetry.exporters.metrics.http_endpoint");
   std::filesystem::path filePath =
-      settings.get<StringRef>("telemetry.exporters.metrics.file_path").str();
+      settings.getValue("telemetry.exporters.metrics.file_path").str();
   std::filesystem::path udsName =
-      settings.get<StringRef>("telemetry.exporters.metrics.uds_name").str();
+      settings.getValue("telemetry.exporters.metrics.uds_name").str();
 
   // Create metric readers, one for each exporter.
 
@@ -404,10 +402,8 @@ TelemetryContext::TelemetryContext(
 
   // -------- Logs --------
   // Get logs exporter config.
-  httpEndpoint =
-      settings.get<StringRef>("telemetry.exporters.logs.http_endpoint");
-  filePath =
-      settings.get<StringRef>("telemetry.exporters.logs.file_path").str();
+  httpEndpoint = settings.getValue("telemetry.exporters.logs.http_endpoint");
+  filePath = settings.getValue("telemetry.exporters.logs.file_path").str();
 
   // Create log processors for each exporter.
   std::vector<std::unique_ptr<opentelemetry::sdk::logs::LogRecordProcessor>>

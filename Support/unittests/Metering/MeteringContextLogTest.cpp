@@ -96,7 +96,7 @@ public:
 
 class MockTelemetryContext : public Telemetry::TelemetryContext {
 public:
-  MockTelemetryContext(Settings &settings)
+  MockTelemetryContext(Config &settings)
       : Telemetry::TelemetryContext(settings) {
     mockEventLogger = std::make_shared<testing::NiceMock<MockEventLogger>>();
     mockLogger = std::make_shared<testing::NiceMock<MockLogger>>(
@@ -191,7 +191,7 @@ protected:
   }
 
   // N.B. Initialize the underlying telemetry with empty settings.
-  Settings empty = Settings(Config());
+  Config empty = Config(Config());
   NiceMock<MockTelemetryContext> mockTelemetryCtx =
       NiceMock<MockTelemetryContext>(empty);
   std::unique_ptr<MeteringContext> context;

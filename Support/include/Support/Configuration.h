@@ -69,7 +69,7 @@ public:
   /// Get a boolean value with possible override from the environment.  Default
   /// is returned if not set.  Error is returned if set, but to a value that
   /// cannot be interpreted as a boolean.
-  ErrorOr<bool> getValueAsBool(StringRef key, bool defaultValue);
+  bool getValueAsBool(StringRef key, bool defaultValue);
 
   /// Set a value - this will override anything that was already set for that
   /// key.

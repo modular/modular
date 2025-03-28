@@ -966,7 +966,6 @@ modular_cc_library(
         "//Support:Configuration",
         "//Support:ML",
         "//Support:Profiling",
-        "//Support:Settings",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
     ],

@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Support/Configuration.h"
-#include "Support/Settings/Settings.h"
+#include "Support/Configuration.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -27,8 +27,8 @@ ErrorOr<std::filesystem::path> MojoConfig::getConfigFilePath() const {
 static StringRef getValueFrom(Config &config, StringLiteral key) {
   return config.getValue(key);
 }
-static StringRef getValueFrom(Settings *settings, StringLiteral key) {
-  return settings->get<StringRef>(key);
+static StringRef getValueFrom(Config *settings, StringLiteral key) {
+  return settings->getValue(key);
 }
 
 StringRef MojoConfig::getValue(StringLiteral key) {
@@ -48,7 +48,7 @@ ErrorOr<MojoConfig> MojoConfig::open() {
 }
 
 MojoConfig MojoConfig::fromContext(ContextRef ctx) {
-  return MojoConfig(ctx->get<Settings>());
+  return MojoConfig(ctx->get<Config>());
 }
 
 //===----------------------------------------------------------------------===//

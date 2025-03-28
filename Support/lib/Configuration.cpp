@@ -196,22 +196,14 @@ StringRef Config::getValueOr(llvm::StringRef key,
   return stringValue;
 }
 
-ErrorOr<bool> Config::getValueAsBool(StringRef key, bool defaultValue) {
+bool Config::getValueAsBool(StringRef key, bool defaultValue) {
   auto stringValue = getValue(key);
   if (stringValue.empty())
     return defaultValue;
-  // llvm::StringSwitch does not support ErrorOr<bool> as a result type
-  // directly because it is not copyable, so first convert to int, then to
-  // ErrorOr<bool>.
-  int intResult = llvm::StringSwitch<int>(stringValue)
-                      .CasesLower("0", "false", "no", 0)
-                      .CasesLower("1", "true", "yes", 1)
-                      .Default(-1);
-  if (intResult == -1) {
-    return Error(llvm::Twine("Unable to interpret configuration key '") + key +
-                 "' with value '" + stringValue + "' as boolean");
-  }
-  return bool(intResult);
+  return llvm::StringSwitch<bool>(stringValue)
+      .CasesLower("0", "false", "no", false)
+      .CasesLower("1", "true", "yes", true)
+      .Default(defaultValue);
 }
 
 void Config::setValue(StringRef key, StringRef value) {

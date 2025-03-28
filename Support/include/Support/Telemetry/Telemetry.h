@@ -9,7 +9,6 @@
 
 #include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
-#include "Support/Settings/Settings.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/Instruments.h"
 #include "Support/Telemetry/Logs.h"
@@ -73,8 +72,8 @@ public:
                    ArrayRef<uint32_t>, ArrayRef<double>, uint64_t,
                    ArrayRef<uint64_t>, ArrayRef<uint8_t>>;
 
-  /// Set up a TelemetryContext from a Settings object.
-  TelemetryContext(Settings &settings,
+  /// Set up a TelemetryContext from a Config object.
+  TelemetryContext(Config &settings,
                    const llvm::StringMap<AttributeValue> &resources = {});
 
   TelemetryContext(TelemetryContext &&other) = default;
