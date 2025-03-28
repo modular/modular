@@ -17,7 +17,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines import TokenGenerator
-from max.pipelines.context import TextContext
+from max.pipelines.context import InputContext, TextContext
 from max.pipelines.interfaces import (
     TextGenerationResponse,
     TextGenerationStatus,
@@ -165,21 +165,6 @@ def create_paged_scheduler(
     return scheduler
 
 
-def trim_prompts(
-    batch: dict[str, TextContext], seq_ids_and_prompts: dict[int, np.ndarray]
-) -> None:
-    # This should really be done in the kv cache manager once we pass the TextContext
-    # in as a argument...
-    for context in batch.values():
-        untrimmed_length = len(context.next_tokens)
-        trimmed_length = len(seq_ids_and_prompts[context.cache_seq_id])
-        bump_length = untrimmed_length - trimmed_length
-        if bump_length > 0:
-            context.bump_token_indices(
-                start_idx=bump_length,
-            )
-
-
 class FakeTokenGeneratorPipeline(TokenGenerator):
     def __init__(self, kv_manager: PagedKVCacheManager):
         self.kv_manager = kv_manager
@@ -203,13 +188,9 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
             if not self.kv_manager.contains(context.cache_seq_id):
                 self.kv_manager.external_claim([context.cache_seq_id])
 
-        # Fetch and trim the prompts
-        seq_ids_and_prompts = {
-            context.cache_seq_id: context.next_tokens
-            for context in batch.values()
-        }
-        self.kv_manager.fetch(seq_ids_and_prompts, num_steps=num_steps)
-        trim_prompts(batch, seq_ids_and_prompts)
+        ctxs: list[InputContext] = list(batch.values())
+
+        self.kv_manager.fetch(ctxs, num_steps=num_steps)
 
         # Generate the responses
         responses = {}
@@ -230,11 +211,7 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
             responses[req_id] = resp
 
         # Step the kv cache manager
-        seq_ids_and_new_tokens = {
-            context.cache_seq_id: np.ones(num_steps)
-            for context in batch.values()
-        }
-        self.kv_manager.step(seq_ids_and_new_tokens)
+        self.kv_manager.step(ctxs)
 
         return responses
 
