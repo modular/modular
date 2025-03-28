@@ -193,28 +193,10 @@ def pipeline_config_options(func):
             " or CPU if no GPUs are available (--devices=cpu)."
         ),
     )
-    # Kept for backwards compatibility.
-    @click.option(
-        "--use-gpu",
-        is_flag=False,
-        type=DevicesOptionType(),
-        show_default=False,
-        default="",
-        flag_value="0",
-        help=(
-            "Whether to run the model on the available GPU. An ID value can be"
-            " provided optionally to indicate the device ID to target."
-        ),
-    )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Remove the options from kwargs and replace with unified device_specs.
         devices: str | list[int] = kwargs.pop("devices")
-        legacy_use_gpu = kwargs.pop("use_gpu", None)
-
-        # Apply legacy flag if no modern devices specified.
-        if not devices and legacy_use_gpu:
-            devices = legacy_use_gpu
 
         kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
 
