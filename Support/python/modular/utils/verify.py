@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import numpy as np
 import numpy.typing
@@ -99,7 +99,7 @@ def is_close(
 
 
 # Extracts named tensors from the result descriptions.
-def _flatten_result_descriptions(result: Any) -> Dict:
+def _flatten_result_descriptions(result: Any) -> dict:
     d = dict()
     if isinstance(result, dict):
         for k, v in result.items():
@@ -115,8 +115,8 @@ def _flatten_result_descriptions(result: Any) -> Dict:
 # Rebuilds the result descriptions such that they become comparable even if the
 # order of results is not identical.
 def _unify_result_descriptions(
-    result_descriptions: List, compare_result_by_position: bool = False
-) -> Dict:
+    result_descriptions: list, compare_result_by_position: bool = False
+) -> dict:
     results = dict()
     for i, desc in enumerate(result_descriptions):
         if compare_result_by_position:
@@ -130,7 +130,7 @@ def _unify_result_descriptions(
 # (required for modular-pytorch which does not store result names).
 def parse_binary_output(
     output_dir: Path, compare_result_by_position: bool = False
-) -> Tuple[Dict, List]:
+) -> tuple[dict, list]:
     with open(output_dir / "output.yaml") as output_yaml:
         result_descriptions = yaml.safe_load(output_yaml)
 

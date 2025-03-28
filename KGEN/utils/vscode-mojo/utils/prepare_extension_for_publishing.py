@@ -61,7 +61,7 @@ def main():
 
     # Update the package.json file to use the nightly version.
     package_json = extension_dir / "package.json"
-    with open(package_json, "r") as f:
+    with open(package_json) as f:
         package = json.load(f)
 
         # Update the various names to include "nightly".
@@ -88,7 +88,7 @@ def main():
 
         > Note: this extension requires that the stable vscode-mojo extension is not enabled on the editor.
         """
-        with open(readme, "r") as f:
+        with open(readme) as f:
             text = readme_prefix + "".join(f.readlines()[1:])
             with open(readme, "w") as f:
                 f.write(text)

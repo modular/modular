@@ -8,8 +8,9 @@ import re
 import shutil
 import string
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Set
+from typing import Optional
 
 from modular.utils.subprocess import (
     CalledProcessError,
@@ -135,7 +136,7 @@ def get_current_branch_name(repo_dir: Optional[Path] = None) -> str:
 
 def get_uncommitted_changes(
     repo_dir: Optional[Path] = None,
-) -> Dict[str, list[str]]:
+) -> dict[str, list[str]]:
     """Return a dictionary of uncommitted changes.
 
     Args:
@@ -157,7 +158,7 @@ def get_uncommitted_changes(
             raise GitError("Not inside a valid git repository.") from None
         raise
 
-    changes: Dict[str, list[str]] = {}
+    changes: dict[str, list[str]] = {}
     for line in out.splitlines():
         # First two chars are the status, changed path starts at 4th character.
         changes.setdefault(line[:2], []).append(line[3:])
@@ -233,7 +234,7 @@ def get_changed_files(
 
 def get_changed_dirs(
     base: Optional[str] = None, repo_dir: Optional[Path] = None
-) -> Set[Path]:
+) -> set[Path]:
     """Get the list of top-level directories changed between this commit
        and the base commit.
 

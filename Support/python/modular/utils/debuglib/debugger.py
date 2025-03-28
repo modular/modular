@@ -14,7 +14,7 @@ import subprocess
 import sys
 from contextlib import redirect_stdout
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 from modular.utils.debuglib.lldbtypes import (
     SBDebugger,
@@ -88,7 +88,7 @@ def get_debugger() -> SBDebugger:
 
 def run_command_for_context(
     command: str, context: Any
-) -> Tuple[bool, str, str]:
+) -> tuple[bool, str, str]:
     """Execute the provided command using the provided context (thread, process
     or frame).
     print its output and error.
@@ -172,7 +172,7 @@ class StopContext:
         its output and error."""
         return dump_command_for_context(command, self.frame)
 
-    def run_command(self, command: str) -> Tuple[bool, str, str]:
+    def run_command(self, command: str) -> tuple[bool, str, str]:
         """Run the given command using the current frame as context and return
         a tuple [success, output, error]."""
         return run_command_for_context(command, self.frame)

@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable, Union
+from typing import Any, Union
 
 from modular.utils import logging
 

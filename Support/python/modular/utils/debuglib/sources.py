@@ -8,8 +8,9 @@
 
 import subprocess
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 
 class MojoCompilationError(Exception):
@@ -30,7 +31,7 @@ class MojoSource:
     def find_lines_with_text(self, text: str) -> Generator[int, None, None]:
         """Generate the 1-indexed line numbers at which the given text is found
         in the source file."""
-        with open(self.path, "r") as source:
+        with open(self.path) as source:
             i = 1
             for line in source.readlines():
                 if text in line:
