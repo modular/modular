@@ -25,30 +25,17 @@ from typing import (
     Type,
     TypeVar,
     cast,
-    final,
     overload,
 )
 
-import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.pipelines.context import InputContext
 from typing_extensions import TypeGuard
 
 from .cache_params import KVCacheParams
-
-
-@dataclass
-class _FetchMetadata:
-    """Metadata about sequences that are inflight.
-
-    Inflight refers to sequences that have executed `fetch` but not `step`.
-    """
-
-    prompt: np.ndarray
-    num_steps: int
-
 
 _T = TypeVar("_T")
 
@@ -204,7 +191,6 @@ class KVCacheManager(ABC):
         self.increment_cache_lengths_model = session.load(
             increment_cache_lengths_graph
         )
-        self.fetch_metadata: dict[int, _FetchMetadata] = {}
 
     @classmethod
     @abstractmethod
@@ -236,36 +222,14 @@ class KVCacheManager(ABC):
         ...
 
     @abstractmethod
-    def _fetch(
-        self,
-        seq_ids_and_prompts: dict[int, np.ndarray],
-        num_steps: int = 1,
-    ) -> List[KVCacheInputs]:
-        """Used by `fetch` and should be implemented by child classes."""
-        ...
-
-    @final
     def fetch(
         self,
-        seq_ids_and_prompts: dict[int, np.ndarray],
+        batch: list[InputContext],
         num_steps: int = 1,
     ) -> List[KVCacheInputs]:
         """Returns blocks and other inputs to kv cache kernel for given
         sequence ids and prompts."""
-        # Call into `_fetch` method implemented by child classes.
-        # This may trim the prompts in place so the fetch metadata is updated
-        # afterwards.
-        res = self._fetch(seq_ids_and_prompts, num_steps)
-
-        # Update the fetch metadata for the given sequence ids and prompts.
-        for seq_id, prompt in seq_ids_and_prompts.items():
-            assert seq_id not in self.fetch_metadata
-            self.fetch_metadata[seq_id] = _FetchMetadata(
-                prompt=prompt,
-                num_steps=num_steps,
-            )
-
-        return res
+        ...
 
     @abstractmethod
     def input_symbols(
@@ -300,12 +264,12 @@ class KVCacheManager(ABC):
 
     def _step(
         self,
-        seq_ids_and_new_tokens: dict[int, np.ndarray],
+        batch: list[InputContext],
     ) -> None:
         """Used by `step` and can optionally be overridden by child classes."""
         ...
 
-    def step(self, seq_ids_and_new_tokens: dict[int, np.ndarray]) -> None:
+    def step(self, batch: list[InputContext]) -> None:
         """Update the `cache_lengths` objects to note that a new
         kv projection step has occurred, and that the underlying memory
         has been written to. This `cache_lengths` value is then used
@@ -313,22 +277,14 @@ class KVCacheManager(ABC):
         be used in the kernels.
         """
         # Call into `_step` method possibly overridden by child classes.
-        self._step(seq_ids_and_new_tokens)
+        self._step(batch)
 
-        # Update the cache lengths and delete the fetch metadata for the given
-        # sequence ids and prompts.
-        for seq_id, new_tokens in seq_ids_and_new_tokens.items():
+        # Update the cache lengths for given batch.
+        for ctx in batch:
+            seq_id = ctx.cache_seq_id
             if seq_id not in self.cache_lengths:
                 raise ValueError(f"seq_id: {seq_id} not in cache.")
-
-            assert seq_id in self.fetch_metadata
-            metadata = self.fetch_metadata[seq_id]
-            del self.fetch_metadata[seq_id]
-
-            assert metadata.num_steps == len(new_tokens)
-            self.cache_lengths[seq_id] += (
-                len(metadata.prompt) + metadata.num_steps - 1
-            )
+            self.cache_lengths[seq_id] = ctx.start_idx
 
     def release(self, seq_id: int) -> None:
         """Release `seq_id` provided, marking this sequence as complete.

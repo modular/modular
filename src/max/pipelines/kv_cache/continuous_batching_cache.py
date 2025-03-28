@@ -32,6 +32,7 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
+from max.pipelines.context import InputContext
 
 from ._utils import build_max_lengths_tensor
 from .cache_params import KVCacheParams
@@ -219,9 +220,9 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         )
         return int(available_cache_memory // cache_size_per_sequence)
 
-    def _fetch(
+    def fetch(
         self,
-        seq_ids_and_prompts: dict[int, np.ndarray],
+        batch: list[InputContext],
         num_steps: int = 1,
     ) -> List[KVCacheInputs]:
         """Fetches the KV cache state for the given sequence IDs.
@@ -231,9 +232,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         previously cached key/value pairs.
 
         Args:
-            seq_ids_and_prompts: Dictionary of sequence IDs to fetch cache state for and the
-                new prompt we plan to add to the cache. Each ID must be within
-                the max_batch_size and must exist in the current cache.
+            batch: List of InputContext for which to fetch cache state for.
             num_steps: Number of steps to run for multi-step scheduling.
 
         Returns:
@@ -246,18 +245,20 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         Raises:
             ValueError: If any seq_id exceeds max_batch_size or doesn't exist in cache
         """
-        active_batch_size = len(seq_ids_and_prompts)
+        active_batch_size = len(batch)
 
         # Lookup table and seq_ids are redundant identical tensors.
         lookup_table_tensor = Tensor.from_numpy(
-            np.array(list(seq_ids_and_prompts.keys()), np.uint32)
+            np.array([ctx.cache_seq_id for ctx in batch], np.uint32)
         )
         cache_lengths_np = np.zeros(active_batch_size, np.uint32)
 
         max_seq_length = 0
         max_context_length = 0
 
-        for i, (seq_id, prompt) in enumerate(seq_ids_and_prompts.items()):
+        for i, ctx in enumerate(batch):
+            seq_id = ctx.cache_seq_id
+            prompt = ctx.next_tokens
             if seq_id > self.max_batch_size:
                 msg = (
                     f"seq_id: {seq_id}, beyond max_batch_size, you may"

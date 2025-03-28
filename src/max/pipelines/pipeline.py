@@ -26,6 +26,7 @@ from typing import (
     Sequence,
     Type,
     TypeVar,
+    cast,
     runtime_checkable,
 )
 
@@ -577,8 +578,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
         else:
             bitmask = None
 
-        seq_ids_and_prompts = {}
-        seq_ids_and_untrimmed_lengths = {}
         tracer.next("claim_cache_rows")
         for i, context in enumerate(batch):
             # Initialize a matcher if needed
@@ -622,12 +621,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     [context.cache_seq_id]
                 )
 
-            # Gather tokens and untrimmed lengths.
-            seq_ids_and_prompts[context.cache_seq_id] = context.next_tokens
-            seq_ids_and_untrimmed_lengths[context.cache_seq_id] = (
-                context.active_length
-            )
-
             # Update num_steps.
             num_steps = self.calculate_num_steps(num_steps, context)
 
@@ -638,26 +631,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
             ):
                 context.matcher.fill_next_token_bitmask(bitmask, index=i)
 
-        # `fetch` mutates the seq_ids_and_prompts input in place when tokens are
-        # retrieved from the cache. This shortens the prompt in the event that
-        # some tokens have backing KV cache entries.
+        # `fetch` may shorten the input context by bumping the start_idx.
         tracer.next("fetch_kv_cache")
         kv_cache_inputs = self._pipeline_model.kv_manager.fetch(
-            seq_ids_and_prompts, num_steps
+            cast(list[InputContext], batch), num_steps
         )
-
-        # Update the context with the new possibly shortened prompt.
-        tracer.next("trim_prompt")
-        for context in batch:
-            untrimmed_length = seq_ids_and_untrimmed_lengths[
-                context.cache_seq_id
-            ]
-            trimmed_length = len(seq_ids_and_prompts[context.cache_seq_id])
-            bump_length = untrimmed_length - trimmed_length
-            if bump_length > 0:
-                context.bump_token_indices(
-                    start_idx=bump_length,
-                )
 
         return (
             self._pipeline_model.prepare_initial_token_inputs(
@@ -813,15 +791,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
         )  # pops multistep_execution_loop_steps
         generated_tokens_host = generated_tokens.to_numpy()
 
-        # Actually update the cache lengths in our kv_cache manager
-        tracer.next("kv_manager.step")  # pops generated_tokens.to(CPU())
-        seq_ids_and_new_tokens = {
-            ctx.cache_seq_id: generated_tokens_host[i]
-            for i, ctx in enumerate(context_batch)
-        }
-        self._pipeline_model.kv_manager.step(seq_ids_and_new_tokens)
-        tracer.pop()  # pops kv_manager.step
-
         # Prepare the response, pruning away completed requests as we go.
         res: dict[str, TextGenerationResponse] = {}
         tracer.push("prepare_response")
@@ -873,6 +842,14 @@ class TextGenerationPipeline(TokenGenerator[T]):
             # Walk outstanding completion tokens, and return to user.
             for token, log_probs in context.outstanding_completion_tokens():
                 res[request_id].append_token(TextResponse(token, log_probs))
+
+        # Update the cache lengths in our kv_cache manager.
+        # This should be done after the contexts are updated.
+        tracer.next("kv_manager.step")  # pops prepare_response
+        self._pipeline_model.kv_manager.step(
+            cast(list[InputContext], context_batch)
+        )
+        tracer.pop()  # pops kv_manager.step
 
         return res
 

@@ -37,7 +37,7 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.context import TextAndVisionContext
+from max.pipelines.context import InputContext, TextAndVisionContext
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     KVCacheInputs,
@@ -234,23 +234,21 @@ class MultimodalKVCacheManager(KVCacheManager):
         return min(text_batch_size, vision_batch_size)
 
     @final
-    def _fetch(
-        self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
+    def fetch(
+        self, batch: list[InputContext], num_steps: int = 1
     ) -> list[KVCacheInputs]:
         """Returns KV cache inputs for both modalities' KV managers."""
         # Here we call into the text KV manager's fetch method to update
         # its fetch metadata.
-        text_fetch_results = self.text_kv_manager.fetch(
-            seq_ids_and_prompts, num_steps
-        )[0]
+        text_fetch_results = self.text_kv_manager.fetch(batch, num_steps)[0]
 
         # For the vision KV manager, fetch metadata isn't applicable since
         # autoregressive generation is text only.
-        active_batch_size = len(seq_ids_and_prompts)
+        active_batch_size = len(batch)
 
         # Lookup table and seq_ids are redundant identical tensors.
         lookup_table_tensor = Tensor.from_numpy(
-            np.array(list(seq_ids_and_prompts.keys()), np.uint32)
+            np.array([ctx.cache_seq_id for ctx in batch], np.uint32)
         )
         cache_lengths_np = np.zeros(active_batch_size, np.uint32)
 
@@ -258,7 +256,8 @@ class MultimodalKVCacheManager(KVCacheManager):
         max_cache_length = 0
 
         device = self.vision_kv_manager.devices[0]
-        for i, seq_id in enumerate(seq_ids_and_prompts):
+        for i, ctx in enumerate(batch):
+            seq_id = ctx.cache_seq_id
             # Assumption: all seq_ids with
             # `vision_kv_manager.cache_lengths[seq_id] == 0`
             # are context encoding steps and have the max image sequence length.
@@ -337,18 +336,19 @@ class MultimodalKVCacheManager(KVCacheManager):
             )
         ]
 
-    def step(self, seq_ids_and_new_tokens: dict[int, np.ndarray]) -> None:
+    def step(self, batch: list[InputContext]) -> None:
         """Steps both text and vision modalities' KV managers."""
         # Step the text KV manager as usual for autoregressive text generation.
-        self.text_kv_manager.step(seq_ids_and_new_tokens)
+        self.text_kv_manager.step(batch)
 
         # Keep the base class's state in sync with the text KV manager's.
-        super().step(seq_ids_and_new_tokens)
+        super().step(batch)
 
         # Increment cache lengths for the vision KV manager iff this is a
         # context encoding (CE) step with an image input.
         # It's a CE step if the existing cache_lengths[seq_id] is 0.
-        for seq_id in seq_ids_and_new_tokens:
+        for ctx in batch:
+            seq_id = ctx.cache_seq_id
             self.vision_kv_manager.cache_lengths[seq_id] += (
                 self.vision_kv_manager.max_seq_len
                 if self.vision_kv_manager.cache_lengths[seq_id] == 0

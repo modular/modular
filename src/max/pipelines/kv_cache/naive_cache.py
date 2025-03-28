@@ -18,11 +18,11 @@ from functools import reduce
 from operator import mul
 from typing import Any, List, cast
 
-import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, TensorType
+from max.pipelines.context import InputContext
 
 from .cache_params import KVCacheParams
 from .manager import (
@@ -145,13 +145,15 @@ class NaiveKVCacheManager(KVCacheManager):
             params.head_dim,
         ]
 
-    def _fetch(
+    def fetch(
         self,
-        seq_ids_and_prompts: dict[int, np.ndarray],
+        batch: list[InputContext],
         num_steps: int = 1,
     ) -> List[KVCacheInputs]:
         existing_keys = list(self.cache_lengths.keys())
-        for i, (seq_id, prompt) in enumerate(seq_ids_and_prompts.items()):
+        for i, ctx in enumerate(batch):
+            seq_id = ctx.cache_seq_id
+            prompt = ctx.next_tokens
             if existing_keys[i] != seq_id:
                 msg = (
                     "seq_ids passed, are different than current inflight"

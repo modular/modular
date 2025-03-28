@@ -32,6 +32,7 @@ from collections import defaultdict
 from typing import Iterable, Optional
 
 import numpy as np
+from max.pipelines.context import InputContext
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent import KVCacheChangeMessage
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
@@ -48,7 +49,6 @@ from .block_utils import (
     hash_block_tokens,
     hash_request_tokens,
 )
-from .paged_cache_metadata import PagedCacheMetadata
 from .simple_trie import SimpleTrie
 
 logger = logging.getLogger("max.pipelines")
@@ -118,37 +118,37 @@ class BlockManager:
         self.kv_cache_agent_queue: Optional[multiprocessing.Queue] = None
 
     @traced
-    def step(self, seq_id: int, data: PagedCacheMetadata) -> None:
+    def step(self, ctx: InputContext) -> None:
         """Step the block manager by committing blocks into prefix cache."""
-        self.assert_runtime_invariants(seq_id, data)
+        self.assert_runtime_invariants(ctx)
 
         if not self.enable_prefix_caching:
             return
 
         # Compute block hashes. These hashes are used by the subsequent methods.
-        self.compute_block_hashes_for_request(seq_id, data)
+        self.compute_block_hashes_for_request(ctx)
 
         # Now that we generated new tokens, we can possibly commit additional
         # blocks into prefix cache.
-        self.commit_to_prefix_cache(seq_id, data)
+        self.commit_to_prefix_cache(ctx)
 
-        self.assert_runtime_invariants(seq_id, data)
+        self.assert_runtime_invariants(ctx)
 
     @traced
     def compute_block_hashes_for_request(
         self,
-        seq_id: int,
-        data: PagedCacheMetadata,
+        ctx: InputContext,
     ):
         """Compute the block hashes for the request."""
 
+        seq_id = ctx.cache_seq_id
         block_hashes = self.req_to_block_hashes[seq_id]
         parent_block_hash_value = None
         if len(block_hashes) > 0:
             parent_block_hash_value = block_hashes[-1].hash_value
 
-        unhashed_tokens = data.tokens[
-            len(block_hashes) * self.block_size : data.inflight_idx
+        unhashed_tokens = ctx.tokens[
+            len(block_hashes) * self.block_size : ctx.current_length
         ]
         new_block_hashes = hash_request_tokens(
             self.block_size, unhashed_tokens, parent_block_hash_value
@@ -157,7 +157,7 @@ class BlockManager:
 
     @traced
     def reuse_blocks_from_prefix_cache(
-        self, seq_id: int, data: PagedCacheMetadata
+        self, ctx: InputContext
     ) -> Optional[tuple[int, int, int]]:
         """Reuse blocks from prefix cache.
 
@@ -171,55 +171,63 @@ class BlockManager:
             (fresh_block_id, partial_block_id, tokens_matched) if a partial block is reused.
             None if no partial block is reused.
         """
-        self.assert_runtime_invariants(seq_id, data)
+        self.assert_runtime_invariants(ctx)
 
+        seq_id = ctx.cache_seq_id
         req_blocks = self.req_to_blocks[seq_id]
 
         # Update cache hit rate metrics.
-        orig_prompt_len = data.num_prompt_tokens
+        orig_prompt_len = ctx.active_length
         self.prompt_tokens += orig_prompt_len - 1
 
         if not self.enable_prefix_caching:
             return None
 
         # Compute block hashes. These hashes are used by the subsequent methods.
-        self.compute_block_hashes_for_request(seq_id, data)
+        self.compute_block_hashes_for_request(ctx)
 
         # Query prefix cache for full blocks.
-        prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(
-            seq_id, data
-        )
-        orig_cached_idx = data.cached_idx
+        prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(ctx)
+        orig_start_idx = ctx.start_idx
 
         if len(prefix_cache_blocks) > 0:
             # Touch the computed blocks to make sure they won't be evicted.
             self.touch(prefix_cache_blocks)
 
             # Since we got cache hits, clear out existing uncommitted blocks
-            self.release_uncommitted_blocks(seq_id, data)
+            self.release_uncommitted_blocks(ctx)
 
             # Append them to the request's blocks.
             req_blocks.extend(prefix_cache_blocks)
-            data.committed_idx += len(prefix_cache_blocks) * self.block_size
-            data.cached_idx = data.committed_idx
+            new_committed_idx = (
+                ctx.committed_idx + len(prefix_cache_blocks) * self.block_size
+            )
+            ctx.set_token_indices(
+                committed_idx=new_committed_idx,
+                start_idx=new_committed_idx,
+            )
+            assert ctx.committed_idx == ctx.start_idx
 
             # Check that the cached_idx has increased.
-            assert data.cached_idx > orig_cached_idx
-            orig_cached_idx = data.cached_idx
+            assert ctx.start_idx > orig_start_idx
+            orig_start_idx = ctx.start_idx
 
         # Query prefix cache for partial blocks
         partial_block, tokens_matched = (
-            self.get_partial_block_from_prefix_cache(seq_id, data)
+            self.get_partial_block_from_prefix_cache(ctx)
         )
+
         cow_args = None
         if partial_block is not None:
             # Since we got cache hits, clear out existing uncommitted blocks
-            self.release_uncommitted_blocks(seq_id, data)
+            self.release_uncommitted_blocks(ctx)
 
             # Append them to the request's blocks.
             fresh_block = self.alloc_block()
             req_blocks.append(fresh_block)
-            data.cached_idx += tokens_matched
+            ctx.bump_token_indices(
+                start_idx=tokens_matched,
+            )
 
             # Update COW arguments
             cow_args = (
@@ -229,11 +237,11 @@ class BlockManager:
             )
 
             # Check that the cached_idx has increased.
-            assert data.cached_idx > orig_cached_idx
-            orig_cached_idx = data.cached_idx
+            assert ctx.start_idx > orig_start_idx
+            orig_start_idx = ctx.start_idx
 
         # Update cache hit rate metrics.
-        new_prompt_len = data.num_prompt_tokens
+        new_prompt_len = ctx.active_length
         self.cached_prompt_tokens += orig_prompt_len - new_prompt_len
 
         return cow_args
@@ -241,8 +249,7 @@ class BlockManager:
     @traced
     def get_full_blocks_from_prefix_cache(
         self,
-        seq_id: int,
-        data: PagedCacheMetadata,
+        ctx: InputContext,
     ) -> list[KVCacheBlock]:
         """Get the computed (cached) blocks for the request.
         Note that the computed blocks must be full.
@@ -256,11 +263,12 @@ class BlockManager:
 
         assert self.enable_prefix_caching
 
+        seq_id = ctx.cache_seq_id
         req_block_hashes = self.req_to_block_hashes[seq_id]
-        num_committed_blocks = data.committed_idx // self.block_size
+        num_committed_blocks = ctx.committed_idx // self.block_size
         # we exclude the last inflight token to ensure that there is at least
         # one prompt token to be encoded.
-        num_inflight_blocks = (data.inflight_idx - 1) // self.block_size
+        num_inflight_blocks = (ctx.current_length - 1) // self.block_size
         uncommitted_block_hashes = req_block_hashes[
             num_committed_blocks:num_inflight_blocks
         ]
@@ -277,8 +285,7 @@ class BlockManager:
     @traced
     def get_partial_block_from_prefix_cache(
         self,
-        seq_id: int,
-        data: PagedCacheMetadata,
+        ctx: InputContext,
     ) -> tuple[Optional[KVCacheBlock], int]:
         """Get the computed (cached) blocks for the request."""
         assert self.enable_prefix_caching
@@ -286,14 +293,15 @@ class BlockManager:
         if self.block_size == 1:
             return None, 0
 
+        seq_id = ctx.cache_seq_id
         req_block_hashes = self.req_to_block_hashes[seq_id]
-        num_committed_blocks = data.committed_idx // self.block_size
+        num_committed_blocks = ctx.committed_idx // self.block_size
 
         parent_hash = ROOT_BLOCK_HASH
         if num_committed_blocks > 0:
             parent_hash = req_block_hashes[num_committed_blocks - 1]
-        parent_tokens = data.tokens[
-            num_committed_blocks * self.block_size : (data.inflight_idx - 1)
+        parent_tokens = ctx.tokens[
+            num_committed_blocks * self.block_size : ctx.current_length - 1
         ]
         if len(parent_tokens) == 0:
             return None, 0
@@ -311,7 +319,7 @@ class BlockManager:
 
         # It is not profitable to do COW if this request's partial block has
         # at least as many tokens as the best match in the prefix cache.
-        current_tokens_in_partial_block = data.cached_idx % self.block_size
+        current_tokens_in_partial_block = ctx.start_idx % self.block_size
         if current_tokens_in_partial_block >= best_tokens_matched:
             return None, 0
 
@@ -325,8 +333,7 @@ class BlockManager:
     @traced
     def commit_to_prefix_cache(
         self,
-        seq_id: int,
-        data: PagedCacheMetadata,
+        ctx: InputContext,
     ) -> None:
         """Commits all blocks whose hashes are known for prefix caching.
 
@@ -337,13 +344,14 @@ class BlockManager:
             data: The data of the request.
         """
 
+        seq_id = ctx.cache_seq_id
         req_blocks = self.req_to_blocks[seq_id]
         req_block_hashes = self.req_to_block_hashes[seq_id]
-        num_committed_blocks = data.committed_idx // self.block_size
+        num_committed_blocks = ctx.committed_idx // self.block_size
 
         # Count the number of tokens for which we know the values of and align
         # to the block size.
-        num_computed_blocks = data.cached_idx // self.block_size
+        num_computed_blocks = ctx.start_idx // self.block_size
 
         # Commit these blocks into the prefix cache.
         for block_idx in range(num_committed_blocks, num_computed_blocks):
@@ -389,7 +397,7 @@ class BlockManager:
                 parent_block_hash = ROOT_BLOCK_HASH
                 if block_idx > 0:
                     parent_block_hash = req_block_hashes[block_idx - 1]
-                tokens = data.tokens[
+                tokens = ctx.tokens[
                     block_idx * self.block_size : (block_idx + 1)
                     * self.block_size
                 ]
@@ -397,7 +405,9 @@ class BlockManager:
                     tuple(tokens)
                 )
 
-        data.committed_idx = num_computed_blocks * self.block_size
+        ctx.set_token_indices(
+            committed_idx=num_computed_blocks * self.block_size,
+        )
 
     def release(self, seq_id: int) -> None:
         """Release the blocks for the request."""
@@ -417,15 +427,17 @@ class BlockManager:
 
     @traced
     def allocate_new_blocks(
-        self, seq_id: int, data: PagedCacheMetadata
+        self, ctx: InputContext, num_steps: int = 1
     ) -> None:
-        self.assert_runtime_invariants(seq_id, data)
+        self.assert_runtime_invariants(ctx)
 
         # Determine number of new blocks to allocate.
+        seq_id = ctx.cache_seq_id
         req_blocks = self.req_to_blocks[seq_id]
-        num_required_blocks = ceildiv(data.seq_len, self.block_size)
+        seq_len = ctx.current_length + num_steps - 1
+        num_required_blocks = ceildiv(seq_len, self.block_size)
         num_new_blocks = num_required_blocks - len(req_blocks)
-        assert num_new_blocks >= 0
+        num_new_blocks = max(num_new_blocks, 0)
 
         # Allocate new blocks.
         if num_new_blocks > self.free_block_queue.num_free_blocks:
@@ -436,7 +448,7 @@ class BlockManager:
             new_block = self.alloc_block()
             req_blocks.append(new_block)
 
-        self.assert_runtime_invariants(seq_id, data)
+        self.assert_runtime_invariants(ctx)
 
     @traced
     def alloc_block(self) -> KVCacheBlock:
@@ -516,27 +528,26 @@ class BlockManager:
             return 0
         return self.cached_prompt_tokens / self.prompt_tokens
 
-    def release_uncommitted_blocks(
-        self, seq_id: int, data: PagedCacheMetadata
-    ) -> None:
+    def release_uncommitted_blocks(self, ctx: InputContext) -> None:
         """Release the uncommitted blocks for the request."""
+        seq_id = ctx.cache_seq_id
         req_blocks = self.req_to_blocks[seq_id]
-        num_committed_blocks = data.committed_idx // self.block_size
+        num_committed_blocks = ctx.committed_idx // self.block_size
         assert len(req_blocks) >= num_committed_blocks
         num_uncommitted_blocks = len(req_blocks) - num_committed_blocks
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
             self.free_block(block)
-        data.cached_idx = data.committed_idx
+        ctx.set_token_indices(
+            start_idx=ctx.committed_idx,
+        )
 
     def get_req_blocks(self, seq_id: int) -> list[int]:
         """Get the block ids for a request."""
         return [block.block_id for block in self.req_to_blocks[seq_id]]
 
     @traced
-    def assert_runtime_invariants(
-        self, seq_id: int, data: PagedCacheMetadata
-    ) -> None:
+    def assert_runtime_invariants(self, ctx: InputContext) -> None:
         """If runtime checks are enabled, assert that the runtime checks are
         correct.
         """
@@ -558,20 +569,23 @@ class BlockManager:
             assert block_hash is not None
             assert block.block_hash == block_hash
 
+        # Get the request hashes and blocks
+        seq_id = ctx.cache_seq_id
+        req_hashes = self.req_to_block_hashes[seq_id]
+        req_blocks = self.req_to_blocks[seq_id]
+
         # Check that the number of committed blocks for request is correct
-        num_committed_blocks = data.committed_idx // self.block_size
+        num_committed_blocks = ctx.committed_idx // self.block_size
         num_committed = 0
-        for block in self.req_to_blocks[seq_id]:
+        for block in req_blocks:
             if block.block_hash is None:
                 break
             num_committed += 1
         assert num_committed == num_committed_blocks
 
         # Check that the tokens in the request line up with the contents of the hashes
-        req_hashes = self.req_to_block_hashes[seq_id]
-        req_blocks = self.req_to_blocks[seq_id]
         for hash_idx, req_hash in enumerate(req_hashes):
-            tokens = data.tokens[
+            tokens = ctx.tokens[
                 hash_idx * self.block_size : (hash_idx + 1) * self.block_size
             ]
             assert req_hash.token_ids == tuple(tokens)
