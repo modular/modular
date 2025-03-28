@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from typing import Tuple
 
 import numpy as np
 import pytest
@@ -18,9 +17,9 @@ from modular_graph_test import modular_graph_test
 def torch_conv2d(
     x: TensorValue,
     filter: TensorValue,
-    stride: Tuple[int, int] = (1, 1),
-    dilation: Tuple[int, int] = (1, 1),
-    padding: Tuple[int, int] = (0, 0),
+    stride: tuple[int, int] = (1, 1),
+    dilation: tuple[int, int] = (1, 1),
+    padding: tuple[int, int] = (0, 0),
     groups: int = 1,
 ):
     x = torch.permute(x, (0, 3, 1, 2))

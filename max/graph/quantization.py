@@ -7,7 +7,6 @@
 
 import enum
 from dataclasses import dataclass
-from typing import Dict
 
 
 # Can't put this directly on the enum because it then becomes unhashable.
@@ -78,7 +77,7 @@ class QuantizationEncoding(enum.Enum):
         ]
 
 
-_BLOCK_PARAMETERS: Dict[QuantizationEncoding, BlockParameters] = {
+_BLOCK_PARAMETERS: dict[QuantizationEncoding, BlockParameters] = {
     # Block: d, q (4 bits)
     QuantizationEncoding.Q4_0: BlockParameters(32, 2 + 32 // 2),
     # Block: d, dmin, scales, q (4 bits)

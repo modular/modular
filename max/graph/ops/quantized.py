@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Optimized quantized operations."""
 
-from typing import Callable, Dict, Literal, Optional, Tuple, Union
+from typing import Callable, Literal, Optional, Union
 
 from max.dtype import DType
 
@@ -29,7 +29,7 @@ def repack_gguf_quantized_weights(
 
 def _repack_quantized_weights(
     op_name: str,
-    rhs: Tuple[TensorValue, ...],
+    rhs: tuple[TensorValue, ...],
     mode: Literal["gptq", "vroom"],
 ) -> TensorValue:
     rhs_type = rhs[0].type
@@ -73,8 +73,8 @@ def _repack_then_matmul(
     repack_op_name: str,
     matmul_op_name: str,
     mode: Literal["gptq", "vroom"],
-) -> Callable[[TensorValue, Tuple[TensorValue, ...]], TensorValue]:
-    def impl(lhs: TensorValue, rhs: Tuple[TensorValue, ...]) -> TensorValue:
+) -> Callable[[TensorValue, tuple[TensorValue, ...]], TensorValue]:
+    def impl(lhs: TensorValue, rhs: tuple[TensorValue, ...]) -> TensorValue:
         # Quantized matmul for supported quantized encoding types.
         # rhs is uint8 and in a packed format such as Q4_0, Q4_K, or Q6_K.
         if rhs[0].dtype is not DType.uint8:
@@ -130,9 +130,9 @@ def _repack_then_matmul(
 # served by the "repack and then matmul" scheme, so this design lets us better
 # support future alternative schemes while continuing to support the current
 # scheme.
-_QMATMUL_STRATEGIES: Dict[
+_QMATMUL_STRATEGIES: dict[
     Union[QuantizationEncoding, str],
-    Callable[[TensorValue, Tuple[TensorValue, ...]], TensorValue],
+    Callable[[TensorValue, tuple[TensorValue, ...]], TensorValue],
 ] = {
     "gptq_b4_g128_aTrue": _repack_then_matmul(
         "GPTQ_gpu_repack_b4_g128_desc_act",
@@ -209,7 +209,7 @@ def qmatmul(
     return strategy(lhs, rhs)
 
 
-_DEQUANTIZE_OP_NAMES: Dict[QuantizationEncoding, str] = {
+_DEQUANTIZE_OP_NAMES: dict[QuantizationEncoding, str] = {
     QuantizationEncoding.Q4_0: "ggml_q4_0_dequantize",
     QuantizationEncoding.Q4_K: "ggml_q4_k_dequantize",
     QuantizationEncoding.Q6_K: "ggml_q6_k_dequantize",

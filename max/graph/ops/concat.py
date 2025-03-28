@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for concat."""
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from max import mlir
 from max.mlir.dialects import rmo

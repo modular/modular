@@ -11,9 +11,10 @@ import functools
 import math
 import re
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Optional, Union
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard

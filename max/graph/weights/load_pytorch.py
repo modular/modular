@@ -11,7 +11,7 @@ import pickle
 from dataclasses import dataclass
 from io import BytesIO
 from os import PathLike
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -33,7 +33,7 @@ from .weights import WeightData
 class TensorInfo:
     dtype: Any  # torch.dtype
     offset: int
-    shape: Tuple[int, ...]
+    shape: tuple[int, ...]
 
 
 class WeightUnpickler(pickle.Unpickler):

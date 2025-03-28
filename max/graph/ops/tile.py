@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for tile."""
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from max.mlir.dialects import rmo
 

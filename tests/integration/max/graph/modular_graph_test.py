@@ -7,7 +7,8 @@
 from __future__ import annotations
 
 import functools
-from typing import Iterable, Mapping, Optional
+from collections.abc import Iterable, Mapping
+from typing import Optional
 
 import numpy as np
 import torch

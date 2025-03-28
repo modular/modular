@@ -49,7 +49,7 @@ class SafetensorWeights(Weights):
     _tensors: Set[str]
     _tensors_to_file_idx: Mapping[str, int]
     _allocated: dict[str, npt.NDArray]
-    _st_weight_map: dict[str, "torch.Tensor"]
+    _st_weight_map: dict[str, torch.Tensor]
 
     def __init__(
         self,
@@ -59,7 +59,7 @@ class SafetensorWeights(Weights):
         tensors_to_file_idx: Mapping[str, int] | None = None,
         prefix: str = "",
         allocated=None,
-        _st_weight_map: dict[str, "torch.Tensor"] | None = None,
+        _st_weight_map: dict[str, torch.Tensor] | None = None,
     ):
         if safe_open is None:
             raise ImportError(

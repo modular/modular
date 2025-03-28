@@ -7,10 +7,10 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Iterator
 from typing import (
     Any,
     Callable,
-    Iterator,
     Optional,
     Protocol,
     TypeVar,

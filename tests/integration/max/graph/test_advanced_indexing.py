@@ -7,7 +7,6 @@
 
 import math
 from dataclasses import dataclass
-from typing import List
 
 import numpy as np
 import pytest
@@ -34,8 +33,8 @@ class StandardInputAndIndexTensors:
         input_tensor[:, indexing_tensor1, indexing_tensor2, :, :] ( = optional_update)
     """
 
-    input_tensor_shape: List[int]
-    index_tensor_shape: List[int]
+    input_tensor_shape: list[int]
+    index_tensor_shape: list[int]
 
     # We expect indexing tensors to be contiguous in the axis they operate on.
     # This represents the first axis
@@ -48,7 +47,7 @@ class StandardInputAndIndexTensors:
     def max_index_tensor_type(self, dtype=DType.int32) -> TensorType:
         return TensorType(dtype, self.index_tensor_shape)
 
-    def output_tensor_shape(self) -> List[int]:
+    def output_tensor_shape(self) -> list[int]:
         return (
             self.input_tensor_shape[: self.start_axis]
             + self.index_tensor_shape
@@ -84,7 +83,7 @@ class StandardInputAndIndexTensors:
             .type(dtype)
         )
 
-    def index_tensors(self, dtype=torch.int32) -> List[torch.Tensor]:
+    def index_tensors(self, dtype=torch.int32) -> list[torch.Tensor]:
         # Make the indices slightly different for variety
         result = [
             torch.arange(np.prod(self.index_tensor_shape))

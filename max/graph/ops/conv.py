@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for conv2d."""
 
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 from max.dtype import DType
@@ -20,10 +20,10 @@ from .constant import constant
 
 def _calc_output_dimensions(
     input_shape: Shape,
-    filter_shape: Tuple[Dim, Dim],
-    padding: Tuple[int, int, int, int],
-    stride: Tuple[int, int],
-    dilation: Tuple[int, int],
+    filter_shape: tuple[Dim, Dim],
+    padding: tuple[int, int, int, int],
+    stride: tuple[int, int],
+    dilation: tuple[int, int],
 ) -> Shape:
     """Computes the final dimensions of a rank-4 tensor after a 2-D convolution.
 
@@ -60,9 +60,9 @@ def _calc_output_dimensions(
 def conv2d(
     x: TensorValueLike,
     filter: TensorValueLike,
-    stride: Tuple[int, int] = (1, 1),
-    dilation: Tuple[int, int] = (1, 1),
-    padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
+    stride: tuple[int, int] = (1, 1),
+    dilation: tuple[int, int] = (1, 1),
+    padding: tuple[int, int, int, int] = (0, 0, 0, 0),
     groups: int = 1,
     bias: Optional[TensorValueLike] = None,
 ) -> TensorValue:
@@ -186,9 +186,9 @@ def conv2d(
 def conv3d(
     x: TensorValueLike,
     filter: TensorValueLike,
-    stride: Tuple[int, int, int] = (1, 1, 1),
-    dilation: Tuple[int, int, int] = (1, 1, 1),
-    padding: Tuple[int, int, int, int, int, int] = (0, 0, 0, 0, 0, 0),
+    stride: tuple[int, int, int] = (1, 1, 1),
+    dilation: tuple[int, int, int] = (1, 1, 1),
+    padding: tuple[int, int, int, int, int, int] = (0, 0, 0, 0, 0, 0),
     groups: int = 1,
     bias: Optional[TensorValueLike] = None,
 ) -> TensorValue:

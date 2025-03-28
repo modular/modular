@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from max import mlir
 from max._core import graph as _graph

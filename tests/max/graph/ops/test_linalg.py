@@ -6,7 +6,8 @@
 """Tests for max.graph linear algebra operations."""
 
 import sys
-from typing import Iterable, Optional, Union
+from collections.abc import Iterable
+from typing import Optional, Union
 
 import numpy as np
 import pytest

@@ -12,9 +12,10 @@ import math
 import operator
 import os
 import random
+from collections.abc import Sequence
 from functools import reduce
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional
 
 import numpy as np
 import pytest

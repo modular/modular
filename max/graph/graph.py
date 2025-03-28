@@ -10,10 +10,11 @@ from __future__ import annotations
 import contextlib
 import inspect
 import traceback
+from collections.abc import Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Optional
 
 from max import mlir
 from max._core import graph as _graph
