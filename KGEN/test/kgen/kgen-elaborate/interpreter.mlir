@@ -735,3 +735,36 @@ kgen.generator @root() -> index {
     %index = kgen.param.constant = <Y>
     kgen.return %index : index
 }
+
+// -----
+
+kgen.generator @union_wrap(%arg0: index) -> !pop.union<index, i64> {
+  %0 = pop.union.wrap %arg0 : index as !pop.union<index, i64>
+  kgen.return %0 : !pop.union<index, i64>
+}
+
+kgen.generator @union_unwrap(%arg0: !pop.union<index, i64>) -> index {
+  %0 = pop.union.unwrap %arg0 : !pop.union<index, i64> as index
+  kgen.return %0 : index
+}
+
+kgen.generator @union_in_memory(%arg0: index) -> index {
+  %0 = pop.union.wrap %arg0 : index as !pop.union<index, i64>
+  %1 = pop.stack_allocation 1 x !pop.union<index, i64>
+  pop.store %0, %1 : !kgen.pointer<!pop.union<index, i64>>
+  %2 = pop.union.bitcast %1 : !kgen.pointer<!pop.union<index, i64>> as !kgen.pointer<index>
+  %3 = pop.load %2 : !kgen.pointer<index>
+  kgen.return %3 : index
+}
+
+// CHECK-LABEL: kgen.func export @test_union
+kgen.generator export @test_union() {
+  kgen.param.apply union = [(index) -> !pop.union<index, i64>: @union_wrap](43)
+  kgen.param.apply unwrapped = [(!pop.union<index, i64>) -> index: @union_unwrap](union)
+  // CHECK: = <43>
+  %0 = kgen.param.constant: index = <unwrapped>
+  kgen.param.apply union_in_memory = [(index) -> index: @union_in_memory](56)
+  // CHECK: = <56>
+  %1 = kgen.param.constant: index = <union_in_memory>
+  kgen.return
+}
