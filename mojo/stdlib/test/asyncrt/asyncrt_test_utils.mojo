@@ -35,24 +35,18 @@ fn api() -> String:
     return "default"
 
 
-fn create_test_device_context(
-    *, device_id: Int = 0, buffer_cache_size: UInt = 0
-) raises -> DeviceContext:
+fn create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
     # Create an instance of the DeviceContext
     var test_ctx: DeviceContext
 
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         print("Using DeviceContext: V2 - " + api())
-        test_ctx = DeviceContext(
-            device_id=device_id, api=api(), buffer_cache_size=buffer_cache_size
-        )
+        test_ctx = DeviceContext(device_id=device_id, api=api())
     elif is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():
         raise Error("DeviceContextV1 is unsupported")
     else:
         print("Using DeviceContext: default")
-        test_ctx = DeviceContext(
-            device_id=device_id, buffer_cache_size=buffer_cache_size
-        )
+        test_ctx = DeviceContext(device_id=device_id)
 
     return test_ctx

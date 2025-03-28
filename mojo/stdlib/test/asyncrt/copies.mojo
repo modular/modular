@@ -177,7 +177,7 @@ fn _run_cpu_ctx_memcpy_async(
 
 
 fn main() raises:
-    var ctx = create_test_device_context(buffer_cache_size=6 * 1024 * 1024)
+    var ctx = create_test_device_context()
 
     print("-------")
     print("Running test_copies(" + ctx.name() + "):")
