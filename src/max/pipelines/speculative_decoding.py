@@ -153,6 +153,17 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             return_n_logits=1,
         )
 
+        # Check that the max length for both models are the same
+        draft_seq_len = self._draft_model.calculate_max_seq_len(
+            self.pipeline_config, draft_config
+        )
+        target_seq_len = self._target_model.calculate_max_seq_len(
+            self.pipeline_config, target_config
+        )
+        if draft_seq_len != target_seq_len:
+            msg = f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
+            raise ValueError(msg)
+
     def next_token(
         self, batch: dict[str, T], num_steps: int
     ) -> dict[str, TextGenerationResponse]:
