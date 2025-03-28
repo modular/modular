@@ -205,8 +205,6 @@ class Model:
         tracer = Tracer()
         input_impls: list[Union[Tensor, MojoValue]] = []
 
-        # Accessing this property causes a check to be performed in the native code implementation, which is a good initial sanity check
-        input_devices = self.input_devices
         input_idx = 0
         for idx, arg in enumerate(args):
             _raise_if_not_contiguous(arg)
@@ -231,9 +229,9 @@ class Model:
                     " implementing the dlpack protocol. We do not"
                     f" currently support inputs of the type {type(arg)}."
                 )
-
             if copy_inputs_to_device:
                 tracer.push(f"copy_inputs_to_device_{input_idx}")
+                input_devices = self.input_devices
                 if input_idx >= len(input_devices):
                     raise ValueError(
                         "Number of inputs does not match expected number ("
@@ -242,20 +240,6 @@ class Model:
                 tensor = tensor.to(input_devices[input_idx])
                 input_idx = input_idx + 1
                 tracer.pop()
-            else:
-                # Validate device assignments of the inputs. NB: MojoValue instances do not get validated
-
-                # DLPack compatible types have a device attribute
-                if hasattr(arg, "device"):
-                    arg_device = arg.device
-                else:
-                    arg_device = CPU()
-                # If the tensor is a scalar, we don't need to check the device
-                if input_devices[idx] != arg_device and tensor.num_elements > 1:
-                    raise ValueError(
-                        "Model execution input at index "
-                        f"{idx} device ({arg_device}) does not match expected device ({self.input_devices[idx]})"
-                    )
             input_impls.append(tensor)
         results = self._impl.execute_device_tensors(input_impls)
 
