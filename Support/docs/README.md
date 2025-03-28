@@ -25,7 +25,6 @@ purpose. The current libraries are:
 - [CUDA](CUDA.md)
 - [DebugInfoDialect](DebugInfoDialect.md)
 - [Driver](Driver.md)
-- [Entitlements](Entitlments.md)
 - [Filesystem](Filesystem.md)
 - [Frameworks](Frameworks.md)
 - [Globals](Globals.md)

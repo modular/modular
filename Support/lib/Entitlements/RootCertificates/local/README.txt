@@ -1,1 +1,0 @@
-PLEASE ensure that these certs DO NOT make it into any kind of production! The private key is stored in key.pem and it is for testing ONLY.

@@ -10,7 +10,6 @@
 
 #include "Config/Version.h"
 #include "Support/Base64.h"
-#include "Support/Entitlements/Entitlement.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Random.h"
@@ -19,6 +18,7 @@
 #include "Support/Telemetry/Exporters/FileMetricExporter.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/Support/BLAKE3.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -59,9 +59,6 @@ using namespace Telemetry;
 using namespace Exporter;
 
 #ifdef MODULAR_ENABLE_TELEMETRY
-
-/// Modular's public telemetry endpoint.
-constexpr StringRef kTelemetryUrl = MODULAR_TELEMETRY_URL;
 
 static bool isModularEmployee() {
   const char *home = std::getenv("HOME");
@@ -316,12 +313,6 @@ TelemetryContext::TelemetryContext(
   auto level = llvm::dyn_cast_if_present<StringRef>(cfgLevel);
   telemetryLevel = levelFromString(level);
 
-  // Fix the minimum telemetry level for a non-modular developer to 0. This can
-  // be changed to use a different entitlement in the future.
-  if (!enabled && !settings.getBool<ModularDeveloperEntitlement>()) {
-    enabled = true;
-    telemetryLevel = Level::L0;
-  }
   // Configure OTel internal logging.
   static llvm::once_flag flag;
   llvm::call_once(flag, [&]() {
@@ -373,10 +364,6 @@ TelemetryContext::TelemetryContext(
   std::filesystem::path udsName =
       settings.get<StringRef>("telemetry.exporters.metrics.uds_name").str();
 
-  // Only allow modular developers to overwrite this endpoint.
-  if (isProdBuild && !settings.getBool<ModularDeveloperEntitlement>())
-    httpEndpoint = kTelemetryUrl;
-
   // Create metric readers, one for each exporter.
 
   if (enabled && !filePath.empty()) {
@@ -395,8 +382,6 @@ TelemetryContext::TelemetryContext(
 
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
-    otlpOptions.ssl_client_key_path = settings.clientKeyPriv();
-    otlpOptions.ssl_client_cert_path = settings.clientCert();
 
     otlpOptions.url = (httpEndpoint + "/v1/metrics").str();
     auto exporter =
@@ -424,10 +409,6 @@ TelemetryContext::TelemetryContext(
   filePath =
       settings.get<StringRef>("telemetry.exporters.logs.file_path").str();
 
-  // See above; only developers can overwrite the httpEndpoint.
-  if (isProdBuild && !settings.getBool<ModularDeveloperEntitlement>())
-    httpEndpoint = kTelemetryUrl;
-
   // Create log processors for each exporter.
   std::vector<std::unique_ptr<opentelemetry::sdk::logs::LogRecordProcessor>>
       processors;
@@ -448,8 +429,6 @@ TelemetryContext::TelemetryContext(
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
         otlpLogOptions;
-    otlpLogOptions.ssl_client_key_string = settings.clientKeyPriv();
-    otlpLogOptions.ssl_client_cert_string = settings.clientCert();
 
     otlpLogOptions.url = (httpEndpoint + "/v1/logs").str();
     auto logExporter =

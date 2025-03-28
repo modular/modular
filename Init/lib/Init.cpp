@@ -76,8 +76,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
 
   // Create the settings object. This will refresh the underlying entitlement
   // store if required by the provided policy.
-  auto settingsOr = Settings::open(httpCtx.copy(), options.entitlementPolicy,
-                                   options.refreshPolicy);
+  auto settingsOr = Settings::open();
   if (settingsOr.isError())
     return settingsOr.takeError();
   Settings settings = std::move(*settingsOr);
@@ -86,9 +85,6 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   StringRef caInfo = settings.get<StringRef>("ssl.cainfo");
   if (!caInfo.empty())
     httpCtx->setCAInfo(std::string(caInfo));
-
-  // Setup authentication on the HTTP client.
-  httpCtx->setupAuth(settings.clientKeyPriv(), settings.clientCert());
 
   // Enable crash logging, if appropriate.
   if (!options.forceDisableCrashReporting &&

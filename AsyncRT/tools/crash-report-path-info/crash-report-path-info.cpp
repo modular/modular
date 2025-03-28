@@ -37,9 +37,7 @@ int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "Modular Crash Report Path Info Tool");
 
-  auto ctxOr = Init::createContext(
-      "crash-report-path-info",
-      Init::Options().withEntitlementPolicy(Settings::kAlwaysSucceed));
+  auto ctxOr = Init::createContext("crash-report-path-info");
   if (ctxOr.isError()) {
     llvm::errs() << "could not create context: " << ctxOr.getError() << "\n";
     return EXIT_FAILURE;

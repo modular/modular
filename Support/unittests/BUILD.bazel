@@ -114,13 +114,6 @@ modular_cc_test(
 )
 
 modular_cc_test(
-    name = "EntitlementsTest",
-    srcs = ["//Support:CertificatesHeader"] + glob(["Entitlements/*.cpp"]),
-    copts = ["-I$(GENDIR)/Support"],
-    deps = ["//Support:Entitlements"],
-)
-
-modular_cc_test(
     name = "MicroBenchmarkTest",
     srcs = ["MicroBenchmarkTest.cpp"],
     deps = ["//Support:MicroBenchmark"],
