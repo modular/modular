@@ -27,9 +27,8 @@ from .host.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
-from sys import env_get_bool
 
-alias ENABLE_PDL_LAUNCH = _enable_pdl_launch()
+alias _ENABLE_PDL_LAUNCH = _enable_pdl_launch()
 
 
 @doc_private
@@ -51,7 +50,7 @@ fn _enable_pdl_launch() -> Bool:
     if DEFAULT_GPU < H100:
         return False
 
-    return env_get_bool["MODULAR_ENABLE_KERNEL_PDL", False]()
+    return True
 
 
 @doc_private
@@ -69,12 +68,11 @@ fn pdl_launch_attributes() -> List[LaunchAttribute]:
 
     Note:
         - Only supported on NVIDIA SM90+ (Hopper architecture and newer) GPUs.
-        - PDL must be explicitly enabled via MODULAR_ENABLE_KERNEL_PDL env var.
         - When disabled, returns an empty list for compatibility with older GPUs.
     """
 
     @parameter
-    if ENABLE_PDL_LAUNCH:
+    if _ENABLE_PDL_LAUNCH:
         return List[LaunchAttribute](
             LaunchAttribute(
                 LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION,
@@ -102,7 +100,7 @@ fn launch_dependent_grids():
     """
 
     @parameter
-    if ENABLE_PDL_LAUNCH:
+    if _ENABLE_PDL_LAUNCH:
         __mlir_op.`nvvm.griddepcontrol.launch.dependents`[_type=None]()
 
 
@@ -122,7 +120,7 @@ fn wait_on_dependent_grids():
     """
 
     @parameter
-    if ENABLE_PDL_LAUNCH:
+    if _ENABLE_PDL_LAUNCH:
         __mlir_op.`nvvm.griddepcontrol.wait`[_type=None]()
 
 
