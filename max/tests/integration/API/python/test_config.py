@@ -34,7 +34,6 @@ def test_config_post_init__with_weight_path_but_no_model_path():
     ]
 
 
-@pytest.mark.skip("TODO: AITLIB-278")
 def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.
     config = PipelineConfig(

@@ -153,9 +153,6 @@ def cli():
     pass
 
 
-# TODO(AITLIB-277): Add back test coverage for kv_cache_config. These had to be removed
-# as the kv cache strategy changes within config right after the config is
-# initialized, which may not be what is provided in the command line.
 TEST_COMMANDS = [
     CLITestCommand(
         args=[
@@ -205,58 +202,57 @@ TEST_COMMANDS = [
         },
         valid=False,
     ),
-    # TODO(AITLIB-278): Add back test coverage for weight_path.
-    # CLITestCommand(
-    #     args=[
-    #         "--model-path",
-    #         "modularai/llama-3.1",
-    #         "--weight-path",
-    #         "model1.safetensors",
-    #         "--weight-path",
-    #         "model2.safetensors",
-    #         "--weight-path",
-    #         "model3.safetensors",
-    #     ],
-    #     expected={
-    #         "model_config": {
-    #             "model_path": "modularai/llama-3.1",
-    #             "trust_remote_code": False,
-    #             "weight_path": [
-    #                 Path("model1.safetensors"),
-    #                 Path("model2.safetensors"),
-    #                 Path("model3.safetensors"),
-    #             ],
-    #         },
-    #     },
-    #     valid=True,
-    # ),
-    # CLITestCommand(
-    #     args=[
-    #         "--model-path",
-    #         "modularai/llama-3.1",
-    #         "--weight-path",
-    #         "model1.safetensors",
-    #         "--weight-path",
-    #         "model2.safetensors",
-    #         "--weight-path",
-    #         "model3.safetensors",
-    #         "--devices",
-    #         "gpu:0",
-    #     ],
-    #     expected={
-    #         "model_config": {
-    #             "model_path": "modularai/llama-3.1",
-    #             "trust_remote_code": False,
-    #             "weight_path": [
-    #                 Path("model1.safetensors"),
-    #                 Path("model2.safetensors"),
-    #                 Path("model3.safetensors"),
-    #             ],
-    #             "device_specs": [DeviceSpec.accelerator(id=0)],
-    #         },
-    #     },
-    #     valid=True,
-    # ),
+    CLITestCommand(
+        args=[
+            "--model-path",
+            "modularai/llama-3.1",
+            "--weight-path",
+            "model1.safetensors",
+            "--weight-path",
+            "model2.safetensors",
+            "--weight-path",
+            "model3.safetensors",
+        ],
+        expected={
+            "model_config": {
+                "model_path": "modularai/llama-3.1",
+                "trust_remote_code": False,
+                "weight_path": [
+                    Path("model1.safetensors"),
+                    Path("model2.safetensors"),
+                    Path("model3.safetensors"),
+                ],
+            },
+        },
+        valid=True,
+    ),
+    CLITestCommand(
+        args=[
+            "--model-path",
+            "modularai/llama-3.1",
+            "--weight-path",
+            "model1.safetensors",
+            "--weight-path",
+            "model2.safetensors",
+            "--weight-path",
+            "model3.safetensors",
+            "--devices",
+            "gpu:0",
+        ],
+        expected={
+            "model_config": {
+                "model_path": "modularai/llama-3.1",
+                "trust_remote_code": False,
+                "weight_path": [
+                    Path("model1.safetensors"),
+                    Path("model2.safetensors"),
+                    Path("model3.safetensors"),
+                ],
+                "device_specs": [DeviceSpec.accelerator(id=0)],
+            },
+        },
+        valid=True,
+    ),
 ]
 
 
