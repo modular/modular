@@ -114,10 +114,10 @@ class InputContext(Protocol):
 
     def bump_token_indices(
         self,
-        start_idx: Optional[int] = None,
-        active_idx: Optional[int] = None,
-        end_idx: Optional[int] = None,
-        committed_idx: Optional[int] = None,
+        start_idx: int = 0,
+        active_idx: int = 0,
+        end_idx: int = 0,
+        committed_idx: int = 0,
     ) -> None:
         """Update the start_idx, active_idx and end_idx without manipulating the token array."""
         ...
@@ -272,18 +272,16 @@ class TextContext:
 
     def bump_token_indices(
         self,
-        start_idx: Optional[int] = None,
-        active_idx: Optional[int] = None,
-        end_idx: Optional[int] = None,
-        committed_idx: Optional[int] = None,
+        start_idx: int = 0,
+        active_idx: int = 0,
+        end_idx: int = 0,
+        committed_idx: int = 0,
     ) -> None:
         """Update the start_idx, active_idx and end_idx without manipulating the token array."""
-        new_start_idx = (start_idx if start_idx else 0) + self._start_idx
-        new_active_idx = (active_idx if active_idx else 0) + self._active_idx
-        new_end_idx = (end_idx if end_idx else 0) + self._end_idx
-        new_committed_idx = (
-            committed_idx if committed_idx else 0
-        ) + self._committed_idx
+        new_start_idx = start_idx + self._start_idx
+        new_active_idx = active_idx + self._active_idx
+        new_end_idx = end_idx + self._end_idx
+        new_committed_idx = committed_idx + self._committed_idx
 
         self.set_token_indices(
             start_idx=new_start_idx,
@@ -300,11 +298,13 @@ class TextContext:
         committed_idx: Optional[int] = None,
     ) -> None:
         """Set the token indices without manipulating the token array."""
-        new_start_idx = start_idx if start_idx else self._start_idx
-        new_active_idx = active_idx if active_idx else self._active_idx
-        new_end_idx = end_idx if end_idx else self._end_idx
+        new_start_idx = start_idx if start_idx is not None else self._start_idx
+        new_active_idx = (
+            active_idx if active_idx is not None else self._active_idx
+        )
+        new_end_idx = end_idx if end_idx is not None else self._end_idx
         new_committed_idx = (
-            committed_idx if committed_idx else self._committed_idx
+            committed_idx if committed_idx is not None else self._committed_idx
         )
 
         if new_committed_idx > new_start_idx:
