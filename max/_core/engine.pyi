@@ -8,8 +8,8 @@
 
 import enum
 import os
-from collections.abc import Sequence
-from typing import Any, Mapping, overload
+from collections.abc import Mapping, Sequence
+from typing import Any, overload
 
 import max._core
 from max import mlir

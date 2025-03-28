@@ -6,15 +6,14 @@
 from __future__ import annotations
 
 import struct
+from collections.abc import Generator, Sequence
 from itertools import product
 from mmap import mmap
 from os import PathLike
 from typing import (
     Any,
-    Generator,
     Optional,
     Protocol,
-    Sequence,
     Union,
     runtime_checkable,
 )

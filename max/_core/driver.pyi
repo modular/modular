@@ -6,8 +6,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
-from collections.abc import Mapping, Sequence
-from typing import Annotated, Any, Generator, overload
+from collections.abc import Generator, Mapping, Sequence
+from typing import Annotated, Any, overload
 
 import max._core
 import numpy
