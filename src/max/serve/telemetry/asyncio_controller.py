@@ -8,8 +8,9 @@ import asyncio
 import logging
 import queue
 import sys
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional
+from typing import Optional
 
 from max.serve.config import MetricLevel, Settings
 from max.serve.telemetry.metrics import MaxMeasurement, MetricClient

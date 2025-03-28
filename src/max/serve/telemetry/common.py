@@ -40,7 +40,7 @@ def _getCloudProvider() -> str:
     if os.path.isdir(path):
         for idFile in os.listdir(path):
             try:
-                with open(idFile, "r") as file:
+                with open(idFile) as file:
                     contents = file.read().lower()
                     for provider in providers:
                         if provider in contents:

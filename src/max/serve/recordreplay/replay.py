@@ -14,8 +14,9 @@ import math
 import sys
 import time
 import types
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any, Iterator, TextIO
+from typing import Any, TextIO
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup

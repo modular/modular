@@ -9,8 +9,8 @@ import logging
 import multiprocessing
 import queue
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Dict, Iterator, Set
 
 import grpc
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
@@ -55,7 +55,7 @@ class KVCacheAgentServicer(KVCacheAgentServiceServicer):
     def __init__(self):
         """Initialize the KVCacheAgentServicer."""
         self._subscribers = set()
-        self._cache_state: Dict[MemoryTier, Set[str]] = {}
+        self._cache_state: dict[MemoryTier, set[str]] = {}
         self._lock = threading.RLock()
 
     def SubscribeToUpdates(

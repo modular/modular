@@ -9,9 +9,10 @@ import queue
 import time
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
 
 from max.pipelines import TokenGenerator
 from max.pipelines.context import InputContext

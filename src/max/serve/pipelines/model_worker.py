@@ -10,8 +10,9 @@ import math
 import multiprocessing
 import os
 import uuid
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Mapping, Optional
+from typing import Optional
 
 import uvloop
 from max.pipelines import EmbeddingsGenerator, PipelinesFactory, TokenGenerator

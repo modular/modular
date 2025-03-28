@@ -9,7 +9,8 @@
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING, Sequence, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from typing_extensions import TypeAlias

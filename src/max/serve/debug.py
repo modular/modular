@@ -11,7 +11,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
-from typing import Callable, ClassVar, Type, Union
+from typing import Callable, ClassVar, Union
 
 from fastapi import FastAPI, Request
 from pydantic import Field
@@ -36,7 +36,7 @@ class DebugSettings(BaseSettings):
 class ProfileFormatMetadata:
     label: str
     extension: str
-    renderer_cls: Type[FrameRenderer]
+    renderer_cls: type[FrameRenderer]
 
 
 class ProfileFormat(ProfileFormatMetadata, Enum):

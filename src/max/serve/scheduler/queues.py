@@ -12,9 +12,10 @@ import multiprocessing
 import multiprocessing.process
 import os
 import queue
+from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
 from enum import Enum
-from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
+from typing import Generic, Optional, TypeVar
 
 import sentinel
 from max.serve.scheduler import mp_queue, zmq_queue

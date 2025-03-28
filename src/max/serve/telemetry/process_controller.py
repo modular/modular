@@ -9,9 +9,10 @@ import logging
 import multiprocessing
 import multiprocessing.queues
 import queue
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncGenerator, Optional
+from typing import Optional
 
 from max.serve.config import MetricLevel, Settings
 from max.serve.scheduler.process_control import (

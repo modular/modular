@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.telemetry.asyncio_controller import start_asyncio_consumer

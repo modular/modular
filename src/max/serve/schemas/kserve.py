@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field, RootModel
 
@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, RootModel
 class MetadataServerResponse(BaseModel):
     name: str
     version: str
-    extensions: List[str]
+    extensions: list[str]
 
 
 class MetadataServerErrorResponse(BaseModel):
@@ -22,7 +22,7 @@ class MetadataServerErrorResponse(BaseModel):
 class MetadataTensor(BaseModel):
     name: str
     datatype: str
-    shape: List[int]
+    shape: list[int]
 
 
 class MetadataModelErrorResponse(BaseModel):
@@ -33,8 +33,8 @@ class Parameters(BaseModel):
     pass
 
 
-class TensorData(RootModel[List]):
-    root: List = Field(..., title="tensor_data")
+class TensorData(RootModel[list]):
+    root: list = Field(..., title="tensor_data")
 
 
 class RequestOutput(BaseModel):
@@ -44,7 +44,7 @@ class RequestOutput(BaseModel):
 
 class ResponseOutput(BaseModel):
     name: str
-    shape: List[int]
+    shape: list[int]
     datatype: str
     parameters: Optional[Parameters] = None
     data: TensorData
@@ -55,7 +55,7 @@ class InferenceResponse(BaseModel):
     model_version: Optional[str] = None
     id: Optional[str] = None
     parameters: Optional[Parameters] = None
-    outputs: List[ResponseOutput]
+    outputs: list[ResponseOutput]
 
 
 class InferenceErrorResponse(BaseModel):
@@ -64,15 +64,15 @@ class InferenceErrorResponse(BaseModel):
 
 class MetadataModelResponse(BaseModel):
     name: str
-    versions: Optional[List[str]] = None
+    versions: Optional[list[str]] = None
     platform: str
-    inputs: Optional[List[MetadataTensor]] = None
-    outputs: Optional[List[MetadataTensor]] = None
+    inputs: Optional[list[MetadataTensor]] = None
+    outputs: Optional[list[MetadataTensor]] = None
 
 
 class RequestInput(BaseModel):
     name: str
-    shape: List[int]
+    shape: list[int]
     datatype: str
     parameters: Optional[Parameters] = None
     data: TensorData
@@ -81,5 +81,5 @@ class RequestInput(BaseModel):
 class InferenceRequest(BaseModel):
     id: Optional[str] = None
     parameters: Optional[Parameters] = None
-    inputs: List[RequestInput]
-    outputs: Optional[List[RequestOutput]] = None
+    inputs: list[RequestInput]
+    outputs: Optional[list[RequestOutput]] = None

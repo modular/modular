@@ -12,8 +12,9 @@ import multiprocessing
 import multiprocessing.synchronize
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional, Protocol, Union
+from typing import Callable, Optional, Protocol, Union
 
 logger = logging.getLogger(__name__)
 # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.

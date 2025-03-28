@@ -4,8 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence, Union, cast
+from typing import Union, cast
 
 import numpy as np
 from max.pipelines.interfaces import (

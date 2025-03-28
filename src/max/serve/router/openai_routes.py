@@ -11,16 +11,14 @@ import logging
 import queue
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from time import perf_counter_ns
 from typing import (
     Any,
-    AsyncGenerator,
-    List,
     Literal,
     Optional,
-    Sequence,
     Union,
     cast,
 )
@@ -242,13 +240,13 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 idx = response_message.find(stop_sequence[0])
                 response_message = response_message[:idx]
 
-            response_choices: List[Choice1] = []
+            response_choices: list[Choice1] = []
             if tool_use:
                 # Try to parse and handle tool calls if tool_use is enabled
                 tool_calls_resp = self._parse_resp_to_json(response_message)
 
                 if tool_calls_resp:
-                    tool_calls: List[ChatCompletionMessageToolCall] = []
+                    tool_calls: list[ChatCompletionMessageToolCall] = []
                     for tool_data in tool_calls_resp:
                         self._handle_tool_calls_response(tool_data, tool_calls)
 
@@ -303,7 +301,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 n_tokens,
             )
 
-    def _parse_resp_to_json(self, text: str) -> Optional[List[dict]]:
+    def _parse_resp_to_json(self, text: str) -> Optional[list[dict]]:
         """Parse the response message to valid tool call JSON objects."""
         segments = [
             segment.strip() for segment in text.splitlines() if segment.strip()
@@ -371,7 +369,7 @@ class OpenAIEmbeddingsResponseGenerator:
         self.pipeline = pipeline
 
     async def encode(
-        self, requests: List[TokenGeneratorRequest]
+        self, requests: list[TokenGeneratorRequest]
     ) -> CreateEmbeddingResponse:
         if len(requests) == 0:
             raise ValueError("No requests provided.")
@@ -569,8 +567,8 @@ async def openai_create_chat_completion(
 
 
 def _convert_chat_completion_tools_to_token_generator_tools(
-    chat_tools: Optional[List[ChatCompletionTool]],
-) -> Optional[List[TokenGeneratorRequestTool]]:
+    chat_tools: Optional[list[ChatCompletionTool]],
+) -> Optional[list[TokenGeneratorRequestTool]]:
     """Convert ChatCompletionTool list to TokenGeneratorRequestTool list."""
     if not chat_tools:
         return None
@@ -698,7 +696,7 @@ class CompletionStreamResponse(BaseModel):
     id: str
     created: int
     model: str
-    choices: List[CompletionResponseStreamChoice]
+    choices: list[CompletionResponseStreamChoice]
     object: Literal["text_completion"]
     usage: Optional[CompletionUsage] = Field(default=None)
 
@@ -912,7 +910,7 @@ async def openai_create_completion(
             http_req_id,
             " (streaming) " if completion_request.stream else "",
             completion_request.model,
-            ", Timers: {0}".format(request_timers) if request_timers else "",
+            f", Timers: {request_timers}" if request_timers else "",
         )
 
         response_generator = OpenAICompletionResponseGenerator(pipeline)

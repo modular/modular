@@ -8,8 +8,9 @@ import asyncio
 import logging
 import multiprocessing
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional
+from typing import Optional
 
 from max.serve.config import Settings
 from max.serve.kvcache_agent.kvcache_agent import start_kvcache_agent_service

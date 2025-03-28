@@ -9,9 +9,10 @@ import json
 import logging
 import random
 import threading
+from collections.abc import Iterable, Sequence
 from os import environ
 from time import sleep, time
-from typing import Iterable, List, Literal, Optional, Sequence, Union
+from typing import Literal, Optional, Union
 
 import numpy as np
 from max.pipelines.interfaces import (
@@ -65,10 +66,10 @@ class PerformanceFakingContext:
 class BatchInfo:
     """Information about a batch of requests passed to the pipeline"""
 
-    past_seq_lens: List[int]
+    past_seq_lens: list[int]
     """Coordinated list of past sequence lengths (i.e. context lengths)"""
 
-    seq_lens: List[int]
+    seq_lens: list[int]
     """Coordinated list of sequence lengths, i.e. prompt_len or 1"""
 
     num_steps: int
@@ -195,7 +196,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         # amount of time spent in between waiting
         self.non_wait_secs: float = 0
         # record of batches
-        self.batch_infos: List[BatchInfo] = []
+        self.batch_infos: list[BatchInfo] = []
 
     def next_token(
         self, batch: dict[str, PerformanceFakingContext], num_steps: int = 1

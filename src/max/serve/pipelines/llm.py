@@ -10,9 +10,10 @@ import asyncio
 import logging
 import os
 import signal
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from functools import partial
-from typing import AsyncGenerator, Callable, Generic, Optional, TypeVar
+from typing import Callable, Generic, Optional, TypeVar
 
 import numpy as np
 from max.pipelines import PipelineConfig, PipelineTask

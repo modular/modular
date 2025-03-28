@@ -15,8 +15,9 @@ information.  Recording item schema is described by the schema module.
 from __future__ import annotations
 
 import types
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, BinaryIO, Iterable, TextIO
+from typing import Any, BinaryIO, TextIO
 
 import msgspec.json
 

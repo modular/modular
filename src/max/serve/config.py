@@ -91,7 +91,7 @@ class Settings(BaseSettings):
             try:
                 sock.bind(("", port))
                 return port
-            except socket.error as e:
+            except OSError as e:
                 raise ValueError(f"port {port} is already in use") from e
 
     # Telemetry and logging configuration

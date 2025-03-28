@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 
 class StopDetector:
@@ -12,9 +12,9 @@ class StopDetector:
     Utility to detect a stop sequence in a continuation
     """
 
-    def __init__(self, stop: Optional[Union[str, List[str]]]):
+    def __init__(self, stop: Optional[Union[str, list[str]]]):
         self.continuation_tail = ""
-        self.stop: List[str]
+        self.stop: list[str]
 
         # Clean up self.stop: List[str]
         if stop == None:
