@@ -303,6 +303,10 @@ class PipelineConfig(MAXConfig):
             msg = "enable_echo not currently supported with speculative decoding enabled"
             raise ValueError(msg)
 
+        if self._sampling_config.enable_structured_output:
+            msg = "structured outputs not currently supported with speculative decoding enabled"
+            raise ValueError(msg)
+
     def _validate_and_resolve_remaining_pipeline_config(self) -> None:
         """Update remaining pipeline config fields with appropriate values
         if not provided. If invalid config is provided, error out with detailed
