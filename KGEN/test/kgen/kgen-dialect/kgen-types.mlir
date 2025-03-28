@@ -93,3 +93,10 @@ kgen.func @func_types() {
   kgen.param.declare btype: type = <!kgen.func<(index, i8) -> none>>
   kgen.return
 }
+
+// COM: Param Capture Type
+
+// CHECK: kgen.generator @param_closure_types<capture: !kgen.param_closure<@foo "fn">>()
+kgen.generator @param_closure_types<capture: !kgen.param_closure<@foo "fn">>() {
+  kgen.return
+}

@@ -746,4 +746,57 @@ def KGEN_ClosureType : KGENType<"Closure", "closure"> {
   let assemblyFormat = "`<` custom<ClosureTypes>($parentSymbol, $name, $closureMemoryKind) `>`";
 }
 
+//===----------------------------------------------------------------------===//
+// ParamClosureType
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamClosureType : KGENType<"ParamClosure", "param_closure"> {
+  let summary = "Represents a struct of parameter captures";
+  let description = [{
+     A `!kgen.param_closure` type represents a struct of  parameter
+     captures. It is used as a placeholder before the captured parameters
+     are calculated. Once calculated, the capture type is replaced with
+     a !kgen.struct type with the capture types as the struct field types.
+
+     Example:
+     ```mlir
+         #type_value = #kgen.type<!kgen.closure<@foo, "fn" registerpassable>,
+          	{"__call__" :
+          	  <!kgen.param_closure<@foo “fn”>>
+              (!kgen.closure<@foo, "fn" registerpassable>) -> index =
+              @foo_fn<:!kgen.param<!kgen.param_closure<@foo “fn”>> ?>
+            }> : !kgen.type
+
+        kgen.generator @foo<C>(%arg0 : index) {
+          %1 = kgen.closure.init()(%arg1: index) -> index {
+	          %0 = kgen.param.constant = <add(C, C)>
+	          kgen.return %0 : index
+          } : (), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
+          %2 = kgen.call @consume<
+            :type #type_value,
+            :type !kgen.param_closure<@foo “fn”>,
+            :!kgen.param<!kgen.param_closure<@foo “fn”>> #kgen.capture<@foo, “fn”>>
+            (%3) :
+            (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index
+          kgen.return
+        }
+
+        kgen.generator @consume<x: type,
+                        CAPTURE_TYPE: type,
+                        CAPTURE_INST: !kgen.param<CAPTURE_TYPE>
+                        >(%arg0: !kgen.param<x>) -> index {
+          %0 = kgen.call_param[(!kgen.param<x>) -> index:
+                       bind_params(:<!kgen.param<CAPTURE_TYPE>>
+                      (!kgen.none, index) -> index
+                      get_vtable_entry(x, "__call__"), CAPTURE_INST)](%arg0, %arg1)
+          kgen.return %0 : index
+        }
+     ```
+  }];
+  let parameters = (ins "SymbolRefAttr":$parentSymbol,
+                        "StringAttr":$name
+                   );
+  let assemblyFormat = "`<` $parentSymbol $name `>`";
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD
