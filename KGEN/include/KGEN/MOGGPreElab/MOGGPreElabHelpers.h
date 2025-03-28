@@ -42,12 +42,6 @@ inline bool isCustomType(LIT::StructType maybeCustom) {
   return !isExtensibilityTensor(maybeCustom);
 }
 
-/// Remove the decorators from the function. Return true if any function had the
-/// kernel decorators.
-bool stripDecorators(LIT::FnOp func);
-
-void stripDecorators(LIT::StructDeclOp structDecl);
-
 /// Helper functions for dealing with the io_spec field of ManagedTensorSlice
 ///
 /// Convert IOSpec enum to and from strings
