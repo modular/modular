@@ -831,7 +831,7 @@ fn mha_single_batch[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
-    alias use_transposed_layout = False  # not token_gen
+    alias use_transposed_layout = True
     alias fragment_layout = Layout.row_major(
         1, 4
     ) if use_transposed_layout else Layout.row_major(4, 1)
@@ -1046,67 +1046,43 @@ fn mha_single_batch[
         # warp scratch and p_smem are using the same smem space
         barrier()
 
-        @parameter
-        if not use_transposed_layout:
-            copy_fragment_to_smem[
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                MMA_M,
-                MMA_N,
-                num_m_mmas,
-                num_n_mmas,
-                fragment_layout,
-                warp_layout,
-            ](
-                p_smem_iter,
-                p_reg_vectorized,
-                warp_row,
-                warp_col,
-            )
+        copy_fragment_to_smem[
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            MMA_M,
+            MMA_N,
+            num_m_mmas,
+            num_n_mmas,
+            fragment_layout,
+            warp_layout,
+        ](
+            p_smem_iter,
+            p_reg_vectorized,
+            warp_row,
+            warp_col,
+        )
 
-            barrier()
+        barrier()
 
-            mma[
-                transpose_b=False,
-                k_group_size=2,
-                config=config,
-                swizzle=None,
-                swap_operands=swap_mma_operands,
-                num_iters = Int(BN // BK),
-                token_gen=token_gen,
-            ](
-                out_reg_tile,
-                p_smem_iter,
-                p_smem_iter,
-                v_gmem_iter,
-                v_smem_iter,
-                num_b_rows,
-            )
-        else:
-            alias num_n_mmas_per_bk = num_n_mmas // (BN // BK)
-            var p_reg_tile_iter = p_reg_tile.tiled_iterator[
-                num_m_mmas * num_n_mmas_per_bk, output_frag_size, axis=0
-            ](0, 0)
-
-            mma[
-                transpose_b=False,
-                k_group_size=1,
-                config=config,
-                swizzle=None,
-                swap_operands=swap_mma_operands,
-                num_iters = Int(BN // BK),
-                token_gen=token_gen,
-            ](
-                out_reg_tile,
-                p_reg_tile_iter,
-                p_smem_iter,
-                v_gmem_iter,
-                v_smem_iter,
-                num_b_rows,
-            )
+        mma[
+            transpose_b=False,
+            k_group_size=2,
+            config=config,
+            swizzle=None,
+            swap_operands=swap_mma_operands,
+            num_iters = Int(BN // BK),
+            token_gen=token_gen,
+        ](
+            out_reg_tile,
+            p_smem_iter,
+            p_smem_iter,
+            v_gmem_iter,
+            v_smem_iter,
+            num_b_rows,
+        )
         # ensure that smem for v is not required anymore
         barrier()
 
