@@ -207,23 +207,6 @@ trait CollectionElementNew(ExplicitlyCopyable, Movable):
     pass
 
 
-# FIXME(25.2): remove deprecation warning
-@deprecated(
-    "deprecated, use `WritableCollectionElement` which still allows you to"
-    " construct a `String` but can avoid intermediary allocations"
-)
-trait StringableCollectionElement(CollectionElement, Stringable):
-    """The StringableCollectionElement trait denotes a trait composition
-    of the `CollectionElement` and `Stringable` traits.
-
-    This is useful to have as a named entity since Mojo does not
-    currently support anonymous trait compositions to constrain
-    on `CollectionElement & Stringable` in the parameter.
-    """
-
-    pass
-
-
 trait WritableCollectionElement(CollectionElement, Writable):
     """The WritableCollectionElement trait denotes a trait composition
     of the `CollectionElement` and `Writable` traits.

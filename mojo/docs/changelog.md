@@ -121,4 +121,7 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 - Error messages about the obsolete `borrowed` and `inout` keywords, as well as
   the obsolete `-> Int as name` syntax has been removed.
 
+- The `StringableCollectionElement` trait has been removed in favor of
+  `WritableCollectionElement`.
+
 ### 🛠️ Fixed
