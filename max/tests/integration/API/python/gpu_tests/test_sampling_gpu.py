@@ -55,7 +55,7 @@ def test_bitmask_sampling_vs_xgrammar():
             enable_structured_output=True,
             in_dtype=DType.float32,
             out_dtype=DType.float32,
-        )
+        ),
     )
 
     session = InferenceSession(devices=[device])
@@ -104,3 +104,52 @@ def test_bitmask_sampling_vs_xgrammar():
         assert isinstance(new_tokens, Tensor)
         for token in new_tokens.to(CPU()).to_numpy():
             assert matcher.accept_token(token[0], debug_print=True)
+
+
+def test_sampling_return_logits():
+    # Initialize Device
+    device = Accelerator()
+
+    # Create one op sampling graph
+    graph = token_sampler(
+        SamplingConfig(
+            top_k=5,
+            enable_structured_output=False,
+            in_dtype=DType.float32,
+            out_dtype=DType.float32,
+        ),
+        return_logits=True,
+    )
+
+    session = InferenceSession(devices=[device])
+    sampler = session.load(graph)
+
+    # Variables
+    batch_size = 3
+    vocab_size = 10
+    generated_tokens = Tensor.zeros(
+        (batch_size, 0),
+        dtype=DType.int64,
+        device=device,
+    )
+    generated_logits = Tensor.zeros(
+        (batch_size, 0), dtype=DType.float32, device=device
+    )
+
+    # Generate Random Logits
+    for j in range(3):
+        logits = np.random.default_rng().random(
+            size=(batch_size, vocab_size), dtype=np.float32
+        )
+
+        # Run through Sampler
+        new_tokens, generated_tokens, generated_logits = sampler(
+            Tensor.from_dlpack(logits).to(device),
+            generated_tokens,  # This isnt used by the sampler, so we can safely ignore it.
+            generated_logits,
+        )[:3]
+
+        # Ensure that the tokens generated, match the correct logits expected.
+        numpy_logits = generated_logits.to_numpy()
+        for i, token_idx in enumerate(new_tokens.to_numpy()):
+            assert numpy_logits[i, j] == logits[i, token_idx]
