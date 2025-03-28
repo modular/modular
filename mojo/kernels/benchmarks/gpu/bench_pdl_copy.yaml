@@ -1,0 +1,11 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_pdl_copy
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_pdl_copy.mojo
+
+params:
+- length: 4096*4096
