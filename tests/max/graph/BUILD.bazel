@@ -5,9 +5,7 @@ modular_py_test(
     srcs = glob(["**/*.py"]),
     data = [
         "//GenericML:MGPRT",
-        "//KGEN:CompilerRT",
         "//SDK/lib/API/python/tests/graph/testdata",
-        "@llvm-project//compiler-rt:orc_rt",
     ],
     env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
     imports = ["pytests"],
