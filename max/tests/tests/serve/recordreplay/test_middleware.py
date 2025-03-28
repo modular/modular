@@ -10,7 +10,7 @@ import asyncio
 import contextlib
 import datetime
 import urllib.parse
-from typing import AsyncIterable, Iterator
+from collections.abc import AsyncIterable, Iterator
 from unittest import mock
 
 import pytest
@@ -155,7 +155,7 @@ def test_recording(include_responses: bool) -> None:
         "GET",
         f"/greeting?name={urllib.parse.quote_plus('Martínez')}",
     )
-    check_response(greeting_tx.response, '"Good day, Martínez"'.encode("utf-8"))
+    check_response(greeting_tx.response, '"Good day, Martínez"'.encode())
     assert isinstance(deposit_tx, schema.Transaction)
     check_request(
         deposit_tx.request,
