@@ -370,7 +370,7 @@ fn mma[
 
             @parameter
             if a_iter.address_space != AddressSpace.LOCAL:
-                mma_op.load_a[swizzle= True if swizzle else False](
+                mma_op.load_a[swizzle=swizzle](
                     a_warp_tile,
                     a_reg_tile.vectorize[1, a_frag_size * k_group_size](),
                     k_mma,
