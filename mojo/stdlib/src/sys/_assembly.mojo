@@ -12,14 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes the inlined_assembly function."""
 
-from sys.intrinsics import _mlirtype_is_eq
-from collections.string.string_slice import StringSlice
 from builtin.string_literal import get_string_literal_slice
+from collections.string.string_slice import StringSlice
 
-
-# ===-----------------------------------------------------------------------===#
-# 0-arg
-# ===-----------------------------------------------------------------------===#
+from .intrinsics import _mlirtype_is_eq
 
 
 @always_inline("nodebug")
