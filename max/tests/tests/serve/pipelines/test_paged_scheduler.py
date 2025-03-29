@@ -846,6 +846,60 @@ def test_oom():
     assert len(actual) == len(expected) and actual == expected
 
 
+def test_dont_oom_during_cow():
+    # this can hold 512 tokens
+    page_size = 128
+    num_blocks = 3
+    scheduler = create_paged_scheduler(
+        enable_chunked_prefill=True,
+        enable_in_flight_batching=False,
+        enable_prefix_caching=True,
+        num_blocks=num_blocks,
+        page_size=page_size,
+        max_batch_size=999,
+        target_tokens_per_batch_ce=200,
+    )
+
+    shared_prefix = rand(64)
+
+    # Request A needs 3 blocks
+    enqueue_request(
+        scheduler,
+        prompt_len=300,
+        max_seq_len=300 + 16,
+        shared_prefix=shared_prefix,
+    )
+
+    batch_info = create_batch_and_execute(scheduler)
+    assert batch_info == BatchInfo(CE, 1, 1, 1, 200)
+
+    # Request B needs 1 block
+    enqueue_request(
+        scheduler,
+        prompt_len=64,
+        max_seq_len=64 + 16,
+        shared_prefix=shared_prefix,
+    )
+
+    # Note that request A and request B share some common prefix tokens.
+    # Request B will want to COW which requires allocating a new block.
+    # However since A is using all of the blocks, B will be unable to COW.
+    actual = run_until_completion(scheduler)
+
+    expected = [
+        # batch_type, batch_size, terminated, num_steps, tokens_to_encode
+        BatchInfo(CE, 1, 0, 1, 100),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 1, 6, 1),
+        BatchInfo(CE, 1, 0, 1, 1),
+        BatchInfo(TG, 1, 0, 10, 1),
+        BatchInfo(TG, 1, 1, 6, 1),
+        BatchInfo(TG, 0, 0, 0, 0),
+    ]
+    print(actual)
+    assert len(actual) == len(expected) and actual == expected
+
+
 @pytest.mark.parametrize(
     "num_prompts, input_tokens, output_tokens, max_forward_steps_tg, target_tokens_per_batch_ce, enable_chunked_prefill, enable_prefix_caching",
     [
