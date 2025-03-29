@@ -73,7 +73,7 @@ struct UInt(
     @always_inline("builtin")
     fn __init__(out self):
         """Default constructor that produces zero."""
-        self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
+        self.value = __mlir_attr.`0 : index`
 
     @doc_private
     @always_inline("builtin")

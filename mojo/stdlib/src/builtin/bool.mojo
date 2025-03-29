@@ -402,13 +402,7 @@ struct Bool(
         Returns:
             True if the object is false and False otherwise.
         """
-        return __mlir_op.`pop.xor`(
-            self.value,
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type.i1,
-                value = __mlir_attr.`true : i1`,
-            ](),
-        )
+        return __mlir_op.`pop.xor`(self.value, __mlir_attr.true)
 
     @always_inline("builtin")
     fn __and__(self, rhs: Bool) -> Bool:

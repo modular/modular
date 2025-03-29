@@ -230,10 +230,7 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
 @always_inline("nodebug")
 fn _unchecked_zero[dtype: DType, size: Int]() -> SIMD[dtype, size]:
     var zero = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](
-        __mlir_op.`kgen.param.constant`[
-            _type = __mlir_type[`!pop.scalar<index>`],
-            value = __mlir_attr[`#pop.simd<0> : !pop.scalar<index>`],
-        ]()
+        __mlir_attr.`#pop.simd<0> : !pop.scalar<index>`
     )
     return Scalar[dtype](zero)
 
