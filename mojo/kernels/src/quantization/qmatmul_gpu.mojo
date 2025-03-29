@@ -50,7 +50,7 @@ from layout.layout_tensor import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.runtime_tuple import RuntimeTuple
-from layout.swizzle import Swizzle, make_swizzle
+from layout.swizzle import Swizzle, make_swizzle, make_ldmatrix_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import (
     TensorCore,
@@ -298,7 +298,11 @@ fn multistage_mma_q[
 
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
-    mma_op.load_a[swizzle_a](
+    alias swizzle_a_pattern = make_ldmatrix_swizzle[
+        a_type, a_warp_tile.stride[0]()
+    ]() if swizzle_a else OptionalReg[Swizzle](None)
+
+    mma_op.load_a[swizzle_a_pattern](
         a_warp_tile, a_reg_tiles[0].vectorize[1, a_frag_size]()
     )
 
@@ -348,7 +352,7 @@ fn multistage_mma_q[
                         ](Int(lane_id))
                     )
 
-            mma_op.load_a[swizzle_a](
+            mma_op.load_a[swizzle_a_pattern](
                 a_warp_tile,
                 a_reg_tiles[next].vectorize[1, a_frag_size](),
                 (k_mma + 1) % num_k_mmas,
