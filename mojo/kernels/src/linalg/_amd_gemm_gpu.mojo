@@ -225,7 +225,7 @@ struct AMD_MMA[
     fn load_tiles[
         k_group: Int
     ](a_tiles: MMATileBuffers, b_tiles: MMATileBuffers):
-        Self.mma_op.load_a[swizzle=True](
+        Self.mma_op.load_a[swizzle=swizzle](
             a_tiles.mma_tile,
             a_tiles.register_buffer[k_group]
             .tile[mmas_per_warp_m, simd_width](k_group, 0)

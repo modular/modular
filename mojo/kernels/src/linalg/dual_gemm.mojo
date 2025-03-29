@@ -41,7 +41,7 @@ from layout.layout_tensor import (
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
-from layout.swizzle import make_swizzle
+from layout.swizzle import make_swizzle, Swizzle, make_ldmatrix_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import (
     TensorCore,
@@ -291,9 +291,13 @@ fn multistage_dual_mma[
 
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
+    alias swizzle_a_pattern = make_ldmatrix_swizzle[
+        a_type, a_warp_tile.stride[0]()
+    ]() if swizzle_a else OptionalReg[Swizzle](None)
+
     @parameter
     for i in range(Int(k_group_size)):
-        mma_op.load_a[swizzle_a](
+        mma_op.load_a[swizzle_a_pattern](
             a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
         )
         mma_op.load_b(b0_warp_tile, b0_reg_tiles[i], i, Int(warp_x))
@@ -383,7 +387,7 @@ fn multistage_dual_mma[
                     ](b_wtile_coord0, b_wtile_coord1)
 
                 alias kidx = Int(k_mma_next % num_k_mmas)
-                mma_op.load_a[swizzle_a](
+                mma_op.load_a[swizzle_a_pattern](
                     a_warp_tile,
                     a_reg_tiles[next].vectorize[1, a_frag_size](),
                     kidx,
