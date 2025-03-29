@@ -223,23 +223,25 @@ class BlockManager:
             # Since we got cache hits, clear out existing uncommitted blocks
             self.release_uncommitted_blocks(ctx)
 
-            # Append them to the request's blocks.
-            fresh_block = self.alloc_block()
-            req_blocks.append(fresh_block)
-            ctx.bump_token_indices(
-                start_idx=tokens_matched,
-            )
+            # We can only perform COW if we can allocate a new block to copy into
+            if self.free_block_queue:
+                # Append them to the request's blocks.
+                fresh_block = self.alloc_block()
+                req_blocks.append(fresh_block)
+                ctx.bump_token_indices(
+                    start_idx=tokens_matched,
+                )
 
-            # Update COW arguments
-            cow_args = (
-                fresh_block.block_id,
-                partial_block.block_id,
-                tokens_matched,
-            )
+                # Update COW arguments
+                cow_args = (
+                    fresh_block.block_id,
+                    partial_block.block_id,
+                    tokens_matched,
+                )
 
-            # Check that the cached_idx has increased.
-            assert ctx.start_idx > orig_start_idx
-            orig_start_idx = ctx.start_idx
+                # Check that the cached_idx has increased.
+                assert ctx.start_idx > orig_start_idx
+                orig_start_idx = ctx.start_idx
 
         # Update cache hit rate metrics.
         new_prompt_len = ctx.active_length
