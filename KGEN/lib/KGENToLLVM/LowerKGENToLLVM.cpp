@@ -978,15 +978,20 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
   // Create the `llvm.mlir.global_ctors` and `llvm.mlir.global_dtors`, where
   // each just invokes the respective functions we generated.
   b.setInsertionPointToStart(module.getBody());
-  mlir::ArrayAttr prioritiesAttr = b.getArrayAttr(b.getI32IntegerAttr(0));
+  mlir::ArrayAttr prioritiesAttr = b.getArrayAttr({b.getI32IntegerAttr(0)});
+  // if the associated data is not `#llvm.zero`, functions are only run if the
+  // data is not discarded. If the data is discarded, the functions are not
+  // executed.
+  mlir::ArrayAttr dataListAttr =
+      b.getArrayAttr({mlir::LLVM::ZeroAttr::get(module.getContext())});
   b.create<LLVM::GlobalCtorsOp>(
       module.getLoc(),
       b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalCtorFnName))),
-      prioritiesAttr);
+      prioritiesAttr, dataListAttr);
   b.create<LLVM::GlobalDtorsOp>(
       module.getLoc(),
       b.getArrayAttr(FlatSymbolRefAttr::get(b.getStringAttr(globalDtorFnName))),
-      prioritiesAttr);
+      prioritiesAttr, dataListAttr);
   return success();
 }
 

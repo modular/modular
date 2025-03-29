@@ -144,8 +144,8 @@ kgen.func export package @used_package_func() -> !kgen.struct<(i32, i32)>{
 
 // CHECK-LABEL: module
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  // CHECK: llvm.mlir.global_ctors {ctors = [@kgenGlobalCtor], priorities = [0 : i32]}
-  // CHECK: llvm.mlir.global_dtors {dtors = [@kgenGlobalDtor], priorities = [0 : i32]}
+  // CHECK: llvm.mlir.global_ctors ctors = [@kgenGlobalCtor], priorities = [0 : i32], data = [#llvm.zero]
+  // CHECK: llvm.mlir.global_dtors dtors = [@kgenGlobalDtor], priorities = [0 : i32], data = [#llvm.zero]
 
   // CHECK: llvm.func weak @kgenGlobalCtor
   // CHECK-NEXT: call @noop()
