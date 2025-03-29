@@ -12,7 +12,7 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from max.pipelines import TokenGenerator
 from max.pipelines.context import InputContext
@@ -265,16 +265,14 @@ class TokenGenerationScheduler(Scheduler):
                 + self.scheduler_config.batch_timeout
             ):
                 return True
-            else:
-                messages_needed = self.scheduler_config.max_batch_size_tg - len(
-                    self.active_batch
-                )
-                if self.request_q.qsize() >= messages_needed:
-                    # If there are enough request to fill the TG batch then schedule CE
-                    return True
-                else:
-                    # If not enough requests then hold off the CE and continue with TG
-                    return False
+            messages_needed = self.scheduler_config.max_batch_size_tg - len(
+                self.active_batch
+            )
+            if self.request_q.qsize() >= messages_needed:
+                # If there are enough request to fill the TG batch then schedule CE
+                return True
+            # If not enough requests then hold off the CE and continue with TG
+            return False
 
         return True
 
@@ -398,10 +396,7 @@ class TokenGenerationScheduler(Scheduler):
 
                 # We were able to schedule this request
                 if not scheduled:
-                    self.available_cache_indices.add(data.cache_seq_id)
-                    self.pipeline.release(data)
-                    data.reset()
-                    self.request_q.put_front_nowait((req_id, data))
+                    self._return_to_request_queue(req_id, data)
                     break
 
             # Schedule the requests as it fits in KVCache and token limit
@@ -418,15 +413,17 @@ class TokenGenerationScheduler(Scheduler):
         )
 
     @traced
-    def _preempt_request(self, req_id: Any, data: InputContext):
-        """Preempts the most recently received request from active batch"""
-        # dicts in python pop the last inserted item
-        # this corresponds to the most recently received request
+    def _return_to_request_queue(self, req_id: Any, data: InputContext):
+        """Resets a request and returns it to the request queue"""
         self.available_cache_indices.add(data.cache_seq_id)
         self.pipeline.release(data)
         data.reset()
         self.request_q.put_front_nowait((req_id, data))
 
+    @traced
+    def _preempt_request(self, req_id: Any, data: InputContext):
+        """Preempts the most recently received request from active batch"""
+        self._return_to_request_queue(req_id, data)
         # Limit logging about preemptions to at most once per second
         current_time = time.monotonic()
         self.total_preemption_count += 1
@@ -811,7 +808,9 @@ class TokenGenerationScheduler(Scheduler):
                     responses[token_idx][request_id] = text_response
 
                 if response.is_done:
-                    responses[len(response.tokens)][request_id] = STOP_STREAM
+                    responses[len(response.tokens)][request_id] = cast(
+                        TextResponse, STOP_STREAM
+                    )
 
             self.response_q.put_nowait(responses)
 
@@ -839,7 +838,9 @@ class TokenGenerationScheduler(Scheduler):
                 responses[token_idx][request_id] = text_response
 
             if response.is_done:
-                responses[len(response.tokens)][request_id] = STOP_STREAM
+                responses[len(response.tokens)][request_id] = cast(
+                    TextResponse, STOP_STREAM
+                )
 
         self.response_q.put_nowait(responses)
 
