@@ -1800,6 +1800,18 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   Operation *resultOp = emitter.builder->create(state);
 
+  // Check if the attributes specified are all inherent attributes.
+  DenseSet<StringAttr> inherentAttrs;
+  inherentAttrs.insert_range(resultOp->getName().getAttributeNames());
+  for (NamedAttribute &attr : state.attributes) {
+    if (!inherentAttrs.contains(attr.getName())) {
+      emitter.emitError(call.getLoc(), "attribute ")
+          << attr.getName() << " is not an inherent attribute of "
+          << unboundOp.getName();
+      return {};
+    }
+  }
+
   // Set the properties if needed. We do this here, because errors result in a
   // crash in the op builder if we simply set state.propertiesAttr.
   if (propsAttr) {

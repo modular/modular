@@ -103,5 +103,9 @@ fn mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
 
 
 fn mlir_illegal_op():
+    # Intentional typo for `is_zero_poison`:
+    # expected-error @below {{attribute 'is_zero_poson' is not an inherent attribute of 'llvm.intr.ctlz'}}
+    __mlir_op.`llvm.intr.ctlz`[_type=Int, is_zero_poson=__mlir_attr.`0: i1`](1)
+
     # expected-error @below {{MLIR verification error: 'llvm.intr.ctlz' op requires attribute 'is_zero_poison'}}
     __mlir_op.`llvm.intr.ctlz`[_type=Int](1)
