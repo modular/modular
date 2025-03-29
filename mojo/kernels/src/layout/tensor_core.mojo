@@ -717,9 +717,7 @@ struct TensorCore[
 
     @always_inline
     fn load_a[
-        # TODO (KERN-1602): Figure out a better way to pass Bool or Swizzle and remove
-        # the hardcoded Swizzle(2, 0, 2) for AMD
-        swizzle: Bool = is_nvidia_gpu(),
+        swizzle: OptionalReg[Swizzle] = None,
         *,
     ](
         self,
@@ -733,8 +731,7 @@ struct TensorCore[
         Optimized version for loading A matrix fragments from shared memory.
 
         Parameters:
-            swizzle: Whether to use swizzling (NVIDIA) or not.
-                     Defaults to True if NVIDIA, False if AMD.
+            swizzle: Optional memory access pattern for to optimize memory bandwidth.
 
         Args:
             warp_tile: The source data in shared memory.
@@ -750,9 +747,7 @@ struct TensorCore[
         if is_nvidia_gpu():
             self._load_a_nvidia[swizzle](warp_tile, fragments, mma_tile_coord_k)
         else:
-            self._load_a_amd[
-                Swizzle(2, 0, 2) if swizzle else OptionalReg[Swizzle](None)
-            ](warp_tile, fragments, mma_tile_coord_k)
+            self._load_a_amd[swizzle](warp_tile, fragments, mma_tile_coord_k)
 
     @always_inline
     fn _load_a_amd[
@@ -785,7 +780,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_a_nvidia[
-        swizzle: Bool = True,
+        swizzle: OptionalReg[Swizzle],
         *,
     ](
         self,
@@ -829,7 +824,7 @@ struct TensorCore[
 
         Parameters:
             swizzle: Optional memory access pattern for AMD GPUs to optimize memory bandwidth.
-                     Must be None when running on NVIDIA GPUs.
+                     Must be None when running on NVIDIA GPUs. For NVIDIA GPUs, swizzle is always on.
 
         Args:
             warp_tile: Source `LayoutTensor` in shared memory containing the B matrix data.
@@ -915,6 +910,9 @@ struct TensorCore[
         alias simd_size = simdwidthof[in_type]()
         alias num_frags = fragments.shape[0]()
         alias WN = warp_tile.shape[1]()
+        alias swizzle = make_ldmatrix_swizzle[
+            warp_tile.dtype, warp_tile.stride[0]()
+        ]()
 
         @parameter
         if transpose_b:
@@ -928,7 +926,9 @@ struct TensorCore[
                     var mma_tile = warp_tile.tile[
                         2 * shape[1], warp_tile.shape[1]()
                     ](i // 2, 0)
-                    var vec = _load_matrix_frag(mma_tile, swizzle_offset)
+                    var vec = _load_matrix_frag[swizzle=swizzle](
+                        mma_tile, swizzle_offset
+                    )
                     fragments[i, 0] = rebind[frag_type](
                         SIMD[warp_tile.dtype, 2](vec[0], vec[2])
                     )
@@ -951,9 +951,9 @@ struct TensorCore[
                     var mma_tile = warp_tile.tile[
                         2 * shape[1], warp_tile.shape[1]()
                     ](i // 2, 0)
-                    var vec = _load_matrix_frag[x4_row_major=True](
-                        mma_tile, swizzle_offset
-                    )
+                    var vec = _load_matrix_frag[
+                        swizzle=swizzle, x4_row_major=True
+                    ](mma_tile, swizzle_offset)
                     var high_low = vec.split()
                     fragments[i, 0] = rebind[frag_type](high_low[0])
                     fragments[i + 1, 0] = rebind[frag_type](high_low[1])
@@ -1020,9 +1020,9 @@ struct TensorCore[
                         var swizzle_offset = (
                             i + warp_tile_coord_n * WN // simd_size
                         )
-                        var vec = _load_matrix_frag[transposed=True](
-                            mma_tile_shifted, swizzle_offset
-                        )
+                        var vec = _load_matrix_frag[
+                            swizzle=swizzle, transposed=True
+                        ](mma_tile_shifted, swizzle_offset)
                         var high_low = vec.split()
                         fragments[i, 0] = rebind[frag_type](high_low[0])
                         fragments[i + 1, 0] = rebind[frag_type](high_low[1])
@@ -1032,9 +1032,9 @@ struct TensorCore[
                     @parameter
                     for i in range(0, num_frags_round_even, 2):
                         # load using x4 layout
-                        var vec = _load_matrix_frag[transposed=True](
-                            mma_tile, i
-                        )
+                        var vec = _load_matrix_frag[
+                            swizzle=swizzle, transposed=True
+                        ](mma_tile, i)
 
                         var high_low = vec.split()
                         fragments[i, 0] = rebind[frag_type](high_low[0])
@@ -1044,7 +1044,7 @@ struct TensorCore[
                     if num_frags % 2:
                         # load using x2 for the last fragment if necessary
                         var vec = _load_matrix_frag[
-                            transposed=True, num_matrices=2
+                            swizzle=swizzle, transposed=True, num_matrices=2
                         ](mma_tile, num_frags_round_even)
                         fragments[num_frags_round_even, 0] = rebind[frag_type](
                             vec
@@ -1194,7 +1194,7 @@ struct TensorCore[
 fn _load_matrix_frag[
     # Refactor the three parameters with ComposedLayout
     # swizzle: OptionalReg[_swizzle_signature] = None,
-    swizzle: Bool = True,
+    swizzle: OptionalReg[Swizzle] = None,
     transposed: Bool = False,
     x4_row_major: Bool = False,
     num_matrices: Int = 4,
@@ -1259,9 +1259,7 @@ fn _load_matrix_frag[
 
     alias ldmatrix_layout = ComposedLayout(
         x4_layout,
-        make_ldmatrix_swizzle[
-            mma_tile.dtype, row_size
-        ]() if swizzle else Swizzle(0, 0, 1),
+        swizzle.value() if swizzle else Swizzle(0, 0, 1),
     )
 
     var lane_offset = eval_composed[ldmatrix_layout](
