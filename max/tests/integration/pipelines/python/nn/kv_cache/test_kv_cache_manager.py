@@ -36,15 +36,15 @@ async def test_step():
     # Claim three items
     seq_ids = kv_manager.claim(n=3)
 
-    # Assert that each cache_length is initialized appropriately as 0
-    for seq_id in seq_ids:
-        assert kv_manager.cache_lengths[seq_id] == 0
-
     prompt_lens = [3, 4, 7]
     batch = [
         create_text_context(s, np.empty(prompt_lens[i]))
         for i, s in enumerate(seq_ids)
     ]
+
+    # Assert that each cache_length is initialized appropriately as 0
+    for ctx in batch:
+        assert ctx.start_idx == 0
 
     # Update these values a few times
     for j in range(3):
@@ -53,8 +53,8 @@ async def test_step():
             ctx.update(42)
         kv_manager.step(batch)
 
-        for i, seq_id in enumerate(seq_ids):
-            assert kv_manager.cache_lengths[seq_id] == prompt_lens[i] * (j + 1)
+        for i, ctx in enumerate(batch):
+            assert ctx.start_idx == prompt_lens[i] * (j + 1)
 
         for i, ctx in enumerate(batch):
             orig_start_idx = ctx.start_idx
