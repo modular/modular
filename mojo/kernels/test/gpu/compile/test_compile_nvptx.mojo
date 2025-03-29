@@ -118,7 +118,7 @@ def test_short_nvptx_ptr():
     # CHECK-NOT: mov.u64
     # CHECK: mov.u32
     # CHECK-NEXT: shl.b32
-    # CHECK-NEXT: mov.u32
+    # CHECK-NEXT: mov.b32
     # CHECK-NEXT: add.s32
     # CHECK-NEXT: ld.global.u32
     # CHECK-NEXT: st.shared.u32

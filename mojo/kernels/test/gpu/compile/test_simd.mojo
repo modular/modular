@@ -20,25 +20,31 @@ def test_operation[
 ]():
     var scalar: String
     var pairwise: String
+    var suffix: String
+
+    # sm_80 does not support trivial add/sub/mul bfloat16 operations, but
+    # these can be implemented using the FMA instruction. Verify that the
+    # backend is using FMA and not falling back to widening the inputs to
+    # float32.
+    # sm_90 and later has wider support for bfloat16 operations.
+    var prefix: String
+
+    @parameter
+    if target_arch == "sm_80" and dtype is DType.bfloat16:
+        prefix = "fma.rn"
+    else:
+        prefix = op_name
 
     @parameter
     if dtype is DType.float16:
-        scalar = op_name + ".rn.f16 "
-        pairwise = op_name + ".rn.f16x2 "
-    elif target_arch == "sm_80":
-        # sm_80 does not support trivial add/sub/mul bfloat16 operations, but
-        # these can be implemented using the FMA instruction. Verify that the
-        # backend is using FMA and not falling back to widening the inputs to
-        # float32.
-        scalar = "fma.rn.bf16 "
-        pairwise = "fma.rn.bf16x2 "
+        suffix = ".f16"
     else:
-        # sm_90 and later has wider support for bfloat16 operations.
-        scalar = op_name + ".rn.bf16 "
-        pairwise = op_name + ".rn.bf16x2 "
+        suffix = ".bf16"
+
+    scalar = prefix + suffix
+    pairwise = scalar + "x2 "
 
     alias target = _get_gpu_target[target_arch]()
-
     assert_true(scalar in _compile_code_asm[op_fn[width=1], target=target]())
     assert_true(pairwise in _compile_code_asm[op_fn[width=2], target=target]())
     assert_true(pairwise in _compile_code_asm[op_fn[width=8], target=target]())
