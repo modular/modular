@@ -266,10 +266,10 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
                     " config."
                 )
                 raise ValueError(msg)
-            elif seq_id not in self.cache_lengths:
+            elif seq_id not in self.active:
                 raise ValueError(f"seq_id: {seq_id} not currently in cache.")
 
-            cache_len = self.cache_lengths[seq_id]
+            cache_len = ctx.start_idx
 
             assert (
                 cache_len + len(prompt) + num_steps - 1 <= self.max_seq_len

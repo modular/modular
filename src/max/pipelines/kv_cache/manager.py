@@ -18,12 +18,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import (
-    Any,
-    TypeVar,
-    cast,
-    overload,
-)
+from typing import Any, TypeVar, cast, overload
 
 from max.driver import Device, Tensor
 from max.dtype import DType
@@ -179,7 +174,7 @@ class KVCacheManager(ABC):
 
         # Attributes for managing available slots.
         self.available = set(range(self.max_batch_size))
-        self.cache_lengths: dict[int, int] = {}
+        self.active: set[int] = set()
 
         self.is_ragged = is_ragged
         increment_cache_lengths_graph = (
@@ -247,53 +242,41 @@ class KVCacheManager(ABC):
         seq_ids = []
 
         for _ in range(n):
-            id = self.available.pop()
-            seq_ids.append(id)
-            self.cache_lengths[id] = 0
+            seq_id = self.available.pop()
+            self.active.add(seq_id)
+            seq_ids.append(seq_id)
 
         return seq_ids
 
     def external_claim(self, seq_ids: list[int]) -> None:
         """Variant of the above where sequence ids are reserved externally."""
         for seq_id in seq_ids:
-            self.available.remove(seq_id)
-            self.cache_lengths[seq_id] = 0
+            if seq_id in self.active:
+                raise ValueError(
+                    f"Attempted to claim {seq_id} but it is already in active set"
+                )
 
-    def _step(
-        self,
-        batch: list[InputContext],
-    ) -> None:
-        """Used by `step` and can optionally be overridden by child classes."""
-        ...
+            self.available.remove(seq_id)
+            self.active.add(seq_id)
 
     def step(self, batch: list[InputContext]) -> None:
-        """Update the `cache_lengths` objects to note that a new
-        kv projection step has occurred, and that the underlying memory
-        has been written to. This `cache_lengths` value is then used
-        downstream in `fetch` to track what section of memory should
-        be used in the kernels.
-        """
-        # Call into `_step` method possibly overridden by child classes.
-        self._step(batch)
+        """Commit the new tokens into the prefix cache.
 
-        # Update the cache lengths for given batch.
-        for ctx in batch:
-            seq_id = ctx.cache_seq_id
-            if seq_id not in self.cache_lengths:
-                raise ValueError(f"seq_id: {seq_id} not in cache.")
-            self.cache_lengths[seq_id] = ctx.start_idx
+        This is a no-op if prefix caching is disabled."""
+        ...
 
     def release(self, seq_id: int) -> None:
         """Release `seq_id` provided, marking this sequence as complete.
         This returns the seq_id back to the available pool of cache memory,
         allowing it to be reused when a new sequence is claimed.
         """
+        if seq_id not in self.active:
+            raise ValueError(
+                f"Attempted to release {seq_id} but it is not in active set"
+            )
 
-        if seq_id not in self.cache_lengths:
-            raise ValueError(f"seq_id: {id} not in cache.")
-
+        self.active.remove(seq_id)
         self.available.add(seq_id)
-        del self.cache_lengths[seq_id]
 
     def contains(self, seq_id: int) -> bool:
         return seq_id not in self.slots_remaining
@@ -302,11 +285,6 @@ class KVCacheManager(ABC):
     def slots_remaining(self) -> set[int]:
         """The outstanding cache slots available."""
         return self.available
-
-    @property
-    def max_sequence_length(self) -> int:
-        """The maximum sequence length in current cache."""
-        return max(self.cache_lengths.values())
 
     def num_kv_inputs(self) -> int:
         """Returns the default number of KV cache inputs for KV managers.

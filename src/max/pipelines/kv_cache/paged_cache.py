@@ -505,6 +505,7 @@ class PagedKVCacheManager(KVCacheManager):
                 del self.prefetched_cow[seq_id]
             return False
 
+    @traced
     def fetch(
         self, batch: list[InputContext], num_steps: int = 1
     ) -> list[KVCacheInputs]:
@@ -519,16 +520,6 @@ class PagedKVCacheManager(KVCacheManager):
         If all requests run `allocate_new_blocks` prior to `fetch`, then the requests
         already have blocks pre-allocated and we will not run into OOM errors.
         """
-        return self._fetch(batch, num_steps)
-
-    @traced
-    def _fetch(
-        self, batch: list[InputContext], num_steps: int = 1
-    ) -> list[KVCacheInputs]:
-        """This is separate from the public `fetch` method so that the @traced
-        decorator can be used since `fetch` is a abstract method in the base class.
-        """
-
         max_seq_len = -1
         for batch_idx, ctx in enumerate(batch):
             seq_id = ctx.cache_seq_id
@@ -676,15 +667,13 @@ class PagedKVCacheManager(KVCacheManager):
         self.block_manager.release(seq_id)
 
     @traced
-    def _step(
+    def step(
         self,
         batch: list[InputContext],
     ) -> None:
-        """Update the `cache_lengths` objects to not that a new
-        kv projection step has occurred, and that the underlying memory
-        has been written to. This `cache_lengths` value is then used
-        downstream in `fetch` to track what section of memory should
-        be used in the kernels.
+        """Commit new tokens into the prefix cache.
+
+        This is a no-op if prefix caching is disabled.
         """
         for ctx in batch:
             # We possibly commit new blocks into the prefix cache.

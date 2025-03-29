@@ -124,6 +124,7 @@ class CowExecutor:
         assert self.cow_strided_memcpy_model is not None
         self.cow_enqueued_args.append((block_dst, block_src, num_tokens))
 
+    @traced
     def batch_async_execute(self):
         """Execute all of the COW memcpy operations enqueued during `fetch`.
 

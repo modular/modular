@@ -150,7 +150,8 @@ class NaiveKVCacheManager(KVCacheManager):
         batch: list[InputContext],
         num_steps: int = 1,
     ) -> list[KVCacheInputs]:
-        existing_keys = list(self.cache_lengths.keys())
+        existing_keys = list(self.active)
+        max_seq_len = 0
         for i, ctx in enumerate(batch):
             seq_id = ctx.cache_seq_id
             prompt = ctx.next_tokens
@@ -162,25 +163,24 @@ class NaiveKVCacheManager(KVCacheManager):
                 )
                 raise ValueError(msg)
 
-            total_length = (
-                self.cache_lengths[seq_id] + len(prompt) + num_steps - 1
-            )
+            total_length = ctx.start_idx + len(prompt) + num_steps - 1
             assert total_length <= self.max_seq_len, (
                 f"seq_id: {seq_id} would overrun the max cache length of {self.max_seq_len} "
-                f"with {len(prompt)} new tokens and {num_steps} steps. Existing length: {self.cache_lengths[seq_id]}"
+                f"with {len(prompt)} new tokens and {num_steps} steps. Existing length: {ctx.start_idx}"
             )
+            max_seq_len = max(max_seq_len, total_length)
         padded_kv_cache_inputs = [
             PaddedKVCacheInputs(
                 k_cache=self.keys,
                 v_cache=self.values,
                 start_pos=Tensor.scalar(
-                    self.max_sequence_length, DType.int64, self.devices[0]
+                    max_seq_len, DType.int64, self.devices[0]
                 ),
                 # TODO: MSDK-1201 - This next variable is not used upstream.
                 # It is included here, as a placeholder, until we can dynamically
                 # return a number of tensors from both `fetch` and `input_symbols`.
                 null_op=Tensor.scalar(
-                    self.max_sequence_length, DType.int64, self.devices[0]
+                    max_seq_len, DType.int64, self.devices[0]
                 ),
             )
         ]
