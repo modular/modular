@@ -23,6 +23,11 @@ what we publish.
 - The Mojo compiler now warns about obsolete use of `mut self` in initializers,
   please switch over to `fn __init__(out self)` instead.
 
+- The syntax for adding attributes to an `__mlir_op` is now limited to inherent
+  attributes (those defined by the op definition). Most users will not need to
+  attach other kinds of attributes, and this helps guard against typos and mojo
+  code getting outdated when the dialect changes.
+
 ### Standard library changes
 
 - You can now forward a `VariadicPack` that is `Writable` to a writer using

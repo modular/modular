@@ -346,7 +346,6 @@ fn _compare_exchange_weak_integral_impl[
 ) -> Bool:
     constrained[type.is_integral(), "the input type must be integral"]()
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
-        bin_op = __mlir_attr.`#pop<bin_op sub>`,
         failure_ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
         success_ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
         syncscope = scope.value,
