@@ -47,7 +47,10 @@ else:
     # This is important since `benchmark` is closed source
     # still right now and is always used by the benchmarks.
     pre_built_packages_path = Path(
-        repo_root / ".magic" / "envs" / "default" / "lib" / "mojo"
+        os.environ.get(
+            "MODULAR_MOJO_PREBUILT_PACKAGES_PATH",
+            repo_root / ".magic" / "envs" / "default" / "lib" / "mojo",
+        )
     )
 
     # The `run-tests.sh` script creates the build directory for you.
