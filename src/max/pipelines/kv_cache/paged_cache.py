@@ -560,8 +560,7 @@ class PagedKVCacheManager(KVCacheManager):
             seq_id = ctx.cache_seq_id
 
             # Get the prefetched blocks for this request.
-            blocks = self.prefetched_blocks[seq_id]
-            del self.prefetched_blocks[seq_id]
+            blocks = self.prefetched_blocks.pop(seq_id)
             cow_args = None
             if seq_id in self.prefetched_cow:
                 cow_args = self.prefetched_cow[seq_id]
@@ -577,9 +576,10 @@ class PagedKVCacheManager(KVCacheManager):
             if cow_args is not None:
                 self.cow_executor.enqueue_cow(*cow_args)
 
-            # Populate the lookup table with the new pages.
-            for i, block_idx in enumerate(blocks):
-                lut_table_np[batch_idx, i] = block_idx
+            # Vectorized assignment of block indices to lookup table
+            lut_table_np[batch_idx, : len(blocks)] = np.array(
+                blocks, dtype=np.uint32
+            )
 
             # Get the existing cache length for this sequence.
             cache_length = ctx.start_idx
