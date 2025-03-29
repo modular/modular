@@ -1,8 +1,8 @@
 // RUN: kgen-translate %s --mlir-to-llvmir -o %t
 // RUN: llvm-module-split %t --per-func | FileCheck %s
 
-llvm.mlir.global_ctors {ctors = [@KGEN_EE_JIT_GlobalConstructor], priorities = [0 : i32]}
-llvm.mlir.global_dtors {dtors = [@KGEN_EE_JIT_GlobalDestructor], priorities = [0 : i32]}
+llvm.mlir.global_ctors ctors = [@KGEN_EE_JIT_GlobalConstructor], priorities = [0 : i32], data = [#llvm.zero]
+llvm.mlir.global_dtors dtors = [@KGEN_EE_JIT_GlobalDestructor], priorities = [0 : i32], data = [#llvm.zero]
 
 llvm.func weak @KGEN_EE_JIT_GlobalConstructor() {
   llvm.return

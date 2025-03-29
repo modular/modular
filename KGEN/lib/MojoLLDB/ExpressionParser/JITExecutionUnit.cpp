@@ -422,7 +422,7 @@ public:
 
       // If that didn't work, try the function.
       if (loadAddr == LLDB_INVALID_ADDRESS && candidate.function) {
-        Address addr = candidate.function->GetAddressRange().GetBaseAddress();
+        Address addr = candidate.function->GetAddress();
         loadAddr = target->GetProcessSP() ? addr.GetLoadAddress(target)
                                           : addr.GetFileAddress();
       }
