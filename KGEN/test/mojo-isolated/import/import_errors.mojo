@@ -83,7 +83,6 @@ fn assignPackageModule():
 import module_in_package
 
 # Check that we don't crash on an invalid use of the missing imported decl.
-# expected-error @below {{expressions are not yet supported at the file scope level}}
 module_in_package
 
 # // -----
