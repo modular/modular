@@ -144,7 +144,7 @@ fn _hash_simd[dtype: DType, size: Int](data: SIMD[dtype, size]) -> UInt:
     See `hash(bytes, n)` documentation for more details.
 
     Parameters:
-        type: The SIMD dtype of the input data.
+        dtype: The SIMD dtype of the input data.
         size: The SIMD width of the input data.
 
     Args:
@@ -157,7 +157,7 @@ fn _hash_simd[dtype: DType, size: Int](data: SIMD[dtype, size]) -> UInt:
     """
 
     @parameter
-    if type is DType.bool:
+    if dtype is DType.bool:
         return _hash_simd(data.cast[DType.int8]())
 
     var hash_data = _ankerl_init[dtype, size]()
@@ -226,7 +226,7 @@ fn hash(bytes: UnsafePointer[UInt8], n: Int) -> UInt:
         cryptographic purposes, but will have good low-bit
         hash collision statistical properties for common data structures.
     """
-    alias type = DType.uint64
+    alias dtype = DType.uint64
     alias type_width = sizeof[dtype]()
     alias simd_width = simdwidthof[dtype]()
     # stride is the byte length of the whole SIMD vector
