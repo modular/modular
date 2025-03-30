@@ -66,11 +66,11 @@ def test_hash_byte_array():
     # assert_true(num_same < 6, "too little entropy in hash fn low bits")
 
 
-def _test_hash_int_simd[type: DType](bits: Int = 4, max_num_same: Int = 2):
-    var a = Scalar[type](0)
-    var b = Scalar[type](1)
-    var c = Scalar[type](2)
-    var d = Scalar[type](-1)
+def _test_hash_int_simd[dtype: DType](bits: Int = 4, max_num_same: Int = 2):
+    var a = Scalar[dtype](0)
+    var b = Scalar[dtype](1)
+    var c = Scalar[dtype](2)
+    var d = Scalar[dtype](-1)
 
     # Test that values hash deterministically
     assert_equal(_hash_simd(a), _hash_simd(a))
