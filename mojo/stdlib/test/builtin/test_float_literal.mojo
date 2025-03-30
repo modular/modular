@@ -26,6 +26,11 @@ alias inf = FloatLiteral.infinity
 alias neg_inf = FloatLiteral.negative_infinity
 
 
+def test_init():
+    alias n: IntLiteral[(4).value] = 4
+    assert_equal(4.0, FloatLiteral(n))
+
+
 def test_division():
     assert_equal(FloatLiteral.__truediv__(4.4, 0.5), 8.8)
 
@@ -174,6 +179,7 @@ def test_float_conversion():
 
 
 def main():
+    test_init()
     test_division()
     test_mod()
     test_int_conversion()
