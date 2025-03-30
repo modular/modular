@@ -99,15 +99,15 @@ def test_set_all():
 
 def test_simd_any():
     @parameter
-    def _test_dtype[type: DType]():
-        assert_true(any(SIMD[type, 1](1)))
-        assert_false(any(SIMD[type, 1](0)))
-        assert_true(any(SIMD[type, 4](1, 2, 3, 4)))
-        assert_true(any(SIMD[type, 4](0, 2, 3, 4)))
-        assert_true(any(SIMD[type, 4](1, 2, 3, 0)))
-        assert_true(any(SIMD[type, 4](0, 2, 3, 0)))
-        assert_true(any(SIMD[type, 4](1, 0, 0, 4)))
-        assert_false(any(SIMD[type, 4](0, 0, 0, 0)))
+    def _test_dtype[dtype: DType]():
+        assert_true(any(SIMD[dtype, 1](1)))
+        assert_false(any(SIMD[dtype, 1](0)))
+        assert_true(any(SIMD[dtype, 4](1, 2, 3, 4)))
+        assert_true(any(SIMD[dtype, 4](0, 2, 3, 4)))
+        assert_true(any(SIMD[dtype, 4](1, 2, 3, 0)))
+        assert_true(any(SIMD[dtype, 4](0, 2, 3, 0)))
+        assert_true(any(SIMD[dtype, 4](1, 0, 0, 4)))
+        assert_false(any(SIMD[dtype, 4](0, 0, 0, 0)))
 
     _test_dtype[DType.bool]()
     _test_dtype[DType.int8]()
@@ -125,15 +125,15 @@ def test_simd_any():
 
 def test_simd_all():
     @parameter
-    def _test_dtype[type: DType]():
-        assert_true(all(SIMD[type, 1](1)))
-        assert_false(all(SIMD[type, 1](0)))
-        assert_true(all(SIMD[type, 4](1, 2, 3, 4)))
-        assert_false(all(SIMD[type, 4](0, 2, 3, 4)))
-        assert_false(all(SIMD[type, 4](1, 2, 3, 0)))
-        assert_false(all(SIMD[type, 4](0, 2, 3, 0)))
-        assert_false(all(SIMD[type, 4](1, 0, 0, 4)))
-        assert_false(all(SIMD[type, 4](0, 0, 0, 0)))
+    def _test_dtype[dtype: DType]():
+        assert_true(all(SIMD[dtype, 1](1)))
+        assert_false(all(SIMD[dtype, 1](0)))
+        assert_true(all(SIMD[dtype, 4](1, 2, 3, 4)))
+        assert_false(all(SIMD[dtype, 4](0, 2, 3, 4)))
+        assert_false(all(SIMD[dtype, 4](1, 2, 3, 0)))
+        assert_false(all(SIMD[dtype, 4](0, 2, 3, 0)))
+        assert_false(all(SIMD[dtype, 4](1, 0, 0, 4)))
+        assert_false(all(SIMD[dtype, 4](0, 0, 0, 0)))
 
     _test_dtype[DType.bool]()
     _test_dtype[DType.int8]()
