@@ -825,13 +825,13 @@ fn simdwidthof[
     """Returns the vector size of the type on the host system.
 
     Parameters:
-        dtype: The type in question.
+        type: The type in question.
         target: The target architecture.
 
     Returns:
         The vector size of the type on the host system.
     """
-    return simdbitwidth[target]() // bitwidthof[dtype, target]()
+    return simdbitwidth[target]() // bitwidthof[type, target]()
 
 
 @always_inline("nodebug")
