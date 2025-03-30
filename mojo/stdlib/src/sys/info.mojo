@@ -330,6 +330,23 @@ fn is_apple_m3() -> Bool:
 
 
 @always_inline("nodebug")
+fn is_apple_m4() -> Bool:
+    """Returns True if the host system is an Apple M4 with AMX support,
+    otherwise returns False.
+
+    Returns:
+        True if the host system is an Apple M4 with AMX support and False
+        otherwise.
+    """
+    return __mlir_attr[
+        `#kgen.param.expr<eq,`,
+        _current_arch().value,
+        `, "apple-m4" : !kgen.string`,
+        `> : i1`,
+    ]
+
+
+@always_inline("nodebug")
 fn is_apple_silicon() -> Bool:
     """Returns True if the host system is an Apple Silicon with AMX support,
     otherwise returns False.
@@ -338,7 +355,7 @@ fn is_apple_silicon() -> Bool:
         True if the host system is an Apple Silicon with AMX support and False
         otherwise.
     """
-    return is_apple_m1() or is_apple_m2() or is_apple_m3()
+    return is_apple_m1() or is_apple_m2() or is_apple_m3() or is_apple_m4()
 
 
 @always_inline("nodebug")
