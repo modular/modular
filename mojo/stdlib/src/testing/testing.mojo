@@ -179,10 +179,10 @@ fn assert_equal(
 
 @always_inline
 fn assert_equal[
-    type: DType, size: Int
+    dtype: DType, size: Int
 ](
-    lhs: SIMD[type, size],
-    rhs: SIMD[type, size],
+    lhs: SIMD[dtype, size],
+    rhs: SIMD[dtype, size],
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
@@ -191,7 +191,7 @@ fn assert_equal[
     Error is raised.
 
     Parameters:
-        type: The dtype of the left- and right-hand-side SIMD vectors.
+        dtype: The dtype of the left- and right-hand-side SIMD vectors.
         size: The width of the left- and right-hand-side SIMD vectors.
 
     Args:
@@ -388,10 +388,10 @@ fn assert_not_equal(
 
 @always_inline
 fn assert_not_equal[
-    type: DType, size: Int
+    dtype: DType, size: Int
 ](
-    lhs: SIMD[type, size],
-    rhs: SIMD[type, size],
+    lhs: SIMD[dtype, size],
+    rhs: SIMD[dtype, size],
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
@@ -400,7 +400,7 @@ fn assert_not_equal[
     Error is raised.
 
     Parameters:
-        type: The dtype of the left- and right-hand-side SIMD vectors.
+        dtype: The dtype of the left- and right-hand-side SIMD vectors.
         size: The width of the left- and right-hand-side SIMD vectors.
 
     Args:
@@ -456,10 +456,10 @@ fn assert_not_equal[
 
 @always_inline
 fn assert_almost_equal[
-    type: DType, size: Int
+    dtype: DType, size: Int
 ](
-    lhs: SIMD[type, size],
-    rhs: SIMD[type, size],
+    lhs: SIMD[dtype, size],
+    rhs: SIMD[dtype, size],
     msg: String = "",
     *,
     atol: Float64 = 1e-08,
@@ -479,7 +479,7 @@ fn assert_almost_equal[
         The type must be boolean, integral, or floating-point.
 
     Parameters:
-        type: The dtype of the left- and right-hand-side SIMD vectors.
+        dtype: The dtype of the left- and right-hand-side SIMD vectors.
         size: The width of the left- and right-hand-side SIMD vectors.
 
     Args:
@@ -495,7 +495,7 @@ fn assert_almost_equal[
         An Error with the provided message if assert fails and `None` otherwise.
     """
     constrained[
-        type is DType.bool or type.is_integral() or type.is_floating_point(),
+        dtype is DType.bool or dtype.is_integral() or dtype.is_floating_point(),
         "type must be boolean, integral, or floating-point",
     ]()
 
@@ -507,7 +507,7 @@ fn assert_almost_equal[
         var err = String(lhs, " is not close to ", rhs)
 
         @parameter
-        if type.is_integral() or type.is_floating_point():
+        if dtype.is_integral() or dtype.is_floating_point():
             err += String(" with a diff of ", abs(lhs - rhs))
 
         if msg:
