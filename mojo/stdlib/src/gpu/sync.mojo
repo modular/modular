@@ -105,44 +105,44 @@ struct AMDScheduleBarrierMask(Intable):
     instructions the compiler is allowed to move across the barrier point.
     """
 
-    """Internal value storage for the barrier mask."""
     var _value: Int32
+    """Internal value storage for the barrier mask."""
 
-    """No instructions can cross the barrier. Most restrictive option."""
     alias NONE = Self(0)
+    """No instructions can cross the barrier. Most restrictive option."""
 
-    """Allows reordering of all arithmetic and logic instructions that don't involve memory operations."""
     alias ALL_ALU = Self(1 << 0)
+    """Allows reordering of all arithmetic and logic instructions that don't involve memory operations."""
 
-    """Permits reordering of vector arithmetic/logic unit instructions only."""
     alias VALU = Self(1 << 1)
+    """Permits reordering of vector arithmetic/logic unit instructions only."""
 
-    """Permits reordering of scalar arithmetic/logic unit instructions only."""
     alias SALU = Self(1 << 2)
+    """Permits reordering of scalar arithmetic/logic unit instructions only."""
 
-    """Allows reordering of matrix multiplication and WMMA instructions."""
     alias MFMA = Self(1 << 3)
+    """Allows reordering of matrix multiplication and WMMA instructions."""
 
-    """Enables reordering of all vector memory operations (reads and writes)."""
     alias ALL_VMEM = Self(1 << 4)
+    """Enables reordering of all vector memory operations (reads and writes)."""
 
-    """Allows reordering of vector memory read operations only."""
     alias VMEM_READ = Self(1 << 5)
+    """Allows reordering of vector memory read operations only."""
 
-    """Allows reordering of vector memory write operations only."""
     alias VMEM_WRITE = Self(1 << 6)
+    """Allows reordering of vector memory write operations only."""
 
-    """Permits reordering of all Local Data Share (LDS) operations."""
     alias ALL_DS = Self(1 << 7)
+    """Permits reordering of all Local Data Share (LDS) operations."""
 
-    """Enables reordering of LDS read operations only."""
     alias DS_READ = Self(1 << 8)
+    """Enables reordering of LDS read operations only."""
 
-    """Enables reordering of LDS write operations only."""
     alias DS_WRITE = Self(1 << 9)
+    """Enables reordering of LDS write operations only."""
 
-    """Allows reordering of transcendental instructions (sin, cos, exp, etc)."""
     alias TRANS = Self(1 << 10)
+    """Allows reordering of transcendental instructions (sin, cos, exp, etc)."""
 
     @implicit
     fn __init__(out self, value: Int):

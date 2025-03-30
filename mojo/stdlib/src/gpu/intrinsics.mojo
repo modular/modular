@@ -221,7 +221,6 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
         - On NVIDIA: Maps to PRMT instruction
         - On AMD: Maps to PERM instruction.
     """
-    """Return selected bytes from two 32-bit unsigned integers."""
     alias asm = "llvm.nvvm.prmt" if is_nvidia_gpu() else "llvm.amdgcn.perm"
     return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
 
