@@ -97,7 +97,7 @@ def test_from_str():
 
     @parameter
     for i in range(len(dtypes)):
-        assert_equal(DType._from_str(str(dtypes[i])), dtypes[i])
+        assert_equal(DType._from_str(String(dtypes[i])), dtypes[i])
 
 
 def main():
