@@ -372,13 +372,13 @@ struct PythonObject(
         self.py_object = cpython.PyLong_FromSsize_t(integer)
 
     @implicit
-    fn __init__[dt: DType](out self, value: SIMD[dt, 1]):
+    fn __init__[dtype: DType](out self, value: SIMD[dtype, 1]):
         """Initialize the object with a generic scalar value. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
         converted to the appropriate integer or floating point type.
 
         Parameters:
-            dt: The scalar value type.
+            dtype: The scalar value type.
 
         Args:
             value: The scalar value.
@@ -386,9 +386,9 @@ struct PythonObject(
         cpython = _get_global_python_itf().cpython()
 
         @parameter
-        if dt is DType.bool:
+        if dtype is DType.bool:
             self.py_object = cpython.PyBool_FromLong(Int(value))
-        elif dt.is_integral():
+        elif dtype.is_integral():
             int_val = value.cast[DType.index]().value
             self.py_object = cpython.PyLong_FromSsize_t(int_val)
         else:
@@ -1544,7 +1544,9 @@ struct PythonObject(
 
         return ptr
 
-    fn unsafe_get_as_pointer[type: DType](self) -> UnsafePointer[Scalar[type]]:
+    fn unsafe_get_as_pointer[
+        dtype: DType
+    ](self) -> UnsafePointer[Scalar[dtype]]:
         """Convert a Python-owned and managed pointer into a Mojo pointer.
 
         Warning: converting from an integer to a pointer is unsafe! The
@@ -1552,14 +1554,14 @@ struct PythonObject(
         pointer. This is OK because the pointer originates from Python.
 
         Parameters:
-            type: The desired DType of the pointer.
+            dtype: The desired DType of the pointer.
 
         Returns:
             An `UnsafePointer` for the underlying Python data.
         """
         var tmp = Int(self)
         var result = UnsafePointer.address_of(tmp).bitcast[
-            UnsafePointer[Scalar[type]]
+            UnsafePointer[Scalar[dtype]]
         ]()[]
         _ = tmp
         return result
