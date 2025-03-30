@@ -425,7 +425,7 @@ fn exp2[
         return res
 
     @parameter
-    if type not in (DType.float32, DType.float64):
+    if dtype not in (DType.float32, DType.float64):
         return exp2(x.cast[DType.float32]()).cast[dtype]()
 
     var xc = x.clamp(-126, 126)
@@ -691,8 +691,8 @@ fn frexp[
     # Add one to the resulting exponent up by subtracting 1 from the bias
     alias exponent_bias = FPUtils[dtype].exponent_bias() - 1
     alias mantissa_width = FPUtils[dtype].mantissa_width()
-    var mask1 = _frexp_mask1[simd_width, type]()
-    var mask2 = _frexp_mask2[simd_width, type]()
+    var mask1 = _frexp_mask1[simd_width, dtype]()
+    var mask2 = _frexp_mask2[simd_width, dtype]()
     var x_int = x.to_bits()
     var selector = x != zero
     var exp = selector.select(
