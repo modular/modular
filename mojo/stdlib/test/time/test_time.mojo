@@ -27,7 +27,7 @@ fn time_me():
 @always_inline
 @parameter
 fn time_me_templated[
-    type: DType,
+    dtype: DType,
 ]():
     time_me()
     return
@@ -35,9 +35,9 @@ fn time_me_templated[
 
 # Check that time_function works on templated function
 fn time_templated_function[
-    type: DType,
+    dtype: DType,
 ]() -> Int:
-    return time_function[time_me_templated[type]]()
+    return time_function[time_me_templated[dtype]]()
 
 
 fn time_capturing_function(iters: Int) -> Int:
