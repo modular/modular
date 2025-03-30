@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
   llvm::InitLLVM initLLVM(argc, argv);
   llvm::setBugReportMsg(
       "This example program shouldn't be crashing. Please submit an issue to "
-      "https://github.com/modularml/modular/issues and include the crash "
+      "https://github.com/modular/max/issues and include the crash "
       "backtrace. Thanks!\n");
 
   // Collect the command line arguments for parsing.
