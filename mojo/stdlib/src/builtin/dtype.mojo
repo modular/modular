@@ -236,6 +236,14 @@ struct DType(
             return DType.int64
         elif str == "uint64":
             return DType.uint64
+        elif str == "int128":
+            return DType.int128
+        elif str == "uint128":
+            return DType.uint128
+        elif str == "int256":
+            return DType.int256
+        elif str == "uint256":
+            return DType.uint256
         elif str == "index":
             return DType.index
         elif str == "float8_e3m4":
@@ -289,47 +297,55 @@ struct DType(
 
         if self == DType.bool:
             return writer.write("bool")
-        if self == DType.int8:
+        elif self == DType.int8:
             return writer.write("int8")
-        if self == DType.uint8:
+        elif self == DType.uint8:
             return writer.write("uint8")
-        if self == DType.int16:
+        elif self == DType.int16:
             return writer.write("int16")
-        if self == DType.uint16:
+        elif self == DType.uint16:
             return writer.write("uint16")
-        if self == DType.int32:
+        elif self == DType.int32:
             return writer.write("int32")
-        if self == DType.uint32:
+        elif self == DType.uint32:
             return writer.write("uint32")
-        if self == DType.int64:
+        elif self == DType.int64:
             return writer.write("int64")
-        if self == DType.uint64:
+        elif self == DType.uint64:
             return writer.write("uint64")
-        if self == DType.index:
+        elif self == DType.int128:
+            return writer.write("int128")
+        elif self == DType.uint128:
+            return writer.write("uint128")
+        elif self == DType.int256:
+            return writer.write("int256")
+        elif self == DType.uint256:
+            return writer.write("uint256")
+        elif self == DType.index:
             return writer.write("index")
-        if self == DType.float8_e3m4:
+        elif self == DType.float8_e3m4:
             return writer.write("float8_e3m4")
-        if self == DType.float8_e5m2:
+        elif self == DType.float8_e5m2:
             return writer.write("float8_e5m2")
-        if self == DType.float8_e5m2fnuz:
+        elif self == DType.float8_e5m2fnuz:
             return writer.write("float8_e5m2fnuz")
-        if self == DType.float8_e4m3fn:
+        elif self == DType.float8_e4m3fn:
             return writer.write("float8_e4m3fn")
-        if self == DType.float8_e4m3fnuz:
+        elif self == DType.float8_e4m3fnuz:
             return writer.write("float8_e4m3fnuz")
-        if self == DType.float8_e4m3:
+        elif self == DType.float8_e4m3:
             return writer.write("float8_e4m3")
-        if self == DType.bfloat16:
+        elif self == DType.bfloat16:
             return writer.write("bfloat16")
-        if self == DType.float16:
+        elif self == DType.float16:
             return writer.write("float16")
-        if self == DType.float32:
+        elif self == DType.float32:
             return writer.write("float32")
-        if self == DType.tensor_float32:
+        elif self == DType.tensor_float32:
             return writer.write("tensor_float32")
-        if self == DType.float64:
+        elif self == DType.float64:
             return writer.write("float64")
-        if self == DType.invalid:
+        elif self == DType.invalid:
             return writer.write("invalid")
 
         return writer.write("<<unknown>>")
