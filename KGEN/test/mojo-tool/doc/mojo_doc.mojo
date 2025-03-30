@@ -14,9 +14,9 @@ spills over to the next line."""
 # RUN: mojo doc %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG
 # CHECK-DIAG-NOT: warning
 
-"""
-This is a module summary, that
-spills over to the next line."""
+# """
+# This is a module summary, that
+# spills over to the next line."""
 
 from layout.int_tuple import *
 from sys.info import is_nvidia_gpu
