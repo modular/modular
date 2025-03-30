@@ -369,7 +369,7 @@ it even works correctly!).  We have to write this function as a type function,
 and we don’t want to utter that MLIR attribute, so we can write it like this:
 
 ```mojo
-fn sub_two(a: IntLiteral[_], out result: __typeof(a-2):
+fn sub_two(a: IntLiteral[_], out result: __typeof(a-2)):
     return __typeof(result)()
   
 ...
