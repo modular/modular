@@ -629,9 +629,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
   case Token::kw_pass:
   case Token::dot_dot_dot:
-  case Token::string:
     // pass_stmt ::= "pass"
-    // doc string
     consumeToken();
     return success();
   case Token::kw_var:

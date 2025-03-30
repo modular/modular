@@ -864,6 +864,7 @@ world"
         # CHECK: kgen.param.constant: !StringLiteral = <{:string "123"}>
         return "123"
         # lit.end_fn
+    # expected-warning @+1 {{'StringLiteral' value is unused}}
     """other comment"""
 
 

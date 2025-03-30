@@ -107,3 +107,16 @@ fn test_in(a: String, b: String):
     # CHECK-NEXT: [[RESB:%.*]] = lit.call {{.*}}__bool__{{.*}}([[RES]])
     # CHECK-NEXT: = lit.call {{.*}}__invert__{{.*}}([[RESB]])
     _ = a not in b
+
+
+##===----------------------------------------------------------------------===##
+# String literals
+##===----------------------------------------------------------------------===##
+
+fn test_string_literal1():
+  _ = 4
+
+  # String literals should be fine at start of expression.
+  # expected-warning @+1 {{'Bool' value is unused}}
+  "a" == "abc" 
+

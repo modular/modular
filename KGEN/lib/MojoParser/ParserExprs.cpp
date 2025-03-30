@@ -505,11 +505,11 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     break;
   case Token::string: { // primary -> literal -> stringliteral
     SmallVector<StringRef> spellings;
-    // Python supports string literal concatenation
-    while (getToken().is(Token::string) && isTokenInCurrentStatement()) {
+    do {
       spellings.push_back(getToken().getSpelling());
       consumeToken(Token::string);
-    }
+      // Python supports string literal concatenation
+    } while (getToken().is(Token::string) && isTokenInCurrentStatement());
     result = alloc<StringLiteralNode>(copyArrayRef<StringRef>(spellings));
     break;
   }
