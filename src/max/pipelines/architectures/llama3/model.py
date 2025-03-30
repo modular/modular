@@ -247,8 +247,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
         tokens = [ctx.next_tokens for ctx in context_batch]
 
         # Pad tokens and compute attention mask for the batch.
-        max_seq_len = max(ctx.start_idx for ctx in context_batch)
-        start_pos = [max_seq_len] * len(context_batch)
+        max_cache_len = max(ctx.start_idx for ctx in context_batch)
+        start_pos = [max_cache_len] * len(context_batch)
         next_tokens_batch, _, attn_mask = batch_padded_tokens_and_mask(
             start_pos=start_pos,
             tokens=tokens,
