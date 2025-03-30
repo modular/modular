@@ -237,7 +237,7 @@ fn sqrt[
         The elementwise square root of x.
     """
     constrained[
-        dtype.is_numeric() or type is DType.bool,
+        dtype.is_numeric() or dtype is DType.bool,
         "type must be arithmetic or boolean",
     ]()
 
@@ -408,7 +408,7 @@ fn exp2[
             ](x)
 
     @parameter
-    if is_amd_gpu() and type in (DType.float16, DType.float32):
+    if is_amd_gpu() and dtype in (DType.float16, DType.float32):
         alias asm = "llvm.amdgcn.exp2." + (
             "f16" if dtype is DType.float16 else "f32"
         )
@@ -483,7 +483,7 @@ fn _ldexp_impl[
     @parameter
     if (
         has_avx512f()
-        and type is DType.float32
+        and dtype is DType.float32
         and simd_width >= hardware_simd_width
     ):
         var res: SIMD[dtype, simd_width] = 0
@@ -601,11 +601,11 @@ fn exp[
     if is_gpu():
 
         @parameter
-        if type in (DType.float16, DType.float32):
+        if dtype in (DType.float16, DType.float32):
             return exp2(x * log2e)
 
     @parameter
-    if type not in (DType.float32, DType.float64):
+    if dtype not in (DType.float32, DType.float64):
         return exp(x.cast[DType.float32]()).cast[dtype]()
 
     var min_val: SIMD[dtype, simd_width]
@@ -632,7 +632,7 @@ fn exp[
 
 @always_inline
 fn _frexp_mask1[
-    simd_width: Int, type: DType
+    simd_width: Int, dtype: DType
 ]() -> SIMD[_integral_type_of[dtype](), simd_width]:
     @parameter
     if dtype is DType.float16:
@@ -648,7 +648,7 @@ fn _frexp_mask1[
 
 @always_inline
 fn _frexp_mask2[
-    simd_width: Int, type: DType
+    simd_width: Int, dtype: DType
 ]() -> SIMD[_integral_type_of[dtype](), simd_width]:
     @parameter
     if dtype is DType.float16:
@@ -2362,8 +2362,8 @@ fn clamp(
 # ===----------------------------------------------------------------------=== #
 
 
-fn _type_is_libm_supported(type: DType) -> Bool:
-    return type in (DType.float32, DType.float64) or dtype.is_integral()
+fn _type_is_libm_supported(dtype: DType) -> Bool:
+    return dtype in (DType.float32, DType.float64) or dtype.is_integral()
 
 
 fn _call_libm[
