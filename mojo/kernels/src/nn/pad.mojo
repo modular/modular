@@ -488,11 +488,10 @@ fn _pad_constant_impl[
         axis_params[r] = _AxisParams[rank, type, paddings_type](
             r, paddings, output_shape
         )
-    """
-    CRITICAL: should be setting output_offset=0, input_offset=0, and
-    pad_with_constant=False for axis=0 in padding. However, this is
-    already addressed in the constructor of _AxisParams.
-    """
+
+    # CRITICAL: should be setting output_offset=0, input_offset=0, and
+    # pad_with_constant=False for axis=0 in padding. However, this is
+    # already addressed in the constructor of _AxisParams.
     # axis_params[0].init_offsets(output_offset, input_offset, pad_with_constant)
 
     _pad_constant_axis[rank, type, paddings_type, 0](
