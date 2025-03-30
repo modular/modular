@@ -734,8 +734,6 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload](Writable):
     fn _insert_fixup(
         mut self, current_node0: UnsafePointer[_IntervalNode[T, U]]
     ):
-        var current_node = current_node0
-
         """Fixes up the red-black tree properties after an insertion.
 
         This method restores the red-black tree properties that may have been violated
@@ -743,9 +741,10 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload](Writable):
         maintain the balance and color properties of the red-black tree.
 
         Args:
-            current_node: A pointer to the newly inserted node that may violate red-black
+            current_node0: A pointer to the newly inserted node that may violate red-black
                 properties.
         """
+        var current_node = current_node0
 
         # While the parent of the current node is red, we need to fix violations
         while current_node != self._root and current_node[].parent[]._is_red:

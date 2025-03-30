@@ -552,7 +552,7 @@ struct String(
     var _buffer: Self._buffer_type
     """The underlying storage for the string."""
 
-    """ Useful string aliases. """
+    # Useful string aliases.
     alias ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
     alias ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     alias ASCII_LETTERS = Self.ASCII_LOWERCASE + Self.ASCII_UPPERCASE
