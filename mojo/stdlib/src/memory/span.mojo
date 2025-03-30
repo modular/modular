@@ -297,20 +297,20 @@ struct Span[
         return self._len
 
     fn __contains__[
-        type: DType, //
+        dtype: DType, //
     ](
         self: Span[
-            Scalar[type],
+            Scalar[dtype],
             origin,
             address_space=address_space,
             alignment=alignment,
         ],
-        value: Scalar[type],
+        value: Scalar[dtype],
     ) -> Bool:
         """Verify if a given value is present in the Span.
 
         Parameters:
-            type: The DType of the scalars stored in the Span.
+            dtype: The DType of the scalars stored in the Span.
 
         Args:
             value: The value to find.
@@ -329,7 +329,7 @@ struct Span[
             alias width = widths[i]
 
             @parameter
-            if simdwidthof[type]() >= width:
+            if simdwidthof[dtype]() >= width:
                 for _ in range((length - processed) // width):
                     if value in (ptr + processed).load[width=width]():
                         return True
