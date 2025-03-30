@@ -67,9 +67,8 @@ struct _block_Q6_K:
 
 
 struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
-    """Packed storage for an array of bit data."""
+    """Packed storage for an array of bit data.
 
-    """
     Logically, the array has a size of block_m by block_n. Physically, block_m
     is a multiple of the tuple width (corresponding to VNNI or equivalent
     instructions) and the tuple width is projected into the N dimension.
@@ -77,6 +76,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     the native SIMD width for int32/float32 types without needing to play games
     with this array's dimensions.
     """
+
     alias _size = block_m * block_n
     alias _simd_width = simdwidthof[DType.uint8]()
     alias _tuple_width = 4
@@ -143,13 +143,11 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
             dst_ptr += Self._packed_stride
 
-    """
-    For the 6-bit encoding, the following encoding is used (one lane of the
-    SIMD register is depicted) where four rows of M are bundled together:
-        [ d1 d0 a5 a4 a3 a2 a1 a0 ]
-        [ d3 d2 b5 b4 b3 b2 b1 b0 ]
-        [ d5 d6 c5 c4 c3 c2 c1 c0 ]
-    """
+    # For the 6-bit encoding, the following encoding is used (one lane of the
+    # SIMD register is depicted) where four rows of M are bundled together:
+    #     [ d1 d0 a5 a4 a3 a2 a1 a0 ]
+    #     [ d3 d2 b5 b4 b3 b2 b1 b0 ]
+    #     [ d5 d6 c5 c4 c3 c2 c1 c0 ]
 
     @always_inline
     fn _pack_int6(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
