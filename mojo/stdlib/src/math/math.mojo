@@ -1062,14 +1062,12 @@ fn isclose[
 
 
 # TODO: Remove this when `iota` works at compile-time
-fn _compile_time_iota[
-    dtype: DType, simd_width: Int
-]() -> SIMD[dtype, simd_width]:
+fn _compile_time_iota[type: DType, simd_width: Int]() -> SIMD[type, simd_width]:
     constrained[
-        dtype.is_integral(),
+        type.is_integral(),
         "_compile_time_iota can only be used with integer types.",
     ]()
-    var a = SIMD[dtype, simd_width](0)
+    var a = SIMD[type, simd_width](0)
     for i in range(simd_width):
         a[i] = i
     return a
@@ -1136,11 +1134,11 @@ fn iota[
         buff.store(i, i + offset)
 
 
-fn iota[dtype: DType, //](mut v: List[Scalar[dtype], *_], offset: Int = 0):
+fn iota[type: DType, //](mut v: List[Scalar[type], *_], offset: Int = 0):
     """Fill a list with consecutive numbers starting from the specified offset.
 
     Parameters:
-        dtype: DType of the underlying data.
+        type: DType of the underlying data.
 
     Args:
         v: The list to fill with numbers.
