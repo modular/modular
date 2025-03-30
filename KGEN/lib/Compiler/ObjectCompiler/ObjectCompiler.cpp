@@ -1413,8 +1413,8 @@ static ErrorOr<TmpFile> createTemp(StringRef name, StringRef suffix) {
   std::error_code ec =
       llvm::sys::fs::createTemporaryFile(name, suffix, filename);
   if (ec)
-    return Error("Couldn't create the temp file: `" + filename +
-                 "`, error message: " + ec.message());
+    return Error::fromErrorCode(ec, "could not create the temporary file: '%s'",
+                                filename.c_str());
 
   return TmpFile(filename, llvm::FileRemover(filename.c_str()));
 }
@@ -1451,8 +1451,8 @@ compilePTXToCUBINViaPTXAS(AsyncRT::DeviceContextRef &ctx,
   {
     llvm::raw_fd_ostream ptxStream(ptxFile->first, ec);
     if (ec)
-      return Error("Couldn't open the file: `" + ptxFile->first +
-                   "`, error message: " + ec.message());
+      return Error::fromErrorCode(ec, "could not open the file: '%s'",
+                                  ptxFile->first.c_str());
 
     ptxStream << ptx;
     if (ptxStream.has_error())
