@@ -65,13 +65,13 @@ struct _MulResult[CarrierDType: DType]:
 
 
 @value
-struct FP[type: DType, CarrierDType: DType = FPUtils[type].uint_type]:
+struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias CarrierType = Scalar[Self.CarrierDType]
-    alias total_bits = sizeof[type]() * 8
+    alias total_bits = sizeof[dtype]() * 8
     alias carrier_bits = sizeof[Self.CarrierDType]() * 8
-    alias sig_bits = FPUtils[type].mantissa_width()
-    alias exp_bits = FPUtils[type].exponent_width()
-    alias neg_exp_bias = -FPUtils[type].exponent_bias()
+    alias sig_bits = FPUtils[dtype].mantissa_width()
+    alias exp_bits = FPUtils[dtype].exponent_width()
+    alias neg_exp_bias = -FPUtils[dtype].exponent_bias()
     alias min_normal_exp = Self.neg_exp_bias + 1
     alias cache_bits = 64 if Self.CarrierDType == DType.uint32 else 128
     alias min_k = -31 if Self.CarrierDType == DType.uint32 else -292
@@ -88,7 +88,9 @@ struct FP[type: DType, CarrierDType: DType = FPUtils[type].uint_type]:
     alias small_divisor = pow(10, Self.kappa)
 
 
-fn _write_float[W: Writer, type: DType, //](mut writer: W, value: Scalar[type]):
+fn _write_float[
+    W: Writer, dtype: DType, //
+](mut writer: W, value: Scalar[dtype]):
     """Write a SIMD float type into a Writer, using the dragonbox algorithm for
     perfect roundtrip, shortest representable format, and high performance.
     Paper: https://github.com/jk-jeon/dragonbox/blob/master/other_files/Dragonbox.pdf
@@ -96,35 +98,35 @@ fn _write_float[W: Writer, type: DType, //](mut writer: W, value: Scalar[type]):
 
     Parameters:
         W: The type of the Writer.
-        type: The type of the float being passed in.
+        dtype: The type of the float being passed in.
 
     Args:
         writer: The Writer to write the float to.
         value: The float to write into the Writer.
     """
-    constrained[type.is_floating_point()]()
+    constrained[dtype.is_floating_point()]()
 
     @parameter
-    if type is DType.float8_e5m2:
+    if dtype is DType.float8_e5m2:
         return writer.write(
             float8_e5m2_to_str[Int(bitcast[DType.uint8](value))]
         )
-    elif type is DType.float8_e4m3fn:
+    elif dtype is DType.float8_e4m3fn:
         return writer.write(
             float8_e4m3fn_to_str[Int(bitcast[DType.uint8](value))]
         )
-    elif type is DType.float8_e5m2fnuz:
+    elif dtype is DType.float8_e5m2fnuz:
         return writer.write(
             float8_e5m2fnuz_to_str[Int(bitcast[DType.uint8](value))]
         )
-    elif type is DType.float8_e4m3fnuz:
+    elif dtype is DType.float8_e4m3fnuz:
         return writer.write(
             float8_e4m3fnuz_to_str[Int(bitcast[DType.uint8](value))]
         )
     else:
         # Upcast the float16 types to float32
         casted = value.cast[
-            DType.float64 if type == DType.float64 else DType.float32
+            DType.float64 if dtype == DType.float64 else DType.float32
         ]()
 
         # Bitcast the float and separate the sig and exp, to enable manipulating
@@ -228,7 +230,7 @@ fn _write_float[W: Writer, type: DType, //](mut writer: W, value: Scalar[type]):
 
 
 fn _to_decimal[
-    CarrierDType: DType, //, type: DType
+    CarrierDType: DType, //, dtype: DType
 ](mut sig: Scalar[CarrierDType], mut exp: Int):
     """Transform the raw binary significand to decimal significand,
     and biased binary exponent into a decimal power of 10 exponent.
@@ -238,30 +240,30 @@ fn _to_decimal[
 
     # For normal numbers
     if binary_exp != 0:
-        binary_exp += FP[type].neg_exp_bias - FP[type].sig_bits
+        binary_exp += FP[dtype].neg_exp_bias - FP[dtype].sig_bits
         if two_fc == 0:
             var minus_k = (binary_exp * 631305 - 261663) >> 21
             var beta = binary_exp + _floor_log2_pow10(-minus_k)
-            var cache_index = -minus_k - FP[type].min_k
+            var cache_index = -minus_k - FP[dtype].min_k
 
             var xi = _compute_endpoint[
                 CarrierDType,
-                FP[type].sig_bits,
-                FP[type].total_bits,
-                FP[type].cache_bits,
+                FP[dtype].sig_bits,
+                FP[dtype].total_bits,
+                FP[dtype].cache_bits,
             ](cache_index, beta, left_endpoint=True)
 
             var zi = _compute_endpoint[
                 CarrierDType,
-                FP[type].sig_bits,
-                FP[type].total_bits,
-                FP[type].cache_bits,
+                FP[dtype].sig_bits,
+                FP[dtype].total_bits,
+                FP[dtype].cache_bits,
             ](cache_index, beta, left_endpoint=False)
 
             # If we don't accept the left endpoint or if the left endpoint is
             # not an integer, increase it.
             if not _is_left_endpoint_integer_shorter_interval[
-                CarrierDType, FP[type].sig_bits
+                CarrierDType, FP[dtype].sig_bits
             ](binary_exp):
                 xi += 1
 
@@ -269,7 +271,7 @@ fn _to_decimal[
             # zi is at most floor((f_c + 1/2) * 2^e * 10^k0).
             # Substituting f_c = 2^p and k0 = -floor(log10(3 * 2^(e-2))), we get
             # zi <= floor((2^(p+1) + 1) * 20/3) <= ceil((2^(p+1) + 1)/3) * 20.
-            sig = _divide_by_pow10[1, FP[type, CarrierDType].n_max](zi)
+            sig = _divide_by_pow10[1, FP[dtype, CarrierDType].n_max](zi)
 
             # On success, remove trailing zeros and return.
             if sig * 10 >= xi:
@@ -279,9 +281,9 @@ fn _to_decimal[
             # Otherwise, compute the round-up of y.
             sig = _compute_round_up_for_shorter_interval_case[
                 CarrierDType,
-                FP[type].total_bits,
-                FP[type].sig_bits,
-                FP[type].cache_bits,
+                FP[dtype].total_bits,
+                FP[dtype].sig_bits,
+                FP[dtype].cache_bits,
             ](cache_index, beta)
 
             # When tie occurs
@@ -293,19 +295,19 @@ fn _to_decimal[
             return
 
         # Normal interval case
-        two_fc |= Scalar[CarrierDType](1) << (FP[type].sig_bits + 1)
+        two_fc |= Scalar[CarrierDType](1) << (FP[dtype].sig_bits + 1)
     else:
         # For subnormal numbers
-        binary_exp = FP[type].min_normal_exp - FP[type].sig_bits
+        binary_exp = FP[dtype].min_normal_exp - FP[dtype].sig_bits
 
     ##########################################
     # Step 1: Schubfach multiplier calculation
     ##########################################
-    var minus_k = _floor_log10_pow2(binary_exp) - FP[type].kappa
+    var minus_k = _floor_log10_pow2(binary_exp) - FP[dtype].kappa
     var beta = binary_exp + _floor_log2_pow10(-minus_k)
-    var cache_index = -minus_k - FP[type].min_k
+    var cache_index = -minus_k - FP[dtype].min_k
     var deltai = _compute_delta[
-        CarrierDType, FP[type].total_bits, FP[type].cache_bits
+        CarrierDType, FP[dtype].total_bits, FP[dtype].cache_bits
     ](cache_index, beta)
     var z_result = _compute_mul[CarrierDType](
         Scalar[CarrierDType]((two_fc | 1) << beta), cache_index
@@ -315,12 +317,12 @@ fn _to_decimal[
     # Step 2: Try larger divisor, remove trailing zeros if necessary
     ################################################################
     sig = _divide_by_pow10[
-        FP[type, CarrierDType].kappa + 1, FP[type, CarrierDType].n_max_larger
+        FP[dtype, CarrierDType].kappa + 1, FP[dtype, CarrierDType].n_max_larger
     ](z_result.integer_part)
-    var r = (z_result.integer_part - FP[type].big_divisor * sig)
+    var r = (z_result.integer_part - FP[dtype].big_divisor * sig)
 
     if r < deltai:
-        exp = minus_k + FP[type].kappa + 1
+        exp = minus_k + FP[dtype].kappa + 1
         return _remove_trailing_zeros(sig, exp)
     # compare fractional parts if r == deltai
     if r == deltai:
@@ -328,7 +330,7 @@ fn _to_decimal[
             (two_fc - 1).cast[DType.uint64](), cache_index, beta
         )
         if x_result.parity | x_result.is_integer:
-            exp = minus_k + FP[type].kappa + 1
+            exp = minus_k + FP[dtype].kappa + 1
             return _remove_trailing_zeros(sig, exp)
     #######################################################
     # Step 3: Find the significand with the smaller divisor
@@ -337,13 +339,13 @@ fn _to_decimal[
 
     # delta is equal to 10^(kappa + elog10(2) - floor(elog10(2))), so dist cannot
     # be larger than r.
-    var dist = r - (deltai // 2) + (FP[type].small_divisor // 2)
-    var approx_y_parity = ((dist ^ (FP[type].small_divisor // 2)) & 1) != 0
+    var dist = r - (deltai // 2) + (FP[dtype].small_divisor // 2)
+    var approx_y_parity = ((dist ^ (FP[dtype].small_divisor // 2)) & 1) != 0
 
     # Is dist divisible by 10^kappa
     var divisible_by_small_divisor = _check_divisibility_and_divide_by_pow10[
-        FP[type].carrier_bits, FP[type].divide_magic_number
-    ](dist, FP[type].kappa)
+        FP[dtype].carrier_bits, FP[dtype].divide_magic_number
+    ](dist, FP[dtype].kappa)
 
     # Add dist / 10^kappa to the significand.
     sig += dist
@@ -362,7 +364,7 @@ fn _to_decimal[
             sig -= 1
 
     # No trailing zeroes on this branch, so set exp as the final step
-    exp = minus_k + FP[type].kappa
+    exp = minus_k + FP[dtype].kappa
 
 
 fn _compute_endpoint[
@@ -395,20 +397,20 @@ fn _compute_endpoint[
             ).cast[CarrierDType]()
 
 
-fn _print_bits[type: DType](x: Scalar[type]) -> String:
-    alias total_bits = sizeof[type]() * 8
+fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
+    alias total_bits = sizeof[dtype]() * 8
     var output = String()
 
     @parameter
-    if not type.is_floating_point():
+    if not dtype.is_floating_point():
         for i in reversed(range(total_bits)):
             output.write((x >> i) & 1)
             if i % 8 == 0:
                 output.write(" ")
     else:
-        alias sig_bits = 23 if type is DType.float32 else 52
-        alias exp_bits = 8 if type is DType.float32 else 11
-        alias cast_type = DType.uint32 if type is DType.float32 else DType.uint64
+        alias sig_bits = 23 if dtype is DType.float32 else 52
+        alias exp_bits = 8 if dtype is DType.float32 else 11
+        alias cast_type = DType.uint32 if dtype is DType.float32 else DType.uint64
         var casted = bitcast[cast_type](x)
         for i in reversed(range(total_bits)):
             output.write((casted >> i) & 1)
