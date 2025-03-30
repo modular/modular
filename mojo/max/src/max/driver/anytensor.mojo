@@ -317,8 +317,8 @@ struct AnyMojoValue:
     CAUTION: Experimental API.
     """
 
-    """Internal representation of Mojo object."""
     alias c_type = _CMojoValue
+    """Internal representation of Mojo object."""
 
     var _impl: Self.c_type
 

@@ -19,8 +19,8 @@ fn _get_engine_path() raises -> String:
 struct _EngineImpl:
     """Represents an instance of Modular AI Engine."""
 
-    """Handle to Modular AI Engine library."""
     var lib: DLHandle
+    """Handle to Modular AI Engine library."""
     var can_close_lib: Bool
 
     alias VersionFnName = "M_version"
