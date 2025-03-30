@@ -260,32 +260,30 @@ fn full_tiles_kernel[
         C[global_r * stride_cm + global_c * stride_cn] = accum
 
 
-"""
-(1) Stream-K wave:  multiple blocks subdivide K across some subset of tiles
-       +-----------+    +-----------+     +-----------+    +-----------+
-       | Block 0   |    | Block 1   |     | Block 2   |    | Block 3   |
-       +-----+-----+    +-----+-----+     +-----+-----+    +-----+-----+
-       |T0,K0 |T0,K1|    |T0,K2 |T1,K0|     |T1,K1 |T1,K2|    |T2,K0 |T2,K1| ...
-        partial  partial  partial  partial  partial  partial  partial  partial
-
-    - The tile T0 is computed in 3 partial K-chunks by Blocks 0,1,...
-    - The tile T1 is also subdivided, etc.
-    - M <-> tile dimension,  N <-> tile dimension,  K <-> subdivided dimension
-    - Atomic merges & locks coordinate partial sums.
-
-(2) Full Tiles wave:   each remaining tile is handled by 1 block fully
-       +-----------+  <--- Block 10 covers tile T3 entirely, no partial sums
-       |   T3      |
-       +-----------+
-
-       +-----------+  <--- Block 11 covers tile T4 entirely, no partial sums
-       |   T4      |
-       +-----------+
-
-       +-----------+  <--- Block 12 covers tile T5 entirely, no partial sums
-       |   T5      |
-       +-----------+
-"""
+# (1) Stream-K wave:  multiple blocks subdivide K across some subset of tiles
+#        +-----------+    +-----------+     +-----------+    +-----------+
+#        | Block 0   |    | Block 1   |     | Block 2   |    | Block 3   |
+#        +-----+-----+    +-----+-----+     +-----+-----+    +-----+-----+
+#        |T0,K0 |T0,K1|    |T0,K2 |T1,K0|     |T1,K1 |T1,K2|    |T2,K0 |T2,K1| ...
+#         partial  partial  partial  partial  partial  partial  partial  partial
+#
+#     - The tile T0 is computed in 3 partial K-chunks by Blocks 0,1,...
+#     - The tile T1 is also subdivided, etc.
+#     - M <-> tile dimension,  N <-> tile dimension,  K <-> subdivided dimension
+#     - Atomic merges & locks coordinate partial sums.
+#
+# (2) Full Tiles wave:   each remaining tile is handled by 1 block fully
+#        +-----------+  <--- Block 10 covers tile T3 entirely, no partial sums
+#        |   T3      |
+#        +-----------+
+#
+#        +-----------+  <--- Block 11 covers tile T4 entirely, no partial sums
+#        |   T4      |
+#        +-----------+
+#
+#        +-----------+  <--- Block 12 covers tile T5 entirely, no partial sums
+#        |   T5      |
+#        +-----------+
 
 
 fn matmul_stream_k[
