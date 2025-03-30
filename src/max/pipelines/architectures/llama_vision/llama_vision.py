@@ -257,13 +257,14 @@ class MultimodalKVCacheManager(KVCacheManager):
 
         device = self.vision_kv_manager.devices[0]
         for i, ctx in enumerate(batch):
-            # Assumption: all seq_ids with
-            # `ctx.start_idx == 0`
-            # are context encoding steps and have the max image sequence length.
+            # Assumption: If start_idx is greater than 0, then it has encoded its
+            # vision input and has the max image sequence length.
             # TODO(bduke): pass the vision sequence lengths in from next_token.
 
             # Omit validity checks on seq ids, which are done in the text fetch.
-            cache_len = ctx.start_idx
+            cache_len = (
+                self.vision_kv_manager.max_seq_len if ctx.start_idx > 0 else 0
+            )
             if cache_len == 0:
                 max_seq_length = self.vision_kv_manager.max_seq_len
 
