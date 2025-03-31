@@ -194,8 +194,10 @@ struct FileHandle(Writer):
         return String(ptr=buf, length=Int(size_copy) + 1)
 
     fn read[
-        type: DType
-    ](self, ptr: UnsafePointer[Scalar[type]], size: Int64 = -1) raises -> Int64:
+        dtype: DType
+    ](
+        self, ptr: UnsafePointer[Scalar[dtype]], size: Int64 = -1
+    ) raises -> Int64:
         """Read data from the file into the pointer. Setting size will read up
         to `sizeof(type) * size`. The default value of `size` is -1 which
         will read to the end of the file. Starts reading from the file handle
@@ -203,7 +205,7 @@ struct FileHandle(Writer):
         seek pointer.
 
         Parameters:
-            type: The type that will the data will be represented as.
+            dtype: The type that will the data will be represented as.
 
         Args:
             ptr: The pointer where the data will be read to.
@@ -260,7 +262,7 @@ struct FileHandle(Writer):
         ](
             self.handle,
             ptr,
-            size * sizeof[type](),
+            size * sizeof[dtype](),
             Pointer.address_of(err_msg),
         )
 
