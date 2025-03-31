@@ -101,33 +101,33 @@ fn hash[T: Hashable](hashable: T) -> UInt:
     return hashable.__hash__()
 
 
-fn _djbx33a_init[type: DType, size: Int]() -> SIMD[type, size]:
-    return SIMD[type, size](5361)
+fn _djbx33a_init[dtype: DType, size: Int]() -> SIMD[dtype, size]:
+    return SIMD[dtype, size](5361)
 
 
 fn _djbx33a_hash_update[
-    type: DType, size: Int
-](data: SIMD[type, size], next: SIMD[type, size]) -> SIMD[type, size]:
+    dtype: DType, size: Int
+](data: SIMD[dtype, size], next: SIMD[dtype, size]) -> SIMD[dtype, size]:
     return data * 33 + next
 
 
 # Based on the hash function used by ankerl::unordered_dense::hash
 # https://martin.ankerl.com/2022/08/27/hashmap-bench-01/#ankerl__unordered_dense__hash
-fn _ankerl_init[type: DType, size: Int]() -> SIMD[type, size]:
-    alias int_type = _uint_type_of_width[bitwidthof[type]()]()
+fn _ankerl_init[dtype: DType, size: Int]() -> SIMD[dtype, size]:
+    alias int_type = _uint_type_of_width[bitwidthof[dtype]()]()
     alias init = Int64(-7046029254386353131).cast[int_type]()
-    return SIMD[type, size](bitcast[type, 1](init))
+    return SIMD[dtype, size](bitcast[dtype, 1](init))
 
 
 fn _ankerl_hash_update[
-    type: DType, size: Int
-](data: SIMD[type, size], next: SIMD[type, size]) -> SIMD[type, size]:
+    dtype: DType, size: Int
+](data: SIMD[dtype, size], next: SIMD[dtype, size]) -> SIMD[dtype, size]:
     # compute the hash as though the type is uint
-    alias int_type = _uint_type_of_width[bitwidthof[type]()]()
+    alias int_type = _uint_type_of_width[bitwidthof[dtype]()]()
     var data_int = bitcast[int_type, size](data)
     var next_int = bitcast[int_type, size](next)
     var result = (data_int * next_int) ^ next_int
-    return bitcast[type, size](result)
+    return bitcast[dtype, size](result)
 
 
 alias _HASH_INIT = _djbx33a_init
@@ -138,13 +138,13 @@ alias _HASH_UPDATE = _djbx33a_hash_update
 # performance issue we've been seeing with Dict. It's still not ideal as
 # a long-term hash function.
 @always_inline
-fn _hash_simd[type: DType, size: Int](data: SIMD[type, size]) -> UInt:
+fn _hash_simd[dtype: DType, size: Int](data: SIMD[dtype, size]) -> UInt:
     """Hash a SIMD byte vector using direct DJBX33A hash algorithm.
 
     See `hash(bytes, n)` documentation for more details.
 
     Parameters:
-        type: The SIMD dtype of the input data.
+        dtype: The SIMD dtype of the input data.
         size: The SIMD width of the input data.
 
     Args:
@@ -157,13 +157,13 @@ fn _hash_simd[type: DType, size: Int](data: SIMD[type, size]) -> UInt:
     """
 
     @parameter
-    if type is DType.bool:
+    if dtype is DType.bool:
         return _hash_simd(data.cast[DType.int8]())
 
-    var hash_data = _ankerl_init[type, size]()
+    var hash_data = _ankerl_init[dtype, size]()
     hash_data = _ankerl_hash_update(hash_data, data)
 
-    alias int_type = _uint_type_of_width[bitwidthof[type]()]()
+    alias int_type = _uint_type_of_width[bitwidthof[dtype]()]()
     var final_data = bitcast[int_type, 1](hash_data[0]).cast[DType.uint64]()
 
     @parameter
@@ -226,9 +226,9 @@ fn hash(bytes: UnsafePointer[UInt8], n: Int) -> UInt:
         cryptographic purposes, but will have good low-bit
         hash collision statistical properties for common data structures.
     """
-    alias type = DType.uint64
-    alias type_width = sizeof[type]()
-    alias simd_width = simdwidthof[type]()
+    alias dtype = DType.uint64
+    alias type_width = sizeof[dtype]()
+    alias simd_width = simdwidthof[dtype]()
     # stride is the byte length of the whole SIMD vector
     alias stride = type_width * simd_width
 
@@ -239,10 +239,10 @@ fn hash(bytes: UnsafePointer[UInt8], n: Int) -> UInt:
     debug_assert(n == k * stride + r, "wrong hash tail math")
 
     # 1. Reinterpret the underlying data as a larger int type
-    var simd_data = bytes.bitcast[Scalar[type]]()
+    var simd_data = bytes.bitcast[Scalar[dtype]]()
 
     # 2. Compute the hash, but strided across the SIMD vector width.
-    var hash_data = _HASH_INIT[type, simd_width]()
+    var hash_data = _HASH_INIT[dtype, simd_width]()
     for i in range(k):
         var update = simd_data.load[width=simd_width](i * simd_width)
         hash_data = _HASH_UPDATE(hash_data, update)
@@ -254,7 +254,7 @@ fn hash(bytes: UnsafePointer[UInt8], n: Int) -> UInt:
         var ptr = remaining.unsafe_ptr()
         memcpy(ptr, bytes + k * stride, r)
         memset_zero(ptr + r, stride - r)  # set the rest to 0
-        var last_value = ptr.bitcast[Scalar[type]]().load[width=simd_width]()
+        var last_value = ptr.bitcast[Scalar[dtype]]().load[width=simd_width]()
         hash_data = _HASH_UPDATE(hash_data, last_value)
 
     # Now finally, hash the final SIMD vector state.
