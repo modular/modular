@@ -700,12 +700,12 @@ fn sizeof[
 
 @always_inline("nodebug")
 fn sizeof[
-    type: DType, target: __mlir_type.`!kgen.target` = _current_target()
+    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
 ]() -> Int:
     """Returns the size of (in bytes) of the dtype.
 
     Parameters:
-        type: The DType in question.
+        dtype: The DType in question.
         target: The target architecture.
 
     Returns:
@@ -715,7 +715,7 @@ fn sizeof[
         __mlir_attr[
             `#kgen.param.expr<get_sizeof, #kgen.type<`,
             `!pop.scalar<`,
-            type.value,
+            dtype.value,
             `>`,
             `> : !kgen.type,`,
             target,
@@ -757,12 +757,12 @@ fn alignof[
 
 @always_inline("nodebug")
 fn alignof[
-    type: DType, target: __mlir_type.`!kgen.target` = _current_target()
+    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
 ]() -> Int:
     """Returns the align of (in bytes) of the dtype.
 
     Parameters:
-        type: The DType in question.
+        dtype: The DType in question.
         target: The target architecture.
 
     Returns:
@@ -772,7 +772,7 @@ fn alignof[
         __mlir_attr[
             `#kgen.param.expr<get_alignof, #kgen.type<`,
             `!pop.scalar<`,
-            type.value,
+            dtype.value,
             `>`,
             `> : !kgen.type,`,
             target,
@@ -801,19 +801,19 @@ fn bitwidthof[
 
 @always_inline("nodebug")
 fn bitwidthof[
-    type: DType, target: __mlir_type.`!kgen.target` = _current_target()
+    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the dtype.
 
     Parameters:
-        type: The type in question.
+        dtype: The type in question.
         target: The target architecture.
 
     Returns:
         The size of the dtype in bits.
     """
     return bitwidthof[
-        __mlir_type[`!pop.scalar<`, type.value, `>`], target=target
+        __mlir_type[`!pop.scalar<`, dtype.value, `>`], target=target
     ]()
 
 
@@ -836,18 +836,18 @@ fn simdwidthof[
 
 @always_inline("nodebug")
 fn simdwidthof[
-    type: DType, target: __mlir_type.`!kgen.target` = _current_target()
+    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
     Parameters:
-        type: The DType in question.
+        dtype: The DType in question.
         target: The target architecture.
 
     Returns:
         The vector size of the dtype on the host system.
     """
-    return simdwidthof[__mlir_type[`!pop.scalar<`, type.value, `>`], target]()
+    return simdwidthof[__mlir_type[`!pop.scalar<`, dtype.value, `>`], target]()
 
 
 @always_inline("nodebug")
