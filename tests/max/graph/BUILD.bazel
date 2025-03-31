@@ -3,10 +3,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "tests",
     srcs = glob(["**/*.py"]),
-    data = [
-        "//GenericML:MGPRT",
-        "//SDK/lib/API/python/tests/graph/testdata",
-    ],
+    data = ["//SDK/lib/API/python/tests/graph/testdata"],
     env = {"TESTDATA_DIRECTORY": "SDK/lib/API/python/tests/graph/testdata"},
     imports = ["pytests"],
     tags = ["no-mypy"],  # TODO: fix and remove
