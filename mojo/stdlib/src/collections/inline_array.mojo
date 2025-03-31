@@ -255,7 +255,13 @@ struct InlineArray[
             storage: The variadic list storage to construct from. Must match array size.
         """
 
-        debug_assert(len(storage) == size, "Elements must be of length size")
+        debug_assert(
+            len(storage) == size,
+            "Expected variadic list of length ",
+            size,
+            ", received ",
+            len(storage),
+        )
         _inline_array_construction_checks[size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
