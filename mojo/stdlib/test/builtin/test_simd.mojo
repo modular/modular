@@ -298,15 +298,15 @@ def test_truthy():
     )
 
     @parameter
-    fn test_dtype[type: DType]() raises:
+    fn test_dtype[dtype: DType]() raises:
         # Scalars of 0-values are false-y, 1-values are truth-y
-        assert_false(Scalar[type](False))
-        assert_true(Scalar[type](True))
+        assert_false(Scalar[dtype](False))
+        assert_true(Scalar[dtype](True))
 
     @parameter
     for i in range(dtypes.__len__()):
-        alias type = dtypes[i]
-        test_dtype[type]()
+        alias dtype = dtypes[i]
+        test_dtype[dtype]()
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
@@ -1091,9 +1091,9 @@ def test_extract():
 
 def test_limits():
     @parameter
-    fn test_integral_overflow[type: DType]() raises:
-        var max_value = Scalar[type].MAX
-        var min_value = Scalar[type].MIN
+    fn test_integral_overflow[dtype: DType]() raises:
+        var max_value = Scalar[dtype].MAX
+        var min_value = Scalar[dtype].MIN
         assert_equal(max_value + 1, min_value)
 
     test_integral_overflow[DType.index]()
@@ -1148,18 +1148,18 @@ def test_indexing():
 
 def test_reduce():
     @parameter
-    def test_dtype[type: DType]():
-        alias X8 = SIMD[type, 8]
-        alias X4 = SIMD[type, 4]
-        alias X2 = SIMD[type, 2]
-        alias X1 = SIMD[type, 1]
+    def test_dtype[dtype: DType]():
+        alias X8 = SIMD[dtype, 8]
+        alias X4 = SIMD[dtype, 4]
+        alias X2 = SIMD[dtype, 2]
+        alias X1 = SIMD[dtype, 1]
         var x8: X8
         var x4: X4
         var x2: X2
         var x1: X1
 
         @parameter
-        if type.is_numeric():
+        if dtype.is_numeric():
             # reduce_add
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(4, 6, 8, 10)
@@ -1229,7 +1229,7 @@ def test_reduce():
             assert_equal(X2(6, 3).reduce_max(), 6)
 
         @parameter
-        if type.is_signed():
+        if dtype.is_signed():
             # reduce_add
             x8 = X8(0, -1, 2, -3, 4, -5, 6, -7)
             x4 = X4(4, -6, 8, -10)
@@ -1299,7 +1299,7 @@ def test_reduce():
             assert_equal(X2(6, -3).reduce_max(), 6)
 
         @parameter
-        if type is DType.bool:
+        if dtype is DType.bool:
             # reduce_and
             var x8b = SIMD[DType.bool, 8](
                 False, False, True, True, False, True, False, True
@@ -1339,7 +1339,7 @@ def test_reduce():
             assert_equal(SIMD[DType.bool, 2](False, False).reduce_or(), False)
 
         @parameter
-        if type.is_integral():
+        if dtype.is_integral():
             # reduce_and
             x8 = X8(0, 1, 2, 3, 4, 5, 6, 7)
             x4 = X4(0, 1, 2, 3)
@@ -1658,11 +1658,11 @@ def test_comparison():
     )
 
     @parameter
-    fn test_dtype[type: DType]() raises:
-        alias X4 = SIMD[type, 4]
+    fn test_dtype[dtype: DType]() raises:
+        alias X4 = SIMD[dtype, 4]
 
         @parameter
-        if type.is_signed():
+        if dtype.is_signed():
             var simd_val = X4(-10, -8, -6, -4)
 
             assert_true(simd_val.__lt__(X4(-1)).reduce_and())
@@ -1714,7 +1714,7 @@ def test_comparison():
             assert_true(mixed_ge[3])
 
         @parameter
-        if type.is_numeric():
+        if dtype.is_numeric():
             var simd_val = X4(1, 2, 3, 4)
 
             assert_true(simd_val.__lt__(X4(5)).reduce_and())
@@ -1766,7 +1766,7 @@ def test_comparison():
             assert_true(mixed_ge[3])
 
         @parameter
-        if type is DType.bool:
+        if dtype is DType.bool:
             var all_true = SIMD[DType.bool, 4](True)
             var all_false = SIMD[DType.bool, 4](False)
             var mixed = SIMD[DType.bool, 4](True, True, False, False)
@@ -1829,8 +1829,8 @@ def test_comparison():
 
     @parameter
     for i in range(dtypes.__len__()):
-        alias type = dtypes[i]
-        test_dtype[type]()
+        alias dtype = dtypes[i]
+        test_dtype[dtype]()
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
