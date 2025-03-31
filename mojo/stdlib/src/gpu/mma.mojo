@@ -977,8 +977,7 @@ fn wgmma_async[
 
     @parameter
     if (
-        a_type is DType.bfloat16
-        and b_type is DType.bfloat16
+        a_type == b_type == DType.bfloat16
         and c_dtype == accum_type == DType.float32
     ):
         var res = __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
