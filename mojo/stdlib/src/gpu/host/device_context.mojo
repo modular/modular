@@ -74,7 +74,7 @@ alias _IntPtr = UnsafePointer[Int32]
 alias _VoidPtr = UnsafePointer[NoneType]
 alias _SizeT = UInt
 
-alias _DumpPath = Variant[Bool, Path, StringLiteral, fn () capturing -> Path]
+alias _DumpPath = Variant[Bool, Path, StaticString, fn () capturing -> Path]
 
 # Define helper methods to call AsyncRT bindings.
 
@@ -1436,8 +1436,8 @@ struct DeviceFunction[
             return val.unsafe_get[Path]() != Path(""), val
 
         @parameter
-        if val.isa[StringLiteral]():
-            return val.unsafe_get[StringLiteral]() != "", val
+        if val.isa[StaticString]():
+            return val.unsafe_get[StaticString]() != "", val
 
         return val.isa[fn () capturing -> Path](), val
 
@@ -1458,7 +1458,7 @@ struct DeviceFunction[
         """
         return String(path).replace("%", self._func_impl.module_name)
 
-    fn _expand_path(self, path: StringLiteral) -> Path:
+    fn _expand_path(self, path: StaticString) -> Path:
         """If the path contains a `%` character, it is replaced with the module
         name. This allows one to dump multiple kernels which are disambiguated
         by the module name.
@@ -1526,9 +1526,9 @@ struct DeviceFunction[
                 self._expand_path(dump_asm_val.unsafe_get[Path]()).write_text(
                     asm
                 )
-            elif dump_asm_val.isa[StringLiteral]():
+            elif dump_asm_val.isa[StaticString]():
                 self._expand_path(
-                    dump_asm_val.unsafe_get[StringLiteral]()
+                    dump_asm_val.unsafe_get[StaticString]()
                 ).write_text(asm)
             else:
                 print(asm)
@@ -1552,9 +1552,9 @@ struct DeviceFunction[
                 self._expand_path(dump_sass_val.unsafe_get[Path]()).write_text(
                     sass
                 )
-            elif dump_sass_val.isa[StringLiteral]():
+            elif dump_sass_val.isa[StaticString]():
                 self._expand_path(
-                    dump_sass_val.unsafe_get[StringLiteral]()
+                    dump_sass_val.unsafe_get[StaticString]()
                 ).write_text(sass)
             else:
                 print(sass)
@@ -1581,9 +1581,9 @@ struct DeviceFunction[
                 self._expand_path(dump_llvm_val.unsafe_get[Path]()).write_text(
                     llvm
                 )
-            elif dump_llvm_val.isa[StringLiteral]():
+            elif dump_llvm_val.isa[StaticString]():
                 self._expand_path(
-                    dump_llvm_val.unsafe_get[StringLiteral]()
+                    dump_llvm_val.unsafe_get[StaticString]()
                 ).write_text(llvm)
             else:
                 print(llvm)
