@@ -20,14 +20,10 @@ This logic is largely borrowed from vLLM v1:
 - https://docs.vllm.ai/en/latest/design/v1/prefix_caching.html
 - https://github.com/vllm-project/vllm/blob/f53a0586b9c88a78167157296555b7664c398055/vllm/v1/core/kv_cache_manager.py#L1
 - https://github.com/vllm-project/vllm/blob/f53a0586b9c88a78167157296555b7664c398055/vllm/v1/core/kv_cache_utils.py#L1
-
-TODO E2EOPT-116: Port block_manager.py and block_utils.py to Mojo
 """
 
 from __future__ import annotations
 
-import logging
-import multiprocessing
 from collections import defaultdict
 from collections.abc import Iterable
 from typing import Optional
@@ -35,24 +31,16 @@ from typing import Optional
 import numpy as np
 from max.pipelines.context import InputContext
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_agent import KVCacheChangeMessage
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
-    MemoryTier,
-    UpdateType,
-)
 from max.support.math import ceildiv
 
+from .block_pool import BlockPool
 from .block_utils import (
     ROOT_BLOCK_HASH,
     BlockHashType,
-    FreeKVCacheBlockQueue,
     KVCacheBlock,
     hash_block_tokens,
     hash_request_tokens,
 )
-from .simple_trie import SimpleTrie
-
-logger = logging.getLogger("max.pipelines")
 
 
 class BlockManager:
@@ -70,30 +58,10 @@ class BlockManager:
         # Whether to enable prefix caching.
         self.enable_prefix_caching = enable_prefix_caching
 
-        # The total number of blocks we'll have per-device.
-        self.total_num_blocks = total_num_blocks
-
-        # A Block pool of all kv-cache blocks.
-        self.block_pool: list[KVCacheBlock] = [
-            KVCacheBlock(idx) for idx in range(self.total_num_blocks)
-        ]
-
-        # Free block queue that constructs and manipulates a doubly linked
-        # list of free blocks (including eviction candidates when caching is
-        # enabled).
-        self.free_block_queue = FreeKVCacheBlockQueue(self.block_pool)
-
-        # {block_hash: block}. A committed block is a full block with a block
-        # hash that can be used for prefix caching.
-        # The cached block may be used by running requests or in the free_block_queue
-        # that could potentially be evicted.
-        self.committed_block_hash_to_block: dict[
-            BlockHashType, KVCacheBlock
-        ] = {}
-
-        # Mapping from parent block hash to child block hash.
-        self.parent_to_child_hash: dict[int, SimpleTrie] = defaultdict(
-            SimpleTrie
+        self.device_block_pool = BlockPool(
+            total_num_blocks,
+            enable_prefix_caching,
+            enable_runtime_checks,
         )
 
         # Mapping from request ID to blocks to track the blocks allocated
@@ -114,9 +82,6 @@ class BlockManager:
 
         # Whether to enable runtime checks.
         self.enable_runtime_checks = enable_runtime_checks
-
-        # Queue for the KV Cache Agent updates
-        self.kv_cache_agent_queue: Optional[multiprocessing.Queue] = None
 
     @traced
     def step(self, ctx: InputContext) -> None:
@@ -146,7 +111,7 @@ class BlockManager:
         block_hashes = self.req_to_block_hashes[seq_id]
         parent_block_hash_value = None
         if len(block_hashes) > 0:
-            parent_block_hash_value = block_hashes[-1].hash_value
+            parent_block_hash_value = block_hashes[-1].value
 
         unhashed_tokens = ctx.tokens[
             len(block_hashes) * self.block_size : ctx.current_length
@@ -193,7 +158,7 @@ class BlockManager:
 
         if len(prefix_cache_blocks) > 0:
             # Touch the computed blocks to make sure they won't be evicted.
-            self.touch(prefix_cache_blocks)
+            self.device_block_pool.touch(prefix_cache_blocks)
 
             # Since we got cache hits, clear out existing uncommitted blocks
             self.release_uncommitted_blocks(ctx)
@@ -224,9 +189,9 @@ class BlockManager:
             self.release_uncommitted_blocks(ctx)
 
             # We can only perform COW if we can allocate a new block to copy into
-            if self.free_block_queue:
+            if self.device_block_pool.free_block_queue:
                 # Append them to the request's blocks.
-                fresh_block = self.alloc_block()
+                fresh_block = self.device_block_pool.alloc_block()
                 req_blocks.append(fresh_block)
                 ctx.bump_token_indices(
                     start_idx=tokens_matched,
@@ -276,14 +241,18 @@ class BlockManager:
             num_committed_blocks:num_inflight_blocks
         ]
 
-        prefix_cache_blocks = []
+        blocks = []
+        device_prefix_cache = (
+            self.device_block_pool.block_hash_to_committed_block
+        )
         for block_hash in uncommitted_block_hashes:
-            if block_hash not in self.committed_block_hash_to_block:
+            hash_value = block_hash.value
+            if hash_value not in device_prefix_cache:
                 break
-            prefix_cache_block = self.committed_block_hash_to_block[block_hash]
-            prefix_cache_blocks.append(prefix_cache_block)
+            block = device_prefix_cache[hash_value]
+            blocks.append(block)
 
-        return prefix_cache_blocks
+        return blocks
 
     @traced
     def get_partial_block_from_prefix_cache(
@@ -310,7 +279,9 @@ class BlockManager:
             return None, 0
 
         # Find the longest prefix match in the prefix cache.
-        children = self.parent_to_child_hash[parent_hash.hash_value]
+        children = self.device_block_pool.parent_hash_to_child_token_ids[
+            parent_hash.value
+        ]
 
         parent_tokens = parent_tokens[: self.block_size]
         res = children.find_string_with_largest_common_prefix(
@@ -319,6 +290,7 @@ class BlockManager:
         if res is None:
             return None, 0
         best_child_tokens, best_tokens_matched = res
+        assert best_tokens_matched < self.block_size
 
         # It is not profitable to do COW if this request's partial block has
         # at least as many tokens as the best match in the prefix cache.
@@ -327,10 +299,12 @@ class BlockManager:
             return None, 0
 
         child_hash = hash_block_tokens(
-            parent_hash.hash_value,
+            parent_hash.value,
             np.array(best_child_tokens),
         )
-        child_block = self.committed_block_hash_to_block[child_hash]
+        child_block = self.device_block_pool.block_hash_to_committed_block[
+            child_hash.value
+        ]
         return child_block, best_tokens_matched
 
     @traced
@@ -363,50 +337,12 @@ class BlockManager:
             # Get the block hash.
             block_hash = req_block_hashes[block_idx]
 
-            if block_hash in self.committed_block_hash_to_block:
-                # Check if a block with the same hash is already committed.
-                # If so, we reuse the already committed block.
-                prefix_cache_block = self.committed_block_hash_to_block[
-                    block_hash
-                ]
-                if block.block_id == prefix_cache_block.block_id:
-                    continue
-
-                self.touch([prefix_cache_block])
-                req_blocks[block_idx] = prefix_cache_block
-
-                # Free the block we currently have.
-                assert block.block_hash is None
-                block.ref_cnt -= 1
-                if block.ref_cnt == 0:
-                    self.free_block_queue.append(block)
-            else:
-                # Update and added the full block to the cache.
-                assert block.block_hash is None
-                block.block_hash = block_hash
-                self.committed_block_hash_to_block[block_hash] = block
-                if self.kv_cache_agent_queue is not None:
-                    logger.debug(
-                        f"Updating KV Cache Agent with block {block_hash.hash_value}, memory tier {MemoryTier.MEMORY_TIER_GPU}, update type {UpdateType.UPDATE_TYPE_ADDED}"
-                    )
-                    self.kv_cache_agent_queue.put(
-                        KVCacheChangeMessage(
-                            cache_id=str(block_hash.hash_value),
-                            memory_tier=MemoryTier.MEMORY_TIER_GPU,
-                            update_type=UpdateType.UPDATE_TYPE_ADDED,
-                        )
-                    )
-
-                parent_block_hash = ROOT_BLOCK_HASH
-                if block_idx > 0:
-                    parent_block_hash = req_block_hashes[block_idx - 1]
-                tokens = ctx.tokens[
-                    block_idx * self.block_size : (block_idx + 1)
-                    * self.block_size
-                ]
-                self.parent_to_child_hash[parent_block_hash.hash_value].insert(
-                    tuple(tokens)
-                )
+            # Get the parent block hash.
+            new_block = self.device_block_pool.get_or_commit_into_prefix_cache(
+                block_hash, block
+            )
+            if new_block is not None:
+                req_blocks[block_idx] = new_block
 
         ctx.set_token_indices(
             committed_idx=num_computed_blocks * self.block_size,
@@ -423,7 +359,7 @@ class BlockManager:
             ordered_blocks = reversed(blocks)
 
         for block in ordered_blocks:
-            self.free_block(block)
+            self.device_block_pool.free_block(block)
 
         self.req_to_blocks[seq_id] = []
         self.req_to_block_hashes[seq_id] = []
@@ -443,86 +379,15 @@ class BlockManager:
         num_new_blocks = max(num_new_blocks, 0)
 
         # Allocate new blocks.
-        if num_new_blocks > self.free_block_queue.num_free_blocks:
+        if num_new_blocks > len(self.device_block_pool.free_block_queue):
             raise RuntimeError(
                 f"Cannot get {num_new_blocks} free blocks from the free block queue"
             )
         for _ in range(num_new_blocks):
-            new_block = self.alloc_block()
+            new_block = self.device_block_pool.alloc_block()
             req_blocks.append(new_block)
 
         self.assert_runtime_invariants(ctx)
-
-    @traced
-    def alloc_block(self) -> KVCacheBlock:
-        """Allocate a block from the free block queue."""
-
-        # First allocate block
-        curr_block = self.free_block_queue.popleft()
-        assert curr_block.ref_cnt == 0
-
-        # If the block is committed into prefix cache, evict it.
-        block_hash = curr_block.block_hash
-        assert self.enable_prefix_caching or block_hash is None
-        if block_hash is not None:
-            if block_hash in self.committed_block_hash_to_block:
-                self.committed_block_hash_to_block[block_hash]
-                del self.committed_block_hash_to_block[block_hash]
-                parent_block_hash = block_hash.parent_hash_value
-                del self.parent_to_child_hash[parent_block_hash][
-                    block_hash.token_ids
-                ]
-                if self.kv_cache_agent_queue is not None:
-                    logger.debug(
-                        f"Updating KV Cache Agent with block {block_hash.hash_value}, memory tier {MemoryTier.MEMORY_TIER_GPU}, update type {UpdateType.UPDATE_TYPE_ADDED}"
-                    )
-                    self.kv_cache_agent_queue.put(
-                        KVCacheChangeMessage(
-                            cache_id=str(block_hash.hash_value),
-                            memory_tier=MemoryTier.MEMORY_TIER_GPU,
-                            update_type=UpdateType.UPDATE_TYPE_REMOVED,
-                        )
-                    )
-
-            curr_block.block_hash = None
-
-        curr_block.ref_cnt += 1
-        assert curr_block.block_hash is None
-        return curr_block
-
-    @traced
-    def free_block(self, block: KVCacheBlock) -> None:
-        """Free a block by decreasing its reference count.
-
-        If the reference count is 0, the block is added to the free block queue.
-
-        Note that a block can be in both the prefix cache and the free block
-        queue at the same time.
-        """
-        block.ref_cnt -= 1
-        if block.ref_cnt == 0:
-            self.free_block_queue.append(block)
-
-    @traced
-    def touch(self, blocks: list[KVCacheBlock]) -> None:
-        """Touch a block increases its reference count by 1, and may remove
-        the block from the free queue. This is used when a block is hit by
-        another request with the same prefix.
-
-        Args:
-            blocks: A list of blocks to touch.
-        """
-        for block in blocks:
-            # ref_cnt=0 means this block is in the free list (i.e. eviction
-            # candidate), so remove it.
-            if block.ref_cnt == 0:
-                self.free_block_queue.remove(block)
-            block.ref_cnt += 1
-
-    @property
-    def free_blocks(self) -> set[int]:
-        """Get the number of free blocks."""
-        return self.free_block_queue.free_blocks
 
     @property
     def cache_hit_rate(self) -> float:
@@ -540,7 +405,7 @@ class BlockManager:
         num_uncommitted_blocks = len(req_blocks) - num_committed_blocks
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
-            self.free_block(block)
+            self.device_block_pool.free_block(block)
         ctx.set_token_indices(
             start_idx=ctx.committed_idx,
         )
@@ -557,20 +422,16 @@ class BlockManager:
         if not self.enable_runtime_checks:
             return
 
-        # Check that the total number of blocks is correct.
-        free_blocks = len(self.free_block_queue)
+        # Get the active block ids
         active_block_ids = []
         for blocks in self.req_to_blocks.values():
             for block in blocks:
                 active_block_ids.append(block.block_id)
                 # Check that all active blocks have a ref_cnt > 0
                 assert block.ref_cnt > 0
-        assert free_blocks + len(set(active_block_ids)) == self.total_num_blocks
 
-        # Check that all blocks in the prefix cache are committed.
-        for block_hash, block in self.committed_block_hash_to_block.items():
-            assert block_hash is not None
-            assert block.block_hash == block_hash
+        # Check that the block pool is consistent
+        self.device_block_pool.assert_runtime_invariants(active_block_ids)
 
         # Get the request hashes and blocks
         seq_id = ctx.cache_seq_id
@@ -603,10 +464,8 @@ class BlockManager:
             # yields the same hash as the parent block hash
             curr_block_hash = req_hashes[hash_idx]
             prev_block_hash = req_hashes[hash_idx - 1]
-            assert (
-                curr_block_hash.parent_hash_value == prev_block_hash.hash_value
-            )
+            assert curr_block_hash.parent_hash_value == prev_block_hash.value
             assert curr_block_hash == hash_block_tokens(
-                prev_block_hash.hash_value,
+                prev_block_hash.value,
                 np.array(curr_block_hash.token_ids),
             )

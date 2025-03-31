@@ -34,7 +34,7 @@ class BlockHashType(NamedTuple):
     """
 
     # Hashed value returned by hash()
-    hash_value: int
+    value: int
 
     # The hash of the parent block.
     parent_hash_value: int
@@ -44,7 +44,7 @@ class BlockHashType(NamedTuple):
 
     def __repr__(self) -> str:
         token_ids_str = ", ".join(str(x) for x in self.token_ids[:5])
-        return f"BlockHashType({self.hash_value}, [{token_ids_str}, ...])"
+        return f"BlockHashType({self.value}, [{token_ids_str}, ...])"
 
 
 ROOT_BLOCK_HASH = BlockHashType(hash("None"), -1, ())
@@ -87,7 +87,7 @@ def hash_request_tokens(
             break
         block_hash = hash_block_tokens(parent_block_hash_value, block_token_ids)
         ret.append(block_hash)
-        parent_block_hash_value = block_hash.hash_value
+        parent_block_hash_value = block_hash.value
     return ret
 
 

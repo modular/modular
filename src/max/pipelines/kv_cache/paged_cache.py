@@ -682,7 +682,7 @@ class PagedKVCacheManager(KVCacheManager):
     @property
     def free_blocks(self) -> set[int]:
         """Get the set of free blocks."""
-        return self.block_manager.free_blocks
+        return self.block_manager.device_block_pool.free_blocks
 
     @property
     def used_blocks_pct(self) -> float:
