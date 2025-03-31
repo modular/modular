@@ -890,18 +890,6 @@ modular_shared_library(
 )
 
 modular_cc_library(
-    name = "Metering",
-    srcs = glob(["lib/Metering/**/*.cpp"]),
-    hdrs = glob(["include/Support/Metering/**/*.h"]),
-    deps = [
-        ":Base",
-        ":Buffer",
-        ":HTTP",
-        ":Telemetry",
-    ],
-)
-
-modular_cc_library(
     name = "Diagnostics",
     srcs = glob(["lib/Diagnostics/**/*.cpp"]),
     hdrs = glob(["include/Support/Diagnostics/**/*.h"]) + [

@@ -31,7 +31,6 @@ purpose. The current libraries are:
 - [HTTP](HTTP.md)
 - [MArchTarget](MArchTarget.md)
 - [MDialect](MDialect.md)
-- [Metering](Metering.md)
 - [ML](ML.md)
 - [Profiling](Profiling.md)
 - [Telemetry](Telemetry.md)
