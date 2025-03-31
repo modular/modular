@@ -5,9 +5,7 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 modular_py_test(
     name = "test_tokenizer",
     size = "small",
-    srcs = glob(
-        ["**/test_tokenizer.py"],
-    ),
+    srcs = ["test_tokenizer.py"],
     data = [
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
