@@ -871,6 +871,11 @@ LogicalResult processStructFuncCommon(
       return failure();
   }
 
+  if (auto sourceName = structDeclOp.getSourceName()) {
+    func->setAttr(builder.getStringAttr(kMOGGKernelStructName),
+                  sourceName->getName());
+  }
+
   func->setAttr(builder.getStringAttr(annotation),
                 registrationInfo.registrationName);
   func.setExported();

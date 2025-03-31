@@ -97,6 +97,7 @@ constexpr StringLiteral REGISTER_MOGG_INTRINSIC = "__mogg_intrinsic_attr";
 //===----------------------------------------------------------------------===//
 
 // Supported static methods under the registered structs.
+static constexpr StringLiteral kMOGGKernelStructName = "mogg.kernel.struct";
 static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
 static constexpr StringLiteral kMOGGPyTorchFallbackFunctionLabel =
