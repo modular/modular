@@ -142,7 +142,7 @@ modular_cc_library(
 
 modular_cc_library(
     name = "Buffer",
-    srcs = ["lib/Buffer.cpp"],
+    srcs = ["lib/Buffer/Buffer.cpp"],
     hdrs = ["include/Support/Buffer.h"],
     deps = [
         ":ADT",
