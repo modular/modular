@@ -142,13 +142,20 @@ modular_cc_library(
 
 modular_cc_library(
     name = "Buffer",
-    srcs = ["lib/Buffer/Buffer.cpp"],
+    srcs = glob([
+        "lib/Buffer/*.cpp",
+        "lib/Buffer/*.h",
+    ]),
     hdrs = ["include/Support/Buffer.h"],
     deps = [
         ":ADT",
         ":Base",
         ":Filesystem",
-    ],
+    ] + select({
+        "//:linux_x86_64": ["@libcufile_x86_64//:libcufile"],
+        "//:linux_aarch64": ["@libcufile_aarch64//:libcufile"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_cc_library(
