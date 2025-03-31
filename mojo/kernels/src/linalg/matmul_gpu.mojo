@@ -451,7 +451,38 @@ fn _matmul_gpu[
                 # GTC matmul configs
                 @parameter
                 if static_N == 2560 and static_K == 8192:
-                    if m == 8192:
+                    if m == 512:
+                        alias M512_N2560_K8192_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 80, 16),
+                        ](
+                            block_tile_shape=Index(128, 80, 64),
+                            cluster_shape=Index(1, 2, 1),
+                            num_pipeline_stages=8,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            config=M512_N2560_K8192_config,
+                            # grid_shape = Index(32, 4),
+                            # schedule = MatmulSchedule.TILE2D,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+                        return
+
+                    elif m == 8192:
                         alias M8192_N2560_K8192_config = MatmulConfig[
                             a_type,
                             b_type,

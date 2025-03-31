@@ -453,20 +453,22 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 and WG_BN % 16 == 0 \
                 and num_consumer <= 2 \
                 and BN == wgmma_shape[1] \
-                and BM == WG_BM
+                and BM == WG_BM \
+                and Int(BN).is_power_of_two()
         # fmt: on
-        var st_matrix_rt_layout = RuntimeLayout[
-            st_matrix_n_layout[c_type, WG_BN, num_m_mmas, num_consumer](),
-            linear_idx_type = DType.int32,
-            bitwidth=32,
-        ]()
-        alias st_matrix_swizzle = make_ldmatrix_swizzle[
-            c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
-        ]()
-        alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[c_type, WG_BN]()
 
         @parameter
         if use_stmatrix:
+            var st_matrix_rt_layout = RuntimeLayout[
+                st_matrix_n_layout[c_type, WG_BN, num_m_mmas, num_consumer](),
+                linear_idx_type = DType.int32,
+                bitwidth=32,
+            ]()
+            alias st_matrix_swizzle = make_ldmatrix_swizzle[
+                c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
+            ]()
+            alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[c_type, WG_BN]()
+
             lane = lane_id()
 
             @parameter
@@ -988,7 +990,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
                 read_pipeline_states.step()
 
-            # var c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
             var c_gmem_tile = c.tile[BM, BN](block_y, block_x)
             var c_gmem_split = c_gmem_tile.tile[BM // num_consumer, BN](
                 local_warp_group_idx, 0
@@ -1008,20 +1009,26 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                     and WG_BN % 16 == 0 \
                     and num_consumer <= 2 \
                     and BN == wgmma_shape[1] \
-                    and BM == WG_BM
+                    and BM == WG_BM \
+                    and Int(BN).is_power_of_two()
             # fmt: on
-            var st_matrix_rt_layout = RuntimeLayout[
-                st_matrix_n_layout[c_type, WG_BN, num_m_mmas, num_consumer](),
-                linear_idx_type = DType.int32,
-                bitwidth=32,
-            ]()
-            alias st_matrix_swizzle = make_ldmatrix_swizzle[
-                c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
-            ]()
-            alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[c_type, WG_BN]()
 
             @parameter
             if use_stmatrix:
+                var st_matrix_rt_layout = RuntimeLayout[
+                    st_matrix_n_layout[
+                        c_type, WG_BN, num_m_mmas, num_consumer
+                    ](),
+                    linear_idx_type = DType.int32,
+                    bitwidth=32,
+                ]()
+                alias st_matrix_swizzle = make_ldmatrix_swizzle[
+                    c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
+                ]()
+                alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[
+                    c_type, WG_BN
+                ]()
+
                 lane = lane_id()
 
                 @parameter
@@ -1460,6 +1467,48 @@ fn _is_valid_grid_shape[
     return grid_shape[0] % num_tiles_n == 0
 
 
+fn _get_c_smem_layout[
+    block_tile_shape: IndexList[3],
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    num_pipeline_stages: Int,
+]() -> Layout:
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+
+    alias WG_BM = BM
+    alias MAX_WG_BN = BN
+
+    alias available_smem_size = H100.shared_memory_per_multiprocessor - 1024
+    alias pipeline_smem_size = Int(num_pipeline_stages) * (
+        BM * BK * sizeof[a_type]()
+        + BN * BK * sizeof[b_type]()
+        + (sizeof[Int64]() * 2)
+    )
+
+    alias available_c_smem_size = available_smem_size - pipeline_smem_size
+
+    constrained[
+        available_c_smem_size > 0,
+        "Not enough SMEM to fit the pipeline.",
+    ]()
+
+    fn _get_max_wg_bn() capturing -> Int:
+        var WG_BN = MAX_WG_BN
+        while available_c_smem_size < WG_BM * WG_BN * sizeof[c_type]():
+            WG_BN //= 2
+        return WG_BN
+
+    constrained[
+        _get_max_wg_bn() >= BN // 4,
+        "WG_BN is too small.",
+    ]()
+
+    return Layout.row_major(WG_BM, _get_max_wg_bn())
+
+
 fn warp_specialize_gemm_with_multicasting[
     c_type: DType,
     c_shape: DimList,
@@ -1544,11 +1593,13 @@ fn warp_specialize_gemm_with_multicasting[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    alias WG_BM = BM
-    alias WG_BN = 128 if config.block_tile_shape[
-        1
-    ] >= 128 else config.block_tile_shape[1]
-    alias c_smem_layout = Layout.row_major(WG_BM, WG_BN)
+    alias c_smem_layout = _get_c_smem_layout[
+        config.block_tile_shape,
+        a_type,
+        b_type,
+        c_type,
+        config.num_pipeline_stages,
+    ]()
 
     alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
@@ -1556,6 +1607,11 @@ fn warp_specialize_gemm_with_multicasting[
         + BN * BK * sizeof[b_type]()
         + (sizeof[Int64]() * 2)
     ) + c_smem_layout.size() * sizeof[c_type]()
+
+    constrained[
+        smem_size <= H100.shared_memory_per_multiprocessor - 1024,
+        "requested SMEM size exceeds 227KB limit.",
+    ]()
 
     @parameter
     if schedule != MatmulSchedule.NONE:
