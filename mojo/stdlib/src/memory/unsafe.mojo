@@ -28,11 +28,11 @@ from sys import bitwidthof
 
 @always_inline("nodebug")
 fn bitcast[
-    type: DType,
+    dtype: DType,
     width: Int, //,
     new_type: DType,
     new_width: Int = width,
-](val: SIMD[type, width]) -> SIMD[new_type, new_width]:
+](val: SIMD[dtype, width]) -> SIMD[new_type, new_width]:
     """Bitcasts a SIMD value to another SIMD value.
 
     For a discussion of byte order, see
@@ -56,7 +56,7 @@ fn bitcast[
         The bitwidth of the two types must be the same.
 
     Parameters:
-        type: The source type.
+        dtype: The source type.
         width: The source width.
         new_type: The target type.
         new_width: The target width.
@@ -69,13 +69,13 @@ fn bitcast[
         source SIMD value.
     """
     constrained[
-        bitwidthof[SIMD[type, width]]()
+        bitwidthof[SIMD[dtype, width]]()
         == bitwidthof[SIMD[new_type, new_width]](),
         "the source and destination types must have the same bitwidth",
     ]()
 
     @parameter
-    if new_type == type:
+    if new_type == dtype:
         return rebind[SIMD[new_type, new_width]](val)
     return __mlir_op.`pop.bitcast`[
         _type = __mlir_type[
