@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """ops.broadcast_to tests."""
 
+import re
+
+import pytest
 from conftest import (
     broadcast_shapes,
     broadcastable_static_positive_shapes,
@@ -70,3 +73,37 @@ def test_broadcast_to_tensor_value(
     assert TensorType.from_mlir(graph_result_type(graph)) == TensorType(
         graph.inputs[0].dtype, shape=out_dims
     )
+
+
+def test_broadcast_to__error_message():
+    input_shape = [6]
+    output_shape = [6, 7]
+
+    with Graph(
+        "broadcast_to_error_message",
+        input_types=[TensorType(dtype=DType.float32, shape=input_shape)],
+    ) as graph:
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "[broadcast_to] input dimension at index 0 (6) must be either 1 or equal to corresponding output dimension at index 1 (7)"
+            ),
+        ):
+            ops.broadcast_to(graph.inputs[0].tensor, output_shape)
+
+
+def test_broadcast_to__error_message_symbolic_shapes():
+    input_shape = ["D0"]
+    output_shape = ["D1", "D2"]
+
+    with Graph(
+        "broadcast_to_error_message",
+        input_types=[TensorType(dtype=DType.float32, shape=input_shape)],
+    ) as graph:
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "[broadcast_to] input dimension at index 0 (D0) must be either 1 or equal to corresponding output dimension at index 1 (D2)"
+            ),
+        ):
+            ops.broadcast_to(graph.inputs[0].tensor, output_shape)
