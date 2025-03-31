@@ -40,8 +40,11 @@ from sys import is_defined
 ```
 """
 
+from collections.string import StaticString
+from builtin.string_literal import get_string_literal_slice
 
-fn is_defined[name: StringLiteral]() -> Bool:
+
+fn is_defined[name: StaticString]() -> Bool:
     """Return true if the named value is defined.
 
     Parameters:
@@ -50,10 +53,14 @@ fn is_defined[name: StringLiteral]() -> Bool:
     Returns:
         True if the name is defined.
     """
-    return __mlir_attr[`#kgen.param.expr<get_env, `, name.value, `> : i1`]
+    return __mlir_attr[
+        `#kgen.param.expr<get_env, `,
+        get_string_literal_slice[name]().value,
+        `> : i1`,
+    ]
 
 
-fn _is_bool_like[val: StringLiteral]() -> Bool:
+fn _is_bool_like[val: StaticString]() -> Bool:
     return get_string_literal[val.lower()]() in (
         "true",
         "1",
@@ -64,7 +71,7 @@ fn _is_bool_like[val: StringLiteral]() -> Bool:
     )
 
 
-fn env_get_bool[name: StringLiteral]() -> Bool:
+fn env_get_bool[name: StaticString]() -> Bool:
     """Try to get an boolean-valued define. Compilation fails if the
     name is not defined or the value is neither `True` or `False`.
 
@@ -90,7 +97,7 @@ fn env_get_bool[name: StringLiteral]() -> Bool:
     return val in ("true", "1", "on")
 
 
-fn env_get_bool[name: StringLiteral, default: Bool]() -> Bool:
+fn env_get_bool[name: StaticString, default: Bool]() -> Bool:
     """Try to get an bool-valued define. If the name is not defined, return
     a default value instead. The boolean must be either `True` or `False`.
 
@@ -109,7 +116,7 @@ fn env_get_bool[name: StringLiteral, default: Bool]() -> Bool:
         return default
 
 
-fn env_get_int[name: StringLiteral]() -> Int:
+fn env_get_int[name: StaticString]() -> Int:
     """Try to get an integer-valued define. Compilation fails if the
     name is not defined.
 
@@ -119,10 +126,14 @@ fn env_get_int[name: StringLiteral]() -> Int:
     Returns:
         An integer parameter value.
     """
-    return __mlir_attr[`#kgen.param.expr<get_env, `, name.value, `> : index`]
+    return __mlir_attr[
+        `#kgen.param.expr<get_env, `,
+        get_string_literal_slice[name]().value,
+        `> : index`,
+    ]
 
 
-fn env_get_int[name: StringLiteral, default: Int]() -> Int:
+fn env_get_int[name: StaticString, default: Int]() -> Int:
     """Try to get an integer-valued define. If the name is not defined, return
     a default value instead.
 
@@ -162,7 +173,7 @@ fn env_get_int[name: StringLiteral, default: Int]() -> Int:
         return default
 
 
-fn env_get_string[name: StringLiteral]() -> StringLiteral:
+fn env_get_string[name: StaticString]() -> StringLiteral:
     """Try to get a string-valued define. Compilation fails if the
     name is not defined.
 
@@ -173,12 +184,14 @@ fn env_get_string[name: StringLiteral]() -> StringLiteral:
         A string parameter value.
     """
     return __mlir_attr[
-        `#kgen.param.expr<get_env, `, name.value, `> : !kgen.string`
+        `#kgen.param.expr<get_env, `,
+        get_string_literal_slice[name]().value,
+        `> : !kgen.string`,
     ]
 
 
 fn env_get_string[
-    name: StringLiteral, default: StringLiteral
+    name: StaticString, default: StringLiteral
 ]() -> StringLiteral:
     """Try to get a string-valued define. If the name is not defined, return
     a default value instead.
@@ -198,7 +211,7 @@ fn env_get_string[
         return default
 
 
-fn env_get_dtype[name: StringLiteral, default: DType]() -> DType:
+fn env_get_dtype[name: StaticString, default: DType]() -> DType:
     """Try to get an DType-valued define. If the name is not defined, return
     a default value instead.
 
