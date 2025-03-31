@@ -272,6 +272,13 @@ class Tensor:
             cpu_copy = cpu_tensor.copy()
         """
 
+    def inplace_copy_from(self, src: Tensor) -> None:
+        """
+        Copy the contents of another tensor into this one. These tensors may
+        be on different devices.
+        Requires that both tensors are contiguous and have same size.
+        """
+
     @staticmethod
     def from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
         """
@@ -366,6 +373,7 @@ class Tensor:
     def _view(
         self, dtype: max._core.dtype.DType, shape: Sequence[int]
     ) -> Tensor: ...
+    def _inplace_copy_from(self, src: Tensor) -> None: ...
 
 def accelerator_count() -> int:
     """Returns number of accelerator devices available."""

@@ -10,13 +10,7 @@ from collections.abc import Generator, Sequence
 from itertools import product
 from mmap import mmap
 from os import PathLike
-from typing import (
-    Any,
-    Optional,
-    Protocol,
-    Union,
-    runtime_checkable,
-)
+from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
 from max._core.driver import Tensor as Tensor
@@ -75,6 +69,28 @@ def _view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:
         shape = (*self.shape[:-1], last_axis_size // dtype.size_in_bytes)
 
     return self._view(dtype, shape)
+
+
+def inplace_copy_from(self, src: Tensor) -> None:
+    """Copy the contents of another tensor into this one. These tensors may
+    be on different devices.
+
+    Requires that both tensors are contiguous and have same size."""
+    # check that both tensors are contiguous
+    if not self.is_contiguous:
+        raise ValueError("Cannot copy from non-contiguous tensor")
+    if not src.is_contiguous:
+        raise ValueError("Cannot copy to non-contiguous tensor")
+
+    # check that both tensors have same size
+    if self.num_elements != src.num_elements:
+        raise ValueError("Cannot copy tensors of different sizes")
+
+    # check that both tensors have the same dtype
+    if self.dtype != src.dtype:
+        raise ValueError("Cannot copy tensors of different dtypes")
+
+    self._inplace_copy_from(src)
 
 
 def _from_numpy(arr: np.ndarray) -> Tensor:
@@ -165,6 +181,7 @@ Tensor.contiguous = _contiguous  # type: ignore[method-assign]
 Tensor._aligned = _aligned  # type: ignore[method-assign]
 Tensor.__repr__ = _repr  # type: ignore[method-assign]
 Tensor.view = _view  # type: ignore[method-assign]
+Tensor.inplace_copy_from = inplace_copy_from  # type: ignore[method-assign]
 Tensor.from_numpy = _from_numpy  # type: ignore[method-assign]
 Tensor.to_numpy = _to_numpy  # type: ignore[method-assign]
 Tensor.from_dlpack = _from_dlpack  # type: ignore[method-assign]
