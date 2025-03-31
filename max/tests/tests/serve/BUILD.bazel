@@ -8,10 +8,7 @@ modular_py_test(
             "pipelines/*.py",
         ],
     ),
-    data = [
-        "//GenericML:MGPRT",
-        "//SDK/lib/API/python/tests/serve/testdata",
-    ],
+    data = ["//SDK/lib/API/python/tests/serve/testdata"],
     env = {
         "MAX_SERVE_DISABLE_TELEMETRY": "True",
         "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
