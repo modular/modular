@@ -48,15 +48,15 @@ struct TopK:
 
     @staticmethod
     fn execute[
-        type: DType,
+        dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
         K: Int,
         target: StringLiteral,
     ](
-        out_vals: OutputTensor[type=type, rank=rank],
+        out_vals: OutputTensor[type=dtype, rank=rank],
         out_idxs: OutputTensor[type = DType.int32, rank=rank],
-        in_vals: InputTensor[type=type, rank=rank],
+        in_vals: InputTensor[type=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[rank == 2, "rank must be 2"]()
@@ -82,9 +82,9 @@ struct TopK:
 
             # Get a pointer to shared memory for the indices and values
             var top_k_sram = external_memory[
-                TopKElement[type],
+                TopKElement[dtype],
                 address_space = AddressSpace.SHARED,
-                alignment = alignof[TopKElement[type]](),
+                alignment = alignof[TopKElement[dtype]](),
             ]()
 
             # Threads put their corresponding index and value into shared memory
@@ -121,7 +121,7 @@ struct TopK:
 
                     # Remove found maximum from consideration in the next iter
                     var index = reduced.idx % block_dim.x
-                    top_k_sram[index].val = min_or_neg_inf[type]()
+                    top_k_sram[index].val = min_or_neg_inf[dtype]()
 
         @parameter
         if target == "gpu":
@@ -131,7 +131,7 @@ struct TopK:
                 in_vals,
                 grid_dim=batch_size,  # One block per batch
                 block_dim=K,  # One thread per K
-                shared_mem_bytes=K * sizeof[TopKElement[type]](),
+                shared_mem_bytes=K * sizeof[TopKElement[dtype]](),
             )
         else:
 
