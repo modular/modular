@@ -47,7 +47,6 @@ modular_cc_library(
         "lib/Random.cpp",
         "lib/ReferenceCounted.cpp",
         "lib/Version.cpp",
-        "lib/VisualizationUtils.cpp",
     ],
     hdrs = [
         "include/Support/AlignedAlloc.h",
@@ -78,7 +77,6 @@ modular_cc_library(
         "include/Support/SymbolExport.h",
         "include/Support/TypeID.h",
         "include/Support/Version.h",
-        "include/Support/VisualizationUtils.h",
     ],
     local_defines = [
         "SHARED_LIBRARY_PREFIX='\"lib\"'",
