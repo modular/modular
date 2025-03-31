@@ -54,6 +54,7 @@ from layout.layout import (
 from memory.unsafe_pointer import UnsafePointer
 from sys import sizeof
 from utils import Index, IndexList
+from utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #
@@ -148,7 +149,7 @@ from utils import Index, IndexList
 
 
 @always_inline
-fn supported_mma_shape[
+fn _supported_mma_shape[
     mma_shape: IndexList[3],
 ]() -> Bool:
     """Checks if a given MMA shape is supported for tensor core operations.
@@ -551,7 +552,7 @@ fn _lhs_descriptor[
     tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
-        supported_mma_shape[mma_shape](),
+        _supported_mma_shape[mma_shape](),
         String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
 
@@ -604,7 +605,7 @@ fn _rhs_descriptor[
     tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
-        supported_mma_shape[mma_shape](),
+        _supported_mma_shape[mma_shape](),
         String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
 
@@ -632,10 +633,41 @@ fn _rhs_descriptor[
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
 fn _output_register_size[mma_shape: IndexList[3]]() -> Int:
     constrained[
-        supported_mma_shape[mma_shape](),
+        _supported_mma_shape[mma_shape](),
         String("WGMMA operation of shape '", mma_shape, "' is not supported"),
     ]()
     return mma_shape[0] * mma_shape[1] // 128
+
+
+@always_inline
+fn _convert_cfrags_to_tuple[
+    c_type: DType, c_frag_size: Int
+](
+    c_frags: LayoutTensor[
+        c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+    ],
+) -> StaticTuple[Scalar[c_type], c_frag_size]:
+    var c_frags_in_tuple = StaticTuple[Scalar[c_type], c_frag_size]()
+
+    @parameter
+    for i in range(c_frag_size):
+        c_frags_in_tuple[i] = rebind[Scalar[c_type]](c_frags._get[0, i]())
+
+    return c_frags_in_tuple
+
+
+@always_inline
+fn _convert_cfrags_to_simd[
+    c_type: DType, c_frag_size: Int
+](
+    c_frags_in_tuple: StaticTuple[Scalar[c_type], c_frag_size],
+    c_frags: LayoutTensor[
+        c_type, _, address_space = AddressSpace.LOCAL, *_, **_
+    ],
+):
+    @parameter
+    for i in range(c_frag_size):
+        c_frags._set[0, i](c_frags_in_tuple[i])
 
 
 struct TensorCoreAsync[
@@ -674,7 +706,7 @@ struct TensorCoreAsync[
             Fails to compile if `mma_shape` is not supported.
         """
         constrained[
-            supported_mma_shape[mma_shape](),
+            _supported_mma_shape[mma_shape](),
             String(
                 "WGMMA operation of shape '", mma_shape, "' is not supported"
             ),
@@ -777,20 +809,6 @@ struct TensorCoreAsync[
         alias b_num_k_mmas_per_tile = b_canonical_K // mma_shape[2] if transpose_b else num_k_mmas
         # fmt: on
 
-        # Vectorize each wgmma's fragment size.
-        alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
-        c_frags = c_reg_tile.vectorize[1, c_frag_size]()
-        constrained[
-            __type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas,
-            String(
-                "C fragments' size: ",
-                __type_of(c_frags).layout.size(),
-                " doesn't match the total number of wgmma: ",
-                num_m_mmas * num_n_mmas,
-                ".",
-            ),
-        ]()
-
         a_desc = _wgmma_descriptor[a_canonical_layout, True, a_swizzle](
             a_smem_tile.ptr
         )
@@ -830,7 +848,15 @@ struct TensorCoreAsync[
                     alias b_offset = n_mma * b_n_stride + b_k_mma * b_k_stride + b_offset_bytes
                     a_desc_m = a_desc + a_offset
                     b_desc_n = b_desc + b_offset
-                    c_frags[mma_id, 0] = wgmma_async[
+
+                    alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
+                    var c_frags = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+
+                    var c_frags_in_tuple = _convert_cfrags_to_tuple[
+                        c_type, c_frag_size
+                    ](c_frags)
+
+                    var c_frags_out_tuple = wgmma_async[
                         mma_shape[0],
                         mma_shape[1],
                         mma_shape[2],
@@ -840,7 +866,11 @@ struct TensorCoreAsync[
                         scale_d=scale_d,
                         scale_a=scale_a,
                         scale_b=scale_b,
-                    ](a_desc_m, b_desc_n, c_frags[mma_id, 0])
+                    ](a_desc_m, b_desc_n, c_frags_in_tuple)
+
+                    _convert_cfrags_to_simd[c_type, c_frag_size](
+                        c_frags_out_tuple, c_frags
+                    )
 
     @staticmethod
     @always_inline
