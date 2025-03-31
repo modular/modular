@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""The GPU package provides low-level programming constructs for working with GPUs.
+"""Provides low-level programming constructs for working with GPUs.
+
 These low level constructs allow you to write code that runs on the GPU with
 traditional programming style--partitioning work across threads that are mapped
 onto 1-, 2-, or 3-dimensional blocks. The thread blocks can subsequently be
