@@ -526,15 +526,25 @@ fn test_zipped_divide() raises:
     assert_equal(String(zd0), "(((2, 2), (2, 2)):((4, 1), (8, 2)))")
 
     # Resemble the case for distributing a tile over warp group.
-    alias tile_layout = Layout(
+    tile_layout = Layout(
         IntTuple(IntTuple(16, 64), 4), IntTuple(IntTuple(128, 2), 2048)
     )
-    alias thread_layout = Layout(
+    thread_layout = Layout(
         IntTuple(IntTuple(8, 4), 4), IntTuple(IntTuple(4, 1), 32)
     )
     assert_equal(
-        String(zipped_divide(tile_layout, thread_layout.shape)),
+        String(zipped_divide(tile_layout, thread_layout)),
         "((((8, 4), 4), ((2, 16), 1)):(((128, 2), 2048), ((1024, 8), 0)))",
+    )
+
+    # Swizzle for cuda core matmul.
+    tile_layout = Layout(IntTuple(16, 8), IntTuple(32, 4))
+    thread_layout = Layout(
+        IntTuple(IntTuple(2, 2), 8), IntTuple(IntTuple(1, 16), 2)
+    )
+    assert_equal(
+        String(zipped_divide(tile_layout, thread_layout)),
+        "((((2, 2), 8), (4, 1)):(((32, 64), 4), (128, 0)))",
     )
 
 
