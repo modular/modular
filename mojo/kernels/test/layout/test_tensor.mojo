@@ -778,6 +778,44 @@ fn test_distribute_vectorized():
         print("----thread[", tid, "]----")
         print(fragments)
 
+    # Fill the buffer first because we can't fill a vectorized tensor.
+    # This will become easier when we can vectorize nested layout.
+    ptr = stack_allocation[64 * 32, DType.float32, alignment=16]()
+    for i in range(64 * 32):
+        ptr[i] = i
+
+    tensor_4x16x64 = LayoutTensor[
+        DType.float32,
+        Layout(IntTuple(IntTuple(16, 16), 4), IntTuple(IntTuple(32, 2), 512)),
+        MutableAnyOrigin,
+        element_layout = Layout(2),
+    ](ptr)
+
+    alias thread_layout = Layout(
+        IntTuple(IntTuple(8, 4), 4), IntTuple(IntTuple(4, 1), 32)
+    )
+
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: [0.0, 1.0] [8.0, 9.0] [16.0, 17.0] [24.0, 25.0]
+    # CHECK: [256.0, 257.0] [264.0, 265.0] [272.0, 273.0] [280.0, 281.0]
+    print("----thread[", 0, "]----")
+    print(tensor_4x16x64.distribute[thread_layout](0))
+    # CHECK: ----thread[ 37 ]----
+    # CHECK: [546.0, 547.0] [554.0, 555.0] [562.0, 563.0] [570.0, 571.0]
+    # CHECK: [802.0, 803.0] [810.0, 811.0] [818.0, 819.0] [826.0, 827.0]
+    print("----thread[", 37, "]----")
+    print(tensor_4x16x64.distribute[thread_layout](37))
+    # CHECK: ----thread[ 74 ]----
+    # CHECK: [1092.0, 1093.0] [1100.0, 1101.0] [1108.0, 1109.0] [1116.0, 1117.0]
+    # CHECK: [1348.0, 1349.0] [1356.0, 1357.0] [1364.0, 1365.0] [1372.0, 1373.0]
+    print("----thread[", 74, "]----")
+    print(tensor_4x16x64.distribute[thread_layout](74))
+    # CHECK: ----thread[ 111 ]----
+    # CHECK: [1638.0, 1639.0] [1646.0, 1647.0] [1654.0, 1655.0] [1662.0, 1663.0]
+    # CHECK: [1894.0, 1895.0] [1902.0, 1903.0] [1910.0, 1911.0] [1918.0, 1919.0]
+    print("----thread[", 111, "]----")
+    print(tensor_4x16x64.distribute[thread_layout](111))
+
 
 fn test_distribute_axis_projection():
     var tensor_4x4 = LayoutTensor[
