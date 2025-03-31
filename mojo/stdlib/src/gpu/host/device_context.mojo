@@ -1902,19 +1902,23 @@ struct DeviceExternalFunction:
         Raises:
             If the copy operation fails.
         """
-        # const char *AsyncRT_DeviceFunction_copyToConstantMemory(const DeviceFunction *func, const char *name,
-        #                                                         const void *data, size_t byte_size)
+        # const char *AsyncRT_DeviceFunction_copyToConstantMemory(
+        #     const DeviceFunction *func,
+        #     const void *name, size_t nameSize,
+        #     const void *data, size_t dataSize)
         _checked(
             external_call[
                 "AsyncRT_DeviceFunction_copyToConstantMemory",
                 _CharPtr,
                 _DeviceFunctionPtr,
                 _CharPtr,
+                _SizeT,
                 _VoidPtr,
                 _SizeT,
             ](
                 self._handle,
-                mapping.name.unsafe_cstr_ptr().bitcast[UInt8](),
+                mapping.name.unsafe_ptr(),
+                len(mapping.name),
                 mapping.ptr,
                 mapping.byte_count,
             )

@@ -9,6 +9,8 @@ The module includes the `ConstantMemoryMapping` struct which represents a mappin
 constant memory that can be used for efficient data transfer between host and GPU device.
 """
 
+from collections.string import StaticString
+
 
 @value
 @register_passable("trivial")
@@ -25,7 +27,7 @@ struct ConstantMemoryMapping(CollectionElement):
         byte_count: Size of the memory mapping in bytes.
     """
 
-    var name: StringLiteral
+    var name: StaticString
     """A string identifier for the constant memory mapping.
 
     This name is used to uniquely identify the constant memory region in the GPU
@@ -51,7 +53,7 @@ struct ConstantMemoryMapping(CollectionElement):
 
     fn __init__(
         out self,
-        name: StringLiteral,
+        name: StaticString,
         ptr: UnsafePointer[NoneType],
         byte_count: Int,
     ):
