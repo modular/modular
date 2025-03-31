@@ -3450,6 +3450,26 @@ void DestructorInsertion::scheduleNeededDtors(ValueRef use,
     return;
   }
 
+  // 'self' in an initializer is modeled as having its whole-object bit set
+  // on entry to the function, but the fields may be in partially initialized
+  // states throughout the body of the initializer.  We only treat the full
+  // object as being initialized if all of its fields are.  This allows the
+  // definition and rewrite of 'self' to work correctly, but doesn't try to
+  // run the destructor on a partially initialized self.
+  if (valueInfo.isFullObjectLiveOnEntry &&
+      valueInfo.endValueBit == use.endBit &&
+      valueInfo.startValueBit == use.startBit) {
+    // If some of the fields are already missing, don't destroy self.
+    --use.endBit;
+    if (!use.isAllMissing(consumedValues))
+      consumedValues[use.endBit] = true;
+    ++use.endBit;
+
+    // If this was the only missing bit, then we're good.
+    if (use.isAllPresent(consumedValues))
+      return;
+  }
+
   // If this is the last use of some subfield of a value that needs to be
   // destroyed, emit a destructor for the WHOLE overall value.
   //
@@ -3494,22 +3514,6 @@ void DestructorInsertion::scheduleNeededDtors(ValueRef use,
     dtorInserter.add(value, use);
     use.markBits(consumedValues, true);
     return;
-  }
-
-  // 'self' in an initializer is modeled as having its whole-object bit set
-  // on entry to the function, but the fields may be in partially initialized
-  // states throughout the body of the initializer.  We only treat the full
-  // object as being initialized if all of its fields are.  This allows the
-  // definition and rewrite of 'self' to work correctly, but doesn't try to
-  // run the destructor on a partially initialized self.
-  if (valueInfo.isFullObjectLiveOnEntry &&
-      valueInfo.endValueBit == use.endBit &&
-      valueInfo.startValueBit == use.startBit) {
-    // If some of the fields are already missing, don't destroy self.
-    --use.endBit;
-    if (!use.isAllMissing(consumedValues))
-      consumedValues[use.endBit] = true;
-    ++use.endBit;
   }
 
   // Trivial types don't have __del__ methods and can't be tracked, so if this

@@ -1388,3 +1388,21 @@ struct RefResultStruct:
       return self.x
 
 fn use(a: String): pass
+
+# https://github.com/modular/max/issues/4163
+#  BUG] Mojo compiler error when two instance variables of type PythonObject are initialized by Python.import_module in a struct's __init__()
+struct SomeStruct:
+    var test_agent: SomeValue[Int]
+    fn __init__(out self) raises:
+        self.test_agent = SomeValue(123)
+
+struct SomeValue[T: CollectionElement]:
+    var value: T
+    var name: String
+    var tmp: Int
+
+    fn __init__(out self, value: T) raises:
+        self.value = value
+        self.name = "example"
+        self.tmp = 1 #<- remove this field and it works
+
