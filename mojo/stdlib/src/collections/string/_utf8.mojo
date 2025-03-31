@@ -11,7 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Implement fast utf-8 validation using SIMD instructions.
+"""Implement UTF-8 utils."""
+
+from bit import count_leading_zeros
+from base64._b64encode import _sub_with_saturation
+from sys import simdwidthof
+from sys.intrinsics import llvm_intrinsic, likely
+
+from memory import Span, UnsafePointer
+
+# ===-----------------------------------------------------------------------===#
+# Validate UTF-8
+# ===-----------------------------------------------------------------------===#
+"""
+Fast utf-8 validation using SIMD instructions.
 
 References for this algorithm:
 J. Keiser, D. Lemire, Validating UTF-8 In Less Than One Instruction Per Byte,
@@ -25,10 +38,6 @@ Code adapted from:
 https://github.com/simdutf/SimdUnicode/blob/main/src/UTF8.cs
 """
 
-from base64._b64encode import _sub_with_saturation
-from sys.intrinsics import llvm_intrinsic
-
-from memory import Span, UnsafePointer
 
 alias TOO_SHORT: UInt8 = 1 << 0
 alias TOO_LONG: UInt8 = 1 << 1
@@ -176,3 +185,108 @@ fn _is_valid_utf8(span: Span[Byte]) -> Bool:
         has_error = validate_chunk(SIMD[DType.uint8, simd_size](), previous)
 
     return all(has_error == 0)
+
+
+# ===-----------------------------------------------------------------------===#
+# Utils
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _is_utf8_continuation_byte[
+    w: Int
+](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+    return vec.cast[DType.int8]() < -(0b1000_0000 >> 1)
+
+
+fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
+    alias sizes = (256, 128, 64, 32, 16, 8)
+    var ptr = str_slice.unsafe_ptr()
+    var num_bytes = str_slice.byte_length()
+    var amnt: Int = 0
+    var processed = 0
+
+    @parameter
+    for i in range(len(sizes)):
+        alias s = sizes[i]
+
+        @parameter
+        if simdwidthof[DType.uint8]() >= s:
+            var rest = num_bytes - processed
+            for _ in range(rest // s):
+                var vec = (ptr + processed).load[width=s]()
+                var comp = _is_utf8_continuation_byte(vec)
+                amnt += Int(comp.cast[DType.uint8]().reduce_add())
+                processed += s
+
+    for i in range(num_bytes - processed):
+        amnt += Int(_is_utf8_continuation_byte(ptr[processed + i]))
+
+    return amnt
+
+
+@always_inline
+fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
+    """Get the length of the sequence starting with given byte. Do note that
+    this does not work correctly if given a continuation byte."""
+
+    debug_assert(
+        not _is_utf8_continuation_byte(b),
+        "Function does not work correctly if given a continuation byte.",
+    )
+    return Int(count_leading_zeros(~b) | (b < 0b1000_0000).cast[DType.uint8]())
+
+
+fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
+    """UTF-8 byte type.
+
+    Returns:
+        The byte type.
+
+    Notes:
+
+        - 0 -> ASCII byte.
+        - 1 -> continuation byte.
+        - 2 -> start of 2 byte long sequence.
+        - 3 -> start of 3 byte long sequence.
+        - 4 -> start of 4 byte long sequence.
+    """
+    return count_leading_zeros(~b)
+
+
+@always_inline
+fn _is_newline_char_utf8[
+    include_r_n: Bool = False
+](p: UnsafePointer[Byte], eol_start: Int, b0: Byte, char_len: Int) -> Bool:
+    """Returns whether the char is a newline char.
+
+    Safety:
+        This assumes valid utf-8 is passed.
+    """
+    # highly performance sensitive code, benchmark before touching
+    alias `\r` = UInt8(ord("\r"))
+    alias `\n` = UInt8(ord("\n"))
+    alias `\t` = UInt8(ord("\t"))
+    alias `\x1c` = UInt8(ord("\x1c"))
+    alias `\x1e` = UInt8(ord("\x1e"))
+
+    # here it's actually faster to have branching due to the branch predictor
+    # "realizing" that the char_len == 1 path is often taken. Using the likely
+    # intrinsic is to make the machine code be ordered to optimize machine
+    # instruction fetching, which is an optimization for the CPU front-end.
+    if likely(char_len == 1):
+        return `\t` <= b0 <= `\x1e` and not (`\r` < b0 < `\x1c`)
+    elif char_len == 2:
+        var b1 = p[eol_start + 1]
+        var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
+
+        @parameter
+        if include_r_n:
+            return is_next_line or (b0 == `\r` and b1 == `\n`)
+        else:
+            return is_next_line
+    elif char_len == 3:  # unicode line sep or paragraph sep: \u2028 , \u2029
+        var b1 = p[eol_start + 1]
+        var b2 = p[eol_start + 2]
+        return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
+    return False
