@@ -95,15 +95,14 @@ struct Slice(
     # ===-------------------------------------------------------------------===#
 
     @no_inline
-    fn __str__(self) -> String:
+    fn __str__(self, out ret: String):
         """Gets the string representation of the span.
 
         Returns:
             The string representation of the span.
         """
-        var output = String()
-        self.write_to(output)
-        return output
+        ret = String(capacity=16)
+        self.write_to(ret)
 
     @no_inline
     fn __repr__(self) -> String:
