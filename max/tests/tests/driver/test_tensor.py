@@ -681,3 +681,55 @@ def test_unaligned_tensor_copy():
     assert tensor32_copy._aligned()
     with pytest.raises(AssertionError):
         np.testing.assert_array_equal(tensor32.copy().to_numpy(), expected)
+
+
+def test_inplace_copy_from_raises():
+    tensor_3_3 = Tensor((3, 3), DType.int32)
+
+    tensor_3_10_3 = Tensor((3, 10, 3), DType.int32)
+    tensor_3_3_noncontig = tensor_3_10_3[:, 0, :]
+    assert tensor_3_3_noncontig.shape == (3, 3)
+    assert not tensor_3_3_noncontig.is_contiguous
+    with pytest.raises(ValueError) as e:
+        tensor_3_3_noncontig.inplace_copy_from(tensor_3_3_noncontig)
+        assert "Cannot copy from non-contiguous tensor" in str(e.value)
+
+    with pytest.raises(ValueError) as e:
+        tensor_3_3.inplace_copy_from(tensor_3_3_noncontig)
+        assert "Cannot copy from non-contiguous tensor" in str(e.value)
+
+    tensor_3_2 = Tensor((3, 2), DType.int32)
+    with pytest.raises(ValueError) as e:
+        tensor_3_3.inplace_copy_from(tensor_3_2)
+        assert "Cannot copy tensors of different sizes" in str(e.value)
+
+    tensor_i32 = Tensor((2, 3), DType.int32)
+    tensor_i16 = Tensor((2, 3), DType.int16)
+    with pytest.raises(ValueError) as e:
+        tensor_i32.inplace_copy_from(tensor_i16)
+        assert "Cannot copy tensors of different dtypes" in str(e.value)
+
+
+def test_inplace_copy_from_tensor_view():
+    enumerated = np.zeros((5, 2, 3), dtype=np.int32)
+    for i, j, k in np.ndindex(enumerated.shape):
+        enumerated[i, j, k] = 100 * i + 10 * j + k
+
+    all_nines = np.full((5, 2, 3), 999, dtype=np.int32)
+
+    src = Tensor.from_numpy(enumerated)
+    dst = Tensor.from_numpy(all_nines)
+
+    # Copy 3rd row of dst tensor into 1st row of src tensor.
+    dst[1, :, :].inplace_copy_from(src[3, :, :])
+
+    expected = np.array(
+        [
+            [[999, 999, 999], [999, 999, 999]],
+            [[300, 301, 302], [310, 311, 312]],
+            [[999, 999, 999], [999, 999, 999]],
+            [[999, 999, 999], [999, 999, 999]],
+            [[999, 999, 999], [999, 999, 999]],
+        ]
+    )
+    assert np.array_equal(dst.to_numpy(), expected)

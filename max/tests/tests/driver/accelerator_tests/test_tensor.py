@@ -164,3 +164,28 @@ def test_accelerator_to_numpy():
     tensor = Tensor.zeros((3, 3), DType.int32, device=acc)
 
     assert np.array_equal(tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32))
+
+
+def test_d2h_inplace_copy_from_tensor_view():
+    enumerated = np.zeros((5, 2, 3), dtype=np.int32)
+    for i, j, k in np.ndindex(enumerated.shape):
+        enumerated[i, j, k] = 100 * i + 10 * j + k
+
+    all_nines = np.full((5, 2, 3), 999, dtype=np.int32)
+
+    gpu_tensor = Tensor.from_numpy(enumerated).to(Accelerator())
+    host_tensor = Tensor.from_numpy(all_nines)
+
+    # Copy 3rd row of gpu_tensor into 1st row of host_tensor.
+    host_tensor[1, :, :].inplace_copy_from(gpu_tensor[3, :, :])
+
+    expected = np.array(
+        [
+            [[999, 999, 999], [999, 999, 999]],
+            [[300, 301, 302], [310, 311, 312]],
+            [[999, 999, 999], [999, 999, 999]],
+            [[999, 999, 999], [999, 999, 999]],
+            [[999, 999, 999], [999, 999, 999]],
+        ]
+    )
+    assert np.array_equal(host_tensor.to_numpy(), expected)
