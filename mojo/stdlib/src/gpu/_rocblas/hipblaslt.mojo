@@ -186,7 +186,7 @@ struct hipblasLtMatmulHeuristicResult_t:
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias HIPBLASLT_LIBRARY_PATH = "/opt/rocm/lib/libhipblaslt.so"
+alias HIPBLASLT_LIBRARY_PATH = "/opt/rocm/lib/libhipblaslt.so.0"
 
 alias HIPBLASLT_LIBRARY = _Global[
     "HIPBLASLT_LIBRARY", _OwnedDLHandle, _init_dylib
