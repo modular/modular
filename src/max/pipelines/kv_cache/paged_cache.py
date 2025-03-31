@@ -42,6 +42,7 @@ from max.support.math import ceildiv
 
 from ._utils import build_max_lengths_tensor
 from .block_manager import BlockManager
+from .block_utils import BlockCopyOp, BlockCopyType
 from .cache_params import KVCacheParams
 from .cow import CowExecutor
 from .manager import (
@@ -371,8 +372,7 @@ class PagedKVCacheManager(KVCacheManager):
 
         # Mapping from seq ID to blocks that have been prefetched prior to a
         # fetch operation.
-        self.prefetched_blocks: dict[int, list[int]] = {}
-        self.prefetched_cow: dict[int, tuple[int, int, int]] = {}
+        self.prefetched_seq_ids: set[int] = set()
 
     @classmethod
     def _block_size_per_token(
@@ -470,15 +470,10 @@ class PagedKVCacheManager(KVCacheManager):
 
         This must be followed by a call to `allocate_new_blocks`. Doing so will
         prefetch the blocks used by a request during a later call to `fetch`.
-
-        Returns:
-            The trimmed prompt tokens due to cache hits.
         """
         seq_id = data.cache_seq_id
-        assert seq_id not in self.prefetched_blocks
-        cow_args = self.block_manager.reuse_blocks_from_prefix_cache(data)
-        if cow_args is not None:
-            self.prefetched_cow[seq_id] = cow_args
+        assert seq_id not in self.prefetched_seq_ids
+        self.block_manager.reuse_blocks_from_prefix_cache(data)
 
     @traced
     def allocate_new_blocks(
@@ -492,18 +487,15 @@ class PagedKVCacheManager(KVCacheManager):
         In this case, the request reset to original state and the method returns `False`.
         """
         seq_id = data.cache_seq_id
-        assert seq_id not in self.prefetched_blocks
+        assert seq_id not in self.prefetched_seq_ids
 
         try:
             self.block_manager.allocate_new_blocks(data, num_steps)
-            self.prefetched_blocks[seq_id] = self.block_manager.get_req_blocks(
-                seq_id
-            )
-            return True
-        except RuntimeError as e:
-            if seq_id in self.prefetched_cow:
-                del self.prefetched_cow[seq_id]
+        except RuntimeError:
             return False
+
+        self.prefetched_seq_ids.add(seq_id)
+        return True
 
     @traced
     def fetch(
@@ -525,23 +517,16 @@ class PagedKVCacheManager(KVCacheManager):
             seq_id = ctx.cache_seq_id
 
             # Prefetch blocks now for request if we have not done so prior to fetch.
-            if seq_id not in self.prefetched_blocks:
-                assert seq_id not in self.prefetched_cow
-                cow_args = self.block_manager.reuse_blocks_from_prefix_cache(
-                    ctx
-                )
-                if cow_args is not None:
-                    self.prefetched_cow[seq_id] = cow_args
-
+            if seq_id not in self.prefetched_seq_ids:
+                self.block_manager.reuse_blocks_from_prefix_cache(ctx)
                 self.block_manager.allocate_new_blocks(ctx, num_steps)
-                self.prefetched_blocks[seq_id] = (
-                    self.block_manager.get_req_blocks(seq_id)
-                )
 
             # Compute the total sequence length
             seq_len = ctx.current_length + num_steps - 1
             assert seq_len <= self.max_seq_len
             max_seq_len = max(max_seq_len, seq_len)
+
+        self.prefetched_seq_ids.clear()
 
         # Allocate the buffers containing metadata about the batch.
         # [0, total_num_pages) are the valid block ids and total_num_pages
@@ -560,11 +545,7 @@ class PagedKVCacheManager(KVCacheManager):
             seq_id = ctx.cache_seq_id
 
             # Get the prefetched blocks for this request.
-            blocks = self.prefetched_blocks.pop(seq_id)
-            cow_args = None
-            if seq_id in self.prefetched_cow:
-                cow_args = self.prefetched_cow[seq_id]
-                del self.prefetched_cow[seq_id]
+            blocks = self.block_manager.get_req_blocks(seq_id)
 
             # Sanity check that we have enough blocks.
             seq_len = ctx.current_length + num_steps - 1
@@ -572,9 +553,11 @@ class PagedKVCacheManager(KVCacheManager):
             assert len(blocks) >= num_required_blocks
             blocks = blocks[:num_required_blocks]
 
-            # Enqueue COW op if we have a cow_args.
-            if cow_args is not None:
-                self.cow_executor.enqueue_cow(*cow_args)
+            # Enqueue copy ops for this request and clear the list.
+            copy_ops = self.block_manager.get_req_copy_ops(seq_id)
+            for copy_op in copy_ops:
+                self._enqueue_block_copy(copy_op)
+            self.block_manager.reset_req_copy_ops(seq_id)
 
             # Vectorized assignment of block indices to lookup table
             lut_table_np[batch_idx, : len(blocks)] = np.array(
@@ -678,6 +661,18 @@ class PagedKVCacheManager(KVCacheManager):
         for ctx in batch:
             # We possibly commit new blocks into the prefix cache.
             self.block_manager.step(ctx)
+
+    @traced
+    def _enqueue_block_copy(self, copy_op: BlockCopyOp) -> None:
+        dst_idx = copy_op.dst.block_id
+        src_idx = copy_op.src.block_id
+        num_tokens = copy_op.num_tokens
+        if copy_op.block_copy_type == BlockCopyType.D2D_COW:
+            self.cow_executor.enqueue_cow(dst_idx, src_idx, num_tokens)
+        else:
+            raise NotImplementedError(
+                f"Unsupported block copy type: {copy_op.block_copy_type}"
+            )
 
     @property
     def free_blocks(self) -> set[int]:

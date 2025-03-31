@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
-from typing import Optional
 
 import numpy as np
 from max.pipelines.context import InputContext
@@ -36,6 +35,8 @@ from max.support.math import ceildiv
 from .block_pool import BlockPool
 from .block_utils import (
     ROOT_BLOCK_HASH,
+    BlockCopyOp,
+    BlockCopyType,
     BlockHashType,
     KVCacheBlock,
     hash_block_tokens,
@@ -73,6 +74,11 @@ class BlockManager:
         # This is to avoid recomputing the block hashes for each call of
         # `get_computed_blocks` or `allocate_slots`.
         self.req_to_block_hashes: dict[int, list[BlockHashType]] = defaultdict(
+            list
+        )
+
+        # Mapping from request ID to block copy operations.
+        self.req_to_block_copy_ops: dict[int, list[BlockCopyOp]] = defaultdict(
             list
         )
 
@@ -122,9 +128,7 @@ class BlockManager:
         block_hashes.extend(new_block_hashes)
 
     @traced
-    def reuse_blocks_from_prefix_cache(
-        self, ctx: InputContext
-    ) -> Optional[tuple[int, int, int]]:
+    def reuse_blocks_from_prefix_cache(self, ctx: InputContext) -> None:
         """Reuse blocks from prefix cache.
 
         Full blocks are directly reused and appended to the request's blocks.
@@ -132,10 +136,6 @@ class BlockManager:
         from are returned as a tuple.
 
         This also updates the cache hit rate metrics.
-
-        Returns:
-            (fresh_block_id, partial_block_id, tokens_matched) if a partial block is reused.
-            None if no partial block is reused.
         """
         self.assert_runtime_invariants(ctx)
 
@@ -147,7 +147,7 @@ class BlockManager:
         self.prompt_tokens += orig_prompt_len - 1
 
         if not self.enable_prefix_caching:
-            return None
+            return
 
         # Compute block hashes. These hashes are used by the subsequent methods.
         self.compute_block_hashes_for_request(ctx)
@@ -158,7 +158,8 @@ class BlockManager:
 
         if len(prefix_cache_blocks) > 0:
             # Touch the computed blocks to make sure they won't be evicted.
-            self.device_block_pool.touch(prefix_cache_blocks)
+            for block in prefix_cache_blocks:
+                self.device_block_pool.touch(block)
 
             # Since we got cache hits, clear out existing uncommitted blocks
             self.release_uncommitted_blocks(ctx)
@@ -183,7 +184,6 @@ class BlockManager:
             self.get_partial_block_from_prefix_cache(ctx)
         )
 
-        cow_args = None
         if partial_block is not None:
             # Since we got cache hits, clear out existing uncommitted blocks
             self.release_uncommitted_blocks(ctx)
@@ -197,12 +197,14 @@ class BlockManager:
                     start_idx=tokens_matched,
                 )
 
-                # Update COW arguments
-                cow_args = (
-                    fresh_block.block_id,
-                    partial_block.block_id,
-                    tokens_matched,
+                # Record a COW operation.
+                cow_op = BlockCopyOp(
+                    block_copy_type=BlockCopyType.D2D_COW,
+                    dst=fresh_block,
+                    src=partial_block,
+                    num_tokens=tokens_matched,
                 )
+                self.req_to_block_copy_ops[seq_id].append(cow_op)
 
                 # Check that the cached_idx has increased.
                 assert ctx.start_idx > orig_start_idx
@@ -212,8 +214,6 @@ class BlockManager:
         new_prompt_len = ctx.active_length
         self.cached_prompt_tokens += orig_prompt_len - new_prompt_len
 
-        return cow_args
-
     @traced
     def get_full_blocks_from_prefix_cache(
         self,
@@ -221,12 +221,6 @@ class BlockManager:
     ) -> list[KVCacheBlock]:
         """Get the computed (cached) blocks for the request.
         Note that the computed blocks must be full.
-
-        Args:
-            request: The request to get the computed blocks.
-
-        Returns:
-            A list of blocks that are computed for the request.
         """
 
         assert self.enable_prefix_caching
@@ -258,7 +252,7 @@ class BlockManager:
     def get_partial_block_from_prefix_cache(
         self,
         ctx: InputContext,
-    ) -> tuple[Optional[KVCacheBlock], int]:
+    ) -> tuple[KVCacheBlock | None, int]:
         """Get the computed (cached) blocks for the request."""
         assert self.enable_prefix_caching
 
@@ -413,6 +407,14 @@ class BlockManager:
     def get_req_blocks(self, seq_id: int) -> list[int]:
         """Get the block ids for a request."""
         return [block.block_id for block in self.req_to_blocks[seq_id]]
+
+    def get_req_copy_ops(self, seq_id: int) -> list[BlockCopyOp]:
+        """Get the block copy operations for a request."""
+        return self.req_to_block_copy_ops[seq_id]
+
+    def reset_req_copy_ops(self, seq_id: int) -> None:
+        """Reset the block copy operations for a request."""
+        self.req_to_block_copy_ops[seq_id].clear()
 
     @traced
     def assert_runtime_invariants(self, ctx: InputContext) -> None:

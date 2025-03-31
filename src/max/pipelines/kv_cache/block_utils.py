@@ -13,8 +13,11 @@
 
 """Utilities for PagedAttention KVCache block manager."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import NamedTuple, Optional
+from enum import Enum
+from typing import NamedTuple
 
 import numpy as np
 from max.profiler import traced
@@ -52,7 +55,7 @@ ROOT_BLOCK_HASH = BlockHashType(hash("None"), -1, ())
 
 @traced
 def hash_block_tokens(
-    parent_block_hash_value: Optional[int], token_ids: np.ndarray
+    parent_block_hash_value: int | None, token_ids: np.ndarray
 ) -> BlockHashType:
     """Compute the hash value of a block."""
     if parent_block_hash_value is None:
@@ -74,7 +77,7 @@ def hash_block_tokens(
 def hash_request_tokens(
     block_size: int,
     token_ids: np.ndarray,
-    parent_block_hash_value: Optional[int],
+    parent_block_hash_value: int | None,
 ) -> list[BlockHashType]:
     """Hash the tokens of a request."""
 
@@ -101,15 +104,29 @@ class KVCacheBlock:
     ref_cnt: int = 0
     # The hash of the block composed of (block hash, tuple of token IDs).
     # It is only available when the block is full.
-    block_hash: Optional[BlockHashType] = None
+    block_hash: BlockHashType | None = None
 
     # Used to construct a doubly linked list for free blocks.
     # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
-    prev_free_block: Optional["KVCacheBlock"] = None
-    next_free_block: Optional["KVCacheBlock"] = None
+    prev_free_block: KVCacheBlock | None = None
+    next_free_block: KVCacheBlock | None = None
 
     def __repr__(self) -> str:
         return f"KVCacheBlock(block_id={self.block_id}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash})"
+
+
+class BlockCopyType(Enum):
+    D2D_COW = 1
+    H2D_MEMCPY = 2
+    D2H_MEMCPY = 3
+
+
+@dataclass
+class BlockCopyOp:
+    block_copy_type: BlockCopyType
+    dst: KVCacheBlock
+    src: KVCacheBlock
+    num_tokens: int
 
 
 class FreeKVCacheBlockQueue:
@@ -139,8 +156,8 @@ class FreeKVCacheBlockQueue:
         self.free_blocks = set(block.block_id for block in blocks)
 
         # Initialize the doubly linked list of free blocks.
-        self.free_list_head: Optional[KVCacheBlock] = blocks[0]
-        self.free_list_tail: Optional[KVCacheBlock] = blocks[-1]
+        self.free_list_head: KVCacheBlock | None = blocks[0]
+        self.free_list_tail: KVCacheBlock | None = blocks[-1]
         for i in range(self.num_free_blocks):
             if i > 0:
                 blocks[i].prev_free_block = blocks[i - 1]

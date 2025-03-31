@@ -28,7 +28,6 @@ from __future__ import annotations
 import logging
 import multiprocessing
 from collections import defaultdict
-from typing import Optional
 
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent import KVCacheChangeMessage
@@ -78,7 +77,7 @@ class BlockPool:
         )
 
         # Queue for the KV Cache Agent updates
-        self.kv_cache_agent_queue: Optional[multiprocessing.Queue] = None
+        self.kv_cache_agent_queue: multiprocessing.Queue | None = None
 
     @traced
     def _commit_into_prefix_cache(
@@ -124,14 +123,6 @@ class BlockPool:
         If there already exists a committed block with the same hash, we return
         the already committed block. Otherwise, we commit the provided block
         into the prefix cache and return None.
-
-        Args:
-            block_hash: The block hash to get or commit.
-            block: The block to possibly commit.
-
-        Returns:
-            An existing block with same hash retrieved from prefix cache or
-            None if the provided block was committed.
         """
         hash_value = block_hash.value
         if hash_value in self.block_hash_to_committed_block:
@@ -141,7 +132,7 @@ class BlockPool:
             if block.block_id == prefix_cache_block.block_id:
                 return None
 
-            self.touch([prefix_cache_block])
+            self.touch(prefix_cache_block)
 
             # Free the block we currently have.
             assert block.block_hash is None
@@ -218,20 +209,16 @@ class BlockPool:
             self.free_block_queue.append(block)
 
     @traced
-    def touch(self, blocks: list[KVCacheBlock]) -> None:
-        """Touch a block increases its reference count by 1, and may remove
+    def touch(self, block: KVCacheBlock) -> None:
+        """Touching a block increases its reference count by 1, and may remove
         the block from the free queue. This is used when a block is hit by
         another request with the same prefix.
-
-        Args:
-            blocks: A list of blocks to touch.
         """
-        for block in blocks:
-            # ref_cnt=0 means this block is in the free list (i.e. eviction
-            # candidate), so remove it.
-            if block.ref_cnt == 0:
-                self.free_block_queue.remove(block)
-            block.ref_cnt += 1
+        # ref_cnt=0 means this block is in the free list (i.e. eviction
+        # candidate), so remove it.
+        if block.ref_cnt == 0:
+            self.free_block_queue.remove(block)
+        block.ref_cnt += 1
 
     @property
     def free_blocks(self) -> set[int]:
