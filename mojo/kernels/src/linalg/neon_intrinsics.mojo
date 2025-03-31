@@ -7,6 +7,7 @@
 from sys import llvm_intrinsic
 
 from memory.unsafe import bitcast
+from collections.string import StaticString
 
 # ===-----------------------------------------------------------------------===#
 # dot product
@@ -25,7 +26,7 @@ fn _neon_dotprod[
 
     @parameter
     @always_inline
-    fn call_intrinsic[intrin: StringLiteral]() -> SIMD[c_type, width]:
+    fn call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
     @parameter

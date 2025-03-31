@@ -12,6 +12,7 @@
 
 from sys._assembly import inlined_assembly
 from sys.info import sizeof
+from collections.string import StaticString
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -294,7 +295,7 @@ fn load_z[
 
 @always_inline
 fn transpose_z_to_x_or_y[
-    destination: StringLiteral, type: DType
+    destination: StaticString, type: DType
 ](z_col_index: Int, xy_row_index: Int, z_row_suboffset: Int):
     # transpose_z_to_x_or_y is a thin wrapper around the fp32 transpose mode of
     # the amx instruction `extry`. This instruction takes a (sub) column of
@@ -347,7 +348,7 @@ fn transpose_z_to_x_or_y[
 
 @always_inline
 fn fma[
-    mode: StringLiteral, type: DType
+    mode: StaticString, type: DType
 ](z_row_index: Int, x_row_index: Int, y_row_index: Int, clear_z: Bool):
     # Apple.amx.fma abstracts the fma operation on the amx hardware. Two modes of
     #  fma operations are supported in this instruction, referred to here as
