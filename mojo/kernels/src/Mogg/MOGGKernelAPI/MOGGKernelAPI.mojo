@@ -2396,8 +2396,15 @@ struct BroadcastTo:
             var output_dim = output_shape[output_axis]
             if input_dim != 1 and input_dim != output_dim:
                 raise Error(
-                    "[broadcast_to] input dim must be either 1 or equal to"
-                    " corresponding output dim starting from the rightmost dim"
+                    "[broadcast_to] input dimension at index ",
+                    input_axis,
+                    " (",
+                    input_dim,
+                    ") must be either 1 or equal to output dimension at index ",
+                    output_axis,
+                    " (",
+                    output_dim,
+                    ")",
                 )
         return output_shape
 
