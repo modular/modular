@@ -79,6 +79,13 @@ def main():
     ctx.synchronize()
 ```
 
+```text
+GPU thread: [ 0 0 0 ]
+GPU thread: [ 1 0 0 ]
+GPU thread: [ 2 0 0 ]
+GPU thread: [ 3 0 0 ]
+```
+
 Then run the file, if you haven't setup Mojo yet, check out the [Getting
 Started](/magic/) guide.
 
@@ -89,7 +96,7 @@ your file if you're running from `mojo main.mojo`:
 
 ```mojo
 from gpu import thread_idx, block_idx, warp, barrier
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceContext, DeviceBuffer, HostBuffer
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from layout import Layout, LayoutTensor
@@ -272,10 +279,10 @@ ctx.synchronize()
 ```
 
 ```text
-block: [ 0 0 0 ] thread: [ 0 0 0 ]
-block: [ 0 0 0 ] thread: [ 1 0 0 ]
 block: [ 1 1 0 ] thread: [ 0 0 0 ]
 block: [ 1 1 0 ] thread: [ 1 0 0 ]
+block: [ 0 0 0 ] thread: [ 0 0 0 ]
+block: [ 0 0 0 ] thread: [ 1 0 0 ]
 block: [ 1 0 0 ] thread: [ 0 0 0 ]
 block: [ 1 0 0 ] thread: [ 1 0 0 ]
 block: [ 0 1 0 ] thread: [ 0 0 0 ]
@@ -357,7 +364,7 @@ print(host_in_buffer)
 ```
 
 ```text
-DeviceBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+HostBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
 ```
 
 ## Device buffer
@@ -385,7 +392,7 @@ on a device they will be scheduled to run in the order that you enqueue them:
 alias size = 4
 alias dtype_u8 = DType.uint8
 
-fn dummy_kernel(buffer: DeviceBuffer[dtype_u8]):
+fn dummy_kernel(buffer: HostBuffer[dtype_u8]):
     buffer[thread_idx.x] = thread_idx.x
 
 # All of these method calls run in the order that they were enqueued
@@ -401,7 +408,7 @@ print(host_buffer)
 ```
 
 ```text
-DeviceBuffer([0, 1, 2, 3])
+HostBuffer([0, 1, 2, 3])
 ```
 
 You can schedule multiple independent kernels to run at the same time using
@@ -455,14 +462,14 @@ block: 0 thread: 0 val: 0
 block: 0 thread: 1 val: 1
 block: 0 thread: 2 val: 2
 block: 0 thread: 3 val: 3
-block: 1 thread: 0 val: 4
-block: 1 thread: 1 val: 5
-block: 1 thread: 2 val: 6
-block: 1 thread: 3 val: 7
 block: 2 thread: 0 val: 8
 block: 2 thread: 1 val: 9
 block: 2 thread: 2 val: 10
 block: 2 thread: 3 val: 11
+block: 1 thread: 0 val: 4
+block: 1 thread: 1 val: 5
+block: 1 thread: 2 val: 6
+block: 1 thread: 3 val: 7
 ```
 
 As in the visualization above, the block/thread is getting the corresponding
@@ -512,7 +519,7 @@ the sum of each thread in the block:
 Output: [ block[0] block[1] block[2] block[3] ]
 ```
 
-Set up the output buffer for the host and device:
+Set up the output buffer/tensor for the host and device:
 
 ```mojo
 var host_output_buffer = ctx.enqueue_create_host_buffer[dtype](blocks)
@@ -520,6 +527,11 @@ var device_output_buffer = ctx.enqueue_create_buffer[dtype](blocks)
 
 # Zero the values on the device as they'll be used to accumulate results
 ctx.enqueue_memset(device_output_buffer, 0)
+
+alias out_layout = Layout.row_major(elements_in)
+alias OutputLayoutTensor = LayoutTensor[dtype, out_layout, MutableAnyOrigin]
+
+var out_tensor = OutputLayoutTensor(device_output_buffer)
 ```
 
 The problem here is that we can't have all the threads summing their values into
@@ -536,7 +548,7 @@ memory in a simple example.  We'll cover better solutions in the next sections.
 
 ```mojo :once
 fn sum_reduce_kernel(
-    in_tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
+    in_tensor: InputLayoutTensor, out_tensor: OutputLayoutTensor
 ):
     # This allocates memory to be shared between threads in a block prior to the
     # kernel launching. Each kernel gets a pointer to the allocated memory.
@@ -555,11 +567,11 @@ fn sum_reduce_kernel(
     # If this is the first thread, sum and write the result to global memory
     if thread_idx.x == 0:
         for i in range(threads):
-            out_buffer[block_idx.x] += shared[i]
+            out_tensor[block_idx.x] += shared[i]
 
 ctx.enqueue_function[sum_reduce_kernel](
     in_tensor,
-    device_output_buffer,
+    out_tensor,
     grid_dim=blocks,
     block_dim=threads,
 )
@@ -572,7 +584,7 @@ print(host_output_buffer)
 ```
 
 ```text
-DeviceBuffer([6, 22, 38, 54])
+HostBuffer([6, 22, 38, 54])
 ```
 
 For our first block/tile we summed the values:
@@ -597,14 +609,14 @@ summing them together:
 
 ```mojo :once
 fn simd_reduce_kernel(
-    in_tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
+    in_tensor: InputLayoutTensor, out_tensor: OutputLayoutTensor
 ):
     # The [4] means it loads 4 sequential values before doing the `reduce_add`
-    out_buffer[block_idx.x] = in_tensor.load[4](block_idx.x, 0).reduce_add()
+    out_tensor[block_idx.x] = in_tensor.load[4](block_idx.x, 0).reduce_add()
 
 ctx.enqueue_function[simd_reduce_kernel](
     in_tensor,
-    device_output_buffer,
+    out_tensor,
     grid_dim=blocks,
     block_dim=1, # one thread per block
 )
@@ -617,7 +629,7 @@ print(host_output_buffer)
 ```
 
 ```text
-DeviceBuffer([6, 22, 38, 54])
+HostBuffer([6, 22, 38, 54])
 ```
 
 This is cleaner and faster, instead of 4 threads writing to shared memory, we're
@@ -652,7 +664,7 @@ Here is a simple warp reduction kernel:
 
 ```mojo :once
 fn warp_reduce_kernel(
-    in_tensor: InputLayoutTensor, out_buffer: DeviceBuffer[dtype]
+    in_tensor: InputLayoutTensor, out_tensor: OutputLayoutTensor
 ):
     var value = in_tensor.load[1](block_idx.x, thread_idx.x)
 
@@ -665,11 +677,11 @@ fn warp_reduce_kernel(
 
     # Thread 0 has the reduced sum of the values from all the other threads
     if thread_idx.x == 0:
-        out_buffer[block_idx.x] = value
+        out_tensor[block_idx.x] = value
 
 ctx.enqueue_function[warp_reduce_kernel](
     in_tensor,
-    device_output_buffer,
+    out_tensor,
     grid_dim=blocks,
     block_dim=threads,
 )
@@ -687,7 +699,7 @@ thread: 0 value: 6
 thread: 1 value: 6
 thread: 2 value: 5
 thread: 3 value: 3
-DeviceBuffer([6, 22, 38, 54])
+HostBuffer([6, 22, 38, 54])
 ```
 
 You can see in the output that the first block had the values [0 1 2 3] and was
@@ -743,20 +755,24 @@ ctx.synchronize()
 iota(in_buffer_host.unsafe_ptr(), elements_f32)
 in_buffer_host.enqueue_copy_to(in_buffer_device)
 
-# Create the LayoutTensor
+# Create the LayoutTensors
 alias LayoutF32 = Layout.row_major(blocks_f32, threads_f32)
 alias InputTensorF32 = LayoutTensor[dtype_f32, LayoutF32, MutableAnyOrigin]
-var float_tensor = InputTensorF32(in_buffer_device)
+var float_in_tensor = InputTensorF32(in_buffer_device)
 
-fn reduce_sum_f32(in_tensor: InputTensorF32, output_buffer: DeviceBuffer[dtype_f32]):
+alias OutputLayoutF32 = Layout.row_major(blocks_f32)
+alias OutputTensorF32 = LayoutTensor[dtype_f32, OutputLayoutF32, MutableAnyOrigin]
+var float_out_tensor = OutputTensorF32(out_buffer_device)
+
+fn reduce_sum_f32(in_tensor: InputTensorF32, output_buffer: OutputTensorF32):
     var value = in_tensor.load[1](block_idx.x, thread_idx.x)
     value = warp.sum(value)
     if thread_idx.x == 0:
         output_buffer[block_idx.x] = value
 
 ctx.enqueue_function[reduce_sum_f32](
-    float_tensor,
-    out_buffer_device,
+    float_in_tensor,
+    float_out_tensor,
     grid_dim=8,
     block_dim=4
 )
@@ -769,7 +785,7 @@ print(out_buffer_host)
 ```
 
 ```text
-DeviceBuffer([6.0, 22.0, 38.0, 54.0, 70.0, 86.0, 102.0, 118.0])
+HostBuffer([6.0, 22.0, 38.0, 54.0, 70.0, 86.0, 102.0, 118.0])
 ```
 
 </details>
