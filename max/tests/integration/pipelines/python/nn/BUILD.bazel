@@ -51,7 +51,6 @@ modular_py_test(
         ],
     ),
     data = [
-        "//GenericML:MGPRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
     ],
@@ -86,7 +85,6 @@ modular_py_test(
         ],
     ),
     data = [
-        "//GenericML:MGPRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
     ],
@@ -116,7 +114,6 @@ modular_py_test(
     size = "enormous",
     srcs = glob(["**/*_distributed_gpu.py"]),
     data = [
-        "//GenericML:MGPRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
     ],
@@ -154,7 +151,6 @@ modular_py_test(
         ],
     ),
     data = [
-        "//GenericML:MGPRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
         "@flash_attn",

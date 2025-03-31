@@ -30,7 +30,6 @@ modular_py_test(
     size = "large",
     srcs = glob(["**/test_*.py"]) + ["conftest.py"],
     data = [
-        "//GenericML:MGPRT",
         "//ModularFramework/tools/mof",
         "//SDK/integration-test/pipelines/python/deepseekV2/testdata",
     ],

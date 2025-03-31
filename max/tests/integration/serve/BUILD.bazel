@@ -8,7 +8,6 @@ modular_py_test(
         "conftest.py",
     ] + glob(["*_cpu.py"]),
     data = [
-        "//GenericML:MGPRT",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "@test_llama_golden",
     ],
@@ -40,7 +39,6 @@ modular_py_test(
         "test_smollm_serving_gpu.py",
     ],
     data = [
-        "//GenericML:MGPRT",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "@test_llama_golden",

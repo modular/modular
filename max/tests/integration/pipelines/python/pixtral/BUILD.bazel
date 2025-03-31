@@ -10,10 +10,7 @@ modular_py_test(
     name = "pixtral",
     size = "large",
     srcs = glob(["**/test_*.py"]),
-    data = [
-        "//GenericML:MGPRT",
-        "//ModularFramework/tools/mof",
-    ],
+    data = ["//ModularFramework/tools/mof"],
     tags = [
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",

@@ -43,7 +43,6 @@ modular_py_test(
     size = "large",
     srcs = glob(["gpu_tests/**/*.py"]),
     data = [
-        "//GenericML:MGPRT",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:ATenRT",
@@ -84,7 +83,6 @@ modular_py_test(
     size = "large",
     srcs = glob(["multi_gpu_tests/**/*.py"]),
     data = [
-        "//GenericML:MGPRT",
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
         "//PyTorch:ATenRT",

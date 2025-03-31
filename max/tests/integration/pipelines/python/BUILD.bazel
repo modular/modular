@@ -25,7 +25,6 @@ modular_py_binary(
     name = "verify_pipelines",
     srcs = ["verify_pipelines.py"],
     data = [
-        "//GenericML:MGPRT",
         "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3:verify",
@@ -59,7 +58,6 @@ modular_py_test(
     name = "test_pipelines_cli",
     size = "enormous",
     srcs = ["test_pipelines_cli.py"],
-    data = ["//GenericML:MGPRT"],
     tags = [
         "manual",  # TODO(AITLIB-293)
         "no-sandbox",
@@ -76,7 +74,6 @@ modular_py_test(
     name = "test_pipelines_cli_gpu",
     size = "enormous",
     srcs = ["test_pipelines_cli_gpu.py"],
-    data = ["//GenericML:MGPRT"],
     exec_properties = {
         # Ensure the test has at least 24GB of GPU memory available.
         "resources:gpu-memory": "24",
@@ -128,7 +125,6 @@ modular_py_binary(
         "replit_compat.py",
     ],
     data = [
-        "//GenericML:MGPRT",
         "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
@@ -173,7 +169,6 @@ modular_py_test(
     name = "test_generate_llm_logits_gpu",
     size = "medium",
     srcs = ["test_generate_llm_logits_gpu.py"],
-    data = ["//GenericML:MGPRT"],
     exec_properties = {
         # Ensure the test has at least 24GB of GPU memory available.
         "resources:gpu-memory": "24",
@@ -207,7 +202,6 @@ modular_py_binary(
     srcs = ["pipelines_lm_eval.py"],
     data = [
         "run_lm_eval.py",
-        "//GenericML:MGPRT",
         "//KGEN:ptxas",
         "//SDK/integration-test/pipelines/python/eval_tasks",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
@@ -229,7 +223,6 @@ modular_py_test(
     name = "test_pipelines_lm_eval",
     size = "medium",
     srcs = ["test_pipelines_lm_eval.py"],
-    data = ["//GenericML:MGPRT"],
     ignore_collisions = True,  # duplicate examples/__init__.py from deps
     tags = [
         "manual",  # TODO(AITLIB-293)
@@ -245,10 +238,7 @@ modular_py_test(
 modular_py_binary(
     name = "pipelines_mteb",
     srcs = ["pipelines_mteb.py"],
-    data = [
-        "//GenericML:MGPRT",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
-    ],
+    data = ["//SDK/lib/API/python/max/entrypoints:pipelines"],
     ignore_collisions = True,  # duplicate scripts/__init__.py from deps
     deps = [
         "//SDK/lib/API/python/max/entrypoints",
