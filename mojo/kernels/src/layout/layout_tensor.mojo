@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+"""Provides the `LayoutTensor` type for representing multidimensional data.
+"""
 from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from sys import (
