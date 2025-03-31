@@ -8,6 +8,7 @@ from collections import InlineArray
 from random import rand
 from sys import argv, env_get_string, is_defined
 from sys.info import alignof
+from collections.string import StaticString
 
 from benchmark import (
     Bench,
@@ -316,7 +317,7 @@ fn fill(buffer: NDBuffer[mut=True, *_], val: Scalar):
 fn bench_compile_time[
     func_type: AnyTrivialRegType, //,
     func: func_type,
-    emission_kind: StringLiteral = "asm",
+    emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:
     constrained[emission_kind in ("asm", "llvm", "ptx")]()
 
@@ -356,7 +357,7 @@ fn bench_compile_time[
     )
 
 
-fn parse_shape[name: StringLiteral]() -> List[Int]:
+fn parse_shape[name: StaticString]() -> List[Int]:
     """Parse string to get an integer-valued shape (2+ dims) define.
 
     For example, the following shapes:
