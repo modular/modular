@@ -7,7 +7,7 @@
 
 from os import abort
 from random import randn
-from sys import env_get_int, env_get_string, sizeof
+from sys import env_get_int, sizeof
 
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
