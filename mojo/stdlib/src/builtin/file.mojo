@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the file based methods.
+"""Provides APIs to read and write files.
 
 These are Mojo built-ins, so you don't need to import them.
 

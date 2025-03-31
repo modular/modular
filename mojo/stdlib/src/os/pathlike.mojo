@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements PathLike trait.
+"""Implements the `PathLike` trait.
 
 You can import the trait from the `os` package. For example:
 

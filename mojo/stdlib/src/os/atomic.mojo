@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the Atomic class.
+"""Implements the `Atomic` struct.
 
 You can import these APIs from the `os` package. For example:
 

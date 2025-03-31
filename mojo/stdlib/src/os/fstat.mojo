@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the file system stat operations.
+"""Implements file system status operations.
 
 You can import these APIs from the `os` package. For example:
 
