@@ -21,6 +21,7 @@ from gpu.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
+from collections import OptionalReg
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -75,8 +76,10 @@ def test_warp_specialize_gemm_with_multicasting[
     c_type: DType,
     cluster_shape: IndexList[3],
     num_consumer: Int = 1,
+    num_pipeline_stages: Int = 4,
     transpose_b: Bool = True,
     partitioned_multicast: Bool = False,
+    grid_shape: OptionalReg[IndexList[2]] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
@@ -143,6 +146,9 @@ def test_warp_specialize_gemm_with_multicasting[
         "BLOCKS SHAPE (BM,BN,BK): (", BM, "x", BN, "x", BK, ") - ",
         "CLUSTER DIMS (M,N): (", CLUSTER_M, "x", CLUSTER_N,
         ") NUM CONSUMERS: ", num_consumer,
+        " NUM PIPELINE STAGES: ", num_pipeline_stages,
+        " MULTICAST MODE: ",
+        "PARTITIONED" if partitioned_multicast else "BROADCAST",
     )
     # fmt: on
 
@@ -188,7 +194,7 @@ def test_warp_specialize_gemm_with_multicasting[
     ](
         block_tile_shape=block_tile_shape,
         cluster_shape=cluster_shape,
-        num_pipeline_stages=4,
+        num_pipeline_stages=num_pipeline_stages,
         num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
     )
@@ -197,6 +203,7 @@ def test_warp_specialize_gemm_with_multicasting[
         transpose_b=transpose_b,
         config=matmul_config,
         schedule=schedule,
+        grid_shape=grid_shape,
         elementwise_lambda_fn=epilogue_fn,
     ](
         c_device.tensor,
@@ -247,6 +254,19 @@ def test_warp_specialize_gemm_with_multicasting[
 
 def main():
     with DeviceContext() as ctx:
+        test_warp_specialize_gemm_with_multicasting[
+            80,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(2, 1, 1),
+            num_consumer=2,
+            num_pipeline_stages=8,
+            partitioned_multicast=False,
+            grid_shape = Index(32, 4),
+            schedule = MatmulSchedule.TILE2D,
+        ](ctx, dynamic(512), static[2560](), static[8192]())
+
         test_warp_specialize_gemm_with_multicasting[
             256,
             DType.bfloat16,
@@ -376,3 +396,49 @@ def main():
             partitioned_multicast=False,
             schedule = MatmulSchedule.TILE2D,
         ](ctx, static[4096](), static[8192](), static[7168]())
+
+        @parameter
+        for wgmma_n in range(8, 264, 8):
+            test_warp_specialize_gemm_with_multicasting[
+                wgmma_n,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(1, 1, 1),
+                num_consumer=2,
+                partitioned_multicast=False,
+                schedule = MatmulSchedule.TILE2D,
+            ](ctx, static[1024](), static[wgmma_n * 3](), static[128]())
+
+            test_warp_specialize_gemm_with_multicasting[
+                wgmma_n,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(1, 2, 1),
+                num_consumer=2,
+                partitioned_multicast=False,
+                schedule = MatmulSchedule.TILE2D,
+            ](ctx, static[1024](), static[wgmma_n * 2](), static[128]())
+
+            test_warp_specialize_gemm_with_multicasting[
+                wgmma_n,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(2, 1, 1),
+                num_consumer=2,
+                partitioned_multicast=False,
+                schedule = MatmulSchedule.TILE2D,
+            ](ctx, static[1024](), static[wgmma_n * 4](), static[128]())
+
+            test_warp_specialize_gemm_with_multicasting[
+                wgmma_n,
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(2, 2, 1),
+                num_consumer=2,
+                partitioned_multicast=False,
+                schedule = MatmulSchedule.TILE2D,
+            ](ctx, dynamic(1024), static[wgmma_n * 6](), static[128]())

@@ -155,6 +155,10 @@ def test_hopper_matmul0_tma_wgmma[
 def main():
     with DeviceContext() as ctx:
         test_hopper_matmul0_tma_wgmma[
+            80, DType.bfloat16, DType.bfloat16, DType.bfloat16
+        ](ctx, static[512](), static[2560](), static[8192]())
+
+        test_hopper_matmul0_tma_wgmma[
             128, DType.bfloat16, DType.bfloat16, DType.bfloat16
         ](ctx, static[128](), static[128](), static[128]())
 
