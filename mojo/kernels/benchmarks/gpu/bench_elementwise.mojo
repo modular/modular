@@ -173,9 +173,9 @@ fn run_elementwise[
 
                 @parameter
                 if emulate_graph_compiler:
-                    """In this mode we use the simd_store / simd_load that are copied
-                    from MOGG.mojo. This is used to emulate what the graph compiler
-                    would generate for the elementwise operations."""
+                    # In this mode we use the simd_store / simd_load that are copied
+                    # from MOGG.mojo. This is used to emulate what the graph compiler
+                    # would generate for the elementwise operations.
                     simd_store(
                         out_tensor,
                         idx,
