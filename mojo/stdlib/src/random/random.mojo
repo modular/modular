@@ -92,15 +92,15 @@ fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
 
 
 fn randint[
-    type: DType
-](ptr: UnsafePointer[Scalar[type]], size: Int, low: Int, high: Int):
+    dtype: DType
+](ptr: UnsafePointer[Scalar[dtype]], size: Int, low: Int, high: Int):
     """Fills memory with uniform random in range [low, high].
 
     Constraints:
         The type should be integral.
 
     Parameters:
-        type: The dtype of the pointer.
+        dtype: The dtype of the pointer.
 
     Args:
         ptr: The pointer to the memory area to fill.
@@ -108,21 +108,21 @@ fn randint[
         low: The minimal value for random.
         high: The maximal value for random.
     """
-    constrained[type.is_integral(), "type must be integral"]()
+    constrained[dtype.is_integral(), "dtype must be integral"]()
 
     @parameter
-    if type.is_signed():
+    if dtype.is_signed():
         for si in range(size):
-            ptr[si] = random_si64(low, high).cast[type]()
+            ptr[si] = random_si64(low, high).cast[dtype]()
     else:
         for ui in range(size):
-            ptr[ui] = random_ui64(low, high).cast[type]()
+            ptr[ui] = random_ui64(low, high).cast[dtype]()
 
 
 fn rand[
-    type: DType
+    dtype: DType
 ](
-    ptr: UnsafePointer[Scalar[type], mut=True, **_],
+    ptr: UnsafePointer[Scalar[dtype], mut=True, **_],
     size: Int,
     /,
     *,
@@ -133,7 +133,7 @@ fn rand[
     """Fills memory with random values from a uniform distribution.
 
     Parameters:
-        type: The dtype of the pointer.
+        dtype: The dtype of the pointer.
 
     Args:
         ptr: The pointer to the memory area to fill.
@@ -145,39 +145,41 @@ fn rand[
     var scale_val = int_scale.or_else(-1)
 
     @parameter
-    if type.is_floating_point():
+    if dtype.is_floating_point():
         if scale_val >= 0:
             var scale_double: Float64 = (1 << scale_val)
             for i in range(size):
                 var rnd = random_float64(min, max)
-                ptr[i] = (floor(rnd * scale_double) / scale_double).cast[type]()
+                ptr[i] = (floor(rnd * scale_double) / scale_double).cast[
+                    dtype
+                ]()
         else:
             for i in range(size):
                 var rnd = random_float64(min, max)
-                ptr[i] = rnd.cast[type]()
+                ptr[i] = rnd.cast[dtype]()
 
         return
 
     @parameter
-    if type.is_signed():
+    if dtype.is_signed():
         var min_ = math.max(
-            Scalar[type].MIN.cast[DType.int64](), min.cast[DType.int64]()
+            Scalar[dtype].MIN.cast[DType.int64](), min.cast[DType.int64]()
         )
         var max_ = math.min(
-            max.cast[DType.int64](), Scalar[type].MAX.cast[DType.int64]()
+            max.cast[DType.int64](), Scalar[dtype].MAX.cast[DType.int64]()
         )
         for i in range(size):
-            ptr[i] = random_si64(min_, max_).cast[type]()
+            ptr[i] = random_si64(min_, max_).cast[dtype]()
         return
 
     @parameter
-    if type is DType.bool or type.is_unsigned():
+    if dtype is DType.bool or dtype.is_unsigned():
         var min_ = math.max(0, min.cast[DType.uint64]())
         var max_ = math.min(
-            max.cast[DType.uint64](), Scalar[type].MAX.cast[DType.uint64]()
+            max.cast[DType.uint64](), Scalar[dtype].MAX.cast[DType.uint64]()
         )
         for i in range(size):
-            ptr[i] = random_ui64(min_, max_).cast[type]()
+            ptr[i] = random_ui64(min_, max_).cast[dtype]()
         return
 
 
@@ -199,9 +201,9 @@ fn randn_float64(
 
 
 fn randn[
-    type: DType
+    dtype: DType
 ](
-    ptr: UnsafePointer[Scalar[type]],
+    ptr: UnsafePointer[Scalar[dtype]],
     size: Int,
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,
@@ -212,7 +214,7 @@ fn randn[
         The type should be floating point.
 
     Parameters:
-        type: The dtype of the pointer.
+        dtype: The dtype of the pointer.
 
     Args:
         ptr: The pointer to the memory area to fill.
@@ -222,7 +224,7 @@ fn randn[
     """
 
     for i in range(size):
-        ptr[i] = randn_float64(mean, standard_deviation).cast[type]()
+        ptr[i] = randn_float64(mean, standard_deviation).cast[dtype]()
     return
 
 
