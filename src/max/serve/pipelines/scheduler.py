@@ -185,7 +185,6 @@ class TokenGenerationSchedulerConfig:
             raise ValueError(msg)
 
         if self.max_forward_steps_ce > 1:
-            self.max_forward_steps_ce = 1
             logger.info(
                 "Prefill does not support multistep inference, overriding max_forward_steps_ce to 1."
             )
