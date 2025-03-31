@@ -300,7 +300,7 @@ async def test_prefix_caching_with_random_prompts(page_size, num_steps) -> None:
         kv_manager.release(seq_id)
 
     assert (
-        len(kv_manager.block_manager.free_block_queue)
+        len(kv_manager.block_manager.device_block_pool.free_block_queue)
         == kv_manager.total_num_pages
     )
 
