@@ -448,6 +448,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 
   // If the expression returned an unawaited value, then the expression should
   // be awaited. Check for an '__await__' function.
+  // TODO: This should be handled with linear types.
   if (shared.typeHasMember(valueType, "__await__", expr->getLoc())) {
     shared.emitWarning(expr->getLoc())
         << "awaitable " << valueType << " value was never awaited"
