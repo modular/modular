@@ -15,7 +15,7 @@
 
 from bit import count_leading_zeros
 from base64._b64encode import _sub_with_saturation
-from sys import simdwidthof
+from sys import simdwidthof, is_compile_time
 from sys.intrinsics import llvm_intrinsic, likely
 
 from memory import Span, UnsafePointer
@@ -23,20 +23,6 @@ from memory import Span, UnsafePointer
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8
 # ===-----------------------------------------------------------------------===#
-"""
-Fast utf-8 validation using SIMD instructions.
-
-References for this algorithm:
-J. Keiser, D. Lemire, Validating UTF-8 In Less Than One Instruction Per Byte,
-Software: Practice and Experience 51 (5), 2021
-https://arxiv.org/abs/2010.03090
-
-Blog post:
-https://lemire.me/blog/2018/10/19/validating-utf-8-bytes-using-only-0-45-cycles-per-byte-avx-edition/
-
-Code adapted from:
-https://github.com/simdutf/SimdUnicode/blob/main/src/UTF8.cs
-"""
 
 
 alias TOO_SHORT: UInt8 = 1 << 0
@@ -133,30 +119,19 @@ fn validate_chunk[
     return must23_as_80 ^ sc
 
 
-fn _is_valid_utf8(span: Span[Byte]) -> Bool:
-    """Verify that the bytes are valid UTF-8.
+fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
+    """Fast utf-8 validation using SIMD instructions.
 
-    Args:
-        span: The Span of bytes.
+    References for this algorithm:
+    J. Keiser, D. Lemire, Validating UTF-8 In Less Than One Instruction Per
+    Byte, Software: Practice and Experience 51 (5), 2021
+    https://arxiv.org/abs/2010.03090
 
-    Returns:
-        Whether the data is valid UTF-8.
+    Blog post:
+    https://lemire.me/blog/2018/10/19/validating-utf-8-bytes-using-only-0-45-cycles-per-byte-avx-edition/
 
-    #### UTF-8 coding format
-    [Table 3-7 page 94](http://www.unicode.org/versions/Unicode6.0.0/ch03.pdf).
-    Well-Formed UTF-8 Byte Sequences
-
-    Code Points        | First Byte | Second Byte | Third Byte | Fourth Byte |
-    :----------        | :--------- | :---------- | :--------- | :---------- |
-    U+0000..U+007F     | 00..7F     |             |            |             |
-    U+0080..U+07FF     | C2..DF     | 80..BF      |            |             |
-    U+0800..U+0FFF     | E0         | ***A0***..BF| 80..BF     |             |
-    U+1000..U+CFFF     | E1..EC     | 80..BF      | 80..BF     |             |
-    U+D000..U+D7FF     | ED         | 80..***9F***| 80..BF     |             |
-    U+E000..U+FFFF     | EE..EF     | 80..BF      | 80..BF     |             |
-    U+10000..U+3FFFF   | F0         | ***90***..BF| 80..BF     | 80..BF      |
-    U+40000..U+FFFFF   | F1..F3     | 80..BF      | 80..BF     | 80..BF      |
-    U+100000..U+10FFFF | F4         | 80..***8F***| 80..BF     | 80..BF      |
+    Code adapted from:
+    https://github.com/simdutf/SimdUnicode/blob/main/src/UTF8.cs
     """
 
     ptr = span.unsafe_ptr()
@@ -185,6 +160,34 @@ fn _is_valid_utf8(span: Span[Byte]) -> Bool:
         has_error = validate_chunk(SIMD[DType.uint8, simd_size](), previous)
 
     return all(has_error == 0)
+
+
+fn _is_valid_utf8(span: Span[Byte]) -> Bool:
+    """Verify that the bytes are valid UTF-8.
+
+    Args:
+        span: The Span of bytes.
+
+    Returns:
+        Whether the data is valid UTF-8.
+
+    #### UTF-8 coding format
+    [Table 3-7 page 94](http://www.unicode.org/versions/Unicode6.0.0/ch03.pdf).
+    Well-Formed UTF-8 Byte Sequences
+
+    Code Points        | First Byte | Second Byte | Third Byte | Fourth Byte |
+    :----------        | :--------- | :---------- | :--------- | :---------- |
+    U+0000..U+007F     | 00..7F     |             |            |             |
+    U+0080..U+07FF     | C2..DF     | 80..BF      |            |             |
+    U+0800..U+0FFF     | E0         | ***A0***..BF| 80..BF     |             |
+    U+1000..U+CFFF     | E1..EC     | 80..BF      | 80..BF     |             |
+    U+D000..U+D7FF     | ED         | 80..***9F***| 80..BF     |             |
+    U+E000..U+FFFF     | EE..EF     | 80..BF      | 80..BF     |             |
+    U+10000..U+3FFFF   | F0         | ***90***..BF| 80..BF     | 80..BF      |
+    U+40000..U+FFFFF   | F1..F3     | 80..BF      | 80..BF     | 80..BF      |
+    U+100000..U+10FFFF | F4         | 80..***8F***| 80..BF     | 80..BF      |
+    """
+    return _is_valid_utf8_runtime(span)
 
 
 # ===-----------------------------------------------------------------------===#
