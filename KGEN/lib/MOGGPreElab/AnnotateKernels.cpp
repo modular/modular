@@ -88,8 +88,8 @@ constexpr StringLiteral COMPILER_PREFIX_INTERNAL = "compiler_internal";
 constexpr StringLiteral COMPILER_PREFIX = "compiler";
 constexpr StringLiteral INTERNAL_PREFIX = "register";
 
-inline bool symbolMatches(mlir::SymbolRefAttr symbol,
-                          llvm::ArrayRef<llvm::StringLiteral> path) {
+bool symbolMatches(mlir::SymbolRefAttr symbol,
+                   llvm::ArrayRef<llvm::StringLiteral> path) {
   if (symbol.getNestedReferences().size() != path.size() - 1)
     return false;
 
@@ -104,121 +104,58 @@ inline bool symbolMatches(mlir::SymbolRefAttr symbol,
   return true;
 }
 
-// Returns true if all inputs are extensibility tensors.
-static bool isExtensibilityKernel(LIT::FnOp func) {
-  if (func.getNumArguments() == 0)
-    return false;
-
-  for (Type arg : func.getArgumentTypes()) {
-    // Tensors are expected to be passed as references.
-    auto asLitRef = dyn_cast<LIT::RefType>(arg);
-    if (!asLitRef)
-      return false;
-
-    auto asDeclRef = dyn_cast<KGEN::LIT::StructType>(asLitRef.getElementType());
-    if (!asDeclRef)
-      return false;
-    if (!isExtensibilityTensor(asDeclRef) && !isCustomType(asDeclRef))
-      return false;
+std::optional<SymbolRefAttr> getDecoratorSymbol(TypedAttr attr) {
+  auto directSym = dyn_cast<SymbolConstantAttr>(attr);
+  if (directSym) {
+    return directSym.getSymbol();
   }
-  return true;
-}
 
-static void annotateExtensibilityKernels(LIT::FnOp func,
-                                         SmallVector<NamedAttribute> &newAttrs,
-                                         OpBuilder &b) {
-  // If we are a kernel and we are using the extensibility tensors we should
-  // mark ourselves as allocating.
-  if (isExtensibilityKernel(func)) {
-    SmallVector<int64_t> allocs;
-
-    // Mark any by ref outputs as allocating.
-    for (auto [idx, convention] :
-         llvm::enumerate(func.getFuncTypeGenerator().getArgConventions())) {
-      if (convention == KGEN::ArgConvention::ByRefResult)
-        allocs.push_back(idx);
+  ParamOperatorAttr apply;
+  apply = dyn_cast<ParamOperatorAttr>(attr);
+  if (apply) {
+    if (auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0))) {
+      return sym.getSymbol();
     }
-
-    newAttrs.push_back(NamedAttribute{b.getStringAttr(ALLOCS_ATTR),
-                                      b.getIndexArrayAttr(allocs)});
   }
+
+  return std::nullopt;
 }
 
-bool stripDecorators(LIT::FnOp func) {
+bool decoratorIsPartOfMAXCompiler(SymbolRefAttr symbol) {
+  auto rootName = symbol.getRootReference().strref();
+  return rootName == MAX_PREFIX || rootName == INTERNAL_PREFIX ||
+         rootName == COMPILER_PREFIX || rootName == COMPILER_PREFIX_INTERNAL;
+}
+
+template <typename StructDeclOrFnTy>
+void replaceMOGGPreElabDecoratorsWithAttributes(StructDeclOrFnTy obj) {
   SmallVector<TypedAttr> decoratorsToCopy;
-  OpBuilder builder{func.getContext()};
-
-  bool areAnyKernels = false;
-
-  // We will replace each decorator with a new attribute.
+  OpBuilder builder{obj.getContext()};
   SmallVector<NamedAttribute> newAttrs;
+  SmallVector<Attribute> kernelRegistrations;
 
-  // Each kernel can implement multiple operations. We will canonicalize these
-  // into one attribute.
-  SmallVector<Attribute> kernelRegistrations, shapeFunctionReg;
-
-  size_t numDecorators = func.getDecorators().size();
-
-  // Identify which MOGG specific decorators this function has if any.
-  for (TypedAttr decorator : func.getDecorators()) {
-    // Keep track of the non mogg decorators to preserve them on the user
-    // kernel.
+  for (TypedAttr decorator : obj.getDecorators()) {
     decoratorsToCopy.push_back(decorator);
 
-    // Identify the decorator being used.
-    llvm::StringRef decoratorName;
+    auto decoratorSymbolOr = getDecoratorSymbol(decorator);
+    if (!decoratorSymbolOr)
+      continue;
+    auto decoratorSymbol = *decoratorSymbolOr;
 
-    // The decorator might just be a direct symbol, for instance `@decorator`
-    // vs `@decorator()`.
-    auto directSym = dyn_cast<SymbolConstantAttr>(decorator);
-    if (directSym) {
-      auto strRef = directSym.getSymbol().getRootReference().strref();
-      // Only accept decorators in max / register domain.
-      if (!(strRef == MAX_PREFIX || strRef == INTERNAL_PREFIX ||
-            strRef == COMPILER_PREFIX || strRef == COMPILER_PREFIX_INTERNAL))
-        continue;
-      decoratorName = directSym.getSymbol().getLeafReference().strref();
-    }
-
-    // We track the apply so we can pull extra arguments from it.
-    // `@decorator("Arg1", 100)`
-    ParamOperatorAttr apply;
-
-    // Otherwise the other allowed form of decorators are parameter apply
-    // expressions of the symbol. E.G `@decorator()`
-    if (decoratorName.empty()) {
-      apply = dyn_cast<ParamOperatorAttr>(decorator);
-      if (apply) {
-        // The first operand is expected to be the symbol we are applying.
-        if (auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0))) {
-          SymbolRefAttr symRef = sym.getSymbol();
-          auto strRef = symRef.getRootReference().strref();
-          // Only accept decorators in max / register domain.
-          if (!(strRef == "max" || strRef == "register" ||
-                strRef == COMPILER_PREFIX ||
-                strRef == COMPILER_PREFIX_INTERNAL))
-            continue;
-          decoratorName = symRef.getLeafReference().strref();
-        }
-      }
-    }
-
-    if (decoratorName.empty())
+    if (!decoratorIsPartOfMAXCompiler(decoratorSymbol))
       continue;
 
-    // All the other decorators below are expected to be in the form of taking
-    // arguments. I.E an apply expression.
+    StringRef decoratorName = decoratorSymbol.getLeafReference().strref();
+    auto apply = dyn_cast<ParamOperatorAttr>(decorator);
     if (!apply)
       continue;
 
-    // Kernel identifiers are slightly different as the include the name and
-    // priority of the kernel.
     if (decoratorName.starts_with(Decorators::REGISTER_INTERNAL_FUNCTION)) {
-      // Register kernels without explict override parameter.
       kernelRegistrations.push_back(apply.getOperand(1));
       kernelRegistrations.push_back(builder.getI64IntegerAttr(-1));
       decoratorsToCopy.pop_back();
-      areAnyKernels = true;
+      if constexpr (std::is_same_v<StructDeclOrFnTy, LIT::FnOp>)
+        obj.setExportKind(ExportKind::Exported);
     } else if (decoratorName.starts_with(Decorators::REGISTER_MOGG_INTRINSIC)) {
       TypedAttr str = std::get<1>(
           cast<LIT::LITStructAttr>(apply.getOperand(1)).getValues()[0]);
@@ -228,98 +165,16 @@ bool stripDecorators(LIT::FnOp func) {
     }
   }
 
-  // Implicitly export all kernels and also add annotations to mark
-  // extensibility types.
-  if (areAnyKernels) {
-    annotateExtensibilityKernels(func, newAttrs, builder);
-    func.setExportKind(ExportKind::Exported);
-  }
-
-  // We don't need to do anything if we don't have any decorators.
-  if (numDecorators == decoratorsToCopy.size())
-    return false;
-
   if (!kernelRegistrations.empty()) {
+    obj.setDecorators(DecoratorsAttr::get(obj.getContext(), decoratorsToCopy));
     newAttrs.push_back(
         NamedAttribute{builder.getStringAttr(kernelRegistrationAttr),
                        builder.getArrayAttr(kernelRegistrations)});
   }
 
-  if (!shapeFunctionReg.empty()) {
-    newAttrs.push_back(
-        NamedAttribute{builder.getStringAttr(shapeFuncRegistrationAttr),
-                       builder.getArrayAttr(shapeFunctionReg)});
+  for (auto &namedAttr : newAttrs) {
+    obj->setAttr(namedAttr.getName(), namedAttr.getValue());
   }
-
-  // Update the function to have only the non mogg decorators.
-  func.setDecorators(DecoratorsAttr::get(func.getContext(), decoratorsToCopy));
-
-  // Add all the old attributes.
-  for (const NamedAttribute &attr : func->getAttrs())
-    newAttrs.push_back(attr);
-  func->setAttrs(newAttrs);
-
-  return areAnyKernels;
-}
-
-void stripDecorators(LIT::StructDeclOp structDecl) {
-  SmallVector<TypedAttr> decoratorsToCopy;
-  OpBuilder builder{structDecl.getContext()};
-
-  // We will replace each decorator with a new attribute.
-  SmallVector<NamedAttribute> newAttrs;
-
-  size_t numDecorators = structDecl.getDecorators().size();
-
-  // Identify which MOGG specific decorators this function has if any.
-  for (TypedAttr decorator : structDecl.getDecorators()) {
-    // Keep track of the non mogg decorators to preserve them on the user
-    // kernel.
-    decoratorsToCopy.push_back(decorator);
-
-    // Identify the decorator being used.
-    llvm::StringRef decoratorName;
-
-    // We track the apply so we can pull extra arguments from it.
-    // `@decorator("Arg1", 100)`
-    ParamOperatorAttr apply = dyn_cast<ParamOperatorAttr>(decorator);
-    if (!apply)
-      continue;
-    // The first operand is expected to be the symbol we are applying.
-    if (auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0))) {
-      SymbolRefAttr symRef = sym.getSymbol();
-      // Only accept decorators in max / register domain.
-      if (!(symRef.getRootReference().strref() == "max" ||
-            symRef.getRootReference().strref() == "register" ||
-            symRef.getRootReference().strref() == COMPILER_PREFIX ||
-            symRef.getRootReference().strref() == COMPILER_PREFIX_INTERNAL))
-        continue;
-      decoratorName = symRef.getLeafReference().strref();
-    }
-    if (decoratorName.empty())
-      continue;
-
-    if (decoratorName.starts_with(Decorators::REGISTER_MOGG_INTRINSIC)) {
-      TypedAttr str = std::get<1>(
-          cast<LIT::LITStructAttr>(apply.getOperand(1)).getValues()[0]);
-      newAttrs.push_back(
-          NamedAttribute{cast<StringAttr>(str), builder.getUnitAttr()});
-      decoratorsToCopy.pop_back();
-    }
-  }
-
-  // We don't need to do anything if we don't have any decorators.
-  if (numDecorators == decoratorsToCopy.size())
-    return;
-
-  // Update the function to have only the non mogg decorators.
-  structDecl.setDecorators(
-      DecoratorsAttr::get(structDecl.getContext(), decoratorsToCopy));
-
-  // Add all the old attributes.
-  for (const NamedAttribute &attr : structDecl->getAttrs())
-    newAttrs.push_back(attr);
-  structDecl->setAttrs(newAttrs);
 }
 
 // Check if the decorator correspond to a function call:
@@ -1117,11 +972,11 @@ public:
     // attributes. Mostly used for older extensibility API iterations
     moduleOp->walk([](Operation *operation) {
       if (auto func = dyn_cast<LIT::FnOp>(operation)) {
-        stripDecorators(func);
+        replaceMOGGPreElabDecoratorsWithAttributes(func);
         if (failed(annotateTypes(func)))
           return WalkResult::interrupt();
       } else if (auto structDeclOp = dyn_cast<LIT::StructDeclOp>(operation)) {
-        stripDecorators(structDeclOp);
+        replaceMOGGPreElabDecoratorsWithAttributes(structDeclOp);
       }
 
       return WalkResult::advance();
