@@ -24,10 +24,7 @@ modular_py_test(
     env = {
         "GIT_CONFIG_GLOBAL": "/dev/null",
     },
-    tags = [
-        "manual",  # TODO(AITLIB-293)
-        "requires-network",
-    ],
+    tags = ["requires-network"],
     deps = [
         ":support",
         requirement("ruamel-yaml"),
