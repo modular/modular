@@ -30,6 +30,7 @@ from max.pipelines import (
     SupportedEncoding,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    generate_attention_mask,
     get_window_index,
     mrope_pos_ids_3d,
 )
@@ -63,33 +64,39 @@ class Qwen2_5VLInputs(ModelInputs):
     temporal_patch_size * patch_size * patch_size] """
     pixel_values: Tensor | None
 
-    """ grid of spatial and temporal coordinates of patches in pixel_values
-    """
-    image_grid_thw: Tensor | None
     """ ids for each patch in pixel_values according to their dims.
     """
     image_rot_pos_ids: Tensor | None
-    """ video pixel_values
-    """
-    pixel_values_videos: Tensor | None
-    """ grid of spatial and temporal coordinates of patches in pixel_values_videos
-    """
-    video_grid_thw: Tensor | None
-    """ ids for each patch in pixel_values_videos according to their dims.
-    """
-    video_rot_pos_ids: Tensor | None
     """ indices of image patches included in windows for WindowAttention
     """
     image_window_index: Tensor | None
-    """ cumulative seq_len of windows for WindowAttention on images
+    """ Attention mask for WindowAttention
     """
-    image_cu_window_seqlens: Tensor | None
+    image_attention_mask_window: Tensor | None
+    """ Attention mask for Full Attention layers
+    """
+    image_attention_mask_full: Tensor | None
+    """ Maximum value of spatial dims in the grid of image patches 
+    """
+    image_max_grid_size: int
+    """ video pixel_values
+    """
+    pixel_values_videos: Tensor | None
+    """ ids for each patch in pixel_values_videos according to their dims.
+    """
+    video_rot_pos_ids: Tensor | None
     """ indices of video patches included in windows for WindowAttention
     """
     video_window_index: Tensor | None
-    """ cumulative seq_len of windows for WindowAttention on videos
+    """ Attention mask for WindowAttention
     """
-    video_cu_window_seqlens: Tensor | None
+    video_attention_mask_window: Tensor | None
+    """ Attention mask for Full Attention layers
+    """
+    video_attention_mask_full: Tensor | None
+    """ Maximum value of spatial dims in the grid of image patches 
+    """
+    video_max_grid_size: int
 
     def __init__(
         self,
@@ -98,15 +105,15 @@ class Qwen2_5VLInputs(ModelInputs):
         input_id_max_seq_len: Tensor,
         pixel_row_offsets: Tensor,
         pixel_values: Tensor | None,
-        image_grid_thw: Tensor | None,
         image_rot_pos_ids: Tensor | None,
-        pixel_values_videos: Tensor | None,
-        video_grid_thw: Tensor | None,
-        video_rot_pos_ids: Tensor | None,
         image_window_index: Tensor | None,
-        image_cu_window_seqlens: Tensor | None,
+        image_attention_mask_window: Tensor | None,
+        image_attention_mask_full: Tensor | None,
+        pixel_values_videos: Tensor | None,
+        video_rot_pos_ids: Tensor | None,
         video_window_index: Tensor | None,
-        video_cu_window_seqlens: Tensor | None,
+        video_attention_mask_window: Tensor | None,
+        video_attention_mask_full: Tensor | None,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.tokens = tokens
@@ -114,15 +121,15 @@ class Qwen2_5VLInputs(ModelInputs):
         self.input_id_max_seq_len = input_id_max_seq_len
         self.pixel_row_offsets = pixel_row_offsets
         self.pixel_values = pixel_values
-        self.image_grid_thw = image_grid_thw
         self.image_rot_pos_ids = image_rot_pos_ids
+        self.image_attention_mask_window = image_attention_mask_window
+        self.image_attention_mask_full = image_attention_mask_full
         self.pixel_values_videos = pixel_values_videos
-        self.video_grid_thw = video_grid_thw
         self.video_rot_pos_ids = video_rot_pos_ids
         self.image_window_index = image_window_index
-        self.image_cu_window_seqlens = image_cu_window_seqlens
         self.video_window_index = video_window_index
-        self.video_cu_window_seqlens = video_cu_window_seqlens
+        self.video_attention_mask_window = video_attention_mask_window
+        self.video_attention_mask_full = video_attention_mask_full
         self.kv_cache_inputs = kv_cache_inputs
 
     @property
@@ -186,12 +193,17 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             self.huggingface_config.patch_size,
             self.huggingface_config.spatial_merge_unit,
         )
+        attention_mask_full, attention_mask_window = generate_attention_mask(
+            grid_thw,
+            pixel_values.shape[0],
+            cu_window_seqlens,
+        )
         return (
             pixel_values,
-            grid_thw,
             position_ids,
             Tensor.from_numpy(window_index),
-            Tensor.from_numpy(cu_window_seqlens),
+            Tensor.from_numpy(attention_mask_window),
+            Tensor.from_numpy(attention_mask_full),
         )
 
     def _prepare_vision_inputs(
@@ -214,15 +226,15 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
         """
         Returns
             image_pixel_values,
-            image_grid_thw,
             image_position_ids,
             image_window_index,
-            image_cu_window_seqlens,
+            image_attention_mask_window,
+            image_attention_mask_full,
             pixel_values_videos,
-            video_grid_thw,
             video_position_ids,
             video_window_index,
-            video_cu_window_seqlens,
+            video_attention_mask_window,
+            video_attention_mask_full,
         """
         # TODO: Call _generate_pos_ids_and_window_indices on image and video inputs for all contexts in the batch
         raise NotImplementedError
@@ -245,16 +257,16 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
 
         # Prepare vision inputs if applicable.
         (
-            pixel_values,
-            image_grid_thw,
-            img_position_ids,
+            image_pixel_values,
+            image_position_ids,
             image_window_index,
-            image_cu_window_seqlens,
+            image_attention_mask_window,
+            image_attention_mask_full,
             pixel_values_videos,
-            video_grid_thw,
             video_position_ids,
             video_window_index,
-            video_cu_window_seqlens,
+            video_attention_mask_window,
+            video_attention_mask_full,
         ) = self._prepare_vision_inputs(
             context_batch, has_images=has_images, has_videos=has_videos
         )
@@ -298,23 +310,23 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
         # calls reusing the same context won't run the vision encoder.
         for ctx in context_batch:
             ctx.pixel_values = []
-            # TODO: Update other attributes too
+            # TODO: Update other visual input related attributes too
 
         return Qwen2_5VLInputs(
             tokens=input_id_values,
             input_row_offsets_or_attn_mask=input_id_row_offsets,
             input_id_max_seq_len=input_id_max_seq_len,
             pixel_row_offsets=pixel_row_offsets,
-            pixel_values=pixel_values,
-            image_grid_thw=image_grid_thw,
-            image_rot_pos_ids=img_position_ids,
-            pixel_values_videos=pixel_values_videos,
-            video_grid_thw=video_grid_thw,
-            video_rot_pos_ids=video_position_ids,
+            pixel_values=image_pixel_values,
+            image_rot_pos_ids=image_position_ids,
             image_window_index=image_window_index,
-            image_cu_window_seqlens=image_cu_window_seqlens,
+            image_attention_mask_full=image_attention_mask_full,
+            image_attention_mask_window=image_attention_mask_window,
+            pixel_values_videos=pixel_values_videos,
+            video_rot_pos_ids=video_position_ids,
             video_window_index=video_window_index,
-            video_cu_window_seqlens=video_cu_window_seqlens,
+            video_attention_mask_full=video_attention_mask_full,
+            video_attention_mask_window=video_attention_mask_window,
             kv_cache_inputs=kv_cache_inputs,
         )
 
