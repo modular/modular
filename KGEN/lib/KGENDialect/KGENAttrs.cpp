@@ -2909,6 +2909,24 @@ static void printClosureSymbolValue(AsmPrinter &p, SymbolRefAttr symbol,
 }
 
 //===----------------------------------------------------------------------===//
+// ClosureAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseClosureAttr(AsmParser &p, Type &type) {
+  SymbolRefAttr symbol;
+  StringAttr name;
+  if (p.parseAttribute(symbol) || p.parseAttribute(name))
+    return failure();
+  type = ParamClosureType::get(p.getContext(), symbol, name);
+  return success();
+}
+
+static void printClosureAttr(AsmPrinter &p, Type type) {
+  ParamClosureType closureType = cast<ParamClosureType>(type);
+  p << closureType.getParentSymbol() << " " << closureType.getName();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
