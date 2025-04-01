@@ -3086,9 +3086,9 @@ struct Mean:
         input_type: DType,
     ](
         input: InputTensor[type=input_type, rank=input_rank],
-        axis: Int,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
-        return reduce_shape(input, axis)
+        return reduce_shape(input, Int(axis))
 
 
 @compiler.register("mo.reduce.add")
@@ -5119,7 +5119,7 @@ struct Conv:
         strides: InputTensor[rank=1],
         dilations: InputTensor[rank=1],
         paddings: InputTensor[rank=1],
-        num_groups: InputTensor[rank=1],
+        num_groups: Scalar,
     ) raises -> IndexList[input.rank]:
         return conv_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -5127,7 +5127,7 @@ struct Conv:
             managed_tensor_slice_to_ndbuffer(strides),
             managed_tensor_slice_to_ndbuffer(dilations),
             managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(num_groups),
+            num_groups,
         )
 
 
@@ -5600,10 +5600,7 @@ struct VroomQ40RepackWeights:
 
     @staticmethod
     @always_inline
-    fn shape(
-        a: InputTensor[type = DType.float32, rank=2],
-        b: InputTensor[type = DType.uint8, rank=2],
-    ) -> IndexList[2]:
+    fn shape(b: InputTensor[type = DType.uint8, rank=2]) -> IndexList[2]:
         return b.shape()
 
 
