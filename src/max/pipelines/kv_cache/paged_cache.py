@@ -44,7 +44,6 @@ from ._utils import build_max_lengths_tensor
 from .block_manager import BlockManager
 from .block_utils import BlockCopyOp, BlockCopyType
 from .cache_params import KVCacheParams
-from .cow import CowExecutor
 from .manager import (
     KVCacheInputs,
     KVCacheInputSymbols,
@@ -359,20 +358,12 @@ class PagedKVCacheManager(KVCacheManager):
         # Whether prefix caching is enabled.
         self.enable_prefix_caching = self.params.enable_prefix_caching
 
-        # Create cow executor
-        self.cow_executor = CowExecutor(
-            session=self.session,
-            block_shape=self.block_shape(),
-            dtype=self.params.dtype,
-            devices=self.devices,
-            tensors=self.tensors,
-            page_size=self.page_size,
-            enable_prefix_caching=self.enable_prefix_caching,
-        )
-
         # Mapping from seq ID to blocks that have been prefetched prior to a
         # fetch operation.
         self.prefetched_seq_ids: set[int] = set()
+
+        # Number of blocks that have been copied due to COW.
+        self.cow_blocks_copied: int = 0
 
     @classmethod
     def _block_size_per_token(
@@ -476,6 +467,14 @@ class PagedKVCacheManager(KVCacheManager):
         self.block_manager.reuse_blocks_from_prefix_cache(data)
 
     @traced
+    def _enqueue_and_reset_copy_ops(self, seq_id: int) -> None:
+        """Enqueue copy ops for a given sequence and clear the list."""
+        copy_ops = self.block_manager.get_req_copy_ops(seq_id)
+        for copy_op in copy_ops:
+            self._enqueue_block_copy(copy_op)
+        self.block_manager.reset_req_copy_ops(seq_id)
+
+    @traced
     def allocate_new_blocks(
         self, data: InputContext, num_steps: int = 1
     ) -> bool:
@@ -492,8 +491,10 @@ class PagedKVCacheManager(KVCacheManager):
         try:
             self.block_manager.allocate_new_blocks(data, num_steps)
         except RuntimeError:
+            self.block_manager.reset_req_copy_ops(seq_id)
             return False
 
+        self._enqueue_and_reset_copy_ops(seq_id)
         self.prefetched_seq_ids.add(seq_id)
         return True
 
@@ -520,6 +521,7 @@ class PagedKVCacheManager(KVCacheManager):
             if seq_id not in self.prefetched_seq_ids:
                 self.block_manager.reuse_blocks_from_prefix_cache(ctx)
                 self.block_manager.allocate_new_blocks(ctx, num_steps)
+                self._enqueue_and_reset_copy_ops(seq_id)
 
             # Compute the total sequence length
             seq_len = ctx.current_length + num_steps - 1
@@ -553,12 +555,6 @@ class PagedKVCacheManager(KVCacheManager):
             assert len(blocks) >= num_required_blocks
             blocks = blocks[:num_required_blocks]
 
-            # Enqueue copy ops for this request and clear the list.
-            copy_ops = self.block_manager.get_req_copy_ops(seq_id)
-            for copy_op in copy_ops:
-                self._enqueue_block_copy(copy_op)
-            self.block_manager.reset_req_copy_ops(seq_id)
-
             # Vectorized assignment of block indices to lookup table
             lut_table_np[batch_idx, : len(blocks)] = np.array(
                 blocks, dtype=np.uint32
@@ -572,9 +568,6 @@ class PagedKVCacheManager(KVCacheManager):
             prompt_tokens = ctx.active_length
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
-
-        # Execute all COW memcpy operations.
-        self.cow_executor.batch_async_execute()
 
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row.
@@ -666,9 +659,13 @@ class PagedKVCacheManager(KVCacheManager):
     def _enqueue_block_copy(self, copy_op: BlockCopyOp) -> None:
         dst_idx = copy_op.dst.block_id
         src_idx = copy_op.src.block_id
-        num_tokens = copy_op.num_tokens
         if copy_op.block_copy_type == BlockCopyType.D2D_COW:
-            self.cow_executor.enqueue_cow(dst_idx, src_idx, num_tokens)
+            # TODO E2EOPT-142: Schedule each memcpy on a different stream
+            self.cow_blocks_copied += 1
+            for device_tensor in self.tensors:
+                device_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
+                    device_tensor[src_idx, :, :, :, :, :]
+                )
         else:
             raise NotImplementedError(
                 f"Unsupported block copy type: {copy_op.block_copy_type}"
@@ -702,17 +699,9 @@ class PagedKVCacheManager(KVCacheManager):
         assert 0 <= pct <= 1
         return pct
 
-    @property
-    def cow_blocks_copied(self) -> int:
-        """The number of blocks that have been copied due to COW."""
-        # TODO E2EOPT-115: Re-enable COW for paged_cache v2
-        if self.cow_executor is None:
-            return 0
-        return self.cow_executor.cow_blocks_copied
-
     def reset_cow_blocks_copied(self) -> None:
         """Reset the number of cow operations performed."""
-        self.cow_executor.reset_cow_blocks_copied()
+        self.cow_blocks_copied = 0
 
     def get_req_blocks(self, seq_id: int) -> list[int]:
         """Get the block ids for a request."""

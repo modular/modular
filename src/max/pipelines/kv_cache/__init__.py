@@ -18,6 +18,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
 
+from .block_utils import BlockCopyOp, BlockCopyType
 from .cache_params import KVCacheParams, KVCacheStrategy
 from .continuous_batching_cache import (
     ContinuousBatchingKVCache,
@@ -174,6 +175,8 @@ def infer_optimal_batch_size(
 __all__ = [
     "KVCacheParams",
     "KVCacheStrategy",
+    "BlockCopyOp",
+    "BlockCopyType",
     "ContinuousBatchingKVCache",
     "ContinuousBatchingKVCacheCollection",
     "ContinuousBatchingKVCacheCollectionType",
