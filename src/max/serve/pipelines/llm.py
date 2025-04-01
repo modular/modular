@@ -478,6 +478,8 @@ def batch_config_from_pipeline_config(
     if cache_strategy == KVCacheStrategy.PAGED:
         log_str += f"\tKVCache Page Size: {kv_cache_config.kv_cache_page_size} Tokens\n"
         log_str += f"\tPrefix Caching: {'Enabled' if kv_cache_config.enable_prefix_caching else 'Disabled'}\n"
+    if kv_cache_config.enable_kvcache_swapping_to_host:
+        log_str += "\tKVCache Swapping to Host: Enabled\n"
     log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
     log_str += f"\tChunked Prefill: {'Enabled' if pipeline_config.enable_chunked_prefill else 'Disabled'}\n"
     if pipeline_config.enable_chunked_prefill:
