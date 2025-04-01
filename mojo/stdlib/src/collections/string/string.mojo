@@ -1984,15 +1984,15 @@ fn _calc_initial_buffer_size(n: Float64) -> Int:
     return 128 + 1  # Add 1 for the terminator
 
 
-fn _calc_initial_buffer_size[type: DType](n0: Scalar[type]) -> Int:
+fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
     @parameter
-    if type.is_integral():
+    if dtype.is_integral():
         var n = abs(n0)
         var sign = 0 if n0 > 0 else 1
         alias is_32bit_system = bitwidthof[DType.index]() == 32
 
         @parameter
-        if is_32bit_system or bitwidthof[type]() <= 32:
+        if is_32bit_system or bitwidthof[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (
@@ -2004,17 +2004,16 @@ fn _calc_initial_buffer_size[type: DType](n0: Scalar[type]) -> Int:
     return 128 + 1  # Add 1 for the terminator
 
 
-fn _calc_format_buffer_size[type: DType]() -> Int:
-    """
-    Returns a buffer size in bytes that is large enough to store a formatted
-    number of the specified type.
+fn _calc_format_buffer_size[dtype: DType]() -> Int:
+    """Returns a buffer size in bytes that is large enough to store a formatted
+    number of the specified dtype.
     """
 
     # TODO:
     #   Use a smaller size based on the `dtype`, e.g. we don't need as much
     #   space to store a formatted int8 as a float64.
     @parameter
-    if type.is_integral():
+    if dtype.is_integral():
         return 64 + 1
     else:
         return 128 + 1  # Add 1 for the terminator
