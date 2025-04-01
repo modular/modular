@@ -254,13 +254,7 @@ fn shuffle_idx[
             WIDTH_MASK=_WIDTH_MASK,
         ](mask, val, offset)
     else:
-
-        @parameter
-        if bitwidthof[type]() == 16 and simd_width == 1:
-            var val_splatted = SIMD[type, 2](rebind[Scalar[type]](val))
-            return _shuffle_idx_amd(mask, val_splatted, offset)[0]
-        else:
-            return _shuffle_idx_amd(mask, val, offset)
+        return _shuffle_idx_amd(mask, val, offset)
 
 
 # ===-----------------------------------------------------------------------===#
