@@ -655,6 +655,42 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         self._store = existing._store^
 
     @always_inline("nodebug")
+    fn __lt__(self, rhs: IntTuple) -> Bool:
+        """Compare two `IntTuple`s lexicographically.
+
+        This function performs element-wise comparison of two `IntTuple`s and determines
+        if the first is lexicographically less than the second. It compares corresponding
+        elements until it finds a pair where the elements differ.
+
+        Args:
+            rhs: The other `IntTuple` to compare.
+
+        Returns:
+            True if `self` is lexicographically less than `rhs`, False otherwise.
+
+        Example:
+
+            ```mojo
+            from layout.int_tuple import IntTuple
+
+            var tuple1 = IntTuple(1, 2, 3)
+            var tuple2 = IntTuple(1, 2, 4)
+
+            var result = tuple1 < tuple2  # Returns True because 3 < 4
+            ```
+        """
+        for z in zip(self, rhs):
+            var z0 = Int(z[0])
+            var z1 = Int(z[1])
+            if z0 == z1:
+                continue
+            elif z0 < z1:
+                return True
+            else:
+                return False
+        return False
+
+    @always_inline("nodebug")
     fn owned_copy(self) -> IntTuple:
         """Create a deep copy of this `IntTuple` with its own memory ownership.
 
@@ -1684,45 +1720,6 @@ fn to_unknown(t: IntTuple) -> IntTuple:
     return res
 
 
-@always_inline("nodebug")
-fn lt(a: IntTuple, b: IntTuple) -> Bool:
-    """Compare two `IntTuple`s lexicographically.
-
-    This function performs element-wise comparison of two `IntTuple`s and determines
-    if the first is lexicographically less than the second. It compares corresponding
-    elements until it finds a pair where the elements differ.
-
-    Args:
-        a: The first `IntTuple` to compare.
-        b: The second `IntTuple` to compare.
-
-    Returns:
-        True if `a` is lexicographically less than `b`, False otherwise.
-
-    Example:
-
-        ```mojo
-        from layout.int_tuple import lt, IntTuple
-
-        var tuple1 = IntTuple(1, 2, 3)
-        var tuple2 = IntTuple(1, 2, 4)
-
-        var result = lt(tuple1, tuple2)  # Returns True because 3 < 4
-        ```
-        .
-    """
-    for z in zip(a, b):
-        var z0 = Int(z[0])
-        var z1 = Int(z[1])
-        if z0 == z1:
-            continue
-        elif z0 < z1:
-            return True
-        else:
-            return False
-    return False
-
-
 @always_inline
 fn _merge[
     cmp: fn (IntTuple, IntTuple) -> Bool,
@@ -1746,7 +1743,7 @@ fn _merge[
 
 
 fn sorted[
-    cmp: fn (IntTuple, IntTuple) -> Bool = lt,
+    cmp: fn (IntTuple, IntTuple) -> Bool = IntTuple.__lt__,
 ](tuple: IntTuple) -> IntTuple:
     """Sort an IntTuple using the provided comparison function.
 

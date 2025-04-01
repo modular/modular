@@ -165,16 +165,16 @@ def test_tuple_basic_ops():
 def test_sorted():
     print("== test_sorted")
 
-    alias t0 = sorted[lt](IntTuple(7, 3, 1, 5, 0))
+    alias t0 = sorted(IntTuple(7, 3, 1, 5, 0))
     assert_equal(String(t0), "(0, 1, 3, 5, 7)")
 
-    alias t1 = sorted[lt](IntTuple(IntTuple(7, 3), IntTuple(1, 5, 0)))
+    alias t1 = sorted(IntTuple(IntTuple(7, 3), IntTuple(1, 5, 0)))
     assert_equal(String(t1), "((1, 5, 0), (7, 3))")
 
-    alias t2 = sorted[lt](IntTuple(IntTuple(7, 3), IntTuple(1, IntTuple(5, 0))))
+    alias t2 = sorted(IntTuple(IntTuple(7, 3), IntTuple(1, IntTuple(5, 0))))
     assert_equal(String(t2), "((1, (5, 0)), (7, 3))")
 
-    assert_equal(lt(IntTuple(4, 6, 8), IntTuple(5, 6, 7)), True)
+    assert_true(IntTuple(4, 6, 8) < IntTuple(5, 6, 7))
 
 
 # CHECK-LABEL: test_product
