@@ -25,7 +25,17 @@ defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
     "same name and no extension."
   >>;
 
+defm emitted_file_type: CommandOptionWithValues<
+  ["--"], "emit", OutputOptionGroup, Index<1>,
+  MetaVarName<"FILE_TYPE">,
+  HelpText<"The type of output file to generate."
+            "\n\n"
+            "* `exe` (default): emit an executable binary file.\n"
+            "* `shared-lib`: emit a shared (dynamic) library.">,
+  Values<"exe,shared-lib">
+>;
+
 def generate_python_extension_module :  Flag<["--"], "gen-py">,
-  Group<OutputOptionGroup>, Index<1>,
+  Group<OutputOptionGroup>, Index<2>,
   HelpText<"Whether to generate a Python extension module (dynamic library). Defaults to false.">,
   Flags<[HelpHidden]>;
