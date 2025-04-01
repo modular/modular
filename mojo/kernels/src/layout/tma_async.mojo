@@ -48,6 +48,8 @@ from gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
+    cp_async_bulk_wait_group,
+    cp_async_bulk_commit_group,
 )
 from layout import IntTuple, LayoutTensor, Layout
 from memory import UnsafePointer, stack_allocation
@@ -751,6 +753,29 @@ struct TMATensorTile[
         )
 
     @always_inline
+    fn commit_group(self):
+        """
+        Commits all prior initiated but uncommitted TMA instructions into a group.
+
+        This function behaves the same as `cp_async_bulk_commit_group`, which creates
+        a synchronization point for bulk TMA transfer.
+        """
+        cp_async_bulk_commit_group()
+
+    @always_inline
+    fn wait_group[n: Int = 0](self):
+        """
+        Wait for the completion of asynchronous copy until a specified number of groups are waiting.
+
+        This funtion behaves the same as `cp_async_bulk_wait_group`, which causes causes the executing
+        thread to wait until a specified number of the most recent TMA copy are pending.
+
+        Parameters:
+            n: The number of pending groups left.
+        """
+        cp_async_bulk_wait_group[n]()
+
+    @always_inline
     fn smem_tensormap_init(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
@@ -1172,29 +1197,19 @@ def create_tma_tile[
     """
     # the last dimension of smem shape has to be smaller or equals to the
     # swizzle bytes.
-    alias swizzle_bytes = tile_sizes[tensor.rank - 1] * sizeof[tensor.dtype]()
+    alias swizzle_rows_bytes = tile_sizes[tensor.rank - 1] * sizeof[
+        tensor.dtype
+    ]()
 
     @parameter
-    if swizzle_mode == TensorMapSwizzle.SWIZZLE_32B:
+    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         constrained[
-            swizzle_bytes <= 32,
+            swizzle_rows_bytes <= swizzle_mode.bytes(),
             "Current swizzle bytes is "
-            + String(swizzle_bytes)
-            + " which exceeds 32B swizzle requirement.",
-        ]()
-    elif swizzle_mode == TensorMapSwizzle.SWIZZLE_64B:
-        constrained[
-            swizzle_bytes <= 64,
-            "Current swizzle bytes is "
-            + String(swizzle_bytes)
-            + " which exceeds 64B swizzle requirement.",
-        ]()
-    elif swizzle_mode == TensorMapSwizzle.SWIZZLE_128B:
-        constrained[
-            swizzle_bytes <= 128,
-            "Current swizzle bytes is "
-            + String(swizzle_bytes)
-            + " which exceeds 128B swizzle requirement.",
+            + String(swizzle_rows_bytes)
+            + " which exceeds "
+            + String(swizzle_mode.bytes())
+            + "B swizzle requirement.",
         ]()
 
     return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
@@ -1298,7 +1313,9 @@ def create_tma_tile[
                 String(swizzle_mode)
                 + " mode requires K dim multiple of "
                 + String(swizzle_mode.bytes())
-                + "B",
+                + "B. K dim is now "
+                + String(tile_shape[1] * sizeof[type]())
+                + " bytes.",
             ]()
 
         return create_tma_descriptor[type, 2, swizzle_mode](
@@ -1322,7 +1339,9 @@ def create_tma_tile[
                 String(swizzle_mode)
                 + " mode requires K dim multiple of "
                 + String(swizzle_mode.bytes())
-                + "B",
+                + "B. K dim is now "
+                + String(tile_shape[2] * sizeof[type]())
+                + "bytes.",
             ]()
 
         return create_tma_descriptor[type, 3, swizzle_mode](
