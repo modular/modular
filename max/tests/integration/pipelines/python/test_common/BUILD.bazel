@@ -21,6 +21,7 @@ modular_py_library(
         ":ndarray_from_tensor_type",
         ":numpy_encoder",
         ":path",
+        ":process_isolation",
         ":registry",
         ":torch_utils",
     ],
@@ -137,4 +138,13 @@ modular_py_library(
         requirement("transformers"),
         requirement("setuptools"),
     ],
+)
+
+modular_py_library(
+    name = "process_isolation",
+    srcs = [
+        "process_isolation.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
 )

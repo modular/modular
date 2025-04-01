@@ -8,21 +8,20 @@ from __future__ import annotations
 
 import enum
 import functools
-import multiprocessing
 import os
 import sys
 import time
 import traceback
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ProcessPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional, TextIO, TypeVar, Union
+from typing import Callable, Optional, TextIO, Union
 
 import click
 from generate_llm_logits import Flake, generate_llm_logits
 from llama3.verify import DiscrepancyReport, verify
 from max.entrypoints.cli import DevicesOptionType
+from test_common.process_isolation import run_in_isolated_process
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -156,38 +155,6 @@ class TagFilterParamType(click.ParamType):
                     f"Tag filter part {part!r} does not start with '+' or '-'"
                 )
         return TagFilter(must_have=required, must_not_have=forbidden)
-
-
-ReturnT = TypeVar("ReturnT")
-
-
-def run_in_isolated_process(
-    func: Callable[[], ReturnT], timeout: int = 600
-) -> ReturnT:
-    """
-    Execute a function in an isolated process with timeout handling.
-
-    Args:
-        func: The function to execute (with arguments already bound)
-        timeout: Timeout in seconds (default: 10 minutes)
-
-    Returns:
-        The return value from the function, with the same type as func's return type
-    """
-    # Needed for multiprocessing to work nicely with CUDA.
-    ctx = multiprocessing.get_context("spawn")
-
-    # Use that context for the ProcessPoolExecutor
-    with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as executor:
-        future = executor.submit(func)
-
-        try:
-            return future.result(timeout=timeout)
-        except TimeoutError:
-            print(f"Process timed out after {timeout} seconds", file=sys.stderr)
-            executor.shutdown(wait=False, cancel_futures=True)
-
-            raise
 
 
 def generate_llm_logits_nonretrying(
