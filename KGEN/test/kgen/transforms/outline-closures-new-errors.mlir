@@ -16,10 +16,10 @@ kgen.generator @closure_types(%arg0 : index, %arg1 : index) {
 // COM: Ensure that unhandled symbols and types fail the pass.
 
 // CHECK: error: no lifted closure struct found for closure type '!kgen.closure<@invalid, "UNKNOWN" nonescaping>'
-// CHECK: error: no lifted closure method found for closure symbol #kgen<closure.symbol <@invalid, "UNKNOWN", #kgen.closure_method<call>>>
+// CHECK: error: no lifted closure method found for closure symbol #kgen.closure.symbol<@invalid, "UNKNOWN", #kgen.closure_method<call>>
 #type_value = #kgen.type<!kgen.closure<@invalid, "UNKNOWN" nonescaping>,
               {"__call__" :
-              (!kgen.pointer<!kgen.closure<@invalid, "fn" nonescaping>>, index) -> index =
+              (!kgen.pointer<!kgen.closure<@invalid, "UNKNOWN" nonescaping>>, index) -> index =
                #kgen.closure.symbol<@invalid, "UNKNOWN", #kgen.closure_method<call>>}> : !kgen.type
 
 kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x> read_mem) -> index {

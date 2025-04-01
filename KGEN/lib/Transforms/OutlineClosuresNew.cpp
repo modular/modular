@@ -171,9 +171,10 @@ ClosureSymbolAttr ClosureLifter::createClosureSymbolAttr(
       FunctionType::get(cxt, originalArgTypes, resultTypes);
   M::KGEN::FuncTypeGeneratorType originalfuncGenType =
       M::KGEN::FuncTypeGeneratorType::get({}, originalFuncType);
+  // TODO: Add parameters MOCO-1740
   auto closureAttr = ClosureSymbolAttr::get(
       cxt, SymbolRefAttr::get(parent.getSymNameAttr()),
-      StringAttr::get(cxt, name), ClosureMethodAttr::get(cxt, method),
+      StringAttr::get(cxt, name), ClosureMethodAttr::get(cxt, method), {},
       originalfuncGenType);
   return closureAttr;
 }

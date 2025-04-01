@@ -138,3 +138,13 @@ kgen.generator export @bindIt(){
   kgen.param.declare a : !kgen.param_closure<@foo "fn"> = <#kgen.closure<@foo "fn">>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @closureSymbol()
+kgen.generator @closureSymbol(){
+  // CHECK: kgen.param.declare symbol: <!kgen.param_closure<@foo "fn">>
+  // CHECK-SAME: (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index =
+  // CHECK-SAME: <#kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> ?>>>
+  kgen.param.declare symbol : <!kgen.param_closure<@foo "fn">>(!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index =
+    <#kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> ?> >>
+  kgen.return
+}

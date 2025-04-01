@@ -2890,22 +2890,29 @@ TypedAttr KGEN::emitMLIROperationCall(
 // ClosureRefAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseClosureSymbolValue(AsmParser &p, SymbolRefAttr &symbol,
-                                           StringAttr &nestedFunctionName,
-                                           ClosureMethodAttr &method) {
-  if (p.parseLess() || p.parseAttribute(symbol) || p.parseComma() ||
+static ParseResult parseClosureSymbolValue(
+    AsmParser &p, SymbolRefAttr &symbol, StringAttr &nestedFunctionName,
+    ClosureMethodAttr &method, SmallVector<TypedAttr> &paramValues) {
+  if (p.parseAttribute(symbol) || p.parseComma() ||
       p.parseAttribute(nestedFunctionName) || p.parseComma() ||
-      p.parseAttribute(method) || p.parseGreater())
+      p.parseAttribute(method))
     return failure();
+  if (succeeded(p.parseOptionalComma())) {
+    if (parseParameterValues(p, paramValues))
+      return failure();
+  }
   return success();
 }
 
 static void printClosureSymbolValue(AsmPrinter &p, SymbolRefAttr symbol,
                                     StringAttr nestedFunctionName,
-                                    ClosureMethodAttr method) {
-  p << "<";
+                                    ClosureMethodAttr method,
+                                    ArrayRef<TypedAttr> paramValues) {
   p << symbol << ", " << nestedFunctionName << ", " << method;
-  p << ">";
+  if (!paramValues.empty()) {
+    p << ", ";
+    printParameterValues(p, paramValues);
+  }
 }
 
 //===----------------------------------------------------------------------===//
