@@ -46,10 +46,12 @@ class BlockPool:
     @traced
     def __init__(
         self,
+        memory_tier: MemoryTier,
         total_num_blocks: int,
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
     ):
+        self.memory_tier = memory_tier
         self.total_num_blocks = total_num_blocks
         self.enable_prefix_caching = enable_prefix_caching
         self.enable_runtime_checks = enable_runtime_checks
@@ -80,7 +82,7 @@ class BlockPool:
         self.kv_cache_agent_queue: multiprocessing.Queue | None = None
 
     @traced
-    def _commit_into_prefix_cache(
+    def commit_into_prefix_cache(
         self,
         block_hash: BlockHashType,
         block: KVCacheBlock,
@@ -103,12 +105,12 @@ class BlockPool:
             return
 
         logger.debug(
-            f"Updating KV Cache Agent with block {hash_value}, memory tier {MemoryTier.MEMORY_TIER_GPU}, update type {UpdateType.UPDATE_TYPE_ADDED}"
+            f"Updating KV Cache Agent with block {hash_value}, memory tier {self.memory_tier}, update type {UpdateType.UPDATE_TYPE_ADDED}"
         )
         self.kv_cache_agent_queue.put(
             KVCacheChangeMessage(
                 cache_id=str(hash_value),
-                memory_tier=MemoryTier.MEMORY_TIER_GPU,
+                memory_tier=self.memory_tier,
                 update_type=UpdateType.UPDATE_TYPE_ADDED,
             )
         )
@@ -140,7 +142,7 @@ class BlockPool:
 
             return prefix_cache_block
 
-        self._commit_into_prefix_cache(block_hash, block)
+        self.commit_into_prefix_cache(block_hash, block)
         return None
 
     @traced
@@ -166,18 +168,18 @@ class BlockPool:
 
         # Notify KV Cache Agent of update
         logger.debug(
-            f"Updating KV Cache Agent with block {hash_value}, memory tier {MemoryTier.MEMORY_TIER_GPU}, update type {UpdateType.UPDATE_TYPE_ADDED}"
+            f"Updating KV Cache Agent with block {hash_value}, memory tier {self.memory_tier}, update type {UpdateType.UPDATE_TYPE_ADDED}"
         )
         self.kv_cache_agent_queue.put(
             KVCacheChangeMessage(
                 cache_id=str(hash_value),
-                memory_tier=MemoryTier.MEMORY_TIER_GPU,
+                memory_tier=self.memory_tier,
                 update_type=UpdateType.UPDATE_TYPE_REMOVED,
             )
         )
 
     @traced
-    def alloc_block(self) -> KVCacheBlock:
+    def alloc_block(self) -> tuple[KVCacheBlock, BlockHashType | None]:
         """Allocate a block from the free block queue."""
 
         # First allocate block
@@ -192,7 +194,7 @@ class BlockPool:
 
         curr_block.ref_cnt += 1
         assert curr_block.block_hash is None
-        return curr_block
+        return curr_block, block_hash
 
     @traced
     def free_block(self, block: KVCacheBlock) -> None:

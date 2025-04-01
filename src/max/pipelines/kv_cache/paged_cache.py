@@ -37,6 +37,9 @@ from max.graph import (
 )
 from max.pipelines.context import InputContext
 from max.profiler import traced
+from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
+    MemoryTier,
+)
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 
@@ -256,6 +259,7 @@ class PagedKVCacheManager(KVCacheManager):
         session: InferenceSession,
         cache_memory: int,
         page_size: int = 128,
+        enable_paging_to_host: bool = False,
         enable_runtime_checks: bool = False,
     ):
         """
@@ -270,6 +274,7 @@ class PagedKVCacheManager(KVCacheManager):
             cache_memory: The total amount of memory available for caching.
                 This is aggregated across all devices.
             page_size: The number of tokens that will be stored in a single block.
+            enable_paging_to_host: Whether to enable paging to host memory.
             enable_runtime_checks: Whether to enable runtime correctness checks.
         """
         # The number of tokens in a single block.
@@ -322,7 +327,7 @@ class PagedKVCacheManager(KVCacheManager):
             )
 
         logger.info(
-            f"Paged KVCache Manager allocated {self.total_num_pages} pages using {single_page_size_bytes_str} per page"
+            f"Paged KVCache Manager allocated {self.total_num_pages} device pages using {single_page_size_bytes_str} per page"
         )
 
         # call our base class constructor
@@ -337,9 +342,9 @@ class PagedKVCacheManager(KVCacheManager):
         )
 
         # Initialize the block buffers for each device.
-        self.tensors: list[Tensor] = []
+        self.device_tensors: list[Tensor] = []
         for device in self.devices:
-            self.tensors.append(
+            self.device_tensors.append(
                 Tensor.zeros(
                     self.block_shape(),  # type: ignore
                     self.params.dtype,
@@ -347,9 +352,45 @@ class PagedKVCacheManager(KVCacheManager):
                 )
             )
 
+        self.host_tensor = None
+        self.total_num_host_pages = 0
+        if enable_paging_to_host:
+            # If we are using paging blocks to CPU, the model must be running on a GPU.
+            for device in self.devices:
+                if device.is_host:
+                    raise ValueError(
+                        "Paging to host is only supported for models running on GPUs."
+                    )
+
+            # Use 50GB of host memory for CPU blocks.
+            GiB = 1024 * 1024 * 1024
+            self.total_num_host_pages = 50 * GiB // single_page_size_bytes
+            assert self.total_num_host_pages > 0
+
+            logger.warning(
+                "Paged KVCache Manager will offload GPU blocks to host memory. This is an experimental feature and may not work correctly."
+            )
+            logger.info(
+                f"Paged KVCache Manager allocated {self.total_num_host_pages} host pages using {single_page_size_bytes_str} per page."
+            )
+
+            # create a host tensor
+            self.host_tensor = Tensor.zeros(
+                self.block_shape(self.total_num_host_pages),  # type: ignore
+                self.params.dtype,
+                device=Device.cpu(),
+            )
+
         # Initialize block manager
+        device_memory_tier = (
+            MemoryTier.MEMORY_TIER_CPU
+            if devices[0].is_host
+            else MemoryTier.MEMORY_TIER_GPU
+        )
         self.block_manager = BlockManager(
+            device_memory_tier=device_memory_tier,
             total_num_blocks=self.total_num_pages,
+            total_num_host_blocks=self.total_num_host_pages,
             block_size=self.page_size,
             enable_prefix_caching=self.params.enable_prefix_caching,
             enable_runtime_checks=enable_runtime_checks,
@@ -423,11 +464,14 @@ class PagedKVCacheManager(KVCacheManager):
 
     def block_shape(
         self,
+        total_num_pages: int | None = None,
         is_parameterized: bool = False,
     ) -> list[int | str]:
+        if total_num_pages is None:
+            total_num_pages = self.total_num_pages
         return self._block_shape(
             self.params,
-            self.total_num_pages,
+            total_num_pages,
             self.page_size,
             self.num_layers,
             is_parameterized,
@@ -467,11 +511,19 @@ class PagedKVCacheManager(KVCacheManager):
         self.block_manager.reuse_blocks_from_prefix_cache(data)
 
     @traced
-    def _enqueue_and_reset_copy_ops(self, seq_id: int) -> None:
+    def _enqueue_and_reset_copy_ops(
+        self, seq_id: int, skip_req_copy_ops: bool = False
+    ) -> None:
         """Enqueue copy ops for a given sequence and clear the list."""
-        copy_ops = self.block_manager.get_req_copy_ops(seq_id)
+        copy_ops = self.block_manager.d2h_eviction_copy_ops
         for copy_op in copy_ops:
             self._enqueue_block_copy(copy_op)
+        self.block_manager.reset_d2h_eviction_copy_ops()
+
+        copy_ops = self.block_manager.get_req_copy_ops(seq_id)
+        if not skip_req_copy_ops:
+            for copy_op in copy_ops:
+                self._enqueue_block_copy(copy_op)
         self.block_manager.reset_req_copy_ops(seq_id)
 
     @traced
@@ -491,7 +543,7 @@ class PagedKVCacheManager(KVCacheManager):
         try:
             self.block_manager.allocate_new_blocks(data, num_steps)
         except RuntimeError:
-            self.block_manager.reset_req_copy_ops(seq_id)
+            self._enqueue_and_reset_copy_ops(seq_id, skip_req_copy_ops=True)
             return False
 
         self._enqueue_and_reset_copy_ops(seq_id)
@@ -583,7 +635,7 @@ class PagedKVCacheManager(KVCacheManager):
         for i, device in enumerate(self.devices):
             ret_list.append(
                 RaggedKVCacheInputs(
-                    blocks=self.tensors[i],
+                    blocks=self.device_tensors[i],
                     cache_lengths=cache_lengths_host.to(device=device),
                     lookup_table=lut_table_host.to(device=device),
                     max_lengths=max_lengths_host,
@@ -657,19 +709,64 @@ class PagedKVCacheManager(KVCacheManager):
 
     @traced
     def _enqueue_block_copy(self, copy_op: BlockCopyOp) -> None:
+        copy_type = copy_op.block_copy_type
         dst_idx = copy_op.dst.block_id
         src_idx = copy_op.src.block_id
-        if copy_op.block_copy_type == BlockCopyType.D2D_COW:
+        if copy_type == BlockCopyType.D2D_COW:
             # TODO E2EOPT-142: Schedule each memcpy on a different stream
             self.cow_blocks_copied += 1
-            for device_tensor in self.tensors:
+            for device_tensor in self.device_tensors:
                 device_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
                     device_tensor[src_idx, :, :, :, :, :]
                 )
-        else:
-            raise NotImplementedError(
-                f"Unsupported block copy type: {copy_op.block_copy_type}"
+        elif copy_type == BlockCopyType.H2D_MEMCPY:
+            # This is a cache hit
+            logger.debug(
+                f"H2D: Copying block {dst_idx} <- {src_idx} (CPU Cache Hit)"
             )
+            dst_dev = copy_op.dst
+            src_host = copy_op.src
+            host_block_pool = self.block_manager.host_block_pool
+            assert host_block_pool is not None
+
+            # Commit the dst block into the device prefix cache.
+            device_block_pool = self.block_manager.device_block_pool
+            device_block_pool.commit_into_prefix_cache(
+                copy_op.block_hash, dst_dev
+            )
+
+            # Release the host block.
+            host_block_pool.free_block(src_host)
+
+            # Copy the data from the host to the devices.
+            assert self.host_tensor is not None
+            for device_tensor in self.device_tensors:
+                device_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
+                    self.host_tensor[src_idx, :, :, :, :, :]
+                )
+        elif copy_type == BlockCopyType.D2H_MEMCPY:
+            # This is a eviction
+            logger.debug(
+                f"D2H: Copying block {dst_idx} <- {src_idx} (GPU Block Evicted)"
+            )
+            dst_host = copy_op.dst
+            host_block_pool = self.block_manager.host_block_pool
+            assert host_block_pool is not None
+
+            # We already committed the dst_host block into the host prefix cache.
+
+            # Release host block.
+            host_block_pool.free_block(dst_host)
+
+            # Copy the data from device 0 to the host. We assume that all
+            # devices have the same data.
+            assert self.host_tensor is not None
+            device_tensor_rank0 = self.device_tensors[0]
+            self.host_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
+                device_tensor_rank0[src_idx, :, :, :, :, :]
+            )
+        else:
+            raise NotImplementedError(f"Unknown block copy type: {copy_type}")
 
     @property
     def free_blocks(self) -> set[int]:
@@ -736,11 +833,14 @@ class PagedKVCacheManagerFA3Fallback(PagedKVCacheManager):
 
     def block_shape(
         self,
+        total_num_pages: int | None = None,
         is_parameterized: bool = False,
     ) -> list[int | str]:
+        if total_num_pages is None:
+            total_num_pages = self.total_num_pages
         return self._block_shape(
             self.params,
-            self.total_num_pages,
+            total_num_pages,
             self.page_size,
             self.num_layers,
             is_parameterized,

@@ -30,6 +30,9 @@ from collections.abc import Iterable
 import numpy as np
 from max.pipelines.context import InputContext
 from max.profiler import traced
+from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
+    MemoryTier,
+)
 from max.support.math import ceildiv
 
 from .block_pool import BlockPool
@@ -48,7 +51,9 @@ class BlockManager:
     @traced
     def __init__(
         self,
+        device_memory_tier: MemoryTier,
         total_num_blocks: int,
+        total_num_host_blocks: int,
         block_size: int,
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
@@ -59,11 +64,23 @@ class BlockManager:
         # Whether to enable prefix caching.
         self.enable_prefix_caching = enable_prefix_caching
 
+        # A pool of device blocks.
         self.device_block_pool = BlockPool(
+            device_memory_tier,
             total_num_blocks,
             enable_prefix_caching,
             enable_runtime_checks,
         )
+
+        # A pool of host blocks.
+        self.host_block_pool: BlockPool | None = None
+        if total_num_host_blocks > 0:
+            self.host_block_pool = BlockPool(
+                MemoryTier.MEMORY_TIER_CPU,
+                total_num_host_blocks,
+                enable_prefix_caching,
+                enable_runtime_checks,
+            )
 
         # Mapping from request ID to blocks to track the blocks allocated
         # for each request, so that we can free the blocks when the request
@@ -78,9 +95,13 @@ class BlockManager:
         )
 
         # Mapping from request ID to block copy operations.
+        # Note that the BlockCopyOp owns an instance of a Host block.
+        # We should increment it when creating a BlockCopyOp and decrement it
+        # when the block copy operation is deleted.
         self.req_to_block_copy_ops: dict[int, list[BlockCopyOp]] = defaultdict(
             list
         )
+        self.d2h_eviction_copy_ops: list[BlockCopyOp] = []
 
         # Cache hit rate metrics.
         self.prompt_tokens = 0
@@ -157,10 +178,6 @@ class BlockManager:
         orig_start_idx = ctx.start_idx
 
         if len(prefix_cache_blocks) > 0:
-            # Touch the computed blocks to make sure they won't be evicted.
-            for block in prefix_cache_blocks:
-                self.device_block_pool.touch(block)
-
             # Since we got cache hits, clear out existing uncommitted blocks
             self.release_uncommitted_blocks(ctx)
 
@@ -195,7 +212,10 @@ class BlockManager:
             # We can only perform COW if we can allocate a new block to copy into
             if self.device_block_pool.free_block_queue:
                 # Append them to the request's blocks.
-                fresh_block = self.device_block_pool.alloc_block()
+                block_hash = partial_block.block_hash
+                assert block_hash is not None
+
+                fresh_block = self.allocate_device_block()
                 req_blocks.append(fresh_block)
                 ctx.bump_token_indices(
                     start_idx=tokens_matched,
@@ -207,6 +227,7 @@ class BlockManager:
                     dst=fresh_block,
                     src=partial_block,
                     num_tokens=tokens_matched,
+                    block_hash=block_hash,
                 )
                 self.req_to_block_copy_ops[seq_id].append(cow_op)
 
@@ -243,12 +264,43 @@ class BlockManager:
         device_prefix_cache = (
             self.device_block_pool.block_hash_to_committed_block
         )
+        host_prefix_cache = (
+            self.host_block_pool.block_hash_to_committed_block
+            if self.host_block_pool is not None
+            else None
+        )
         for block_hash in uncommitted_block_hashes:
             hash_value = block_hash.value
-            if hash_value not in device_prefix_cache:
+            if hash_value in device_prefix_cache:
+                block = device_prefix_cache[hash_value]
+                blocks.append(block)
+                self.device_block_pool.touch(block)
+            elif (
+                host_prefix_cache is not None
+                and hash_value in host_prefix_cache
+                and len(self.device_block_pool.free_block_queue) > 0
+            ):
+                assert self.host_block_pool is not None
+
+                host_block = host_prefix_cache[hash_value]
+                assert host_block.block_hash is not None
+                self.host_block_pool.touch(host_block)
+
+                # Allocate a new device block.
+                device_block = self.allocate_device_block()
+                blocks.append(device_block)
+
+                # Record a H2D block copy operation.
+                h2d_op = BlockCopyOp(
+                    block_copy_type=BlockCopyType.H2D_MEMCPY,
+                    src=host_block,
+                    dst=device_block,
+                    num_tokens=self.block_size,
+                    block_hash=host_block.block_hash,
+                )
+                self.req_to_block_copy_ops[seq_id].append(h2d_op)
+            else:
                 break
-            block = device_prefix_cache[hash_value]
-            blocks.append(block)
 
         return blocks
 
@@ -382,10 +434,52 @@ class BlockManager:
                 f"Cannot get {num_new_blocks} free blocks from the free block queue"
             )
         for _ in range(num_new_blocks):
-            new_block = self.device_block_pool.alloc_block()
+            new_block = self.allocate_device_block()
             req_blocks.append(new_block)
 
         self.assert_runtime_invariants(ctx)
+
+    @traced
+    def maybe_offload_gpu_block_to_host(
+        self, gpu_block: KVCacheBlock, old_hash: BlockHashType | None
+    ) -> None:
+        # Can't swap if there is no host block pool.
+        if self.host_block_pool is None:
+            return
+
+        # Can't swap if the block was not previously committed.
+        if old_hash is None:
+            return
+
+        # Can't swap if there are no free host blocks.
+        if len(self.host_block_pool.free_block_queue) == 0:
+            return
+
+        # Should not swap if another block with the same hash is present.
+        if old_hash.value in self.host_block_pool.block_hash_to_committed_block:
+            return
+
+        # Allocate a host block
+        host_block, _ = self.host_block_pool.alloc_block()
+
+        # Create a D2H block copy operation.
+        d2h_op = BlockCopyOp(
+            block_copy_type=BlockCopyType.D2H_MEMCPY,
+            src=gpu_block,
+            dst=host_block,
+            num_tokens=self.block_size,
+            block_hash=old_hash,
+        )
+        self.d2h_eviction_copy_ops.append(d2h_op)
+
+        # Commit the host block into the host prefix cache.
+        self.host_block_pool.commit_into_prefix_cache(old_hash, host_block)
+
+    @traced
+    def allocate_device_block(self) -> KVCacheBlock:
+        new_block, block_hash = self.device_block_pool.alloc_block()
+        self.maybe_offload_gpu_block_to_host(new_block, block_hash)
+        return new_block
 
     @property
     def cache_hit_rate(self) -> float:
@@ -412,13 +506,17 @@ class BlockManager:
         """Get the block ids for a request."""
         return [block.block_id for block in self.req_to_blocks[seq_id]]
 
-    def get_req_copy_ops(self, seq_id: int) -> list[BlockCopyOp]:
-        """Get the block copy operations for a request."""
-        return self.req_to_block_copy_ops[seq_id]
+    def reset_d2h_eviction_copy_ops(self) -> None:
+        """Reset the D2H eviction operations."""
+        self.d2h_eviction_copy_ops.clear()
 
     def reset_req_copy_ops(self, seq_id: int) -> None:
         """Reset the block copy operations for a request."""
         self.req_to_block_copy_ops[seq_id].clear()
+
+    def get_req_copy_ops(self, seq_id: int) -> list[BlockCopyOp]:
+        """Get the block copy operations for a request."""
+        return self.req_to_block_copy_ops[seq_id]
 
     @traced
     def assert_runtime_invariants(self, ctx: InputContext) -> None:

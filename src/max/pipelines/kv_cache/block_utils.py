@@ -127,6 +127,7 @@ class BlockCopyOp:
     dst: KVCacheBlock
     src: KVCacheBlock
     num_tokens: int
+    block_hash: BlockHashType
 
 
 class FreeKVCacheBlockQueue:
