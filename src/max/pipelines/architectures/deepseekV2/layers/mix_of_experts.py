@@ -162,7 +162,7 @@ class MoE(Module):
         up_projs = topk_up_proj @ hidden_states
 
         # (seq_len, k, h, w) @ (seq_len, 1, w, 1) -> (seq_len, k, h, 1)
-        gate_projs = ops.silu(topk_gate_proj @ hidden_states)
+        gate_projs = topk_gate_proj @ hidden_states
 
         # apply silu to gate_projs with cast to float32 (MODELS-645)
         gate_projs = ops.silu(gate_projs.cast(DType.float32)).cast(
