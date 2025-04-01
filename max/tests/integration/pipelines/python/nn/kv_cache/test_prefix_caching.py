@@ -738,11 +738,11 @@ async def test_prefix_caching_cow() -> None:
     run_forward_cow(
         seq_id=1, prompt=np.array([10, 11, 12, 13, 14, 22]), cache_idx=5
     )
-    assert kv_manager.cow_blocks_copied == 1
+    assert kv_manager.d2d_blocks_copied == 1
     run_forward_cow(seq_id=2, prompt=np.array([10, 11, 22]), cache_idx=2)
-    assert kv_manager.cow_blocks_copied == 2
+    assert kv_manager.d2d_blocks_copied == 2
     run_forward_cow(seq_id=3, prompt=np.array([10, 11, 12]), cache_idx=2)
-    assert kv_manager.cow_blocks_copied == 3
+    assert kv_manager.d2d_blocks_copied == 3
 
 
 @pytest.mark.asyncio
