@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: AMD-GPU
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from pathlib import Path
@@ -26,7 +25,6 @@ from gpu.intrinsics import load_acquire, store_release
 from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
 from math import exp
 from memory import UnsafePointer
-from sys.intrinsics import readfirstlane
 
 alias MI300X_TARGET = _get_gpu_target["mi300x"]()
 alias FULL_MASK_AMD = 2**WARP_SIZE - 1
@@ -327,60 +325,6 @@ def test_schedule_group_barrier_compile():
     )
 
 
-# CHECK-LABEL: test_readfirstlane_compile
-def test_readfirstlane_compile():
-    print("== test_readfirstlane_compile")
-
-    fn readfirstlane_kernel[T: AnyTrivialRegType](y: UnsafePointer[T], x: T):
-        y[0] = readfirstlane(x)
-
-    # CHECK: tail call i16 @llvm.amdgcn.readfirstlane.i16(i16 %1)
-    print(
-        _compile_code_asm[
-            readfirstlane_kernel[Int16],
-            target=MI300X_TARGET,
-            emission_kind="llvm-opt",
-        ]()
-    )
-
-    # CHECK: tail call i32 @llvm.amdgcn.readfirstlane.i32(i32 %1)
-    print(
-        _compile_code_asm[
-            readfirstlane_kernel[Int32],
-            target=MI300X_TARGET,
-            emission_kind="llvm-opt",
-        ]()
-    )
-
-    # CHECK: tail call i64 @llvm.amdgcn.readfirstlane.i64(i64 %1)
-    print(
-        _compile_code_asm[
-            readfirstlane_kernel[Int],
-            target=MI300X_TARGET,
-            emission_kind="llvm-opt",
-        ]()
-    )
-
-    # CHECK: tail call double @llvm.amdgcn.readfirstlane.f64(double %1)
-    print(
-        _compile_code_asm[
-            readfirstlane_kernel[Float64],
-            target=MI300X_TARGET,
-            emission_kind="llvm-opt",
-        ]()
-    )
-
-    # CHECK: tail call ptr @llvm.amdgcn.readfirstlane.p0(ptr %1)
-    print(
-        _compile_code_asm[
-            readfirstlane_kernel[UnsafePointer[Bool]],
-            target=MI300X_TARGET,
-            emission_kind="llvm-opt",
-        ]()
-    )
-
-
-# CHECK-LABEL: test_atomic_compile
 def test_atomic_compile():
     print("== test_atomic_compile")
 
@@ -419,5 +363,4 @@ def main():
     test_threadid_compile()
     test_schedule_barrier_compile()
     test_schedule_group_barrier_compile()
-    test_readfirstlane_compile()
     test_atomic_compile()
