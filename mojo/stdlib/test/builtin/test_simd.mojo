@@ -27,6 +27,7 @@ from testing import (
 
 from utils import IndexList, StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
+from bit import count_leading_zeros
 
 
 def test_cast():
@@ -1974,6 +1975,13 @@ def test_is_power_of_two_simd():
     assert_equal(Int64.MIN.is_power_of_two(), False)
 
 
+def test_comptime():
+    alias v = Int32(0b1111_1111)
+    alias n = count_leading_zeros(v)
+    # Verify that count_leading_zeros works at comptime.
+    assert_equal(n, 24)
+
+
 def main():
     test_abs()
     test_add()
@@ -2033,4 +2041,5 @@ def main():
     test_reversed()
     test_large_int_types()
     test_is_power_of_two_simd()
+    test_comptime()
     # TODO: add tests for __and__, __or__, anc comparison operators

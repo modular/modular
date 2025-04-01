@@ -130,3 +130,6 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
   `WritableCollectionElement`.
 
 ### 🛠️ Fixed
+
+- [#3847](https://github.com/modular/max/issues/3847) - Count leading zeros
+  can't be used on SIMD at compile time.
