@@ -53,9 +53,7 @@ fn assert_sorted_string(mut list: List[String]) raises:
         )
 
 
-fn assert_sorted[
-    type: ComparableCollectionElement
-](mut list: List[type]) raises:
+fn assert_sorted[T: ComparableCollectionElement](mut list: List[T]) raises:
     for i in range(1, len(list)):
         assert_true(list[i] >= list[i - 1], String("error at index: ", i))
 
