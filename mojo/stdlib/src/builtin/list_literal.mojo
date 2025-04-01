@@ -655,6 +655,8 @@ struct VariadicPack[
     of the pack.
     """
 
+    # Returns all the elements in a kgen.pack.
+    # Useful for FFI, such as calling printf. Otherwise, avoid this if possible.
     @doc_private
     @always_inline("nodebug")
     fn get_loaded_kgen_pack(self) -> Self._loaded_kgen_pack_type:

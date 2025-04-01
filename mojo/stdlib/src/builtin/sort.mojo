@@ -447,58 +447,6 @@ fn partition[
     _partition[_cmp_fn](span, k)
 
 
-fn partition[
-    origin: MutableOrigin, //,
-    cmp_fn: fn (Int, Int) capturing [_] -> Bool,
-](span: Span[Int, origin], k: Int):
-    """Partition the input buffer inplace such that first k elements are the
-    largest (or smallest if cmp_fn is < operator) elements.
-    The ordering of the first k elements is undefined.
-
-    Parameters:
-        origin: Origin of span.
-        cmp_fn: Comparison functor of (type, type) capturing [_] -> Bool type.
-
-    Args:
-        span: Input buffer.
-        k: Index of the partition element.
-    """
-
-    @parameter
-    fn _cmp_fn(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return cmp_fn(lhs.data, rhs.data)
-
-    _partition[_cmp_fn](span, k)
-
-
-fn partition[
-    dtype: DType,
-    origin: MutableOrigin, //,
-    cmp_fn: fn (Scalar[dtype], Scalar[dtype]) capturing [_] -> Bool,
-](span: Span[Scalar[dtype], origin], k: Int):
-    """Partition the input buffer inplace such that first k elements are the
-    largest (or smallest if cmp_fn is < operator) elements.
-    The ordering of the first k elements is undefined.
-
-    Parameters:
-        dtype: DType of the underlying data.
-        origin: Origin of span.
-        cmp_fn: Comparison functor of (type, type) capturing [_] -> Bool type.
-
-    Args:
-        span: Input buffer.
-        k: Index of the partition element.
-    """
-
-    @parameter
-    fn _cmp_fn(
-        lhs: _SortWrapper[Scalar[dtype]], rhs: _SortWrapper[Scalar[dtype]]
-    ) -> Bool:
-        return cmp_fn(lhs.data, rhs.data)
-
-    _partition[_cmp_fn](span, k)
-
-
 # ===-----------------------------------------------------------------------===#
 # sort
 # ===-----------------------------------------------------------------------===#
@@ -578,35 +526,6 @@ fn sort[
 
     @parameter
     fn _cmp_fn(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return cmp_fn(lhs.data, rhs.data)
-
-    _sort[_cmp_fn, stable=stable](span)
-
-
-fn sort[
-    dtype: DType,
-    origin: MutableOrigin, //,
-    cmp_fn: fn (Scalar[dtype], Scalar[dtype]) capturing [_] -> Bool,
-    *,
-    stable: Bool = False,
-](span: Span[Scalar[dtype], origin]):
-    """Sort the list inplace.
-    The function doesn't return anything, the list is updated inplace.
-
-    Parameters:
-        dtype: DType type of the underlying data.
-        origin: Origin of span.
-        cmp_fn: The comparison function.
-        stable: Whether the sort should be stable.
-
-    Args:
-        span: The span to be sorted.
-    """
-
-    @parameter
-    fn _cmp_fn(
-        lhs: _SortWrapper[Scalar[dtype]], rhs: _SortWrapper[Scalar[dtype]]
-    ) -> Bool:
         return cmp_fn(lhs.data, rhs.data)
 
     _sort[_cmp_fn, stable=stable](span)
