@@ -938,7 +938,7 @@ fn implicitarg_ptr() -> (
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[UInt8, address_space=4],
+        UnsafePointer[UInt8, address_space = _GPUAddressSpace.CONSTANT],
     ]()
 
 
@@ -1104,7 +1104,7 @@ alias block_idx = _BlockIdx()
 fn _get_gcn_idx[offset: Int, dtype: DType = DType.int16]() -> UInt:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[Scalar[dtype], address_space=4],
+        UnsafePointer[Scalar[dtype], address_space = _GPUAddressSpace.CONSTANT],
         has_side_effect=False,
     ]()
     return UInt(Int(ptr.load[alignment=4](offset)))
