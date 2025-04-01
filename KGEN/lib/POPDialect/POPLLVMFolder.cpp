@@ -115,9 +115,11 @@ static TypedAttr convertLLVMToAttr(llvm::Constant *value, Type type) {
     if (!dtype)
       return {};
 
-    // Scalar float result type.
+    // Scalar float/int result type.
     if (auto cf = dyn_cast<llvm::ConstantFP>(value))
       return SIMDAttr::get(DTypeValue(cf->getValue(), *dtype), simdType);
+    if (auto ci = dyn_cast<llvm::ConstantInt>(value))
+      return SIMDAttr::get(DTypeValue(ci->getValue(), *dtype), simdType);
 
     if (isa<llvm::ConstantAggregateZero>(value))
       return SIMDAttr::getZeroValue(simdType);
