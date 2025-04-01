@@ -133,3 +133,6 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 - [#3847](https://github.com/modular/max/issues/3847) - Count leading zeros
   can't be used on SIMD at compile time.
+
+- [#4198](https://github.com/modular/max/issues/4198) - Apple M4
+  is not properly detected with `sys.is_apple_silicon()`.
