@@ -77,7 +77,7 @@ def create_paged_manager(
     max_seq_len: int,
     page_size: int,
     enable_prefix_caching: bool = False,
-    enable_paging_to_host: bool = False,
+    enable_kvcache_swapping_to_host: bool = False,
 ) -> PagedKVCacheManager:
     # Setting kv_heads, head_dim, and num_layers to 1 so it is easy to compute
     # memory usage. Now we know each block is 1 byte.
@@ -92,6 +92,7 @@ def create_paged_manager(
         cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
+        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
     )
 
     session = InferenceSession()
@@ -115,7 +116,6 @@ def create_paged_manager(
         cache_memory=cache_memory,
         page_size=page_size,
         enable_runtime_checks=True,
-        enable_paging_to_host=enable_paging_to_host,
     )
 
     assert kv_manager.total_num_pages == num_blocks
@@ -134,7 +134,7 @@ def create_paged_scheduler(
     enable_prefix_caching=False,
     enable_in_flight_batching=False,
     enable_chunked_prefill=True,
-    enable_paging_to_host=False,
+    enable_kvcache_swapping_to_host=False,
 ) -> TokenGenerationScheduler:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
@@ -143,7 +143,7 @@ def create_paged_scheduler(
         max_seq_len=max_seq_len,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_paging_to_host=enable_paging_to_host,
+        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
     )
 
     # Create a scheduler with a paged manager
@@ -918,8 +918,8 @@ def test_dont_oom_during_cow():
     assert len(actual) == len(expected) and actual == expected
 
 
-@pytest.mark.parametrize("enable_paging_to_host", [True, False])
-def test_paging_to_host(enable_paging_to_host: bool):
+@pytest.mark.parametrize("enable_kvcache_swapping_to_host", [True, False])
+def test_paging_to_host(enable_kvcache_swapping_to_host: bool):
     num_prompts = 3
     prompt_len = 550
     page_size = 128
@@ -934,7 +934,7 @@ def test_paging_to_host(enable_paging_to_host: bool):
         page_size=page_size,
         max_batch_size=999,
         target_tokens_per_batch_ce=200,
-        enable_paging_to_host=enable_paging_to_host,
+        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
         max_seq_len=prompt_len + num_new_tokens,
     )
 
@@ -958,7 +958,7 @@ def test_paging_to_host(enable_paging_to_host: bool):
 
     actual = run_until_completion(scheduler)
 
-    if enable_paging_to_host:
+    if enable_kvcache_swapping_to_host:
         # When paging to host is enabled, our effective cache size increases so
         # we can get cache hits on the latter CE iterations.
         expected = [
