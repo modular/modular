@@ -14,13 +14,11 @@
 
 from __future__ import annotations
 
-from max.graph import ops
 from max.nn import (
     MLPV2,
     AttentionWithRopeV2,
     EmbeddingV2,
     LinearV2,
-    Module,
     OptimizedRotaryEmbedding,
     RMSNormV2,
     Transformer,
@@ -110,10 +108,3 @@ class Mistral(Transformer):
             ),
             return_n_logits=config.return_n_logits,
         )
-
-
-class Gelu(Module):
-    """Basic layer that applies GELU (Gaussian Error Linear Units) on the input."""
-
-    def __call__(self, x):
-        return ops.gelu(x)
