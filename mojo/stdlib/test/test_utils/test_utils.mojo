@@ -14,14 +14,15 @@
 from sys import external_call
 
 from builtin.simd import _simd_apply
+from utils import StaticString
 
 
 @always_inline
 fn libm_call[
     dtype: DType,
     simd_width: Int,
-    fn_fp32: StringLiteral,
-    fn_fp64: StringLiteral,
+    fn_fp32: StaticString,
+    fn_fp64: StaticString,
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     @always_inline("nodebug")
     @parameter

@@ -17,6 +17,7 @@ from collections import Dict
 
 from python import Python, PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
+from utils import StaticString
 
 
 def test_dunder_methods(mut python: Python):
@@ -262,7 +263,7 @@ def test_bool_conversion() -> None:
 fn test_string_conversions() raises -> None:
     fn test_string_literal() -> None:
         try:
-            var mojo_str: StringLiteral = "mojo"
+            var mojo_str: StaticString = "mojo"
             var py_str = PythonObject(mojo_str)
             var py_capitalized = py_str.capitalize()
             var py = Python()

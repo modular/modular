@@ -29,7 +29,7 @@ from testing import (
     assert_true,
 )
 
-from utils import Index
+from utils import Index, StaticString
 from utils.numerics import nan
 
 alias void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
@@ -172,7 +172,7 @@ def test_memcmp_simd():
 
 
 def test_memcmp_extensive[
-    dtype: DType, extermes: StringLiteral = ""
+    dtype: DType, extermes: StaticString = ""
 ](count: Int):
     var ptr1 = UnsafePointer[Scalar[dtype]].alloc(count)
     var ptr2 = UnsafePointer[Scalar[dtype]].alloc(count)

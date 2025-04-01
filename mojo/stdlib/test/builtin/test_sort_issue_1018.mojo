@@ -17,8 +17,10 @@ from random import rand
 
 from memory import Span, UnsafePointer
 
+from utils import StaticString
 
-fn sort_test[D: DType, name: StringLiteral](size: Int, max: Int) raises:
+
+fn sort_test[D: DType, name: StaticString](size: Int, max: Int) raises:
     var p = UnsafePointer[SIMD[D, 1]].alloc(size)
     rand[D](p, size)
     sort(Span[Scalar[D], MutableAnyOrigin](ptr=p, length=size))
