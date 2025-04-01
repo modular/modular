@@ -25,7 +25,9 @@ def test_compile_config_split_k_reduction_scheme(
     session: InferenceSession, compile_config_ops_path: Path
 ):
     tensor_type = TensorType(dtype=DType.int32, shape=[1])
-    with Graph("graph", input_types=[]) as graph:
+    with Graph(
+        "graph", input_types=[], custom_extensions=[compile_config_ops_path]
+    ) as graph:
         graph.output(
             ops.custom("use_splitk_reduction_scheme", [], [tensor_type])[0]
         )
@@ -45,7 +47,9 @@ def test_compile_config_use_logger(
     capfd, session: InferenceSession, compile_config_ops_path: Path
 ):
     tensor_type = TensorType(dtype=DType.int32, shape=[1])
-    with Graph("graph", input_types=[]) as graph:
+    with Graph(
+        "graph", input_types=[], custom_extensions=[compile_config_ops_path]
+    ) as graph:
         graph.output(ops.custom("use_logger", [], [tensor_type])[0])
 
     session.set_mojo_log_level(LogLevel.DEBUG)

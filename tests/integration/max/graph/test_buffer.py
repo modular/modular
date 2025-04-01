@@ -148,7 +148,9 @@ def test_store_slice_load_slice(
 def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
     bt = BufferType(DType.float32, [2, 2])
 
-    with Graph("basic", input_types=[bt]) as graph:
+    with Graph(
+        "basic", input_types=[bt], custom_extensions=[custom_ops_path]
+    ) as graph:
         buffer: BufferValue = graph.inputs[0]
 
         # this custom op is equivalent to buffer[0,0] += 1
@@ -186,6 +188,7 @@ def test_variadic_buffer_handling(
                 BufferType(DType.float32, [2]),
                 BufferType(DType.float32, [2]),
             ],
+            custom_extensions=[custom_ops_path],
         ),
         custom_extensions=[custom_ops_path],
     ).execute(np.arange(2, dtype=np.float32), np.arange(2, dtype=np.float32))[0]

@@ -21,9 +21,13 @@ def counter_ops_path() -> Path:
 @pytest.fixture
 def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     counter_type = _OpaqueType("Counter")
-    maker_graph = Graph("maker", input_types=[], output_types=[counter_type])
+    maker_graph = Graph(
+        "maker",
+        input_types=[],
+        output_types=[counter_type],
+        custom_extensions=[counter_ops_path],
+    )
     with maker_graph:
-        maker_graph.import_kernels(counter_ops_path)
         maker_graph.output(
             ops.custom(
                 "make_counter",
@@ -41,7 +45,12 @@ def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
 @pytest.fixture
 def bumper_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     counter_type = _OpaqueType("Counter")
-    bumper_graph = Graph("bumper", input_types=[counter_type], output_types=[])
+    bumper_graph = Graph(
+        "bumper",
+        input_types=[counter_type],
+        output_types=[],
+        custom_extensions=[counter_ops_path],
+    )
     with bumper_graph:
         ops.inplace_custom(
             "bump_counter",
@@ -59,7 +68,12 @@ def bumper_model(session: InferenceSession, counter_ops_path: Path) -> Model:
 @pytest.fixture
 def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     counter_type = _OpaqueType("Counter")
-    reader_graph = Graph("reader", input_types=[counter_type], output_types=[])
+    reader_graph = Graph(
+        "reader",
+        input_types=[counter_type],
+        output_types=[],
+        custom_extensions=[counter_ops_path],
+    )
     with reader_graph:
         c = ops.inplace_custom(
             "read_counter",
@@ -106,7 +120,10 @@ def test_pyobject_opaque(
     python_type = _OpaqueType("PythonObject")
 
     bumper_graph = Graph(
-        "bumper", input_types=[python_type], output_types=[python_type]
+        "bumper",
+        input_types=[python_type],
+        output_types=[python_type],
+        custom_extensions=[counter_ops_path],
     )
     with bumper_graph:
         x = ops.inplace_custom(

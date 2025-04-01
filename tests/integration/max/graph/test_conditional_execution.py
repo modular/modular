@@ -123,7 +123,11 @@ def test_conditional_inplace_user_supplied(
     bt = BufferType(DType.float32, [2, 2])
     bool_type = TensorType(DType.bool, [])
 
-    with Graph("basic", input_types=[bt, bool_type]) as graph:
+    with Graph(
+        "basic",
+        input_types=[bt, bool_type],
+        custom_extensions=[custom_ops_path],
+    ) as graph:
         buffer: BufferValue = graph.inputs[0]
         cond = graph.inputs[1]
 

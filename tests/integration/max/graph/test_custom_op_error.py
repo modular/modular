@@ -25,6 +25,7 @@ def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
                     values=[],
                     out_types=[TensorType(DType.int32, shape=[42])],
                 ),
+                custom_extensions=[custom_ops_mojopkg],
             ),
             custom_ops_path=str(custom_ops_mojopkg),
         )

@@ -168,6 +168,7 @@ class Graph:
         input_types: Iterable[Type] = (),
         path: Optional[Path] = None,
         *args,
+        custom_extensions: list[Path] = [],
         context: Optional[mlir.Context] = None,
         **kwargs,
     ) -> None:
@@ -219,7 +220,11 @@ class Graph:
         assert isinstance(initial_chain, _ChainValue)
         self._current_chain = initial_chain
 
+        # Initialize the kernel library and load custom extensions paths.
         self._kernel_library = KernelLibrary(self._context)
+        with self._context:
+            for kernels_path in custom_extensions:
+                self._import_kernels(kernels_path)
 
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
@@ -612,7 +617,7 @@ class Graph:
 
         return _graph.frame_loc(mlir.Context.current, tb)
 
-    def import_kernels(self, path: Path):
+    def _import_kernels(self, path: Path):
         self._kernel_library.add_path(path)
 
         # Update the graph attribute for the library paths.
