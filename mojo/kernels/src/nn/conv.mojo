@@ -2785,7 +2785,6 @@ fn conv_shape[
     strides_type: DType,
     dilations_type: DType,
     paddings_type: DType,
-    num_groups_type: DType,
     single_thread_blocking_override: Bool,
 ](
     input_buf: NDBuffer[input_type, input_rank],
@@ -2793,7 +2792,7 @@ fn conv_shape[
     strides_buf: NDBuffer[strides_type, 1],
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
-    num_groups_buf: NDBuffer[num_groups_type, 1],
+    num_groups_scalar: Scalar,
 ) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `conv` operation, and assert the inputs are
@@ -2807,7 +2806,6 @@ fn conv_shape[
         strides_type: Type of the strides tensor.
         dilations_type: Type of the dilations tensor.
         paddings_type: Type of the paddings tensor.
-        num_groups_type: Type of the num_groups tensor.
         single_thread_blocking_override: If True, then the operation is run
           ssynchronouslysing a single thread.
 
@@ -2817,7 +2815,7 @@ fn conv_shape[
         strides_buf: The strides tensor.
         dilations_buf: The dilations tensor.
         paddings_buf: The paddings tensor.
-        num_groups_buf: The num_groups tensor.
+        num_groups_scalar: The num_groups scalar.
 
     Returns:
         The output shape.
@@ -2847,7 +2845,7 @@ fn conv_shape[
     var input_channels = input_buf.dim(input_rank - 1)
     var filter_channels = filter_buf.dim(input_rank - 2)
     var output_channels = filter_buf.dim(input_rank - 1)
-    var num_groups = Int(num_groups_buf[0])
+    var num_groups = Int(num_groups_scalar)
 
     if input_channels != (num_groups * filter_channels):
         raise Error(
