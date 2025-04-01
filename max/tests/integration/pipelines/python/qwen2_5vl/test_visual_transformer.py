@@ -10,61 +10,20 @@ import torch.nn.functional as F
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Weight
-from max.nn import Conv3D
+from max.graph import Graph, TensorType
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+    generate_attention_mask,
     get_window_index,
     mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.visual_transformer import (
-    VisionPatchEmbed,
-    VisionRotaryEmbedding,
-    VisionTransformer,
-)
-from qwen_vl_utils import process_vision_info
-from transformers import (
-    AutoProcessor,
-    Qwen2_5_VLForConditionalGeneration,
+    VisionWindowSdpaAttention,
 )
 
 ACCURACY_RTOL = 1e-4
-ACCURACY_ATOL = 1e-5
+ACCURACY_ATOL = 1e-6
 
-
-@pytest.fixture
-def torch_model_and_inputs():
-    model_id = "Qwen/Qwen2.5-VL-3B-Instruct"
-    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        model_id, torch_dtype="float", device_map="auto"
-    ).visual
-    processor = AutoProcessor.from_pretrained(model_id)
-
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
-                },
-                {"type": "text", "text": "Describe this image."},
-            ],
-        }
-    ]
-
-    text = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    # image mode=RGB size=2044x1372
-    inputs = process_vision_info(messages)
-    processed_inputs = processor(
-        text=[text],
-        images=inputs[0],
-        videos=inputs[1],
-        padding=True,
-        return_tensors="pt",
-    )
-    return model, processed_inputs
+torch.manual_seed(0)
 
 
 def torch_mrope_pos_ids_3d(
@@ -149,6 +108,60 @@ def torch_get_window_index(
     return window_index, cu_window_seqlens
 
 
+def torch_generate_attention_mask(
+    grid_thw: torch.tensor, seq_length: int, cu_window_seqlens: list
+) -> tuple[torch.tensor, torch.tensor]:
+    cu_window_seqlens = torch.tensor(
+        cu_window_seqlens,
+        device=grid_thw.device,
+        dtype=grid_thw.dtype if torch.jit.is_tracing() else torch.int32,
+    )
+    cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
+
+    cu_seqlens = torch.repeat_interleave(
+        grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
+    ).cumsum(
+        dim=0,
+        # Select dtype based on the following factors:
+        #  - FA2 requires that cu_seqlens_q must have dtype int32
+        #  - torch.onnx.export requires that cu_seqlens_q must have same dtype as grid_thw
+        # See https://github.com/huggingface/transformers/pull/34852 for more information
+        dtype=grid_thw.dtype if torch.jit.is_tracing() else torch.int32,
+    )
+    cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+
+    attention_mask_cu_seqlens = torch.zeros(
+        [1, seq_length, seq_length], device=grid_thw.device, dtype=torch.bool
+    )
+    for i in range(1, len(cu_seqlens)):
+        attention_mask_cu_seqlens[
+            ...,
+            cu_seqlens[i - 1] : cu_seqlens[i],
+            cu_seqlens[i - 1] : cu_seqlens[i],
+        ] = True
+
+    attention_mask_cu_window_seqlens = torch.zeros(
+        [1, seq_length, seq_length], device=grid_thw.device, dtype=torch.bool
+    )
+    for i in range(1, len(cu_window_seqlens)):
+        attention_mask_cu_window_seqlens[
+            ...,
+            cu_window_seqlens[i - 1] : cu_window_seqlens[i],
+            cu_window_seqlens[i - 1] : cu_window_seqlens[i],
+        ] = True
+
+    # TODO(KERN-782): This fill_val should be -inf but softmax saturates with NaNs.
+    fill_val = -10000.0
+    attention_mask_cu_seqlens = torch.zeros(
+        (1, seq_length, seq_length)
+    ).masked_fill_(attention_mask_cu_seqlens.logical_not(), fill_val)
+    attention_mask_cu_window_seqlens = torch.zeros(
+        (1, seq_length, seq_length)
+    ).masked_fill_(attention_mask_cu_window_seqlens.logical_not(), fill_val)
+
+    return attention_mask_cu_seqlens, attention_mask_cu_window_seqlens
+
+
 def test_pos_ids():
     image_grid_thw = torch.tensor([[1, 98, 146], [1, 22, 28]])
     spatial_merge_size = 2
@@ -195,223 +208,99 @@ def test_window_index():
     )
 
 
-@pytest.mark.skip(
-    reason="Loads the model and real images. Used for debugging but not needed in CI."
-)
-def test_vision_patch_embed(torch_model_and_inputs):
-    model, inputs = torch_model_and_inputs
-
-    # Inputs to the visual transformer for one image and no videos:
-    # hidden_states of shape resized_width x resized_height = [14308, 1176] and grid_thw of shape [1, 3]
-    pixel_values = inputs["pixel_values"]
-
-    temporal_patch_size = model.patch_embed.temporal_patch_size  # 2
-    patch_size = model.patch_embed.patch_size  # 14
-    in_channels = model.patch_embed.in_channels  # 3
-    embed_dim = model.patch_embed.embed_dim  # 1280
-    kernel_size = (temporal_patch_size, patch_size, patch_size)
-
-    # Get torch model outputs and permute it to match graph API output shape.
-    with torch.no_grad():
-        torch_patch_embeds = model.patch_embed(pixel_values)
-
-    graph_api_pixel_values = pixel_values
-
-    # Register Layer weights in weights_registry.
-    weights_registry = {}
-
-    def weight(name: str, array) -> Weight:
-        """Creates a Weight from the input array of and add it to weights_registry."""
-        if array.dtype != torch.float32:
-            array = array.float()
-        weights_registry[name] = array
-        return Weight(
-            name=name,
-            dtype=DType.float32,
-            shape=array.shape,
-        )
-
-    # Permute the weights of Conv layer.
-    graph_api_conv_weights = torch.permute(
-        model.patch_embed.proj.weight.data, (2, 3, 4, 1, 0)
-    ).contiguous()
-
-    # Get graph api outputs.
-    graph_api_proj = Conv3D(
-        weight("patch_embed", graph_api_conv_weights),
-        bias=None,
-        stride=kernel_size,
-    )
-
-    graph_api_patch_embed = VisionPatchEmbed(
-        proj=graph_api_proj,
-        patch_size=patch_size,
-        temporal_patch_size=temporal_patch_size,
-        in_channels=in_channels,
-        embed_dim=embed_dim,
-    )
-
-    session = InferenceSession()
-    with Graph(
-        "visual",
-        input_types=[
-            TensorType(DType.float32, (pixel_values.shape)),
-        ],
-    ) as graph:
-        graph_api_patch_embeds = graph_api_patch_embed(graph.inputs[0].tensor)
-        graph.output(graph_api_patch_embeds)
-    compiled = session.load(graph, weights_registry=weights_registry)
-    graph_api_output = compiled.execute(graph_api_pixel_values)[0]
-    assert isinstance(graph_api_output, Tensor)
-
-    # Compare results.
-    np.testing.assert_allclose(
-        graph_api_output.to_numpy(),
-        torch_patch_embeds.detach().numpy(),
-        equal_nan=True,
-        rtol=ACCURACY_RTOL,
-        atol=ACCURACY_ATOL,
-    )
-
-
-@pytest.mark.skip(
-    reason="Loads the model and real images. Used for debugging but not needed in CI."
-)
-def test_rot_embed(torch_model_and_inputs):
-    model, inputs = torch_model_and_inputs
-
-    # Inputs to the visual transformer for one image and no videos:
-    # hidden_states of shape resized_width x resized_height = [14308, 1176] and grid_thw of shape [1, 3]
-    pixel_values = inputs["pixel_values"]
-    image_grid_thw = inputs["image_grid_thw"]
-
-    # Permute (batch_size, in_channels, depth, height, width) inputs to (batch_size, depth, height, width, in_channels) for our Graph API.
-    # graph_api_pixel_values = torch.permute(
-    #     pixel_values, (0, 2, 3, 4, 1)
-    # ).contiguous()
-    graph_api_pixel_values = pixel_values
-
-    temporal_patch_size = model.patch_embed.temporal_patch_size  # 2
-    patch_size = model.patch_embed.patch_size  # 14
-    in_channels = model.patch_embed.in_channels  # 3
-    embed_dim = model.patch_embed.embed_dim  # 1280
-    kernel_size = (temporal_patch_size, patch_size, patch_size)
-    spatial_merge_size = model.spatial_merge_size
-    hidden_size = 1280
-    n_heads = 16
-    theta = 10000.0
-    window_size = model.window_size
-    spatial_merge_unit = model.spatial_merge_unit
-
-    # Get torch model outputs and permute it to match graph API output shape.
-    with torch.no_grad():
-        hidden_states = model.patch_embed(pixel_values)
-        rotary_pos_emb = model.rot_pos_emb(image_grid_thw)
-        window_index, cu_window_seqlens = model.get_window_index(image_grid_thw)
-
-        seq_len, _ = hidden_states.size()
-        hidden_states = hidden_states.reshape(
-            seq_len // spatial_merge_unit, spatial_merge_unit, -1
-        )
-        hidden_states = hidden_states[window_index, :, :]
-        hidden_states = hidden_states.reshape(seq_len, -1)
-        rotary_pos_emb = rotary_pos_emb.reshape(
-            seq_len // spatial_merge_unit, spatial_merge_unit, -1
-        )
-        rotary_pos_emb = rotary_pos_emb[window_index, :, :]
-        rotary_pos_emb = rotary_pos_emb.reshape(seq_len, -1)
-        emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
-        torch_model_output = (emb.cos(), emb.sin())[0]
-
-    # Register Layer weights in weights_registry.
-    weights_registry = {}
-
-    def weight(name: str, array) -> Weight:
-        """Creates a Weight from the input array of and add it to weights_registry."""
-        weights_registry[name] = array
-        if array.dtype != torch.float32:
-            array = array.float()
-        return Weight(
-            name=name,
-            dtype=DType.float32,
-            shape=array.shape,
-        )
-
-    # Permute the weights of Conv layer.
-    graph_api_conv_weights = torch.permute(
-        model.patch_embed.proj.weight.data, (2, 3, 4, 1, 0)
-    ).contiguous()
-
-    # Get graph api outputs.
-    graph_api_proj = Conv3D(
-        weight("patch_embed", graph_api_conv_weights),
-        bias=None,
-        stride=kernel_size,
-    )
-    graph_api_patch_embed = VisionPatchEmbed(
-        proj=graph_api_proj,
-        patch_size=patch_size,
-        temporal_patch_size=temporal_patch_size,
-        in_channels=in_channels,
-        embed_dim=embed_dim,
-    )
-
-    rotary_pos_emb = VisionRotaryEmbedding(
-        dim=hidden_size, n_heads=n_heads, theta=theta
-    )
-    visual_transformer = VisionTransformer(
-        patch_embed=graph_api_patch_embed,
-        rotary_pos_emb=rotary_pos_emb,
-        spatial_merge_unit=spatial_merge_unit,
-    )
-
-    rot_pos_ids = mrope_pos_ids_3d(image_grid_thw, spatial_merge_size)
-    window_index, cu_window_seqlens = get_window_index(
+def test_generate_attention_mask():
+    image_grid_thw = torch.tensor([[1, 98, 146], [1, 22, 28]])
+    spatial_merge_size = 2
+    window_size = 112
+    patch_size = 14
+    seq_length = 14308
+    spatial_merge_unit = spatial_merge_size * spatial_merge_size
+    _, cu_window_seqlens = torch_get_window_index(
         image_grid_thw,
         window_size,
         spatial_merge_size,
         patch_size,
         spatial_merge_unit,
     )
+    actual_attention_mask_full, actual_attention_mask_window = (
+        generate_attention_mask(
+            image_grid_thw.detach().numpy(),
+            seq_length,
+            np.array(cu_window_seqlens),
+        )
+    )
+    attention_mask_full, attention_mask_window = torch_generate_attention_mask(
+        image_grid_thw, seq_length, cu_window_seqlens
+    )
 
-    max_grid_size = image_grid_thw[:, 1:].max().item()
+    np.testing.assert_allclose(
+        attention_mask_full.detach().numpy(),
+        actual_attention_mask_full,
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+    np.testing.assert_allclose(
+        attention_mask_window.detach().numpy(),
+        actual_attention_mask_window,
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+
+@pytest.mark.skip(reason="Currently failing with error 1e-2. Still debugging.")
+def test_scaled_dot_product_attention_vision_mask():
+    # batch_size, Target seq_len, embed_dim
+    q = torch.rand(16, 14308, 80, dtype=torch.float32)
+    k = torch.rand(16, 14308, 80, dtype=torch.float32)
+    v = torch.rand(16, 14308, 80, dtype=torch.float32)
+    # batch_size, target seq_len, source seq_len
+    attention_mask = torch.bernoulli(torch.full((1, 14308, 14308), 0.5)).to(
+        torch.bool
+    )
+    dim = 1280
+    n_heads = 16
+    expected_attn_output = F.scaled_dot_product_attention(
+        q, k, v, attention_mask, dropout_p=0.0
+    )
+
+    # TODO(KERN-782): This fill_val should be -inf but softmax saturates with NaNs.
+    fill_val = -10000.0
+    max_attention_mask = torch.zeros(
+        attention_mask.shape, dtype=torch.float32
+    ).masked_fill_(attention_mask.logical_not(), fill_val)
 
     session = InferenceSession()
     with Graph(
         "visual",
         input_types=[
-            TensorType(DType.float32, (pixel_values.shape)),
-            TensorType(DType.int64, (image_grid_thw.shape)),
-            TensorType(DType.int64, (rot_pos_ids.shape)),
-            TensorType(DType.int64, (window_index.shape)),
-            TensorType(DType.int64, (cu_window_seqlens.shape)),
+            TensorType(DType.float32, (q.shape)),
+            TensorType(DType.float32, (k.shape)),
+            TensorType(DType.float32, (v.shape)),
+            TensorType(DType.float32, (attention_mask.shape)),
         ],
     ) as graph:
-        visual_transformer_output = visual_transformer(
-            x=graph.inputs[0].tensor,
-            grid_thw=graph.inputs[1].tensor,
-            rot_pos_ids=graph.inputs[2].tensor,
-            max_grid_size=max_grid_size,
-            window_index=graph.inputs[3].tensor,
-            cu_window_seqlens=graph.inputs[4].tensor,
+        attn_output = VisionWindowSdpaAttention.scaled_dot_product_attention(
+            xq=graph.inputs[0].tensor,
+            xk=graph.inputs[1].tensor,
+            xv=graph.inputs[2].tensor,
+            attention_mask=graph.inputs[3].tensor,
+            dim=dim,
+            n_heads=n_heads,
         )
-        graph.output(visual_transformer_output)
 
-    compiled = session.load(graph, weights_registry=weights_registry)
-    graph_api_output = compiled.execute(
-        graph_api_pixel_values,
-        image_grid_thw,
-        rot_pos_ids,
-        window_index,
-        cu_window_seqlens,
-    )[0]
-    assert isinstance(graph_api_output, Tensor)
+        graph.output(attn_output)
+        compiled = session.load(graph)
+        max_graph_output = compiled.execute(q, k, v, max_attention_mask)[0]
+        assert isinstance(max_graph_output, Tensor)
 
-    # Compare results.
-    np.testing.assert_allclose(
-        graph_api_output.to_numpy(),
-        torch_model_output.detach().float().numpy(),
-        equal_nan=True,
-        rtol=ACCURACY_RTOL,
-        atol=ACCURACY_ATOL,
-    )
+        # Compare results.
+        np.testing.assert_allclose(
+            max_graph_output.to_numpy(),
+            expected_attn_output.detach().numpy(),
+            equal_nan=True,
+            rtol=ACCURACY_RTOL,
+            atol=ACCURACY_ATOL,
+        )
