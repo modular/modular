@@ -17,6 +17,35 @@ from sys import sizeof
 
 from testing import assert_equal, assert_false, assert_true
 
+alias dtypes = (
+    DType.bool,
+    DType.int8,
+    DType.uint8,
+    DType.int16,
+    DType.uint16,
+    DType.int32,
+    DType.uint32,
+    DType.int64,
+    DType.uint64,
+    DType.int128,
+    DType.uint128,
+    DType.int256,
+    DType.uint256,
+    DType.index,
+    DType.float8_e3m4,
+    DType.float8_e5m2,
+    DType.float8_e5m2fnuz,
+    DType.float8_e4m3fn,
+    DType.float8_e4m3fnuz,
+    DType.float8_e4m3,
+    DType.bfloat16,
+    DType.float16,
+    DType.float32,
+    DType.tensor_float32,
+    DType.float64,
+    DType.invalid,
+)
+
 
 fn test_equality() raises:
     assert_true(DType.float32 is DType.float32)
@@ -65,6 +94,10 @@ def test_from_str():
 
     assert_equal(DType._from_str("blahblah"), DType.invalid)
     assert_equal(DType._from_str("DType.blahblah"), DType.invalid)
+
+    @parameter
+    for i in range(len(dtypes)):
+        assert_equal(DType._from_str(String(dtypes[i])), dtypes[i])
 
 
 def main():
