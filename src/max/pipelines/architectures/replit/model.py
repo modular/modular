@@ -10,10 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the replit nn.model."""
 
 from __future__ import annotations
 
 import logging
+import math
 import time
 import warnings
 from collections.abc import Sequence
@@ -23,6 +25,7 @@ import numpy as np
 from max.driver import Device, DeviceSpec, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import GGUFWeights, Weights, WeightsAdapter
 from max.pipelines import (
     KVCacheConfig,
@@ -45,8 +48,8 @@ from max.pipelines.kv_cache import (
 from max.pipelines.log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 
-from .graph import _build_graph
 from .model_config import ReplitConfig
+from .replit import Replit
 
 logger = logging.getLogger("max.pipelines")
 
@@ -279,22 +282,68 @@ class ReplitModel(PipelineModel[TextContext]):
 
         logger.info("Building and compiling model...")
         before = time.perf_counter()
-        graph = _build_graph(
-            self.pipeline_config,
-            self.weights,
-            ReplitConfig.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                n_devices=len(self.devices),
-                kv_cache_config=self.kv_cache_config,
-                cache_dtype=self.encoding.cache_dtype,
-            ),
-            kv_manager=self.kv_manager,
+
+        pipeline_config = self.pipeline_config
+        huggingface_config = self.huggingface_config
+        if self.adapter:
+            state_dict = self.adapter(
+                dict(self.weights.items()),
+                huggingface_config=huggingface_config,
+                pipeline_config=self.pipeline_config,
+            )
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
+
+        kv_params = ReplitConfig.get_kv_params(
             huggingface_config=self.huggingface_config,
+            n_devices=len(self.devices),
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
+        )
+        device_refs = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in pipeline_config.model_config.device_specs
+        ]
+        model_config = ReplitConfig(
+            hidden_size=huggingface_config.d_model,
+            num_attention_heads=huggingface_config.n_heads,
+            num_key_value_heads=kv_params.n_kv_heads,
+            num_hidden_layers=huggingface_config.n_layers,
+            vocab_size=huggingface_config.vocab_size,
             dtype=self.dtype,
+            kv_params=kv_params,
+            return_n_logits=-1 if pipeline_config.enable_echo else 1,
+            attention_multiplier=math.sqrt(1 / kv_params.head_dim),
+            devices=device_refs,
         )
-        model = session.load(
-            graph, weights_registry=self.weights.allocated_weights
+        nn_model = Replit(model_config)
+        nn_model.load_state_dict(state_dict, weight_alignment=1)
+        tokens_type = TensorType(DType.int64, shape=["total_seq_len"])
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"]
         )
+        kv_cache_types = self.kv_manager.input_symbols()[0]
+        with Graph(
+            "replit",
+            input_types=[
+                tokens_type,
+                input_row_offsets_type,
+                *kv_cache_types,
+            ],
+        ) as graph:
+            tokens, input_row_offsets, *kv_cache_inputs = graph.inputs
+            # This is just needed for type checking.
+            kv_cache_tensors = [v.tensor for v in kv_cache_inputs]
+            outputs = nn_model(
+                tokens=tokens.tensor,
+                input_row_offsets=input_row_offsets,
+                kv_cache_inputs=kv_cache_tensors,
+            )
+            graph.output(*outputs)
+
+        model = session.load(graph, weights_registry=nn_model.state_dict())
         after = time.perf_counter()
         logger.info(
             f"Building and compiling model took {after - before:.6f} seconds"
