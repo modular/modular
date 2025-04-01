@@ -743,3 +743,96 @@ async def test_prefix_caching_cow() -> None:
     assert kv_manager.cow_blocks_copied == 2
     run_forward_cow(seq_id=3, prompt=np.array([10, 11, 12]), cache_idx=2)
     assert kv_manager.cow_blocks_copied == 3
+
+
+@pytest.mark.asyncio
+async def test_prefix_caching_rollback_prompt_n_num_step_1() -> None:
+    kv_manager = create_paged_manager(num_blocks=128, page_size=3)
+
+    seq_id = 42
+    ctx = create_text_context(seq_id, np.array([1, 2, 3, 4, 15, 16]))
+    kv_manager.external_claim([seq_id])
+
+    _ = kv_manager.fetch([ctx], num_steps=1)
+    ctx.update(17)
+
+    kv_manager.step([ctx])
+
+    req_blocks = kv_manager.block_manager.req_to_blocks[seq_id]
+    req_hashes = kv_manager.block_manager.req_to_block_hashes[seq_id]
+    # block 1: 1 2 3
+    # block 2: 4 15 16
+    assert ctx.committed_idx == 6
+    assert len(req_blocks) == 2
+    assert len(req_hashes) == 2
+
+    # Whoops, the correct tokens is [1 2 3 4 5 6 7 8]!
+    # Lets reset the ctx.
+    ctx.set_token_indices(start_idx=3, active_idx=4, end_idx=4)
+    assert ctx.next_tokens.tolist() == [4]
+    ctx.update(5)
+    ctx.update(6)
+    ctx.update(7)
+    ctx.update(8)
+    ctx.set_token_indices(start_idx=4)
+    assert ctx.next_tokens.tolist() == [5, 6, 7, 8]
+
+    # Rollback should evict the stale hashes and blocks
+    kv_manager.rollback([ctx])
+
+    req_blocks = kv_manager.block_manager.req_to_blocks[seq_id]
+    req_hashes = kv_manager.block_manager.req_to_block_hashes[seq_id]
+    # block 1: 1 2 3
+    # block 2: 4 ? ?
+    assert ctx.committed_idx == 3
+    assert len(req_blocks) == 2
+    assert len(req_hashes) == 1
+
+
+@pytest.mark.asyncio
+async def test_prefix_caching_rollback_prompt_1_num_step_n() -> None:
+    kv_manager = create_paged_manager(num_blocks=128, page_size=3)
+
+    seq_id = 42
+    ctx = create_text_context(seq_id, np.array([1]))
+    kv_manager.external_claim([seq_id])
+
+    _ = kv_manager.fetch([ctx], num_steps=6)
+    ctx.update(2)
+    ctx.update(3)
+    ctx.update(4)
+    ctx.update(15)
+    ctx.update(16)
+    ctx.update(17)
+
+    kv_manager.step([ctx])
+
+    req_blocks = kv_manager.block_manager.req_to_blocks[seq_id]
+    req_hashes = kv_manager.block_manager.req_to_block_hashes[seq_id]
+    # block 1: 1 2 3
+    # block 2: 4 15 16
+    assert ctx.committed_idx == 6
+    assert len(req_blocks) == 2
+    assert len(req_hashes) == 2
+
+    # Whoops, the correct tokens is [1 2 3 4 5 6 7 8]!
+    # Lets reset the ctx.
+    ctx.set_token_indices(start_idx=3, active_idx=4, end_idx=4)
+    assert ctx.next_tokens.tolist() == [4]
+    ctx.update(5)
+    ctx.update(6)
+    ctx.update(7)
+    ctx.update(8)
+    ctx.set_token_indices(start_idx=4)
+    assert ctx.next_tokens.tolist() == [5, 6, 7, 8]
+
+    # Rollback should evict the stale hashes and blocks
+    kv_manager.rollback([ctx])
+
+    req_blocks = kv_manager.block_manager.req_to_blocks[seq_id]
+    req_hashes = kv_manager.block_manager.req_to_block_hashes[seq_id]
+    # block 1: 1 2 3
+    # block 2: 4 ? ?
+    assert ctx.committed_idx == 3
+    assert len(req_blocks) == 2
+    assert len(req_hashes) == 1
