@@ -81,9 +81,7 @@ fn count_trailing_zeros(val: Int) -> Int:
     Returns:
         The number of trailing zeros of the input.
     """
-    return llvm_intrinsic[
-        "llvm.cttz", __mlir_type.index, has_side_effect=False
-    ](val.value, False.value)
+    return llvm_intrinsic["llvm.cttz", Int, has_side_effect=False](val, False)
 
 
 @always_inline("nodebug")
@@ -284,8 +282,7 @@ fn bit_not[
         NOT of the integer value at position `i` of the input value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    var neg_one = SIMD[dtype, width](-1)
-    return __mlir_op.`pop.simd.xor`(val.value, neg_one.value)
+    return ~val
 
 
 # ===-----------------------------------------------------------------------===#
