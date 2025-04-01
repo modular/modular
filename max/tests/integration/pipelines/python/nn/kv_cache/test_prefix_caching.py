@@ -14,12 +14,16 @@ import numpy as np
 import pytest
 from context_utils import create_text_context
 from max.driver import CPU
-from max.driver.tensor import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines.context import InputContext
-from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
+from max.pipelines.kv_cache import (
+    BlockCopyOp,
+    BlockCopyType,
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedKVCacheManager,
+)
 
 
 def rand(length: int) -> np.ndarray:
@@ -432,9 +436,28 @@ class FakeModel:
             lambda: np.array([])
         )
 
-        # Monkey patch the cow_strided_memcpy_model to use our mock model so that
-        # when COW occurs, we can update the block_projections object.
-        kv_manager.cow_executor.cow_strided_memcpy_model = self.mock_cow_graph()
+        fake_model = self
+
+        def mock_enqueue_block_copy(self, copy_op: BlockCopyOp) -> Any:
+            assert copy_op.block_copy_type == BlockCopyType.D2D_COW
+            block_src = copy_op.src.block_id
+            block_dst = copy_op.dst.block_id
+            num_tokens = copy_op.num_tokens
+
+            assert block_src in fake_model.block_projections
+            assert 0 < num_tokens < fake_model.page_size
+            for token in range(num_tokens):
+                fake_model.block_projections[block_dst][token] = (
+                    fake_model.block_projections[block_src][token]
+                )
+
+            self._orig_enqueue_block_copy(copy_op)
+
+        # Monkey patch the enqueue_block_copy method to use our mock method.
+        kv_manager._orig_enqueue_block_copy = kv_manager._enqueue_block_copy  # type: ignore
+        kv_manager._enqueue_block_copy = mock_enqueue_block_copy.__get__(  # type: ignore
+            kv_manager
+        )
 
     def run(
         self,
@@ -510,48 +533,6 @@ class FakeModel:
                     self.block_projections[block][block_offset] = prefix
 
         return seq_ids_and_new_tokens
-
-    def mock_cow_graph(self) -> Any:
-        class MockGraph:
-            def __init__(
-                self,
-                block_projections: dict[int, dict[int, np.ndarray]],
-                page_size: int,
-            ):
-                self.block_projections = block_projections
-                self.page_size = page_size
-
-            def execute(
-                self,
-                block_dst_idx_tensor: Tensor,
-                block_src_idx_tensor: Tensor,
-                num_tokens_tensor: Tensor,
-                *_,
-            ) -> None:
-                # when the kv_manager attempts to execute the cow strided memcpy
-                # graph, we intercept the call and update the block_projections
-                # object instead.
-                def to_numpy(arr: Tensor | np.ndarray) -> np.ndarray:
-                    if isinstance(arr, Tensor):
-                        arr_tensor: Tensor = arr
-                        return arr_tensor.to_numpy()
-                    return arr
-
-                block_dst_idx_np = to_numpy(block_dst_idx_tensor)
-                block_src_idx_np = to_numpy(block_src_idx_tensor)
-                num_tokens_np = to_numpy(num_tokens_tensor)
-
-                for block_dst, block_src, num_tokens in zip(
-                    block_dst_idx_np, block_src_idx_np, num_tokens_np
-                ):
-                    assert block_src in self.block_projections
-                    assert 0 < num_tokens < self.page_size
-                    for token in range(num_tokens):
-                        self.block_projections[block_dst][token] = (
-                            self.block_projections[block_src][token]
-                        )
-
-        return MockGraph(self.block_projections, self.page_size)
 
 
 @pytest.mark.asyncio
