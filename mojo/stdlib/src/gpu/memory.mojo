@@ -655,7 +655,17 @@ fn _mark_eviction[
     @parameter
     if eviction_policy is CacheEviction.EVICT_NORMAL:
         return 0
+    elif eviction_policy is CacheEviction.EVICT_LAST:
+        return inlined_assembly[
+            "createpolicy.fractional.L2::evict_last.b64 $0;",
+            UInt64,
+            constraints="=l",
+        ]()
     else:
+        constrained[
+            eviction_policy is CacheEviction.EVICT_FIRST,
+            "invalid eviction policy, only support normal, first, and last",
+        ]()
         return inlined_assembly[
             "createpolicy.fractional.L2::evict_first.b64 $0;",
             UInt64,
@@ -746,7 +756,7 @@ fn async_copy[
     alias access_size = _int_to_str[size]()
 
     alias cache_hint = ".L2::cache_hint" if eviction_policy is not CacheEviction.EVICT_NORMAL else ""
-    alias cache_policy = _mark_eviction[eviction_policy]()
+    var cache_policy = _mark_eviction[eviction_policy]()
 
     alias l2_prefetch_substr = ".L2::" + _int_to_str[
         l2_prefetch.value()
