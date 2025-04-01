@@ -509,64 +509,36 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
 
     @parameter
     if dtype is DType.float8_e5m2:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f8e5m2>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2>`,
         )
     elif dtype is DType.float8_e5m2fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`
-                ],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`,
         )
     elif dtype is DType.float8_e4m3fn:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f8e4m3>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3>`,
         )
     elif dtype is DType.float8_e4m3fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"nan"> : !pop.scalar<f8e4m3fnuz>`
-                ],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fnuz>`,
         )
     elif dtype is DType.float16:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f16>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f16>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f16>`,
         )
     elif dtype is DType.bfloat16:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<bf16>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<bf16>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
         )
     elif dtype is DType.float32:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f32>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f32>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f32>`,
         )
     elif dtype is DType.float64:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f64>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f64>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f64>`,
         )
     else:
         constrained[False, "nan only support on floating point types"]()
@@ -647,67 +619,39 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
 
     @parameter
     if dtype is DType.float8_e5m2:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f8e5m2>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2>`,
         )
     elif dtype is DType.float8_e5m2fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"inf"> : !pop.scalar<f8e5m2fnuz>`
-                ],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2fnuz>`,
         )
     elif dtype is DType.float8_e4m3fn:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f8e4m3>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3>`,
         )
     elif dtype is DType.float8_e4m3fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`
-                ],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`,
         )
     elif dtype is DType.float16:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f16>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f16>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f16>`,
         )
     elif dtype is DType.bfloat16:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<bf16>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<bf16>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<bf16>`,
         )
     elif dtype is DType.float32:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f32>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f32>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f32>`,
         )
     elif dtype is DType.float64:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f64>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f64>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f64>`,
         )
     else:
-        constrained[False, "+inf only support on floating point types"]()
+        constrained[False, "+inf only support on floating point dtypes"]()
         return 0
 
 
@@ -732,64 +676,36 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
 
     @parameter
     if dtype is DType.float8_e5m2:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f8e5m2>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2>`,
         )
     elif dtype is DType.float8_e5m2fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"-inf"> : !pop.scalar<f8e5m2fnuz>`
-                ],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2fnuz>`,
         )
     elif dtype is DType.float8_e4m3fn:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f8e4m3>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3>`,
         )
     elif dtype is DType.float8_e4m3fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"-inf"> : !pop.scalar<f8e4m3fnuz>`
-                ],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fnuz>`,
         )
     elif dtype is DType.float16:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f16>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f16>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f16>`,
         )
     elif dtype is DType.bfloat16:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<bf16>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<bf16>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<bf16>`,
         )
     elif dtype is DType.float32:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f32>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f32>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f32>`,
         )
     elif dtype is DType.float64:
-        return rebind[__mlir_type[`!pop.scalar<`, dtype.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f64>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f64>`],
-            ]()
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f64>`,
         )
     else:
         constrained[False, "+inf only support on floating point types"]()
