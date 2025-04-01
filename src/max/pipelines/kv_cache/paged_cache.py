@@ -353,13 +353,25 @@ class PagedKVCacheManager(KVCacheManager):
         self.host_tensor = None
         self.total_num_host_pages = 0
         if params.enable_kvcache_swapping_to_host:
-            # Use 50GB of host memory for CPU blocks.
             GiB = 1024 * 1024 * 1024
-            self.total_num_host_pages = 50 * GiB // single_page_size_bytes
+            host_kvcache_swap_space_gb = params.host_kvcache_swap_space_gb
+            assert host_kvcache_swap_space_gb is not None
+            host_kvcache_swap_space_bytes = int(
+                host_kvcache_swap_space_gb * GiB
+            )
 
-            # Don't exceed 3000 pages. This allows tests to not take forever.
-            self.total_num_host_pages = min(self.total_num_host_pages, 3000)
-            assert self.total_num_host_pages > 0
+            self.total_num_host_pages = (
+                host_kvcache_swap_space_bytes // single_page_size_bytes
+            )
+
+            if self.total_num_host_pages == 0:
+                human_readable_host_swap_space_gb = to_human_readable_bytes(
+                    host_kvcache_swap_space_bytes
+                )
+                raise RuntimeError(
+                    f"Insufficient host swap space to allocate even a single page. "
+                    f"One page requires {single_page_size_bytes_str} but only {human_readable_host_swap_space_gb} are available."
+                )
 
             logger.warning(
                 "Paged KVCache Manager will offload GPU blocks to host memory. This is an experimental feature and may not work correctly."

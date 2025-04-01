@@ -101,6 +101,12 @@ class KVCacheConfig(MAXConfig):
         kv\\_cache\\_workspace = (total\\_free\\_memory \\times device\\_memory\\_utilization) - model\\_weights\\_size
     """
 
+    host_kvcache_swap_space_gb: float = 50.0
+    """The amount of host memory to use for the host KVCache in GiB.
+
+    These space is only allocated when kvcache_swapping_to_host is enabled.
+    """
+
     _available_cache_memory: Optional[int] = None
     """The amount of available cache memory in bytes. This should only be set by internal code."""
 
@@ -112,6 +118,7 @@ class KVCacheConfig(MAXConfig):
             "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. This defaults to false.",
             "enable_kvcache_swapping_to_host": "Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted. This defaults to false.",
             "device_memory_utilization": "The fraction of available device memory that the process should consume. This is used to inform the size of the KVCache workspace: kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size. Default is set to 0.9.",
+            "host_kvcache_swap_space_gb": "The amount of host memory to use for the host KVCache in GiB. This is only used when kvcache_swapping_to_host is enabled. Default is set to 50.0.",
         }
 
 
