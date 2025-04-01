@@ -129,3 +129,12 @@ kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> =
 
 // CHECK: kgen.param.assert <rebind(:i53 42)>, "rebind must fold"
 kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
+
+// COM: Closure Attribute
+
+// CHECK-LABEL: kgen.generator export @bindIt() {
+kgen.generator export @bindIt(){
+  // CHECK-NEXT: kgen.param.declare a: !kgen.param_closure<@foo "fn"> = <#kgen.closure<@foo "fn">>
+  kgen.param.declare a : !kgen.param_closure<@foo "fn"> = <#kgen.closure<@foo "fn">>
+  kgen.return
+}

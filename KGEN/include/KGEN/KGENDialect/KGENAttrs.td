@@ -1199,4 +1199,59 @@ def KGEN_ClosureSymbolAttr : KGENAttr<"ClosureSymbol", "closure.symbol",
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// ClosureAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ClosureAttr : KGENAttr<"Closure", "closure", [
+    TypedAttrInterface]> {
+  let summary = "A placeholder for the parameter captures";
+  let description = [{
+    The `#kgen.closure` attribute represents an uncomputed
+    parametric closure. A parametric closure is a set of parametric
+    values that are captured from the enclosing function. This abstraction
+    is useful in the case where transformations are applied between the
+    the closure definition site and the closure lowering pass that may alter
+    the set of parameters captured.
+
+    Example:
+
+    In the following example we define a closure that captures the parameter
+    value `C`. We want to bind this closure to the "x" parameter of the
+    function `consume`. We must also pass the parameters that the closure
+    depends on, which in this case is just `C` but could include `D` if we
+    apply a transformation between now and when we lift the closure. To
+    postpone the calculation of the captures, we bind an abstract value
+    to the capture struct parameter of `consume` called
+    `#kgen.closure<@foo "fn">`. This placeholder is of type ClosureAttr and
+    represents the parameter captures of the "fn" closure.
+
+    ```mlir
+
+    kgen.generator @foo<C,D>() {
+     %0 = kgen.closure.init()() -> index {
+	         %1 = kgen.param.constant = <mul(C, C)>
+	         kgen.return %1 : index
+      } : (), !kgen.pointer<!kgen.closure<@foo, "fn" registerpassable>>
+      %2 = kgen.call @consume<:type #type_value,
+       :!kgen.param<!kgen.param_closure<@foo "fn">> #kgen.closure<@foo "fn">
+       >(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index
+      kgen.return
+    }
+
+    kgen.generator @consume<x: type,
+                        CAPTURE_INST: !kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>
+                        >(%arg0: !kgen.param<x>) -> index {
+        // BODY OMITTED FOR BREVITY
+    }
+    ```
+  }];
+
+  let parameters = (ins AttributeSelfTypeParameter<"", "ParamClosureType">:$type);
+
+  let assemblyFormat = [{
+    `<` custom<ClosureAttr>(ref($type)) `>`
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD
