@@ -259,14 +259,13 @@ class PagedKVCacheManager(KVCacheManager):
         session: InferenceSession,
         cache_memory: int,
         page_size: int = 128,
-        enable_paging_to_host: bool = False,
         enable_runtime_checks: bool = False,
     ):
         """
         Args:
             params: The KVCacheParams for the given pipeline.
-            max_batch_size: The maximum number of active
-                requests that the manager should support.
+            max_batch_size: The maximum number of active requests that the
+                manager should support.
             max_seq_len: The maximum sequence length we will generate.
             num_layers: The number of layers in the model.
             devices: The devices on which the manager will allocate memory.
@@ -274,7 +273,6 @@ class PagedKVCacheManager(KVCacheManager):
             cache_memory: The total amount of memory available for caching.
                 This is aggregated across all devices.
             page_size: The number of tokens that will be stored in a single block.
-            enable_paging_to_host: Whether to enable paging to host memory.
             enable_runtime_checks: Whether to enable runtime correctness checks.
         """
         # The number of tokens in a single block.
@@ -327,7 +325,7 @@ class PagedKVCacheManager(KVCacheManager):
             )
 
         logger.info(
-            f"Paged KVCache Manager allocated {self.total_num_pages} device pages using {single_page_size_bytes_str} per page"
+            f"Paged KVCache Manager allocated {self.total_num_pages} device pages using {single_page_size_bytes_str} per page."
         )
 
         # call our base class constructor
@@ -354,7 +352,7 @@ class PagedKVCacheManager(KVCacheManager):
 
         self.host_tensor = None
         self.total_num_host_pages = 0
-        if enable_paging_to_host:
+        if params.enable_kvcache_swapping_to_host:
             # Use 50GB of host memory for CPU blocks.
             GiB = 1024 * 1024 * 1024
             self.total_num_host_pages = 50 * GiB // single_page_size_bytes

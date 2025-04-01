@@ -31,11 +31,7 @@ import huggingface_hub
 import torch
 from huggingface_hub import constants as hf_hub_constants
 from huggingface_hub import errors as hf_hub_errors
-from max.driver import (
-    DeviceSpec,
-    devices_exist,
-    scan_available_devices,
-)
+from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
@@ -92,6 +88,9 @@ class KVCacheConfig(MAXConfig):
     enable_prefix_caching: bool = False
     """Whether to enable prefix caching for the paged attention KVCache."""
 
+    enable_kvcache_swapping_to_host: bool = False
+    """Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted."""
+
     device_memory_utilization: float = 0.9
     """The fraction of available device memory that the process should consume.
 
@@ -111,6 +110,7 @@ class KVCacheConfig(MAXConfig):
             "cache_strategy": "Force a specific cache strategy: 'naive' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
             "kv_cache_page_size": "The number of tokens in a single page in the paged KVCache. Default is set to 512.",
             "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. This defaults to false.",
+            "enable_kvcache_swapping_to_host": "Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted. This defaults to false.",
             "device_memory_utilization": "The fraction of available device memory that the process should consume. This is used to inform the size of the KVCache workspace: kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size. Default is set to 0.9.",
         }
 
