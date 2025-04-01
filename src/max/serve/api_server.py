@@ -17,11 +17,7 @@ import uvloop
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from max.pipelines import PipelinesFactory, PipelineTokenizer
-from max.serve.config import (
-    APIType,
-    Settings,
-    api_prefix,
-)
+from max.serve.config import APIType, Settings
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
@@ -36,7 +32,7 @@ from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
-from max.serve.router import kserve_routes, openai_routes
+from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
 from max.serve.telemetry.common import (
     configure_logging,
     configure_metrics,
@@ -49,6 +45,7 @@ from uvicorn import Config, Server
 ROUTES = {
     APIType.KSERVE: kserve_routes,
     APIType.OPENAI: openai_routes,
+    APIType.SAGEMAKER: sagemaker_routes,
 }
 
 logger = logging.getLogger("max.serve")
@@ -161,9 +158,7 @@ def fastapi_app(
     app.add_api_route("/version", version)
 
     for api_type in settings.api_types:
-        app.include_router(
-            ROUTES[api_type].router, prefix=api_prefix(settings, api_type)
-        )
+        app.include_router(ROUTES[api_type].router)
 
     app.state.settings = settings
     register_request(app)

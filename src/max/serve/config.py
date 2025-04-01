@@ -20,6 +20,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class APIType(Enum):
     KSERVE = "kserve"
     OPENAI = "openai"
+    SAGEMAKER = "sagemaker"
 
 
 class RunnerType(Enum):
@@ -75,7 +76,8 @@ class Settings(BaseSettings):
 
     # Server configuration
     api_types: list[APIType] = Field(
-        description="List of exposed API types.", default=[APIType.OPENAI]
+        description="List of exposed API types.",
+        default=[APIType.OPENAI, APIType.SAGEMAKER],
     )
     host: str = Field(
         description="Hostname to use", default="0.0.0.0", alias="MAX_SERVE_HOST"
