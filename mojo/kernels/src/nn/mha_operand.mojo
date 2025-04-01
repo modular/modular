@@ -120,3 +120,56 @@ struct NDBufferMHAOperand[
     @always_inline
     fn max_context_length(self) -> UInt32:
         return self.buffer.dim[1]()
+
+
+@register_passable("trivial")
+struct RaggedMHAOperand[type_: DType, shape: DimList, stride: DimList](
+    MHAOperand
+):
+    """An implementation for ragged NDBuffer arguments to MHA kernels."""
+
+    alias type = type_
+    var buffer: NDBuffer[Self.type, 3, MutableAnyOrigin, shape, stride]
+    var cache_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_]
+
+    fn __init__(
+        out self,
+        buffer: NDBuffer[Self.type, 3, MutableAnyOrigin, shape, stride],
+        cache_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_],
+    ):
+        self.buffer = buffer
+        self.cache_row_offsets = cache_row_offsets
+
+    @always_inline
+    fn block_paged_ptr[
+        tile_size: Int
+    ](
+        self,
+        batch_idx: UInt32,
+        start_tok_idx: UInt32,
+        head_idx: UInt32,
+        head_dim_idx: UInt32 = 0,
+    ) -> UnsafePointer[Scalar[Self.type]]:
+        global_token_idx = Int(
+            self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
+        )
+        var ret_ptr = self.buffer._offset(
+            (
+                Int(global_token_idx),
+                Int(head_idx),
+                Int(head_dim_idx),
+            )
+        )
+        return rebind[UnsafePointer[Scalar[Self.type]]](ret_ptr)
+
+    @always_inline
+    fn cache_length(self, batch_idx: Int) -> Int:
+        return Int(
+            self.cache_row_offsets[batch_idx + 1]
+            - self.cache_row_offsets[batch_idx]
+        )
+
+    @always_inline
+    fn max_context_length(self) -> UInt32:
+        # NotImplemented
+        return 0
