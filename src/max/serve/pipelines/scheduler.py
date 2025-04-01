@@ -646,17 +646,29 @@ class TokenGenerationScheduler(Scheduler):
             return
 
         # KVCache specific metrics
-        used_pct = self.paged_manager.used_blocks_pct
+        paged_manager = self.paged_manager
+        used_pct = paged_manager.used_blocks_pct
         cache_hit_rate = sch_output.cache_hit_rate
-        total_blocks = self.paged_manager.total_num_pages
+        total_blocks = paged_manager.total_num_pages
 
-        cow_str = ""
-        if self.paged_manager.enable_prefix_caching:
-            cow_blocks_copied = self.paged_manager.cow_blocks_copied
-            self.paged_manager.reset_cow_blocks_copied()
-            cow_str = f"COW: {cow_blocks_copied} blocks copied, "
+        host_kvcache_str = ""
+        if paged_manager.enable_swapping_to_host:
+            host_committed_pct = paged_manager.host_committed_block_pct
+            host_total_blocks = paged_manager.total_num_host_pages
+            host_kvcache_str = f"Host KVCache Usage: {host_committed_pct:.1%} of {host_total_blocks} blocks, "
 
-        logger.debug(
+        blocks_copied_str = ""
+        d2d_blocks_copied = paged_manager.d2d_blocks_copied
+        h2d_blocks_copied = paged_manager.h2d_blocks_copied
+        d2h_blocks_copied = paged_manager.d2h_blocks_copied
+        if paged_manager.enable_prefix_caching:
+            if paged_manager.enable_swapping_to_host:
+                blocks_copied_str = f"Blocks copied: {d2d_blocks_copied} D2D, {h2d_blocks_copied} H2D, {d2h_blocks_copied} D2H | "
+            elif paged_manager.enable_prefix_caching:
+                blocks_copied_str = f"Blocks copied: {d2d_blocks_copied} D2D | "
+            paged_manager.reset_blocks_copied()
+
+        print(
             f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
             f"Terminated: {terminated_reqs} reqs, "
             f"Pending: {pending_reqs} reqs | "
@@ -666,8 +678,9 @@ class TokenGenerationScheduler(Scheduler):
             f"Batch creation: {batch_creation_latency_str}, "
             f"Execution: {batch_execution_latency_str} | "
             f"KVCache usage: {used_pct:.1%} of {total_blocks} blocks, "
-            f"Cache hit rate: {cache_hit_rate:.1%} of {prompt_tokens} toks, "
-            f"{cow_str}"
+            f"{host_kvcache_str}"
+            f"Cache hit rate: {cache_hit_rate:.1%} of {prompt_tokens} toks | "
+            f"{blocks_copied_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
