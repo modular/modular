@@ -6,8 +6,8 @@
 
 # REQUIRES: NVIDIA-GPU
 # UNSUPPORTED: asan, ubsan
-# RUN: kgen -emit -kgen-debug-only=object-compiler %s -o %t 2>&1 | FileCheck %s --check-prefix=CHECK-PTXAS
-# RUN: %mojo -O0 %s -o %t.cubin
+# RUN: MODULAR_USE_PTXAS=1 kgen -emit -kgen-debug-only=object-compiler %s -o %t 2>&1 | FileCheck %s --check-prefix=CHECK-PTXAS
+# RUN: MODULAR_USE_PTXAS=1 %mojo -O0 %s -o %t.cubin
 # RUN: file /usr/local/cuda/bin/nvdisasm && (/usr/local/cuda/bin/nvdisasm %t.cubin | FileCheck %s --check-prefix=CHECK-CUBIN)
 
 from gpu.host import DeviceContext

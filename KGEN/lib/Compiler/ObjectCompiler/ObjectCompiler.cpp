@@ -1573,31 +1573,31 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
   // use the driver's nvptxcompiler. This allows for temporary experimentation.
   // If this pathway is always benificial, then we will stop checking the env
   // var.
-  if (llvm::sys::Process::GetEnv("MODULAR_USE_DRIVER_NVPTX_COMPILER")) {
-    LLVM_DEBUG(llvm::dbgs()
-               << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
-    KGEN_DEBUG(0, {
-      llvm::dbgs() << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n";
-    });
-    // FIXME: Will clean this _v2 up once we decide which compiler to use to get
-    // to cubin.
-    return ctx->compileFunction_v2(ptx, options.getDebugLevelString(),
-                                   options.optimizationLevel,
-                                   getNVGPUName(options.targetAccelerator));
+  if (llvm::sys::Process::GetEnv("MODULAR_USE_PTXAS")) {
+    ErrorOr<MojoConfig> cfg = MojoConfig::open();
+    if (cfg.isError())
+      return cfg.takeError();
+
+    // Add any paths specified in the config.
+    StringRef ptxasPath = cfg->getPTXASPath();
+    if (ptxasPath.empty())
+      return Error("Unable to find the ptxas compiler in the config.");
+
+    // Compile to CUBIN via ptxas if you can. We always fallback to using the
+    // driver if we failed.
+    return compilePTXToCUBINViaPTXAS(ctx, inputModule, ptxasPath, ptx, options);
   }
 
-  ErrorOr<MojoConfig> cfg = MojoConfig::open();
-  if (cfg.isError())
-    return cfg.takeError();
-
-  // Add any paths specified in the config.
-  StringRef ptxasPath = cfg->getPTXASPath();
-  if (ptxasPath.empty())
-    return Error("Unable to find the ptxas compiler in the config.");
-
-  // Compile to CUBIN via ptxas if you can. We always fallback to using the
-  // driver if we failed.
-  return compilePTXToCUBINViaPTXAS(ctx, inputModule, ptxasPath, ptx, options);
+  LLVM_DEBUG(
+      llvm::dbgs() << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
+  KGEN_DEBUG(0, {
+    llvm::dbgs() << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n";
+  });
+  // FIXME: Will clean this _v2 up once we decide which compiler to use to get
+  // to cubin.
+  return ctx->compileFunction_v2(ptx, options.getDebugLevelString(),
+                                 options.optimizationLevel,
+                                 getNVGPUName(options.targetAccelerator));
 }
 
 static AnyAsyncValueRef
