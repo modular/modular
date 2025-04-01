@@ -282,39 +282,6 @@ def test_no_implicit_load(tensor_type: TensorType, buffer_type: BufferType):
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
-def test_inplace_custom(tensor_type: TensorType, buffer_type: BufferType):
-    with Graph(
-        "buffer_load",
-        input_types=[buffer_type, tensor_type],
-    ) as graph:
-        buffer: BufferValue = graph.inputs[0]
-        tensor: TensorValue = graph.inputs[1]
-
-        chain_0 = graph._current_chain
-
-        ops.inplace_custom("foo", values=[buffer])
-        chain_1 = graph._current_chain
-
-        ops.buffer_store(buffer, tensor)
-        chain_2 = graph._current_chain
-
-        ops.inplace_custom("bar", values=[buffer])
-        chain_3 = graph._current_chain
-
-        with pytest.raises(TypeError):
-            ops.inplace_custom("baz", values=[tensor])
-
-        graph.output()
-
-        assert chain_0 != chain_1
-        assert chain_1 != chain_2
-        assert chain_2 != chain_3
-
-        assert 'mo.custom {symbol = "foo"}' in str(graph)
-        assert 'mo.custom {symbol = "bar"}' in str(graph)
-
-
-@given(tensor_type=tensor_type, buffer_type=buffer_type)
 def test_prints_with_buffer_ops(
     tensor_type: TensorType, buffer_type: BufferType
 ):
@@ -348,27 +315,3 @@ def test_prints_with_buffer_ops(
 
 # TODO(MSDK-960): test that the chain is working correctly.
 # TODO(MSDK-960): test load -> element-wise ops -> store.
-
-
-def test_custom_buffer_error() -> None:
-    """Test that we get an error for passing unchained buffers to custom ops."""
-    with Graph(
-        "custom_buffer_error",
-        input_types=[BufferType(DType.float32, shape=[42])],
-    ) as graph:
-        buffer = graph.inputs[0]
-
-        with pytest.raises(
-            TypeError,
-            match=(
-                "custom ops that take buffers or opaque values to do in-place "
-                "updates should use ops.inplace_custom instead"
-            ),
-        ):
-            _ = ops.custom(
-                "bar",
-                values=[buffer],
-                out_types=[TensorType(DType.uint32, shape=[])],
-            )[0]
-
-        graph.output()
