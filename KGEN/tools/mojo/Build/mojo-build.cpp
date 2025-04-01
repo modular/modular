@@ -27,6 +27,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/PlatformLibNames.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -136,8 +137,22 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 // Mojo program execution
 //===----------------------------------------------------------------------===//
 
+// What output file type `mojo build` will generate.
 enum class OutputType {
+  // Produce an executable file containing machine code, e.g. a `.exe` on
+  // Windows, or an extensionless binary on Unix-like operating systems.
+  //
+  // Produced by default or when `--emit exe` is specified.
   executable,
+  // Produce a shared (dynamic) library, with the appropriate file extension
+  // for the OS (.dylib, .so, or .dll).
+  //
+  // Produced when `--emit shared-lib` is specified.
+  sharedLibrary,
+  // Also a shared library, but with extra code generated and special file ext
+  // and linker options.
+  //
+  // Produced when `--emit shared-lib` and `--gen-py` are specified.
   pythonExtensionModule,
 };
 
@@ -171,11 +186,12 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
     if (!symtab.lookup("main"))
       return state.reportError("module does not contain a 'main' function");
     break;
+  case OutputType::sharedLibrary:
   case OutputType::pythonExtensionModule:
     // Python extension modules
     if (symtab.lookup("main"))
       return state.reportError(
-          "python extension module should not contain a 'main' function");
+          "shared library should not contain a 'main' function");
     break;
   }
 
@@ -236,9 +252,6 @@ static int linkOutput(OutputType outputType, const State &state,
   StringRef libExt = ".a";
 #endif
 
-  // Only used for Python modules which requires a .so suffix on all platforms.
-  StringRef dynamicLibraryExtension = ".so";
-
   // Read the mojo configuration.
   ErrorOr<MojoConfig> configOr = MojoConfig::open();
   if (failed(configOr)) {
@@ -258,12 +271,27 @@ static int linkOutput(OutputType outputType, const State &state,
   // directory.
   StringRef inputName = args.getLastArgValue(options::OPT_INPUT);
 
-  StringRef outputSuffix = outputType == OutputType::executable
-                               ? binaryExt
-                               : dynamicLibraryExtension;
-  std::string defaultOutputName =
-      std::filesystem::path((inputName.rsplit('.').first + outputSuffix).str())
-          .filename();
+  // Get the file base name, e.g. `foo` in `foo.mojo`.
+  StringRef inputBaseName = inputName.rsplit('.').first;
+
+  std::string defaultOutputName = [outputType, inputBaseName, binaryExt] {
+    switch (outputType) {
+    case OutputType::executable:
+      return (inputBaseName + binaryExt).str();
+    case OutputType::sharedLibrary:
+      // TODO(MOCO-1772):
+      //  Determine this file extension based on the _target_ OS, not the host
+      //  that `mojo` itself was compiled for.
+      // Returns `foo.(so|dylib|dll)` for a source file called `foo.mojo`.
+      return PlatformLibrary::getSharedLibraryName(inputBaseName);
+    // Python modules require a .so suffix on all platforms.
+    case OutputType::pythonExtensionModule:
+      return (inputBaseName + ".so").str();
+    }
+  }();
+  // Validate this is a valid filename using the `path` ctor.
+  defaultOutputName = std::filesystem::path(defaultOutputName).filename();
+
   std::filesystem::path cwd = std::filesystem::current_path(ec);
   if (!ec)
     defaultOutputName = cwd.append(defaultOutputName);
@@ -470,6 +498,22 @@ static int build(const State &subcommandState) {
       telemetryCtx, StringRef(state.subcommand), args, /*privateArgs=*/
       {options::OPT_D, options::OPT_I, options::OPT_o});
 
+  StringRef emitFileType =
+      args.getLastArgValue(options::OPT_emitted_file_type, "exe");
+
+  OutputType outputType = OutputType::executable;
+  if (emitFileType == "exe") {
+    // Link an executable from the archive (default).
+    outputType = OutputType::executable;
+  } else if (emitFileType == "shared-lib") {
+    // We have a static archive at this point, go ahead and turn it into a
+    // dynamic library.
+    outputType = OutputType::sharedLibrary;
+  } else {
+    // FIXME: Report this error better, by showing the valid values.
+    return state.reportError("Unrecognized value for `--emit`.");
+  }
+
   bool generatePythonBindings =
       args.hasArg(options::OPT_generate_python_extension_module);
 
@@ -490,6 +534,18 @@ static int build(const State &subcommandState) {
     }
   }
 
+  // The `--gen-py` flag is only valid when emitting a shared library.
+  // If `--gen-py` was validly specified, update `outputType` to track that
+  // we're emitting a Python extension module shared library.
+  if (generatePythonBindings) {
+    if (outputType != OutputType::sharedLibrary) {
+      return state.reportError(
+          "Mojo Python binding generation is only supported "
+          "when emitting a shared library.");
+    }
+    outputType = OutputType::pythonExtensionModule;
+  }
+
   // Lower the input file to an MLIR module.
   AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
@@ -505,15 +561,6 @@ static int build(const State &subcommandState) {
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
-
-  OutputType outputType = [generatePythonBindings] {
-    // We have a static archive at this point, go ahead and turn it into a
-    // dynamic library.
-    if (generatePythonBindings)
-      return OutputType::pythonExtensionModule;
-    // Link an executable from the archive.
-    return OutputType::executable;
-  }();
 
   // Compile the module to a static archive.
   BufferRef archive;
