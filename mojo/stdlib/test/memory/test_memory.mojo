@@ -172,13 +172,13 @@ def test_memcmp_simd():
 
 
 def test_memcmp_extensive[
-    type: DType, extermes: StringLiteral = ""
+    dtype: DType, extermes: StringLiteral = ""
 ](count: Int):
-    var ptr1 = UnsafePointer[Scalar[type]].alloc(count)
-    var ptr2 = UnsafePointer[Scalar[type]].alloc(count)
+    var ptr1 = UnsafePointer[Scalar[dtype]].alloc(count)
+    var ptr2 = UnsafePointer[Scalar[dtype]].alloc(count)
 
-    var dptr1 = UnsafePointer[Scalar[type]].alloc(count)
-    var dptr2 = UnsafePointer[Scalar[type]].alloc(count)
+    var dptr1 = UnsafePointer[Scalar[dtype]].alloc(count)
+    var dptr2 = UnsafePointer[Scalar[dtype]].alloc(count)
 
     for i in range(count):
         ptr1[i] = i
@@ -189,42 +189,42 @@ def test_memcmp_extensive[
             ptr2[i] = i + 1
             dptr2[i] = i + 1
         elif extermes == "nan":
-            ptr2[i] = nan[type]()
-            dptr2[i] = nan[type]()
+            ptr2[i] = nan[dtype]()
+            dptr2[i] = nan[dtype]()
         elif extermes == "inf":
-            ptr2[i] = Scalar[type].MAX
-            dptr2[i] = Scalar[type].MAX
+            ptr2[i] = Scalar[dtype].MAX
+            dptr2[i] = Scalar[dtype].MAX
 
     assert_equal(
         memcmp(ptr1, ptr1, count),
         0,
-        String("for dtype=", type, ";count=", count),
+        String("for dtype=", dtype, ";count=", count),
     )
     assert_equal(
         memcmp(ptr1, ptr2, count),
         -1,
-        String("for dtype=", type, ";count=", count),
+        String("for dtype=", dtype, ";count=", count),
     )
     assert_equal(
         memcmp(ptr2, ptr1, count),
         1,
-        String("for dtype=", type, ";count=", count),
+        String("for dtype=", dtype, ";count=", count),
     )
 
     assert_equal(
         memcmp(dptr1, dptr1, count),
         0,
-        String("for dtype=", type, ";extremes=", extermes, ";count=", count),
+        String("for dtype=", dtype, ";extremes=", extermes, ";count=", count),
     )
     assert_equal(
         memcmp(dptr1, dptr2, count),
         -1,
-        String("for dtype=", type, ";extremes=", extermes, ";count=", count),
+        String("for dtype=", dtype, ";extremes=", extermes, ";count=", count),
     )
     assert_equal(
         memcmp(dptr2, dptr1, count),
         1,
-        String("for dtype=", type, ";extremes=", extermes, ";count=", count),
+        String("for dtype=", dtype, ";extremes=", extermes, ";count=", count),
     )
 
     ptr1.free()

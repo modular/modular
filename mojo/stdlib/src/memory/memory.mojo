@@ -43,10 +43,10 @@ from memory.pointer import AddressSpace, _GPUAddressSpace
 
 @always_inline
 fn _memcmp_impl_unconstrained[
-    type: DType, //
+    dtype: DType, //
 ](
-    s1: UnsafePointer[Scalar[type], **_],
-    s2: UnsafePointer[Scalar[type], **_],
+    s1: UnsafePointer[Scalar[dtype], **_],
+    s2: UnsafePointer[Scalar[dtype], **_],
     count: Int,
 ) -> Int:
     for i in range(count):
@@ -59,13 +59,13 @@ fn _memcmp_impl_unconstrained[
 
 @always_inline
 fn _memcmp_opt_impl_unconstrained[
-    type: DType, //
+    dtype: DType, //
 ](
-    s1: UnsafePointer[Scalar[type], **_],
-    s2: UnsafePointer[Scalar[type], **_],
+    s1: UnsafePointer[Scalar[dtype], **_],
+    s2: UnsafePointer[Scalar[dtype], **_],
     count: Int,
 ) -> Int:
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[dtype]()
     if count < simd_width:
         for i in range(count):
             var s1i = s1[i]
@@ -105,13 +105,13 @@ fn _memcmp_opt_impl_unconstrained[
 
 @always_inline
 fn _memcmp_impl[
-    type: DType
+    dtype: DType
 ](
-    s1: UnsafePointer[Scalar[type], **_],
-    s2: UnsafePointer[Scalar[type], **_],
+    s1: UnsafePointer[Scalar[dtype], **_],
+    s2: UnsafePointer[Scalar[dtype], **_],
     count: Int,
 ) -> Int:
-    constrained[type.is_integral(), "the input dtype must be integral"]()
+    constrained[dtype.is_integral(), "the input dtype must be integral"]()
     if is_compile_time():
         return _memcmp_impl_unconstrained(s1, s2, count)
     else:
@@ -349,19 +349,19 @@ fn memset_zero[
 
 @always_inline
 fn memset_zero[
-    type: DType, address_space: AddressSpace, //, *, count: Int
-](ptr: UnsafePointer[Scalar[type], address_space=address_space]):
+    dtype: DType, address_space: AddressSpace, //, *, count: Int
+](ptr: UnsafePointer[Scalar[dtype], address_space=address_space]):
     """Fills memory with zeros.
 
     Parameters:
-        type: The element type.
+        dtype: The element type.
         address_space: The address space of the pointer.
         count: Number of elements to fill (in elements, not bytes).
 
     Args:
         ptr: UnsafePointer to the beginning of the memory block to fill.
     """
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[dtype]()
     alias vector_end = align_down(count, simd_width)
 
     @parameter
@@ -370,7 +370,7 @@ fn memset_zero[
 
     @parameter
     for i in range(0, vector_end, simd_width):
-        ptr.store(i, SIMD[type, simd_width](0))
+        ptr.store(i, SIMD[dtype, simd_width](0))
 
     @parameter
     for i in range(vector_end, count):
@@ -385,17 +385,17 @@ fn memset_zero[
 @always_inline
 fn stack_allocation[
     count: Int,
-    type: DType,
+    dtype: DType,
     /,
-    alignment: Int = alignof[type]() if is_gpu() else 1,
+    alignment: Int = alignof[dtype]() if is_gpu() else 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[Scalar[type], address_space=address_space]:
+]() -> UnsafePointer[Scalar[dtype], address_space=address_space]:
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 
     Parameters:
         count: Number of elements to allocate memory for.
-        type: The data type of each element.
+        dtype: The data type of each element.
         alignment: Address alignment of the allocated data.
         address_space: The address space of the pointer.
 
@@ -404,7 +404,7 @@ fn stack_allocation[
     """
 
     return stack_allocation[
-        count, Scalar[type], alignment=alignment, address_space=address_space
+        count, Scalar[dtype], alignment=alignment, address_space=address_space
     ]()
 
 
