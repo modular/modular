@@ -418,8 +418,6 @@ class BlockManager:
     def allocate_new_blocks(
         self, ctx: InputContext, num_steps: int = 1
     ) -> None:
-        self.assert_runtime_invariants(ctx)
-
         # Determine number of new blocks to allocate.
         seq_id = ctx.cache_seq_id
         req_blocks = self.req_to_blocks[seq_id]
@@ -436,8 +434,6 @@ class BlockManager:
         for _ in range(num_new_blocks):
             new_block = self.allocate_device_block()
             req_blocks.append(new_block)
-
-        self.assert_runtime_invariants(ctx)
 
     @traced
     def maybe_offload_gpu_block_to_host(

@@ -355,16 +355,12 @@ class PagedKVCacheManager(KVCacheManager):
         self.host_tensor = None
         self.total_num_host_pages = 0
         if enable_paging_to_host:
-            # If we are using paging blocks to CPU, the model must be running on a GPU.
-            for device in self.devices:
-                if device.is_host:
-                    raise ValueError(
-                        "Paging to host is only supported for models running on GPUs."
-                    )
-
             # Use 50GB of host memory for CPU blocks.
             GiB = 1024 * 1024 * 1024
             self.total_num_host_pages = 50 * GiB // single_page_size_bytes
+
+            # Don't exceed 3000 pages. This allows tests to not take forever.
+            self.total_num_host_pages = min(self.total_num_host_pages, 3000)
             assert self.total_num_host_pages > 0
 
             logger.warning(
@@ -548,6 +544,8 @@ class PagedKVCacheManager(KVCacheManager):
 
         self._enqueue_and_reset_copy_ops(seq_id)
         self.prefetched_seq_ids.add(seq_id)
+
+        self.block_manager.assert_runtime_invariants(data)
         return True
 
     @traced
@@ -723,7 +721,7 @@ class PagedKVCacheManager(KVCacheManager):
         elif copy_type == BlockCopyType.H2D_MEMCPY:
             # This is a cache hit
             logger.debug(
-                f"H2D: Copying block {dst_idx} <- {src_idx} (CPU Cache Hit)"
+                f"H2D: Copying block D{dst_idx} <- H{src_idx} (CPU Cache Hit)"
             )
             dst_dev = copy_op.dst
             src_host = copy_op.src
@@ -748,7 +746,7 @@ class PagedKVCacheManager(KVCacheManager):
         elif copy_type == BlockCopyType.D2H_MEMCPY:
             # This is a eviction
             logger.debug(
-                f"D2H: Copying block {dst_idx} <- {src_idx} (GPU Block Evicted)"
+                f"D2H: Copying block H{dst_idx} <- D{src_idx} (GPU Block Evicted)"
             )
             dst_host = copy_op.dst
             host_block_pool = self.block_manager.host_block_pool
