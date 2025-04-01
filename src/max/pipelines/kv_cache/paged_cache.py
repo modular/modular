@@ -393,12 +393,19 @@ class PagedKVCacheManager(KVCacheManager):
         # Whether prefix caching is enabled.
         self.enable_prefix_caching = self.params.enable_prefix_caching
 
+        # Whether kvcache swapping to host is enabled
+        self.enable_swapping_to_host = (
+            self.params.enable_kvcache_swapping_to_host
+        )
+
         # Mapping from seq ID to blocks that have been prefetched prior to a
         # fetch operation.
         self.prefetched_seq_ids: set[int] = set()
 
-        # Number of blocks that have been copied due to COW.
-        self.cow_blocks_copied: int = 0
+        # Number of blocks that have been copied
+        self.d2d_blocks_copied: int = 0
+        self.d2h_blocks_copied: int = 0
+        self.h2d_blocks_copied: int = 0
 
     @classmethod
     def _block_size_per_token(
@@ -719,7 +726,7 @@ class PagedKVCacheManager(KVCacheManager):
         if copy_type == BlockCopyType.D2D_COW:
             # TODO E2EOPT-142: Schedule each memcpy on a different stream
             if dst_idx != src_idx:
-                self.cow_blocks_copied += 1
+                self.d2d_blocks_copied += 1
                 for device_tensor in self.device_tensors:
                     device_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
                         device_tensor[src_idx, :, :, :, :, :]
@@ -749,6 +756,7 @@ class PagedKVCacheManager(KVCacheManager):
                 device_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
                     self.host_tensor[src_idx, :, :, :, :, :]
                 )
+            self.h2d_blocks_copied += 1
         elif copy_type == BlockCopyType.D2H_MEMCPY:
             # This is a eviction
             logger.debug(
@@ -770,6 +778,7 @@ class PagedKVCacheManager(KVCacheManager):
             self.host_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
                 device_tensor_rank0[src_idx, :, :, :, :, :]
             )
+            self.d2h_blocks_copied += 1
         else:
             raise NotImplementedError(f"Unknown block copy type: {copy_type}")
 
@@ -788,6 +797,18 @@ class PagedKVCacheManager(KVCacheManager):
         return pct
 
     @property
+    def host_committed_block_pct(self) -> float:
+        """Get the percentage of host blocks that are committed."""
+        if self.block_manager.host_block_pool is None:
+            return 0
+        host_committed_blocks = len(
+            self.block_manager.host_block_pool.block_hash_to_committed_block
+        )
+        pct = host_committed_blocks / self.total_num_host_pages
+        assert 0 <= pct <= 1
+        return pct
+
+    @property
     def free_blocks_pct(self) -> float:
         """Get the percentage of blocks that are free."""
         pct = len(self.free_blocks) / self.total_num_pages
@@ -801,9 +822,11 @@ class PagedKVCacheManager(KVCacheManager):
         assert 0 <= pct <= 1
         return pct
 
-    def reset_cow_blocks_copied(self) -> None:
+    def reset_blocks_copied(self) -> None:
         """Reset the number of cow operations performed."""
-        self.cow_blocks_copied = 0
+        self.d2d_blocks_copied = 0
+        self.d2h_blocks_copied = 0
+        self.h2d_blocks_copied = 0
 
     def get_req_blocks(self, seq_id: int) -> list[int]:
         """Get the block ids for a request."""
