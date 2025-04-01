@@ -58,7 +58,7 @@ fn _shuffle_idx_launch_helper[
 ](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
-    alias constant_add: Scalar[type] = 42.0
+    alias constant_add: Scalar[type] = 42
     var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
 
     for i in range(buffer_size):
@@ -100,12 +100,16 @@ fn test_shuffle_idx_fp16_packed(ctx: DeviceContext) raises:
     _shuffle_idx_launch_helper[DType.float16, 2](ctx)
 
 
+fn test_shuffle_idx_int64(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[DType.int64, 1](ctx)
+
+
 fn _shuffle_up_launch_helper[
     type: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
-    alias constant_add: Scalar[type] = 42.0
+    alias constant_add: Scalar[type] = 42
     alias offset = WARP_SIZE // 2
 
     var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
@@ -158,12 +162,16 @@ fn test_shuffle_up_fp16_packed(ctx: DeviceContext) raises:
     _shuffle_up_launch_helper[DType.float16, 2](ctx)
 
 
+fn test_shuffle_up_int64(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[DType.int64, 1](ctx)
+
+
 fn _shuffle_down_launch_helper[
     type: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
-    alias constant_add: Scalar[type] = 42.0
+    alias constant_add: Scalar[type] = 42
     alias offset = WARP_SIZE // 2
 
     var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
@@ -216,12 +224,16 @@ fn test_shuffle_down_fp16_packed(ctx: DeviceContext) raises:
     _shuffle_down_launch_helper[DType.float16, 2](ctx)
 
 
+fn test_shuffle_down_int64(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[DType.int64, 1](ctx)
+
+
 fn _shuffle_xor_launch_helper[
     type: DType, simd_width: Int
 ](ctx: DeviceContext) raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
-    alias constant_add: Scalar[type] = 42.0
+    alias constant_add: Scalar[type] = 42
     alias offset = WARP_SIZE // 2
 
     var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
@@ -265,6 +277,10 @@ fn test_shuffle_xor_fp16(ctx: DeviceContext) raises:
 
 fn test_shuffle_xor_fp16_packed(ctx: DeviceContext) raises:
     _shuffle_xor_launch_helper[DType.float16, 2](ctx)
+
+
+fn test_shuffle_xor_int64(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[DType.int64, 1](ctx)
 
 
 fn _warp_reduce_launch_helper[
@@ -389,21 +405,25 @@ fn main() raises:
         test_shuffle_idx_bf16_packed(ctx)
         test_shuffle_idx_fp16(ctx)
         test_shuffle_idx_fp16_packed(ctx)
+        test_shuffle_idx_int64(ctx)
         test_shuffle_up_fp32(ctx)
         test_shuffle_up_bf16(ctx)
         test_shuffle_up_bf16_packed(ctx)
         test_shuffle_up_fp16(ctx)
         test_shuffle_up_fp16_packed(ctx)
+        test_shuffle_up_int64(ctx)
         test_shuffle_down_fp32(ctx)
         test_shuffle_down_bf16(ctx)
         test_shuffle_down_bf16_packed(ctx)
         test_shuffle_down_fp16(ctx)
         test_shuffle_down_fp16_packed(ctx)
+        test_shuffle_down_int64(ctx)
         test_shuffle_xor_fp32(ctx)
         test_shuffle_xor_bf16(ctx)
         test_shuffle_xor_bf16_packed(ctx)
         test_shuffle_xor_fp16(ctx)
         test_shuffle_xor_fp16_packed(ctx)
+        test_shuffle_xor_int64(ctx)
         test_warp_reduce_fp32(ctx)
         test_warp_reduce_bf16(ctx)
         test_warp_reduce_bf16_packed(ctx)
