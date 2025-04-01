@@ -951,18 +951,36 @@ fn implicitarg_ptr() -> (
 
 
 @always_inline
-fn readfirstlane(value: Int32) -> Int32:
+fn readfirstlane[T: AnyTrivialRegType](value: T) -> T:
     """
-    Get the lowest acitve lane of the input operand.
+    Returns the value in the lowest active lane of the input operand.
+
+    Constraints:
+        Only works with trivial types of size 2 bytes or multiple of 4 bytes.
+
+    Parameters:
+        T: The type of the input value.
 
     Args:
-        value: The input thread.
+        value: The input value.
 
     Returns:
         The value in the lowest active lane of the input operand.
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
-    return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
+    alias size = sizeof[T]()
+    constrained[
+        size == 2 or size % 4 == 0,
+        String(
+            (
+                "The size of input type for readfirstlane must be 2 or a"
+                " multiple of 4 bytes but got '"
+            ),
+            size,
+            "'",
+        ),
+    ]()
+    return llvm_intrinsic["llvm.amdgcn.readfirstlane", T, T](value)
 
 
 # ===-----------------------------------------------------------------------===#
