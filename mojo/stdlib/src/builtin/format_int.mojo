@@ -52,7 +52,7 @@ fn bin(num: Scalar, /, *, prefix: StaticString = "0b") -> String:
 
 
 # Need this until we have constraints to stop the compiler from matching this
-# directly to bin[type: DType](num: Scalar[type]).
+# directly to bin[dtype: DType](num: Scalar[dtype]).
 fn bin(b: Scalar[DType.bool], /, *, prefix: StaticString = "0b") -> String:
     """Returns the binary representation of a scalar bool.
 
@@ -246,11 +246,11 @@ fn _format_int[
 
 
 fn _write_int[
-    type: DType,
+    dtype: DType,
     W: Writer,
 ](
     mut writer: W,
-    value: Scalar[type],
+    value: Scalar[dtype],
     /,
     radix: Int = 10,
     *,
@@ -265,11 +265,11 @@ fn _write_int[
 
 
 fn _try_write_int[
-    type: DType,
+    dtype: DType,
     W: Writer,
 ](
     mut writer: W,
-    value: Scalar[type],
+    value: Scalar[dtype],
     /,
     radix: Int = 10,
     *,
@@ -282,7 +282,7 @@ fn _try_write_int[
     The maximum supported radix is 36 unless a custom `digit_chars` mapping is
     provided.
     """
-    constrained[type.is_integral(), "Expected integral"]()
+    constrained[dtype.is_integral(), "Expected integral"]()
 
     # Check that the radix and available digit characters are valid
     if radix < 2:
@@ -359,7 +359,7 @@ fn _try_write_int[
     var remaining_int = value
 
     @parameter
-    fn process_digits[get_digit_value: fn () capturing [_] -> Scalar[type]]():
+    fn process_digits[get_digit_value: fn () capturing [_] -> Scalar[dtype]]():
         while remaining_int:
             var digit_value = get_digit_value()
 
@@ -378,14 +378,14 @@ fn _try_write_int[
     if remaining_int >= 0:
 
         @parameter
-        fn pos_digit_value() -> Scalar[type]:
+        fn pos_digit_value() -> Scalar[dtype]:
             return remaining_int % radix
 
         process_digits[pos_digit_value]()
     else:
 
         @parameter
-        fn neg_digit_value() -> Scalar[type]:
+        fn neg_digit_value() -> Scalar[dtype]:
             return abs(remaining_int % -radix)
 
         process_digits[neg_digit_value]()
