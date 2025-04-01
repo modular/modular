@@ -188,6 +188,10 @@ class BlockManager:
             # Since we got cache hits, clear out existing uncommitted blocks
             self.release_uncommitted_blocks(ctx)
 
+            # Touch and free block to move it to end of the free list.
+            self.device_block_pool.touch(partial_block)
+            self.device_block_pool.free_block(partial_block)
+
             # We can only perform COW if we can allocate a new block to copy into
             if self.device_block_pool.free_block_queue:
                 # Append them to the request's blocks.
