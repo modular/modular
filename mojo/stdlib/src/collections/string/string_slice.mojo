@@ -23,7 +23,13 @@ from collections.string import StringSlice
 
 from collections import List, Optional
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from collections.string._utf8_validation import _is_valid_utf8
+from collections.string._utf8 import (
+    _is_valid_utf8,
+    _count_utf8_continuation_bytes,
+    _utf8_first_byte_sequence_length,
+    _utf8_byte_type,
+    _is_newline_char_utf8,
+)
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -1794,14 +1800,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         @parameter
         if single_character:
-            return length != 0 and _is_newline_char[include_r_n=True](
+            return length != 0 and _is_newline_char_utf8[include_r_n=True](
                 ptr, 0, ptr[0], length
             )
         else:
             var offset = 0
             for s in self.codepoint_slices():
                 var b_len = s.byte_length()
-                if not _is_newline_char(ptr, offset, ptr[offset], b_len):
+                if not _is_newline_char_utf8(ptr, offset, ptr[offset], b_len):
                     return False
                 offset += b_len
             return length != 0
@@ -1845,7 +1851,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                     "corrupted sequence causing unsafe memory access",
                 )
                 var isnewline = unlikely(
-                    _is_newline_char(ptr, eol_start, b0, char_len)
+                    _is_newline_char_utf8(ptr, eol_start, b0, char_len)
                 )
                 var char_end = Int(isnewline) * (eol_start + char_len)
                 var next_idx = char_end * Int(char_end < length)
@@ -2092,44 +2098,6 @@ fn _to_string_list[
 
 
 @always_inline
-fn _is_newline_char[
-    include_r_n: Bool = False
-](p: UnsafePointer[Byte], eol_start: Int, b0: Byte, char_len: Int) -> Bool:
-    """Returns whether the char is a newline char.
-
-    Safety:
-        This assumes valid utf-8 is passed.
-    """
-    # highly performance sensitive code, benchmark before touching
-    alias `\r` = UInt8(ord("\r"))
-    alias `\n` = UInt8(ord("\n"))
-    alias `\t` = UInt8(ord("\t"))
-    alias `\x1c` = UInt8(ord("\x1c"))
-    alias `\x1e` = UInt8(ord("\x1e"))
-
-    # here it's actually faster to have branching due to the branch predictor
-    # "realizing" that the char_len == 1 path is often taken. Using the likely
-    # intrinsic is to make the machine code be ordered to optimize machine
-    # instruction fetching, which is an optimization for the CPU front-end.
-    if likely(char_len == 1):
-        return `\t` <= b0 <= `\x1e` and not (`\r` < b0 < `\x1c`)
-    elif char_len == 2:
-        var b1 = p[eol_start + 1]
-        var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
-
-        @parameter
-        if include_r_n:
-            return is_next_line or (b0 == `\r` and b1 == `\n`)
-        else:
-            return is_next_line
-    elif char_len == 3:  # unicode line sep or paragraph sep: \u2028 , \u2029
-        var b1 = p[eol_start + 1]
-        var b2 = p[eol_start + 2]
-        return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
-    return False
-
-
-@always_inline
 fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
     """
     Get the length of a null-terminated string from a pointer.
@@ -2281,68 +2249,6 @@ fn _memmem_impl[
             return haystack + i
 
     return UnsafePointer[Scalar[dtype]]()
-
-
-@always_inline
-fn _is_utf8_continuation_byte[
-    w: Int
-](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
-    return vec.cast[DType.int8]() < -(0b1000_0000 >> 1)
-
-
-fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
-    alias sizes = (256, 128, 64, 32, 16, 8)
-    var ptr = str_slice.unsafe_ptr()
-    var num_bytes = str_slice.byte_length()
-    var amnt: Int = 0
-    var processed = 0
-
-    @parameter
-    for i in range(len(sizes)):
-        alias s = sizes[i]
-
-        @parameter
-        if simdwidthof[DType.uint8]() >= s:
-            var rest = num_bytes - processed
-            for _ in range(rest // s):
-                var vec = (ptr + processed).load[width=s]()
-                var comp = _is_utf8_continuation_byte(vec)
-                amnt += Int(comp.cast[DType.uint8]().reduce_add())
-                processed += s
-
-    for i in range(num_bytes - processed):
-        amnt += Int(_is_utf8_continuation_byte(ptr[processed + i]))
-
-    return amnt
-
-
-@always_inline
-fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
-    """Get the length of the sequence starting with given byte. Do note that
-    this does not work correctly if given a continuation byte."""
-
-    debug_assert(
-        not _is_utf8_continuation_byte(b),
-        "Function does not work correctly if given a continuation byte.",
-    )
-    return Int(count_leading_zeros(~b) | (b < 0b1000_0000).cast[DType.uint8]())
-
-
-fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> __type_of(b):
-    """UTF-8 byte type.
-
-    Returns:
-        The byte type.
-
-    Notes:
-
-        - 0 -> ASCII byte.
-        - 1 -> continuation byte.
-        - 2 -> start of 2 byte long sequence.
-        - 3 -> start of 3 byte long sequence.
-        - 4 -> start of 4 byte long sequence.
-    """
-    return count_leading_zeros(~b)
 
 
 @always_inline
