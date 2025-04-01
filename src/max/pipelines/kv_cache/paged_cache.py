@@ -714,11 +714,12 @@ class PagedKVCacheManager(KVCacheManager):
         src_idx = copy_op.src.block_id
         if copy_type == BlockCopyType.D2D_COW:
             # TODO E2EOPT-142: Schedule each memcpy on a different stream
-            self.cow_blocks_copied += 1
-            for device_tensor in self.device_tensors:
-                device_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
-                    device_tensor[src_idx, :, :, :, :, :]
-                )
+            if dst_idx != src_idx:
+                self.cow_blocks_copied += 1
+                for device_tensor in self.device_tensors:
+                    device_tensor[dst_idx, :, :, :, :, :].inplace_copy_from(
+                        device_tensor[src_idx, :, :, :, :, :]
+                    )
         elif copy_type == BlockCopyType.H2D_MEMCPY:
             # This is a cache hit
             logger.debug(
