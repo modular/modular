@@ -235,7 +235,7 @@ class Llama3_1PipelineOracle(PipelineOracle):
         model = transformers.AutoModelForCausalLM.from_pretrained(
             "UNUSED",
             config=config,
-            gguf_file=weight_path,
+            gguf_file=str(weight_path),
             device_map=device,
             torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
         )

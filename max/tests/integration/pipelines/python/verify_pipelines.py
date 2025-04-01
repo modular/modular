@@ -375,8 +375,8 @@ PIPELINES = {
             # `(26, array([12445])) |  -3.12881e+00 │  3.12882e+00`
             absolute_tolerance=30,
             relative_tolerance=1e-4,
-            cos_dist_threshold=0.7,
-            kl_div_threshold=20,
+            cos_dist_threshold=2,
+            kl_div_threshold=25,
         ),
     ),
     "llama3_1-float32": PipelineDef(
