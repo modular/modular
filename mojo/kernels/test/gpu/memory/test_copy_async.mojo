@@ -205,12 +205,9 @@ fn test_async_copy_with_eviction(
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
-    async_copy[4, eviction_policy = CacheEviction.EVICT_FIRST, l2_prefetch=128](
-        src, shared_mem
-    )
-    async_copy[16, eviction_policy = CacheEviction.EVICT_FIRST, l2_prefetch=64](
-        src, shared_mem
-    )
+    async_copy[4, eviction_policy = CacheEviction.EVICT_FIRST](src, shared_mem)
+    async_copy[16, eviction_policy = CacheEviction.EVICT_FIRST](src, shared_mem)
+    async_copy[16, eviction_policy = CacheEviction.EVICT_LAST](src, shared_mem)
 
 
 fn async_copy_with_non_zero_fill_kernel(
@@ -244,24 +241,24 @@ def test_async_copy_with_non_zero_fill():
 
 fn _verify_async_copy_with_eviction(asm: StringSlice) raises -> None:
     assert_true("createpolicy.fractional.L2::evict_first.b64" in asm)
-    assert_true("cp.async.ca.shared.global.L2::128B" in asm)
-    assert_true("cp.async.ca.shared.global.L2::64B" in asm)
+    assert_true("createpolicy.fractional.L2::evict_last.b64" in asm)
+    assert_true("cp.async.ca.shared.global" in asm)
 
 
 def test_async_copy_with_eviction_sm80():
     print("test_async_copy_with_eviction_sm80")
     var asm = _compile_code_asm[
-        test_async_copy_l2_prefetch, target = _get_gpu_target()
+        test_async_copy_with_eviction, target = _get_gpu_target["sm_80"]()
     ]()
-    _verify_async_copy_l2_prefetch(asm)
+    _verify_async_copy_with_eviction(asm)
 
 
 def test_async_copy_with_eviction_sm90():
     print("test_async_copy_with_eviction_sm90")
     var asm = _compile_code_asm[
-        test_async_copy_l2_prefetch, target = _get_gpu_target["sm_90"]()
+        test_async_copy_with_eviction, target = _get_gpu_target["sm_90"]()
     ]()
-    _verify_async_copy_l2_prefetch(asm)
+    _verify_async_copy_with_eviction(asm)
 
 
 def main():
