@@ -20,6 +20,7 @@ from max.pipelines import (
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 
+from . import weight_adapters
 from .model import MistralModel
 
 mistral_arch = SupportedArchitecture(
@@ -33,4 +34,7 @@ mistral_arch = SupportedArchitecture(
     pipeline_model=MistralModel,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
 )

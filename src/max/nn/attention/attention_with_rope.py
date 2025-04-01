@@ -207,9 +207,8 @@ class AttentionWithRopeV2(Module):
                 " in Attention layer."
             )
 
-        kv_weight_dim = (
-            hidden_size // num_attention_heads
-        ) * num_key_value_heads
+        q_weight_dim = self.kv_params.head_dim * num_attention_heads
+        kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
         self.stacked_qkv = stacked_qkv
 
@@ -219,13 +218,13 @@ class AttentionWithRopeV2(Module):
             self.qkv_proj = Weight(
                 name="qkv_proj.weight",
                 dtype=dtype,
-                shape=[hidden_size + 2 * kv_weight_dim, hidden_size],
+                shape=[q_weight_dim + 2 * kv_weight_dim, hidden_size],
             )
         else:
             self.q_proj = Weight(
                 name="q_proj.weight",
                 dtype=dtype,
-                shape=[hidden_size, hidden_size],
+                shape=[q_weight_dim, hidden_size],
             )
             self.k_proj = Weight(
                 name="k_proj.weight",
@@ -242,7 +241,7 @@ class AttentionWithRopeV2(Module):
             assert not stacked_qkv, "Bias is not supported with stacked qkv."
 
             self.bias_q = Weight(
-                name="q_proj.bias", dtype=dtype, shape=[hidden_size]
+                name="q_proj.bias", dtype=dtype, shape=[q_weight_dim]
             )
             self.bias_k = Weight(
                 name="k_proj.bias", dtype=dtype, shape=[kv_weight_dim]
@@ -252,7 +251,7 @@ class AttentionWithRopeV2(Module):
             )
 
         self.o_proj = linear_cls(
-            in_dim=hidden_size,
+            in_dim=q_weight_dim,
             out_dim=hidden_size,
             dtype=dtype,
             device=devices[0] if devices else None,

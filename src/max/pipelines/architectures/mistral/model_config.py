@@ -17,13 +17,46 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.pipelines.kv_cache import KVCacheParams
-from max.pipelines.max_config import KVCacheConfig, MAXModelConfig
+from max.pipelines.max_config import (
+    KVCacheConfig,
+    MAXModelConfig,
+    MAXModelConfigBase,
+)
 from transformers import AutoConfig
 
 
 @dataclass
-class MistralConfig(MAXModelConfig):
+class MistralConfigBase(MAXModelConfigBase):
+    """Base configuration for Llama3 models."""
+
+    # Required fields
+    hidden_size: int
+    num_attention_heads: int
+    num_key_value_heads: int
+    num_hidden_layers: int
+    head_dim: int
+    vocab_size: int
+    rope_theta: float
+    max_seq_len: int
+    rms_norm_eps: float
+    feed_forward_length: int
+
+    dtype: DType
+    kv_params: KVCacheParams
+    return_n_logits: int
+
+    attention_multiplier: float
+    devices: list[DeviceRef]
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        return {}
+
+
+@dataclass
+class MistralConfig(MAXModelConfig, MistralConfigBase):
     @staticmethod
     def help() -> dict[str, str]:
         return {}
