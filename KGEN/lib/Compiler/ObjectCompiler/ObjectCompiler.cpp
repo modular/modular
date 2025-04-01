@@ -1565,8 +1565,8 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
       llvm::dbgs()
           << "Falling back to using the driver to compile PTX to CUBIN.\n";
     });
-    return ctx->compileFunction(ptx, options.getDebugLevelString(),
-                                options.optimizationLevel);
+    return ctx->compileFunction_v2(ptx, options.getDebugLevelString(),
+                                   options.optimizationLevel);
   }
 
   // If the environment variable MODULAR_USE_DRIVER_NVPTX_COMPILER is set, we
@@ -1595,9 +1595,9 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
   });
   // FIXME: Will clean this _v2 up once we decide which compiler to use to get
   // to cubin.
-  return ctx->compileFunction_v2(ptx, options.getDebugLevelString(),
-                                 options.optimizationLevel,
-                                 getNVGPUName(options.targetAccelerator));
+  return ctx->compileFunction(ptx, options.getDebugLevelString(),
+                              options.optimizationLevel,
+                              getNVGPUName(options.targetAccelerator));
 }
 
 static AnyAsyncValueRef
