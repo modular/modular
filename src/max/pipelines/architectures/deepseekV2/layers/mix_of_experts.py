@@ -164,6 +164,11 @@ class MoE(Module):
         # (seq_len, k, h, w) @ (seq_len, 1, w, 1) -> (seq_len, k, h, 1)
         gate_projs = ops.silu(topk_gate_proj @ hidden_states)
 
+        # apply silu to gate_projs with cast to float32 (MODELS-645)
+        gate_projs = ops.silu(gate_projs.cast(DType.float32)).cast(
+            DType.bfloat16
+        )
+
         # (seq_len, k, h, 1) * (seq_len, k, h, 1) -> (seq_len, k, h, 1)
         up_gate_projs = up_projs * gate_projs
 
@@ -179,7 +184,9 @@ class MoE(Module):
 
         # TODO(MODELS-396): Probably should be a MLPV2 layer
         shared_expert_out = self.shared_expert_down_proj(
-            ops.silu(self.shared_expert_gate_proj(identity))
+            ops.silu(
+                self.shared_expert_gate_proj(identity).cast(DType.float32)
+            ).cast(DType.bfloat16)
             * self.shared_expert_up_proj(identity)
         )
 
