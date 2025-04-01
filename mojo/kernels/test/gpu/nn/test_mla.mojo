@@ -23,7 +23,7 @@ from nn.mha import (
     _naive_attention_with_transpose,
     mha_gpu_naive,
 )
-from nn.mla import flare_mla_decoding
+from nn.mla import flare_mla_decoding, flare_mla_prefill
 from nn.mha_mask import NullMask, CausalMask
 from nn.mha_operand import NDBufferMHAOperand
 from nn.mha_score_mod import IdentityScoreMod
@@ -58,7 +58,7 @@ fn test[
     use_index_input: Bool = False,
 ) raises:
     print(
-        "test_flash_attention",
+        "test_mla_decoding",
         "batch_size:",
         batch_size,
         "num_partitions:",
@@ -370,6 +370,342 @@ fn test[
     flash_output_ptr.free()
 
 
+fn test_prefill[
+    qkv_type: DType,
+    depth: Int,
+    num_heads: Int,
+    kv_depth: Int,
+    cache_depth: Int,
+    cache_num_heads: Int,
+    batch_size: Int = 1,
+    use_causal_mask: Bool = True,
+](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+    print(
+        "test_mla_prefill",
+        "batch_size:",
+        batch_size,
+        "seq_len:",
+        seq_len,
+        "num_keys:",
+        num_keys,
+        "qkv_type:",
+        qkv_type,
+        "depth:",
+        depth,
+        "kv_depth:",
+        kv_depth,
+        "cache_depth:",
+        cache_depth,
+        "cache_num_heads:",
+        cache_num_heads,
+    )
+
+    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+
+    var q_size = batch_size * seq_len * num_heads * depth
+    var k_size = batch_size * num_keys * num_heads * kv_depth
+    var v_size = k_size
+    var o_size = batch_size * seq_len * num_heads * kv_depth
+    var cache_size = batch_size * num_keys * cache_num_heads * cache_depth
+
+    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
+    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
+    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
+    var cache_ptr = UnsafePointer[Scalar[qkv_type]].alloc(cache_size)
+    var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+
+    # Q, K, V, cache are randomly initalized.
+    randn[qkv_type](q_ptr, q_size)
+    randn[qkv_type](k_ptr, k_size)
+    randn[qkv_type](v_ptr, v_size)
+    randn[qkv_type](cache_ptr, cache_size)
+
+    # input row offsets and cache row offsets
+    var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
+    var cache_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
+    for i in range(batch_size):
+        input_row_offsets[i] = i * seq_len
+        cache_row_offsets[i] = i * num_keys
+    input_row_offsets[batch_size] = batch_size * seq_len
+    cache_row_offsets[batch_size] = batch_size * num_keys
+
+    # ragged inputs
+    var q = NDBuffer[qkv_type, 3](
+        q_ptr, Index(batch_size * seq_len, num_heads, depth)
+    )
+    var k = NDBuffer[qkv_type, 3](
+        k_ptr, Index(batch_size * num_keys, num_heads, kv_depth)
+    )
+    var v = NDBuffer[qkv_type, 3](
+        v_ptr, Index(batch_size * num_keys, num_heads, kv_depth)
+    )
+    var cache = NDBuffer[qkv_type, 4](
+        cache_ptr, Index(batch_size, num_keys, cache_num_heads, cache_depth)
+    )
+    var output = NDBuffer[qkv_type, 3](
+        output_ptr, Index(batch_size * seq_len, num_heads, kv_depth)
+    )
+
+    # device pointers
+    var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+    var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
+    var cache_device_ptr = ctx.enqueue_create_buffer[qkv_type](cache_size)
+    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size + 1
+    )
+    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size + 1
+    )
+
+    # copy from host to device
+    ctx.enqueue_copy(q_device_ptr, q_ptr)
+    ctx.enqueue_copy(k_device_ptr, k_ptr)
+    ctx.enqueue_copy(v_device_ptr, v_ptr)
+    ctx.enqueue_copy(cache_device_ptr, cache_ptr)
+    ctx.enqueue_copy(input_row_offsets_device_ptr, input_row_offsets)
+    ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
+
+    # construct device buffers
+    var q_device = NDBuffer[qkv_type, 3, _, DimList(Dim(), num_heads, depth)](
+        q_device_ptr.unsafe_ptr(),
+        Index(batch_size * seq_len, num_heads, depth),
+    )
+    var k_device = NDBuffer[
+        qkv_type, 3, _, DimList(Dim(), num_heads, kv_depth)
+    ](
+        k_device_ptr.unsafe_ptr(),
+        Index(batch_size * num_keys, num_heads, kv_depth),
+    )
+    var v_device = NDBuffer[
+        qkv_type, 3, _, DimList(Dim(), num_heads, kv_depth)
+    ](
+        v_device_ptr.unsafe_ptr(),
+        Index(batch_size * num_keys, num_heads, kv_depth),
+    )
+    var cache_device = NDBuffer[
+        qkv_type, 4, _, DimList(Dim(), Dim(), cache_num_heads, cache_depth)
+    ](
+        cache_device_ptr.unsafe_ptr(),
+        Index(batch_size, num_keys, cache_num_heads, cache_depth),
+    )
+    var output_device = NDBuffer[
+        qkv_type, 3, _, DimList(Dim(), num_heads, kv_depth)
+    ](
+        output_device_ptr.unsafe_ptr(),
+        Index(batch_size * seq_len, num_heads, kv_depth),
+    )
+    var input_row_offsets_device = NDBuffer[DType.uint32, 1, _, DimList(Dim())](
+        input_row_offsets_device_ptr.unsafe_ptr(),
+        Index(batch_size + 1),
+    )
+    var cache_row_offsets_device = NDBuffer[DType.uint32, 1, _, DimList(Dim())](
+        cache_row_offsets_device_ptr.unsafe_ptr(),
+        Index(batch_size + 1),
+    )
+
+    @parameter
+    @always_inline
+    @__copy_capture(
+        q_device,
+        k_device,
+        v_device,
+        cache_device,
+        input_row_offsets_device,
+        cache_row_offsets_device,
+        output_device,
+    )
+    fn kernel_launch(ctx: DeviceContext) raises:
+        flare_mla_prefill(
+            output_device,
+            q_device,
+            k_device,
+            v_device,
+            cache_device,
+            CausalMask(),
+            IdentityScoreMod(),
+            input_row_offsets_device,
+            cache_row_offsets_device,
+            scale,
+            ctx,
+            q_max_seq_len=seq_len,
+        )
+
+    if is_benchmark():
+        alias nrun = 200
+
+        # Warmup
+        for i in range(20):
+            kernel_launch(ctx)
+
+        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var sectime = nstime / 1000000
+
+        var tflops = 2 * batch_size * num_heads * (
+            (-seq_len * seq_len + 2 * seq_len * num_keys)
+        ) * (depth + kv_depth) / sectime / 1e9
+        print(nrun, "runs avg: ", sectime, " ms   ", tflops, " TFLOPs")
+
+    else:
+        kernel_launch(ctx)
+
+    ctx.synchronize()
+    ctx.enqueue_copy(output_ptr, output_device_ptr)
+
+    # create reference K and V
+    # unlike flare_mla_prefill, K_ref and V_ref each head is of size depth (not kv_depth)
+    var k_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * num_keys * num_heads * depth
+    )
+    var v_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * num_keys * num_heads * depth
+    )
+    var output_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        batch_size * seq_len * num_heads * depth
+    )
+
+    # create reference K and V
+    var k_ref = NDBuffer[qkv_type, 4](
+        k_ref_ptr, Index(batch_size, num_keys, num_heads, depth)
+    )
+    var v_ref = NDBuffer[qkv_type, 4](
+        v_ref_ptr, Index(batch_size, num_keys, num_heads, depth)
+    )
+    var output_ref = NDBuffer[qkv_type, 4](
+        output_ref_ptr, Index(batch_size, seq_len, num_heads, depth)
+    )
+
+    # the first kv_depth elements of each head in K_ref and V_ref are the same as K and V
+    for b in range(batch_size):
+        for s in range(seq_len):
+            for h in range(num_heads):
+                for d in range(kv_depth):
+                    k_ref[b, s, h, d] = k[b * seq_len + s, h, d]
+                    v_ref[b, s, h, d] = v[b * seq_len + s, h, d]
+
+    # the rest of the elements in K_ref are broadcasted from the last (depth - kv_depth) elements of the head in cache
+    # the rest of the elements in V_ref are zeros
+    for b in range(batch_size):
+        for s in range(seq_len):
+            for h in range(num_heads):
+                for d in range(depth - kv_depth):
+                    k_ref[b, s, h, d + kv_depth] = cache[
+                        b, s, 0, cache_depth - (depth - kv_depth) + d
+                    ]
+                    v_ref[b, s, h, d + kv_depth] = 0
+
+    # view q_device as a rank 4 buffer
+    var q_device_rank4 = NDBuffer[
+        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
+    ](
+        q_device_ptr.unsafe_ptr(),
+        Index(batch_size, seq_len, num_heads, depth),
+    )
+
+    # create device pointers for K_ref and V_ref
+    var k_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](
+        batch_size * num_keys * num_heads * depth
+    )
+    var v_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](
+        batch_size * num_keys * num_heads * depth
+    )
+    var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](
+        batch_size * seq_len * num_heads * depth
+    )
+    # create device buffers for K_ref and V_ref
+    var k_ref_device = NDBuffer[
+        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
+    ](
+        k_ref_device_ptr.unsafe_ptr(),
+        Index(batch_size, num_keys, num_heads, depth),
+    )
+    var v_ref_device = NDBuffer[
+        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
+    ](
+        v_ref_device_ptr.unsafe_ptr(),
+        Index(batch_size, num_keys, num_heads, depth),
+    )
+    var output_ref_device = NDBuffer[
+        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
+    ](
+        output_ref_device_ptr.unsafe_ptr(),
+        Index(batch_size, seq_len, num_heads, depth),
+    )
+
+    # copy from host to device
+    ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
+    ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
+
+    # create dummy mask3d
+    var dummy_mask = NDBuffer[
+        qkv_type,
+        4,
+        MutableAnyOrigin,
+        DimList.create_unknown[4](),
+    ]()
+    var null_valid_length = NDBuffer[DType.uint32, 1](
+        UnsafePointer[UInt32](), Index(0)
+    )
+
+    var k_ref_operand = NDBufferMHAOperand(k_ref_device)
+    var v_ref_operand = NDBufferMHAOperand(v_ref_device)
+
+    # create reference output
+    mha_gpu_naive[_is_cache_length_accurate=True, use_mask_tensor=False,](
+        q_device_rank4,
+        k_ref_operand,
+        v_ref_operand,
+        dummy_mask,
+        CausalMask(),
+        output_ref_device,
+        null_valid_length,
+        scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        1,
+        ctx,
+    )
+
+    ctx.enqueue_copy(output_ref_ptr, output_ref_device_ptr)
+    ctx.synchronize()
+
+    # view output as a rank 4 buffer
+    var output_rank4 = NDBuffer[qkv_type, 4](
+        output_ptr, Index(batch_size, seq_len, num_heads, kv_depth)
+    )
+
+    # compare output with reference
+    for b in range(batch_size):
+        for s in range(seq_len):
+            for h in range(num_heads):
+                for d in range(kv_depth):
+                    lhs = output_rank4[b, s, h, d]
+                    rhs = output_ref[b, s, h, d]
+                    assert_almost_equal(lhs, rhs, atol=1e-1, rtol=1e-3)
+
+    _ = q_device_ptr
+    _ = k_device_ptr
+    _ = v_device_ptr
+    _ = cache_device_ptr
+    _ = output_device_ptr
+    _ = k_ref_device_ptr
+    _ = v_ref_device_ptr
+    _ = output_ref_device_ptr
+
+    q_ptr.free()
+    k_ptr.free()
+    v_ptr.free()
+    cache_ptr.free()
+    output_ptr.free()
+    k_ref_ptr.free()
+    v_ref_ptr.free()
+    output_ref_ptr.free()
+
+
 fn test_decoding[
     batch_size: Int,
     num_partitions: OptionalReg[Int],
@@ -436,6 +772,30 @@ fn test_decoding[
     ](1, 1024, ctx, use_index_input=use_index_input)
 
 
+fn test_mla_prefill[
+    batch_size: Int,
+](ctx: DeviceContext) raises:
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](140, 140, ctx)
+
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=16,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](140, 140, ctx)
+
+
 def main():
     with DeviceContext() as ctx:
         # tests with mask tensor
@@ -443,3 +803,6 @@ def main():
 
         # tests with casual mask
         test_decoding[27, 1, False, True](ctx, False)
+
+        # test mla prefill
+        test_mla_prefill[2](ctx)
