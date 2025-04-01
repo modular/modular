@@ -521,6 +521,9 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
     /// something like !kgen.type or a trait type.
     Type getVariadicElementType();
 
+    // Returns the argument convention of the variadic list parameter.
+    ArgConvention getVariadicConvention();
+
     /// Return the effective type (always a reference) of each element given
     /// the type according to the type list.
     RefType getElementRefTypeFor(Type elementType);
