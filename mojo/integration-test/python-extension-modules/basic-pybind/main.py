@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: MODULAR_MOJO_PYBIND=enabled %bare-mojo build %S/mojo_module.mojo --gen-py
+# RUN: MODULAR_MOJO_PYBIND=enabled %bare-mojo build %S/mojo_module.mojo --emit shared-lib --gen-py
 # RUN: python3 %s
 
 import sys
