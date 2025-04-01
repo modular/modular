@@ -2724,37 +2724,11 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 namespace {
 /// This replaces one attribute with another without respect to its original
 /// type.  TODO: Is there a better way to do this?
-struct AttrReplacer : public ParameterReplacer<AttrReplacer> {
+struct AttrReplacer : public IndexParameterReplacer<AttrReplacer> {
   TypedAttr oldAttrValue, newAttrValue;
 
   AttrReplacer(TypedAttr oldAttrValue, TypedAttr newAttrValue)
       : oldAttrValue(oldAttrValue), newAttrValue(newAttrValue) {}
-
-  template <typename T>
-  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
-  doReplace(T value, size_t depth) {
-    if (auto result = tryReplace(value, depth))
-      return result;
-
-    if constexpr (std::is_base_of_v<Type, T>)
-      if (isa<ParameterScopeTypeInterface>(value))
-        ++depth;
-
-    SmallVector<Attribute, 16> newAttrs;
-    SmallVector<Type, 16> newTypes;
-    bool changed = false;
-    auto walkFn = [&](auto value, SmallVectorImpl<decltype(value)> &values) {
-      auto newValue = this->replaceImpl(value, depth);
-      changed |= newValue != value;
-      values.push_back(newValue);
-    };
-    value.walkImmediateSubElements(
-        [&](Attribute attr) { walkFn(attr, newAttrs); },
-        [&](Type type) { walkFn(type, newTypes); });
-    if (!changed)
-      return value;
-    return value.replaceImmediateSubElements(newAttrs, newTypes);
-  }
 
   // CRTP methods.
   Attribute tryReplace(Attribute attr, size_t depth) {
