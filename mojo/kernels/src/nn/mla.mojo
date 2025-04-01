@@ -1092,6 +1092,8 @@ fn mla_decoding_single_batch[
             BN // BK,
         )
 
+        barrier()
+
     tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](start, end)
 
     # Apply softmax denumerator.
