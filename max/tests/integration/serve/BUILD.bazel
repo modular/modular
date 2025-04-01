@@ -51,7 +51,10 @@ modular_py_test(
         # Ensure the test has at least 23GB of GPU memory available.
         "resources:gpu-memory": "23",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ],
     tags = [
         "gpu",
         "no-sandbox",
