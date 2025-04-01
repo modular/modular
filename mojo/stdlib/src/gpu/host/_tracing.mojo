@@ -84,6 +84,10 @@ fn _init_dylib() -> _OwnedDLHandle:
         return abort[_OwnedDLHandle](
             "the GPU tracing library was not found at "
             + ",".join(LIBRARY_PATHS)
+            + " please install the cuda toolkit. "
+            + "In apt-get this can be done with "
+            + "`sudo apt-get -y install cuda-toolkit-XX-Y`. Where XX and Y "
+            + "are the major and minor versions."
         )
 
     var dylib = _OwnedDLHandle(library_path.value())
