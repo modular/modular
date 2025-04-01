@@ -27,6 +27,7 @@ from max.serve.scheduler.queues import (
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
+from max.support.human_readable_formatter import to_human_readable_bytes
 
 logger = logging.getLogger("max.serve")
 
@@ -479,7 +480,14 @@ def batch_config_from_pipeline_config(
         log_str += f"\tKVCache Page Size: {kv_cache_config.kv_cache_page_size} Tokens\n"
         log_str += f"\tPrefix Caching: {'Enabled' if kv_cache_config.enable_prefix_caching else 'Disabled'}\n"
     if kv_cache_config.enable_kvcache_swapping_to_host:
+        host_kvcache_swap_space_gb = kv_cache_config.host_kvcache_swap_space_gb
         log_str += "\tKVCache Swapping to Host: Enabled\n"
+        GiB = 1024 * 1024 * 1024
+        host_kvcache_swap_space_str = to_human_readable_bytes(
+            int(host_kvcache_swap_space_gb * GiB)
+        )
+        log_str += f"\tKVCache Host Swap Space: {host_kvcache_swap_space_str}\n"
+    log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
     log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
     log_str += f"\tChunked Prefill: {'Enabled' if pipeline_config.enable_chunked_prefill else 'Disabled'}\n"
     if pipeline_config.enable_chunked_prefill:
