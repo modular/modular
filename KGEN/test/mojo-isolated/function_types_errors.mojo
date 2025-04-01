@@ -38,7 +38,8 @@ fn device_func(i: Int):
     pass
 
 fn test_infer_variadic():
-    # expected-error @below {{invalid call to 'infer_variadic': callee parameter #1 has 'fn(x: Int, y: Int, *args: *) -> None' type, but value has type 'fn(i: Int) -> None'}}
+    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
     infer_variadic[device_func]()
 
 
@@ -48,7 +49,7 @@ fn test_infer_variadic():
 # Tests that we correctly match each incoming argument type against the
 # callee's variadic's element trait.
 
-# expected-error @below {{struct 'ZInt' does not implement all requirements for 'Sprongling'}}
+# expected-note @below {{struct 'ZInt' does not implement all requirements for 'Sprongling'}}
 struct ZInt:
     pass
 
@@ -69,6 +70,8 @@ fn device_func(i: ZInt, j: ZInt):
     pass
 
 
+# expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
 fn test_infer_variadic():
-    # expected-error @below {{invalid call to 'infer_variadic': callee parameter #1 has 'fn(*args: *) -> None' type, but value has type 'fn(i: ZInt, j: ZInt) -> None'}}
+    # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
+    # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
     infer_variadic[device_func]()

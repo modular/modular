@@ -125,6 +125,8 @@ public:
 private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+  LogicalResult matchFunctionTypes(FnTypeGeneratorType actual,
+                                   FnTypeGeneratorType expected);
   LogicalResult matchSingleEltStruct(TypedAttr actualAddrSpace,
                                      TypedAttr expectedAddrSpace);
   LogicalResult inferSelfFromInitResult(Type returnedType);

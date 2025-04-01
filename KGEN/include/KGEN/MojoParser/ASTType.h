@@ -11,6 +11,7 @@
 #ifndef KGEN_MOJOPARSER_ASTTYPE_H
 #define KGEN_MOJOPARSER_ASTTYPE_H
 
+#include "KGEN/KGENDialect/KGENEnums.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
@@ -136,6 +137,10 @@ public:
   /// Given a VariadicType, return the element as an ASTType.  This aborts if
   /// the current type isn't a VariadicType.
   ASTType getVariadicElementType() const;
+
+  /// Given a VariadicType, return its convention as an ASTType.  This aborts if
+  /// the current type isn't a VariadicType.
+  ArgConvention getVariadicConvention() const;
 
   /// Return the RefPackType that corresponds to the VariadicPack instance.
   RefPackType getVariadicPackInfo(SharedState &shared) const;

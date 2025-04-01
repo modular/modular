@@ -335,6 +335,12 @@ ASTType ASTType::getVariadicElementType() const {
   return ASTType(cast<VariadicType>(mlirType).getElementType());
 }
 
+/// Given a VariadicType, return the argument convention.  This aborts if
+/// the current type isn't a VariadicType.
+ArgConvention ASTType::getVariadicConvention() const {
+  return cast<VariadicType>(mlirType).getConvention();
+}
+
 /// Return the RefPackType that corresponds to the VariadicPack instance.
 RefPackType ASTType::getVariadicPackInfo(SharedState &shared) const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");

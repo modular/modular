@@ -27,6 +27,11 @@ using namespace M::KGEN::LIT;
 
 #define DEBUG_TYPE "LITEXPRCALLS"
 
+// DO NOT SUBMIT, thoughts on where this should go?
+//     also we should probably return something other than a bool.
+extern bool checkConventionsConvertible(ArgConvention expectedConv,
+                                        ArgConvention actualConv);
+
 //===----------------------------------------------------------------------===//
 // InferenceFailure
 //===----------------------------------------------------------------------===//
@@ -117,6 +122,166 @@ ParameterInferenceState::ParameterInferenceState(
       givenBindings(givenBindings), evaluator(evaluator),
       inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()), diags(diags),
       allowImplicitConversions(allowImplicitConversions) {}
+
+LogicalResult
+ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
+                                            FnTypeGeneratorType expected) {
+  // TODO: Enable non-raising to raising conversions.
+  if (actual.getFnEffects() != expected.getFnEffects())
+    return failure();
+
+  // Functions with different parameterization cannot be converted between each
+  // other. If the types are equal but the passing conventions are different,
+  // then the conversion is allowed.
+  // TODO: Consider default parameter values and enable parameter inference to
+  // reconcile differences.
+  if (actual.getInputParamTypes() != expected.getInputParamTypes())
+    return failure();
+
+  // If the functions differ in return type conventions, check if the nominal
+  // types are equal.
+  bool actualMemResult = actual.hasMemoryOnlyResult();
+  bool expectedMemResult = expected.hasMemoryOnlyResult();
+  // TODO: We could allow implicit conversions here.
+  if (failed(
+          matchTypes(actual.getUserResultType(), expected.getUserResultType())))
+    return failure();
+
+  for (auto [actualResult, expectedResult] :
+       llvm::zip(actual.getResults(), expected.getResults()))
+    if (failed(matchTypes(actualResult, expectedResult))) {
+      return failure();
+    }
+
+  if (failed(matchParams(actual.getCaptureOrigins(),
+                         expected.getCaptureOrigins()))) {
+    return failure();
+  }
+
+  ArrayRef<Type> actualArgTypes =
+      actual.getArguments().drop_back(actualMemResult);
+  ArrayRef<Type> expectedArgTypes =
+      expected.getArguments().drop_back(expectedMemResult);
+
+  // Functions with an incompatible number of arguments cannot be converted
+  // between each other. The number of arguments should be equal, unless the
+  // expected function is variadic.
+  // TODO: Consider default argument values.
+  std::optional<size_t> expectedVariadicArgIndexOpt =
+      expected.findPackVarArgIndex();
+  if (expectedVariadicArgIndexOpt.has_value()) {
+    size_t expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
+    if (actualArgTypes.size() < expectedVariadicArgIndex) {
+      // Caller didn't supply enough arguments.
+      return failure();
+    }
+  } else { // No variadic
+    if (actualArgTypes.size() != expectedArgTypes.size()) {
+      // Caller didn't supply the expected number of arguments.
+      return failure();
+    }
+  }
+
+  // "Normal" here means it won't be received by a variadic arg in the expected
+  // function.
+  size_t numNormalArgs = actualArgTypes.size();
+  if (expectedVariadicArgIndexOpt.has_value()) {
+    numNormalArgs = expectedVariadicArgIndexOpt.value();
+  }
+
+  // Check all the normal args (which aren't going into a variadic arg).
+  for (size_t actualArgIndex = 0; actualArgIndex < numNormalArgs;
+       actualArgIndex++) {
+    auto actualConv = actual.getArgConvention(actualArgIndex);
+    ArgConvention expectedConv = expected.getArgConvention(actualArgIndex);
+    ASTType actualAstType = actualArgTypes[actualArgIndex];
+    ASTType expectedAstType = expectedArgTypes[actualArgIndex];
+
+    if (!checkConventionsConvertible(expectedConv, actualConv))
+      return failure();
+
+    ASTType expectedValueAstType =
+        getFunctionArgumentRValueType(expectedAstType, expectedConv);
+    ASTType actualValueAstType =
+        getFunctionArgumentRValueType(actualAstType, actualConv);
+    // Now check that the argument types line up.
+    if (!succeeded(matchTypes(actualValueAstType.mlirType,
+                              expectedValueAstType.mlirType)))
+      return failure();
+  }
+
+  // If the expected fn has a variadic arg, check all the actual args that will
+  // go into it.
+  if (expectedVariadicArgIndexOpt.has_value()) {
+    auto expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
+
+    ArgConvention expectedConv =
+        expected.getArgConvention(expectedVariadicArgIndex);
+
+    // Get the variadic pack's element trait.
+    ASTType expectedArgVariadicPackType =
+        expected.getIfVariadicPack(expectedVariadicArgIndex);
+    RefPackType refPackType =
+        expectedArgVariadicPackType.getVariadicPackInfo(shared);
+    ASTType variadicElType = refPackType.getVariadicElementType();
+
+    // This works because VariadicPack's element type is always a trait.
+    auto expectedTraitType = cast<TraitType>(variadicElType.mlirType);
+
+    TypedAttr variadic = refPackType.getVariadic();
+    // As we do our checks, we'll also be calculating the actual kgen.variadic
+    // parameter value.
+    SmallVector<TypedAttr> elements;
+
+    for (size_t actualArgIndex = numNormalArgs;
+         actualArgIndex < actualArgTypes.size(); actualArgIndex++) {
+      auto actualConv = actual.getArgConvention(actualArgIndex);
+      ASTType actualAstType = actualArgTypes[actualArgIndex];
+
+      if (!checkConventionsConvertible(expectedConv, actualConv))
+        return failure();
+
+      ASTType actualValueAstType =
+          getFunctionArgumentRValueType(actualAstType, actualConv);
+
+      // If the argument types line up, then we can skip the rest of this.
+      if (succeeded(
+              matchTypes(actualValueAstType.mlirType, variadicElType.mlirType)))
+        continue;
+
+      // We can convert a more general `actual` function (that takes in a trait
+      // argument) to a more specific `expected` function that takes in a struct
+      // argument, as long as that struct conforms to that trait.
+      // In other words, here we're handling function conversions with covariant
+      // arguments (see TTSMFS).
+      ExprEmitter emitter(declScope, EC_TypeParamValue);
+      SyntheticNode synthNode(declScope.getLoc());
+      CValue actualAstTypeCValue = CValue(actualValueAstType.mlirType);
+      // Now, check if the actual arg can be converted to the expected trait.
+      PValue actualAstTypeAsVariadicElTrait =
+          emitter.emitMetaTypeToTraitConversion(
+              {actualAstTypeCValue, synthNode}, expectedTraitType);
+      if (!actualAstTypeAsVariadicElTrait) {
+        return failure();
+      }
+      // And since we have it, let's use it to build up a kgen.variadic
+      // parameter value.
+      elements.push_back(actualAstTypeAsVariadicElTrait);
+    }
+
+    // Now assemble the kgen.variadic parameter value and match it against the
+    // expected one.
+    auto varType =
+        VariadicType::get(variadicElType, refPackType.getVariadicConvention());
+    auto variadicAttr = VariadicAttr::get(elements, varType);
+    if (failed(matchParams(variadicAttr, variadic))) {
+      return failure();
+    }
+  }
+
+  // The function types are convertible.
+  return success();
+}
 
 LogicalResult ParameterInferenceState::matchTypes(Type actualType,
                                                   Type expectedType) {
@@ -255,57 +420,19 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
     }
 
   // Handle FuncTypeGeneratorType
-  if (auto actual = dyn_cast<FnTypeGeneratorType>(actualType))
+  if (auto actual = dyn_cast<FnTypeGeneratorType>(actualType)) {
     if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType)) {
-      // When checking SignatureTypes, we have to keep track of
-      // paramIndexRefDepth to be sure we are binding the right parameters.
-      if (actual.getArguments().size() == expected.getArguments().size() &&
-          actual.getResults().size() == expected.getResults().size()) {
-        ++paramIndexRefDepth;
-        for (auto [actualArgument, expectedArgument] :
-             llvm::zip(actual.getArguments(), expected.getArguments()))
-          if (failed(matchTypes(actualArgument, expectedArgument)))
-            return failure();
+      ++paramIndexRefDepth;
 
-        for (auto [actualResult, expectedResult] :
-             llvm::zip(actual.getResults(), expected.getResults()))
-          if (failed(matchTypes(actualResult, expectedResult)))
-            return failure();
-
-        if (failed(matchParams(actual.getCaptureOrigins(),
-                               expected.getCaptureOrigins())))
-          return failure();
-
+      if (succeeded(matchFunctionTypes(actual, expected))) {
         --paramIndexRefDepth;
         return success();
-      }
-
-      // TODO(verdagon): This entire block is a temporary hack that's replaced
-      // in the next PR, so I can split PRs to be merciful to reviewers.
-      auto expectedPackArgIndexOpt = expected.findPackVarArgIndex();
-      if (expectedPackArgIndexOpt.has_value()) {
-        // The argument index that has the VariadicPack.
-        size_t expectedPackArgIndex = expectedPackArgIndexOpt.value();
-        ASTType expectedAstType =
-            expected.getIfVariadicPack(expectedPackArgIndex);
-        RefPackType refPackType = expectedAstType.getVariadicPackInfo(shared);
-        TypedAttr variadic = refPackType.getVariadic();
-        if (isa<ParamIndexRefAttr>(variadic)) {
-          // Make an empty variadic for now
-          Type variadicElType = refPackType.getVariadicElementType();
-          auto variadicType =
-              VariadicType::get(variadicElType, ArgConvention::ReadReg);
-          auto variadicAttr = VariadicAttr::get({}, variadicType);
-          ++paramIndexRefDepth;
-          if (failed(matchParams(variadicAttr, variadic))) {
-            assert(false);
-            return failure();
-          }
-          --paramIndexRefDepth;
-          return success();
-        }
+      } else {
+        --paramIndexRefDepth;
+        return failure();
       }
     }
+  }
 
   // If the actual type is a reference to a parameter, it might be a local
   // parameter within a function.  The type checker will resolve this using the
