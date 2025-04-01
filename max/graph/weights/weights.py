@@ -150,5 +150,8 @@ class WeightData:
             data = self.data.view(dtype.to_numpy())
         return dataclasses.replace(self, dtype=dtype, shape=Shape(data.shape))
 
+    def __repr__(self):
+        return f"WeightData({self.dtype}, {self.shape})"
+
 
 WeightsAdapter = Callable[..., dict[str, WeightData]]
