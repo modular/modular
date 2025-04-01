@@ -85,17 +85,7 @@ def create_paged_manager(
     HEAD_DIM = 1
     NUM_LAYERS = 1
 
-    kv_params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=NUM_KV_HEADS,
-        head_dim=HEAD_DIM,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=page_size,
-        enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
-    )
-
-    session = InferenceSession()
+    dtype = DType.float32
 
     cache_memory = (
         2
@@ -104,8 +94,26 @@ def create_paged_manager(
         * HEAD_DIM
         * page_size
         * num_blocks
-        * kv_params.dtype.size_in_bytes
+        * dtype.size_in_bytes
     )
+
+    # CPU swap space is 100x the device cache memory
+    GiB = 1024 * 1024 * 1024
+    host_kvcache_swap_space_gb = 100 * cache_memory / GiB
+
+    kv_params = KVCacheParams(
+        dtype=dtype,
+        n_kv_heads=NUM_KV_HEADS,
+        head_dim=HEAD_DIM,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=page_size,
+        enable_prefix_caching=enable_prefix_caching,
+        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        host_kvcache_swap_space_gb=host_kvcache_swap_space_gb,
+    )
+
+    session = InferenceSession()
+
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         max_batch_size=max_batch_size,
@@ -914,7 +922,6 @@ def test_dont_oom_during_cow():
         BatchInfo(TG, 1, 1, 6, 1),
         BatchInfo(TG, 0, 0, 0, 0),
     ]
-    print(actual)
     assert len(actual) == len(expected) and actual == expected
 
 
