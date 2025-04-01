@@ -668,7 +668,7 @@ class TokenGenerationScheduler(Scheduler):
                 blocks_copied_str = f"Blocks copied: {d2d_blocks_copied} D2D | "
             paged_manager.reset_blocks_copied()
 
-        print(
+        logger.debug(
             f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
             f"Terminated: {terminated_reqs} reqs, "
             f"Pending: {pending_reqs} reqs | "
