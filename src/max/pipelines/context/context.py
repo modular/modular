@@ -308,13 +308,6 @@ class TextContext:
             committed_idx if committed_idx is not None else self._committed_idx
         )
 
-        if new_committed_idx > new_start_idx:
-            msg = f"""
-            committed_idx must always be at most start_idx, unable to bump token indices
-            as new committed_idx ({new_committed_idx}) is greater than new start_idx ({new_start_idx}).
-            """
-            raise ValueError(msg)
-
         if new_start_idx >= new_active_idx:
             msg = f"""
             active_idx must always be greater than start_idx, unable to bump token indices
@@ -463,6 +456,7 @@ class TextContext:
         return (
             f"TextContext("
             f"cache_seq_id={self._cache_seq_id}, "
+            f"committed_idx={self.committed_idx}, "
             f"start_idx={self.start_idx}, "
             f"active_idx={self.active_idx}, "
             f"end_idx={self.end_idx})"

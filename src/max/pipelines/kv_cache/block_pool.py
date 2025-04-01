@@ -146,7 +146,7 @@ class BlockPool:
         return None
 
     @traced
-    def _evict_block(self, block: KVCacheBlock) -> None:
+    def uncommit_block(self, block: KVCacheBlock) -> None:
         """Evict a block from the prefix cache."""
         assert block.block_hash is not None
         hash_value = block.block_hash.value
@@ -190,7 +190,7 @@ class BlockPool:
         block_hash = curr_block.block_hash
         assert self.enable_prefix_caching or block_hash is None
         if block_hash is not None:
-            self._evict_block(curr_block)
+            self.uncommit_block(curr_block)
 
         curr_block.ref_cnt += 1
         assert curr_block.block_hash is None

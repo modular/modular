@@ -128,6 +128,42 @@ class BlockManager:
         self.assert_runtime_invariants(ctx)
 
     @traced
+    def rollback(self, ctx: InputContext) -> None:
+        """Rollback the block manager by discarding all blocks after ctx.start_idx.
+
+        This may delete block hashes and blocks assigned to a request."""
+
+        new_num_hashes = ctx.start_idx // self.block_size
+        req_hashes = self.req_to_block_hashes[ctx.cache_seq_id]
+
+        # Delete all hashes after ctx.start_idx
+        assert len(req_hashes) >= new_num_hashes
+        while len(req_hashes) > new_num_hashes:
+            req_hashes.pop()
+
+        new_num_blocks = ceildiv(ctx.start_idx, self.block_size)
+        new_num_committed_blocks = ctx.start_idx // self.block_size
+
+        # Evict blocks from prefix cache
+        req_blocks = self.req_to_blocks[ctx.cache_seq_id]
+        for block in req_blocks[new_num_committed_blocks:]:
+            # If the block is committed into prefix cache, uncommit it.
+            block_hash = block.block_hash
+            assert self.enable_prefix_caching or block_hash is None
+            assert block.ref_cnt == 1  # should only be one ref to the block
+            if block_hash is not None:
+                self.device_block_pool.uncommit_block(block)
+
+        # Unassign blocks from request
+        assert len(req_blocks) >= new_num_blocks
+        while len(req_blocks) > new_num_blocks:
+            self.device_block_pool.free_block(req_blocks.pop())
+
+        ctx.set_token_indices(
+            committed_idx=new_num_committed_blocks * self.block_size
+        )
+
+    @traced
     def compute_block_hashes_for_request(
         self,
         ctx: InputContext,

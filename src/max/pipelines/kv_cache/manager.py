@@ -265,6 +265,20 @@ class KVCacheManager(ABC):
         This is a no-op if prefix caching is disabled."""
         ...
 
+    def rollback(self, batch: list[InputContext]) -> None:
+        """Rollback the KVCache for speculative decoding by discarding all data
+        after ctx.start_idx. This should be called after stepping normally.
+
+        This is a no-op except for paged kv cache manager.
+
+        Usage:
+            >>> manager.fetch([ctx]])
+            >>> manager.step([ctx]])
+            >>> ctx.bump_token_indices(start_idx=-100, ...)
+            >>> manager.rollback([ctx])
+        """
+        ...
+
     def release(self, seq_id: int) -> None:
         """Release `seq_id` provided, marking this sequence as complete.
         This returns the seq_id back to the available pool of cache memory,
