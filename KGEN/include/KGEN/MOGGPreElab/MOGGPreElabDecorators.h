@@ -26,7 +26,6 @@ inline bool isKernel(Operation *gen) {
 
 constexpr StringLiteral shapeFuncRegistrationAttr = "mogg.v1_shape_func";
 
-constexpr StringLiteral ALLOCS_ATTR = "mogg.allocs";
 constexpr StringLiteral IS_VIEW_ATTR = "mogg.view";
 constexpr StringLiteral OUTLINED_ATTR = "mogg.outlined";
 
