@@ -173,6 +173,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             head_dim=hidden_size // num_kv_heads,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             page_size=kv_cache_config.kv_cache_page_size,
             n_devices=n_devices,
         )
