@@ -32,7 +32,7 @@ from gpu.mma import (
 )
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
-from layout.swizzle import make_ldmatrix_swizzle
+from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.layout_tensor import (
     copy_local_to_dram,
     LayoutTensorIter,
@@ -94,12 +94,275 @@ fn cluster_size[cluster_shape: StaticTuple[Int32, 3]]() -> Int32:
     return size
 
 
+@always_inline
+fn warp_specialized_gemm_output[
+    c_type: DType,
+    accum_type: DType,
+    c_layout: Layout,
+    c_smem_layout: Layout,
+    c_reg_layout: Layout,
+    c_desc_layout: Layout,
+    /,
+    *,
+    BM: Int,
+    BN: Int,
+    c_swizzle: TensorMapSwizzle,
+    wgmma_shape: IndexList[3],
+    num_consumer: Int = 1,
+    use_tma_store: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c_smem_tile: LayoutTensor[
+        c_type,
+        c_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ],
+    c_reg_tile: LayoutTensor[
+        accum_type,
+        c_reg_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ],
+    warp_group_thread_idx: UInt,
+    local_warp_group_idx: UInt,
+    local_thread_idx: UInt,
+    block_y: Int,
+    block_x: Int,
+):
+    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // WARP_GROUP_SIZE
+    alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
+    alias num_n_mmas = BN // wgmma_shape[1]
+    alias num_consumer_threads = num_consumer * WARP_GROUP_SIZE
+    alias simd_size = simdwidthof[c_type]()
+
+    var c_gmem_tile = c.tile[BM, BN](block_y, block_x)
+    var c_gmem_split = c_gmem_tile.tile[BM // num_consumer, BN](
+        local_warp_group_idx, 0
+    )
+    var warp_id = warp_group_thread_idx // WARP_SIZE
+
+    alias WG_BM = c_smem_tile.layout.shape[0].value()
+    alias WG_BN = c_smem_tile.layout.shape[1].value()
+
+    # fmt: off
+    alias use_stmatrix = accum_type == DType.float32 \
+            and c_type == DType.bfloat16 \
+            and c_frag_size % 8 == 0 \
+            and wgmma_shape[1] % 16 == 0 \
+            and BM % wgmma_shape[0] == 0 \
+            and BN % WG_BN == 0 \
+            and WG_BN % 16 == 0 \
+            and num_consumer <= 2 \
+            and BN == wgmma_shape[1] \
+            and BM == WG_BM \
+            and Int(BN).is_power_of_two()
+    # fmt: on
+
+    @parameter
+    if use_stmatrix:
+        var st_matrix_rt_layout = RuntimeLayout[
+            st_matrix_n_layout[c_type, WG_BN, num_m_mmas, num_consumer](),
+            linear_idx_type = DType.int32,
+            bitwidth=32,
+        ]()
+        alias st_matrix_swizzle = make_ldmatrix_swizzle[
+            c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
+        ]()
+        alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[c_type, WG_BN]()
+
+        lane = lane_id()
+
+        @parameter
+        for sub_wg_bn_id in range(BN // WG_BN):
+
+            @parameter
+            for m_mma in range(num_m_mmas):
+
+                @parameter
+                for i in range(WG_BN // 16):
+                    var c_frag = c_reg_tile.tile[1, 8](
+                        m_mma, i + sub_wg_bn_id * (WG_BN // 16)
+                    )
+
+                    var d_reg = c_frag.load[8](0, 0).cast[DType.bfloat16]()
+
+                    var st_matrix_args = RuntimeTuple[
+                        IntTuple(
+                            UNKNOWN_VALUE,
+                            IntTuple(
+                                i,
+                                m_mma,
+                                UNKNOWN_VALUE,
+                            ),
+                        )
+                    ](
+                        warp_group_thread_idx,
+                        i,
+                        m_mma,
+                        local_warp_group_idx,
+                    )
+                    var offset = c_smem_tile.ptr.offset(
+                        st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
+                    )
+                    var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
+
+                    st_matrix[simd_width=4](offset, d_reg_f32_packed)
+
+            named_barrier[num_consumer_threads, 10]()
+
+            alias thread_layout = Layout.row_major(
+                num_consumer_threads // (WG_BN // simd_size),
+                WG_BN // simd_size,
+            )
+
+            var c_gmem_wg_tile = c_gmem_tile.tile[BM, WG_BN](0, sub_wg_bn_id)
+
+            @parameter
+            if elementwise_lambda_fn:
+                alias epilogue = elementwise_lambda_fn.value()
+
+                # Output dimensions in global memory.
+                alias N = c_layout.shape[1].value()
+                var M: UInt = c.dim(0)
+
+                var c_gmem_frag = c_gmem_wg_tile.vectorize[
+                    1, simd_size
+                ]().distribute[thread_layout](local_thread_idx)
+                var c_smem_frag = c_smem_tile.vectorize[
+                    1, simd_size
+                ]().distribute[thread_layout, swizzle=st_matrix_vec_swizzle](
+                    local_thread_idx
+                )
+
+                var thread_offset = c_gmem_frag.distance(c.ptr)
+
+                alias num_stores_per_thread = __type_of(
+                    c_gmem_frag
+                ).layout.size()
+
+                @parameter
+                for i in range(num_stores_per_thread):
+                    alias src_idx = __type_of(c_smem_frag).layout(i)
+                    alias dst_idx = __type_of(c_gmem_frag).layout(i)
+
+                    var m = Int((thread_offset + dst_idx) // N)
+                    var n = Int((thread_offset + dst_idx) % N)
+                    alias alignment = alignof[SIMD[c_type, simd_size]]()
+
+                    if m < M and n < N:
+                        epilogue[alignment=alignment](
+                            (m, n),
+                            c_smem_frag[i, 0].cast[c_type](),
+                        )
+
+            else:
+
+                @parameter
+                if use_tma_store:
+                    if warp_group_thread_idx == 0:
+                        c_tma_op.async_store(
+                            c_smem_tile,
+                            (
+                                UInt(block_x * BN + sub_wg_bn_id * WG_BN),
+                                UInt(block_y * BM),
+                            ),
+                        )
+                        c_tma_op.commit_group()
+                        c_tma_op.wait_group()
+                else:
+                    copy_sram_to_dram[
+                        thread_layout=thread_layout, swizzle=st_matrix_swizzle
+                    ](
+                        c_gmem_wg_tile.vectorize[1, simd_size](),
+                        c_smem_tile.vectorize[1, simd_size](),
+                    )
+
+            named_barrier[num_consumer_threads, 10]()
+
+    else:
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias epilogue = elementwise_lambda_fn.value()
+
+            # Output dimensions in global memory.
+            alias N = c_layout.shape[1].value()
+            var M: UInt = c.dim(0)
+
+            lane = lane_id()
+
+            c_frag_vec2 = c_reg_tile.vectorize[1, 2]()
+
+            @parameter
+            for m_mma in range(num_m_mmas):
+
+                @parameter
+                for n_mma in range(num_n_mmas):
+                    alias mma_id = n_mma * num_m_mmas + m_mma
+
+                    warp_tile = c_gmem_split.tile[
+                        wgmma_shape[0] // 4, wgmma_shape[1]
+                    ](m_mma * 4 + warp_id, n_mma)
+
+                    gmem_frag = warp_tile.vectorize[1, 2]().distribute[
+                        Layout.row_major(8, 4)
+                    ](lane)
+                    thread_offset = gmem_frag.distance(c.ptr)
+
+                    alias num_vecs = __type_of(gmem_frag).layout.size()
+
+                    @parameter
+                    for i in range(num_vecs):
+                        alias dst_idx = __type_of(gmem_frag).layout(i)
+
+                        m = Int((thread_offset + dst_idx) // N)
+                        n = Int((thread_offset + dst_idx) % N)
+
+                        alias alignment = alignof[SIMD[c_type, 2]]()
+                        if m < M and n < N:
+                            epilogue[alignment=alignment](
+                                (m, n),
+                                c_frag_vec2[mma_id, i].cast[c_type](),
+                            )
+
+        else:
+
+            @parameter
+            for m_mma in range(num_m_mmas):
+
+                @parameter
+                for n_mma in range(num_n_mmas):
+                    alias mma_id = n_mma * num_m_mmas + m_mma
+
+                    # (m_mma, n_mma) is coordinates for a warp group's tile.
+                    # A warp group is 4x1 warps.
+                    warp_tile = c_gmem_split.tile[
+                        wgmma_shape[0] // 4, wgmma_shape[1]
+                    ](m_mma * 4 + warp_id, n_mma)
+
+                    # Tile at (mma_id, 0) is a long vector containing all fragments
+                    # for this warp.
+                    c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+
+                    # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
+                    # elementwise. This pattern repeates to fill the warp tile.
+                    copy_local_to_dram[Layout.row_major(8, 4)](
+                        warp_tile.vectorize[1, 2](),
+                        c_frag.vectorize[1, 2](),
+                    )
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
     `nvvm.cluster_dim`=cluster_shape,
 )
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 fn tma_wgmma_warp_specialized_gemm_kernel[
     a_type: DType,
     b_type: DType,
@@ -113,18 +376,22 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     wgmma_shape: IndexList[3],
     a_desc_layout: Layout,
     b_desc_layout: Layout,
+    c_desc_layout: Layout,
     c_smem_layout: Layout,
     cluster_shape: StaticTuple[Int32, 3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = True,
     num_threads: Int = 128,
     pipeline_stages: Int = 7,
     partitioned_multicast: Bool = False,
+    use_tma_store: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
 ):
     constrained[transpose_b, "Only support transposed B in layout"]()
@@ -371,7 +638,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
                 write_pipeline_states.step()
 
     else:
-        var consumer_local_tid = thread_idx.x - 128
 
         @parameter
         if num_consumer == 1 or num_consumer == 2:
@@ -432,210 +698,25 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
             read_pipeline_states.step()
 
-        var c_gmem_tile = c.tile[BM, BN](
-            block_idx_swizzle[1], block_idx_swizzle[0]
+        warp_specialized_gemm_output[
+            BM=BM,
+            BN=BN,
+            c_swizzle=c_swizzle,
+            wgmma_shape=wgmma_shape,
+            num_consumer=num_consumer,
+            use_tma_store=use_tma_store,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](
+            c_tma_op,
+            c,
+            c_smem_tile,
+            c_reg_tile,
+            warp_group_thread_idx,
+            local_warp_group_idx,
+            thread_idx.x - WARP_GROUP_SIZE,
+            block_idx_swizzle[1],
+            block_idx_swizzle[0],
         )
-        var c_gmem_split = c_gmem_tile.tile[BM // num_consumer, BN](
-            local_warp_group_idx, 0
-        )
-        var warp_id = warp_group_thread_idx // WARP_SIZE
-
-        alias WG_BM = c_smem_tile.layout.shape[0].value()
-        alias WG_BN = c_smem_tile.layout.shape[1].value()
-
-        # fmt: off
-        alias use_stmatrix = accum_type == DType.float32 \
-                and c_type == DType.bfloat16 \
-                and c_frag_size % 8 == 0 \
-                and wgmma_shape[1] % 16 == 0 \
-                and BM % wgmma_shape[0] == 0 \
-                and BN % WG_BN == 0 \
-                and WG_BN % 16 == 0 \
-                and num_consumer <= 2 \
-                and BN == wgmma_shape[1] \
-                and BM == WG_BM \
-                and Int(BN).is_power_of_two()
-        # fmt: on
-
-        @parameter
-        if use_stmatrix:
-            var st_matrix_rt_layout = RuntimeLayout[
-                st_matrix_n_layout[c_type, WG_BN, num_m_mmas, num_consumer](),
-                linear_idx_type = DType.int32,
-                bitwidth=32,
-            ]()
-            alias st_matrix_swizzle = make_ldmatrix_swizzle[
-                c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
-            ]()
-            alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[c_type, WG_BN]()
-
-            lane = lane_id()
-
-            @parameter
-            for sub_wg_bn_id in range(BN // WG_BN):
-
-                @parameter
-                for m_mma in range(num_m_mmas):
-
-                    @parameter
-                    for i in range(WG_BN // 16):
-                        var c_frag = c_reg_tile.tile[1, 8](
-                            m_mma, i + sub_wg_bn_id * (WG_BN // 16)
-                        )
-
-                        var d_reg = c_frag.load[8](0, 0).cast[DType.bfloat16]()
-
-                        var st_matrix_args = RuntimeTuple[
-                            IntTuple(
-                                UNKNOWN_VALUE,
-                                IntTuple(
-                                    i,
-                                    m_mma,
-                                    UNKNOWN_VALUE,
-                                ),
-                            )
-                        ](warp_group_thread_idx, i, m_mma, local_warp_group_idx)
-                        var offset = c_smem_tile.ptr.offset(
-                            st_matrix_swizzle(
-                                st_matrix_rt_layout(st_matrix_args)
-                            )
-                        )
-                        var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
-
-                        st_matrix[simd_width=4](offset, d_reg_f32_packed)
-
-                named_barrier[num_consumer_threads, 10]()
-
-                alias thread_layout = Layout.row_major(
-                    num_consumer_threads // (WG_BN // simd_size),
-                    WG_BN // simd_size,
-                )
-
-                var c_gmem_wg_tile = c_gmem_tile.tile[BM, WG_BN](
-                    0, sub_wg_bn_id
-                )
-
-                @parameter
-                if elementwise_lambda_fn:
-                    alias epilogue = elementwise_lambda_fn.value()
-
-                    # Output dimensions in global memory.
-                    alias N = c_layout.shape[1].value()
-                    var M: UInt = c.dim(0)
-
-                    var c_gmem_frag = c_gmem_wg_tile.vectorize[
-                        1, simd_size
-                    ]().distribute[thread_layout](consumer_local_tid)
-                    var c_smem_frag = c_smem_tile.vectorize[
-                        1, simd_size
-                    ]().distribute[
-                        thread_layout, swizzle=st_matrix_vec_swizzle
-                    ](
-                        consumer_local_tid
-                    )
-
-                    var thread_offset = c_gmem_frag.distance(c.ptr)
-
-                    alias num_stores_per_thread = __type_of(
-                        c_gmem_frag
-                    ).layout.size()
-
-                    @parameter
-                    for i in range(num_stores_per_thread):
-                        alias src_idx = __type_of(c_smem_frag).layout(i)
-                        alias dst_idx = __type_of(c_gmem_frag).layout(i)
-
-                        var m = Int((thread_offset + dst_idx) // N)
-                        var n = Int((thread_offset + dst_idx) % N)
-                        alias alignment = alignof[SIMD[c_type, simd_size]]()
-
-                        if m < M and n < N:
-                            epilogue[alignment=alignment](
-                                (m, n),
-                                c_smem_frag[i, 0].cast[c_type](),
-                            )
-
-                else:
-                    copy_sram_to_dram[
-                        thread_layout=thread_layout, swizzle=st_matrix_swizzle
-                    ](
-                        c_gmem_wg_tile.vectorize[1, simd_size](),
-                        c_smem_tile.vectorize[1, simd_size](),
-                    )
-
-                named_barrier[num_consumer_threads, 10]()
-
-        else:
-
-            @parameter
-            if elementwise_lambda_fn:
-                alias epilogue = elementwise_lambda_fn.value()
-
-                # Output dimensions in global memory.
-                alias N = c_layout.shape[1].value()
-                var M: UInt = c.dim(0)
-
-                lane = lane_id()
-
-                c_frag_vec2 = c_reg_tile.vectorize[1, 2]()
-
-                @parameter
-                for m_mma in range(num_m_mmas):
-
-                    @parameter
-                    for n_mma in range(num_n_mmas):
-                        alias mma_id = n_mma * num_m_mmas + m_mma
-
-                        warp_tile = c_gmem_split.tile[
-                            wgmma_shape[0] // 4, wgmma_shape[1]
-                        ](m_mma * 4 + warp_id, n_mma)
-
-                        gmem_frag = warp_tile.vectorize[1, 2]().distribute[
-                            Layout.row_major(8, 4)
-                        ](lane)
-                        thread_offset = gmem_frag.distance(c.ptr)
-
-                        alias num_vecs = __type_of(gmem_frag).layout.size()
-
-                        @parameter
-                        for i in range(num_vecs):
-                            alias dst_idx = __type_of(gmem_frag).layout(i)
-
-                            m = Int((thread_offset + dst_idx) // N)
-                            n = Int((thread_offset + dst_idx) % N)
-
-                            alias alignment = alignof[SIMD[c_type, 2]]()
-                            if m < M and n < N:
-                                epilogue[alignment=alignment](
-                                    (m, n),
-                                    c_frag_vec2[mma_id, i].cast[c_type](),
-                                )
-
-            else:
-
-                @parameter
-                for m_mma in range(num_m_mmas):
-
-                    @parameter
-                    for n_mma in range(num_n_mmas):
-                        alias mma_id = n_mma * num_m_mmas + m_mma
-
-                        # (m_mma, n_mma) is coordinates for a warp group's tile.
-                        # A warp group is 4x1 warps.
-                        warp_tile = c_gmem_split.tile[
-                            wgmma_shape[0] // 4, wgmma_shape[1]
-                        ](m_mma * 4 + warp_id, n_mma)
-
-                        # Tile at (mma_id, 0) is a long vector containing all fragments
-                        # for this warp.
-                        c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
-
-                        # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
-                        # elementwise. This pattern repeates to fill the warp tile.
-                        copy_local_to_dram[Layout.row_major(8, 4)](
-                            warp_tile.vectorize[1, 2](),
-                            c_frag.vectorize[1, 2](),
-                        )
 
     # TO ensure SEMEM destruction doesn't happen
     @parameter
@@ -649,6 +730,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 )
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+@__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     a_type: DType,
     b_type: DType,
@@ -662,19 +744,23 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     wgmma_shape: IndexList[3],
     a_desc_layout: Layout,
     b_desc_layout: Layout,
+    c_desc_layout: Layout,
     c_smem_layout: Layout,
     cluster_shape: StaticTuple[Int32, 3],
     grid_shape: IndexList[2],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = True,
     num_threads: Int = 128,
     pipeline_stages: Int = 7,
     partitioned_multicast: Bool = False,
+    use_tma_store: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     problem_shape: IndexList[3],
 ):
@@ -922,7 +1008,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 work_info = scheduler.fetch_next_work()
 
     else:
-        var consumer_local_tid = thread_idx.x - 128
 
         @parameter
         if num_consumer == 1 or num_consumer == 2:
@@ -990,223 +1075,25 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
                 read_pipeline_states.step()
 
-            var c_gmem_tile = c.tile[BM, BN](block_y, block_x)
-            var c_gmem_split = c_gmem_tile.tile[BM // num_consumer, BN](
-                local_warp_group_idx, 0
+            warp_specialized_gemm_output[
+                BM=BM,
+                BN=BN,
+                c_swizzle=c_swizzle,
+                wgmma_shape=wgmma_shape,
+                num_consumer=num_consumer,
+                use_tma_store=use_tma_store,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                c_tma_op,
+                c,
+                c_smem_tile,
+                c_reg_tile,
+                warp_group_thread_idx,
+                local_warp_group_idx,
+                thread_idx.x - WARP_GROUP_SIZE,
+                block_y,
+                block_x,
             )
-            var warp_id = warp_group_thread_idx // WARP_SIZE
-
-            alias WG_BM = c_smem_tile.layout.shape[0].value()
-            alias WG_BN = c_smem_tile.layout.shape[1].value()
-
-            # fmt: off
-            alias use_stmatrix = accum_type == DType.float32 \
-                    and c_type == DType.bfloat16 \
-                    and c_frag_size % 8 == 0 \
-                    and wgmma_shape[1] % 16 == 0 \
-                    and BM % wgmma_shape[0] == 0 \
-                    and BN % WG_BN == 0 \
-                    and WG_BN % 16 == 0 \
-                    and num_consumer <= 2 \
-                    and BN == wgmma_shape[1] \
-                    and BM == WG_BM \
-                    and Int(BN).is_power_of_two()
-            # fmt: on
-
-            @parameter
-            if use_stmatrix:
-                var st_matrix_rt_layout = RuntimeLayout[
-                    st_matrix_n_layout[
-                        c_type, WG_BN, num_m_mmas, num_consumer
-                    ](),
-                    linear_idx_type = DType.int32,
-                    bitwidth=32,
-                ]()
-                alias st_matrix_swizzle = make_ldmatrix_swizzle[
-                    c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
-                ]()
-                alias st_matrix_vec_swizzle = make_ldmatrix_swizzle[
-                    c_type, WG_BN
-                ]()
-
-                lane = lane_id()
-
-                @parameter
-                for sub_wg_bn_id in range(BN // WG_BN):
-
-                    @parameter
-                    for m_mma in range(num_m_mmas):
-
-                        @parameter
-                        for i in range(WG_BN // 16):
-                            var c_frag = c_reg_tile.tile[1, 8](
-                                m_mma, i + sub_wg_bn_id * (WG_BN // 16)
-                            )
-
-                            var d_reg = c_frag.load[8](0, 0).cast[
-                                DType.bfloat16
-                            ]()
-
-                            var st_matrix_args = RuntimeTuple[
-                                IntTuple(
-                                    UNKNOWN_VALUE,
-                                    IntTuple(
-                                        i,
-                                        m_mma,
-                                        UNKNOWN_VALUE,
-                                    ),
-                                )
-                            ](
-                                warp_group_thread_idx,
-                                i,
-                                m_mma,
-                                local_warp_group_idx,
-                            )
-                            var offset = c_smem_tile.ptr.offset(
-                                st_matrix_swizzle(
-                                    st_matrix_rt_layout(st_matrix_args)
-                                )
-                            )
-                            var d_reg_f32_packed = bitcast[DType.float32, 4](
-                                d_reg
-                            )
-
-                            st_matrix[simd_width=4](offset, d_reg_f32_packed)
-
-                    named_barrier[num_consumer_threads, 10]()
-
-                    alias thread_layout = Layout.row_major(
-                        num_consumer_threads // (WG_BN // simd_size),
-                        WG_BN // simd_size,
-                    )
-
-                    var c_gmem_wg_tile = c_gmem_tile.tile[BM, WG_BN](
-                        0, sub_wg_bn_id
-                    )
-
-                    @parameter
-                    if elementwise_lambda_fn:
-                        alias epilogue = elementwise_lambda_fn.value()
-
-                        # Output dimensions in global memory.
-                        alias N = c_layout.shape[1].value()
-                        var M: UInt = c.dim(0)
-
-                        var c_gmem_frag = c_gmem_wg_tile.vectorize[
-                            1, simd_size
-                        ]().distribute[thread_layout](consumer_local_tid)
-                        var c_smem_frag = c_smem_tile.vectorize[
-                            1, simd_size
-                        ]().distribute[
-                            thread_layout, swizzle=st_matrix_vec_swizzle
-                        ](
-                            consumer_local_tid
-                        )
-
-                        var thread_offset = c_gmem_frag.distance(c.ptr)
-
-                        alias num_stores_per_thread = __type_of(
-                            c_gmem_frag
-                        ).layout.size()
-
-                        @parameter
-                        for i in range(num_stores_per_thread):
-                            alias src_idx = __type_of(c_smem_frag).layout(i)
-                            alias dst_idx = __type_of(c_gmem_frag).layout(i)
-
-                            var m = Int((thread_offset + dst_idx) // N)
-                            var n = Int((thread_offset + dst_idx) % N)
-                            alias alignment = alignof[SIMD[c_type, simd_size]]()
-
-                            if m < M and n < N:
-                                epilogue[alignment=alignment](
-                                    (m, n),
-                                    c_smem_frag[i, 0].cast[c_type](),
-                                )
-
-                    else:
-                        copy_sram_to_dram[
-                            thread_layout=thread_layout,
-                            swizzle=st_matrix_swizzle,
-                        ](
-                            c_gmem_wg_tile.vectorize[1, simd_size](),
-                            c_smem_tile.vectorize[1, simd_size](),
-                        )
-
-                    named_barrier[num_consumer_threads, 10]()
-
-            else:
-
-                @parameter
-                if elementwise_lambda_fn:
-                    alias epilogue = elementwise_lambda_fn.value()
-
-                    # Output dimensions in global memory.
-                    alias N = c_layout.shape[1].value()
-                    var M: UInt = c.dim(0)
-
-                    lane = lane_id()
-
-                    c_frag_vec2 = c_reg_tile.vectorize[1, 2]()
-
-                    @parameter
-                    for m_mma in range(num_m_mmas):
-
-                        @parameter
-                        for n_mma in range(num_n_mmas):
-                            alias mma_id = n_mma * num_m_mmas + m_mma
-
-                            warp_tile = c_gmem_split.tile[
-                                wgmma_shape[0] // 4, wgmma_shape[1]
-                            ](m_mma * 4 + warp_id, n_mma)
-
-                            gmem_frag = warp_tile.vectorize[1, 2]().distribute[
-                                Layout.row_major(8, 4)
-                            ](lane)
-                            thread_offset = gmem_frag.distance(c.ptr)
-
-                            alias num_vecs = __type_of(gmem_frag).layout.size()
-
-                            @parameter
-                            for i in range(num_vecs):
-                                alias dst_idx = __type_of(gmem_frag).layout(i)
-
-                                m = Int((thread_offset + dst_idx) // N)
-                                n = Int((thread_offset + dst_idx) % N)
-
-                                alias alignment = alignof[SIMD[c_type, 2]]()
-                                if m < M and n < N:
-                                    epilogue[alignment=alignment](
-                                        (m, n),
-                                        c_frag_vec2[mma_id, i].cast[c_type](),
-                                    )
-
-                else:
-
-                    @parameter
-                    for m_mma in range(num_m_mmas):
-
-                        @parameter
-                        for n_mma in range(num_n_mmas):
-                            alias mma_id = n_mma * num_m_mmas + m_mma
-
-                            # (m_mma, n_mma) is coordinates for a warp group's tile.
-                            # A warp group is 4x1 warps.
-                            warp_tile = c_gmem_split.tile[
-                                wgmma_shape[0] // 4, wgmma_shape[1]
-                            ](m_mma * 4 + warp_id, n_mma)
-
-                            # Tile at (mma_id, 0) is a long vector containing all fragments
-                            # for this warp.
-                            c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
-
-                            # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
-                            # elementwise. This pattern repeates to fill the warp tile.
-                            copy_local_to_dram[Layout.row_major(8, 4)](
-                                warp_tile.vectorize[1, 2](),
-                                c_frag.vectorize[1, 2](),
-                            )
-
             work_info = scheduler.fetch_next_work()
 
     # TO ensure SEMEM destruction doesn't happen
@@ -1473,13 +1360,15 @@ fn _get_c_smem_layout[
     b_type: DType,
     c_type: DType,
     num_pipeline_stages: Int,
+    use_tma_store: Bool,
 ]() -> Layout:
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
 
     alias WG_BM = BM
-    alias MAX_WG_BN = BN
+    # constrain due to max swizzling bytes
+    alias MAX_WG_BN = 128 // sizeof[c_type]() if use_tma_store else 128
 
     alias available_smem_size = H100.shared_memory_per_multiprocessor - 1024
     alias pipeline_smem_size = Int(num_pipeline_stages) * (
@@ -1521,6 +1410,7 @@ fn warp_specialize_gemm_with_multicasting[
     wgmma_shape: IndexList[3],
     config: MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape],
     grid_shape: OptionalReg[IndexList[2]] = None,
+    use_tma_store: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](
@@ -1570,11 +1460,28 @@ fn warp_specialize_gemm_with_multicasting[
         config.cluster_shape[1],
         config.cluster_shape[2],
     )
+
     alias CLUSTER_N = UInt(Int(cluster_shape[0]))
     alias CLUSTER_M = UInt(Int(cluster_shape[1]))
 
+    alias c_smem_layout = _get_c_smem_layout[
+        config.block_tile_shape,
+        a_type,
+        b_type,
+        c_type,
+        config.num_pipeline_stages,
+        use_tma_store,
+    ]()
+    alias c_smem_tile = Index(
+        c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
+    )
+
     alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+    # make sure WG_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
+    alias c_swizzle = TensorMapSwizzle(
+        min(log2_floor(c_smem_tile[1] // 8), 3)
+    ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     a_tma_op = create_tma_tile[
         a_type,
@@ -1593,13 +1500,9 @@ fn warp_specialize_gemm_with_multicasting[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    alias c_smem_layout = _get_c_smem_layout[
-        config.block_tile_shape,
-        a_type,
-        b_type,
-        c_type,
-        config.num_pipeline_stages,
-    ]()
+    c_tma_op = create_tma_tile[c_type, 2, c_smem_tile, swizzle_mode=c_swizzle](
+        ctx, c
+    )
 
     alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
@@ -1628,19 +1531,23 @@ fn warp_specialize_gemm_with_multicasting[
             wgmma_shape,
             __type_of(a_tma_op).desc_layout,
             __type_of(b_tma_op).desc_layout,
+            __type_of(c_tma_op).desc_layout,
             c_smem_layout,
+            c_swizzle=c_swizzle,
             cluster_shape=cluster_shape,
             grid_shape=grid_shape_adjusted,
             transpose_b=True,
             num_threads=num_threads,
             pipeline_stages = config.num_pipeline_stages,
             partitioned_multicast = config.partitioned_multicast,
+            use_tma_store=use_tma_store,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
         ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
+            c_tma_op,
             c,
             Index(M, N, K),
             grid_dim=(grid_shape_adjusted[0], grid_shape_adjusted[1]),
@@ -1664,18 +1571,22 @@ fn warp_specialize_gemm_with_multicasting[
             wgmma_shape,
             __type_of(a_tma_op).desc_layout,
             __type_of(b_tma_op).desc_layout,
+            __type_of(c_tma_op).desc_layout,
             c_smem_layout,
+            c_swizzle=c_swizzle,
             cluster_shape=cluster_shape,
             transpose_b=True,
             num_threads=num_threads,
             pipeline_stages = config.num_pipeline_stages,
             partitioned_multicast = config.partitioned_multicast,
+            use_tma_store=use_tma_store,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
         ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
+            c_tma_op,
             c,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(num_threads),
