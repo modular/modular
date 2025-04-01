@@ -15,8 +15,8 @@ import torch.nn.functional as F
 from distance_metrics import is_euclidean_distance_close
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Weight
-from max.nn import LayerNorm
+from max.graph import Graph, TensorType
+from max.nn import LayerNormV2
 from ndarray_from_tensor_type import ndarray_from_tensor_type
 
 
@@ -36,18 +36,7 @@ def _test_layer_norm(
     # Phase 1: op staging.
     graph = Graph(
         "layer_norm",
-        forward=LayerNorm(
-            weight=Weight(
-                name="weight",
-                dtype=DType.from_numpy(weight.dtype),
-                shape=weight.shape,
-            ),
-            bias=Weight(
-                name="bias",
-                dtype=DType.from_numpy(bias.dtype),
-                shape=bias.shape,
-            ),
-        ),
+        forward=LayerNormV2(dims=weight.shape[0], eps=1e-6, use_bias=True),
         input_types=[input_type],
     )
 
