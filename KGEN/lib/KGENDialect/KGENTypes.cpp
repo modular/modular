@@ -255,10 +255,10 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
         return failure();
       value = SymbolConstantAttr::get(symbol, sigGen, paramValues);
     } else if (auto closureSymbol = llvm::dyn_cast<ClosureSymbolAttr>(attr)) {
-      // TODO: support parameters (MOCO 1652)
       value = ClosureSymbolAttr::get(
           closureSymbol.getContext(), closureSymbol.getParentSymbol(),
-          closureSymbol.getNestedFuncName(), closureSymbol.getMethod(), sigGen);
+          closureSymbol.getNestedFuncName(), closureSymbol.getMethod(),
+          closureSymbol.getParamValues(), sigGen);
     } else {
       value = llvm::cast<TypedAttr>(attr);
     }

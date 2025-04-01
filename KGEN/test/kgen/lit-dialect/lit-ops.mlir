@@ -512,11 +512,7 @@ lit.fn @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
 !String = !lit.struct<@String>
 !Impl = !kgen.closure<@make_closure, "foo" nonescaping>
 
-// CHECK: #kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>,
-// CHECK-SAME: {"__call__" : !lit.generator<[1]("self":
-// CHECK-SAME: !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, imm *[0,0]>
-// CHECK-SAME:  read_mem, "y": index) -> index> = #kgen<closure.symbol
-// CHECK-SAME:  <@make_closure, "foo", #kgen.closure_method<call>>>}> : !lit.trait<@Closure>
+// CHECK: #type_value = #kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>, {"__call__" : !lit.generator<[1]("self": !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, imm *[0,0]> read_mem, "y": index) -> index> = #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<call>>}> : !lit.trait<@Closure>
 #Impl1 = #kgen.type<!Impl, {"__call__" :
                             !lit.generator<[1]("self": !lit.ref<!Impl, imm *[0,0]> read_mem, "y": index) -> index> =
                             #kgen.closure.symbol<@make_closure, "foo", #kgen.closure_method<call>>}> : !Closure
