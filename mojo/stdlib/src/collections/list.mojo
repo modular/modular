@@ -134,6 +134,16 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self._len = 0
         self.capacity = capacity
 
+    fn __init__(out self, *, length: UInt, fill: T):
+        """Constructs a list with the given capacity.
+
+        Args:
+            length: The requested length of the list.
+            fill: The element to fill each element of the list.
+        """
+        self = Self()
+        self.resize(length, fill)
+
     fn __init__(out self, owned *values: T):
         """Constructs a list from the given values.
 

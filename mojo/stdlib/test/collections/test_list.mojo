@@ -905,6 +905,20 @@ def test_list_repr():
     assert_equal(empty.__repr__(), "[]")
 
 
+def test_list_fill_constructor():
+    var l = List[Int32](length=10, fill=3)
+    assert_equal(len(l), 10)
+
+    for i in range(10):
+        assert_equal(l[i], 3)
+
+    var l2 = List[String](length=20, fill="hi")
+    assert_equal(len(l2), 20)
+
+    for i in range(20):
+        assert_equal(l2[i], "hi")
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
@@ -945,3 +959,4 @@ def main():
     test_list_dtor()
     test_destructor_trivial_elements()
     test_list_repr()
+    test_list_fill_constructor()
