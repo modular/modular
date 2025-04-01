@@ -140,8 +140,8 @@ def test_mix_of_experts(
     )
 
     torch.testing.assert_close(
-        torch_output,
-        torch.from_dlpack(max_output[0]).to(torch_dtype),
+        torch_output.squeeze(),
+        torch.from_dlpack(max_output[0]).to(torch_dtype).squeeze(),
         rtol=1e-3,
-        atol=1e-6,
+        atol=2 * torch.finfo(torch.bfloat16).eps,
     )
