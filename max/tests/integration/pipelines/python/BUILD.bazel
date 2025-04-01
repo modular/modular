@@ -25,7 +25,6 @@ modular_py_binary(
     name = "verify_pipelines",
     srcs = ["verify_pipelines.py"],
     data = [
-        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3:verify",
         "@torch_llama-gptq_golden",
@@ -125,7 +124,6 @@ modular_py_binary(
         "replit_compat.py",
     ],
     data = [
-        "//KGEN:ptxas",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "//Support/tools/system-info",
@@ -202,7 +200,6 @@ modular_py_binary(
     srcs = ["pipelines_lm_eval.py"],
     data = [
         "run_lm_eval.py",
-        "//KGEN:ptxas",
         "//SDK/integration-test/pipelines/python/eval_tasks",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
         "@mistral-evals//:evaluate",
