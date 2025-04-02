@@ -116,6 +116,15 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 - The `type` parameter of `SIMD` has been renamed to `dtype`.
 
+- Add `repr` support for `List[T]` of `T: RepresentableCollectionElement`.
+  ([PR #4267](https://github.com/modular/max/pull/4267))
+  Example:
+
+  ```mojo
+    print(repr(List[UInt8](0, 1)))
+    # [SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]
+  ```
+
 ### Tooling changes
 
 ### ❌ Removed

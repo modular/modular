@@ -87,3 +87,19 @@ fn repr(value: None) -> String:
         The string representation of `None`.
     """
     return "None"
+
+
+fn repr[T: RepresentableCollectionElement](value: List[T]) -> String:
+    """Returns the string representation of a `List[T]`.
+
+    Args:
+        value: A `List` of elements `T`.
+
+    Parameters:
+        T: A type that implements `RepresentableCollectionElement`.
+
+    Returns:
+        The string representation of `List[T]`.
+    """
+    # TODO: remove when `List` can conform conditionally to `Representable`.
+    return value.__repr__()
