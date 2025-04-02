@@ -81,14 +81,22 @@ fn _init_dylib() -> _OwnedDLHandle:
     var library_path = _find_library_path()
 
     if not library_path:
-        return abort[_OwnedDLHandle](
-            "the GPU tracing library was not found at "
-            + ",".join(LIBRARY_PATHS)
-            + " please install the cuda toolkit. "
-            + "In apt-get this can be done with "
-            + "`sudo apt-get -y install cuda-toolkit-XX-Y`. Where XX and Y "
-            + "are the major and minor versions."
+        var msg = "the GPU tracing library was not found at " + ",".join(
+            LIBRARY_PATHS
         )
+
+        @parameter
+        if has_nvidia_gpu_accelerator():
+            msg += " please install the cuda toolkit. "
+            msg += "In apt-get this can be done with "
+            msg += (
+                "`sudo apt-get -y install cuda-toolkit-XX-Y`. Where XX and Y "
+            )
+            msg += "are the major and minor versions."
+        else:
+            msg += " please install ROCprofiler."
+
+        return abort[_OwnedDLHandle](msg)
 
     var dylib = _OwnedDLHandle(library_path.value())
 
