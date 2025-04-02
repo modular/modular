@@ -368,9 +368,7 @@ struct Span[
             A `Pointer` pointing at the first element of this span.
         """
 
-        return Pointer[T, origin, address_space=address_space].address_of(
-            self._data[0]
-        )
+        return Pointer[T, origin, address_space=address_space](to=self._data[0])
 
     @always_inline
     fn copy_from[
