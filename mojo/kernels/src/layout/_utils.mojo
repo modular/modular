@@ -18,6 +18,7 @@ from utils.index import Index
 from .int_tuple import product, _get_index_type
 from gpu.intrinsics import make_buffer_resource, _buffer_resource
 from utils import IndexList
+from sys.intrinsics import readfirstlane
 
 
 struct ManagedLayoutTensor[
@@ -255,7 +256,7 @@ fn get_amd_buffer_descriptor(tensor: LayoutTensor) -> _buffer_resource:
 fn get_amd_buffer_descriptor(
     tensor_iter: LayoutTensorIter, bound: Int
 ) -> _buffer_resource:
-    return make_buffer_resource(tensor_iter.ptr, bound)
+    return make_buffer_resource(readfirstlane(tensor_iter.ptr), bound)
 
 
 @always_inline

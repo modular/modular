@@ -5959,6 +5959,85 @@ fn copy_dram_to_local[
 
 
 @always_inline("nodebug")
+fn copy_dram_to_local[
+    src_thread_layout: Layout,
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](dst: LayoutTensor, src_iter: LayoutTensorIter, bounds: Int):
+    """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
+
+    This function implements an optimized memory transfer operation specifically for AMD GPU
+    architectures. It utilizes the hardware's buffer_load intrinsic to efficiently transfer
+    data from global memory to registers while handling bounds checking. The function distributes
+    the copy operation across multiple threads for maximum throughput.
+
+    Parameters:
+        src_thread_layout: The layout used to distribute the source tensor across threads.
+                          This determines how the workload is divided among participating threads.
+        thread_scope: Defines whether operations are performed at BLOCK or WARP level.
+                     BLOCK scope involves all threads in a thread block, while WARP scope
+                     restricts operations to threads within the same warp.
+                     Defaults to `ThreadScope.BLOCK`.
+
+    Args:
+        dst: The destination tensor in register memory (LOCAL address space).
+        src_iter: The source tensor iterator.
+        bounds: Bounds of the buffer, based on the ptr of the src_iter.
+
+    Constraints:
+
+        - Only supported on AMD GPUs.
+        - The destination element layout size must match the SIMD width.
+        - Source fragments must be rank 2 with known dimensions.
+
+    Notes:
+
+        - The offset calculation method significantly impacts performance.
+          Current implementation optimizes for throughput over flexibility.
+        - This function is particularly useful for prefetching data into registers
+          before performing computations, reducing memory access latency.
+    """
+    constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
+    var src_tensor = src_iter[].vectorize[
+        dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
+    ]()
+    alias simd_width = src_tensor.element_layout.size()
+    _copy_local_to_dram_validate_args(src_tensor, dst)
+
+    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
+
+    var descriptor = get_amd_buffer_descriptor(src_iter, bounds)
+    var src_frag_offset = src_fragments.distance(src_tensor.ptr) + Int(
+        src_iter.offset
+    )
+    alias num_stores_per_thread = src_fragments.layout.size()
+
+    alias M = src_fragments.shape[0]()
+    alias N = src_fragments.shape[1]()
+
+    constrained[
+        src_fragments.layout.rank() == 2,
+        "src_fragments must be rank 2.",
+    ]()
+
+    constrained[
+        src_fragments.layout.all_dims_known(),
+        "src_fragments must have known layout.",
+    ]()
+
+    @parameter
+    for i in range(src_fragments.layout.size()):
+        alias src_static_idx = src_fragments.layout(i)
+        var src_idx = Int32(src_frag_offset) + src_static_idx
+        dst[i] = rebind[dst.element_type](
+            buffer_load[src_tensor.dtype, simd_width](
+                descriptor,
+                src_idx,
+            )
+        )
+
+
+@always_inline("nodebug")
 fn copy[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
