@@ -1271,7 +1271,9 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
             "gfx942",
             "",
         ),
-        "the target architecture '" + target_arch + "' is not valid",
+        "the target architecture '",
+        target_arch,
+        "' is not valid",
     ]()
 
     @parameter

@@ -1418,16 +1418,14 @@ struct DeviceFunction[
 
             constrained[
                 False,
-                String(
-                    "the environment variable '",
-                    env_var,
-                    (
-                        "' is not a valid value. The value should either be"
-                        " a boolean value or a path like value, but got '"
-                    ),
-                    env_val,
-                    "'",
+                "the environment variable '",
+                env_var,
+                (
+                    "' is not a valid value. The value should either be"
+                    " a boolean value or a path like value, but got '"
                 ),
+                env_val,
+                "'",
             ]()
             return False, val
 

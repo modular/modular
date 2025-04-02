@@ -23,13 +23,11 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     constrained[
         False,
         # fmt: off
-        String(
-            "no valid implementation of mma for for a=",
-            a.size, "x", a.dtype,
-            ", b=", b.size, "x", b.dtype,
-            ", c=", c.size, "x", c.dtype,
-            ", and d=", d.size, "x", d.dtype,
-        )
+        "no valid implementation of mma for for a=",
+        String(a.size), "x",  String(a.dtype),
+        ", b=",  String(b.size), "x",  String(b.dtype),
+        ", c=",  String(c.size), "x",  String(c.dtype),
+        ", and d=", String(d.size), "x", String(d.dtype),
         # fmt: on
     ]()
 
@@ -921,47 +919,39 @@ fn wgmma_async[
 
     constrained[
         (m * n // 128) * sizeof[accum_type]() == width * sizeof[c_dtype](),
-        String(
-            "Number of output registers ",
-            width,
-            " don't match the instruction shape ",
-            Index(m, n, k),
-        ),
+        "Number of output registers ",
+        String(width),
+        " don't match the instruction shape ",
+        String(Index(m, n, k)),
     ]()
 
     constrained[
         scale_d == 1 or scale_d == 0,
-        String(
-            "Invalid scale in value of scaled_d '",
-            scale_d,
-            (
-                "' which is not supported. Only 1 or 0 is supported as the"
-                " scale in values.."
-            ),
+        "Invalid scale in value of scaled_d '",
+        String(scale_d),
+        (
+            "' which is not supported. Only 1 or 0 is supported as the"
+            " scale in values."
         ),
     ]()
 
     constrained[
         scale_a == 1 or scale_a == -1,
-        String(
-            "Invalid scale in value of scaled_a '",
-            scale_a,
-            (
-                "' which is not supported. Only 1 or -1 is supported as the"
-                " scale in values."
-            ),
+        "Invalid scale in value of scaled_a '",
+        String(scale_a),
+        (
+            "' which is not supported. Only 1 or -1 is supported as the"
+            " scale in values."
         ),
     ]()
 
     constrained[
         scale_b == 1 or scale_b == -1,
-        String(
-            "Invalid scale in value of scaled_b '",
-            scale_b,
-            (
-                "' which is not supported. Only 1 or -1 is supported as the"
-                " scale in values."
-            ),
+        "Invalid scale in value of scaled_b '",
+        String(scale_b),
+        (
+            "' which is not supported. Only 1 or -1 is supported as the"
+            " scale in values."
         ),
     ]()
 
@@ -999,14 +989,12 @@ fn wgmma_async[
     else:
         constrained[
             False,
-            String(
-                "Unsupported data type combination: ",
-                a_type,
-                " and ",
-                b_type,
-                " with accum_type ",
-                accum_type,
-            ),
+            "Unsupported data type combination: ",
+            String(a_type),
+            " and ",
+            String(b_type),
+            " with accum_type ",
+            String(accum_type),
         ]()
 
         return c_reg
@@ -1070,47 +1058,39 @@ fn wgmma_async[
 
     constrained[
         (m * n // 128) * sizeof[accum_type]() == width * sizeof[c_dtype](),
-        String(
-            "Number of output registers ",
-            width,
-            " don't match the instruction shape ",
-            Index(m, n, k),
-        ),
+        "Number of output registers ",
+        String(width),
+        " don't match the instruction shape ",
+        String(Index(m, n, k)),
     ]()
 
     constrained[
         scale_d == 1 or scale_d == 0,
-        String(
-            "Invalid scale in value of scaled_d '",
-            scale_d,
-            (
-                "' which is not supported. Only 1 or 0 is supported as the"
-                " scale in values.."
-            ),
+        "Invalid scale in value of scaled_d '",
+        String(scale_d),
+        (
+            "' which is not supported. Only 1 or 0 is supported as the"
+            " scale in values."
         ),
     ]()
 
     constrained[
         scale_a == 1 or scale_a == -1,
-        String(
-            "Invalid scale in value of scaled_a '",
-            scale_a,
-            (
-                "' which is not supported. Only 1 or -1 is supported as the"
-                " scale in values."
-            ),
+        "Invalid scale in value of scaled_a '",
+        String(scale_a),
+        (
+            "' which is not supported. Only 1 or -1 is supported as the"
+            " scale in values."
         ),
     ]()
 
     constrained[
         scale_b == 1 or scale_b == -1,
-        String(
-            "Invalid scale in value of scaled_b '",
-            scale_b,
-            (
-                "' which is not supported. Only 1 or -1 is supported as the"
-                " scale in values."
-            ),
+        "Invalid scale in value of scaled_b '",
+        String(scale_b),
+        (
+            "' which is not supported. Only 1 or -1 is supported as the"
+            " scale in values."
         ),
     ]()
 
@@ -1435,18 +1415,18 @@ fn wgmma_async[
     constrained[
         (m * n // 128) * sizeof[accum_type]()
         == frag_c_width * sizeof[c_dtype](),
-        "Number of output registers "
-        + String(frag_c_width)
-        + " don't match the instruction shape "
-        + String(Index(m, n, k)),
+        "Number of output registers ",
+        String(frag_c_width),
+        " don't match the instruction shape ",
+        String(Index(m, n, k)),
     ]()
 
     constrained[
         (m * k // 128) * sizeof[a_type]() == frag_a_width * sizeof[a_dtype](),
-        "Number of input a registers "
-        + String(frag_a_width)
-        + " don't match the instruction shape "
-        + String(Index(m, n, k)),
+        "Number of input a registers ",
+        String(frag_a_width),
+        " don't match the instruction shape ",
+        String(Index(m, n, k)),
     ]()
     # for now, limited support
     constrained[m == 64]()
@@ -1764,7 +1744,7 @@ fn wgmma_async[
                 )
             )
         else:
-            constrained[False, String("the n value '", n, "' is not valid")]()
+            constrained[False, "the n value '", String(n), "' is not valid"]()
             return c
         # fmt: on
 
