@@ -407,12 +407,13 @@ fn flash_attention_dispatch[
             ):
                 constrained[
                     BM % 64 == 0,
-                    "SM90 requires BM%64==0, but BM==" + String(BM),
+                    "SM90 requires BM%64==0, but BM==",
+                    String(BM),
                 ]()
                 constrained[
                     BK == 64,
-                    "H100 requires BK=64 as it uses 128B swizzles, but BK=="
-                    + String(BK),
+                    "H100 requires BK=64 as it uses 128B swizzles, but BK==",
+                    String(BK),
                 ]()
                 alias BN = config.block_n()
                 # we add smem use for SharedMemBarrier synchronization
