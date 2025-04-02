@@ -36,7 +36,7 @@ def _iterate_indices(self) -> Generator[ShapeType]:
 
 def _contiguous(self) -> Tensor:
     """Creates a contiguous copy of the parent tensor."""
-    tensor_copy = Tensor(self.shape, self.dtype)
+    tensor_copy = Tensor(self.dtype, self.shape)
     for idx in self._iterate_indices():
         tensor_copy[idx] = self[idx].item()
     return tensor_copy

@@ -182,8 +182,8 @@ class Tensor:
     @overload
     def __init__(
         self,
-        shape: Sequence[int],
         dtype: max._core.dtype.DType,
+        shape: Sequence[int],
         device: Device | None = None,
     ) -> None: ...
     @overload
@@ -232,7 +232,7 @@ class Tensor:
             from max import driver
             from max.dtype import DType
 
-            cpu_tensor = driver.Tensor([2, 3], dtype=DType.bfloat16, device=driver.CPU())
+            cpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
 
             print(cpu_tensor.is_host)
         """
@@ -267,7 +267,7 @@ class Tensor:
             from max import driver
             from max.dtype import DType
 
-            cpu_tensor = driver.Tensor([2, 3], dtype=DType.bfloat16, device=driver.CPU())
+            cpu_tensor = driver.Tensor(shape=[2, 3], dtype=DType.bfloat16, device=driver.CPU())
 
             cpu_copy = cpu_tensor.copy()
         """
