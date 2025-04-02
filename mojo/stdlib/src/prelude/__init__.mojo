@@ -17,14 +17,14 @@
 from collections import KeyElement, List, Optional, InlineArray
 from collections.string import (
     Codepoint,
+    StaticString,
     String,
+    StringSlice,
     ascii,
     atof,
     atol,
     chr,
     ord,
-    StringSlice,
-    StaticString,
 )
 from hashlib.hash import Hashable, hash
 
