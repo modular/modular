@@ -21,6 +21,7 @@ from bit import count_leading_zeros
 
 from sys import llvm_intrinsic, sizeof
 from sys.info import bitwidthof
+from utils._select import _select_register_value as select
 
 # ===-----------------------------------------------------------------------===#
 # count_leading_zeros
@@ -105,9 +106,9 @@ fn count_trailing_zeros[
         trailing zeros at position `i` of the input value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-    return llvm_intrinsic[
-        "llvm.cttz", __type_of(val.value), has_side_effect=False
-    ](val.value, False.value)
+    return llvm_intrinsic["llvm.cttz", __type_of(val), has_side_effect=False](
+        val, False
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -301,8 +302,7 @@ fn bit_width(val: Int) -> Int:
         The number of bits required to represent the integer.
     """
     alias bitwidth = bitwidthof[Int]()
-
-    return bitwidth - count_leading_zeros(~val if val < 0 else val)
+    return bitwidth - count_leading_zeros(select(val < 0, ~val, val))
 
 
 @always_inline
@@ -358,9 +358,8 @@ fn log2_floor(val: Int) -> Int:
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns -1 if val is 0.
     """
-    if val <= 1:
-        return 0
-    return bitwidthof[Int]() - count_leading_zeros(val) - 1
+    alias bitwidth = bitwidthof[Int]()
+    return select(val <= 1, 0, bitwidth - count_leading_zeros(val) - 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -418,10 +417,7 @@ fn next_power_of_two[
         value.
     """
     constrained[dtype.is_integral(), "must be integral"]()
-
-    alias ones = SIMD[dtype, width](1)
-
-    return (val > 1).select(1 << bit_width(val - ones), ones)
+    return (val > 1).select(1 << bit_width(val - 1), 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -443,10 +439,7 @@ fn prev_power_of_two(val: Int) -> Int:
     Returns:
         The largest power of 2 that is less than or equal to the input value.
     """
-    if val <= 0:
-        return 0
-
-    return 1 << (bit_width(val) - 1)
+    return select(val > 0, 1 << (bit_width(val) - 1), 0)
 
 
 @always_inline
@@ -475,10 +468,7 @@ fn prev_power_of_two[
         value.
     """
     constrained[dtype.is_integral(), "must be integral and unsigned"]()
-
-    alias zeros = SIMD[dtype, width](0)
-
-    return (val > 0).select(1 << (bit_width(val) - 1), zeros)
+    return (val > 0).select(1 << (bit_width(val) - 1), 0)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -505,7 +495,7 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
         The input rotated to the left by `shift` elements (with wrap-around).
     """
     constrained[
-        shift >= -bitwidthof[Int]() and shift < bitwidthof[Int](),
+        -bitwidthof[Int]() <= shift < bitwidthof[Int](),
         "Constraints: -bitwidthof[Int]() <= shift < bitwidthof[Int]()",
     ]()
 
@@ -555,7 +545,7 @@ fn rotate_bits_left[
         return rotate_bits_right[-shift](x)
     else:
         return llvm_intrinsic["llvm.fshl", __type_of(x), has_side_effect=False](
-            x, x, SIMD[dtype, width](shift)
+            x, x, __type_of(x)(shift)
         )
 
 
@@ -583,7 +573,7 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
         The input rotated to the right by `shift` elements (with wrap-around).
     """
     constrained[
-        shift >= -bitwidthof[Int]() and shift < bitwidthof[Int](),
+        -bitwidthof[Int]() <= shift < bitwidthof[Int](),
         "Constraints: -bitwidthof[Int]() <= shift < bitwidthof[Int]()",
     ]()
 
@@ -633,5 +623,5 @@ fn rotate_bits_right[
         return rotate_bits_left[-shift](x)
     else:
         return llvm_intrinsic["llvm.fshr", __type_of(x), has_side_effect=False](
-            x, x, SIMD[dtype, width](shift)
+            x, x, __type_of(x)(shift)
         )
