@@ -1577,8 +1577,7 @@ struct SIMD[dtype: DType, size: Int](
                     self
                 )
 
-            # FIXME(MOCO-1752): This should be an alias
-            var mask = FPUtils[dtype].exponent_mantissa_mask()
+            alias mask = FPUtils[dtype].exponent_mantissa_mask()
             return Self.from_bits(self.to_bits() & mask)
         else:
             return (self < 0).select(-self, self)
