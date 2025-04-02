@@ -625,3 +625,9 @@ class Graph:
                 ]
             )
         )
+
+    @property
+    def kernel_libraries_paths(self) -> list[Path]:
+        """Returns the list of extra kernel libraries paths for the custom ops."""
+
+        return self._kernel_library.library_paths()
