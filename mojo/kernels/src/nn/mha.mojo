@@ -57,7 +57,10 @@ from layout.layout_tensor import (
     copy,
     copy_sram_to_dram,
 )
-from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
+from nn._amd_flash_attention_gpu import (
+    mha_single_batch as amd_mha_single_batch,
+    mha_decoding_single_batch as amd_mha_decoding_single_batch,
+)
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
@@ -2777,7 +2780,7 @@ fn mha_decoding[
                 " attention"
             ),
         ]()
-        amd_mha_single_batch[group=group, config=config, token_gen=True](
+        amd_mha_decoding_single_batch[group=group, config=config](
             output_ptr.offset(output_batch_offset),
             q_ptr.offset(q_batch_offset),
             k,

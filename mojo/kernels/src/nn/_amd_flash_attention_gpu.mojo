@@ -765,7 +765,6 @@ fn mha_single_batch[
     mask_t: MHAMask,
     group: Int,
     config: MHAConfig,
-    token_gen: Bool = False,
 ](
     output: UnsafePointer[Scalar[output_type],],
     q: UnsafePointer[Scalar[q_type],],
@@ -778,6 +777,8 @@ fn mha_single_batch[
     start_pos: Int,
     mask: mask_t,
 ):
+    alias token_gen = False
+
     alias BM = config.block_m()
     alias BN = config.block_n()
     alias depth = config.depth
@@ -818,7 +819,351 @@ fn mha_single_batch[
     var warp_row = warp_id // num_warps_n
     var warp_col = warp_id % num_warps_n
 
-    var kv_head_idx = block_idx.y if token_gen else block_idx.y // group
+    var kv_head_idx = block_idx.y // group
+
+    var q_tile_idx = block_idx.x
+
+    var gmem_manager = GlobalMemoryManager[
+        q_type, BM, BN, BK, depth, num_heads, group, token_gen
+    ](q_tile_idx, kv_head_idx, seq_len)
+
+    var q_tile = gmem_manager.get_q_tensor(q)
+
+    var output_tile = gmem_manager.get_output_tensor(output)
+
+    var rowmax = tb[accum_type]().row_major[
+        num_m_mmas, fragment_layout.shape[0].value()
+    ]().local().alloc().fill(min_or_neg_inf[accum_type]())
+    var rowsum = tb[accum_type]().row_major[
+        num_m_mmas, fragment_layout.shape[0].value()
+    ]().local().alloc().fill(0)
+
+    var smem_manager = SharedMemoryManager[
+        q_type, BM, BN, BK, depth, num_warps_n
+    ]()
+
+    var p_smem_iter = smem_manager.get_p_iter()
+    var k_smem_iter = smem_manager.get_k_iter()
+    var v_smem_iter = smem_manager.get_v_iter()
+
+    var warp_scratch = smem_manager.get_warp_scratch_tensor()
+
+    var mask_block_row: UInt32 = q_tile_idx * BM
+    var mask_warp_row = warp_row * WM
+    var mask_warp_col = warp_col * WN
+
+    constrained[BK == 32, "BK must be 32"]()
+
+    # the following assumes BK == 32, i.e. simd_width = 2*frag_size
+    alias q_reg_size = (depth // BK) * num_m_mmas * simd_width
+
+    var q_reg_data = stack_allocation[
+        q_reg_size,
+        q_type,
+        address_space = AddressSpace.LOCAL,
+    ]()
+
+    var q_reg_tile_iter = LayoutTensorIter[
+        q_type,
+        Layout.row_major(num_m_mmas, simd_width),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ](q_reg_data, q_reg_size)
+
+    var q_gmem_warp_iter = q_tile.tiled_iterator[WM, BK, axis=1](warp_row, 0)
+
+    @parameter
+    for i in range(Int(depth // BK)):
+        var q_reg_tile = q_reg_tile_iter.next_unsafe(i)[]
+        copy_dram_to_local[
+            src_thread_layout = Layout.col_major(16, 4),
+            thread_scope = ThreadScope.WARP,
+        ](
+            q_reg_tile.vectorize[1, simd_width](),
+            q_gmem_warp_iter,
+            q_tile.dim(0) * q_tile.stride[0](),
+        )
+        q_gmem_warp_iter._incr()
+
+    @always_inline
+    @parameter
+    fn loop_over_kvcache[
+        tile_size: Int, not_last_iter: Bool
+    ](kv_tile_start_row: Int, end: Int):
+        var mask_status = mask.status(
+            Index[element_bitwidth=32, unsigned=True](
+                Int(q_tile_idx * BM + start_pos),
+                Int(kv_tile_start_row),
+            ),
+            Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+        )
+
+        @parameter
+        if not token_gen:
+            if mask_status == TileMaskStatus.FULL_MASK:
+                return
+
+        var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
+
+        var k_tile = gmem_manager.get_kv_tensor[not_last_iter=not_last_iter](
+            k.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
+            kv_tile_num_rows,
+        )
+        var k_gmem_iter = k_tile.tiled_iterator[BN, BK, axis=1](0, 0)
+
+        var v_tile = gmem_manager.get_kv_tensor[not_last_iter=not_last_iter](
+            v.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
+            kv_tile_num_rows,
+        )
+
+        var v_gmem_iter = v_tile.tiled_iterator[BK, BN, axis=0](0, 0)
+
+        var p_reg_tile = tb[accum_type]().row_major[
+            num_m_mmas * num_n_mmas, output_frag_size
+        ]().local().alloc().fill(0)
+
+        alias swizzle = Swizzle(2, 0, 2)
+
+        var num_b_rows = OptionalReg[Int](
+            kv_tile_num_rows
+        ) if not not_last_iter else None
+
+        # TODO (KERN-1708):this is just a dummy iterator to satisfy the interface
+        # will fix it with better interface later
+        var q_smem_iter = LayoutTensorIter[
+            q_type,
+            Layout.row_major(num_m_mmas, simd_width),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](
+            UnsafePointer[
+                Scalar[q_type], address_space = AddressSpace.SHARED
+            ](),
+            q_reg_size,
+        )
+
+        mma[
+            transpose_b=True,
+            k_group_size=2,
+            config=config,
+            swizzle=swizzle,
+            swap_operands=swap_mma_operands,
+            num_iters = Int(depth // BK),
+            token_gen=token_gen,
+        ](
+            p_reg_tile,
+            q_reg_tile_iter,
+            q_smem_iter,
+            k_gmem_iter,
+            k_smem_iter,
+            num_b_rows,
+        )
+
+        var p_reg_vectorized = p_reg_tile.vectorize[1, output_frag_size]()
+
+        alias use_exp2 = True
+
+        @always_inline
+        @parameter
+        fn _apply_mask_impl[masked: Bool]():
+            _apply_mask[
+                masked=masked,
+                accum_type=accum_type,
+                token_gen=token_gen,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                num_m_mmas=num_m_mmas,
+                num_n_mmas=num_n_mmas,
+                mask_t=mask_t,
+                not_last_iter=not_last_iter,
+                group=group,
+                fragment_layout=fragment_layout,
+                warp_layout=warp_layout,
+                use_exp2=use_exp2,
+            ](
+                kv_tile_start_row,
+                kv_tile_num_rows,
+                start_pos,
+                seq_len,
+                num_keys,
+                Int(mask_block_row),
+                Int(mask_warp_row),
+                mask_warp_col,
+                scale,
+                mask,
+                p_reg_vectorized,
+            )
+
+        @parameter
+        if not token_gen:
+            unswitch[_apply_mask_impl](
+                mask_status == TileMaskStatus.PARTIAL_MASK
+            )
+        else:
+            _apply_mask_impl[masked=True]()
+
+        mask_warp_col += BN
+        alias reg_layout_by_mma_unit = Layout.row_major(
+            num_m_mmas * num_n_mmas, output_frag_size
+        )
+
+        # Not sure why we need this barrier here, but the code hangs without it
+        barrier()
+
+        _online_softmax_iter_for_mma_output[
+            accum_type,
+            # score layout by mma unit
+            # TODO: generalize beyond 16x8 layout
+            Layout.row_major(num_m_mmas, num_n_mmas),
+            # threads layout by warp
+            Layout.row_major(num_warps_m, num_warps_n),
+            warp_layout,
+            use_exp2=use_exp2,
+            fragment_layout=fragment_layout,
+        ](
+            out_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
+                1, output_frag_size
+            ](),
+            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
+                1, output_frag_size
+            ](),
+            warp_scratch.tile[2 * num_warps_n, WM](0, Int(warp_row)),
+            rowmax.ptr.address_space_cast[AddressSpace.GENERIC](),
+            rowsum.ptr.address_space_cast[AddressSpace.GENERIC](),
+        )
+
+        # warp scratch and p_smem are using the same smem space
+        barrier()
+
+        copy_fragment_to_smem[
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            MMA_M,
+            MMA_N,
+            num_m_mmas,
+            num_n_mmas,
+            fragment_layout,
+            warp_layout,
+        ](
+            p_smem_iter,
+            p_reg_vectorized,
+            warp_row,
+            warp_col,
+        )
+
+        barrier()
+
+        mma[
+            transpose_b=False,
+            k_group_size=2,
+            config=config,
+            swizzle=None,
+            swap_operands=swap_mma_operands,
+            num_iters = Int(BN // BK),
+            token_gen=token_gen,
+        ](
+            out_reg_tile,
+            p_smem_iter,
+            p_smem_iter,
+            v_gmem_iter,
+            v_smem_iter,
+            num_b_rows,
+        )
+        # ensure that smem for v is not required anymore
+        barrier()
+
+    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, num_keys)
+
+    # Apply softmax denominator.
+    apply_softmax_denominator[
+        num_m_mmas=num_m_mmas,
+        num_n_mmas=num_n_mmas,
+        fragment_layout=fragment_layout,
+    ](out_reg_tile, rowsum)
+
+    var output_warp_tile = output_tile.tile[WM, WN](warp_row, warp_col)
+    copy_local_to_dram[
+        dst_thread_layout=warp_layout,
+        thread_scope = ThreadScope.WARP,
+    ](
+        output_warp_tile.vectorize[
+            fragment_layout.shape[0].value(),
+            fragment_layout.shape[1].value(),
+        ](),
+        out_reg_tile.vectorize[1, output_frag_size](),
+        output_tile,
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
+)
+@always_inline
+fn mha_decoding_single_batch[
+    output_type: DType,
+    q_type: DType,
+    k_t: MHAOperand,
+    v_t: MHAOperand,
+    mask_t: MHAMask,
+    group: Int,
+    config: MHAConfig,
+](
+    output: UnsafePointer[Scalar[output_type],],
+    q: UnsafePointer[Scalar[q_type],],
+    k: k_t,
+    v: v_t,
+    seq_len: Int,
+    num_keys: Int,
+    scale: Float32,
+    batch_idx: Int,
+    start_pos: Int,
+    mask: mask_t,
+):
+    alias token_gen = True
+    alias BM = config.block_m()
+    alias BN = config.block_n()
+    alias depth = config.depth
+    alias num_heads = config.num_heads
+    alias kv_num_heads = num_heads // group
+    alias BK = config.block_k()
+    constrained[BN == depth, "BN must be equal to depth"]()
+    alias simd_width = simdwidthof[q_type]()
+
+    alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
+    alias use_transposed_layout = True
+    alias fragment_layout = Layout.row_major(
+        1, 4
+    ) if use_transposed_layout else Layout.row_major(4, 1)
+    alias warp_layout = Layout.col_major(
+        16, 4
+    ) if use_transposed_layout else Layout.row_major(4, 16)
+    alias swap_mma_operands = use_transposed_layout
+
+    alias output_frag_size = fragment_layout.size()
+    alias accum_type = get_accum_type[q_type]()
+
+    alias WM = config.warp_m()
+    alias WN = config.warp_n()
+    alias num_m_mmas = ceildiv(WM, MMA_M)
+    alias num_n_mmas = ceildiv(WN, MMA_N)
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
+    var out_reg_tile = tb[accum_type]().row_major[
+        num_m_mmas * num_n_mmas, output_frag_size
+    ]().local().alloc().fill(0)
+
+    var warp_id = thread_idx.x // WARP_SIZE
+
+    var warp_row = warp_id // num_warps_n
+    var warp_col = warp_id % num_warps_n
+
+    var kv_head_idx = block_idx.y
 
     var q_tile_idx = block_idx.x
 
