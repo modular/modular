@@ -488,7 +488,6 @@ def batch_config_from_pipeline_config(
         )
         log_str += f"\tKVCache Host Swap Space: {host_kvcache_swap_space_str}\n"
     log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
-    log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
     log_str += f"\tChunked Prefill: {'Enabled' if pipeline_config.enable_chunked_prefill else 'Disabled'}\n"
     if pipeline_config.enable_chunked_prefill:
         log_str += (
