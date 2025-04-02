@@ -10,7 +10,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements Formatting utilities."""
+"""String formatting utilities for Mojo.
+
+This module provides string formatting functionality similar to Python's `str.format()` method.
+It implements curly brace `{}` based string formatting with support for positional arguments,
+named arguments, format specifiers and conversion flags.
+
+Key Features:
+- Curly brace `{}` based string formatting
+- Support for positional and named arguments
+- Format specifiers for controlling output format
+- Conversion flags for `str()` and `repr()` conversions
+- Automatic and manual argument indexing
+- Fill, align, sign and other formatting options
+
+Example:
+```mojo
+from collections.string import String
+
+# Basic formatting
+var s1 = "Hello {0}!".format("World")  # Hello World!
+
+# Multiple arguments
+var s2 = "{0} plus {1} equals {2}".format(1, 2, 3)  # 1 plus 2 equals 3
+
+# Format specifiers
+var s3 = "{:>10}".format("test")  # '      test'
+
+# Conversion flags
+var s4 = "{!r}".format("test")  # "'test'"
+```
+
+Note:
+
+This is an internal implementation module. Users should use the `format()` methods
+provided by the `String` and `StringSlice` types rather than using these utilities directly.
+"""
 
 from collections import Optional
 

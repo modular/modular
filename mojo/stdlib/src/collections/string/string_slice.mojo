@@ -10,15 +10,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the StringSlice type.
+"""The `StringSlice` type implementation for efficient string operations.
 
-You can import these APIs from the `collections.string.string_slice` module.
+This module provides the `StringSlice` type, which is a lightweight view into string data
+that enables zero-copy string operations. `StringSlice` is designed for high-performance
+string manipulation while maintaining memory safety and UTF-8 awareness.
 
-Examples:
+Key Features:
+- Zero-copy string views and operations
+- UTF-8 aware string slicing and manipulation
+- Memory-safe string operations
+- Efficient string comparison and search
+- Unicode-aware string operations
 
-```mojo
-from collections.string import StringSlice
-```
+The `StringSlice` type is particularly useful for:
+- High-performance string operations without copying
+- Efficient string parsing and tokenization
+- Memory-safe string manipulation
+- Unicode-aware text processing
+
+Example:
+    ```mojo
+    from collections.string import StringSlice
+
+    # Create a string slice
+    var text = StringSlice("Hello, 世界")
+
+    # Zero-copy slicing
+    var hello = text[0:5] # Hello
+
+    # Unicode-aware operations
+    var world = text[7:13]  # "世界"
+
+    # String comparison
+    if text.startswith("Hello"):
+        print("Found greeting")
+    ```
 """
 
 from collections import List, Optional
