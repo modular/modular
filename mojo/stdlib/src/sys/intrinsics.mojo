@@ -24,7 +24,7 @@ from sys.info import is_gpu, _is_sm_9x
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
-from collections.string import StringSlice
+from collections.string import StaticString
 from builtin.string_literal import get_string_literal_slice
 
 from ._assembly import inlined_assembly
@@ -37,7 +37,7 @@ from .info import is_amd_gpu, is_nvidia_gpu, sizeof
 
 @always_inline("nodebug")
 fn llvm_intrinsic[
-    intrin: StringSlice,
+    intrin: StaticString,
     type: AnyTrivialRegType,
     *types: AnyType,
     has_side_effect: Bool = True,

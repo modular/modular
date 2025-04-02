@@ -865,8 +865,8 @@ struct StringLiteral(
 # FIXME(MOCO-1707): This should be named get_string_literal[value: StringSlice],
 # but Mojo isn't picking the most specific overload correctly.
 @always_inline("nodebug")
-fn get_string_literal_slice[value: StringSlice]() -> StringLiteral:
-    """Form a string literal from an arbitrary compile-time StringSlice value.
+fn get_string_literal_slice[value: StaticString]() -> StringLiteral:
+    """Form a string literal from an arbitrary compile-time StaticString value.
 
     Parameters:
         value: The value to convert to StringLiteral.

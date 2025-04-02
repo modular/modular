@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements a foreign functions interface (FFI)."""
 
-from collections.string import StringSlice
+from collections.string import StringSlice, StaticString
 from os import abort
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 from builtin.string_literal import get_string_literal_slice
@@ -295,7 +295,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
     @always_inline
     fn _get_function[
-        func_name: StringSlice, result_type: AnyTrivialRegType
+        func_name: StaticString, result_type: AnyTrivialRegType
     ](self) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
@@ -399,7 +399,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
     @always_inline
     fn call[
-        name: StringSlice,
+        name: StaticString,
         return_type: AnyTrivialRegType = NoneType,
         *T: AnyType,
     ](self, *args: *T) -> return_type:
@@ -419,7 +419,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         return self.call[name, return_type](args)
 
     fn call[
-        name: StringSlice, return_type: AnyTrivialRegType = NoneType
+        name: StaticString, return_type: AnyTrivialRegType = NoneType
     ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
         """Call a function with any amount of arguments.
 
@@ -446,7 +446,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 @always_inline
 fn _get_dylib_function[
     dylib_global: _Global[_, _OwnedDLHandle, _],
-    func_name: StringSlice,
+    func_name: StaticString,
     result_type: AnyTrivialRegType,
 ]() -> result_type:
     alias func_cache_name = String(dylib_global.name) + "/" + String(func_name)
@@ -473,7 +473,7 @@ fn _get_dylib_function[
 
 
 struct _Global[
-    name: StringSlice,
+    name: StaticString,
     storage_type: Movable,
     init_fn: fn () -> storage_type,
 ]:
@@ -512,7 +512,7 @@ struct _Global[
 
 @always_inline
 fn _get_global[
-    name: StringSlice,
+    name: StaticString,
     init_fn: fn (OpaquePointer) -> OpaquePointer,
     destroy_fn: fn (OpaquePointer) -> None,
 ](payload: OpaquePointer = OpaquePointer()) -> OpaquePointer:
@@ -525,7 +525,7 @@ fn _get_global[
 
 
 @always_inline
-fn _get_global_or_null[name: StringSlice]() -> OpaquePointer:
+fn _get_global_or_null[name: StaticString]() -> OpaquePointer:
     return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
         name.unsafe_ptr(), name.byte_length()
     )
@@ -538,7 +538,7 @@ fn _get_global_or_null[name: StringSlice]() -> OpaquePointer:
 
 @always_inline("nodebug")
 fn external_call[
-    callee: StringSlice,
+    callee: StaticString,
     return_type: AnyTrivialRegType,
     *types: AnyType,
 ](*args: *types) -> return_type:
@@ -560,7 +560,7 @@ fn external_call[
 
 @always_inline("nodebug")
 fn external_call[
-    callee: StringSlice,
+    callee: StaticString,
     return_type: AnyTrivialRegType,
 ](args: VariadicPack[element_trait=AnyType]) -> return_type:
     """Calls an external function.
@@ -602,7 +602,7 @@ fn external_call[
 
 @always_inline("nodebug")
 fn _external_call_const[
-    callee: StringSlice,
+    callee: StaticString,
     return_type: AnyTrivialRegType,
     *types: AnyType,
 ](*args: *types) -> return_type:

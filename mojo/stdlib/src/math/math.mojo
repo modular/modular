@@ -38,7 +38,7 @@ from bit import count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer
-from collections.string import StringSlice
+from collections.string import StaticString
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
@@ -2367,7 +2367,7 @@ fn _type_is_libm_supported(dtype: DType) -> Bool:
 
 
 fn _call_libm[
-    func_name: StringSlice,
+    func_name: StaticString,
     arg_type: DType,
     simd_width: Int,
     *,
@@ -2395,7 +2395,7 @@ fn _call_libm[
 
 
 fn _call_libm_impl[
-    func_name: StringSlice,
+    func_name: StaticString,
     arg_type: DType,
     simd_width: Int,
     *,
@@ -2417,8 +2417,8 @@ fn _call_libm_impl[
 fn _call_ptx_intrinsic_scalar[
     dtype: DType, //,
     *,
-    instruction: StringSlice,
-    constraints: StringSlice,
+    instruction: StaticString,
+    constraints: StaticString,
 ](arg: Scalar[dtype]) -> Scalar[dtype]:
     return inlined_assembly[
         instruction + " $0, $1;",
@@ -2431,8 +2431,8 @@ fn _call_ptx_intrinsic_scalar[
 fn _call_ptx_intrinsic_scalar[
     dtype: DType, //,
     *,
-    instruction: StringSlice,
-    constraints: StringSlice,
+    instruction: StaticString,
+    constraints: StaticString,
 ](arg0: Scalar[dtype], arg1: Scalar[dtype]) -> Scalar[dtype]:
     return inlined_assembly[
         instruction + " $0, $1, $2;",
@@ -2446,8 +2446,8 @@ fn _call_ptx_intrinsic[
     dtype: DType,
     simd_width: Int, //,
     *,
-    instruction: StringSlice,
-    constraints: StringSlice,
+    instruction: StaticString,
+    constraints: StaticString,
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     @parameter
     if simd_width == 1:
@@ -2469,10 +2469,10 @@ fn _call_ptx_intrinsic[
     dtype: DType,
     simd_width: Int, //,
     *,
-    scalar_instruction: StringSlice,
-    vector2_instruction: StringSlice,
-    scalar_constraints: StringSlice,
-    vector_constraints: StringSlice,
+    scalar_instruction: StaticString,
+    vector2_instruction: StaticString,
+    scalar_constraints: StaticString,
+    vector_constraints: StaticString,
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     @parameter
     if simd_width == 1:
@@ -2500,10 +2500,10 @@ fn _call_ptx_intrinsic[
     dtype: DType,
     simd_width: Int, //,
     *,
-    scalar_instruction: StringSlice,
-    vector2_instruction: StringSlice,
-    scalar_constraints: StringSlice,
-    vector_constraints: StringSlice,
+    scalar_instruction: StaticString,
+    vector2_instruction: StaticString,
+    scalar_constraints: StaticString,
+    vector_constraints: StaticString,
 ](arg0: SIMD[dtype, simd_width], arg1: SIMD[dtype, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
