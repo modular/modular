@@ -29,6 +29,7 @@ from sys import (
     llvm_intrinsic,
     simdwidthof,
     sizeof,
+    is_compile_time,
 )
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
@@ -1129,7 +1130,7 @@ fn iota[
     if is_compile_time():
         var a = SIMD[step_dtype, simd_width](0)
         for i in range(Scalar[step_dtype](simd_width)):
-            a[i] = i
+            a[Int(i)] = i
         return a.cast[dtype]() + offset
 
     var step = llvm_intrinsic[
