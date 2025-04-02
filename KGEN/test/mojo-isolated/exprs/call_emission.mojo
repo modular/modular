@@ -366,12 +366,12 @@ fn test_byref_slot_with_references():
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
-    f = also_broken(Pointer.address_of(f))
+    f = also_broken(Pointer(to=f))
     # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}([[RESULTTMP]], %f)
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
-    f = also_broken(Pointer.address_of(f))
+    f = also_broken(Pointer(to=f))
     # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}([[RESULTTMP]], %f)
 
 
@@ -413,7 +413,7 @@ fn complex_ref_box_emission[p: Int](a: Int):
     # RValues infer as immutable, just like you can't pass them to mut.
     _ = test_int_ref(Int())
     # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
-    # CHECK-NEXT: [[REGVAL:%.*]] = kgen.param.constant: !Int = <{0}> 
+    # CHECK-NEXT: [[REGVAL:%.*]] = kgen.param.constant: !Int = <{0}>
     # CHECK-NEXT: lit.ref.store [[REGVAL]], [[VAR]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[VAR]]
     # CHECK-NEXT: lit.call {{.*}}test_int_ref{{.*}}([[TMP]])

@@ -27,10 +27,9 @@ fn test0():
   var list = MyList[Int]()
 
   # CHECK: lit.call {{.*}}MyList::@"__getitem__
-  var ptr = Pointer.address_of(list[4])
+  var ptr = Pointer(to=list[4])
   # CHECK: lit.call {{.*}}MyList::@"__del__
 
   # FIXME: This is not extending the lifetime of MyList
   # CHECK: lit.call {{.*}}Int::@"__iadd__
   ptr[] += 4
-  

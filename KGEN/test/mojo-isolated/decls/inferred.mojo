@@ -146,10 +146,10 @@ fn testMyOptional(a: MyOptional[Int]):
 
 
 # CHECK-LABEL: lit.fn @"findall
-# CHECK-NEXT: lit.call {{.*}}Pointer::@"address_of{{.*}}(%self)
+# CHECK-NEXT: lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%self)
 struct DefBoxInference:
     def findall(self) -> DefBoxInferenceIter[__origin_of(self)]:
-        return DefBoxInferenceIter[__origin_of(self)](Pointer.address_of(self))
+        return DefBoxInferenceIter[__origin_of(self)](Pointer(to=self))
 
 
 @value

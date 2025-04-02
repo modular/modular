@@ -998,7 +998,7 @@ fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegEx
     # Last use of both x and b.
     # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%a)
     # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
-    
+
     # CHECK-NEXT:  kgen.return [[RESULT]]
     return a if x else b
 
@@ -1100,7 +1100,7 @@ fn caught_eh_cleanup():
 # https://linear.app/modularml/issue/MOCO-1251
 fn test_ref_field(owned mem: MemPair):
   # Pointer to subfield.
-  r = Pointer.address_of(mem.a)
+  r = Pointer(to=mem.a)
 
   # Subfield reference keeps entire value alive.
   # CHECK: lit.call {{.*}}__eq__
@@ -1265,7 +1265,7 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
   # CHECK-NEXT: lit.var.lifetime.end [[IF]]
 
 
-  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond 
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %a
   # CHECK-NEXT:   hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1277,7 +1277,7 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
   return a if cond else b
 
 # CHECK-LABEL: lit.fn @"testConds3
-fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample, 
+fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample,
               owned m: RegExample, owned n: RegExample):
   # CHECK-NEXT: %t1 = lit.var.decl
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
@@ -1381,7 +1381,7 @@ struct OuterStruct:
 
 struct RefResultStruct:
   var x: String
-  fn __init__(out self): 
+  fn __init__(out self):
     self.x = String()
 
   fn method(self) -> ref [self.x] String:
@@ -1405,4 +1405,3 @@ struct SomeValue[T: CollectionElement]:
         self.value = value
         self.name = "example"
         self.tmp = 1 #<- remove this field and it works
-
