@@ -1999,12 +1999,11 @@ fn _flash_attention_kv_cache_ragged_gpu[
         DimList.create_unknown[4](),
     ]()
 
-    gpu_flash_attention[add_attn_mask=False, ragged=True](
+    gpu_flash_attention[ragged=True](
         output,
         q,
         k,
         v,
-        dummy_mask,
         mask,
         IdentityScoreMod(),
         input_row_offsets,
@@ -2025,22 +2024,14 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_gpu[
     output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContext,
 ) raises:
-    var dummy_mask = NDBuffer[
-        type,
-        4,
-        MutableAnyOrigin,
-        DimList.create_unknown[4](),
-    ]()
-
     # This assumes that, the q tensor is static in the 1 dim.
     alias num_q_heads = Int(q.shape.at[1]())
 
-    gpu_flash_attention[add_attn_mask=False, use_score_mod=True, ragged=True](
+    gpu_flash_attention[use_score_mod=True, ragged=True](
         output,
         q,
         k,
         v,
-        dummy_mask,
         CausalMask(),
         AlibiScoreMod[num_q_heads](),
         input_row_offsets,
@@ -2142,11 +2133,10 @@ fn _flare_mla_decode_kv_cache_ragged[
         DimList.create_unknown[4](),
     ]()
 
-    flare_mla_decoding[add_attn_mask=False, ragged=True](
+    flare_mla_decoding[ragged=True](
         output,
         q,
         k,
-        dummy_mask,
         mask,
         IdentityScoreMod(),
         input_row_offsets,
@@ -2212,15 +2202,11 @@ fn _cross_attention_kv_cache_ragged[
             output,
         )
     else:
-        var dummy_mask = NDBuffer[
-            type, 4, MutableAnyOrigin, DimList.create_unknown[4]()
-        ](UnsafePointer[Scalar[type]](), Index(0, 0, 0, 0))
-        gpu_flash_attention[add_attn_mask=False, ragged=True](
+        gpu_flash_attention[ragged=True](
             output,
             q,
             k,
             v,
-            dummy_mask,
             mask,
             IdentityScoreMod(),
             q_input_row_offsets,

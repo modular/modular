@@ -81,11 +81,9 @@ from utils.static_tuple import StaticTuple
     )
 )
 fn mha_sm90[
-    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
-    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -173,7 +171,6 @@ fn mha_sm90[
     @parameter
     if config.algorithm == FlashAttentionAlgorithm(3):
         _mha_single_batch_sm90_fa3[
-            mask_rank,
             config=config,
             group=group,
             use_score_mod=use_score_mod,
@@ -195,7 +192,6 @@ fn mha_sm90[
     else:
         constrained[config.algorithm == FlashAttentionAlgorithm(2)]()
         _mha_single_batch_sm90_fa2[
-            mask_rank,
             config=config,
             group=group,
             use_score_mod=use_score_mod,
@@ -354,7 +350,7 @@ fn _apply_mask[
     seq_len: UInt32,
     max_seq_len: Int,
     q_tile_idx: UInt32,
-    scale_log2e: Scalar[accum_type],
+    scale: Scalar[accum_type],
     mask: mask_t,
     mask_status: TileMaskStatus,
     score_mod: score_mod_t,
@@ -396,6 +392,11 @@ fn _apply_mask[
                     for j in range(MMA_N // 8):
                         score_col = mask_frag_col + j * 8
 
+                        p_reg_vec2[mma_id, i + j * 2] = (
+                            p_reg_vec2[mma_id, i + j * 2]
+                            * scale.cast[accum_type]()
+                        )
+
                         @parameter
                         if masked:
                             p_reg_vec2[mma_id, i + j * 2] = mask.mask(
@@ -409,32 +410,28 @@ fn _apply_mask[
                                     Int(score_row_with_start_pos),
                                     Int(score_col),
                                 ),
-                                p_reg_vec2[mma_id, i + j * 2] * scale_log2e,
-                            )
-                        else:
-                            p_reg_vec2[mma_id, i + j * 2] = (
-                                p_reg_vec2[mma_id, i + j * 2] * scale_log2e
+                                p_reg_vec2[mma_id, i + j * 2],
                             )
 
                         @parameter
                         if use_score_mod:
-                            p_reg_vec2[mma_id, i + j * 2] = (
-                                score_mod.score_mod(
-                                    IndexList[
-                                        4,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
-                                        Int(block_idx.z),
-                                        Int(block_idx.y),
-                                        Int(score_row_with_start_pos),
-                                        Int(score_col),
-                                    ),
-                                    p_reg_vec2[mma_id, i + j * 2],
-                                    max_seq_len,
-                                )
-                                * log2e
+                            p_reg_vec2[mma_id, i + j * 2] = score_mod.score_mod(
+                                IndexList[
+                                    4,
+                                    element_bitwidth=32,
+                                    unsigned=True,
+                                ](
+                                    Int(block_idx.z),
+                                    Int(block_idx.y),
+                                    Int(score_row_with_start_pos),
+                                    Int(score_col),
+                                ),
+                                p_reg_vec2[mma_id, i + j * 2],
+                                max_seq_len,
                             )
+                        p_reg_vec2[mma_id, i + j * 2] = (
+                            p_reg_vec2[mma_id, i + j * 2] * log2e
+                        )
 
                         @parameter
                         if masked:
@@ -457,7 +454,6 @@ fn _apply_mask[
 
 @always_inline
 fn _mha_single_batch_sm90_fa3[
-    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -1091,12 +1087,6 @@ fn _mha_single_batch_sm90_fa3[
         mask_warp_row = warp_y * WM
         mask_warp_col = warp_x * WN
 
-        var scale_log2e: Scalar[accum_type] = (
-            scale.cast[accum_type]() if use_score_mod else scale.cast[
-                accum_type
-            ]()
-            * log2e
-        )
         read_pipeline_states = PipelineState[pipeline_stages]()
 
         @parameter
@@ -1172,7 +1162,7 @@ fn _mha_single_batch_sm90_fa3[
                 seq_len,
                 max_seq_len,
                 q_tile_idx,
-                scale_log2e,
+                scale.cast[accum_type](),
                 mask,
                 mask_status,
                 score_mod,
@@ -1486,7 +1476,6 @@ fn _mha_single_batch_sm90_fa3[
 
 @always_inline
 fn _mha_single_batch_sm90_fa2[
-    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -1819,10 +1808,6 @@ fn _mha_single_batch_sm90_fa2[
 
     alias num_k_iters_0 = Int(depth // BK)
     alias num_k_iters_1 = Int(BN // BK)
-    var scale_log2e: Scalar[accum_type] = (
-        scale.cast[accum_type]() if use_score_mod else scale.cast[accum_type]()
-        * log2e
-    )
 
     @parameter
     for q_id in range(num_k_iters_0):
@@ -1957,7 +1942,7 @@ fn _mha_single_batch_sm90_fa2[
             seq_len,
             max_seq_len,
             q_tile_idx,
-            scale_log2e,
+            scale.cast[accum_type](),
             mask,
             mask_status,
             score_mod,

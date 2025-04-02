@@ -6,6 +6,8 @@
 
 from math import iota
 from sys import bitwidthof
+from buffer import NDBuffer, DimList
+from collections import OptionalReg
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
 
@@ -236,6 +238,107 @@ struct NullMask(MHAMask):
     ) -> TileMaskStatus:
         # no mask
         return TileMaskStatus(0)
+
+
+@value
+@register_passable("trivial")
+struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](MHAMask):
+    """Mask that's backed by a materialized tensor."""
+
+    alias MaskType = NDBuffer[type_, rank_, MutableAnyOrigin, shape_]
+    var mask_tensor: Self.MaskType
+    var start_pos: OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
+    var is_multiple_of_2: Bool
+
+    fn __init__(
+        out self,
+        mask_tensor: Self.MaskType,
+        start_pos: OptionalReg[
+            NDBuffer[DType.uint32, 1, MutableAnyOrigin]
+        ] = None,
+    ):
+        constrained[rank_ in (3, 4), "Expected rank 3 or 4 for mask tensor"]()
+        self.mask_tensor = mask_tensor
+        self.start_pos = start_pos
+        self.is_multiple_of_2 = self.mask_tensor.dim[rank_ - 1]() % 2 == 0
+
+    @always_inline
+    fn get_start_pos(self, batch_idx: Int) -> Int:
+        if self.start_pos:
+            return Int(self.start_pos.value()[batch_idx])
+        else:
+            return (
+                self.mask_tensor.dim[rank_ - 1]()
+                - self.mask_tensor.dim[rank_ - 2]()
+            )
+
+    @always_inline
+    fn mask[
+        type: DType,
+        width: Int, //,
+        *,
+        element_bitwidth: Int = bitwidthof[UInt32](),
+        unsigned: Bool = False,
+    ](
+        self,
+        coord: IndexList[
+            4, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        score_vec: SIMD[type, width],
+    ) -> SIMD[type, width]:
+        alias IndexListType = IndexList[
+            rank_, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ]
+        var adjusted_coord: IndexListType
+
+        var start_pos = self.get_start_pos(coord[0])
+
+        @parameter
+        if rank_ == 3:
+            adjusted_coord = IndexListType(
+                coord[0], coord[2] - start_pos, coord[3]
+            )
+        else:
+            adjusted_coord = IndexListType(
+                coord[0], coord[1], coord[2] - start_pos, coord[3]
+            )
+
+        var retval = SIMD[type, width](-10000)
+        if adjusted_coord[rank_ - 2] < self.mask_tensor.dim[rank_ - 2]():
+            if (
+                adjusted_coord[rank_ - 1] + width
+                <= self.mask_tensor.dim[rank_ - 1]()
+                and self.is_multiple_of_2
+            ):
+                retval = self.mask_tensor.load[width=width](
+                    adjusted_coord
+                ).cast[type]()
+            elif adjusted_coord[rank_ - 1] < self.mask_tensor.dim[rank_ - 1]():
+                for i in range(
+                    min(width, self.mask_tensor.dim[rank_ - 1]() - coord[3])
+                ):
+                    adjusted_coord[rank_ - 1] = coord[3] + i
+                    retval[i] = self.mask_tensor.load[width=1](
+                        adjusted_coord
+                    ).cast[type]()
+
+        return score_vec + retval
+
+    @always_inline
+    fn status[
+        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
+    ](
+        self,
+        tile_offset: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        tile_size: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+    ) -> TileMaskStatus:
+        # This is counter-intuitive but setting to `partial` ensures we
+        # always read the values for the tensor.
+        return TileMaskStatus.PARTIAL_MASK
 
 
 # ===-----------------------------------------------------------------------===#

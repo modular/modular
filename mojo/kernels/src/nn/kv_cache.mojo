@@ -29,7 +29,7 @@ from nn.flash_attention import (
 )
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import CausalMask, NullMask
+from nn.mha_mask import CausalMask, NullMask, MaterializedMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from nn.normalization import _rms_norm_impl
 from register import register_internal
@@ -629,19 +629,14 @@ fn _flash_attention_kv_cache_causal_mask_gpu[
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContext,
 ) raises:
-    var mask_nd = NDBuffer[
-        type, 4, MutableAnyOrigin, DimList.create_unknown[4]()
-    ](UnsafePointer[Scalar[type]](), IndexList[4]())
-
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this and instead pass in explicit KVCache lengths to the GPU kernel.
     # KERN-725
-    gpu_flash_attention[add_attn_mask=False](
+    gpu_flash_attention(
         output,
         q,
         k,
         v,
-        mask_nd,
         CausalMask(),
         IdentityScoreMod(),
         valid_lengths,
@@ -697,13 +692,12 @@ fn _flash_attention_kv_cache_gpu[
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
     # KERN-725
-    gpu_flash_attention[add_attn_mask=True](
+    gpu_flash_attention(
         output,
         q,
         k,
         v,
-        mask_nd,
-        NullMask(),
+        MaterializedMask(mask_nd, start_pos=k.cache_lengths_nd()),
         IdentityScoreMod(),
         valid_lengths,
         scale,
@@ -855,13 +849,12 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
     # KERN-725
-    gpu_flash_attention[add_attn_mask=False, use_score_mod=True](
+    gpu_flash_attention[use_score_mod=True](
         output,
         q,
         k,
         v,
-        mask_nd,
-        CausalMask(),
+        MaterializedMask(mask_nd, start_pos=k.cache_lengths_nd()),
         AlibiScoreMod[num_q_heads](),
         valid_lengths,
         scale,
