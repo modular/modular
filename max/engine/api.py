@@ -720,6 +720,13 @@ class InferenceSession:
             options_dict["custom_extensions"].extend(
                 _process_custom_extensions_objects(custom_ops_path)
             )
+        if _is_max_graph(model):
+            if "custom_extensions" not in options_dict:
+                options_dict["custom_extensions"] = list()
+            options_dict["custom_extensions"].extend(
+                _process_custom_extensions_objects(model.kernel_libraries_paths)  # type: ignore
+            )
+
         if input_specs is not None:
             options_dict["input_specs"] = input_specs
 
