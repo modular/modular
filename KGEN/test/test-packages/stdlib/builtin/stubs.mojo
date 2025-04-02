@@ -31,7 +31,6 @@ alias `42` = __mlir_attr.`42 : index`
 alias `123` = __mlir_attr.`123 : index`
 alias `True` = __mlir_attr.`1 : i1`
 alias `False` = __mlir_attr.`0 : i1`
-alias Byte = __mlir_type.i8
 
 
 @value
@@ -322,6 +321,10 @@ struct UInt8:
         pass
 
 
+alias Byte = UInt8
+
+
+@value
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
@@ -354,6 +357,12 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
 struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
     var _slice: Span[Byte, origin]
 
+    @implicit
+    fn __init__[
+        O: ImmutableOrigin, //
+    ](out self: StringSlice[O], ref [O]value: String):
+        pass
+
     @always_inline
     fn unsafe_ptr(
         self,
@@ -370,15 +379,14 @@ alias StaticString = StringSlice[StaticConstantOrigin]
 
 @always_inline("nodebug")
 fn get_string_literal2[
-    string: String, extra: VariadicList[StaticString]
+    string: StaticString, extra: VariadicList[StaticString]
 ](
     out result: StringLiteral[
         __mlir_attr[
             `#kgen.param.expr<data_to_str,`,
-            string.byte_length().value,
+            string,
             `,`,
-            string.unsafe_ptr().address,
-            # `,`, extra.value,
+            extra.value,
             `> : !kgen.string`,
         ]
     ]

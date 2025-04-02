@@ -1346,10 +1346,16 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::AttrToStr:
     break;
   case POC::DataToStr:
-    if (operands.size() != 2 || !::isa<IndexType>(operands[0].getType()) ||
-        !::isa<PointerType>(operands[1].getType()))
-      return emitError() << "'data_to_str' expects two operands, one 'index' "
-                            "length and one pointer";
+    if (operands.size() != 2)
+      return emitError() << "'data_to_str' expects two operands, one "
+                            "string slice and a variadic of string slices";
+
+    if (VariadicType::get(operands[0].getType()) != operands[1].getType())
+      return emitError() << "'data_to_str' expects two operands, one "
+                            "string slice and a variadic of string slices\n"
+                         << operands[0].getType() << "\n"
+                         << operands[1].getType();
+
     break;
   case POC::StringAddress:
     if (operands.size() != 1 || !::isa<StringType>(operands[0].getType()))

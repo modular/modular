@@ -990,10 +990,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
     return success();
   case (uint32_t)POC::DataToStr:
-    if (parseParamValue(p, operands.emplace_back(),
-                        IndexType::get(p.getContext())) ||
-        p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
+    if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
+        parseParamValue(p, operands.emplace_back(), VariadicType::get(type)))
       return failure();
+
     return success();
   }
   llvm_unreachable("unknown operator");
@@ -1348,11 +1348,11 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     break;
   case POC::DataToStr:
     p << ':';
-    printKGENType(p, operands.back().getType());
+    printKGENType(p, operands[0].getType());
     p << ' ';
-    printParamValue(p, operands.front());
+    printParamValue(p, operands[0]);
     p << ", ";
-    printParamValue(p, operands.back());
+    printParamValue(p, operands[1]);
     break;
   }
 }
