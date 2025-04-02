@@ -165,6 +165,12 @@ void ASTDecl::dump() const {
   }
 }
 
+ASTType ASTDecl::getIfTypeValue() const {
+  if (auto cv = getIfIRValue().getIfPValue())
+    return cv.getIfTypeValue();
+  return {};
+}
+
 std::optional<StringRef> ASTDecl::getNameIfOperation() const {
   if (Operation *op = getIfOperation())
     if (auto decl = dyn_cast<ASTDeclInterface>(op))

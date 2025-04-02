@@ -77,11 +77,13 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 
   if (auto anyStruct = dyn_cast<StructMetaType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
-  if (auto traitType = dyn_cast<TraitType>(type))
-    return &shared.declResolver->getDeclForTypeSymbol(traitType.getSymbol());
+
   if (auto anyTrait = dyn_cast<AnyTraitType>(type))
-    return &shared.declResolver->getDeclForTypeSymbol(
-        anyTrait.getTraitType().getSymbol());
+    type = anyTrait.getTraitType();
+
+  if (auto traitType = dyn_cast<TraitType>(type))
+    return shared.declResolver->getTraitDecl(traitType);
+
   return nullptr;
 }
 
@@ -193,6 +195,26 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   // Trait values are generic and therefore use the default specification.
   if (auto trait = dyn_cast<TraitDeclOp>(decl)) {
     TypeConvention convention = trait.getConvention();
+    if (convention == TypeConvention::Unspecified)
+      return genericDefault;
+    return convention;
+  }
+
+  if (TraitType traitType =
+          dyn_cast_or_null<TraitType>(decl->getIfTypeValue())) {
+    // The register passability of a trait composition is the strictest of its
+    // members.
+    TypeConvention convention = TypeConvention::Unspecified;
+    for (SymbolRefAttr symbol : traitType.getSymbols()) {
+      TypeConvention singleTraitRP =
+          ASTType(TraitType::get(symbol)).getRegisterPassability(loc, shared);
+      if (singleTraitRP == TypeConvention::Unspecified)
+        continue;
+      if (convention == TypeConvention::Unspecified)
+        convention = singleTraitRP;
+      else
+        convention = std::max(convention, singleTraitRP);
+    }
     if (convention == TypeConvention::Unspecified)
       return genericDefault;
     return convention;
@@ -1052,7 +1074,12 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(), decl);
     os << ']';
   } else if (auto traitType = dyn_cast<TraitType>(type)) {
-    printSymbol(os, traitType.getSymbol(), diagShared, /*isFunc=*/false);
+    llvm::interleave(
+        traitType.getSymbols(), os,
+        [&](SymbolRefAttr symbol) {
+          printSymbol(os, symbol, diagShared, /*isFunc=*/false);
+        },
+        " & ");
   } else if (auto anyTrait = dyn_cast<AnyTraitType>(type)) {
     os << "AnyTrait[";
     ASTType(anyTrait.getTraitType()).print(os, diagShared, demangleParams);

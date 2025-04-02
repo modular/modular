@@ -65,12 +65,16 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
     }
 
     if (auto trait = dyn_cast<TraitType>(type)) {
-      if (std::optional<StringRef> name =
-              StructType::getAliasName(trait.getSymbol())) {
-        os << *name;
-        return AliasResult::OverridableAlias;
+      ArrayRef<SymbolRefAttr> symbols = trait.getSymbols();
+      SmallVector<StringRef> names;
+      for (SymbolRefAttr symbol : symbols) {
+        if (std::optional<StringRef> name = StructType::getAliasName(symbol))
+          names.push_back(*name);
+        else
+          return AliasResult::NoAlias;
       }
-      return AliasResult::NoAlias;
+      llvm::interleave(names, os, "_");
+      return AliasResult::OverridableAlias;
     }
 
     if (auto meta = dyn_cast<StructMetaType>(type)) {

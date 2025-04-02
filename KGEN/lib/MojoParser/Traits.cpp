@@ -151,12 +151,14 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   // TODO(MOCO-1468): Pull out into a helper method.
   bool implicitlyDestructible = false;
   for (auto parentAttr : structDeclOp.getParentTypes()) {
-    ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(
-        cast<TraitType>(parentAttr.getType()).getSymbol());
-    if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
-      if (parentTrait.getSymName() == "AnyType") {
-        implicitlyDestructible = true;
-        break;
+    for (SymbolRefAttr symbol :
+         cast<TraitType>(parentAttr.getType()).getSymbols()) {
+      ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+      if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
+        if (parentTrait.getSymName() == "AnyType") {
+          implicitlyDestructible = true;
+          break;
+        }
       }
     }
   }
@@ -171,15 +173,15 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   // These are the special methods that need to be synthesized.
   SmallVector<SpecialFunctionKind> specialFns;
 
-  ASTDecl &traitDecl =
-      emitter.getDeclResolver().getDeclForTypeSymbol(trait.getSymbol());
+  ASTType traitASTType = ASTType(trait);
+  ASTDecl &traitDecl = *traitASTType.getDecl(shared);
 
   // Make sure to fully resolve the trait first.
   if (failed(shared.declResolver->resolveFully(traitDecl, structDecl.getLoc())))
     return failure();
 
-  TraitDeclOp parentTrait = cast<TraitDeclOp>(traitDecl);
-  if (parentTrait.isRegisterPassable() && !structDeclOp.isRegisterPassable()) {
+  if (traitASTType.isRegisterPassable(structDecl.getLoc(), shared) &&
+      !regPassable) {
     diag = shared.emitError(structDecl.getLoc(),
                             "a struct must be register passable in order to "
                             "inherit from a register passable trait");
@@ -191,10 +193,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 
   bool allMatchFound = true;
   // Prepare an error. It will be abandoned if the check succeeds.
-  StringRef traitName = cast<TraitDeclOp>(traitDecl).getSymName();
   diag = shared.emitError(structDecl.getLoc(), "struct ")
-         << selfType << " does not implement all requirements for '"
-         << traitName << "'";
+         << selfType << " does not implement all requirements for "
+         << traitASTType;
 
   // Returns failure() to stop the verifyConformance loop.
   auto checkMethod = [&](const mlir::StringAttr &name, ASTDecl *traitFnDecl,
@@ -339,12 +340,14 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   if (allMatchFound) {
     diag->abandon();
     diag.reset();
-  } else {
+  } else if (traitDecl.getIfOperation()) {
     diag->attachNote(traitDecl.getLoc())
-        << "trait '" << traitName << "' declared here";
+        << "trait " << traitASTType << " declared here";
     if (!parent.getInheritedFrom().empty()) {
       ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
-          cast<TraitType>(parent.getInheritedFrom().front()).getSymbol());
+          cast<TraitType>(parent.getInheritedFrom().front())
+              .getSymbols()
+              .front());
       diag->attachNote(parentDecl.getLoc())
           << "inherited through '" << *parentDecl.getNameIfOperation()
           << "' here";
@@ -400,7 +403,10 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
   SmallVector<TypeLineageAttr> newParentTypes =
       llvm::to_vector(structOp.getParentTypes());
   unsigned curNumParents = newParentTypes.size();
-  StructEmitter::appendTraits(newParentTypes, traitDecl);
+  for (SymbolRefAttr symbol : trait.getSymbols()) {
+    ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+    StructEmitter::appendTraits(newParentTypes, &memberDecl);
+  }
   for (TypeLineageAttr newParent :
        llvm::drop_begin(newParentTypes, curNumParents))
     if (failed(verifyConformance(*this, newParent, diag)))
@@ -418,4 +424,24 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
   if (diag)
     diag->abandon();
   return result;
+}
+
+void LIT::canonicalizeTraitCompositionSymbols(
+    SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols) {
+  // TODO: Remove any symbol that is a parent of another symbol in the list.
+
+  // Sort and deduplicate the symbols.
+  llvm::sort(symbols, [&](SymbolRefAttr a, SymbolRefAttr b) {
+    if (a.getRootReference() != b.getRootReference())
+      return a.getRootReference().getValue() < b.getRootReference().getValue();
+    // Compare each segment of the symbols in dictionary order.
+    ArrayRef<FlatSymbolRefAttr> aSegments = a.getNestedReferences();
+    ArrayRef<FlatSymbolRefAttr> bSegments = b.getNestedReferences();
+    for (auto [aSeg, bSeg] : llvm::zip(aSegments, bSegments)) {
+      if (aSeg != bSeg)
+        return aSeg.getValue() < bSeg.getValue();
+    }
+    return aSegments.size() < bSegments.size();
+  });
+  symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
 }

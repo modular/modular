@@ -179,13 +179,6 @@ struct TypeDeclInfo {
     return it->second;
   }
 
-  /// Return the trait decl for the specified TraitType.
-  LIT::TraitDeclOp getTraitDeclForType(TraitType type) const {
-    auto it = traitMap.find(type.getSymbol());
-    assert(it != traitMap.end() && "reference to trait that wasn't declared");
-    return it->second;
-  }
-
   /// Return true if the specified type is RegisterPassableTrivial - no copy,
   /// move, or destructor members.
   bool isRegisterPassableTrivial(Type type) const;
@@ -195,9 +188,9 @@ struct TypeDeclInfo {
   TypedAttr getDestructorForType(Type type) const;
   SymbolConstantAttr getMoveInitForType(Type type) const;
 
-  /// If this is a non-destructible/linear type, return the error message to
-  /// emit if an implicit destructor call is required.
-  StringAttr getLinearTypeErrorMsg(Type type) const;
+  /// If this is a non-destructible/linear type, emit its linear type error
+  /// message and return true. Otherwise returns false.
+  bool emitErrorMsgIfLinearType(Location loc, Type type) const;
 
   /// Return the function for a given symbol name if known.
   FnOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
@@ -266,18 +259,19 @@ static SymbolConstantAttr getSpecialMemberForType(
 TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
   if (auto generic = dyn_cast<ParamType>(type)) {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
-      FuncTypeGeneratorType dtorSig =
-          TraitDeclOp(traitMap.at(trait.getSymbol()))
-              .getDtorSig()
-              .value_or(FuncTypeGeneratorType());
-      if (dtorSig) {
-        // Bind the *(0,0) parameter to a concrete type we're using in this
-        // context.
-        auto specSig = dtorSig.getSpecializedGenerator({generic.getParam()});
-        auto delStr =
-            StringAttr::get("__del__", StringType::get(type.getContext()));
-        return ParamOperatorAttr::get(POC::GetVTableEntry,
-                                      {generic.getParam(), delStr}, specSig);
+      for (SymbolRefAttr symbol : trait.getSymbols()) {
+        FuncTypeGeneratorType dtorSig = TraitDeclOp(traitMap.at(symbol))
+                                            .getDtorSig()
+                                            .value_or(FuncTypeGeneratorType());
+        if (dtorSig) {
+          // Bind the *(0,0) parameter to a concrete type we're using in this
+          // context.
+          auto specSig = dtorSig.getSpecializedGenerator({generic.getParam()});
+          auto delStr =
+              StringAttr::get("__del__", StringType::get(type.getContext()));
+          return ParamOperatorAttr::get(POC::GetVTableEntry,
+                                        {generic.getParam(), delStr}, specSig);
+        }
       }
     }
   }
@@ -295,18 +289,35 @@ SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type) const {
 
 /// If this is a non-destructible/linear type, return the error message to
 /// emit if an implicit destructor call is required.
-StringAttr TypeDeclInfo::getLinearTypeErrorMsg(Type type) const {
-  if (auto valueType = dyn_cast<LIT::StructType>(type))
-    return getStructDeclForType(valueType).getLinearTypeErrorMsgAttr();
+bool TypeDeclInfo::emitErrorMsgIfLinearType(Location loc, Type type) const {
+  if (auto valueType = dyn_cast<LIT::StructType>(type)) {
+    StructDeclOp structDecl = getStructDeclForType(valueType);
+    std::optional<StringRef> errorMsg = structDecl.getLinearTypeErrorMsg();
+    if (errorMsg)
+      ::mlir::emitError(loc) << *errorMsg;
+    return errorMsg.has_value();
+  }
 
   if (auto generic = dyn_cast<ParamType>(type)) {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
-      return TraitDeclOp(traitMap.at(trait.getSymbol()))
-          .getLinearTypeErrorMsgAttr();
+      InFlightDiagnostic diag = ::mlir::emitError(loc);
+      bool hasError = false;
+      for (SymbolRefAttr symbol : trait.getSymbols()) {
+        TraitDeclOp traitDecl(traitMap.at(symbol));
+        std::optional<StringRef> errorMsg = traitDecl.getLinearTypeErrorMsg();
+        if (errorMsg) {
+          if (hasError)
+            diag.attachNote();
+          diag << *errorMsg;
+          hasError = true;
+        }
+      }
+      return hasError;
     }
   }
+
   // Otherwise, must be an MLIR type like 'index'.
-  return {};
+  return false;
 }
 
 /// Return the total number of flattened fields in the specified type.
@@ -2034,9 +2045,8 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   if (!dtor) {
     // If there is no destructor, then this is either a trivial type or a
     // non-linear type.  Check for linearTypeErrorMsg and emit it if present.
-    if (StringAttr linearMsg =
-            valueSet.typeDeclInfo.getLinearTypeErrorMsg(destroyedType)) {
-      mlir::emitError(builder.getLoc()) << linearMsg.str();
+    if (valueSet.typeDeclInfo.emitErrorMsgIfLinearType(builder.getLoc(),
+                                                       destroyedType)) {
       valueSet.getValueInfo(valueRef.valueId).hasErrorDiagnosed = true;
     }
 

@@ -57,6 +57,9 @@ public:
   /// If the IRValue is a function, return it as a PValue.
   PValue getFuncAsPValue() const;
 
+  /// If the IRValue is a concrete type, return it as an ASTType.
+  ASTType getIfTypeValue() const;
+
   llvm::SMLoc getLoc() const { return loc; }
   ASTDecl *getParentDecl() const { return parentDecl; }
 
@@ -286,6 +289,10 @@ private:
   /// These are the declarations defined within this scope.  This is lazily
   /// allocated the first time something is added, because it the vast majority
   /// of decls (leaves in the tree) don't need it.  (5-12% need it).
+  /// This includes "owned" child decls whose `parentDecl` points back to this
+  /// decl, as well as "inherited" child decls whose `parentDecl` points to
+  /// other decls (as is the case for trait composition decls, see STCASTD).
+  /// TODO: Properly model inherited vs. owned decls.
   using DeclInScopeType = llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>>;
   std::unique_ptr<DeclInScopeType> declsInScope;
 
