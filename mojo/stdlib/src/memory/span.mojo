@@ -360,6 +360,7 @@ struct Span[
         """
         return self._data
 
+    @always_inline
     fn as_ref(self) -> Pointer[T, origin, address_space=address_space]:
         """
         Gets a `Pointer` to the first element of this span.
