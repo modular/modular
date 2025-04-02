@@ -837,7 +837,7 @@ struct NDBuffer[
 
         constrained[
             num_tile_sizes() == rank,
-            "The tile sould have the same rank as the buffer",
+            "The tile should have the same rank as the buffer",
         ]()
 
         constrained[
