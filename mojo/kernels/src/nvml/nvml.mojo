@@ -13,7 +13,6 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, c_char
 
 from memory import UnsafePointer, stack_allocation
-from collections.string import StringSlice
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -61,7 +60,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StringSlice, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: AnyTrivialRegType
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         CUDA_NVML_LIBRARY(),
