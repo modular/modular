@@ -121,6 +121,10 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
   initialize a `Pointer` (a reference, if you will) to *some other address in
   memory*.  In the future, `Pointer.address_of(...)` function will be removed.
 
+- The `logger` package is now open sourced (along with its commit history)!
+  This helps continue our commitment to progressively open sourcing more
+  of the standard library.
+
 ### Tooling changes
 
 ### ❌ Removed
