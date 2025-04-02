@@ -21,7 +21,11 @@ import gpu.warp as warp
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.grid_controls import (
+    pdl_launch_attributes,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
 
 from utils import IndexList
 from utils.numerics import get_accum_type
@@ -293,34 +297,38 @@ fn reduce_kernel[
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
-    with PDL():
-        # grid stride loop over rows
-        # each block reduces a row, which requires no partial reductions
-        for row_idx in range(block_idx.x, UInt(num_rows), grid_dim.x):
-            var row_coords = _get_nd_indices_from_flat_index(
-                Int(row_idx), shape, axis
-            )
+    # Launch next kernel early and it's the next kernel' responsibility to
+    # wait at proper stage.
+    launch_dependent_grids()
+    wait_on_dependent_grids()
 
-            var row_accum = row_reduce[
-                BLOCK_SIZE,
-                num_reductions,
-                input_fn,
-                reduce_fn,
-                type,
-                simd_width,
-                rank,
-                accum_type=accum_type,
-            ](row_coords, axis, init, row_size)
+    # grid stride loop over rows
+    # each block reduces a row, which requires no partial reductions
+    for row_idx in range(block_idx.x, UInt(num_rows), grid_dim.x):
+        var row_coords = _get_nd_indices_from_flat_index(
+            Int(row_idx), shape, axis
+        )
 
-            if thread_idx.x == 0:
-                var row_accum_cast = StaticTuple[Scalar[type], num_reductions]()
+        var row_accum = row_reduce[
+            BLOCK_SIZE,
+            num_reductions,
+            input_fn,
+            reduce_fn,
+            type,
+            simd_width,
+            rank,
+            accum_type=accum_type,
+        ](row_coords, axis, init, row_size)
 
-                @parameter
-                for i in range(num_reductions):
-                    row_accum_cast[i] = row_accum[i].cast[type]()
+        if thread_idx.x == 0:
+            var row_accum_cast = StaticTuple[Scalar[type], num_reductions]()
 
-                row_coords[axis] = 0
-                output_fn[type, 1, rank](row_coords, row_accum_cast)
+            @parameter
+            for i in range(num_reductions):
+                row_accum_cast[i] = row_accum[i].cast[type]()
+
+            row_coords[axis] = 0
+            output_fn[type, 1, rank](row_coords, row_accum_cast)
 
 
 fn reduce_launch[

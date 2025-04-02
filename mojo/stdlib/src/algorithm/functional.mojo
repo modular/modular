@@ -24,7 +24,11 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu.grid_controls import pdl_launch_attributes, PDL
+from gpu.grid_controls import (
+    pdl_launch_attributes,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_cpu, is_gpu, is_valid_target
 from runtime import tracing
@@ -1659,39 +1663,43 @@ fn _elementwise_impl_gpu[
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
 
-        with PDL():
-            for idx in range(
-                tid,
-                num_packed_elems,
-                block_size * grid_dim.x,
-            ):
-                var start_indices = _get_start_indices_of_nth_subvolume_uint[0](
-                    idx * simd_width, shape
-                )
+        # Launch next kerne early and it's the next kernel' responsibility to
+        # wait at proper stage.
+        launch_dependent_grids()
+        wait_on_dependent_grids()
 
-                @parameter
-                if handle_uneven_simd:
-                    if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
+        for idx in range(
+            tid,
+            num_packed_elems,
+            block_size * grid_dim.x,
+        ):
+            var start_indices = _get_start_indices_of_nth_subvolume_uint[0](
+                idx * simd_width, shape
+            )
 
-                        @parameter
-                        for off in range(Int(simd_width)):
-                            func[1, rank](
-                                _get_start_indices_of_nth_subvolume_uint[0](
-                                    idx * simd_width + off,
-                                    shape,
-                                ).canonicalize()
-                            )
-                    else:
-                        func[simd_width, rank](start_indices.canonicalize())
+            @parameter
+            if handle_uneven_simd:
+                if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
+
+                    @parameter
+                    for off in range(Int(simd_width)):
+                        func[1, rank](
+                            _get_start_indices_of_nth_subvolume_uint[0](
+                                idx * simd_width + off,
+                                shape,
+                            ).canonicalize()
+                        )
                 else:
                     func[simd_width, rank](start_indices.canonicalize())
+            else:
+                func[simd_width, rank](start_indices.canonicalize())
 
-            # process the tail region
-            if tid < unpacked_tail_length:
-                var index_tup = _get_start_indices_of_nth_subvolume_uint[0](
-                    packed_region_length + tid, shape
-                ).canonicalize()
-                func[1, rank](index_tup)
+        # process the tail region
+        if tid < unpacked_tail_length:
+            var index_tup = _get_start_indices_of_nth_subvolume_uint[0](
+                packed_region_length + tid, shape
+            ).canonicalize()
+            func[1, rank](index_tup)
 
     if shape[rank - 1] % simd_width == 0:
         ctx.enqueue_function[
