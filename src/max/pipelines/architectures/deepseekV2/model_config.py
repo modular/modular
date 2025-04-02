@@ -36,7 +36,7 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
     kv_params: KVCacheParams
     devices: list[DeviceRef]
 
-    # Default values copied from Transformers DeepseekV2Config
+    # Default values lifted from Transformers DeepseekV2Config
     vocab_size: int = 102400
     hidden_size: int = 4096
     intermediate_size: int = 11008
@@ -44,8 +44,8 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
     num_hidden_layers: int = 30
     num_attention_heads: int = 32
     num_key_value_heads: int = 32
-    n_shared_experts: int | None = None
-    n_routed_experts: int | None = None
+    n_shared_experts: int = 0
+    n_routed_experts: int = 0
     ep_size: int = 1
     routed_scaling_factor: float = 1.0
     kv_lora_rank: int = 512
@@ -54,9 +54,9 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
     v_head_dim: int = 128
     qk_nope_head_dim: int = 128
     topk_method: str = "greedy"
-    n_group: int | None = None
-    topk_group: int | None = None
-    num_experts_per_tok: int | None = None
+    n_group: int = 0
+    topk_group: int = 0
+    num_experts_per_tok: int = 0
     moe_layer_freq: int = 1
     first_k_dense_replace: int = 0
     norm_topk_prob: bool = False
@@ -102,6 +102,9 @@ class DeepseekV2ConfigBase(MAXModelConfigBase):
 
         if self.tie_word_embeddings:
             raise ValueError("tie_word_embeddings is not supported yet")
+
+        if self.pad_token_id != None:
+            raise ValueError("Padding token is not supported yet")
 
     @staticmethod
     def help() -> dict[str, str]:
