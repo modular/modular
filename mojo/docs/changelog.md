@@ -72,6 +72,11 @@ for i in range(iteration_range):
 - The `is_power_of_two(x)` function in the `bit` package is now a method on
   `Int`, `UInt` and `SIMD`.
 
+- The `constrained[cond, string]()` function now accepts multiple strings that
+  are printed concatenated on failure, so you can use:
+  `constrained[cond, "hello: ", String(n), ": world"]()` which is more comptime
+  efficient and somewhat more ergonomic than using string concatenation.
+
 ### GPU changes
 
 - `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the
