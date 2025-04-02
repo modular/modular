@@ -31,6 +31,7 @@ alias `42` = __mlir_attr.`42 : index`
 alias `123` = __mlir_attr.`123 : index`
 alias `True` = __mlir_attr.`1 : i1`
 alias `False` = __mlir_attr.`0 : i1`
+alias Byte = __mlir_type.i8
 
 
 @value
@@ -321,6 +322,22 @@ struct UInt8:
         pass
 
 
+@register_passable("trivial")
+struct Span[
+    mut: Bool, //,
+    T: CollectionElement,
+    origin: Origin[mut],
+]:
+    # Field
+    var _data: UnsafePointer[T, mut=mut, origin=origin]
+    var _len: Int
+
+    fn unsafe_ptr(
+        self,
+    ) -> UnsafePointer[T, mut=mut, origin=origin,]:
+        return self._data
+
+
 @value
 @register_passable("trivial")
 struct StringLiteral[value: __mlir_type.`!kgen.string`]:
@@ -333,20 +350,46 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
         return Bool()
 
 
+@register_passable("trivial")
+struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
+    var _slice: Span[Byte, origin]
+
+    @always_inline
+    fn unsafe_ptr(
+        self,
+    ) -> UnsafePointer[Byte, mut=mut, origin=origin]:
+        return self._slice.unsafe_ptr()
+
+    @always_inline
+    fn byte_length(self) -> Int:
+        return self._slice._len
+
+
+alias StaticString = StringSlice[StaticConstantOrigin]
+
+
 @always_inline("nodebug")
-fn get_string_literal[
-    value: String
+fn get_string_literal2[
+    string: String, extra: VariadicList[StaticString]
 ](
     out result: StringLiteral[
         __mlir_attr[
             `#kgen.param.expr<data_to_str,`,
-            value.byte_length().value,
+            string.byte_length().value,
             `,`,
-            value.unsafe_ptr().address,
+            string.unsafe_ptr().address,
+            # `,`, extra.value,
             `> : !kgen.string`,
         ]
     ]
 ):
+    result = __type_of(result)()
+
+
+@always_inline("nodebug")
+fn get_string_literal[
+    string: String, *extra: StaticString
+](out result: __type_of(get_string_literal2[string, extra]())):
     result = __type_of(result)()
 
 
@@ -476,13 +519,19 @@ alias ImplicitlyDestructible = AnyType
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable
+@register_passable("trivial")
 struct VariadicList[type: AnyTrivialRegType]:
     alias _mlir_type = __mlir_type[`!kgen.variadic<`, type, `>`]
 
+    var value: Self._mlir_type
+
+    @implicit
+    fn __init__(out self, *value: type):
+        self = value
+
     @implicit
     fn __init__(out self, value: Self._mlir_type):
-        return
+        self.value = value
 
 
 # Helper to compute the union of two origins:
@@ -734,8 +783,10 @@ struct Tuple[*element_types: AnyType]:
 @register_passable("trivial")
 struct UnsafePointer[
     T: AnyType,
+    *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    origin: Origin[True]._mlir_type = MutableAnyOrigin,
+    mut: Bool = True,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
 ]:
     alias _mlir_type = __mlir_type[
         `!kgen.pointer<`, T, `,`, address_space._value.value, `>`
@@ -746,6 +797,7 @@ struct UnsafePointer[
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
     @implicit
+    @always_inline("builtin")
     fn __init__(out self, value: Self._mlir_type):
         self.address = value
 

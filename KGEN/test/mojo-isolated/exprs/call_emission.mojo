@@ -232,7 +232,7 @@ fn test_variadic_and_kw_only_params_indirect[x: Index,
 
 # CHECK-LABEL: lit.fn @"initialize_in_addrspace
 fn initialize_in_addrspace(
-    ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]
+    ptr: UnsafePointer[ExampleRegPassable, address_space=AddressSpace(1)]
 ):
     # CHECK-NEXT: [[REGVAL:%.*]] = lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}()
 
@@ -259,7 +259,7 @@ fn test_param_refitem[a: SomeRefItemStruct]():
 # CHECK-LABEL: lit.fn @"mutate_in_addrspace
 fn mutate_in_addrspace(
     a: ExampleRegPassable,
-    ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)],
+    ptr: UnsafePointer[ExampleRegPassable, address_space=AddressSpace(1)],
 ):
     # Get !lit.ref in addr space #1
     # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
