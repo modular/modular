@@ -33,7 +33,7 @@ basic-raw
 Build manually using:
 
 ```shell
-mojo-pybind --raw-bindings mojo_module.mojo
+mojo build mojo_module.mojo --emit shared-lib -o mojo_module.so
 ```
 
 Which will result in a `mojo_module.so` being built and placed alongside the

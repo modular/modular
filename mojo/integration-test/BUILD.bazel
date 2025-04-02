@@ -23,9 +23,4 @@ lit_tests(
         "//KGEN/tools/kgen-translate",
         "//KGEN/tools/mojo",
     ],
-    deps = [
-        # Adds path/to/mojo-pybind/.. to the PYTHONPATH so we can invoke it as:
-        #   RUN: python3 -m mojo-pybind.main
-        "//KGEN/MojoBindings/mojo-pybind",
-    ],
 )

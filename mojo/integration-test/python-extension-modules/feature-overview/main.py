@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: python3 -m mojo-pybind.main --raw-bindings %S/mojo_module.mojo
+# RUN: %bare-mojo build %S/mojo_module.mojo --emit shared-lib -o mojo_module.so
 # RUN: python3 %s
 
 import sys
