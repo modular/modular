@@ -640,7 +640,7 @@ struct VariadicListMem[
             element_type,
             origin,
             __origin_of(self),
-        ](0, Pointer.address_of(self))
+        ](0, Pointer(to=self))
 
 
 alias _AnyTypeMetaType = __type_of(AnyType)
@@ -749,6 +749,15 @@ struct Pointer[
     @implicit
     fn __init__(out self, _mlir_value: Self._mlir_type):
         self._value = _mlir_value
+
+    @always_inline("nodebug")
+    fn __init__(out self, *, ref [origin, address_space._value.value]to: type):
+        """Constructs a Pointer from a reference to a value.
+
+        Args:
+            to: The value to construct a pointer to.
+        """
+        self = Self(_mlir_value=__get_mvalue_as_litref(to))
 
     @staticmethod
     @always_inline("nodebug")

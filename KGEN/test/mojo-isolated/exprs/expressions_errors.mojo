@@ -560,7 +560,7 @@ fn compare_mem_result():
 
 fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
-  var bref = Pointer.address_of(b) # ok
+  var bref = Pointer(to=b) # ok
 
   # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[CopyAndInitMemType, b]' to 'CopyAndInitMemType'}}
   _ = b <= bref
@@ -615,19 +615,19 @@ fn testSomeThing(a: SomeThing):
 # Issue #32603: References to read-only args in generics miscompile when instantiated on regpassable types
 fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
   # These are all fine since they are not returned.
-  _ = Pointer.address_of(a)
+  _ = Pointer(to=a)
   _ = __origin_of(a)
   _ = __get_mvalue_as_litref(a)
   # This is okay. The VariadicListMem has a origin.
-  _ = Pointer.address_of(args)
-  _ = Pointer.address_of(args[0])
+  _ = Pointer(to=args)
+  _ = Pointer(to=args[0])
 
 @register_passable
 struct NonTrivialReg:
   pass
 
 fn get_ref_to_reg_variadic(*args: NonTrivialReg):
-  _ = Pointer.address_of(args[0])
+  _ = Pointer(to=args[0])
 
 fn variadic_int(*x: Int) -> Bool: pass
 
@@ -699,7 +699,7 @@ struct SomeStruct:
   fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int])
       -> Pointer[Int, __origin_of(self)]:
     # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin]' value to 'Pointer[Int, self]'}}
-    return Pointer.address_of(ptr[])
+    return Pointer(to=ptr[])
 
 # Various type printing cases.
 #
