@@ -284,7 +284,29 @@ fn test_conv_gpu[
     ctx.enqueue_copy(input_dev, input_ptr)
     ctx.enqueue_copy(filter_dev, filter_ptr)
 
-    conv_gpu[4, 4, input_dim, filter_dim, output_dim, type, type, type](
+    # Run with convolution with epilogue fusion:
+    @parameter
+    @always_inline
+    @__copy_capture(output_buf)
+    fn output_fn[
+        _type: DType, _rank: Int, _width: Int
+    ](coords: IndexList[_rank], val: SIMD[_type, _width]) capturing:
+        output_buf.store[width=_width](
+            rebind[IndexList[output_buf.rank]](coords),
+            rebind[SIMD[output_buf.type, _width]](val) + 1,
+        )
+
+    conv_gpu[
+        4,
+        4,
+        input_dim,
+        filter_dim,
+        output_dim,
+        type,
+        type,
+        type,
+        maybe_epilogue_func=output_fn,
+    ](
         input_buf,
         filter_buf,
         output_buf,
@@ -297,10 +319,15 @@ fn test_conv_gpu[
 
     ctx.enqueue_copy(output_gpu_ptr, output_dev)
 
+    # Account for epilogue which adds one but is not in reference impls.
+    for i in range(len(output_ref)):
+        output_ref.data[i] += 1
+        output_cpu.data[i] += 1
+
     # verifying results
     for x in range(output_dim_flattened):
-        assert_almost_equal(output_ref_ptr[x], output_gpu_ptr[x], rtol=0.01)
         assert_equal(output_ref_ptr[x], output_cpu_ptr[x])
+        assert_almost_equal(output_ref_ptr[x], output_gpu_ptr[x], rtol=0.01)
 
     input_ptr.free()
     filter_ptr.free()
