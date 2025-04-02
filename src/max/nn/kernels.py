@@ -1251,7 +1251,7 @@ def rms_norm_key_cache(
             gamma,
             ops.constant(epsilon, gamma.dtype),
             ops.constant(layer_idx, DType.uint32),
-            ops.cast(TensorValue.from_dim(total_seq_len), DType.uint32),
+            ops.cast(TensorValue(total_seq_len), DType.uint32),
             input_row_offsets,
         ],
         parameters=parameters,
