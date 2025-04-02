@@ -96,7 +96,7 @@ fn gen_pytype_wrapper[
     # each time.
     # FIXME(MSTDL-969): Bitcast to `TypedPythonObject["Module"]`.
     Python.add_object(
-        pointer_bitcast[PyModule](Pointer.address_of(module))[], name, type_obj
+        pointer_bitcast[PyModule](Pointer(to=module))[], name, type_obj
     )
 
 

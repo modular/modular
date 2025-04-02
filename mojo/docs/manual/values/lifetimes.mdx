@@ -101,7 +101,7 @@ from memory import Pointer
 
 def use_pointer():
     a = 10
-    ptr = Pointer.address_of(a)
+    ptr = Pointer(to=a)
 ```
 
 A final type of origin value is an `OriginSet`. As the name suggests, an
@@ -173,7 +173,7 @@ struct BoxedString:
         self.o_ptr = OwnedPointer(value)
 
     fn as_ptr(mut self) -> Pointer[String, __origin_of(self.o_ptr)]:
-        return Pointer.address_of(self.o_ptr[])
+        return Pointer(to=self.o_ptr[])
 ```
 
 Note that the `as_ptr()` method takes its `self` argument as `mut self`. If it
@@ -398,7 +398,7 @@ You can assign a `Pointer` to a variable, but you need to use the dereference
 operator (`[]`) to access the underlying value.
 
 ```mojo
-name_ptr = Pointer.address_of(list[2])
+name_ptr = Pointer(to=list[2])
 name_ptr[] += "?"
 ```
 

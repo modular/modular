@@ -209,7 +209,7 @@ fn _printf[
             var loaded_pack = args.get_loaded_kgen_pack()
 
             _ = external_call["vprintf", Int32](
-                fmt.unsafe_cstr_ptr(), Pointer.address_of(loaded_pack)
+                fmt.unsafe_cstr_ptr(), Pointer(to=loaded_pack)
             )
         elif is_amd_gpu():
             # This is adapted from Triton's third party method for lowering

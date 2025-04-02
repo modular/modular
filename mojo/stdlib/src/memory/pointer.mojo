@@ -355,6 +355,7 @@ struct Pointer[
 
     @staticmethod
     @always_inline("nodebug")
+    @deprecated("Use Pointer(to=...) constructor instead.")
     fn address_of(ref [origin, address_space]value: type) -> Self:
         """Constructs a Pointer from a reference to a value.
 

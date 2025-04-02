@@ -114,7 +114,7 @@ struct _LinkedListIter[
         return self
 
     fn __next__(mut self, out p: Pointer[ElementType, origin]):
-        p = Pointer[ElementType, origin].address_of(self.curr[].value)
+        p = Pointer[ElementType, origin](to=self.curr[].value)
 
         @parameter
         if forward:
@@ -746,7 +746,7 @@ struct LinkedList[
         Returns:
             An iterator of immutable references to the list elements.
         """
-        return _LinkedListIter(Pointer.address_of(self))
+        return _LinkedListIter(Pointer(to=self))
 
     fn __reversed__(
         self,
@@ -761,7 +761,7 @@ struct LinkedList[
             A reversed iterator of immutable references to the list elements.
         """
         return _LinkedListIter[ElementType, __origin_of(self), forward=False](
-            Pointer.address_of(self)
+            Pointer(to=self)
         )
 
     fn __bool__(self) -> Bool:

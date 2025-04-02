@@ -259,14 +259,14 @@ struct _VariadicListMemIter[
         out self, index: Int, ref [list_origin]list: Self.variadic_list_type
     ):
         self.index = index
-        self.src = Pointer.address_of(list)
+        self.src = Pointer(to=list)
 
     fn __next__(mut self) -> Self.variadic_list_type.reference_type:
         self.index += 1
         # TODO: Need to make this return a dereferenced reference, not a
         # reference that must be deref'd by the user.
         return rebind[Self.variadic_list_type.reference_type](
-            Pointer.address_of(self.src[][self.index - 1])
+            Pointer(to=self.src[][self.index - 1])
         )
 
     @always_inline

@@ -116,6 +116,11 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 - The `type` parameter of `SIMD` has been renamed to `dtype`.
 
+- The `Pointer.address_of(...)` function has been deprecated.  Please use the
+  `Pointer(to=...)` constructor instead.  Conceptually, this is saying "please
+  initialize a `Pointer` (a reference, if you will) to *some other address in
+  memory*.  In the future, `Pointer.address_of(...)` function will be removed.
+
 ### Tooling changes
 
 ### ❌ Removed

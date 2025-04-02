@@ -301,7 +301,7 @@ struct _WriteBufferStack[
     fn __init__(out self, ref [origin]writer: W):
         self.data = InlineArray[UInt8, capacity](uninitialized=True)
         self.pos = 0
-        self.writer = Pointer.address_of(writer)
+        self.writer = Pointer(to=writer)
 
     fn write_list[
         T: WritableCollectionElement
@@ -515,7 +515,7 @@ struct WritableVariadicPack[
         Args:
             value: The `VariadicPack` to take a reference to.
         """
-        self.value = Pointer.address_of(value)
+        self.value = Pointer(to=value)
 
     fn write_to[W: Writer](self, mut writer: W):
         """

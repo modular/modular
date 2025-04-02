@@ -79,11 +79,11 @@ struct _SpanIter[
     ):
         @parameter
         if forward:
-            p = Pointer.address_of(self.src[self.index])
+            p = Pointer(to=self.src[self.index])
             self.index += 1
         else:
             self.index -= 1
-            p = Pointer.address_of(self.src[self.index])
+            p = Pointer(to=self.src[self.index])
 
     @always_inline
     fn __has_next__(self) -> Bool:
