@@ -84,10 +84,7 @@ def custom(
             )
 
     # Call the verifier, will throw if the call is invalid.
-    # TODO(GEX-1965): Currently we skip verification if no kernel library was imported.
-    # We should throw an error instead.
-    if not graph._kernel_library.is_empty():
-        graph._kernel_library.verify_custom_op(custom_op)
+    graph._kernel_library.verify_custom_op(custom_op)
 
     return results
 
@@ -145,9 +142,6 @@ def inplace_custom(
             )
 
     # Call the verifier, will throw if the call is invalid.
-    # TODO(GEX-1965) Currently we skip verification if no kernel library was imported.
-    # We should throw an error instead.
-    if not graph._kernel_library.is_empty():
-        graph._kernel_library.verify_custom_op(custom_op)
+    graph._kernel_library.verify_custom_op(custom_op)
 
     return results

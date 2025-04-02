@@ -52,10 +52,6 @@ class KernelLibrary:
     def library_paths(self) -> list[Path]:
         return self._analysis.library_paths
 
-    # TODO(GEX-1965): Remove this function.
-    def is_empty(self) -> bool:
-        return len(self._analysis.library_paths) == 0
-
     def add_path(self, path: Path):
         self._analysis.add_path(path)
 
