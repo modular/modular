@@ -331,8 +331,8 @@ def test_llava_mistral_decoder(pytorch_mistral_and_config):
     prompt_lens = [30]
     assert len(prompt_lens) == batch_size
     input_row_offsets = Tensor(
-        [batch_size + 1],
         DType.uint32,
+        [batch_size + 1],
     )
     running_sum = 0
     for i in range(batch_size):

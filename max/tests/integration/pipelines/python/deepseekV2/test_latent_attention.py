@@ -139,7 +139,7 @@ def generate_max_outputs(
         seq_ids.append(seq_id[0])
 
     # Compute input row offsets for ragged tensors.
-    input_row_offsets = Tensor([batch_size + 1], DType.uint32)
+    input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
     running_sum = 0
     for i in range(batch_size):
         input_row_offsets[i] = running_sum

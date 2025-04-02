@@ -616,8 +616,8 @@ def test_kv_cache_paged_fa3_fallback():
         seq_ids.append(seq_id[0])
 
     input_row_offsets = Tensor(
-        [batch_size + 1],
         DType.uint32,
+        [batch_size + 1],
     )
     running_sum = 0
     for i in range(batch_size):

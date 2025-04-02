@@ -121,8 +121,8 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         seq_ids.append(seq_id[0])
 
     input_row_offsets = Tensor(
-        [batch_size + 1],
         DType.uint32,
+        [batch_size + 1],
     )
     running_sum = 0
     for i in range(batch_size):
@@ -267,7 +267,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         seq_ids.append(seq_id[0])
 
     # Compute input row offsets for ragged tensors.
-    input_row_offsets = Tensor([batch_size + 1], DType.uint32)
+    input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
     running_sum = 0
     for i in range(batch_size):
         input_row_offsets[i] = running_sum
@@ -401,7 +401,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         seq_ids.append(seq_id[0])
 
     # Compute input row offsets for ragged tensors.
-    input_row_offsets = Tensor([batch_size + 1], DType.uint32)
+    input_row_offsets = Tensor(DType.uint32, [batch_size + 1])
     running_sum = 0
     for i in range(batch_size):
         input_row_offsets[i] = running_sum

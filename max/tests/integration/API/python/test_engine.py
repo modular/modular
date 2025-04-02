@@ -83,8 +83,8 @@ def test_devicetensor_wrong_num_inputs(
     # The engine should throw a ValueError when executing with the
     # wrong number of input tensors.
     model = session.load(mo_model_path)
-    first_tensor = Tensor((5,), DType.float32)
-    second_tensor = Tensor((5,), DType.float32)
+    first_tensor = Tensor(DType.float32, (5,))
+    second_tensor = Tensor(DType.float32, (5,))
     # Ensure that tensors are initialized
     for i in range(5):
         first_tensor[i] = i
@@ -105,7 +105,7 @@ def test_devicetensor_wrong_shape(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
-    tensor = Tensor((6,), DType.float32)
+    tensor = Tensor(DType.float32, (6,))
     # Ensure that tensors are initialized
     for i in range(6):
         tensor[i] = i
@@ -125,7 +125,7 @@ def test_devicetensor_wrong_rank(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
-    tensor = Tensor((5, 2), DType.float32)
+    tensor = Tensor(DType.float32, (5, 2))
     # Ensure that tensors are initialized
     for i in range(5):
         for j in range(2):
@@ -146,7 +146,7 @@ def test_devicetensor_wrong_dtype(
     # The engine should throw a ValueError when executing a tensor with
     # the wrong dtype.
     model = session.load(mo_model_path)
-    tensor = Tensor((6,), DType.int32)
+    tensor = Tensor(DType.int32, (6,))
     # Ensure that tensors are initialized
     for i in range(6):
         tensor[i] = i
@@ -165,7 +165,7 @@ def test_execute_device_tensor(
     # The engine should be able to take in a simple 1-d tensor and execute a
     # model with this input.
     model = session.load(mo_model_path)
-    input_tensor = Tensor((5,), DType.float32)
+    input_tensor = Tensor(DType.float32, (5,))
     for idx in range(5):
         input_tensor[idx] = 1.0
     output = model.execute(input_tensor)
@@ -183,7 +183,7 @@ def test_execute_noncontiguous_tensor(
     # The engine should reject any strided tensor inputs and request that they
     # be reallocated using `.contiguous`.
     model = session.load(mo_model_path)
-    input_tensor = Tensor((10,), DType.float32)
+    input_tensor = Tensor(DType.float32, (10,))
     for idx in range(10):
         input_tensor[idx] = 1.0
     subtensor = input_tensor[::2]
@@ -210,8 +210,8 @@ def test_execute_devicetensor_dynamic_shape(
     # Device tensors should be able to execute even when the model expects
     # dynamic shapes.
     model = session.load(dynamic_model_path)
-    tensor_one = Tensor((5,), DType.int32)
-    tensor_two = Tensor((5,), DType.int32)
+    tensor_one = Tensor(DType.int32, (5,))
+    tensor_two = Tensor(DType.int32, (5,))
 
     for x in range(5):
         tensor_one[x] = x
