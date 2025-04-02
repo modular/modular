@@ -65,6 +65,7 @@ from .conv_utils import (
     ConvShape,
     align_down_residual,
     elementwise_epilogue_type,
+    elementwise_simd_epilogue_type,
     get_conv_num_partitions,
     get_conv_shape,
     get_conv_tile_shape,
@@ -2894,9 +2895,7 @@ fn conv_nhwc_direct[
     filter_packed: Bool,
     conv_info_static: ConvInfoStatic[input_rank - 2],
     lambdas_have_fusion: Bool,
-    elementwise_lambda: fn[type: DType, rank: Int, width: Int] (
-        IndexList[rank], SIMD[type, width]
-    ) capturing -> None,
+    elementwise_lambda: elementwise_simd_epilogue_type,
 ](
     input: NDBuffer[input_type, input_rank, _, input_shape],
     filter: NDBuffer[filter_type, filter_rank, _, filter_shape],
@@ -3006,6 +3005,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
     filter_type: DType,
     output_type: DType,
     block_size: Int,
+    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type],
 ](
     input: NDBuffer[input_type, 4, MutableAnyOrigin, input_dim],
     filter: NDBuffer[filter_type, 4, MutableAnyOrigin, filter_dim],
@@ -3054,7 +3054,13 @@ fn conv2d_gpu_naive_nhwc_rscf[
                                 accum_type
                             ]()
                         )
-        output.store(IndexList[4](n, h, w, co), value.cast[output_type]())
+
+        @parameter
+        if maybe_epilogue_func:
+            alias epilogue_func = maybe_epilogue_func.value()
+            epilogue_func(IndexList[4](n, h, w, co), value.cast[output_type]())
+        else:
+            output.store(IndexList[4](n, h, w, co), value.cast[output_type]())
 
 
 @always_inline
@@ -3186,6 +3192,7 @@ fn conv_gpu[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type] = None,
 ](
     input: NDBuffer[input_type, input_rank, MutableAnyOrigin, input_dim],
     filter: NDBuffer[filter_type, filter_rank, MutableAnyOrigin, filter_dim],
@@ -3208,6 +3215,7 @@ fn conv_gpu[
         filter_type,
         output_type,
         block_size,
+        maybe_epilogue_func,
     ]
 
     var grid_dim_x = ceildiv(output.dim[2](), block_size)

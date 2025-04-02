@@ -35,6 +35,10 @@ alias elementwise_epilogue_type = fn[rank: Int] (
     f_size: Int,
 ) capturing -> None
 
+alias elementwise_simd_epilogue_type = fn[type: DType, rank: Int, width: Int] (
+    IndexList[rank], SIMD[type, width]
+) capturing -> None
+
 
 # ===----------------------------------------------------------------------=== #
 # Wrapper for  Convolution Shape                                               #
