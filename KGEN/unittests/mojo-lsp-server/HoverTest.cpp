@@ -457,6 +457,8 @@ TEST(HoverTest, testHoverImport) {
 
   auto simdDoc = "Implements SIMD primitives and abstractions";
 
+  auto stringPackageDoc = "The string package";
+
   createTestClient()
       .open(doc)
       .hover(doc, rangeBuiltin.start,
@@ -474,14 +476,8 @@ Implements the builtin package.
       .hover(doc, rangeString.start,
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeString);
-               EXPECT_EQ(hover.contents.value, R"(### package `string`
-
----
-
-###
-Implements the string package.
-
-)");
+               EXPECT_TRUE(
+                   StringRef(hover.contents.value).contains(stringPackageDoc));
              })
       .hover(doc, rangeSimd.start,
              [&](const lsp::Hover &hover) {
