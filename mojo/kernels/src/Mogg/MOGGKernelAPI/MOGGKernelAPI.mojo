@@ -5085,10 +5085,6 @@ struct Conv:
                 "only unpacked filter is supported on cuda gpu",
             ]()
 
-            constrained[
-                lambdas_have_fusion == False, "lambda fusion isnt supported"
-            ]()
-
             var cuda_ctx = ctx.get_device_context()
             conv_gpu[
                 input.rank,
@@ -5099,6 +5095,7 @@ struct Conv:
                 input.type,
                 filter.type,
                 output.type,
+                output_fn,
             ](
                 input_buf,
                 filter_buf,
