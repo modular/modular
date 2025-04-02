@@ -1060,7 +1060,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         Returns:
             An iterator object for this `IntTuple`.
         """
-        return _IntTupleIter(Pointer.address_of(self), 0)
+        return _IntTupleIter(Pointer(to=self), 0)
 
     @always_inline
     fn __getitem__(self, _idx: Int) -> IntTuple[__origin_of(self)]:
@@ -1563,8 +1563,8 @@ fn zip(
     alias common_type = Pointer[IntTuple, __origin_of(a, b)]
     return __type_of(result)(
         InlineArray[common_type, 2](
-            rebind[common_type](Pointer.address_of(a)),
-            rebind[common_type](Pointer.address_of(b)),
+            rebind[common_type](Pointer(to=a)),
+            rebind[common_type](Pointer(to=b)),
         )
     )
 
@@ -1592,9 +1592,9 @@ fn zip(
     alias common_type = Pointer[IntTuple, __origin_of(a, b, c)]
     return __type_of(result)(
         InlineArray[common_type, 3](
-            rebind[common_type](Pointer.address_of(a)),
-            rebind[common_type](Pointer.address_of(b)),
-            rebind[common_type](Pointer.address_of(c)),
+            rebind[common_type](Pointer(to=a)),
+            rebind[common_type](Pointer(to=b)),
+            rebind[common_type](Pointer(to=c)),
         )
     )
 

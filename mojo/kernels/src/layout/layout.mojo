@@ -734,7 +734,7 @@ struct Layout(
         Returns:
             An iterator over the layout's dimensions.
         """
-        return _LayoutIter(0, Pointer.address_of(self))
+        return _LayoutIter(0, Pointer(to=self))
 
     fn size(self) -> Int:
         """Returns the total number of elements in the layout's domain.
