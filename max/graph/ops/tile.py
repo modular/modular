@@ -11,11 +11,11 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import Dim, DimLike, StaticDim, TensorType
+from ..type import Dim, DimLike, Shape, StaticDim, TensorType
 from ..value import TensorValue, TensorValueLike
 
 
-def tile(x: TensorValueLike, repeats: Iterable[DimLike]):
+def tile(x: TensorValueLike, repeats: Iterable[DimLike]) -> TensorValue:
     """
     Returns a new Tensor as the result of copying the input tensor N_i times
     on each dimension, where N_i = repeats[i].
@@ -42,5 +42,5 @@ def tile(x: TensorValueLike, repeats: Iterable[DimLike]):
         rmo.mo_tile,
         TensorType(dtype=x.dtype, shape=output_dims, device=x.device).to_mlir(),
         x,
-        TensorValue.from_shape(repeats),
+        TensorValue(Shape(repeats)),
     )[0].tensor

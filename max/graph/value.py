@@ -297,9 +297,9 @@ class TensorValue(Value):
         elif isinstance(value, TensorValue):
             self._mlir_value = value._mlir_value
         elif isinstance(value, Dim):
-            self._mlir_value = TensorValue.from_dim(value)._mlir_value
+            self._mlir_value = TensorValue._from_dim(value)._mlir_value
         elif isinstance(value, Shape):
-            self._mlir_value = TensorValue.from_shape(value)._mlir_value
+            self._mlir_value = TensorValue._from_shape(value)._mlir_value
         elif isinstance(value, _numeric):
             raise TypeError(
                 "TensorValue() can not be created directly from a"
@@ -314,7 +314,7 @@ class TensorValue(Value):
             )
 
     @staticmethod
-    def from_dim(dim: DimLike) -> TensorValue:
+    def _from_dim(dim: DimLike) -> TensorValue:
         """Creates a new tensor based on provided MLIR dimension type.
 
         Args:
@@ -326,7 +326,7 @@ class TensorValue(Value):
         return ops.shape_to_tensor([dim]).reshape(())
 
     @staticmethod
-    def from_shape(shape: ShapeLike) -> TensorValue:
+    def _from_shape(shape: ShapeLike) -> TensorValue:
         """Creates a new tensor with the specified shape.
 
         Args:
