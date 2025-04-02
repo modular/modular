@@ -36,6 +36,8 @@ def matrix_multiplication(
     a_tensor = Tensor.from_numpy(a).to(device)
     b_tensor = Tensor.from_numpy(b).to(device)
 
+    path = Path(__file__).parent / "kernels.mojopkg"
+
     # Configure our simple one-operation graph.
     with Graph(
         "matrix_multiplication_graph",
@@ -43,6 +45,7 @@ def matrix_multiplication(
             TensorType(dtype, shape=a_tensor.shape),
             TensorType(dtype, shape=b_tensor.shape),
         ],
+        custom_extensions=[path],
     ) as graph:
         # Take in the two inputs to the graph.
         a_value, b_value = graph.inputs
@@ -80,8 +83,6 @@ if __name__ == "__main__":
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 
-    path = Path(__file__).parent / "kernels.mojopkg"
-
     M = 256
     K = 256
     N = 256
@@ -92,7 +93,6 @@ if __name__ == "__main__":
     # Set up an inference session for running the graph.
     session = InferenceSession(
         devices=[device],
-        custom_extensions=path,
     )
 
     # Fill the input matrices with random values.
