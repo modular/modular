@@ -52,22 +52,70 @@ struct IndexOpInterpretInterface
 // IndexOpInterpretInterface Implementations
 //===----------------------------------------------------------------------===//
 
-struct CmpOpInterpretInterface
-    : public IndexOpInterpretInterface<CmpOpInterpretInterface,
-                                       mlir::index::CmpOp> {
-  static ErrorTreeOrSuccess interpret(mlir::index::CmpOp op,
-                                      ArrayRef<Attribute> operands,
+template <typename IndexOpT>
+struct IndexOpInterpretInterfaceImplementation
+    : public IndexOpInterpretInterface<
+          IndexOpInterpretInterfaceImplementation<IndexOpT>, IndexOpT> {
+  static ErrorTreeOrSuccess interpret(IndexOpT op, ArrayRef<Attribute> operands,
                                       InterpreterState &state);
 };
 
-struct SubOpInterpretInterface
-    : public IndexOpInterpretInterface<SubOpInterpretInterface,
-                                       mlir::index::SubOp> {
-  static ErrorTreeOrSuccess interpret(mlir::index::SubOp op,
-                                      ArrayRef<Attribute> operands,
-                                      InterpreterState &state);
-};
+using CmpOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::CmpOp>;
 
+using SubOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::SubOp>;
+
+using ShlOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::ShlOp>;
+
+using ShrSOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::ShrSOp>;
+
+using ShrUOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::ShrUOp>;
+
+using AndOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::AndOp>;
+
+using CeilDivUOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::CeilDivUOp>;
+
+using CeilDivSOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::CeilDivSOp>;
+
+using DivUOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::DivUOp>;
+
+using DivSOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::DivSOp>;
+
+using MaxUOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::MaxUOp>;
+
+using MaxSOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::MaxSOp>;
+
+using MinUOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::MinUOp>;
+
+using MinSOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::MinSOp>;
+
+using MulOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::MulOp>;
+
+using OrOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::OrOp>;
+
+using RemSOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::RemSOp>;
+
+using RemUOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::RemUOp>;
+
+using XOrOpInterpretInterface =
+    IndexOpInterpretInterfaceImplementation<mlir::index::XOrOp>;
 } // namespace M::KGEN
 
 #endif // KGEN_TOOLCOMMON_INITALLDIALECTS_INDEXINTERPRETERINTERFACE_H

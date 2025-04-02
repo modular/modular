@@ -217,8 +217,6 @@ public:
     mlir::index::SubOp::attachInterface<SubOpComputeOpInterface>(*ctx);
     mlir::index::MulOp::attachInterface<MulOpComputeOpInterface>(*ctx);
     mlir::index::CmpOp::attachInterface<CmpOpComputeOpInterface>(*ctx);
-    mlir::index::CmpOp::attachInterface<CmpOpInterpretInterface>(*ctx);
-    mlir::index::SubOp::attachInterface<SubOpInterpretInterface>(*ctx);
     mlir::index::DivSOp::attachInterface<DivSOpComputeOpInterface>(*ctx);
     mlir::index::DivUOp::attachInterface<DivUOpComputeOpInterface>(*ctx);
     mlir::index::CeilDivSOp::attachInterface<CeilDivSOpComputeOpInterface>(
@@ -229,6 +227,29 @@ public:
         *ctx);
     mlir::index::RemSOp::attachInterface<RemSOpComputeOpInterface>(*ctx);
     mlir::index::RemUOp::attachInterface<RemUOpComputeOpInterface>(*ctx);
+
+    // Interpreter interfaces
+    mlir::index::CmpOp::attachInterface<CmpOpInterpretInterface>(*ctx);
+    mlir::index::SubOp::attachInterface<SubOpInterpretInterface>(*ctx);
+    mlir::index::ShlOp::attachInterface<ShlOpInterpretInterface>(*ctx);
+    mlir::index::ShrSOp::attachInterface<ShrSOpInterpretInterface>(*ctx);
+    mlir::index::ShrUOp::attachInterface<ShrUOpInterpretInterface>(*ctx);
+    mlir::index::AndOp::attachInterface<AndOpInterpretInterface>(*ctx);
+    mlir::index::CeilDivUOp::attachInterface<CeilDivUOpInterpretInterface>(
+        *ctx);
+    mlir::index::CeilDivSOp::attachInterface<CeilDivSOpInterpretInterface>(
+        *ctx);
+    mlir::index::DivUOp::attachInterface<DivUOpInterpretInterface>(*ctx);
+    mlir::index::DivSOp::attachInterface<DivSOpInterpretInterface>(*ctx);
+    mlir::index::MaxUOp::attachInterface<MaxUOpInterpretInterface>(*ctx);
+    mlir::index::MaxSOp::attachInterface<MaxSOpInterpretInterface>(*ctx);
+    mlir::index::MinUOp::attachInterface<MinUOpInterpretInterface>(*ctx);
+    mlir::index::MinSOp::attachInterface<MinSOpInterpretInterface>(*ctx);
+    mlir::index::MulOp::attachInterface<MulOpInterpretInterface>(*ctx);
+    mlir::index::OrOp::attachInterface<OrOpInterpretInterface>(*ctx);
+    mlir::index::RemSOp::attachInterface<RemSOpInterpretInterface>(*ctx);
+    mlir::index::RemUOp::attachInterface<RemUOpInterpretInterface>(*ctx);
+    mlir::index::XOrOp::attachInterface<XOrOpInterpretInterface>(*ctx);
   }
 
   /// Clone the extension.

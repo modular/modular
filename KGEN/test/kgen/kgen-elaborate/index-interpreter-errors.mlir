@@ -4,7 +4,7 @@
 // expected-note @below {{failed to interpret function @minus}}
 kgen.generator @minus(%arg0: index, %arg1: index) -> index {
   // expected-note @below {{failed to interpret operation index.sub(4294967295 : index, -4294967295 : index)}}
-  // expected-note @below {{subtraction failed due to overflow}}
+  // expected-note @below {{`index.sub` failed due to overflow}}
   %0 = index.sub %arg0, %arg1
   kgen.return %0 : index
 }
