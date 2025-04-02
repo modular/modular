@@ -34,7 +34,7 @@ Example:
 from os import PathLike
 from pathlib import Path
 from sys.info import _current_target
-from collections.string import StringSlice, StaticString
+from collections.string import StaticString
 from builtin.string_literal import get_string_literal_slice
 
 from memory import UnsafePointer
@@ -225,7 +225,7 @@ fn _compile_info_non_failable_impl[
     func: func_type,
     /,
     emission_kind: Int,
-    compile_options: StringSlice,
+    compile_options: StaticString,
     target: __mlir_type.`!kgen.target`,
 ]() -> Info[func_type, func]:
     """Internal implementation of compile_info that cannot fail.
