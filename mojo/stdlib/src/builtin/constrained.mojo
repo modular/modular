@@ -15,11 +15,11 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 from collections.string.string_slice import StaticString
-from builtin.string_literal import get_string_literal_slice
+from builtin.string_literal import get_string_literal_slice2
 
 
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: StaticString]():
+fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     """Compile time checks that the condition is true.
 
     The `constrained` is similar to `static_assert` in C++ and is used to
@@ -30,6 +30,7 @@ fn constrained[cond: Bool, msg: StaticString]():
     Parameters:
         cond: The bool value to assert.
         msg: The message to display on failure.
+        extra: Additional messages to concatenate to msg.
 
     Example:
 
@@ -53,7 +54,7 @@ fn constrained[cond: Bool, msg: StaticString]():
     """
     __mlir_op.`kgen.param.assert`[
         cond = cond.__mlir_i1__(),
-        message = get_string_literal_slice[msg]().value,
+        message = get_string_literal_slice2[msg, extra]().value,
     ]()
 
 

@@ -344,6 +344,7 @@ struct Span[
     # Methods
     # ===------------------------------------------------------------------===#
 
+    @always_inline
     fn unsafe_ptr(
         self,
     ) -> UnsafePointer[

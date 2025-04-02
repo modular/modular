@@ -1400,7 +1400,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             The length of this string slice in bytes.
         """
 
-        return len(self.as_bytes())
+        return len(self._slice)
 
     fn char_length(self) -> UInt:
         """Returns the length in Unicode codepoints.

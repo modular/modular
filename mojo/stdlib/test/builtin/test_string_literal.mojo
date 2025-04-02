@@ -13,6 +13,7 @@
 # RUN: %mojo %s
 
 from sys.ffi import c_char
+from builtin.string_literal import get_string_literal_slice
 
 from memory import UnsafePointer
 from testing import (
@@ -515,6 +516,8 @@ def test_string_literal_from_stringable():
     assert_equal(
         get_string_literal[SIMD[DType.int64, 4](1, 2, 3, 4)](), "[1, 2, 3, 4]"
     )
+    # Test get_string_literal with multiple string arguments.
+    assert_equal(get_string_literal_slice["a", "b", "c"](), "abc")
 
 
 def test_base64_encode_decode():
