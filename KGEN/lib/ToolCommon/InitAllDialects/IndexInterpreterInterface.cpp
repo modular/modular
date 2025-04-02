@@ -37,6 +37,45 @@ static bool compareIndices(const APInt &lhs, const APInt &rhs,
   llvm_unreachable("unhandled IndexCmpPredicate predicate");
 }
 
+// Interpret result of the binary operation
+template <bool isSigned, bool withOverflowCheck, typename BinaryFn>
+static ErrorTreeOrSuccess
+interpretBinaryOp(Location loc, MLIRContext *ctx, ArrayRef<Attribute> operands,
+                  BinaryFn binaryFn, InterpreterState &state,
+                  StringRef opName) {
+  IntegerAttr lhsInt = dyn_cast_if_present<mlir::IntegerAttr>(operands[0]);
+  IntegerAttr rhsInt = dyn_cast_if_present<mlir::IntegerAttr>(operands[1]);
+  uint64_t targetBitwidth = state.getTarget().resolveIndexBitWidth();
+  APInt lhs;
+  APInt rhs;
+  if constexpr (isSigned) {
+    lhs = lhsInt.getValue().truncSSat(targetBitwidth);
+    rhs = rhsInt.getValue().truncSSat(targetBitwidth);
+  } else {
+    lhs = lhsInt.getValue().truncUSat(targetBitwidth);
+    rhs = rhsInt.getValue().truncUSat(targetBitwidth);
+  }
+
+  APInt result;
+  if constexpr (withOverflowCheck) {
+    bool overflow = false;
+    result = binaryFn(lhs, rhs, overflow);
+    if (overflow)
+      return ErrorTree(loc, "`index." + opName + "` failed due to overflow");
+  } else {
+    result = binaryFn(lhs, rhs);
+  }
+
+  if constexpr (isSigned)
+    result = result.sextOrTrunc(IndexType::kInternalStorageBitWidth);
+  else
+    result = result.zextOrTrunc(IndexType::kInternalStorageBitWidth);
+
+  state.mapResults(IntegerAttr::get(IndexType::get(ctx), result));
+  return success();
+}
+
+template <>
 ErrorTreeOrSuccess
 CmpOpInterpretInterface::interpret(mlir::index::CmpOp cmpOp,
                                    ArrayRef<Attribute> operands,
@@ -59,24 +98,218 @@ CmpOpInterpretInterface::interpret(mlir::index::CmpOp cmpOp,
   return success();
 }
 
+template <>
 ErrorTreeOrSuccess
 SubOpInterpretInterface::interpret(mlir::index::SubOp subOp,
                                    ArrayRef<Attribute> operands,
                                    InterpreterState &state) {
-  assert(operands.size() == 2 && "cmp expected two operands");
-  IntegerAttr lhsInt = dyn_cast_if_present<mlir::IntegerAttr>(operands[0]);
-  IntegerAttr rhsInt = dyn_cast_if_present<mlir::IntegerAttr>(operands[1]);
-  uint64_t targetBitwidth = state.getTarget().resolveIndexBitWidth();
-  APInt lhs = lhsInt.getValue().truncSSat(targetBitwidth);
-  APInt rhs = rhsInt.getValue().truncSSat(targetBitwidth);
-  bool overflow;
-  APInt difference = lhs.ssub_ov(rhs, overflow);
-  if (overflow)
-    return ErrorTree(subOp.getLoc(),
-                     Error("subtraction failed due to overflow"));
+  assert(operands.size() == 2 && "sub expected two operands");
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/true>(
+      subOp.getLoc(), subOp.getContext(), operands,
+      [](APInt lhs, APInt rhs, bool &overflow) {
+        return lhs.ssub_ov(rhs, overflow);
+      },
+      state, "sub");
+}
 
-  state.mapResults(
-      IntegerAttr::get(IndexType::get(subOp.getContext()),
-                       difference.sext(IndexType::kInternalStorageBitWidth)));
-  return success();
+template <>
+ErrorTreeOrSuccess
+ShlOpInterpretInterface::interpret(mlir::index::ShlOp shlOp,
+                                   ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+  assert(operands.size() == 2 && "shl expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      shlOp.getLoc(), shlOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs << rhs; }, state, "shl");
+}
+
+template <>
+ErrorTreeOrSuccess
+ShrSOpInterpretInterface::interpret(mlir::index::ShrSOp shrsOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "shrs expected two operands");
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+      shrsOp.getLoc(), shrsOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs.ashr(rhs); }, state, "shrs");
+}
+
+template <>
+ErrorTreeOrSuccess
+ShrUOpInterpretInterface::interpret(mlir::index::ShrUOp shruOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "shru expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      shruOp.getLoc(), shruOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs.lshr(rhs); }, state, "shru");
+}
+
+template <>
+ErrorTreeOrSuccess
+AndOpInterpretInterface::interpret(mlir::index::AndOp andOp,
+                                   ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+  assert(operands.size() == 2 && "and expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      andOp.getLoc(), andOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs &= rhs; }, state, "and");
+}
+
+template <>
+ErrorTreeOrSuccess
+CeilDivUOpInterpretInterface::interpret(mlir::index::CeilDivUOp ceilDivUOp,
+                                        ArrayRef<Attribute> operands,
+                                        InterpreterState &state) {
+  assert(operands.size() == 2 && "ceildivu expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      ceilDivUOp.getLoc(), ceilDivUOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) {
+        return lhs.udiv(rhs) + (lhs.urem(rhs) != 0 ? 1 : 0);
+      },
+      state, "ceildivu");
+}
+
+template <>
+ErrorTreeOrSuccess
+CeilDivSOpInterpretInterface::interpret(mlir::index::CeilDivSOp ceilDivSOp,
+                                        ArrayRef<Attribute> operands,
+                                        InterpreterState &state) {
+  assert(operands.size() == 2 && "ceildivs expected two operands");
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+      ceilDivSOp.getLoc(), ceilDivSOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) {
+        return lhs.sdiv(rhs) + (lhs.srem(rhs).sgt(0) ? 1 : 0);
+      },
+      state, "ceildivs");
+}
+
+template <>
+ErrorTreeOrSuccess
+DivUOpInterpretInterface::interpret(mlir::index::DivUOp divUOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "divu expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      divUOp.getLoc(), divUOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs.udiv(rhs); }, state, "divu");
+}
+
+template <>
+ErrorTreeOrSuccess
+DivSOpInterpretInterface::interpret(mlir::index::DivSOp divSOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "divs expected two operands");
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+      divSOp.getLoc(), divSOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs.sdiv(rhs); }, state, "divs");
+}
+
+template <>
+ErrorTreeOrSuccess
+MaxUOpInterpretInterface::interpret(mlir::index::MaxUOp maxUOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "maxu expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      maxUOp.getLoc(), maxUOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return llvm::APIntOps::umax(lhs, rhs); },
+      state, "maxu");
+}
+
+template <>
+ErrorTreeOrSuccess
+MaxSOpInterpretInterface::interpret(mlir::index::MaxSOp maxSOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "maxs expected two operands");
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+      maxSOp.getLoc(), maxSOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return llvm::APIntOps::smax(lhs, rhs); },
+      state, "maxs");
+}
+
+template <>
+ErrorTreeOrSuccess
+MinUOpInterpretInterface::interpret(mlir::index::MinUOp minUOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "minu expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      minUOp.getLoc(), minUOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return llvm::APIntOps::umin(lhs, rhs); },
+      state, "minu");
+}
+
+template <>
+ErrorTreeOrSuccess
+MinSOpInterpretInterface::interpret(mlir::index::MinSOp minSOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "mins expected two operands");
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+      minSOp.getLoc(), minSOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return llvm::APIntOps::smin(lhs, rhs); },
+      state, "mins");
+}
+
+template <>
+ErrorTreeOrSuccess
+MulOpInterpretInterface::interpret(mlir::index::MulOp mulOp,
+                                   ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+  assert(operands.size() == 2 && "mul expected two operands");
+  // FIXME: Re-enable overflow check after fix of KERN-1704
+  // return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/true>(
+  //     mulOp.getLoc(), mulOp.getContext(), operands,
+  //     [](APInt lhs, APInt rhs, bool &overflow) { return lhs.smul_ov(rhs,
+  //     overflow); }, state, "mul");
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+      mulOp.getLoc(), mulOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs * rhs; }, state, "mul");
+}
+
+template <>
+ErrorTreeOrSuccess
+OrOpInterpretInterface::interpret(mlir::index::OrOp orOp,
+                                  ArrayRef<Attribute> operands,
+                                  InterpreterState &state) {
+  assert(operands.size() == 2 && "or expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      orOp.getLoc(), orOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs |= rhs; }, state, "or");
+}
+
+template <>
+ErrorTreeOrSuccess
+RemUOpInterpretInterface::interpret(mlir::index::RemUOp remuOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "remu expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      remuOp.getLoc(), remuOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs.urem(rhs); }, state, "remu");
+}
+
+template <>
+ErrorTreeOrSuccess
+RemSOpInterpretInterface::interpret(mlir::index::RemSOp remsOp,
+                                    ArrayRef<Attribute> operands,
+                                    InterpreterState &state) {
+  assert(operands.size() == 2 && "rems expected two operands");
+  return interpretBinaryOp</*isSigned=*/true, /*withOverflowCheck=*/false>(
+      remsOp.getLoc(), remsOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs.srem(rhs); }, state, "rems");
+}
+
+template <>
+ErrorTreeOrSuccess
+XOrOpInterpretInterface::interpret(mlir::index::XOrOp xorOp,
+                                   ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
+  assert(operands.size() == 2 && "xor expected two operands");
+  return interpretBinaryOp</*isSigned=*/false, /*withOverflowCheck=*/false>(
+      xorOp.getLoc(), xorOp.getContext(), operands,
+      [](APInt lhs, APInt rhs) { return lhs ^= rhs; }, state, "xor");
 }
