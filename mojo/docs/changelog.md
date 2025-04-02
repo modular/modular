@@ -127,6 +127,19 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 ### Tooling changes
 
+### Mojo Compiler
+
+- The Mojo compiler is now able to interpret all arithmetic operations from
+the `index` dialect that are used in methods of `Int` and `UInt` types.
+That allows users to finally compute constants at compile time:
+
+```mojo
+alias a: Int = 1000000000
+alias b: Int = (5 * a) // 2
+```
+
+previously compiler would throw error "cannot fold operation".
+
 ### ❌ Removed
 
 - The `SIMD.roundeven()` method has been removed from the standard library.
