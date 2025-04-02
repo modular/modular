@@ -53,14 +53,11 @@ struct ManagedLayoutTensor[
 
         constrained[
             runtime_layout.linear_idx_type == Self.index_type,
-            String(
-                "Mismatch of index type for RuntimeLayout:",
-                runtime_layout.linear_idx_type,
-                "and LayoutTensor:",
-                Self.index_type,
-                ".",
-                sep=" ",
-            ),
+            "Mismatch of index type for RuntimeLayout: ",
+            String(runtime_layout.linear_idx_type),
+            " and LayoutTensor: ",
+            String(Self.index_type),
+            ".",
         ]()
 
         self.runtime_layout = rebind[__type_of(self.runtime_layout)](
@@ -90,26 +87,18 @@ struct ManagedLayoutTensor[
     ) raises:
         constrained[
             runtime_layout.bitwidth == Self.layout_bitwidth,
-            String(
-                "Mismatch of bitwidth for RuntimeLayout:",
-                runtime_layout.bitwidth,
-                "and LayoutTensor:",
-                Self.layout_bitwidth,
-                ".",
-                sep=" ",
-            ),
+            "Mismatch of bitwidth for RuntimeLayout: ",
+            String(runtime_layout.bitwidth),
+            " and LayoutTensor: ",
+            String(Self.layout_bitwidth),
         ]()
 
         constrained[
             runtime_layout.linear_idx_type == Self.index_type,
-            String(
-                "Mismatch of index type for RuntimeLayout:",
-                runtime_layout.linear_idx_type,
-                "and LayoutTensor:",
-                Self.index_type,
-                ".",
-                sep=" ",
-            ),
+            "Mismatch of index type for RuntimeLayout: ",
+            String(runtime_layout.linear_idx_type),
+            " and LayoutTensor: ",
+            String(Self.index_type),
         ]()
 
         self.ctx = ctx

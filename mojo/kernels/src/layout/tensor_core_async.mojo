@@ -553,16 +553,20 @@ fn _lhs_descriptor[
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
         _supported_mma_shape[mma_shape](),
-        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
+        "WGMMA operation of shape '",
+        String(mma_shape),
+        "' is not supported",
     ]()
 
     alias flat_layout = __type_of(tensor).layout
     alias layout = tile_to_descriptor[tensor.dtype, flat_layout, True]()
     constrained[
         layout.rank() == 2 and layout[0].rank() == 2 and layout[1].rank() == 2,
-        "shared memory tile layout should have structure (rank-2, rank-2). But"
-        " got "
-        + String(layout),
+        (
+            "shared memory tile layout should have structure (rank-2, rank-2)."
+            " But got "
+        ),
+        String(layout),
     ]()
 
     alias shape00 = layout[0].shape[0].value()
@@ -571,8 +575,8 @@ fn _lhs_descriptor[
     # General constraints for all swizzle types.
     constrained[
         shape00 == 8 and shape11 % 2 == 0,
-        "Tile shape must be ((8, _), (_, multiple of 2)). But got "
-        + String(layout),
+        "Tile shape must be ((8, _), (_, multiple of 2)). But got ",
+        String(layout),
     ]()
 
     alias type = __type_of(tensor).dtype
@@ -584,10 +588,10 @@ fn _lhs_descriptor[
         alias stride_bytes = stride10 * sizeof[type]()
         constrained[
             stride_bytes != swizzle_mode.bytes(),
-            "Stride dim bytes "
-            + String(stride_bytes)
-            + " doesn't match "
-            + String(swizzle_mode),
+            "Stride dim bytes ",
+            String(stride_bytes),
+            " doesn't match ",
+            String(swizzle_mode),
         ]()
 
     # Ingore 4 LSB.
@@ -606,7 +610,9 @@ fn _rhs_descriptor[
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
         _supported_mma_shape[mma_shape](),
-        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
+        "WGMMA operation of shape '",
+        String(mma_shape),
+        "' is not supported",
     ]()
 
     # Transposed case is same to K-major A matrix.
@@ -634,7 +640,9 @@ fn _rhs_descriptor[
 fn _output_register_size[mma_shape: IndexList[3]]() -> Int:
     constrained[
         _supported_mma_shape[mma_shape](),
-        String("WGMMA operation of shape '", mma_shape, "' is not supported"),
+        "WGMMA operation of shape '",
+        String(mma_shape),
+        "' is not supported",
     ]()
     return mma_shape[0] * mma_shape[1] // 128
 
@@ -707,9 +715,9 @@ struct TensorCoreAsync[
         """
         constrained[
             _supported_mma_shape[mma_shape](),
-            String(
-                "WGMMA operation of shape '", mma_shape, "' is not supported"
-            ),
+            "WGMMA operation of shape '",
+            String(mma_shape),
+            "' is not supported",
         ]()
 
     @staticmethod
@@ -921,7 +929,8 @@ struct TensorCoreAsync[
 
         constrained[
             b_n_stride > 0 or (b_n_stride == 0 and num_n_mmas == 1),
-            "b_smem_layout = " + String(b_smem_layout),
+            "b_smem_layout = ",
+            String(b_smem_layout),
         ]()
 
         # Vectorize each wgmma's fragment size.
@@ -931,21 +940,19 @@ struct TensorCoreAsync[
         c_frags = c_reg_tile.vectorize[1, c_frag_size]()
         constrained[
             __type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas,
-            String(
-                "C fragments' size: ",
-                __type_of(c_frags).layout.size(),
-                (
-                    "\nDoesn't match the total number of wgmmas\n= num_m_mmas *"
-                    " num_n_mmas: "
-                ),
-                num_m_mmas,
-                " * ",
-                num_n_mmas,
-                ".\na_frag.layout[0].shape[0].value() = ",
-                a_frag.layout[0].shape[0].value(),
-                "\nnum_k_mmas = ",
-                num_k_mmas,
+            "C fragments' size: ",
+            String(__type_of(c_frags).layout.size()),
+            (
+                "\nDoesn't match the total number of wgmmas\n= num_m_mmas *"
+                " num_n_mmas: "
             ),
+            String(num_m_mmas),
+            " * ",
+            String(num_n_mmas),
+            ".\na_frag.layout[0].shape[0].value() = ",
+            String(a_frag.layout[0].shape[0].value()),
+            "\nnum_k_mmas = ",
+            String(num_k_mmas),
         ]()
 
         b_desc = _rhs_descriptor[mma_shape, transpose_b, b_swizzle](b_smem_tile)

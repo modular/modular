@@ -395,14 +395,10 @@ struct LayoutTensor[
 
         constrained[
             runtime_layout.linear_idx_type == Self.index_type,
-            String(
-                "Mismatch of index type for RuntimeLayout:",
-                runtime_layout.linear_idx_type,
-                "and LayoutTensor:",
-                Self.index_type,
-                ".",
-                sep=" ",
-            ),
+            "Mismatch of index type for RuntimeLayout: ",
+            String(runtime_layout.linear_idx_type),
+            " and LayoutTensor: ",
+            String(Self.index_type),
         ]()
 
         self.ptr = span.unsafe_ptr()
@@ -519,14 +515,10 @@ struct LayoutTensor[
 
         constrained[
             runtime_layout.linear_idx_type == Self.index_type,
-            String(
-                "Mismatch of index type for RuntimeLayout:",
-                runtime_layout.linear_idx_type,
-                "and LayoutTensor:",
-                Self.index_type,
-                ".",
-                sep=" ",
-            ),
+            "Mismatch of index type for RuntimeLayout: ",
+            String(runtime_layout.linear_idx_type),
+            " and LayoutTensor: ",
+            String(Self.index_type),
         ]()
 
         self.ptr = ptr
@@ -1971,10 +1963,10 @@ struct LayoutTensor[
         constrained[layout.all_dims_known(), "Requires fully static layout"]()
         constrained[
             alignment % Self.alignment == 0,
-            "Stack allocation alignment "
-            + String(alignment)
-            + " must be multiple of tensor alignment "
-            + String(Self.alignment),
+            "Stack allocation alignment ",
+            String(alignment),
+            " must be multiple of tensor alignment ",
+            String(Self.alignment),
         ]()
 
         var ptr = stack_allocation[
@@ -3845,10 +3837,10 @@ struct LayoutTensor[
 
         constrained[
             dst_size == src_size,
-            "copy_from should move data of the same size, getting dst size "
-            + String(dst_size)
-            + " and src size "
-            + String(src_size),
+            "copy_from should move data of the same size, getting dst size ",
+            String(dst_size),
+            " and src size ",
+            String(src_size),
         ]()
 
         constrained[
@@ -4672,11 +4664,11 @@ fn copy_dram_to_sram[
     if not src_fragments.masked or is_scalar:
         constrained[
             dst_fragments.layout.size() == src_fragments.layout.size(),
-            "Fragment size mismatch: dst fragments size ("
-            + String(dst_fragments.layout.size())
-            + ") does not match src fragments size ("
-            + String(src_fragments.layout.size())
-            + ")",
+            "Fragment size mismatch: dst fragments size (",
+            String(dst_fragments.layout.size()),
+            ") does not match src fragments size (",
+            String(src_fragments.layout.size()),
+            ")",
         ]()
 
         dst_fragments.copy_from(src_fragments)
@@ -5243,12 +5235,10 @@ fn copy_dram_to_sram_async[
 
     constrained[
         src_thread_layout.size() == dst_thread_layout.size(),
-        String(
-            "src thread layout size ",
-            src_thread_layout.size(),
-            " does not match dst thread layout size ",
-            dst_thread_layout.size(),
-        ),
+        "src thread layout size ",
+        String(src_thread_layout.size()),
+        " does not match dst thread layout size ",
+        String(dst_thread_layout.size()),
     ]()
 
     alias num_busy_threads = src_thread_layout.size()

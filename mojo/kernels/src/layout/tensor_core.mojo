@@ -312,9 +312,9 @@ struct TensorCore[
         else:
             constrained[
                 False,
-                "Data type "
-                + String(in_type)
-                + " is not supported for loading matrix A fragments on AMD"
+                "Data type ",
+                String(in_type),
+                " is not supported for loading matrix A fragments on AMD",
                 " GPUs. Only float32, bfloat16 and float16 are supported.",
             ]()
         return a_reg_tile
@@ -474,9 +474,9 @@ struct TensorCore[
         else:
             constrained[
                 False,
-                "Data type "
-                + String(in_type)
-                + " is not supported for loading matrix B fragments on AMD"
+                "Data type ",
+                String(in_type),
+                " is not supported for loading matrix B fragments on AMD",
                 " GPUs. Only float32, bfloat16 and float16 are supported.",
             ]()
 

@@ -1205,11 +1205,11 @@ def create_tma_tile[
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         constrained[
             swizzle_rows_bytes <= swizzle_mode.bytes(),
-            "Current swizzle bytes is "
-            + String(swizzle_rows_bytes)
-            + " which exceeds "
-            + String(swizzle_mode.bytes())
-            + "B swizzle requirement.",
+            "Current swizzle bytes is ",
+            String(swizzle_rows_bytes),
+            " which exceeds ",
+            String(swizzle_mode.bytes()),
+            "B swizzle requirement.",
         ]()
 
     return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
@@ -1310,12 +1310,12 @@ def create_tma_tile[
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
                 (tile_shape[1] * sizeof[type]()) % swizzle_mode.bytes() == 0,
-                String(swizzle_mode)
-                + " mode requires K dim multiple of "
-                + String(swizzle_mode.bytes())
-                + "B. K dim is now "
-                + String(tile_shape[1] * sizeof[type]())
-                + " bytes.",
+                String(swizzle_mode),
+                " mode requires K dim multiple of ",
+                String(swizzle_mode.bytes()),
+                "B. K dim is now ",
+                String(tile_shape[1] * sizeof[type]()),
+                " bytes.",
             ]()
 
         return create_tma_descriptor[type, 2, swizzle_mode](
@@ -1336,12 +1336,12 @@ def create_tma_tile[
         if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
             constrained[
                 (tile_shape[2] * sizeof[type]()) % swizzle_mode.bytes() == 0,
-                String(swizzle_mode)
-                + " mode requires K dim multiple of "
-                + String(swizzle_mode.bytes())
-                + "B. K dim is now "
-                + String(tile_shape[2] * sizeof[type]())
-                + "bytes.",
+                String(swizzle_mode),
+                " mode requires K dim multiple of ",
+                String(swizzle_mode.bytes()),
+                "B. K dim is now ",
+                String(tile_shape[2] * sizeof[type]()),
+                "bytes.",
             ]()
 
         return create_tma_descriptor[type, 3, swizzle_mode](
