@@ -20,7 +20,7 @@ from algorithm.functional import (
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
-from collections.string import StringSlice
+from collections.string import StaticString
 
 from utils import IndexList
 from utils.index import Index
@@ -74,7 +74,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StringSlice, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: AnyTrivialRegType
 ]() -> result_type:
     constrained[os_is_macos(), "operating system must be macOS"]()
     return _ffi_get_dylib_function[
