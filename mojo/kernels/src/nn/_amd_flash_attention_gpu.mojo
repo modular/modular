@@ -238,59 +238,12 @@ fn mma[
     var warp_row = warp_id // num_warps_n
     var warp_col = warp_id % num_warps_n
 
-    @always_inline
-    fn _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
-    ):
-        return __type_of(tensor)(
-            tensor.ptr,
-            RuntimeLayout(
-                RuntimeTuple[tensor.layout.shape, unsigned=True](
-                    num_rows, tensor.dim(1)
-                ),
-                tensor.runtime_layout.stride,
-            ),
-        )
-
-    alias thread_layout_a = Layout.row_major(
-        min(Int(num_threads), Int(BM * BK) // simd_width) // (BK // simd_width),
-        BK // simd_width,
-    )
-
     alias thread_layout_b = Layout.row_major(
         min(num_threads, BN * BK // simd_width)
         * simd_width
         // b_smem_iter.layout.stride[0].value(),
         b_smem_iter.layout.stride[0].value() // simd_width,
     )
-
-    @parameter
-    if a_iter.address_space in (AddressSpace.GLOBAL, AddressSpace.GENERIC):
-        alias a_stride = a_iter.layout.stride[0].value()
-
-        @parameter
-        for i in range(num_iters):
-            var a_tile = a_iter[]
-            var a_smem_tile = a_smem_iter.next_unsafe(i)[]
-            copy_dram_to_sram[
-                thread_layout=thread_layout_a,
-                swizzle=swizzle,
-                num_threads=num_threads,
-            ](
-                a_smem_tile.vectorize[1, simd_width](),
-                a_iter,
-                a_tile.dim(0) * a_stride,
-            )
-            a_iter._incr()
-
-            @parameter
-            if token_gen:
-                # this is a workaround to ensure good register allocation
-                # otherwise each gmem->smem pair was using the same register
-                # leading to unnecessary syncs. I am pretty sure this has some
-                # negative performance impact so we should hopefully remove it
-                # in the future
-                schedule_barrier()
 
     @parameter
     if b_iter.address_space != AddressSpace.SHARED:
@@ -300,26 +253,11 @@ fn mma[
         for i in range(num_iters):
             var b_smem_tile = b_smem_iter.next_unsafe(i)[]
 
-            if num_b_rows:
-                copy_dram_to_sram[
-                    thread_layout=thread_layout_b,
-                    swizzle=swizzle,
-                ](
-                    b_smem_tile.vectorize[1, simd_width](),
-                    b_iter,
-                    num_b_rows.value() * b_stride,
-                )
-            else:
-                copy_dram_to_sram[
-                    thread_layout=thread_layout_b,
-                    swizzle=swizzle,
-                ](
-                    b_smem_tile.vectorize[1, simd_width](),
-                    b_iter,
-                    # bounds don't matter for this case as we will never be out of bounds
-                    # if num_b_rows is not provided
-                    Int.MAX,
-                )
+            copy_dram_to_sram[thread_layout=thread_layout_b, swizzle=swizzle,](
+                b_smem_tile.vectorize[1, simd_width](),
+                b_iter,
+                num_b_rows.value() * b_stride if num_b_rows else Int.MAX,
+            )
             b_iter._incr()
 
             @parameter
@@ -549,7 +487,13 @@ fn apply_softmax_denominator[
 
 
 struct SharedMemoryManager[
-    dtype: DType, BM: Int, BN: Int, BK: Int, depth: Int, num_rowwise_warps: Int
+    dtype: DType,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    depth: Int,
+    num_rowwise_warps: Int,
+    token_gen: Bool,
 ]:
     var p_smem: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.SHARED
@@ -561,7 +505,7 @@ struct SharedMemoryManager[
     # k_v_smem is used for k, v, and scratch
     alias _alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
     alias _accum_type = get_accum_type[dtype]()
-    alias _p_smem_size = BM * BN
+    alias _p_smem_size = BM * BN if token_gen else 0
     alias _k_v_smem_size = max(BM, BN) * depth
 
     @always_inline
@@ -775,7 +719,6 @@ fn mha_single_batch[
     mask: mask_t,
 ):
     alias token_gen = False
-
     alias BM = config.block_m()
     alias BN = config.block_n()
     alias depth = config.depth
@@ -836,12 +779,10 @@ fn mha_single_batch[
     ]().local().alloc().fill(0)
 
     var smem_manager = SharedMemoryManager[
-        q_type, BM, BN, BK, depth, num_warps_n
+        q_type, BM, BN, BK, depth, num_warps_n, token_gen
     ]()
 
-    var p_smem_iter = smem_manager.get_p_iter()
     var k_smem_iter = smem_manager.get_k_iter()
-    var v_smem_iter = smem_manager.get_v_iter()
 
     var warp_scratch = smem_manager.get_warp_scratch_tensor()
 
@@ -1032,44 +973,133 @@ fn mha_single_batch[
         # warp scratch and p_smem are using the same smem space
         barrier()
 
-        copy_fragment_to_smem[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            MMA_M,
-            MMA_N,
-            num_m_mmas,
-            num_n_mmas,
-            fragment_layout,
-            warp_layout,
-        ](
-            p_smem_iter,
-            p_reg_vectorized,
-            warp_row,
-            warp_col,
-        )
+        @parameter
+        for i in range(Int(BN // BK)):
+            # we multiply v^T x p^T instead of p x v
+            # here all threads work to load 16xdepth tile at a time
+            # with each warp loading 4xdepth tile
+            # each thread loads v_reg_tile is therefore BK//MMA_N 16B elements
+            var v_reg_tile = tb[q_type]().row_major[
+                BK // MMA_N, simd_width
+            ]().local().alloc()
 
-        barrier()
+            var v_gmem_tile = v_gmem_iter[]
 
-        mma[
-            transpose_b=False,
-            k_group_size=2,
-            config=config,
-            swizzle=None,
-            swap_operands=swap_mma_operands,
-            num_iters = Int(BN // BK),
-            token_gen=token_gen,
-        ](
-            out_reg_tile,
-            p_smem_iter,
-            p_smem_iter,
-            v_gmem_iter,
-            v_smem_iter,
-            num_b_rows,
-        )
-        # ensure that smem for v is not required anymore
+            @parameter
+            for i in range(Int(BK // MMA_N)):
+                var v_warp_tile = v_gmem_tile.tile[BK // 2, depth](i, 0).tile[
+                    4, depth
+                ](warp_id, 0)
+                copy_dram_to_local[
+                    src_thread_layout = Layout.row_major(4, 16),
+                    thread_scope = ThreadScope.WARP,
+                ](
+                    v_reg_tile.tile[1, simd_width](i, 0).vectorize[
+                        1, simd_width
+                    ](),
+                    v_warp_tile.vectorize[1, simd_width](),
+                    v_tile,
+                )
+            v_gmem_iter._incr()
+
+            # transpose v_gmem_tile to v_smem
+            # each thread writes 8x2 elements to smem using 4x4B writes
+            # shared memory layout is row_major(depth, BK // num_warps) repeated num_warps times
+            # and each warp writes to a different tile in smem
+
+            alias num_warps = config.num_threads() // WARP_SIZE
+            constrained[
+                BK // num_warps == simd_width,
+                "BK//num_warps must be equal to simd_width",
+            ]()
+
+            var lane_coords = idx2crd[Layout.col_major(16, 4)](lane_id())
+            var lane_row = lane_coords[0]
+            var lane_col = lane_coords[1]
+
+            var v_smem_iter = LayoutTensorIter[
+                q_type,
+                Layout.row_major(depth, BK // num_warps),
+                MutableAnyOrigin,
+                address_space = AddressSpace.SHARED,
+                circular=True,
+            ](
+                smem_manager.get_v_iter().ptr.offset(depth * BK * i),
+                depth * BK,
+            )
+
+            var v_smem_warp_tile = v_smem_iter.next_unsafe(warp_id)[]
+
+            var v_lane_tile = v_smem_warp_tile.tile[simd_width, 2](
+                lane_row, lane_col
+            ).vectorize[1, 2]()
+
+            @parameter
+            for j in range(simd_width):
+                # each thread loads 2x8 elements from gmem
+                # they are interleaved and written to smem
+                var v_reg_tile_0 = v_reg_tile[0, j][0]
+                var v_reg_tile_1 = v_reg_tile[1, j][0]
+                var v_01 = SIMD[q_type, 2](v_reg_tile_0, v_reg_tile_1)
+                v_lane_tile[j, 0] = rebind[v_lane_tile.element_type](v_01)
+
+            # ensure that shared memory is filled
+            barrier()
+
+            # MMA
+            # threads in 16x4 layout
+            # each column loads depth x 8 elements from smem
+            var v_smem_warp_tile_mma = v_smem_iter.next_unsafe(
+                lane_col
+            )[].vectorize[1, simd_width]()
+            var v_smem_warp_tile_mma_tile = v_smem_warp_tile_mma.distribute[
+                Layout.row_major(16, 1)
+            ](lane_row)
+
+            alias mma_op = TensorCore[
+                accum_type,
+                q_type,
+                (MMA_M, MMA_N, MMA_K),
+                transpose_b=False,
+            ]()
+
+            var v_reg_tile_mma = tb[q_type]().row_major[
+                depth // MMA_M, simd_width
+            ]().local().alloc()
+            v_reg_tile_mma.vectorize[1, simd_width]().copy_from(
+                v_smem_warp_tile_mma_tile
+            )
+
+            var p_mma_tile_interleaved = tb[q_type]().row_major[
+                WM // MMA_M, simd_width
+            ]().local().alloc()
+
+            constrained[BK // MMA_N == 2, "BK//MMA_N must be 2"]()
+            var p_mma_tile = p_reg_tile.tile[2, output_frag_size](i, 0)
+
+            # interleave p_reg_tile to match the pattern in v_smem_warp_tile_mma_tile
+            @parameter
+            for j in range(output_frag_size):
+                p_mma_tile_interleaved[0, 2 * j] = p_mma_tile[0, j].cast[
+                    q_type
+                ]()
+                p_mma_tile_interleaved[0, 2 * j + 1] = p_mma_tile[1, j].cast[
+                    q_type
+                ]()
+
+            @parameter
+            for k in range(2):
+                var a_reg_k = v_reg_tile_mma.tile[
+                    depth // MMA_M, output_frag_size
+                ](0, k).vectorize[1, output_frag_size]()
+                var b_reg_k = p_mma_tile_interleaved.tile[
+                    WM // MMA_N, output_frag_size
+                ](0, k).vectorize[1, output_frag_size]()
+                mma_op.mma(
+                    a_reg_k,
+                    b_reg_k,
+                    out_reg_tile.vectorize[1, output_frag_size](),
+                )
         barrier()
 
     tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, num_keys)
@@ -1120,6 +1150,7 @@ fn mha_decoding_single_batch[
     mask: mask_t,
 ):
     alias token_gen = True
+
     alias BM = config.block_m()
     alias BN = config.block_n()
     alias depth = config.depth
@@ -1180,7 +1211,7 @@ fn mha_decoding_single_batch[
     ]().local().alloc().fill(0)
 
     var smem_manager = SharedMemoryManager[
-        q_type, BM, BN, BK, depth, num_warps_n
+        q_type, BM, BN, BK, depth, num_warps_n, token_gen
     ]()
 
     var p_smem_iter = smem_manager.get_p_iter()
