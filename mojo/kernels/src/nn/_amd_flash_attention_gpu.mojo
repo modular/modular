@@ -376,8 +376,6 @@ fn mma[
                     k_mma,
                 )
             else:
-                constrained[False, " not supported"]()
-                constrained[k_group_size == 1, "k_group_size must be 1"]()
                 var a_reg_tile_input = a_iter.next_unsafe(i)[]
                 a_reg_tile.vectorize[1, a_frag_size]().copy_from(
                     a_reg_tile_input.vectorize[1, a_frag_size]()
@@ -398,6 +396,8 @@ fn mma[
                     0, k
                 ).vectorize[1, b_frag_size]()
 
+                # TODO (KERN-1702): this would not work if num_m_mmas > 1 as inside mma function
+                # we will have to change the layout of c from col_major to row_major
                 @parameter
                 if swap_operands:
                     mma_op.mma(b_reg_k, a_reg_k, c.vectorize[1, c_frag_size]())
@@ -554,10 +554,6 @@ fn apply_softmax_denominator[
 struct SharedMemoryManager[
     dtype: DType, BM: Int, BN: Int, BK: Int, depth: Int, num_rowwise_warps: Int
 ]:
-    var q_smem: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED
-    ]
-    # q_smem is used for q and output
     var p_smem: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.SHARED
     ]
@@ -568,19 +564,11 @@ struct SharedMemoryManager[
     # k_v_smem is used for k, v, and scratch
     alias _alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
     alias _accum_type = get_accum_type[dtype]()
-    alias _q_smem_size = BM * depth
     alias _p_smem_size = BM * BN
     alias _k_v_smem_size = max(BM, BN) * depth
 
     @always_inline
     fn __init__(out self):
-        self.q_smem = stack_allocation[
-            Self._q_smem_size,
-            dtype,
-            address_space = AddressSpace.SHARED,
-            alignment = Self._alignment,
-        ]()
-
         self.p_smem = stack_allocation[
             Self._p_smem_size,
             dtype,
@@ -621,22 +609,6 @@ struct SharedMemoryManager[
         return __type_of(result)(self.k_v_smem, BN * depth)
 
     @always_inline
-    fn get_q_iter(
-        self,
-        out result: LayoutTensorIter[
-            dtype,
-            Layout.row_major(BM, BK),
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
-            alignment = Self._alignment,
-        ],
-    ):
-        return __type_of(result)(
-            self.q_smem,
-            BM * depth,
-        )
-
-    @always_inline
     fn get_p_iter(
         self,
         out result: LayoutTensorIter[
@@ -651,18 +623,6 @@ struct SharedMemoryManager[
             self.p_smem,
             BM * BN,
         )
-
-    @always_inline
-    fn get_output_tensor(
-        self,
-        out result: LayoutTensor[
-            dtype,
-            Layout.row_major(BM, depth),
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
-        ],
-    ):
-        return __type_of(result)(self.q_smem)
 
     @always_inline
     fn get_warp_scratch_tensor(
@@ -868,8 +828,6 @@ fn mha_single_batch[
 
     var q_tile = gmem_manager.get_q_tensor(q)
 
-    var q_gmem_iter = q_tile.tiled_iterator[BM, BK, axis=1](0, 0)
-
     var output_tile = gmem_manager.get_output_tensor(output)
 
     var rowmax = tb[accum_type]().row_major[
@@ -882,7 +840,7 @@ fn mha_single_batch[
     var smem_manager = SharedMemoryManager[
         q_type, BM, BN, BK, depth, num_warps_n
     ]()
-    var q_smem_iter = smem_manager.get_q_iter()
+
     var p_smem_iter = smem_manager.get_p_iter()
     var k_smem_iter = smem_manager.get_k_iter()
     var v_smem_iter = smem_manager.get_v_iter()
@@ -892,6 +850,39 @@ fn mha_single_batch[
     var mask_block_row: UInt32 = q_tile_idx * BM
     var mask_warp_row = warp_row * WM
     var mask_warp_col = warp_col * WN
+
+    constrained[BK == 32, "BK must be 32"]()
+
+    # the following assumes BK == 32, i.e. simd_width = 2*frag_size
+    alias q_reg_size = (depth // BK) * num_m_mmas * simd_width
+
+    var q_reg_data = stack_allocation[
+        q_reg_size,
+        q_type,
+        address_space = AddressSpace.LOCAL,
+    ]()
+
+    var q_reg_tile_iter = LayoutTensorIter[
+        q_type,
+        Layout.row_major(num_m_mmas, simd_width),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ](q_reg_data, q_reg_size)
+
+    var q_gmem_warp_iter = q_tile.tiled_iterator[WM, BK, axis=1](warp_row, 0)
+
+    @parameter
+    for i in range(Int(depth // BK)):
+        var q_reg_tile = q_reg_tile_iter.next_unsafe(i)[]
+        copy_dram_to_local[
+            src_thread_layout = Layout.col_major(16, 4),
+            thread_scope = ThreadScope.WARP,
+        ](
+            q_reg_tile.vectorize[1, simd_width](),
+            q_gmem_warp_iter,
+            q_tile.dim(0) * q_tile.stride[0](),
+        )
+        q_gmem_warp_iter._incr()
 
     @always_inline
     @parameter
@@ -935,40 +926,37 @@ fn mha_single_batch[
         var num_b_rows = OptionalReg[Int](
             kv_tile_num_rows
         ) if not not_last_iter else None
-        if kv_tile_start_row == 0:
-            mma[
-                transpose_b=True,
-                k_group_size=2,
-                config=config,
-                swizzle=swizzle,
-                swap_operands=swap_mma_operands,
-                num_iters = Int(depth // BK),
-                token_gen=token_gen,
-            ](
-                p_reg_tile,
-                q_gmem_iter,
-                q_smem_iter,
-                k_gmem_iter,
-                k_smem_iter,
-                num_b_rows,
-            )
-        else:
-            mma[
-                transpose_b=True,
-                k_group_size=2,
-                config=config,
-                swizzle=swizzle,
-                swap_operands=swap_mma_operands,
-                num_iters = Int(depth // BK),
-                token_gen=token_gen,
-            ](
-                p_reg_tile,
-                q_smem_iter,
-                q_smem_iter,
-                k_gmem_iter,
-                k_smem_iter,
-                num_b_rows,
-            )
+
+        # TODO (KERN-1708):this is just a dummy iterator to satisfy the interface
+        # will fix it with better interface later
+        var q_smem_iter = LayoutTensorIter[
+            q_type,
+            Layout.row_major(num_m_mmas, simd_width),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](
+            UnsafePointer[
+                Scalar[q_type], address_space = AddressSpace.SHARED
+            ](),
+            q_reg_size,
+        )
+
+        mma[
+            transpose_b=True,
+            k_group_size=2,
+            config=config,
+            swizzle=swizzle,
+            swap_operands=swap_mma_operands,
+            num_iters = Int(depth // BK),
+            token_gen=token_gen,
+        ](
+            p_reg_tile,
+            q_reg_tile_iter,
+            q_smem_iter,
+            k_gmem_iter,
+            k_smem_iter,
+            num_b_rows,
+        )
 
         var p_reg_vectorized = p_reg_tile.vectorize[1, output_frag_size]()
 
@@ -1095,50 +1083,18 @@ fn mha_single_batch[
         fragment_layout=fragment_layout,
     ](out_reg_tile, rowsum)
 
-    alias use_smem_when_writing_output = False
-
-    @parameter
-    if use_smem_when_writing_output:
-        var output_smem = smem_manager.get_output_tensor()
-        var output_smem_warp_tile = output_smem.tile[WM, depth](warp_id, 0)
-
-        copy[thread_layout=warp_layout, thread_scope = ThreadScope.WARP,](
-            output_smem_warp_tile.vectorize[
-                fragment_layout.shape[0].value(),
-                fragment_layout.shape[1].value(),
-            ](),
-            out_reg_tile.vectorize[1, output_frag_size](),
-        )
-
-        barrier()
-
-        alias num_threads = config.num_threads()
-
-        alias output_thread_layout = Layout.row_major(
-            num_threads * simd_width // depth,
-            depth // simd_width,
-        )
-
-        copy_sram_to_dram[
-            thread_layout=output_thread_layout,
-            num_threads=num_threads,
-        ](
-            output_tile.vectorize[1, simd_width](),
-            output_smem.vectorize[1, simd_width](),
-        )
-    else:
-        var output_warp_tile = output_tile.tile[WM, WN](warp_row, warp_col)
-        copy_local_to_dram[
-            dst_thread_layout=warp_layout,
-            thread_scope = ThreadScope.WARP,
-        ](
-            output_warp_tile.vectorize[
-                fragment_layout.shape[0].value(),
-                fragment_layout.shape[1].value(),
-            ](),
-            out_reg_tile.vectorize[1, output_frag_size](),
-            output_tile,
-        )
+    var output_warp_tile = output_tile.tile[WM, WN](warp_row, warp_col)
+    copy_local_to_dram[
+        dst_thread_layout=warp_layout,
+        thread_scope = ThreadScope.WARP,
+    ](
+        output_warp_tile.vectorize[
+            fragment_layout.shape[0].value(),
+            fragment_layout.shape[1].value(),
+        ](),
+        out_reg_tile.vectorize[1, output_frag_size](),
+        output_tile,
+    )
 
 
 @always_inline
