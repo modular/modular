@@ -44,7 +44,7 @@ from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from layout._utils import load_to_simd
-from layout.int_tuple import IntTuple
+from layout.int_tuple import IntTuple, product
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.swizzle import (
@@ -99,7 +99,7 @@ alias shape_16x16x16 = IndexList[3](16, 16, 16)
 
 
 fn _get_a_k_group_size[a: Layout, shape: IndexList[3]]() -> Int:
-    return a.shape[1].value() // shape[2]
+    return product(a.shape[1]) // shape[2]
 
 
 fn _get_b_k_group_size[
