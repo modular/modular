@@ -81,7 +81,7 @@ def test_my_add_valid(
         )
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)
 
 
 def test_my_add_invalid_inputs_count(
@@ -150,7 +150,7 @@ def test_op_with_device_context_valid(
         )
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)
 
 
 def test_op_invalid_device_context_pos(
@@ -218,7 +218,7 @@ def test_op_multiple_outputs_valid(
         )
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)
 
 
 def test_op_multiple_outputs_invalid_outputs_count(
@@ -288,7 +288,7 @@ def test_return_opaque_mem_type(
         )
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)
 
 
 def test_return_opaque_reg_type(
@@ -312,7 +312,7 @@ def test_return_opaque_reg_type(
         )
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)
 
 
 def test_invalid_kernel_returns_tensor(
@@ -359,7 +359,7 @@ def test_variadic_ins_outs_valid(
         )
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)
 
 
 def test_invalid_kernel_multiple_variadic_inputs(
@@ -447,7 +447,7 @@ def test_tensor_kernel_raises_valid(
         )
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)
 
 
 @pytest.mark.skip(reason="Opaque outputs with raises not supported (GEX-1888)")
@@ -472,7 +472,7 @@ def test_return_opaque_mem_type_raises_valid(
         )
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)
 
 
 @pytest.mark.skip(reason="Opaque outputs with raises not supported (GEX-1888)")
@@ -497,7 +497,7 @@ def test_return_opaque_reg_type_raises_valid(
         )
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)
 
 
 def test_mutable_input_tensor_valid(
@@ -514,4 +514,4 @@ def test_mutable_input_tensor_valid(
         graph.output()
 
     # Compile the model
-    session.load(graph, custom_extensions=kernel_verification_ops_path)
+    session.load(graph)

@@ -27,7 +27,6 @@ def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
                 ),
                 custom_extensions=[custom_ops_mojopkg],
             ),
-            custom_ops_path=str(custom_ops_mojopkg),
         )
 
     # Verify two conditions:

@@ -33,12 +33,12 @@ def test_compile_config_split_k_reduction_scheme(
         )
 
     session.set_split_k_reduction_precision("ACCUM")
-    model = session.load(graph, custom_extensions=compile_config_ops_path)
+    model = session.load(graph)
     result = model.execute()[0].to_numpy()
     assert result == [1]
 
     session.set_split_k_reduction_precision("OUTPUT")
-    model = session.load(graph, custom_extensions=compile_config_ops_path)
+    model = session.load(graph)
     result = model.execute()[0].to_numpy()
     assert result == [2]
 
@@ -53,7 +53,7 @@ def test_compile_config_use_logger(
         graph.output(ops.custom("use_logger", [], [tensor_type])[0])
 
     session.set_mojo_log_level(LogLevel.DEBUG)
-    model = session.load(graph, custom_extensions=compile_config_ops_path)
+    model = session.load(graph)
     result = model.execute()[0].to_numpy()
 
     # On the Mojo side the logger level is set to DEBUG, so the result should be 10.

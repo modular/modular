@@ -170,7 +170,7 @@ def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
 
     rawbuffer = np.ones((2, 2), dtype=np.float32)
 
-    model = session.load(graph, custom_ops_path=custom_ops_path)
+    model = session.load(graph)
     model.execute(Tensor.from_dlpack(rawbuffer))
 
     actual = np.array([[3, 1], [1, 1]], dtype=np.float32) * -1
@@ -198,7 +198,6 @@ def test_variadic_buffer_handling(
             ],
             custom_extensions=[custom_ops_path],
         ),
-        custom_extensions=[custom_ops_path],
     ).execute(np.arange(2, dtype=np.float32), np.arange(2, dtype=np.float32))[0]
     assert isinstance(output, Tensor)
 

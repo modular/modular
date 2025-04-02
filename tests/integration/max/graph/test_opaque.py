@@ -36,9 +36,7 @@ def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
                 parameters={"stride": 1},
             )[0]
         )
-    maker_compiled = session.load(
-        maker_graph, custom_extensions=counter_ops_path
-    )
+    maker_compiled = session.load(maker_graph)
     return maker_compiled
 
 
@@ -59,9 +57,7 @@ def bumper_model(session: InferenceSession, counter_ops_path: Path) -> Model:
             parameters={"stride": 1},
         )
         bumper_graph.output()
-    bumper_compiled = session.load(
-        bumper_graph, custom_extensions=counter_ops_path
-    )
+    bumper_compiled = session.load(bumper_graph)
     return bumper_compiled
 
 
@@ -82,9 +78,7 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
             parameters={"stride": 1},
         )
         reader_graph.output(c[0])
-    reader_compiled = session.load(
-        reader_graph, custom_extensions=counter_ops_path
-    )
+    reader_compiled = session.load(reader_graph)
     return reader_compiled
 
 
@@ -131,9 +125,7 @@ def test_pyobject_opaque(
         )[0]
         y = ops.inplace_custom("bump_python_counter", [x], [python_type])[0]
         bumper_graph.output(y)
-    bumper_compiled = session.load(
-        bumper_graph, custom_extensions=counter_ops_path
-    )
+    bumper_compiled = session.load(bumper_graph)
 
     counter = PythonCounter()
     for i in range(5):

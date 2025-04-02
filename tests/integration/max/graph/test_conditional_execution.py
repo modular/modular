@@ -147,7 +147,7 @@ def test_conditional_inplace_user_supplied(
 
         graph.output()
 
-    model = session.load(graph, custom_ops_path=custom_ops_path)
+    model = session.load(graph)
 
     rawbuffer = np.ones((2, 2), dtype=np.float32)
     model.execute(Tensor.from_dlpack(rawbuffer), True)
