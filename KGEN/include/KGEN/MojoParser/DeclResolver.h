@@ -91,6 +91,13 @@ public:
   /// `makeUnlistedDecl`.
   void attachDeclToParentNameTable(ASTDecl *decl, StringAttr name);
 
+  /// Attach a declaration to a trait composition's decl. This does not modify
+  /// any existing parent-child relationships of the `childDecl`. It merely adds
+  /// it to the trait composition's declsInScope map.
+  void attachDeclToTraitCompositionDecl(ASTDecl *traitDecl, ASTDecl *childDecl,
+                                        StringAttr name);
+
+public:
   //===--------------------------------------------------------------------===//
   // Import Resolution
   //===--------------------------------------------------------------------===//
@@ -184,6 +191,10 @@ public:
   /// returns an existing function if there is a redefinition problem.
   Operation *finalizeFuncSignature(FnOp funcOp, ASTDecl &decl);
 
+  /// Return the trait composition decl for the given trait type. If no decl
+  /// exists for this trait composition, null is returned.
+  ASTDecl *getTraitDecl(TraitType trait);
+
   //===--------------------------------------------------------------------===//
   // Export Handling
   //===--------------------------------------------------------------------===//
@@ -205,6 +216,12 @@ public:
   /// parameter declaration. Return the captured parameter references.
   static std::pair<SmallVector<ParamDeclRefAttr>, FnTypeGeneratorType>
   createSelfContainedSignature(FnTypeGeneratorType original);
+
+  /// Given a trait type, return its canonical form (cached).
+  TraitType getCanonicalTrait(TraitType trait);
+  /// Given a list of symbols, canonicalize the list and return the canonical
+  /// trait type.
+  TraitType getCanonicalTrait(SmallVectorImpl<SymbolRefAttr> &symbols);
 
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
@@ -231,6 +248,9 @@ private:
   LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
 
+  ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
+  ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
+
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a
   /// StructType: StructTypes, aliases, etc.
@@ -240,6 +260,13 @@ private:
   /// from MLIR symbol references to their body and AST information.  This is
   /// populated during signature resolution, since the symbol will be mangled.
   DenseMap<SymbolRefAttr, ASTDecl *> declForFuncSymbol;
+
+  /// This map tracks the synthetic, unlisted ASTDecls for trait compositions.
+  /// Their IRValue is the canonical trait type-value. For details, see STCASTD.
+  DenseMap<TraitType, ASTDecl *> canonicalTraitCompositionDecls;
+
+  /// This map caches trait canonicalization.
+  DenseMap<TraitType, TraitType> traitCanonicalizationCache;
 
   /// This map tracks the exported function names and their locations so that
   /// we can check if they are unique.

@@ -197,21 +197,27 @@ def LIT_TraitType: LITType<"Trait", "trait",
     [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Type of a trait value.";
   let description = [{
-    The `!lit.trait` type represents the type of a lit.trait.decl value.
+    The `!lit.trait` type represents the type of some lit.trait.decl values.
+    The list of decls must be non-empty and uniqued.
 
     Example:
 
     ```mlir
     !lit.trait<@SomeTrait>
+    !lit.trait<@SomeTrait, @SomeOtherTrait>
     ```
   }];
 
-  let parameters = (ins "SymbolRefAttr":$symbol);
-  let assemblyFormat = "`<` $symbol `>`";
+  let parameters = (ins ArrayRefParameter<"SymbolRefAttr">:$symbols);
+  let assemblyFormat = "`<` $symbols `>`";
 
   let builders = [
+    TypeBuilderWithInferredContext<(ins "ArrayRef<SymbolRefAttr>":$symbols), [{
+      assert(!symbols.empty() && "cannot create empty trait type");
+      return get(symbols[0].getContext(), symbols);
+    }]>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
-      return get(symbol.getContext(), symbol);
+      return get(symbol.getContext(), {symbol});
     }]>
   ];
 

@@ -37,9 +37,8 @@ static FnTypeGeneratorType getSignatureFromDecl(ASTDecl *decl) {
     return nullptr;
   if (auto func = dyn_cast<FnOp>(*decl))
     return func.getFuncTypeGenerator();
-  if (auto pValue = decl->getIfIRValue().getIfPValue())
-    return dyn_cast_or_null<FnTypeGeneratorType>(
-        pValue.getIfTypeValue().mlirType);
+  if (auto typeValue = decl->getIfTypeValue())
+    return dyn_cast_or_null<FnTypeGeneratorType>(typeValue);
   return nullptr;
 }
 

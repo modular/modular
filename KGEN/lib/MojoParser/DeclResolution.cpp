@@ -1939,18 +1939,20 @@ parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
     // Successively flatten the parent list so we always have all the parents
     // available to check.
     // TODO: Encode an "inherited from" here, to make diagnostics nice.
-    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(
-        cast<TraitType>(type).getSymbol());
-    for (TypeLineageAttr inherited :
-         cast<TraitDeclOp>(traitDecl).getParentTypes()) {
-      if (auto it = parentTypeSet.find(inherited.getType());
-          it != parentTypeSet.end())
-        continue;
-      SmallVector<Type> lineage = llvm::to_vector(inherited.getInheritedFrom());
-      lineage.push_back(type);
-      Type parent = inherited.getType();
-      parentTypeSet.insert(
-          {parent, {TypeLineageAttr::get(parent, lineage), loc}});
+    for (SymbolRefAttr symbol : cast<TraitType>(type).getSymbols()) {
+      ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+      for (TypeLineageAttr inherited :
+           cast<TraitDeclOp>(traitDecl).getParentTypes()) {
+        if (auto it = parentTypeSet.find(inherited.getType());
+            it != parentTypeSet.end())
+          continue;
+        SmallVector<Type> lineage =
+            llvm::to_vector(inherited.getInheritedFrom());
+        lineage.push_back(type);
+        Type parent = inherited.getType();
+        parentTypeSet.insert(
+            {parent, {TypeLineageAttr::get(parent, lineage), loc}});
+      }
     }
     return success();
   };
@@ -2447,12 +2449,14 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // TODO(MOCO-1468): Pull this out into a helper.
   bool implicitlyDestructible = false;
   for (auto parentAttr : structOp.getParentTypes()) {
-    ASTDecl &parentDecl =
-        getDeclForTypeSymbol(cast<TraitType>(parentAttr.getType()).getSymbol());
-    if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
-      if (parentTrait.getSymName() == "AnyType") {
-        implicitlyDestructible = true;
-        break;
+    for (SymbolRefAttr symbol :
+         cast<TraitType>(parentAttr.getType()).getSymbols()) {
+      ASTDecl &parentDecl = getDeclForTypeSymbol(symbol);
+      if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
+        if (parentTrait.getSymName() == "AnyType") {
+          implicitlyDestructible = true;
+          break;
+        }
       }
     }
   }
@@ -2797,8 +2801,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   // Now just pull in the functions in the bodies of all parents.
   Block &body = *traitOp.getBody();
   for (TypeLineageAttr parent : traitOp.getParentTypes()) {
-    ASTDecl &parentDecl =
-        getDeclForTypeSymbol(cast<TraitType>(parent.getType()).getSymbol());
+    ASTDecl &parentDecl = *ASTType(parent.getType()).getDecl(shared);
     if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
       continue;
 
@@ -2872,4 +2875,85 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
   return getDeclResolver().importModule(
       *decl.getParentDecl(), packageOp, op.getModuleNameAttr(),
       op.getImportNameAttr(), decl.getLoc(), importNameLoc);
+}
+
+//===----------------------------------------------------------------------===//
+// Trait Composition Decl implementation
+//===----------------------------------------------------------------------===//
+
+ParseResult DeclResolver::resolveSignature(TraitType traitType,
+                                           ASTDecl &traitDecl) {
+  // There is no signature to resolve for a trait composition.
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
+  // Synthetic Trait Composition ASTDecl (STCASTD):
+  // A trait composition decl is modeled as an "anonymous child trait" that
+  // inherits from each trait in the composition. The differences are that:
+  // - There is no physical TraitDeclOp in the IR for the trait composition.
+  //   The ASTDecl's irValue is a TraitType (instead of a TraitDeclOp).
+  // - Its child decls are "weak links" to the existing child decls of its
+  //   parent traits. No new child ASTDecls or child Ops are created during this
+  //   body resolution. As a result, the child methods' self parameter reference
+  //   `_Self` still have the parent trait's type instead of the composition's.
+
+  // Deduplicate member aliases if they have identical types. Otherwise, keep
+  // all mergeable types in the list. They will each be checked during
+  // conformance checking.
+  DenseMap<StringAttr, Type> existingAliases;
+  // Cannot deduplicate function declarations since we need the full
+  // list of provided functions from each member trait during
+  // emitMetaTypeToTraitConversion.
+  // This is because the self type of each member function needs to be
+  // matched against the target trait type. This should be avoidable
+  // once we get rid of in-line vtables. At that point,
+  // emitMetaTypeToTraitConversion should just verify conformance and
+  // return an UpcastAttr.
+
+  for (SymbolRefAttr symbol : traitType.getSymbols()) {
+    ASTDecl &parentDecl = getDeclForTypeSymbol(symbol);
+    if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
+      return failure();
+
+    // Inherit members from the parent.
+    for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
+      for (ASTDecl *decl : decls) {
+        if (failed(resolveFully(*decl, traitDecl.getLoc())))
+          return failure();
+
+        if (auto alias = dyn_cast<AliasDeclOp>(decl)) {
+          // Check if the type is mergeable with the existing alias type.
+          if (auto it = existingAliases.find(name);
+              it != existingAliases.end()) {
+            Type existingType = it->second;
+            Type newType = alias.getType();
+            if (existingType == newType)
+              continue;
+
+            TraitType existingTrait = dyn_cast<TraitType>(existingType);
+            TraitType newTrait = dyn_cast<TraitType>(newType);
+            if (!existingTrait || !newTrait)
+              return emitError(
+                         traitDecl.getLoc(),
+                         "trait composition has conflicting alias types for '")
+                     << alias.getDeclName().getValue() << "'";
+            // No need to update existingAliases since we don't care about the
+            // specific trait type.
+          } else {
+            existingAliases[name] = alias.getType();
+          }
+        } else if (!isa<FnOp>(decl)) {
+          // If the decl is not a function or alias, it is an error.
+          return emitError(traitDecl.getLoc(),
+                           "unexpected decl in trait composition")
+                     .attachNote(decl->getLoc())
+                 << " declared here";
+        }
+
+        attachDeclToTraitCompositionDecl(&traitDecl, decl, name);
+      }
+    }
+  }
+  return success();
 }

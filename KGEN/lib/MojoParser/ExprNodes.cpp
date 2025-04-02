@@ -19,6 +19,7 @@
 #include "ExprNodes.h"
 #include "MojoUtils.h"
 #include "Signatures.h"
+#include "Traits.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -2331,6 +2332,17 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   AnyValue rhsRV = emitter.emitExpr(rhs, EC_OperatorOperandValue);
   if (!lhsRV || !rhsRV)
     return {};
+
+  // Emit trait composition if both operands are traits.
+  if (kind == kAnd) {
+    TraitType lhsTrait = dyn_cast_or_null<TraitType>(lhsRV.getIfTypeValue());
+    TraitType rhsTrait = dyn_cast_or_null<TraitType>(rhsRV.getIfTypeValue());
+    if (lhsTrait && rhsTrait) {
+      SmallVector<SymbolRefAttr> symbols(lhsTrait.getSymbols());
+      llvm::append_range(symbols, rhsTrait.getSymbols());
+      return emitter.emitResult(TraitType::get(symbols), this, dest);
+    }
+  }
 
   return emitBinOpCall({lhsRV, lhs}, {rhsRV, rhs}, kind, dest, this, emitter);
 }

@@ -1112,12 +1112,14 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     // TODO(MOCO-1468): Pull out into a helper, or make a method like
     // isRegisterPassable that can go on the structDeclOp.
     for (auto parentAttr : structDeclOp.getParentTypes()) {
-      ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(
-          cast<TraitType>(parentAttr.getType()).getSymbol());
-      if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
-        if (parentTrait.getSymName() == "AnyType") {
-          implicitlyDestructible = true;
-          break;
+      for (SymbolRefAttr symbol :
+           cast<TraitType>(parentAttr.getType()).getSymbols()) {
+        ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
+          if (parentTrait.getSymName() == "AnyType") {
+            implicitlyDestructible = true;
+            break;
+          }
         }
       }
     }

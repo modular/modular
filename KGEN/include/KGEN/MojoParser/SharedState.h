@@ -38,6 +38,7 @@ class LookupResult;
 class PackageOp;
 class ParserListener;
 class StructDeclOp;
+class TraitType;
 class CallOperands;
 struct ParserConfig;
 class CachedOriginFinder;

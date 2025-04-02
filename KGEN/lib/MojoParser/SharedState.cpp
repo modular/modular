@@ -198,9 +198,15 @@ private:
   }
   WalkResult processBytecodeReferences(Type type) {
     return TypeSwitch<Type, WalkResult>(type)
-        .Case<StructMetaType, LIT::StructType, TraitType>([&](auto ref) {
+        .Case<StructMetaType, LIT::StructType>([&](auto ref) {
           return success(
               resolveBytecodeReferenceSignature(shared, ref.getSymbol()));
+        })
+        .Case<TraitType>([&](TraitType ref) {
+          return success(
+              llvm::all_of(ref.getSymbols(), [&](SymbolRefAttr symbol) -> bool {
+                return resolveBytecodeReferenceSignature(shared, symbol);
+              }));
         })
         .Default(WalkResult::advance());
   }

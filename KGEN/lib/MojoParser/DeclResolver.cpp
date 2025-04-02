@@ -15,6 +15,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
+#include "Traits.h"
 
 #include "KGEN/LITDialect/LITOps.h"
 
@@ -211,6 +212,29 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   decl->setErroneous();
   for (ASTDecl *previous : entries)
     previous->setErroneous();
+}
+
+TraitType DeclResolver::getCanonicalTrait(TraitType trait) {
+  if (TraitType canonical = traitCanonicalizationCache.lookup(trait))
+    return canonical;
+  SmallVector<SymbolRefAttr> symbols(trait.getSymbols());
+  return traitCanonicalizationCache[trait] = getCanonicalTrait(symbols);
+}
+
+TraitType
+DeclResolver::getCanonicalTrait(SmallVectorImpl<SymbolRefAttr> &symbols) {
+  if (!symbols.empty())
+    canonicalizeTraitCompositionSymbols(shared, symbols);
+  return TraitType::get(getContext(), symbols);
+}
+
+void DeclResolver::attachDeclToTraitCompositionDecl(ASTDecl *traitDecl,
+                                                    ASTDecl *childDecl,
+                                                    StringAttr name) {
+  // Lazy allocate declsInScope.
+  if (!traitDecl->declsInScope)
+    traitDecl->declsInScope.reset(new ASTDecl::DeclInScopeType());
+  (*traitDecl->declsInScope)[name].push_back(childDecl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -481,6 +505,12 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
         .Case<LIT::FileModuleOp, ModuleOp, PackageOp,
               UnresolvedWildcardImportOp>([&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
+          if (auto traitType =
+                  dyn_cast_or_null<TraitType>(decl.getIfTypeValue())) {
+            if (failed(resolveSignature(traitType, decl)))
+              decl.setErroneous();
+            return;
+          }
           // Invalid function arguments will not be resolved to a value and will
           // have a null IR representation.
           if (!decl.isErroneous()) {
@@ -551,6 +581,13 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
         .Case<ModuleOp, UnresolvedImportOp, UnresolvedWildcardImportOp>(
             [&](auto op) { /*Nothing*/ })
         .Default([&](auto &attr) {
+          if (auto traitType =
+                  dyn_cast_or_null<TraitType>(decl.getIfTypeValue())) {
+            if (failed(resolveBody(traitType, decl)))
+              decl.setErroneous();
+            return;
+          }
+
           if (!decl.isErroneous())
             emitError(decl.getLoc(),
                       "do not know how to resolve the body of this decl!");
@@ -702,6 +739,31 @@ Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
 
   // Install it in the symbol table and check for redefinition while doing so.
   return shared.setResolvedDeclSymbol(funcOp);
+}
+
+ASTDecl *DeclResolver::getTraitDecl(TraitType trait) {
+  ArrayRef<SymbolRefAttr> symbols = trait.getSymbols();
+  if (symbols.size() == 1)
+    return &getDeclForTypeSymbol(symbols.front());
+
+  TraitType canonTraitType = getCanonicalTrait(trait);
+  // Check if the canonicalized trait type has a hit.
+  if (auto it = canonicalTraitCompositionDecls.find(canonTraitType);
+      it != canonicalTraitCompositionDecls.end())
+    return it->second;
+
+  // Otherwise, create a new decl and register for the canonical trait type.
+  // Trait compositions are anonymous declarations and do not have a source
+  // location themselves. Conformance errors will be routed to its member decls.
+  ASTDecl *decl = &createUnlistedDecl(DeclIRValue(canonTraitType), /*loc=*/{},
+                                      /*parentDecl=*/nullptr, LexerCursor(),
+                                      LexerCursor(), /*indentation=*/-1);
+
+  // Initialize the decl to signature-resolved since we do not have anything to
+  // do for the signature resolve phase.
+  decl->resolvedness = DeclResolvedness::signature;
+  canonicalTraitCompositionDecls[canonTraitType] = decl;
+  return decl;
 }
 
 //===----------------------------------------------------------------------===//
