@@ -367,15 +367,15 @@ fn gemm_kernel[
     # Validate tiling constraints
     constrained[
         warp_tile_m % 16 == 0,
-        "Block M dimension per warp ("
-        + String(warp_tile_m)
-        + ") must be divisible by 16",
+        "Block M dimension per warp (",
+        String(warp_tile_m),
+        ") must be divisible by 16",
     ]()
     constrained[
         warp_tile_n % 16 == 0,
-        "Block N dimension per warp ("
-        + String(warp_tile_n)
-        + ") must be divisible by 16",
+        "Block N dimension per warp (",
+        String(warp_tile_n),
+        ") must be divisible by 16",
     ]()
 
     # Matrix dimensions from input tensors
