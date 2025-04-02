@@ -210,12 +210,11 @@ fn test[
     fn kernel_launch(ctx: DeviceContext) raises:
         @parameter
         if mask_rank == 3:
-            flash_attention[add_attn_mask=False](
+            flash_attention(
                 output_device,
                 q_device,
                 k_device,
                 v_device,
-                mask3d,
                 NullMask(),
                 IdentityScoreMod(),
                 scale,
@@ -223,12 +222,11 @@ fn test[
                 num_partitions,
             )
         else:
-            flash_attention[add_attn_mask=False](
+            flash_attention(
                 output_device,
                 q_device,
                 k_device,
                 v_device,
-                mask4d,
                 NullMask(),
                 IdentityScoreMod(),
                 scale,
