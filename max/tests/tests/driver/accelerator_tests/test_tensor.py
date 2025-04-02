@@ -21,7 +21,7 @@ def test_from_numpy_accelerator():
 
 def test_is_host_accelerator():
     # Accelerator tensors should be marked as not being on-host.
-    assert not Tensor((1, 1), DType.int32, device=Accelerator()).is_host
+    assert not Tensor(DType.int32, (1, 1), device=Accelerator()).is_host
 
 
 def test_host_device_copy():
@@ -72,7 +72,7 @@ def test_to_device():
     cpu = CPU()
     acc = Accelerator()
 
-    host_tensor = Tensor((3, 3), dtype=DType.int32, device=cpu)
+    host_tensor = Tensor(dtype=DType.int32, shape=(3, 3), device=cpu)
     acc_tensor = host_tensor.to(acc)
 
     assert cpu == host_tensor.device
@@ -109,7 +109,7 @@ DLPACK_DTYPES = {
 def test_dlpack_accelerator():
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
-        tensor = Tensor((1, 4), dtype)
+        tensor = Tensor(dtype, (1, 4))
         for j in range(4):
             tensor[0, j] = j
         acc_tensor = tensor.to(Accelerator())
@@ -135,7 +135,7 @@ def test_from_dlpack():
 
 
 def test_dlpack_device():
-    tensor = Tensor((3, 3), DType.int32, device=Accelerator())
+    tensor = Tensor(DType.int32, (3, 3), device=Accelerator())
     device_tuple = tensor.__dlpack_device__()
     assert len(device_tuple) == 2
     assert isinstance(device_tuple[0], int)

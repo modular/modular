@@ -21,7 +21,7 @@ from max.dtype import DType
 
 def test_tensor() -> None:
     # Validate that metadata shows up correctly
-    tensor = Tensor((3, 4, 5), DType.float32)
+    tensor = Tensor(DType.float32, (3, 4, 5))
     assert DType.float32 == tensor.dtype
     assert "DType.float32" == str(tensor.dtype)
     assert (3, 4, 5) == tensor.shape
@@ -29,13 +29,13 @@ def test_tensor() -> None:
 
     # Validate that shape can be specified as a list and we copy the dims.
     shape = [2, 3]
-    tensor2 = Tensor(shape, DType.float32)
+    tensor2 = Tensor(DType.float32, shape)
     shape[0] = 1
     assert (2, 3) == tensor2.shape
 
 
 def test_get_and_set() -> None:
-    tensor = Tensor((3, 4, 5), DType.int32)
+    tensor = Tensor(DType.int32, (3, 4, 5))
     tensor[0, 1, 3] = 68
     # Get should return zero-d tensor
     elt = tensor[0, 1, 3]
@@ -76,7 +76,7 @@ def test_get_and_set() -> None:
 def test_slice() -> None:
     # Tensor slices should have the desired shape and should preserve
     # reference semantics.
-    tensor = Tensor((3, 3, 3), DType.int32)
+    tensor = Tensor(DType.int32, (3, 3, 3))
     subtensor = tensor[:2, :2, :2]
     assert subtensor.shape == (2, 2, 2)
     subtensor[0, 0, 0] = 25
@@ -103,7 +103,7 @@ def test_slice() -> None:
 
 
 def test_drop_dimensions() -> None:
-    tensor = Tensor((5, 5, 5), DType.int32)
+    tensor = Tensor(DType.int32, (5, 5, 5))
     # When indexing into a tensor with a mixture of slices and integral
     # indices, the slice should drop any dimensions that correspond to
     # integral indices.
@@ -119,7 +119,7 @@ def test_drop_dimensions() -> None:
 
 
 def test_negative_step() -> None:
-    tensor = Tensor((3, 3), DType.int32)
+    tensor = Tensor(DType.int32, (3, 3))
     tensor[0, 0] = 1
     tensor[0, 1] = 2
     tensor[0, 2] = 3
@@ -143,7 +143,7 @@ def test_negative_step() -> None:
 
 
 def test_out_of_bounds_slices() -> None:
-    tensor = Tensor((3, 3, 3), DType.int32)
+    tensor = Tensor(DType.int32, (3, 3, 3))
 
     # Out of bounds indexes are allowed in slices.
     assert tensor[4:, :2, 8:10:-1].shape == (0, 2, 0)
@@ -154,7 +154,7 @@ def test_out_of_bounds_slices() -> None:
 
 
 def test_one_dimensional_tensor() -> None:
-    tensor = Tensor((10,), DType.int32)
+    tensor = Tensor(DType.int32, (10,))
     for i in range(10):
         tensor[i] = i
 
@@ -164,7 +164,7 @@ def test_one_dimensional_tensor() -> None:
 
 def test_contiguous_tensor() -> None:
     # Initialized tensors should be contiguous, and tensor slices should not be.
-    tensor = Tensor((3, 3), DType.int32)
+    tensor = Tensor(DType.int32, (3, 3))
     assert tensor.is_contiguous
     val = 1
     for x, y in product(range(3), range(3)):
@@ -192,7 +192,7 @@ def test_contiguous_tensor() -> None:
 def test_modify_contiguous_tensor() -> None:
     # Modifications made to the original tensor should not be reflected
     # on the contiguous copy, and vice-versa.
-    tensor = Tensor((3, 3), DType.int32)
+    tensor = Tensor(DType.int32, (3, 3))
     for x, y in product(range(3), range(3)):
         tensor[x, y] = 1
 
@@ -252,7 +252,7 @@ def test_from_numpy_scalar() -> None:
 
 def test_is_host() -> None:
     # CPU tensors should be marked as being on-host.
-    assert Tensor((1, 1), DType.int32, device=CPU()).is_host
+    assert Tensor(DType.int32, (1, 1), device=CPU()).is_host
 
 
 def test_host_host_copy() -> None:
@@ -308,7 +308,7 @@ def test_from_dlpack() -> None:
 
 
 def test_from_dlpack_short_circuit() -> None:
-    tensor = Tensor((4,), DType.int8)
+    tensor = Tensor(DType.int8, (4,))
     for i in range(4):
         tensor[i] = i
 
@@ -322,7 +322,7 @@ def test_from_dlpack_short_circuit() -> None:
 
 
 def test_from_dlpack_copy() -> None:
-    tensor = Tensor((4,), DType.int8)
+    tensor = Tensor(DType.int8, (4,))
     for i in range(4):
         tensor[i] = i
 
@@ -336,7 +336,7 @@ def test_from_dlpack_copy() -> None:
 
 
 def test_dlpack_device() -> None:
-    tensor = Tensor((3, 3), DType.int32)
+    tensor = Tensor(DType.int32, (3, 3))
     device_tuple = tensor.__dlpack_device__()
     assert len(device_tuple) == 2
     assert isinstance(device_tuple[0], int)
@@ -348,7 +348,7 @@ def test_dlpack_device() -> None:
 def test_dlpack() -> None:
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype in DLPACK_DTYPES:
-        tensor = Tensor((1, 4), dtype)
+        tensor = Tensor(dtype, (1, 4))
         for j in range(4):
             tensor[0, j] = j
 
@@ -392,7 +392,7 @@ def test_torch_tensor_conversion() -> None:
 
 @given(st.floats())
 def test_setitem_bfloat16(value: float) -> None:
-    tensor = Tensor((1,), DType.bfloat16)
+    tensor = Tensor(DType.bfloat16, (1,))
     tensor[0] = value
     expected = torch.tensor([value]).type(torch.bfloat16)
     # Torch rounds values up, whereas we currently truncate.
@@ -421,7 +421,7 @@ def test_getitem_bfloat16(value: float) -> None:
 def test_device() -> None:
     # We should be able to set and query the device that a tensor is resident on.
     cpu = CPU()
-    tensor = Tensor((3, 3), dtype=DType.int32, device=cpu)
+    tensor = Tensor(dtype=DType.int32, shape=(3, 3), device=cpu)
     assert cpu == tensor.device
 
 
@@ -537,27 +537,27 @@ def test_from_dlpack_memmap(memmap_example_file: Path) -> None:
 
 
 def test_num_elements() -> None:
-    tensor1 = Tensor((2, 4, 3), DType.int8)
+    tensor1 = Tensor(DType.int8, (2, 4, 3))
     assert tensor1.num_elements == 24
 
-    tensor2 = Tensor((1, 4), DType.int8)
+    tensor2 = Tensor(DType.int8, (1, 4))
     assert tensor2.num_elements == 4
 
-    tensor3 = Tensor((), DType.int8)
+    tensor3 = Tensor(DType.int8, ())
     assert tensor3.num_elements == 1
 
-    tensor4 = Tensor((1, 1, 1, 1, 1), DType.int8)
+    tensor4 = Tensor(DType.int8, (1, 1, 1, 1, 1))
     assert tensor4.num_elements == 1
 
 
 def test_element_size() -> None:
     for dtype in DLPACK_DTYPES:
-        tensor = Tensor((), dtype)
+        tensor = Tensor(dtype, ())
         assert tensor.element_size == np.dtype(dtype.to_numpy()).itemsize
 
 
 def test_view() -> None:
-    tensor = Tensor((2, 6), DType.int8)
+    tensor = Tensor(DType.int8, (2, 6))
     for i in range(tensor.shape[0]):
         for j in range(tensor.shape[1]):
             tensor[i, j] = i * 10 + j
@@ -572,7 +572,7 @@ def test_view() -> None:
     assert tensor_view[3, 1].item() == 11
     assert tensor_view[5, 1].item() == 15
 
-    tensor8 = Tensor((2, 4), DType.int8)
+    tensor8 = Tensor(DType.int8, (2, 4))
     for i, j in product(range(2), range(4)):
         tensor8[i, j] = 1
 
@@ -618,14 +618,14 @@ def test_item_success() -> None:
 
     # Single-element tensors of various ranks
     for shape in [(), (1,), (1, 1), (1, 1, 1)]:
-        tensor = Tensor(shape, DType.float32)
+        tensor = Tensor(DType.float32, shape)
         tensor[tuple(0 for _ in shape)] = 3.14
         assert math.isclose(tensor.item(), 3.14, rel_tol=1e-6)
 
 
 def test_item_multiple_elements() -> None:
     """Test item() fails when tensor contains multiple elements"""
-    tensor = Tensor((2,), DType.int32)
+    tensor = Tensor(DType.int32, (2,))
     with pytest.raises(
         ValueError,
         match="calling `item` on a tensor with 2 items but expected only 1",
@@ -634,7 +634,7 @@ def test_item_multiple_elements() -> None:
 
 
 def test_aligned() -> None:
-    tensor = Tensor((5,), DType.int32)
+    tensor = Tensor(DType.int32, (5,))
     assert tensor._aligned()
     assert tensor._aligned(DType.int32.align)
 
@@ -684,9 +684,9 @@ def test_unaligned_tensor_copy():
 
 
 def test_inplace_copy_from_raises():
-    tensor_3_3 = Tensor((3, 3), DType.int32)
+    tensor_3_3 = Tensor(DType.int32, (3, 3))
 
-    tensor_3_10_3 = Tensor((3, 10, 3), DType.int32)
+    tensor_3_10_3 = Tensor(DType.int32, (3, 10, 3))
     tensor_3_3_noncontig = tensor_3_10_3[:, 0, :]
     assert tensor_3_3_noncontig.shape == (3, 3)
     assert not tensor_3_3_noncontig.is_contiguous
@@ -698,13 +698,13 @@ def test_inplace_copy_from_raises():
         tensor_3_3.inplace_copy_from(tensor_3_3_noncontig)
         assert "Cannot copy from non-contiguous tensor" in str(e.value)
 
-    tensor_3_2 = Tensor((3, 2), DType.int32)
+    tensor_3_2 = Tensor(DType.int32, (3, 2))
     with pytest.raises(ValueError) as e:
         tensor_3_3.inplace_copy_from(tensor_3_2)
         assert "Cannot copy tensors of different sizes" in str(e.value)
 
-    tensor_i32 = Tensor((2, 3), DType.int32)
-    tensor_i16 = Tensor((2, 3), DType.int16)
+    tensor_i32 = Tensor(DType.int32, (2, 3))
+    tensor_i16 = Tensor(DType.int16, (2, 3))
     with pytest.raises(ValueError) as e:
         tensor_i32.inplace_copy_from(tensor_i16)
         assert "Cannot copy tensors of different dtypes" in str(e.value)
