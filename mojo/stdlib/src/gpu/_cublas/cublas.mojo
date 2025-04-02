@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import List
-from collections.string import StringSlice
+from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
@@ -41,7 +41,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StringSlice, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: AnyTrivialRegType
 ]() -> result_type:
     return _ffi_get_dylib_function[
         CUDA_CUBLAS_LIBRARY(),

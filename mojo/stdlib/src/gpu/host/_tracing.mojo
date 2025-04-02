@@ -15,7 +15,7 @@ from sys import (
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, c_char
 from sys.param_env import env_get_int
-from collections.string import StringSlice
+from collections.string import StaticString
 from memory import UnsafePointer, stack_allocation
 
 from utils.variant import Variant
@@ -113,7 +113,7 @@ fn _init_dylib() -> _OwnedDLHandle:
 
 @always_inline
 fn _get_dylib_function[
-    func_name: StringSlice, result_type: AnyTrivialRegType
+    func_name: StaticString, result_type: AnyTrivialRegType
 ]() -> result_type:
     return _ffi_get_dylib_function[
         GPU_TRACING_LIBRARY,
