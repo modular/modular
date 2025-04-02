@@ -156,7 +156,7 @@ def test_debug_print_binary_max_bf16(session, capfd, tmp_path):
         "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
     )
     dim = 15
-    input = Tensor([dim], DType.bfloat16)
+    input = Tensor(DType.bfloat16, [dim])
     for i in range(dim):
         input[i] = np.random.uniform()
 
@@ -193,7 +193,7 @@ def test_debug_print_binary_max_bf16_shapes(session, capfd, tmp_path, shape):
     compiled_model = session.load(g)
 
     # Generate test data.
-    input = Tensor(shape, DType.bfloat16)
+    input = Tensor(DType.bfloat16, shape)
     rng = np.random.default_rng()
 
     if shape:
