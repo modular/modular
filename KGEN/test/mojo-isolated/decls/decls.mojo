@@ -383,7 +383,7 @@ alias mname1 = get_string_literal[alias_parametric_fn()]().value
 
 # TODO: Figure out how to get the value of the alias.
 # CHECK-SAME: LLVMMetadataArray = [
-# CHECK-SAME: #kgen.param.expr<data_to_str, #lit.struct.extract<:!Int{{.*}}alias_parametric_fn
+# CHECK-SAME: #kgen.param.expr<data_to_str, {{.*}}alias_parametric_fn
 # CHECK-SAME: #kgen.unknown : !lit.struct<#IntLiteral <:!pop.int_literal 128>>
 @__llvm_metadata(
     mname1=128

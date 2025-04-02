@@ -242,14 +242,18 @@ static StringAttr getBytesOf(MemoryBlobAttr value, size_t numBytes) {
   return {};
 }
 
-/// Evaluate POC::DataToStr "data_to_str" operator.
-FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
-  auto lengthAttr = dyn_cast<IntegerAttr>(op.getOperand(0));
-  MemRefAttr pointerAttr = dyn_cast<MemRefAttr>(op.getOperand(1));
-  if (!lengthAttr || !pointerAttr) {
+/// Extract a value of type `struct<(pointer<none>, index)>` into a StringAttr.
+FailureOr<StringAttr> IREvaluator::evaluateStringPart(TypedAttr part) {
+  // Get the two parts of the struct, StructExtract will fold.
+
+  MemRefAttr pointerAttr =
+      dyn_cast<MemRefAttr>(StructExtractAttr::get(part, 0));
+  auto lengthAttr = dyn_cast<IntegerAttr>(StructExtractAttr::get(part, 1));
+  if (!pointerAttr || !lengthAttr) {
     emitError({*errorLoc, "'data_to_str' did not narrow to a constant"});
     return failure();
   }
+
   size_t numBytes = lengthAttr.getInt();
 
   // Check to see if we have a memref(interp.memory_handle(...)) because
@@ -260,7 +264,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
           getBytesOf(pointerAttr.getModel().getMemory()[pointerAttr.getIndex()],
                      numBytes)) {
     if (pointerAttr.getOffset() == 0)
-      return TypedAttr(result);
+      return result;
   }
 
   // Reset memory upon exit.
@@ -290,6 +294,36 @@ FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
 
   // Success!
   return {StringAttr::get(result, StringType::get(getContext()))};
+}
+
+/// Evaluate POC::DataToStr "data_to_str" operator.
+FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
+  FailureOr<StringAttr> result = evaluateStringPart(op.getOperand(0));
+  if (failed(result))
+    return failure();
+
+  // Extra string parts, which will be a VariadicAttr of type
+  // !kgen.variadic<>
+  VariadicAttr extrasAttr = dyn_cast<VariadicAttr>(op.getOperand(1));
+  if (!extrasAttr) {
+    emitError(
+        {*errorLoc, "'data_to_str' did not narrow to a variadic constant"});
+    return failure();
+  }
+
+  // If there are no extra parts then we're done.
+  if (extrasAttr.getValues().empty())
+    return TypedAttr(*result);
+
+  // Otherwise, we need to evaluate the extra parts and concatenate them.
+  std::string concatStr = result->str();
+  for (TypedAttr extra : extrasAttr.getValues()) {
+    FailureOr<StringAttr> extraResult = evaluateStringPart(extra);
+    if (failed(extraResult))
+      return failure();
+    concatStr += extraResult->str();
+  }
+  return TypedAttr(StringAttr::get(concatStr, StringType::get(getContext())));
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateStringAddress(ParamOperatorAttr op) {
