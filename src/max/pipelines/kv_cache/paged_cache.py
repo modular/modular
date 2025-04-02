@@ -248,6 +248,42 @@ class FetchPagedKVCacheCollection:
 
 
 class PagedKVCacheManager(KVCacheManager):
+    page_size: int
+    """Number of tokens stored per block."""
+
+    total_num_pages: int
+    """Total number of blocks allocated per device."""
+
+    device_tensors: list[Tensor]
+    """List of tensors holding the KV cache blocks, one per device."""
+
+    host_tensor: Tensor | None
+    """Tensor holding the KV cache blocks on the host for swapping (if enabled)."""
+
+    total_num_host_pages: int
+    """Total number of blocks allocated on the host for swapping (if enabled)."""
+
+    block_manager: BlockManager
+    """Manages allocation, eviction, and reuse of KV cache blocks."""
+
+    enable_prefix_caching: bool
+    """Flag indicating if prefix caching (block reuse) is enabled."""
+
+    enable_swapping_to_host: bool
+    """Flag indicating if swapping blocks to host memory is enabled."""
+
+    prefetched_seq_ids: set[int]
+    """Set of sequence IDs whose blocks have been prefetched."""
+
+    d2d_blocks_copied: int
+    """Count of blocks copied device-to-device (e.g., for COW)."""
+
+    d2h_blocks_copied: int
+    """Count of blocks copied device-to-host (e.g., for eviction)."""
+
+    h2d_blocks_copied: int
+    """Count of blocks copied host-to-device (e.g., for cache hits from host)."""
+
     @traced
     def __init__(
         self,
