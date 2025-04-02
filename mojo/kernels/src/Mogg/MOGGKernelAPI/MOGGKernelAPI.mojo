@@ -6929,7 +6929,8 @@ struct Struct_mha_ragged_paged_fa3_fallback_causal_mask_no_pos:
     ) raises:
         constrained[
             "gpu" in target,
-            String("fa3_fallback only supports GPU execution, got: ") + target,
+            "fa3_fallback only supports GPU execution, got: ",
+            target,
         ]()
         constrained[
             type == DType.bfloat16, "fa3_fallback only support BF16 execution"
