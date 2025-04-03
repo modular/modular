@@ -71,7 +71,7 @@ fn _is_bool_like[val: StaticString]() -> Bool:
     )
 
 
-fn env_get_bool[name: StaticString]() -> Bool:
+fn env_get_bool[name: StringLiteral]() -> Bool:
     """Try to get an boolean-valued define. Compilation fails if the
     name is not defined or the value is neither `True` or `False`.
 
@@ -173,7 +173,7 @@ fn env_get_int[name: StaticString, default: Int]() -> Int:
         return default
 
 
-fn env_get_string[name: StaticString]() -> StringLiteral:
+fn env_get_string[name: StringLiteral]() -> StringLiteral:
     """Try to get a string-valued define. Compilation fails if the
     name is not defined.
 
@@ -184,14 +184,12 @@ fn env_get_string[name: StaticString]() -> StringLiteral:
         A string parameter value.
     """
     return __mlir_attr[
-        `#kgen.param.expr<get_env, `,
-        get_string_literal_slice[name]().value,
-        `> : !kgen.string`,
+        `#kgen.param.expr<get_env, `, name.value, `> : !kgen.string`
     ]
 
 
 fn env_get_string[
-    name: StaticString, default: StringLiteral
+    name: StringLiteral, default: StringLiteral
 ]() -> StringLiteral:
     """Try to get a string-valued define. If the name is not defined, return
     a default value instead.
