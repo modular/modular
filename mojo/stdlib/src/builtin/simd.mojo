@@ -2639,7 +2639,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == 1:
-            return rebind[SIMD[type, size_out]](self)
+            return rebind[SIMD[dtype, size_out]](self)
         elif size_out > 1:
             return self.reduce[and_reduce_body, size_out]()
 

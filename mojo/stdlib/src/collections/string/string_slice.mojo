@@ -26,6 +26,7 @@ from collections import List, Optional
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string._utf8 import (
     _is_valid_utf8,
+    _is_valid_utf8_comptime,
     _count_utf8_continuation_bytes,
     _utf8_first_byte_sequence_length,
     _utf8_byte_type,
@@ -473,8 +474,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # NOTE: validating StringLiterals would cause recursive loops
         self._slice = lit.as_bytes()
 
-    @always_inline("builtin")
-    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, origin]):
+    fn __init__[
+        debug_assert_validate: Bool = True,
+        location: Optional[_SourceLocation] = None,
+    ](out self, *, unsafe_from_utf8: Span[Byte, origin]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Parameters:
@@ -493,14 +496,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             # NOTE: using the comptime version is because the fast runtime one
             # causes recursive loops when used here
             if not _is_valid_utf8_comptime(unsafe_from_utf8):
-                abort()
-                # alias msg = "buffer is not valid UTF-8"
-                # if is_compile_time():
-                #     abort()
-                #     # abort(msg)
-                # debug_assert(
-                #     False, msg, location=location.or_else(__call_location())
-                # )
+                alias msg = "buffer is not valid UTF-8"
+                if is_compile_time():
+                    abort(msg)
+                # FIXME: this should have location=location.or_else(__call_location())
+                debug_assert(False, msg)
 
         self._slice = unsafe_from_utf8
 
@@ -540,7 +540,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var ptr = unsafe_from_utf8_cstr_ptr.bitcast[Byte]()
         self = Self(unsafe_from_utf8_ptr=ptr)
 
-    @always_inline("builtin")
     fn __init__(out self, *, ptr: UnsafePointer[Byte], length: UInt):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
         encoded bytes and a length.

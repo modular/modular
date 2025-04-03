@@ -319,10 +319,10 @@ fn _is_utf8_continuation_byte[
     return vec.cast[DType.int8]() < -(0b1000_0000 >> 1)
 
 
-fn _count_utf8_continuation_bytes(str_slice: StringSlice) -> Int:
+fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
     alias sizes = (256, 128, 64, 32, 16, 8)
-    var ptr = str_slice.unsafe_ptr()
-    var num_bytes = str_slice.byte_length()
+    var ptr = span.unsafe_ptr()
+    var num_bytes = len(span)
     var amnt: Int = 0
     var processed = 0
 
