@@ -2020,15 +2020,17 @@ static void simplifyDivOperands(SmallVectorImpl<TypedAttr> &operands) {
 static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
   simplifyDivOperands(operands);
 
-  // Implement support for identities like `x/1 = x`.
-  if (auto rhs = dyn_cast<IntegerAttr>(operands[1]))
+  // Implement support for identities like `x/1 = x` and guard against `x/0`
+  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
     if (rhs.getValue().isOne())
       return operands[0];
+    if (rhs.getValue().isZero())
+      return {};
+  }
 
-  // Note that division by 0 is undefined behavior.
   return foldBinaryOp(
-      operands, [](auto a, auto b) { return b.isZero() ? b : a.udiv(b); },
-      [](auto a, auto b) { return b.isZero() ? b : a.sdiv(b); });
+      operands, [](auto a, auto b) { return a.udiv(b); },
+      [](auto a, auto b) { return a.sdiv(b); });
 }
 
 static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
