@@ -33,6 +33,7 @@ from .type import (
     TensorType,
     Type,
     _ChainType,
+    _OpaqueType,
 )
 
 
@@ -174,6 +175,11 @@ class _OpaqueValue(Value):
                 "_OpaqueValue() argument must be an mlir.Value of opaque type "
                 f"or a graph._OpaqueValue, not {type(value).__name__!r}"
             )
+
+    @property
+    def type(self) -> _OpaqueType:
+        """Returns the type of the :obj:`_OpaqueValue` as a :obj:`_OpaqueType`."""
+        return _OpaqueType.from_mlir(self._mlir_value.type)
 
 
 class BufferValue(Value):
