@@ -212,7 +212,7 @@ fn _validate_utf8_simd_slice[
                 break
             continue
 
-        var byte_types = _utf8_byte_type(d).slice[4]()
+        var byte_types = _utf8_byte_type(d.slice[4]())
         var first_byte_type = byte_types[0]
 
         # byte_type has to match against the amount of continuation bytes
@@ -249,7 +249,7 @@ fn _validate_utf8_simd_slice[
 
         @parameter
         if remainder:
-            break
+            return iter_len == 0
     return True
 
 
