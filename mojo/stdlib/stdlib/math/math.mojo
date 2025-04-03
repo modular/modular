@@ -1129,8 +1129,8 @@ fn iota[
 
     if is_compile_time():
         var a = SIMD[step_dtype, simd_width](0)
-        for i in range(Scalar[step_dtype](simd_width)):
-            a[Int(i)] = i
+        for i in range(simd_width):
+            a[i] = Scalar[step_dtype](i)
         return a.cast[dtype]() + offset
 
     var step = llvm_intrinsic[
