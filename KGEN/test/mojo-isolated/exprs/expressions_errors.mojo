@@ -164,20 +164,20 @@ fn test_func_type():
     alias float7: fn[T: AnyTrivialRegType](mut *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
-    alias f1: fn (a: Int, StringLiteral) -> Int
+    alias f1: fn (a: Int, Int) -> Int
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    alias f2: fn (Int, /, StringLiteral) -> Int
+    alias f2: fn (Int, /, Int) -> Int
     # expected-error @below {{unnamed argument cannot follow '/' or '*'}}
-    alias f3: fn (*, StringLiteral) -> Int
+    alias f3: fn (*, Int) -> Int
     # expected-error @below {{unnamed argument must be positional-only}}
     alias f4 = fn (Int, b: Int) capturing -> Int
 
     # expected-error @below {{unnamed parameter cannot follow named parameter}}
-    alias f5: fn [a: Int, StringLiteral]() -> Int
+    alias f5: fn [a: Int, Int]() -> Int
     # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
-    alias f6: fn [Int, /, StringLiteral] -> Int
+    alias f6: fn [Int, /, Int] -> Int
     # expected-error @below {{unnamed parameter cannot follow '/' or '*'}}
-    alias f7: fn [*, StringLiteral] -> Int = test_func_type
+    alias f7: fn [*, Int] -> Int = test_func_type
     # expected-error @below {{unnamed parameter must be positional-only}}
     alias f8 = fn [Int, b: Int] capturing -> Int
 

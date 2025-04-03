@@ -309,7 +309,7 @@ fn testStructWithParams():
 
 
 # expected-error @below {{required positional parameter follows optional positional parameter}}
-struct DefaultParams[a: Int, b: Int = 7, msg: StringLiteral]:
+struct DefaultParams[a: Int, b: Int = 7, msg: Int]:
     pass
 
 
