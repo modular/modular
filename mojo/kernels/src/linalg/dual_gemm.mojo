@@ -753,10 +753,10 @@ fn multistage_dual_gemm[
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b0: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    b1: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout],
+    a: LayoutTensor[a_type, a_layout],
+    b0: LayoutTensor[b_type, b_layout],
+    b1: LayoutTensor[b_type, b_layout],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim(0)
@@ -807,10 +807,10 @@ fn multistage_dual_gemm[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     num_k_partitions: Int = 1,
 ](
-    c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    c: NDBuffer[c_type, 2, _, c_shape],
+    a: NDBuffer[a_type, 2, _, a_shape],
+    b0: NDBuffer[b_type, 2, _, b_shape],
+    b1: NDBuffer[b_type, 2, _, b_shape],
     ctx: DeviceContext,
 ) raises:
     var tensor_c = from_ndbuffer_row_major(c)
