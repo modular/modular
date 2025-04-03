@@ -6,7 +6,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
-from max import mlir
+from max._mlir._mlir_libs._mlir import MlirValue  # type: ignore
+from max.mlir import Location
 
 from . import (
     dialects as dialects,
@@ -40,7 +41,7 @@ class InsertPoint:
 class OpBuilder:
     def __init__(self, arg: InsertPoint, /) -> None: ...
     def create(
-        self, arg0: type[OpState], arg1: mlir.Location, /, *args, **kwargs
+        self, arg0: type[OpState], arg1: Location, /, *args, **kwargs
     ) -> object: ...
 
 class OpState:
@@ -48,3 +49,11 @@ class OpState:
 
 class Type:
     def __eq__(self, arg: object, /) -> bool: ...
+    @property
+    def ctype(self) -> object: ...
+
+class Value:
+    def __init__(self, arg: MlirValue, /) -> None: ...
+    def __eq__(self, arg: object, /) -> bool: ...
+    @property
+    def type(self) -> Type: ...

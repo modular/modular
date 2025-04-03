@@ -54,6 +54,10 @@ modular_genrule(
     outs = stubfiles,
     cmd = """
     set -e
+    # When profiling is enabled, it replaces the bound methods entirely, which causes weird things to
+    # happen with the stubfiles. Avoid the issue entirely by just forcing it off when generating.
+    export MODULAR_ENABLE_PROFILING=OFF
+
     export folder=$(dirname $(location stubfiles/_core.pyi))
     $(execpath {stubgen}) -r -m max._core -O $folder -p $(location :patterns.nb) --include-private --quiet
 
@@ -126,6 +130,12 @@ modular_python_binding_py_library(
         "profiler",
     )
 ]
+
+diff_test(
+    name = "_core.diff_test",
+    file1 = "//SDK/lib/API/python/max:stubfiles/_core.pyi",
+    file2 = "_core/__init__.pyi",
+)
 
 modular_py_library(
     name = "max",
