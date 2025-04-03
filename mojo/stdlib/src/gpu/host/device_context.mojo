@@ -128,8 +128,6 @@ struct _DeviceBufferMode:
 struct HostBuffer[
     type: DType,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
 ](Sized, Stringable, Writable):
     """Represents a block of host-resident storage. For GPU devices, a host
     buffer is allocated in the host's global memory.
@@ -141,13 +139,9 @@ struct HostBuffer[
     Parameters:
         type: Data type to be stored in the buffer.
         address_space: The address space of the underlying pointer.
-        mut: The mutability of the underlying pointer.
-        origin: The origin of the underlying pointer.
     """
 
-    alias _HostPtr = UnsafePointer[
-        Scalar[type], address_space=address_space, mut=mut, origin=origin
-    ]
+    alias _HostPtr = UnsafePointer[Scalar[type], address_space=address_space]
 
     # _device_ptr must be the first word in the struct to enable passing of
     # HostBuffer to kernels. The first word is passed to the kernel and
@@ -563,9 +557,7 @@ struct HostBuffer[
         """
         return self._device_ptr[idx]
 
-    fn __setitem__(
-        self: HostBuffer[type, mut=True], idx: Int, val: Scalar[type]
-    ):
+    fn __setitem__(self: HostBuffer[type], idx: Int, val: Scalar[type]):
         """Sets the element at the specified index in the host buffer.
 
         This operator allows direct modification of individual elements in the host buffer
@@ -581,8 +573,6 @@ struct HostBuffer[
 struct DeviceBuffer[
     type: DType,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
 ](Sized, Stringable, Writable, CollectionElement):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
@@ -594,17 +584,9 @@ struct DeviceBuffer[
     Parameters:
         type: Data type to be stored in the buffer.
         address_space: The address space of the underlying pointer.
-        mut: The mutability of the underlying pointer.
-        origin: The origin of the underlying pointer.
     """
 
-    alias _DevicePtr = UnsafePointer[
-        Scalar[type], address_space=address_space, mut=mut, origin=origin
-    ]
-    alias _HostMappedBufferType = _HostMappedBuffer[
-        type, address_space=address_space, mut=mut, origin=origin
-    ]
-
+    alias _DevicePtr = UnsafePointer[Scalar[type], address_space=address_space]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
@@ -995,7 +977,10 @@ struct DeviceBuffer[
 
     fn map_to_host(
         self,
-    ) raises -> Self._HostMappedBufferType:
+        out mapped_buffer: _HostMappedBuffer[
+            type, __origin_of(self), address_space
+        ],
+    ) raises:
         """Maps this device buffer to host memory for CPU access.
 
         This method creates a host-accessible view of the device buffer's contents.
@@ -1030,7 +1015,9 @@ struct DeviceBuffer[
                 out_host[i] = 255
         ```
         """
-        return Self._HostMappedBufferType(self.context(), self)
+        mapped_buffer = _HostMappedBuffer[
+            type, __origin_of(self), address_space
+        ](self.context(), self)
 
     fn write_to[W: Writer](self, mut writer: W):
         """Writes a string representation of this buffer to the provided writer.
@@ -3231,17 +3218,9 @@ struct DeviceContext(CollectionElement):
             size: Number of elements (of the specified `DType`) to copy.
         """
         # Not directly implemented on DeviceContext, wrap in buffers first
-        var dst_buf = DeviceBuffer[
-            mut = dst_ptr.mut,
-            origin = dst_ptr.origin,
-            address_space = dst_ptr.address_space,
-        ](self, dst_ptr, size, owning=False)
-        var src_buf = DeviceBuffer[
-            mut = src_ptr.mut,
-            origin = src_ptr.origin,
-            address_space = src_ptr.address_space,
-        ](self, src_ptr, size, owning=False)
-        self.enqueue_copy[type](dst_buf, src_buf)
+        var dst_buf = DeviceBuffer(self, dst_ptr, size, owning=False)
+        var src_buf = DeviceBuffer(self, src_ptr, size, owning=False)
+        self.enqueue_copy(dst_buf, src_buf)
 
     @always_inline
     fn enqueue_copy[
@@ -4030,37 +4009,36 @@ struct DeviceMulticastBuffer[type: DType]:
 
 
 struct _HostMappedBuffer[
+    mut: Bool, //,
     type: DType,
+    origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-    mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
 ]:
     var _ctx: DeviceContext
-    alias _DevBuf = DeviceBuffer[
-        type, address_space=address_space, mut=mut, origin=origin
+    var _dev_buf: Pointer[
+        DeviceBuffer[type, address_space=address_space], origin
     ]
-    var _dev_buf: Self._DevBuf
-    var _cpu_buf: HostBuffer[type, **_]
+    var _cpu_buf: HostBuffer[type]
 
     fn __init__(
         out self,
         ctx: DeviceContext,
-        buf: Self._DevBuf,
+        ref [origin]buf: DeviceBuffer[type, address_space=address_space],
     ) raises:
         var cpu_buf = ctx.enqueue_create_host_buffer[type](len(buf))
         self._ctx = ctx
-        self._dev_buf = buf
+        self._dev_buf = Pointer(to=buf)
         self._cpu_buf = cpu_buf
 
     fn __del__(owned self):
         pass
 
     fn __enter__(mut self) raises -> HostBuffer[type]:
-        self._dev_buf.enqueue_copy_to(self._cpu_buf)
+        self._dev_buf[].enqueue_copy_to(self._cpu_buf)
         self._ctx.synchronize()
         return self._cpu_buf
 
     fn __exit__(mut self) raises:
         self._ctx.synchronize()
-        self._cpu_buf.enqueue_copy_to(self._dev_buf)
+        self._cpu_buf.enqueue_copy_to(self._dev_buf[])
         self._ctx.synchronize()
