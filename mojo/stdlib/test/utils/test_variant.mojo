@@ -135,7 +135,7 @@ def test_set_calls_deleter():
     var deleted: Bool = False
     var deleted2: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
-    v1.set[ObservableDel](ObservableDel(UnsafePointer(to=deleted2)))
+    v1.set(ObservableDel(UnsafePointer(to=deleted2)))
     assert_true(deleted)
     assert_false(deleted2)
     _ = v1^
