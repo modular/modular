@@ -112,9 +112,7 @@ def test_moveinit():
 def test_steal_data():
     var deleted = False
 
-    var owned_ptr = OwnedPointer(
-        ObservableDel(UnsafePointer(to=deleted))
-    )
+    var owned_ptr = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
 
     var ptr = owned_ptr^.steal_data()
 

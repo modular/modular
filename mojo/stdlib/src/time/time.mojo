@@ -250,19 +250,17 @@ fn _time_function_windows[
     """Calculates elapsed time in Windows"""
 
     var ticks_per_sec: _WINDOWS_LARGE_INTEGER = 0
-    var ticks_per_sec_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](to=
-        ticks_per_sec
+    var ticks_per_sec_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](
+        to=ticks_per_sec
     )
     external_call["QueryPerformanceFrequency", NoneType](ticks_per_sec_ptr)
 
     var starting_tick_count: _WINDOWS_LARGE_INTEGER = 0
-    var start_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](to=
-        starting_tick_count
+    var start_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](
+        to=starting_tick_count
     )
     var ending_tick_count: _WINDOWS_LARGE_INTEGER = 0
-    var end_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](to=
-        ending_tick_count
-    )
+    var end_ptr = UnsafePointer[_WINDOWS_LARGE_INTEGER](to=ending_tick_count)
 
     external_call["QueryPerformanceCounter", NoneType](start_ptr)
     func()

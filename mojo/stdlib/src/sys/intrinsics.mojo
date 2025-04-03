@@ -106,9 +106,7 @@ fn llvm_intrinsic[
 fn _unsafe_aliasing_address_to_pointer[
     dtype: DType
 ](owned addr: Scalar[DType.index]) -> UnsafePointer[Scalar[dtype]]:
-    return UnsafePointer(to=addr).bitcast[
-        UnsafePointer[Scalar[dtype]]
-    ]()[]
+    return UnsafePointer(to=addr).bitcast[UnsafePointer[Scalar[dtype]]]()[]
 
 
 @always_inline("nodebug")

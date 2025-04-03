@@ -244,9 +244,7 @@ struct _Function(CollectionElement, CollectionElementNew):
 
     @always_inline
     fn invoke(owned self, arg0: object, arg1: object) raises -> object:
-        return UnsafePointer(to=self.value).bitcast[Self.fn2]()[](
-            arg0, arg1
-        )
+        return UnsafePointer(to=self.value).bitcast[Self.fn2]()[](arg0, arg1)
 
     @always_inline
     fn invoke(
