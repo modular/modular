@@ -48,10 +48,6 @@ trait KVCacheT(CollectionElement):
         mo.opaque symbols."""
         ...
 
-    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
-        """Returns the cache lengths as a NDBuffer."""
-        ...
-
     fn cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
         ...
@@ -206,10 +202,6 @@ struct ContiguousKVCache[
         )
 
     @always_inline
-    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
-        return self.cache_lengths
-
-    @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
         debug_assert(
             batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
@@ -357,10 +349,6 @@ struct ContinuousBatchingKVCache[
     @staticmethod
     fn id() -> String:
         return "KVCacheRegisterPassable"
-
-    @always_inline
-    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
-        return self.cache_lengths
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
@@ -511,10 +499,6 @@ struct PagedKVCache[
         """Returns a string id describing the type, this is used when defining
         mo.opaque symbols."""
         return String("PagedKVCache+", Self.type)
-
-    @always_inline
-    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
-        return self.cache_lengths
 
     fn cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
@@ -696,12 +680,6 @@ struct PagedKVCacheFA3Fallback[
         """Returns a string id describing the type, this is used when defining
         mo.opaque symbols."""
         return String("PagedKVCache+", Self.type)
-
-    @always_inline
-    fn cache_lengths_nd(self) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
-        return rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            self.cache_lengths
-        )
 
     fn cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
