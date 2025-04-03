@@ -25,7 +25,6 @@ shared_tensor_types = st.shared(tensor_types())
 )
 def test_repeat_interleave(type: TensorType, repeats: int, axis: int):
     dim = type.shape[axis]
-    # TODO(GEX-1918): no checked overflow here
     assume(not isinstance(dim, StaticDim) or int(dim) * repeats < 2**63)
     with Graph("repeat_interleave", input_types=[type]) as graph:
         try:  # dims must fit into an int64
@@ -42,10 +41,9 @@ def test_repeat_interleave(type: TensorType, repeats: int, axis: int):
 
 @given(
     type=shared_tensor_types,
-    repeats=st.integers(min_value=1),
+    repeats=st.integers(min_value=1, max_value=2**63 - 1),
 )
 def test_repeat_interleave__no_axis(type: TensorType, repeats: int):
-    # TODO(GEX-1918): no checked overflow here
     static_product = reduce(operator.mul, type.shape.static_dims, repeats)
     assume(static_product < 2**63)
     with Graph("repeat_interleave", input_types=[type]) as graph:
