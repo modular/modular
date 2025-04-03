@@ -394,7 +394,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     return vals
 
 
-fn env_get_shape[name: StringLiteral, default: StringLiteral]() -> List[Int]:
+fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
     """Try to get an integer-valued shape (2+ dims) define.
     Compilation fails if the name is not defined.
 
@@ -540,7 +540,7 @@ fn array_equal[
 @register_passable("trivial")
 struct Mode:
     var _value: Int
-    var handle: StringLiteral
+    var handle: StaticString
     alias NONE = Self(0x0, "none")
     alias RUN = Self(0x1, "run")
     alias BENCHMARK = Self(0x2, "benchmark")
@@ -551,11 +551,11 @@ struct Mode:
         var handle_lower = handle.lower().split(Self.SEP)
         self = Self.NONE
         for h in handle_lower:
-            if h[] == Self.RUN.handle:
+            if Self.RUN.handle == h[]:
                 self.append(Self.RUN)
-            elif h[] == Self.BENCHMARK.handle:
+            elif Self.BENCHMARK.handle == h[]:
                 self.append(Self.BENCHMARK)
-            elif h[] == Self.VERIFY.handle:
+            elif Self.VERIFY.handle == h[]:
                 self.append(Self.VERIFY)
 
     fn append(mut self, other: Self):
@@ -563,14 +563,14 @@ struct Mode:
 
     fn __str__(self) -> String:
         s = List[String]()
-        if self == Self.RUN:
-            s.append(Self.RUN.handle)
-        if self == Self.BENCHMARK:
-            s.append(Self.BENCHMARK.handle)
-        if self == Self.VERIFY:
-            s.append(Self.VERIFY.handle)
-        if self == Self.NONE:
-            s.append(Self.NONE.handle)
+        if Self.RUN == self:
+            s.append(String(Self.RUN.handle))
+        if Self.BENCHMARK == self:
+            s.append(String(Self.BENCHMARK.handle))
+        if Self.VERIFY == self:
+            s.append(String(Self.VERIFY.handle))
+        if Self.NONE == self:
+            s.append(String(Self.NONE.handle))
         return Self.SEP.join(s)
 
     fn __eq__(self, mode: Self) -> Bool:
