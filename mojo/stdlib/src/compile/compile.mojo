@@ -209,18 +209,6 @@ fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
     return
 
 
-# (HACK, HACK, HACK), compile offload result is now a dynamic value
-# instead of a compile time constant.
-# The input of this function should not be treated as always
-# a StringLiteral (compile time constant value).
-# Mark this function as `always_inline` as a workaround to rely on
-# compiler optimization to satisfy the input type requirement,
-# but this is fragile.
-@always_inline
-fn _hash_module_name(s: StringLiteral) -> StaticString:
-    return StringLiteral(__mlir_op.`pop.string.hash`(s.value))
-
-
 @always_inline
 fn _compile_info_non_failable_impl[
     func_type: AnyTrivialRegType,
@@ -253,7 +241,10 @@ fn _compile_info_non_failable_impl[
     var result = Info[func_type, func](
         StringLiteral(offload.asm),
         get_linkage_name[target, func](),
-        _hash_module_name(offload.asm),
+        # HACK: This is super low-level processing of !kgen.string values.
+        # pop.string.hash should move to an attribute representation or
+        # something.
+        StringLiteral(__mlir_op.`pop.string.hash`(offload.asm)),
         offload.num_captures,
         "",
         False,
