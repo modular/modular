@@ -128,8 +128,8 @@ struct ManagedLayoutTensor[
 
         @parameter
         if layout.all_dims_known():
-            return LayoutTensor[dtype, layout](
-                self.device_data.value(),
+            return LayoutTensor[dtype, layout, MutableAnyOrigin](
+                self.device_data.value().unsafe_ptr(),
             )
         else:
             return LayoutTensor[dtype, layout](
@@ -161,11 +161,11 @@ struct ManagedLayoutTensor[
         @parameter
         if layout.all_dims_known():
             return LayoutTensor[dtype, layout](
-                self.host_data,
+                self.host_data.unsafe_ptr(),
             )
         else:
             return LayoutTensor[dtype, layout](
-                self.host_data,
+                self.host_data.unsafe_ptr(),
                 self.runtime_layout,
             )
 

@@ -584,11 +584,8 @@ struct LayoutTensor[
     @implicit
     fn __init__(
         out self,
-        device_buffer: DeviceBuffer[
-            dtype,
-            address_space=address_space,
-            mut=mut,
-            origin=origin, **_,
+        ref [origin]device_buffer: DeviceBuffer[
+            dtype, address_space=address_space
         ],
     ):
         """Create a LayoutTensor from a `DeviceBuffer`. The layout must have
@@ -616,12 +613,7 @@ struct LayoutTensor[
     @implicit
     fn __init__(
         out self,
-        host_buffer: HostBuffer[
-            dtype,
-            address_space=address_space,
-            mut=mut,
-            origin=origin, **_,
-        ],
+        ref [origin]host_buffer: HostBuffer[dtype, address_space=address_space],
     ):
         """Create a LayoutTensor from a `DeviceBuffer`. The layout must have
         statically known dimensions.
@@ -647,11 +639,8 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        device_buffer: DeviceBuffer[
-            dtype,
-            address_space=address_space,
-            mut=mut,
-            origin=origin, **_,
+        ref [origin]device_buffer: DeviceBuffer[
+            dtype, address_space=address_space
         ],
         runtime_layout: RuntimeLayout[layout, **_],
     ):
@@ -667,12 +656,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        host_buffer: HostBuffer[
-            dtype,
-            address_space=address_space,
-            mut=mut,
-            origin=origin, **_,
-        ],
+        ref [origin]host_buffer: HostBuffer[dtype, address_space=address_space],
         runtime_layout: RuntimeLayout[layout, **_],
     ):
         """Create a LayoutTensor from a `HostBuffer`. The layout must have
@@ -687,11 +671,8 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        device_buffer: DeviceBuffer[
-            dtype,
-            address_space=address_space,
-            mut=mut,
-            origin=origin, **_,
+        ref [origin]device_buffer: DeviceBuffer[
+            dtype, address_space=address_space
         ],
         runtime_layout: RuntimeLayout[
             layout,
@@ -715,12 +696,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self,
-        host_buffer: HostBuffer[
-            dtype,
-            address_space=address_space,
-            mut=mut,
-            origin=origin, **_,
-        ],
+        ref [origin]host_buffer: HostBuffer[dtype, address_space=address_space],
         runtime_layout: RuntimeLayout[
             layout,
             bitwidth = Self.layout_bitwidth,
