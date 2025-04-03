@@ -230,7 +230,7 @@ struct EventAttributes:
 
 
 @register_passable("trivial")
-struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
+struct _dylib_function[fn_name: StaticString, type: AnyTrivialRegType]:
     alias fn_type = type
 
     @staticmethod

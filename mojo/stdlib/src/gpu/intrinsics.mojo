@@ -19,7 +19,7 @@ underlying GPU architecture.
 """
 
 from sys._assembly import inlined_assembly
-from sys.info import _current_arch, alignof, bitwidthof, _is_sm_9x
+from sys.info import alignof, bitwidthof, _is_sm_9x
 from sys.intrinsics import llvm_intrinsic
 
 from builtin.dtype import _int_type_of_width

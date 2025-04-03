@@ -61,17 +61,17 @@ fn _resolve_warp_size() -> Int:
 # MAX_THREADS_PER_BLOCK_METADATA
 # ===-----------------------------------------------------------------------===#
 
-alias MAX_THREADS_PER_BLOCK_METADATA = _resolve_max_threads_per_block_metadata().value
+alias MAX_THREADS_PER_BLOCK_METADATA = _resolve_max_threads_per_block_metadata()
 """This is metadata tag that is used in conjunction with __llvm_metadata to
 give a hint to the compiler about the max threads per block that's used."""
 
 
-fn _resolve_max_threads_per_block_metadata() -> StringLiteral:
+fn _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
     @parameter
     if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
-        return "nvvm.maxntid"
+        return "nvvm.maxntid".value
     elif is_amd_gpu() or has_amd_gpu_accelerator():
-        return "rocdl.flat_work_group_size"
+        return "rocdl.flat_work_group_size".value
     else:
-        constrained[False, "no acclerator detected"]()
-        return ""
+        constrained[False, "no accelerator detected"]()
+        return "".value
