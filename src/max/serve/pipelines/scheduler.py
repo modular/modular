@@ -652,7 +652,7 @@ class TokenGenerationScheduler(Scheduler):
         total_blocks = paged_manager.total_num_pages
 
         host_kvcache_str = ""
-        if paged_manager.enable_swapping_to_host:
+        if paged_manager.enable_kvcache_swapping_to_host:
             host_committed_pct = paged_manager.host_committed_block_pct
             host_total_blocks = paged_manager.total_num_host_pages
             host_kvcache_str = f"Host KVCache Usage: {host_committed_pct:.1%} of {host_total_blocks} blocks, "
@@ -662,7 +662,7 @@ class TokenGenerationScheduler(Scheduler):
         h2d_blocks_copied = paged_manager.h2d_blocks_copied
         d2h_blocks_copied = paged_manager.d2h_blocks_copied
         if paged_manager.enable_prefix_caching:
-            if paged_manager.enable_swapping_to_host:
+            if paged_manager.enable_kvcache_swapping_to_host:
                 blocks_copied_str = f"Blocks copied: {d2d_blocks_copied} D2D, {h2d_blocks_copied} H2D, {d2h_blocks_copied} D2H | "
             elif paged_manager.enable_prefix_caching:
                 blocks_copied_str = f"Blocks copied: {d2d_blocks_copied} D2D | "
