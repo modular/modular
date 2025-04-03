@@ -1129,9 +1129,11 @@ static PValue bindToIndirectCall(PValue callable, FnTypeGeneratorType sig,
 
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
 /// or call to a method), apply parameter bindings to it.
-static LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
-                                                 ArrayRef<Operand> operands,
-                                                 ExprEmitter &emitter) {
+// TODO(MOCO-1106): Removed `static` on this so variadic thunks could use it,
+// let's refactor emitGetterSetterAccess so it can be used by thunks instead.
+LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
+                                          ArrayRef<Operand> operands,
+                                          ExprEmitter &emitter) {
   // Build a list of all the things we can bind. Remember the number of
   // positional parmaeters that have already been bound.
   SmallVector<InProgressBindings> bindables;

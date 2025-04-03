@@ -182,10 +182,16 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
     }
   }
 
+  bool expectedHasVariadic = expectedVariadicArgIndexOpt.has_value();
+  bool actualHasVariadic = actual.findPackVarArgIndex().has_value();
+  // If this is true, then we need to collect a bunch of `actual`'s args into a
+  // variadic for `expected`.
+  bool collectIntoVariadic = expectedHasVariadic && !actualHasVariadic;
+
   // "Normal" here means it won't be received by a variadic arg in the expected
   // function.
   size_t numNormalArgs = actualArgTypes.size();
-  if (expectedVariadicArgIndexOpt.has_value()) {
+  if (collectIntoVariadic) {
     numNormalArgs = expectedVariadicArgIndexOpt.value();
   }
 
@@ -212,7 +218,7 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
 
   // If the expected fn has a variadic arg, check all the actual args that will
   // go into it.
-  if (expectedVariadicArgIndexOpt.has_value()) {
+  if (collectIntoVariadic) {
     auto expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
 
     ArgConvention expectedConv =

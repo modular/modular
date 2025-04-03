@@ -31,6 +31,12 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+// TODO(MOCO-1106): Use the higher-level emitGetterSetterAccess instead of using
+// this directly.
+extern LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
+                                                 ArrayRef<Operand> operands,
+                                                 ExprEmitter &emitter);
+
 //===----------------------------------------------------------------------===//
 // Function Conversions
 //===----------------------------------------------------------------------===//
@@ -187,12 +193,11 @@ bool canConvertFunctionTypes(SharedState &shared, FnTypeGeneratorType actual,
 
     for (size_t actualArgIndex = numNormalArgs;
          actualArgIndex < actualArgTypes.size(); actualArgIndex++) {
-
       auto actualConv = actual.getArgConvention(actualArgIndex);
-      ASTType actualAstType = actualArgTypes[actualArgIndex];
-
       if (!checkConventionsConvertible(expectedConv, actualConv))
         return false;
+
+      ASTType actualAstType = actualArgTypes[actualArgIndex];
 
       // Now that we know the conventions are valid, check that the actual
       // argument conforms to the variadic pack's element trait.
@@ -360,57 +365,80 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
       thunkSignature.findPackVarArgIndex();
 
   bool actualMemResult = actualSignature.hasMemoryOnlyResult();
-  bool thunkMemResult = thunkSignature.hasMemoryOnlyResult();
   ArrayRef<Type> actualArgTypes =
       actualSignature.getArguments().drop_back(actualMemResult);
-  ArrayRef<Type> thunkArgTypes =
-      thunkSignature.getArguments().drop_back(thunkMemResult);
 
   for (size_t actualArgIndex = 0; actualArgIndex < actualArgTypes.size();
        actualArgIndex++) {
-    ASTType actualAstType = actualArgTypes[actualArgIndex];
-
     bool actualArgIsForVariadic =
         thunkVariadicArgIndexOpt.has_value() &&
         actualArgIndex >= thunkVariadicArgIndexOpt.value();
 
-    ASTType thunkArgAstType;
     Value argForActual;
-    KGEN::ArgConvention thunkArgConv;
+    KGEN::ArgConvention convForActual;
     if (actualArgIsForVariadic) {
       size_t thunkVariadicArgIndex = thunkVariadicArgIndexOpt.value();
-      ASTType thunkAstType =
-          thunkSignature.getIfVariadicPack(thunkVariadicArgIndex);
-      assert(thunkAstType);
       size_t indexInVariadic = actualArgIndex - thunkVariadicArgIndex;
+
+      MBValue packRefMBValue =
+          MBValue(thunk.getArguments()[thunkVariadicArgIndex]);
 
       auto index = IntegerAttr::get(IndexType::get(ctx), indexInVariadic);
 
-      ValueDest eltDest(actualAstType, EC_VarArgArgument);
-
       SyntheticNode indexSynthNode(moduleDecl.getLoc(), PValue(index));
 
-      // Temporary placeholder, since __getitem__ calls don't work, we'll just
-      // call the default constructor for the type we want to send to the
-      // underlying function.
-      auto constructorResult = emitter.emitConstructorCall(
-          actualAstType, {}, indexSynthNode, CallSyntax::kTypeCall, eltDest);
-      assert(constructorResult);
-      argForActual = eltDest.getMLValueForResult(moduleDecl.getLoc(),
-                                                 actualAstType, emitter);
-      // TODO(verdagon): Call __getitem__ in next PR when StructEmitter works
+      auto variadicTypeFromFunctionType =
+          functionType.getInputs()[thunkVariadicArgIndex];
 
-      thunkArgAstType = actualAstType;
-      // TODO(verdagon): Change to ReadReg in next PR when StructEmitter works
-      thunkArgConv = ArgConvention::OwnedMem;
+      ValueDest eltDest(EC_VarArgArgument);
+
+      // TODO(MOCO-1106): Use the higher-level emitGetterSetterAccess instead of
+      // the below OverloadSet/emitCall directly. It'll require refactoring
+      // emitGetterSetterAccess to avoid some index mismatch bugs.
+
+      // Look up VariadicPack.__getitem__
+      OverloadSet getItemOv = OverloadSet::lookup(
+          emitter.getDeclScope(),
+          ASTType(variadicTypeFromFunctionType).getReferenceElementType(),
+          "__getitem__", node, CallSyntax::kDirectCall);
+      if (failed(bindParamValuesToDirectCall(
+              getItemOv,
+              {Operand(&indexSynthNode, moduleDecl.getLoc(),
+                       Operand::PassKind::kKeyword,
+                       StringAttr::get(ctx, "index"))},
+              emitter))) {
+        // This should theoretically never happen, because we own VariadicPack.
+        emitter.emitError(moduleDecl.getLoc(),
+                          "Internal error: Couldn't find VariadicPack's "
+                          "__getitem__ method for the "
+                          "generated variadic thunk.");
+        return {};
+      }
+
+      // Call the_pack.__getitem__[index]()
+      CallOperands getItemOperands(
+          {ASTExprAnd<MBValue>{packRefMBValue, &node}});
+      CValue getItemResult =
+          getItemOv.emitCall(std::move(getItemOperands), eltDest, emitter);
+      if (!getItemResult) {
+        // This should theoretically never happen, because we own VariadicPack.
+        emitter.emitError(moduleDecl.getLoc(),
+                          "Internal error: Couldn't call "
+                          "VariadicPack.__getitem__[index] in the "
+                          "generated variadic thunk.");
+        return {};
+      }
+      argForActual = getItemResult.getMlirValue();
+
+      // Thunks can only receive
+      convForActual = ArgConvention::ReadMem;
     } else {
-      thunkArgAstType = thunkArgTypes[actualArgIndex];
       argForActual = thunk.getArguments()[actualArgIndex];
-      thunkArgConv = thunkSignature.getArgConvention(actualArgIndex);
+      convForActual = thunkSignature.getArgConvention(actualArgIndex);
     }
 
     AnyValue value;
-    switch (thunkArgConv) {
+    switch (convForActual) {
     case ArgConvention::OwnedReg:
       llvm_unreachable("not used by the mojo parser");
     case ArgConvention::ByRefResult:
