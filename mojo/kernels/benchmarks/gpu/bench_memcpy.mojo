@@ -34,13 +34,13 @@ fn _human_memory(size: Int) -> String:
     alias GB = MB * KB
 
     if size >= GB:
-        return _pretty_print_float(Float64(size) / GB) + "GB"
+        return _pretty_print_float(Float64(size) / GB) + "GiB"
 
     if size >= MB:
-        return _pretty_print_float(Float64(size) / MB) + "MB"
+        return _pretty_print_float(Float64(size) / MB) + "MiB"
 
     if size >= KB:
-        return _pretty_print_float(Float64(size) / KB) + "KB"
+        return _pretty_print_float(Float64(size) / KB) + "KiB"
 
     return String(size) + "B"
 
@@ -115,21 +115,33 @@ struct Config:
 
 @no_inline
 fn bench_memcpy(
-    mut b: Bench, *, length: Int, config: Config, context: DeviceContext
+    mut b: Bench,
+    length_in_bytes: Int,
+    *,
+    config: Config,
+    context: DeviceContext,
 ) raises:
     alias dtype = DType.float32
+    length_in_elements = length_in_bytes // sizeof[dtype]()
     var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
-        length
+        length_in_elements
     ) if config.pinned_memory else DeviceContext(
         api="cpu"
     ).enqueue_create_host_buffer[
         dtype
     ](
-        length
+        length_in_elements
     )
 
-    var mem_device = context.enqueue_create_buffer[dtype](length)
-    var mem2_device = context.enqueue_create_buffer[dtype](length)
+    # Allocate device buffers. If we're doing a d2d transfer, then we need 2
+    # buffers (source & destination). Otherwise, we only need one. But we don't
+    # want to put this allocation inside the timed region, so we always allocate
+    # both and drop the size of the second buffer to zero in the case of a non
+    # d2d test.
+    var mem_device = context.enqueue_create_buffer[dtype](length_in_elements)
+    var mem2_device = context.enqueue_create_buffer[dtype](
+        length_in_elements if config.direction == Config.DToD else 0
+    )
 
     @parameter
     @always_inline
@@ -141,17 +153,27 @@ fn bench_memcpy(
                 context.enqueue_copy(mem_host, mem_device)
             elif config.direction == Config.HToD:
                 context.enqueue_copy(mem_device, mem_host)
-            else:
+            elif config.direction == Config.DToD:
                 context.enqueue_copy(mem_device, mem2_device)
+            else:
+                raise Error("Unexpected transfer direction")
 
         b.iter_custom[kernel_launch](context)
+
+    # For D2D transfers, we're reading the entire buffer into gpu cache/sharedmem,
+    # then writing it back to a new address in vram. This means we're really
+    # moving the tensor in/out of vram twice (one read + one write), and therefore
+    # we need to double the size in order to calculate the correct bandwidth.
+    transferred_size_in_bytes = length_in_bytes
+    if config.direction == Config.DToD:
+        transferred_size_in_bytes *= 2
 
     b.bench_function[bench_func](
         BenchId(
             String("memcpy_", config),
-            input_id="length=" + _human_memory(length),
+            input_id="length=" + _human_memory(length_in_bytes),
         ),
-        ThroughputMeasure(BenchMetric.bytes, length * sizeof[dtype]()),
+        ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes),
     )
     context.synchronize()
 
@@ -163,19 +185,24 @@ fn bench_memcpy(
 
 @no_inline
 fn bench_p2p(
-    mut b: Bench, *, length: Int, ctx1: DeviceContext, ctx2: DeviceContext
+    mut b: Bench,
+    length_in_bytes: Int,
+    *,
+    ctx1: DeviceContext,
+    ctx2: DeviceContext,
 ) raises:
     alias dtype = DType.float32
+    length_in_elements = length_in_bytes // sizeof[dtype]()
 
     # Create host buffers for verification
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(length)
+    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(length_in_elements)
 
     # Initialize source data with known pattern
-    iota(host_ptr, length)
+    iota(host_ptr, length_in_elements)
 
     # Create and initialize device buffers
-    var src_buf = ctx1.enqueue_create_buffer[dtype](length)
-    var dst_buf = ctx2.enqueue_create_buffer[dtype](length)
+    var src_buf = ctx1.enqueue_create_buffer[dtype](length_in_elements)
+    var dst_buf = ctx2.enqueue_create_buffer[dtype](length_in_elements)
 
     # Copy initial data to source buffer
     ctx1.enqueue_copy(src_buf, host_ptr)
@@ -191,19 +218,16 @@ fn bench_p2p(
 
         b.iter_custom[kernel_launch](ctx1)
 
-    # Calculate bytes transferred
-    var bytes_transferred = length * sizeof[dtype]()
-
     # Create list of throughput measures
     var measures = List[ThroughputMeasure](
         # Raw bandwidth (considering only one transfer)
-        ThroughputMeasure(BenchMetric.bytes, bytes_transferred),
+        ThroughputMeasure(BenchMetric.bytes, length_in_bytes),
     )
 
     b.bench_function[bench_func](
         BenchId(
             "memcpy_p2p",
-            input_id="length=" + _human_memory(bytes_transferred),
+            input_id="length=" + _human_memory(length_in_bytes),
         ),
         measures=measures,
     )
@@ -225,7 +249,7 @@ fn bench_p2p(
 
     # Parallelize verification using sync_parallelize
     var shape = IndexList[1](
-        length,
+        length_in_elements,
     )
     parallelize_over_rows[verify_chunk](shape, 0, 256)
 
@@ -246,7 +270,7 @@ def main():
 
     if not (config == Config.UNDEFINED) and not (config == Config.PEER_TO_PEER):
         with DeviceContext() as ctx:
-            bench_memcpy(m, length=length, config=config, context=ctx)
+            bench_memcpy(m, length, config=config, context=ctx)
 
     elif config.direction == Config.P2P:
         var num_devices = DeviceContext.number_of_devices()
@@ -256,7 +280,7 @@ def main():
             var ctx2 = DeviceContext(device_id=1)
 
             # Benchmark peer context D2D
-            bench_p2p(m, length=length, ctx1=ctx1, ctx2=ctx2)
+            bench_p2p(m, length, ctx1=ctx1, ctx2=ctx2)
         else:
             print("Only one device found, skipping peer-to-peer benchmarks")
 
