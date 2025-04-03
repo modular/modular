@@ -34,7 +34,7 @@ from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 from sys.info import _current_arch
 
-from bit import count_trailing_zeros
+from bit import count_trailing_zeros, count_leading_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer
@@ -2355,6 +2355,26 @@ fn clamp(
         upper_bound.
     """
     return val.clamp(lower_bound, upper_bound)
+
+
+# ===----------------------------------------------------------------------=== #
+# next_power_of_two
+# ===----------------------------------------------------------------------=== #
+
+
+fn next_power_of_two(n: Int) -> Int:
+    """Computes the next power of two greater than or equal to the input.
+
+    Args:
+        n: The input value.
+
+    Returns:
+        The next power of two greater than or equal to the input.
+    """
+    if n <= 1:
+        return 1
+
+    return 1 << (bitwidthof[Int]() - count_leading_zeros(n - 1))
 
 
 # ===----------------------------------------------------------------------=== #
