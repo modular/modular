@@ -322,15 +322,14 @@ class AlgebraicDim(Dim):
     Furthermore, algebraic dimensions automatically simplify into a canonical
     form.
 
-    For example:
+    The following example demonstrates how to create and use algebraic dimensions with symbolic values:
 
-        >>> from max.graph import AlgebraicDim, Dim
-        >>> isinstance(Dim("batch") * 5, AlgebraicDim)
-        True
-        >>> print(Dim("batch") * 5)
-        batch * 5
-        >>> -Dim("x") - 4 == -(Dim("x") + 4)
-        True
+    .. code-block:: python
+
+        from max.graph import AlgebraicDim, Dim
+        isinstance(Dim("batch") * 5, AlgebraicDim)  # Returns True
+        print(Dim("batch") * 5)  # Outputs: batch * 5
+        -Dim("x") - 4 == -(Dim("x") + 4)  # Returns True
     """
 
     attr: mlir.Attribute
@@ -423,10 +422,14 @@ class StaticDim(Dim):
     Static tensor dimensions will always have exactly the same value,
     and are key to good model performance.
 
-    Static dimensions can be created implicitly in most cases:
+    The following example shows how static dimensions can be created implicitly:
 
-    ``TensorType(DType.int64, (4, 5))`` is a tensor with 2 static dimensions:
-    ``4`` and ``5`` respectively.
+    .. code-block:: python
+
+        from max.graph import TensorType
+        from max.dtype import DType
+        tensor = TensorType(DType.int64, (4, 5))
+        # This creates a tensor with 2 static dimensions: 4 and 5 respectively
     """
 
     dim: int
@@ -534,6 +537,18 @@ class DeviceRef:
 
     DeviceRef type representation consists of a DeviceKind and an id. This is a direct
     representation of the device attribute in mlir.
+
+    The following example demonstrates how to create and use device references:
+
+    .. code-block:: python
+
+        from max.graph import DeviceRef
+        # Create a GPU device reference (default id=0)
+        gpu_device = DeviceRef.GPU()
+        print(gpu_device)  # Outputs: gpu:0
+        # Create a CPU device with specific id
+        cpu_device = DeviceRef.CPU(id=1)
+        print(cpu_device)  # Outputs: cpu:1
     """
 
     device_type: DeviceKind
@@ -595,6 +610,19 @@ class Type:
     Every Value in the Graph has a Type, and that type is represented by an Type.
     This type may be inspected to get finer-grained types and learn more
     about an individual Value.
+
+    The following example shows how to work with types in a graph:
+
+    .. code-block:: python
+
+        from max.graph import Graph, TensorType
+        from max.dtype import DType
+        with Graph() as g:
+            # Create a tensor constant with a specific type
+            tensor_type = TensorType(DType.float32, [2, 3])
+            # The type can be inspected to get information about the value
+            print(f"Tensor element type: {tensor_type.dtype}")  # Outputs: DType.float32
+            print(f"Tensor shape: {tensor_type.shape}")  # Outputs: [2, 3]
     """
 
     def to_mlir(self) -> mlir.Type:
@@ -631,6 +659,17 @@ class TensorType(Type):
     model computation. It allows us to do some optimistic optimizations and
     shape inference during graph construction, and to provide more detailed
     shape information to the compiler for further optimization passes.
+
+    The following example shows how to create a tensor type with static dimensions and access its properties:
+
+    .. code-block:: python
+
+        from max.graph import TensorType
+        from max.dtype import DType
+        # Create a tensor type with float32 elements and static dimensions 2x3
+        tensor_type = TensorType(DType.float32, (2, 3))
+        print(tensor_type.dtype)  # Outputs: DType.float32
+        print(tensor_type.shape)  # Outputs: [2, 3]
 
     It can also represent a fully dynamic rank tensor. The presence of dynamic
     rank tensors in a graph will often degrade performance dramatically and
