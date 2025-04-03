@@ -438,9 +438,9 @@ fn advanced_indexing_getitem[
     index_type: DType, //,
     start_axis: Int,
     num_index_tensors: Int,
-    target: StringLiteral,
+    target: StaticString,
     single_thread_blocking_override: Bool,
-    trace_description: StringLiteral,
+    trace_description: StaticString,
     input_tensor_fn: fn[width: Int] (IndexList[input_rank]) capturing -> SIMD[
         input_type, width
     ],
@@ -619,9 +619,9 @@ fn advanced_indexing_setitem_inplace[
     index_type: DType, //,
     start_axis: Int,
     num_index_tensors: Int,
-    target: StringLiteral,
+    target: StaticString,
     single_thread_blocking_override: Bool,
-    trace_description: StringLiteral,
+    trace_description: StaticString,
     updates_tensor_fn: fn[width: Int] (
         IndexList[updates_rank]
     ) capturing -> SIMD[input_type, width],

@@ -975,7 +975,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
 
 
 def rms_norm_kv_cache_ragged_paged[
-    type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+    type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
 ](
     kv_collection: PagedKVCacheCollection[
         type,
