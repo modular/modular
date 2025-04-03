@@ -80,7 +80,7 @@ fn _neon_matmul[
 
     @parameter
     @always_inline
-    fn call_intrinsic[intrin: StringLiteral]() -> SIMD[c_type, width]:
+    fn call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
     @parameter
