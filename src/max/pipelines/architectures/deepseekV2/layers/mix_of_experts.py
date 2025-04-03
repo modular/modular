@@ -72,36 +72,36 @@ class MoE(Module):
         # Routed experts weights
         for i in range(self.experts_per_rank):
             d = Weight(
-                name=f"down_proj{i}.weight",
+                name=f"experts.{i}.down_proj.weight",
                 shape=(
                     self.max_position_embeddings,
                     self.moe_intermediate_size,
                 ),
                 dtype=dtype,
             )
-            setattr(self, f"down_proj{i}", d)
+            setattr(self, f"experts.{i}.down_proj", d)
             self.down_proj.append(d)
 
             g = Weight(
-                name=f"gate_proj{i}.weight",
+                name=f"experts.{i}.gate_proj.weight",
                 shape=(
                     self.moe_intermediate_size,
                     self.max_position_embeddings,
                 ),
                 dtype=dtype,
             )
-            setattr(self, f"gate_proj{i}", g)
+            setattr(self, f"experts.{i}.gate_proj", g)
             self.gate_proj.append(g)
 
             u = Weight(
-                name=f"up_proj{i}.weight",
+                name=f"experts.{i}.up_proj.weight",
                 shape=(
                     self.moe_intermediate_size,
                     self.max_position_embeddings,
                 ),
                 dtype=dtype,
             )
-            setattr(self, f"up_proj{i}", u)
+            setattr(self, f"experts.{i}.up_proj", u)
             self.up_proj.append(u)
 
         # Shared experts weights
