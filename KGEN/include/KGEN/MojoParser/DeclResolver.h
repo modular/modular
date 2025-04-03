@@ -80,6 +80,10 @@ public:
 
   /// Add a new declaration that needs to be resolved, but don't attach it to
   /// parent's name table.  It needs to be added later.
+  /// "Unlisted" means it has no parent; it's not in any parent's name table.
+  /// Nothing else can find it, even if you traverse the entire tree.
+  /// Often, this is just the first step before adding it to a parent, but
+  /// sometimes it's not, and it must be found some other way.
   ASTDecl &createUnlistedDecl(DeclIRValue irValue, llvm::SMLoc loc,
                               ASTDecl *parentDecl, LexerCursor cursor,
                               LexerCursor endCursor, ssize_t indentation);

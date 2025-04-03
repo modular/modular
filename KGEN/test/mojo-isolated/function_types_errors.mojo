@@ -75,3 +75,32 @@ fn test_infer_variadic():
     # expected-error @below {{invalid call to 'infer_variadic': failed to infer parameter 'ArgTypes'}}
     # expected-note @below {{failed to infer parameter 'ArgTypes', parameter isn't used in any argument}}
     infer_variadic[device_func]()
+
+
+# // -----
+
+
+
+@register_passable("trivial")
+trait ZAnyRPTrait:
+    pass
+
+fn device_func(a: Int, b: Bool) -> Int:
+    return 73
+
+@value
+struct DeviceFunction[*ArgTypes: ZAnyRPTrait]:
+    # expected-note @below {{function declared here}}
+    fn call(self, *args: *ArgTypes) -> Int:
+        return 91
+
+fn compile[
+    ArgTypes: __mlir_type[`!kgen.variadic<`, ZAnyRPTrait, `>`], //,
+    func: fn(*args: *ArgTypes)->Int
+]() -> DeviceFunction[*ArgTypes]:
+    return DeviceFunction[*ArgTypes]()
+
+fn main():
+    var thing = compile[device_func]()
+    # expected-error @below {{invalid call to 'call': method argument #1 cannot be converted from 'StringLiteral["hello"]' to 'Bool'}}
+    var result2 = thing.call(42, "hello")
