@@ -1992,13 +1992,6 @@ fn _flash_attention_kv_cache_ragged_gpu[
     output: NDBuffer[mut=True, type, 3, *_],
     context: DeviceContext,
 ) raises:
-    var dummy_mask = NDBuffer[
-        type,
-        4,
-        MutableAnyOrigin,
-        DimList.create_unknown[4](),
-    ]()
-
     gpu_flash_attention[ragged=True](
         output,
         q,
@@ -2125,13 +2118,6 @@ fn _flare_mla_decode_kv_cache_ragged[
 
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
-
-    var dummy_mask = NDBuffer[
-        type,
-        4,
-        MutableAnyOrigin,
-        DimList.create_unknown[4](),
-    ]()
 
     flare_mla_decoding[ragged=True](
         output,
