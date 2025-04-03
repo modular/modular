@@ -76,6 +76,7 @@ from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
+from nn.argsort import argsort
 from nn.concat import _concat_cpu, concat, fused_concat
 from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
@@ -8265,3 +8266,31 @@ struct AdvancedIndexingSetItem:
             _synchronous=_synchronous,
             _trace_name = _trace_name + "_p2/2_update",
         ](tensor, updates, indices, ctx)
+
+
+# ===-----------------------------------------------------------------------===#
+# ArgSort
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mx.argsort")
+struct ArgSort[*, ascending: Bool]:
+    @staticmethod
+    fn execute[
+        target: StringLiteral
+    ](
+        indecies: OutputTensor[rank=1],
+        input: InputTensor[rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var indecies_ndbuffer = managed_tensor_slice_to_ndbuffer(indecies)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+
+        @parameter
+        if target == "cpu":
+            argsort[ascending=ascending](indecies_ndbuffer, input_ndbuffer)
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            argsort[ascending=ascending, target=target](
+                indecies_ndbuffer, input_ndbuffer, cuda_ctx
+            )
