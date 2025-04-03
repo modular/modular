@@ -6,8 +6,8 @@
 
 # RUN: kgen-translate -verify-diagnostics -import-mojo %s | FileCheck %s
 
-from memory import UnsafePointer
-from memory import Pointer
+from memory import UnsafePointer, Pointer
+from collections.string import StaticString
 
 # CHECK: module {
 
@@ -860,7 +860,7 @@ world"
 
     # Issue #201: https://github.com/modular/mojo/issues/201
     # CHECK: lit.fn *"hello{{.*}} {
-    fn hello() -> StringLiteral:
+    fn hello() -> StaticString:
         # CHECK: kgen.param.constant: !StringLiteral = <{:string "123"}>
         return "123"
         # lit.end_fn
