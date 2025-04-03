@@ -132,7 +132,6 @@ struct Deque[ElementType: CollectionElement](
         if elements is not None:
             self.extend(elements.value())
 
-    @implicit
     fn __init__(out self, owned *values: ElementType):
         """Constructs a deque from the given values.
 
