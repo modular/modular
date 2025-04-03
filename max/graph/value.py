@@ -51,6 +51,27 @@ class Value:
     Conceptually, think of a `Value` as an edge in the dataflow graph,
     with the other end being the user of that value.
 
+    The following example shows how to work with Values in a graph to create a simple computation:
+
+    .. code-block:: python
+
+        from max.graph import Graph, ops, Value
+        from max.dtype import DType
+        import numpy as np
+
+        # Create a graph context
+        with Graph("value_example") as graph:
+            # Create input values
+            a = ops.constant(np.array([1, 2, 3]), dtype=DType.float32)
+            b = ops.constant(np.array([4, 5, 6]), dtype=DType.float32)
+
+            # Use values to perform operations
+            c = a + b  # c is a Value representing the addition
+
+            # Demonstrate that the result is a Value
+            print(f"Type of c: {type(c)}")
+            print(f"Is c a Value? {isinstance(c, Value)}")
+
     Similar to a regular variable, a `Value` has a data type.
     """
 
@@ -273,7 +294,7 @@ class TensorValue(Value):
     various methods and properties to manipulate and query tensor attributes
     such as :obj:`shape`, data type (:obj:`dtype`), device placement (:obj:`device`), and more.
 
-    For example:
+    The following example demonstrates how to create and manipulate tensor values in a graph:
 
     .. code-block:: python
 
@@ -289,8 +310,16 @@ class TensorValue(Value):
             # Create a constant tensor from the matrix
             tensor = ops.constant(matrix, dtype=DType.float32)
 
-            # Perform a simple operation: transpose the tensor
-            transposed_tensor = tensor.T  # Output: Tensor representing [[1, 3], [2, 4]]
+            # Access tensor properties
+            print(f"Shape: {tensor.shape}")  # Output: [2, 2]
+            print(f"Data type: {tensor.dtype}")  # Output: DType.float32
+
+            # Perform operations on the tensor
+            transposed = tensor.T
+            doubled = tensor * 2
+
+            print(f"Original shape: {tensor.shape}")  # Output: [2, 2]
+            print(f"Transposed shape: {transposed.shape}")  # Output: [2, 2]
     """
 
     # Disallow special methods that would fall back to __getitem__ and hang.
@@ -358,8 +387,15 @@ class TensorValue(Value):
     def shape(self) -> Shape:
         """Returns the shape of the :obj:`TensorValue`.
 
+        The following example demonstrates how to access the shape of a tensor:
+
         .. code-block:: python
 
+            import numpy as np
+            from max.dtype import DType
+            from max.graph import Graph, ops
+
+            # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
 
             # Create a Graph context to work with tensors
@@ -367,8 +403,8 @@ class TensorValue(Value):
                 # Create a constant tensor from the matrix
                 tensor = ops.constant(matrix, dtype=DType.float32)
 
-                # Access tensor properties
-                print(f"Shape: {tensor.shape}")  # Output: Shape: (2, 2)
+                # Access tensor shape
+                print(f"Shape: {tensor.shape}")  # Shape: [Dim(2), Dim(2)]
         """
         return self.type.shape
 
@@ -384,15 +420,24 @@ class TensorValue(Value):
     def dtype(self) -> DType:
         """Returns the tensor data type.
 
+        The following example demonstrates how to access the data type of a tensor:
+
         .. code-block:: python
 
+            import numpy as np
+            from max.dtype import DType
+            from max.graph import Graph, ops
+
+            # Create a matrix with float32 values
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
 
             # Create a Graph context to work with tensors
             with Graph("dtype_demo") as graph:
                 # Create a constant tensor from the matrix
                 tensor = ops.constant(matrix, dtype=DType.float32)
-                print(f"Data type: {tensor.dtype}")  # Output: Data type: DType.float32
+
+                # Access tensor data type
+                print(f"Data type: {tensor.dtype}")  # Output: DType.float32
         """
         t = self._mlir_value.type
         if not _graph.type_is_tensor(t):
@@ -404,15 +449,24 @@ class TensorValue(Value):
     def rank(self) -> int:
         """Returns the rank (number of dims) of the buffer.
 
+        The following example demonstrates how to access the rank of a tensor:
+
         .. code-block:: python
 
+            import numpy as np
+            from max.dtype import DType
+            from max.graph import Graph, ops
+
+            # Create a 2x2 matrix (2-dimensional array)
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
 
             # Create a Graph context to work with tensors
             with Graph("rank_demo") as graph:
                 # Create a constant tensor from the matrix
                 tensor = ops.constant(matrix, dtype=DType.float32)
-                print(f"Rank (number of dimensions): {tensor.rank}")  # Output: Rank: 2
+
+                # Access tensor rank (number of dimensions)
+                print(f"Rank: {tensor.rank}")  # Output: 2
         """
         t = self._mlir_value.type
         if not _graph.type_is_tensor(t):
@@ -431,8 +485,15 @@ class TensorValue(Value):
     def reshape(self, shape: ShapeLike) -> TensorValue:
         """Creates a new tensor with the same data but reshaped.
 
+        The following example demonstrates how to reshape a tensor to change its dimensions:
+
         .. code-block:: python
 
+            import numpy as np
+            from max.dtype import DType
+            from max.graph import Graph, ops
+
+            # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
 
             # Create a Graph context to work with tensors
@@ -440,7 +501,11 @@ class TensorValue(Value):
                 # Create a constant tensor from the matrix
                 tensor = ops.constant(matrix, dtype=DType.float32)
 
-                reshaped_tensor = tensor.reshape((1, 4)) # Output: Tensor representing [[1, 2, 3, 4]]
+                # Reshape tensor to a 1x4 matrix
+                reshaped_tensor = tensor.reshape((1, 4))
+
+                print(f"Original shape: {tensor.shape}")  # Output: [2, 2]
+                print(f"Reshaped shape: {reshaped_tensor.shape}")  # Output: [1, 4]
 
         Args:
             shape: The new shape as an iterable of integers or symbolic dimensions.
@@ -456,31 +521,49 @@ class TensorValue(Value):
         The number and order of the elements in the tensor is unchanged.
         All dimensions from ``start_dim`` to ``end_dim`` (inclusive) are merged into a single output dim.
 
+        The following example demonstrates how to flatten a multi-dimensional tensor:
+
         .. code-block:: python
 
+            import numpy as np
+            from max.dtype import DType
+            from max.graph import Graph, ops
+
+            # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
 
             # Create a Graph context to work with tensors
             with Graph("flatten_demo") as graph:
                 # Create a constant tensor from the matrix
                 tensor = ops.constant(matrix, dtype=DType.float32)
-                # Flatten the tensor
-                flattened_tensor = tensor.flatten() # Output: Tensor representing [1, 2, 3, 4]
+
+                # Flatten the tensor to a 1D array
+                flattened_tensor = tensor.flatten()
+
+                print(f"Original shape: {tensor.shape}")  # Output: [2, 2]
+                print(f"Flattened shape: {flattened_tensor.shape}")  # Output: [4]
 
         Args:
             start_dim: The starting dimension to flatten. Defaults to ``1``.
             end_dim: The ending dimension to flatten. Defaults to ``-1``.
 
         Returns:
-            A new :obj:`TensorValue` with the broadcasted shape.
+            A new :obj:`TensorValue` with the flattened dimensions.
         """
         return ops.flatten(self, start_dim, end_dim)
 
     def broadcast_to(self, shape: ShapeLike) -> TensorValue:
         """Broadcasts the tensor to a new shape.
 
+        The following example demonstrates how to broadcast a tensor to a larger shape:
+
         .. code-block:: python
 
+            import numpy as np
+            from max.dtype import DType
+            from max.graph import Graph, ops
+
+            # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
 
             # Create a Graph context to work with tensors
@@ -488,7 +571,11 @@ class TensorValue(Value):
                 # Create a constant tensor from the matrix
                 tensor = ops.constant(matrix, dtype=DType.float32)
 
-                broadcasted_tensor = tensor.broadcast_to((3, 2, 2)) # Output: Tensor with shape (3, 2, 2)
+                # Broadcast tensor to a 3x2x2 tensor (add a new dimension of size 3)
+                broadcasted_tensor = tensor.broadcast_to((3, 2, 2))
+
+                print(f"Original shape: {tensor.shape}")  # Output: [2, 2]
+                print(f"Broadcasted shape: {broadcasted_tensor.shape}")  # Output: [3, 2, 2]
 
         Args:
             shape: An iterable of integers or symbolic dimensions.
@@ -501,8 +588,15 @@ class TensorValue(Value):
     def cast(self, dtype: DType) -> TensorValue:
         """Casts a symbolic tensor to a different data type.
 
+        The following example demonstrates how to cast a tensor from one data type to another:
+
         .. code-block:: python
 
+            import numpy as np
+            from max.dtype import DType
+            from max.graph import Graph, ops
+
+            # Create a matrix with float32 values
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
 
             # Create a Graph context to work with tensors
@@ -510,7 +604,11 @@ class TensorValue(Value):
                 # Create a constant tensor from the matrix
                 tensor = ops.constant(matrix, dtype=DType.float32)
 
-                casted_tensor = tensor.cast(DType.int32) # Output: Tensor representing [[1, 2], [3, 4]] with dtype=int32
+                # Cast tensor to integer type
+                casted_tensor = tensor.cast(DType.int32)
+
+                print(f"Original dtype: {tensor.dtype}")  # Output: DType.float32
+                print(f"Casted dtype: {casted_tensor.dtype}")  # Output: DType.int32
 
         Args:
             dtype: The target data type (e.g., ``DType.int32``, ``DType.float64``).
@@ -546,17 +644,25 @@ class TensorValue(Value):
     def transpose(self, dim_1: int, dim_2: int) -> TensorValue:
         """Swaps two dimensions of the tensor.
 
+        The following example demonstrates how to transpose a tensor by swapping its dimensions:
+
         .. code-block:: python
 
             import numpy as np
             from max.dtype import DType
             from max.graph import Graph, ops
 
-            matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
+            # Create a 2x3 matrix
+            matrix = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+
             with Graph("transpose_demo") as graph:
                 tensor = ops.constant(matrix, dtype=DType.float32)
+
+                # Transpose the tensor (swap dimensions 0 and 1)
                 transposed_tensor = tensor.transpose(dim_1=0, dim_2=1)
-                print(transposed_tensor)
+
+                print(f"Original shape: {tensor.shape}")  # Output: [2, 3]
+                print(f"Transposed shape: {transposed_tensor.shape}")  # Output: [3, 2]
 
         Args:
             dim_1: The first dimension to swap.
@@ -570,13 +676,26 @@ class TensorValue(Value):
     def to(self, device: DeviceRef) -> TensorValue:
         """Transfers the tensor to a specified device without mutation.
 
+        The following example demonstrates how to move a tensor from one device to another:
+
         .. code-block:: python
 
+            import numpy as np
+            from max.dtype import DType
+            from max.graph import Graph, ops, DeviceRef
+
+            # Create a 2x2 matrix
             matrix = np.array([[1, 2], [3, 4]], dtype=np.float32)
 
-            with Graph("to_example") as graph:
+            with Graph("to_device_example") as graph:
+                # Create a tensor on the default device
                 tensor = ops.constant(matrix, dtype=DType.float32)
-                print(tensor.device)
+
+                # Move the tensor to a GPU device
+                gpu_tensor = tensor.to(DeviceRef.GPU())
+
+                print(f"Original device: {tensor.device}")  # Output depends on default device
+                print(f"New device: {gpu_tensor.device}")  # Output: gpu:0
 
         Args:
             device: A :obj:`DeviceRef` object specifying the target device.
