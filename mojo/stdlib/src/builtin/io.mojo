@@ -35,7 +35,7 @@ from sys.intrinsics import _type_is_eq
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
 from memory import UnsafePointer, bitcast, memcpy
-
+from builtin.string_literal import get_string_literal_slice
 from utils import StaticString, write_args, write_buffered
 
 # ===----------------------------------------------------------------------=== #
@@ -45,7 +45,7 @@ from utils import StaticString, write_args, write_buffered
 
 @value
 @register_passable("trivial")
-struct _fdopen[mode: StringLiteral = "a"]:
+struct _fdopen[mode: StaticString = "a"]:
     var handle: OpaquePointer
 
     @implicit
@@ -56,7 +56,10 @@ struct _fdopen[mode: StringLiteral = "a"]:
             stream_id: The stream id
         """
 
-        self.handle = fdopen(dup(stream_id.value), mode.unsafe_cstr_ptr())
+        self.handle = fdopen(
+            dup(stream_id.value),
+            get_string_literal_slice[mode]().unsafe_cstr_ptr(),
+        )
 
     fn __enter__(self) -> Self:
         """Open the file handle for use within a context manager"""
@@ -173,7 +176,7 @@ fn _flush(file: FileDescriptor = stdout):
 
 
 fn _printf_cpu[
-    fmt: StringLiteral, *types: AnyType
+    fmt: StaticString, *types: AnyType
 ](args: VariadicPack[_, AnyType, *types], file: FileDescriptor = stdout):
     # The argument pack will contain references for each value in the pack,
     # but we want to pass their values directly into the C printf call. Load
@@ -190,12 +193,16 @@ fn _printf_cpu[
                 `) -> !pop.scalar<si32>`,
             ],
             _type=Int32,
-        ](fd, fmt.unsafe_cstr_ptr(), args.get_loaded_kgen_pack())
+        ](
+            fd,
+            get_string_literal_slice[fmt]().unsafe_cstr_ptr(),
+            args.get_loaded_kgen_pack(),
+        )
 
 
 @no_inline
 fn _printf[
-    fmt: StringLiteral, *types: AnyType
+    fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
     if is_compile_time():
         _printf_cpu[fmt](args, file)
@@ -209,7 +216,8 @@ fn _printf[
             var loaded_pack = args.get_loaded_kgen_pack()
 
             _ = external_call["vprintf", Int32](
-                fmt.unsafe_cstr_ptr(), Pointer(to=loaded_pack)
+                get_string_literal_slice[fmt]().unsafe_cstr_ptr(),
+                Pointer(to=loaded_pack),
             )
         elif is_amd_gpu():
             # This is adapted from Triton's third party method for lowering
@@ -297,7 +305,7 @@ fn _printf[
 
 @no_inline
 fn _snprintf[
-    fmt: StringLiteral, *types: AnyType
+    fmt: StaticString, *types: AnyType
 ](str: UnsafePointer[UInt8], size: Int, *args: *types) -> Int:
     """Writes a format string into an output pointer.
 
@@ -331,7 +339,12 @@ fn _snprintf[
                 `) -> !pop.scalar<si32>`,
             ],
             _type=Int32,
-        ](str, size, fmt.unsafe_cstr_ptr(), loaded_pack)
+        ](
+            str,
+            size,
+            get_string_literal_slice[fmt]().unsafe_cstr_ptr(),
+            loaded_pack,
+        )
     )
 
 

@@ -136,7 +136,7 @@ struct _DebugLevel(Writable, Stringable):
         Returns:
             The debug level as a string.
         """
-        return Self.level
+        return String(Self.level)
 
 
 alias DebugLevel = _DebugLevel()

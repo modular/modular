@@ -40,6 +40,7 @@ Messages below the configured level will be silently ignored.
 import sys
 from os import abort
 from sys.param_env import env_get_string
+from collections.string import StringSlice
 
 from utils import write_args
 
@@ -172,7 +173,7 @@ struct Level:
         return self != other
 
     @staticmethod
-    fn _from_str(name: String) -> Self:
+    fn _from_str(name: StringSlice) -> Self:
         """Converts a string level name to a Level value.
 
         Args:

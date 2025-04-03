@@ -63,7 +63,7 @@ trait Writer:
         var x: Int
         var y: Int
 
-        # Pass multiple args to the Writer. The Int and StringLiteral types
+        # Pass multiple args to the Writer. The Int and StaticString types
         # call `writer.write_bytes` in their own `write_to` implementations.
         fn write_to[W: Writer](self, mut writer: W):
             writer.write("Point(", self.x, ", ", self.y, ")")
@@ -190,7 +190,7 @@ fn write_args[
     from utils import write_args
 
     fn variadic_pack_function[*Ts: Writable](
-        *args: *Ts, sep: StringLiteral, end: StringLiteral
+        *args: *Ts, sep: StaticString, end: StaticString
     ):
         var stdout = sys.stdout
         write_args(stdout, args, sep=sep, end=end)
@@ -386,7 +386,7 @@ fn write_buffered[
     from utils import write_buffered
 
     fn print_err_buffered[*Ts: Writable](
-        *args: *Ts, sep: StringLiteral, end: StringLiteral
+        *args: *Ts, sep: StaticString, end: StaticString
     ):
         var stderr = sys.stderr
         write_buffered(stdout, args, sep=sep, end=end)

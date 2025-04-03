@@ -15,7 +15,7 @@
 
 import os
 from collections import List, InlineArray
-from collections.string import StringSlice
+from collections.string import StringSlice, StaticString
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, listdir, stat_result
 from sys import external_call, os_is_windows
@@ -62,9 +62,9 @@ fn _dir_of_current_file() raises -> Path:
 
 
 @no_inline
-fn _dir_of_current_file_impl(file_name: StringLiteral) raises -> Path:
+fn _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
     var i = String(file_name).rfind(DIR_SEPARATOR)
-    return Path(StringSlice(file_name)[0:i])
+    return Path(file_name[0:i])
 
 
 @value

@@ -21,6 +21,7 @@ from sys.ffi import OpaquePointer
 from sys.intrinsics import _type_is_eq
 
 from memory import ArcPointer, UnsafePointer, memcmp, memcpy
+from collections.string import StaticString
 
 from utils import Variant
 
@@ -116,19 +117,19 @@ struct _RefCountedAttrsDict:
     attribute dictionary is constructed once with a fixed number of elements.
     Those elements can be modified, but elements cannot be added or deleted
     after the dictionary is implemented. Because attribute are accessed
-    directly with `x.attr`, the key will always be a `StringLiteral`.
+    directly with `x.attr`, the key will always be a `StaticString`.
     """
 
-    var impl: ArcPointer[Dict[StringLiteral, _ObjectImpl]]
+    var impl: ArcPointer[Dict[StaticString, _ObjectImpl]]
     """The implementation of the map."""
 
     fn __init__(out self):
-        self.impl = ArcPointer[Dict[StringLiteral, _ObjectImpl]](
-            Dict[StringLiteral, _ObjectImpl]()
+        self.impl = ArcPointer[Dict[StaticString, _ObjectImpl]](
+            Dict[StaticString, _ObjectImpl]()
         )
 
     @always_inline
-    fn set(mut self, key: StringLiteral, value: _ObjectImpl) raises:
+    fn set(mut self, key: StaticString, value: _ObjectImpl) raises:
         if key in self.impl[]:
             self.impl[][key].destroy()
             self.impl[][key] = value
@@ -140,7 +141,7 @@ struct _RefCountedAttrsDict:
         )
 
     @always_inline
-    fn get(self, key: StringLiteral) raises -> _ObjectImpl:
+    fn get(self, key: StaticString) raises -> _ObjectImpl:
         var iter = self.impl[].find(key)
         if iter:
             return iter.value()
@@ -157,13 +158,13 @@ struct Attr:
     added.
     """
 
-    var key: StringLiteral
+    var key: StaticString
     """The name of the attribute."""
     var value: object
     """The value of the attribute."""
 
     @always_inline
-    fn __init__(out self, key: StringLiteral, owned value: object):
+    fn __init__(out self, key: StaticString, owned value: object):
         """Initializes the attribute with a key and value.
 
         Args:
@@ -681,11 +682,11 @@ struct _ObjectImpl(
         return self.get_obj_attrs().attrs.bitcast[_RefCountedAttrsDict]()
 
     @always_inline
-    fn set_obj_attr(self, key: StringLiteral, value: _ObjectImpl) raises:
+    fn set_obj_attr(self, key: StaticString, value: _ObjectImpl) raises:
         self.get_obj_attrs_ptr()[].set(key, value)
 
     @always_inline
-    fn get_obj_attr(self, key: StringLiteral) raises -> _ObjectImpl:
+    fn get_obj_attr(self, key: StaticString) raises -> _ObjectImpl:
         return self.get_obj_attrs_ptr()[].get(key).copy()
 
 
@@ -1916,7 +1917,7 @@ struct object(
         self[i][j] = value
 
     @always_inline
-    fn __getattr__(self, key: StringLiteral) raises -> object:
+    fn __getattr__(self, key: StaticString) raises -> object:
         """Gets the named attribute.
 
         Args:
@@ -1936,7 +1937,7 @@ struct object(
         return self._value.get_obj_attr(key)
 
     @always_inline
-    fn __setattr__(mut self, key: StringLiteral, value: object) raises:
+    fn __setattr__(mut self, key: StaticString, value: object) raises:
         """Sets the named attribute.
 
         Args:

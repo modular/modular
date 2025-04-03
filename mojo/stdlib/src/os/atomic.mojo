@@ -23,9 +23,11 @@ from sys.info import is_nvidia_gpu
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from memory import UnsafePointer, bitcast
+from builtin.string_literal import get_string_literal_slice
+from collections.string import StaticString
 
 
-struct Atomic[dtype: DType, *, scope: StringLiteral = ""]:
+struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     """Represents a value with atomic operations.
 
     The class provides atomic `add` and `sub` methods for mutating the value.
@@ -84,7 +86,7 @@ struct Atomic[dtype: DType, *, scope: StringLiteral = ""]:
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op add>`,
             ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-            syncscope = scope.value,
+            syncscope = get_string_literal_slice[scope]().value,
             _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
         ](
             ptr.bitcast[
@@ -198,7 +200,7 @@ struct Atomic[dtype: DType, *, scope: StringLiteral = ""]:
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op sub>`,
             ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-            syncscope = scope.value,
+            syncscope = get_string_literal_slice[scope]().value,
             _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
         ](value_addr.address, rhs.value)
 
@@ -344,7 +346,7 @@ struct Atomic[dtype: DType, *, scope: StringLiteral = ""]:
 
 @always_inline
 fn _compare_exchange_weak_integral_impl[
-    dtype: DType, //, *, scope: StringLiteral
+    dtype: DType, //, *, scope: StaticString
 ](
     value_addr: UnsafePointer[Scalar[dtype], **_],
     mut expected: Scalar[dtype],
@@ -354,7 +356,7 @@ fn _compare_exchange_weak_integral_impl[
     var cmpxchg_res = __mlir_op.`pop.atomic.cmpxchg`[
         failure_ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
         success_ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-        syncscope = scope.value,
+        syncscope = get_string_literal_slice[scope]().value,
     ](
         value_addr.bitcast[
             __mlir_type[`!pop.scalar<`, dtype.value, `>`]
@@ -374,7 +376,7 @@ fn _compare_exchange_weak_integral_impl[
 
 @always_inline
 fn _max_impl_base[
-    dtype: DType, //, *, scope: StringLiteral
+    dtype: DType, //, *, scope: StaticString
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[
         __mlir_type[`!pop.scalar<`, dtype.value, `>`]
@@ -382,14 +384,14 @@ fn _max_impl_base[
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op max>`,
         ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-        syncscope = scope.value,
+        syncscope = get_string_literal_slice[scope]().value,
         _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
     ](value_addr.address, rhs.value)
 
 
 @always_inline
 fn _min_impl_base[
-    dtype: DType, //, *, scope: StringLiteral
+    dtype: DType, //, *, scope: StaticString
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[
         __mlir_type[`!pop.scalar<`, dtype.value, `>`]
@@ -397,14 +399,14 @@ fn _min_impl_base[
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op = __mlir_attr.`#pop<bin_op min>`,
         ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
-        syncscope = scope.value,
+        syncscope = get_string_literal_slice[scope]().value,
         _type = __mlir_type[`!pop.scalar<`, dtype.value, `>`],
     ](value_addr.address, rhs.value)
 
 
 @always_inline
 fn _max_impl[
-    dtype: DType, //, *, scope: StringLiteral
+    dtype: DType, //, *, scope: StaticString
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():
@@ -427,7 +429,7 @@ fn _max_impl[
 
 @always_inline
 fn _min_impl[
-    dtype: DType, //, *, scope: StringLiteral
+    dtype: DType, //, *, scope: StaticString
 ](ptr: UnsafePointer[Scalar[dtype], **_], rhs: Scalar[dtype]):
     @parameter
     if is_nvidia_gpu() and dtype.is_floating_point():

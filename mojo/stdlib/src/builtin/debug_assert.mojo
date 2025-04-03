@@ -40,13 +40,16 @@ alias defined_mode = env_get_string["ASSERT", "safe"]()
 @no_inline
 fn _assert_enabled[assert_mode: StringLiteral, cpu_only: Bool]() -> Bool:
     constrained[
-        defined_mode in ["none", "warn", "safe", "all"],
+        defined_mode == "none"
+        or defined_mode == "warn"
+        or defined_mode == "safe"
+        or defined_mode == "all",
         "-D ASSERT=",
         defined_mode,
         " but must be one of: none, warn, safe, all",
     ]()
     constrained[
-        assert_mode in ["none", "safe"],
+        assert_mode == "none" or assert_mode == "safe",
         "assert_mode=",
         assert_mode,
         " but must be one of: none, safe",
