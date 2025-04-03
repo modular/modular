@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string import StringSlice
+from collections.string import StringSlice, StaticString
 from sys import alignof, sizeof
 from sys.ffi import c_char
 
@@ -118,7 +118,7 @@ struct Error(
     @no_inline
     fn __init__[
         *Ts: Writable
-    ](out self, *args: *Ts, sep: StringLiteral = "", end: StringLiteral = ""):
+    ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
         """
         Construct an Error by concatenating a sequence of Writable arguments.
 

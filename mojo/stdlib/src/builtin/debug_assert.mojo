@@ -25,7 +25,7 @@ from sys.param_env import env_get_string
 
 from builtin._location import __call_location, _SourceLocation
 from memory import Span, UnsafePointer
-
+from collections.string import StaticString
 from utils.write import (
     _TotalWritableBytes,
     _WriteBufferHeap,
@@ -38,7 +38,7 @@ alias defined_mode = env_get_string["ASSERT", "safe"]()
 
 
 @no_inline
-fn _assert_enabled[assert_mode: StringLiteral, cpu_only: Bool]() -> Bool:
+fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     constrained[
         defined_mode == "none"
         or defined_mode == "warn"
@@ -67,7 +67,7 @@ fn _assert_enabled[assert_mode: StringLiteral, cpu_only: Bool]() -> Bool:
 @always_inline
 fn debug_assert[
     cond: fn () capturing [_] -> Bool,
-    assert_mode: StringLiteral = "none",
+    assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     *Ts: Writable,
 ](*messages: *Ts):
@@ -151,7 +151,7 @@ fn debug_assert[
 
 @always_inline
 fn debug_assert[
-    assert_mode: StringLiteral = "none",
+    assert_mode: StaticString = "none",
     cpu_only: Bool = False,
     *Ts: Writable,
 ](cond: Bool, *messages: *Ts):

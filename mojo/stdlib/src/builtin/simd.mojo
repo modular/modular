@@ -69,7 +69,7 @@ from sys import (
     CompilationTarget,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _current_arch, _is_sm_9x
+from sys.info import _is_sm_9x
 
 from bit import byte_swap, pop_count
 from builtin._format_float import _write_float

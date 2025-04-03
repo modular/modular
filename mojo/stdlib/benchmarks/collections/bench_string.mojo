@@ -20,6 +20,7 @@ from collections.string._utf8 import _is_valid_utf8
 from os import abort
 from pathlib import _dir_of_current_file
 from random import random_si64, seed
+from builtin.string_literal import StaticString
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
 
@@ -29,7 +30,7 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
 # ===-----------------------------------------------------------------------===#
 fn make_string[
     length: UInt = 0
-](filename: StringLiteral = "UN_charter_EN.txt") -> String:
+](filename: String = "UN_charter_EN.txt") -> String:
     """Make a `String` made of items in the `./data` directory.
 
     Parameters:
@@ -81,8 +82,8 @@ fn bench_string_init(mut b: Bencher) raises:
 @parameter
 fn bench_string_count[
     length: UInt = 0,
-    filename: StringLiteral = "UN_charter_EN",
-    sequence: StringLiteral = "a",
+    filename: StaticString = "UN_charter_EN",
+    sequence: StaticString = "a",
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -102,8 +103,8 @@ fn bench_string_count[
 @parameter
 fn bench_string_split[
     length: UInt = 0,
-    filename: StringLiteral = "UN_charter_EN",
-    sequence: Optional[StringLiteral] = None,
+    filename: StaticString = "UN_charter_EN",
+    sequence: Optional[StaticString] = None,
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -128,7 +129,7 @@ fn bench_string_split[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_splitlines[
-    length: UInt = 0, filename: StringLiteral = "UN_charter_EN"
+    length: UInt = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -147,7 +148,7 @@ fn bench_string_splitlines[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_lower[
-    length: UInt = 0, filename: StringLiteral = "UN_charter_EN"
+    length: UInt = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -166,7 +167,7 @@ fn bench_string_lower[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_upper[
-    length: UInt = 0, filename: StringLiteral = "UN_charter_EN"
+    length: UInt = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -186,9 +187,9 @@ fn bench_string_upper[
 @parameter
 fn bench_string_replace[
     length: UInt = 0,
-    filename: StringLiteral = "UN_charter_EN",
-    old: StringLiteral = "a",
-    new: StringLiteral = "A",
+    filename: StaticString = "UN_charter_EN",
+    old: StaticString = "a",
+    new: StaticString = "A",
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
@@ -207,7 +208,7 @@ fn bench_string_replace[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_string_is_valid_utf8[
-    length: UInt = 0, filename: StringLiteral = "UN_charter_EN"
+    length: UInt = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".html")
 
@@ -259,7 +260,7 @@ def main():
         @parameter
         for j in range(len(filenames)):
             alias fname = filenames[j]
-            alias old = old_chars[j]
+            alias old = StaticString(old_chars[j])
             alias new = new_chars[j]
             alias suffix = String("[", length, "]")  # "(" + fname + ")"
             m.bench_function[bench_string_count[length, fname, old]](
