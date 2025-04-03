@@ -26,6 +26,7 @@ from gpu.host._compile import _get_gpu_target
 from internal_utils import DeviceNDBuffer, arg_parse, parse_shape
 from memory import UnsafePointer
 from testing import assert_equal
+from collections.string import StaticString
 
 from utils import IndexList
 from utils.index import product
@@ -111,10 +112,10 @@ fn run_elementwise[
     use_aligned_memory: Bool,
 ](
     mut m: Bench,
-    fn_name: String,
+    fn_name: StaticString,
     dims: IndexList[rank],
     *,
-    name: String,
+    name: StaticString,
     ctx: DeviceContext,
 ) raises:
     alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
