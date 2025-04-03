@@ -1651,7 +1651,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # TODO: We assumes the StringSlice only has ASCII.
         # When we support utf-8 slicing, we should drop self._slice[abs_start:]
         # and use something smarter.
-        return StringSlice(unsafe_from_utf8=self._slice[abs_start:])
+        return StringSlice(
+            unsafe_from_utf8_no_validation=self._slice[abs_start:]
+        )
 
     @always_inline
     fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:

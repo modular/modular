@@ -19,6 +19,7 @@ from hashlib.hash import hash as old_hash
 from bit import pop_count
 from builtin._location import __call_location
 from collections import InlineArray
+from collections.string import StaticString
 from memory import Span, memset_zero
 from testing import assert_equal, assert_not_equal, assert_true
 
@@ -89,7 +90,7 @@ alias words_ar = """
 """
 
 # Source: https://github.com/tkaitchuck/ahash/blob/7d5c661a74b12d5bc5448b0b83fdb429190db1a3/tests/map_tests.rs#L9
-alias words_en: String = """
+alias words_en = """
     a, ability, able, about, above, accept, according, account, across, act, action,
     activity, actually, add, address, administration, admit, adult, affect, after,
     again, against, age, agency, agent, ago, agree, agreement, ahead, air, all,
@@ -573,7 +574,7 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 """
 
 
-fn gen_word_pairs[words: String = words_en]() -> List[String]:
+fn gen_word_pairs[words: StaticString = words_en]() -> List[String]:
     var result = List[String]()
     try:
         var list = words.split(",")

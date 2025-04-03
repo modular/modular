@@ -247,9 +247,6 @@ fn _validate_utf8_simd_slice[
         idx += Int(first_byte_type)
         iter_len -= Int(first_byte_type)
 
-        @parameter
-        if remainder:
-            return iter_len == 0
     return True
 
 
