@@ -44,7 +44,7 @@ from collections.string import StaticString
 from builtin.string_literal import get_string_literal_slice
 
 
-fn is_defined[name: StaticString]() -> Bool:
+fn is_defined[name: StringLiteral]() -> Bool:
     """Return true if the named value is defined.
 
     Parameters:
@@ -53,15 +53,11 @@ fn is_defined[name: StaticString]() -> Bool:
     Returns:
         True if the name is defined.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<get_env, `,
-        get_string_literal_slice[name]().value,
-        `> : i1`,
-    ]
+    return __mlir_attr[`#kgen.param.expr<get_env, `, name.value, `> : i1`]
 
 
-fn _is_bool_like[val: StaticString]() -> Bool:
-    return get_string_literal[val.lower()]() in (
+fn _is_bool_like[val: StringLiteral]() -> Bool:
+    return get_string_literal[StaticString(val).lower()]() in (
         "true",
         "1",
         "on",
@@ -97,7 +93,7 @@ fn env_get_bool[name: StringLiteral]() -> Bool:
     return val in ("true", "1", "on")
 
 
-fn env_get_bool[name: StaticString, default: Bool]() -> Bool:
+fn env_get_bool[name: StringLiteral, default: Bool]() -> Bool:
     """Try to get an bool-valued define. If the name is not defined, return
     a default value instead. The boolean must be either `True` or `False`.
 
@@ -116,7 +112,7 @@ fn env_get_bool[name: StaticString, default: Bool]() -> Bool:
         return default
 
 
-fn env_get_int[name: StaticString]() -> Int:
+fn env_get_int[name: StringLiteral]() -> Int:
     """Try to get an integer-valued define. Compilation fails if the
     name is not defined.
 
@@ -126,14 +122,10 @@ fn env_get_int[name: StaticString]() -> Int:
     Returns:
         An integer parameter value.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<get_env, `,
-        get_string_literal_slice[name]().value,
-        `> : index`,
-    ]
+    return __mlir_attr[`#kgen.param.expr<get_env, `, name.value, `> : index`]
 
 
-fn env_get_int[name: StaticString, default: Int]() -> Int:
+fn env_get_int[name: StringLiteral, default: Int]() -> Int:
     """Try to get an integer-valued define. If the name is not defined, return
     a default value instead.
 
@@ -209,7 +201,7 @@ fn env_get_string[
         return default
 
 
-fn env_get_dtype[name: StaticString, default: DType]() -> DType:
+fn env_get_dtype[name: StringLiteral, default: DType]() -> DType:
     """Try to get an DType-valued define. If the name is not defined, return
     a default value instead.
 
