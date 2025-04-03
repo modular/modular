@@ -146,7 +146,7 @@ struct OwningVector[T: Movable](Sized):
 
 
 fn get_lib_path_from_cfg(
-    name: StringSlice, err_name: StringLiteral
+    name: StringSlice, err_name: StaticString
 ) raises -> String:
     var lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]

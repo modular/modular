@@ -13,6 +13,7 @@ from max.tensor import Tensor
 from memory import UnsafePointer, memcpy
 from memory.unsafe import bitcast
 from python import Python, PythonObject
+from collections.string import StaticString
 
 from ._tensor_spec_impl import CTensorSpec
 from .session import InferenceSession
@@ -131,5 +132,5 @@ struct _Numpy:
     fn __init__(out self) raises:
         self.np = Python.import_module("numpy")
 
-    fn __getattr__(self, attr: StringLiteral) raises -> PythonObject:
+    fn __getattr__(self, attr: StaticString) raises -> PythonObject:
         return self.np.__getattr__(attr)
