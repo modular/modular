@@ -302,20 +302,12 @@ class MAXModelConfig(MAXModelConfigBase):
 
     def weights_size(self) -> int:
         size = 0
-        hf_repo = HuggingFaceRepo(
-            (
-                self._weights_repo_id
-                if self._weights_repo_id
-                else self.model_path
-            ),
-            trust_remote_code=self.trust_remote_code,
-        )
         for file_path in self.weight_path:
             if os.path.exists(file_path):
                 size += os.path.getsize(file_path)
                 continue
 
-            next_size = hf_repo.size_of(str(file_path))
+            next_size = self.huggingface_weights_repo.size_of(str(file_path))
 
             if next_size is None:
                 raise ValueError(
@@ -325,6 +317,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         return size
 
+    @cached_property
     def huggingface_weights_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(
             (
@@ -357,7 +350,6 @@ class MAXModelConfig(MAXModelConfigBase):
         are consistent.
         """
         # If weight_path and quantization_encoding are provided, verify that they are consistent.
-        huggingface_weights_repo = self.huggingface_weights_repo()
         try:
             _weights_format = weights_format(self.weight_path)
         except ValueError:
@@ -374,7 +366,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     str(self.weight_path[0])
                 )
             else:
-                file_encoding = huggingface_weights_repo.encoding_for_file(
+                file_encoding = self.huggingface_weights_repo.encoding_for_file(
                     self.weight_path[0]
                 )
 
@@ -402,7 +394,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     self.quantization_encoding = encoding
 
             else:
-                if encoding := huggingface_weights_repo.encoding_for_file(
+                if encoding := self.huggingface_weights_repo.encoding_for_file(
                     self.weight_path[0]
                 ):
                     msg = f"encoding inferred from weights file: {encoding}"
@@ -413,7 +405,9 @@ class MAXModelConfig(MAXModelConfigBase):
                     raise ValueError(msg)
         elif not self.quantization_encoding:
             # Check if the repo only has one quantization_encoding.
-            supported_encodings = huggingface_weights_repo.supported_encodings
+            supported_encodings = (
+                self.huggingface_weights_repo.supported_encodings
+            )
             if len(supported_encodings) == 1:
                 msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
                 logger.debug(msg)
@@ -488,7 +482,6 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         assert self.quantization_encoding, "quantization_encoding must be set."
 
-        huggingface_weights_repo = self.huggingface_weights_repo()
         # If no weight_path is provided, we should grab the default.
         if not self.weight_path:
             # Retrieve the default files for each weights format.
@@ -503,7 +496,7 @@ class MAXModelConfig(MAXModelConfigBase):
             else:
                 alternate_encoding = None
 
-            weight_files = huggingface_weights_repo.files_for_encoding(
+            weight_files = self.huggingface_weights_repo.files_for_encoding(
                 encoding=self.quantization_encoding,
                 alternate_encoding=alternate_encoding,
             )
@@ -521,7 +514,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 SupportedEncoding.bfloat16,
                 SupportedEncoding.float32,
             ]:
-                msg = f"compatible weights cannot be found for '{self.quantization_encoding}' in 'gguf' format, in the provided repo: '{huggingface_weights_repo.repo_id}'"
+                msg = f"compatible weights cannot be found for '{self.quantization_encoding}' in 'gguf' format, in the provided repo: '{self.huggingface_weights_repo.repo_id}'"
                 raise ValueError(msg)
             else:
                 msg = f"compatible weights cannot be found for '{self.quantization_encoding}'"
@@ -570,9 +563,8 @@ class MAXModelConfig(MAXModelConfigBase):
         for path in self.weight_path:
             # Check if file exists locally.
             if not os.path.exists(path):
-                huggingface_weights_repo = self.huggingface_weights_repo()
                 # If does not exist locally, verify that it exists on Huggingface.
-                if not huggingface_weights_repo.file_exists(str(path)):
+                if not self.huggingface_weights_repo.file_exists(str(path)):
                     msg = (
                         f"weight_path: '{path}' does not exist locally, and"
                         f" '{self.model_path}/{path}' does"
