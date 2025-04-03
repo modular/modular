@@ -1,9 +1,16 @@
 load("//bazel:api.bzl", "modular_py_test", "modular_run_binary_test", "requirement")
 
 modular_py_test(
-    name = "tests",
+    name = "tests-pure",
     size = "large",
-    srcs = glob(["*.py"]),
+    srcs = [
+        "conftest.py",
+        "test_context.py",
+        "test_dtype.py",
+        "test_engine.py",
+        "test_graph_telemetry.py",
+        "test_telemetry.py",
+    ],
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
         "//ONNX/tools/onnx:monnx",
@@ -12,17 +19,7 @@ modular_py_test(
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
     ],
-    env = {
-        "MODULAR_PATH": ".",
-    },
-    env_inherit = [
-        "HF_TOKEN",
-    ],
-    tags = [
-        "manual",  # TODO(AITLIB-293)
-        "no-sandbox",
-        "requires-network",
-    ],
+    env = {"MODULAR_PATH": "."},
     deps = [
         "//SDK/integration-test/API/python/test_common",
         "//SDK/lib/API/python/max",
@@ -39,9 +36,55 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "gpu-tests",
+    name = "tests-hf",
     size = "large",
-    srcs = glob(["gpu_tests/**/*.py"]),
+    srcs = [
+        "conftest.py",
+        "test_cli.py",
+        "test_config.py",
+        "test_huggingface_utilities.py",
+        "test_tokenizer.py",
+    ],
+    data = [
+        # TODO(MAXPLAT-86): Find a shared place for these tools
+        "//ONNX/tools/onnx:monnx",
+        "//PyTorch:TorchRuntimePlugins",
+        "//PyTorch/tools/torch:mtorch",
+        "//SDK/integration-test/API:inputs",
+        "//SDK/integration-test/API:pytest_inputs",
+    ],
+    env = {"MODULAR_PATH": "."},
+    env_inherit = ["HF_TOKEN"],
+    tags = [
+        "manual",  # TODO(AITLIB-293)
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//SDK/integration-test/API/python/test_common",
+        "//SDK/lib/API/python/max",
+        "//SDK/lib/API/python/max/entrypoints",
+        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
+        requirement("click"),
+        requirement("gguf"),
+        requirement("safetensors"),
+        requirement("sentencepiece"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "gpu-tests-pure",
+    size = "large",
+    srcs = [
+        "gpu_tests/conftest.py",
+        "gpu_tests/test_cumsum_gpu.py",
+        "gpu_tests/test_engine.py",
+        "gpu_tests/test_explicit_device.py",
+        "gpu_tests/test_gpu_weight.py",
+        "gpu_tests/test_load_weights_fp8.py",
+    ],
     data = [
         "//ModularFramework/tools/mof",
         "//ONNX/tools/onnx:monnx",
@@ -58,6 +101,43 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
     },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "no-mypy",  # TODO: fix and remove
+    ],
+    deps = [
+        "//SDK/integration-test/API/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/entrypoints",
+        requirement("click"),
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
+        requirement("xgrammar"),
+        requirement("setuptools"),
+    ],
+)
+
+modular_py_test(
+    name = "gpu-tests-hf",
+    size = "large",
+    srcs = [
+        "gpu_tests/conftest.py",
+        "gpu_tests/test_cli.py",
+        "gpu_tests/test_config.py",
+        "gpu_tests/test_registry_gpu.py",
+        "gpu_tests/test_sampling_gpu.py",
+        "gpu_tests/test_tokenizer_gpu.py",
+    ],
+    data = [
+        "//ModularFramework/tools/mof",
+        "//ONNX/tools/onnx:monnx",
+        "//PyTorch:ATenRT",
+        "//PyTorch:TorchRuntimePlugins",
+        "//PyTorch/tools/torch:mtorch",
+    ],
+    env = {"MODULAR_PATH": "."},
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",

@@ -1,12 +1,43 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
-    name = "tests_cpu",
+    name = "tests_cpu_pure",
     size = "large",
     srcs = [
         "__init__.py",
         "conftest.py",
-    ] + glob(["*_cpu.py"]),
+        "test_sagemaker_cpu.py",
+        "test_stop_cpu.py",
+    ],
+    data = [
+        "//SDK/integration-test/pipelines/python/llama3/testdata",
+        "@test_llama_golden",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
+    },
+    deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/serve/schemas",
+        requirement("async-asgi-testclient"),
+        requirement("pytest-asyncio"),
+        requirement("sse-starlette"),
+    ],
+)
+
+modular_py_test(
+    name = "tests_cpu_hf",
+    size = "large",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_embeddings_cpu.py",
+        "test_metrics_e2e_cpu.py",
+        "test_models_api_cpu.py",
+        "test_tinyllama_serving_cpu.py",
+    ],
     data = [
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "@test_llama_golden",
