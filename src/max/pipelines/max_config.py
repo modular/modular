@@ -104,7 +104,7 @@ class KVCacheConfig(MAXConfig):
     host_kvcache_swap_space_gb: float = 50.0
     """The amount of host memory to use for the host KVCache in GiB.
 
-    These space is only allocated when kvcache_swapping_to_host is enabled.
+    This space is only allocated when kvcache_swapping_to_host is enabled.
     """
 
     _available_cache_memory: Optional[int] = None
