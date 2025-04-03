@@ -5323,7 +5323,7 @@ struct MaskedFlashAttentionGPU:
         var v_buffer = managed_tensor_slice_to_ndbuffer(v)
         var mask_buffer = managed_tensor_slice_to_ndbuffer(mask)
 
-        flash_attention(
+        flash_attention[add_attn_mask=True](
             output_buffer,
             q_buffer,
             k_buffer,
