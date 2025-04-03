@@ -161,6 +161,9 @@ previously compiler would throw error "cannot fold operation".
 
 ### 🛠️ Fixed
 
+- [#3510](https://github.com/modular/max/issues/3510) - `PythonObject` doesn't
+  handle large `UInt64` correctly.
+
 - [#3847](https://github.com/modular/max/issues/3847) - Count leading zeros
   can't be used on SIMD at compile time.
 
