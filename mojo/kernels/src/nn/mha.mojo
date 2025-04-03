@@ -3812,6 +3812,17 @@ fn mha_decoding_single_batch_pipelined[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
+    # It's because in online-softmax we only use the top 8x4 sub-matrix
+    # in the 16x8 mma output for Nvidia GPU. It shouldn't matter for AMD.
+    constrained[
+        not is_nvidia_gpu() or group <= 8,
+        String(
+            "Only support GQA with group <= 8 for Nvidia, but got a group = '",
+            group,
+            "'.",
+        ),
+    ]()
+
     var tid = thread_idx.x
     var warp_id = warp.broadcast(tid // WARP_SIZE)
     var lane = lane_id()
