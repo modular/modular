@@ -68,6 +68,7 @@ Given two input tensor shapes, broadcasting works as following:
 """
 
 from collections import Optional
+from collections.string.string_slice import StaticString
 
 from builtin._location import __call_location, _SourceLocation
 
@@ -79,9 +80,9 @@ from ..error import error
 # Note: Keep alphabetized.
 
 
-def _binary_op[op_name: StringLiteral](lhs: Symbol, rhs: Symbol) -> Symbol:
+def _binary_op[op_name: StaticString](lhs: Symbol, rhs: Symbol) -> Symbol:
     return lhs.graph().op(
-        op_name,
+        String(op_name),
         List[Symbol](lhs, rhs),
     )
 
@@ -554,7 +555,7 @@ def not_equal(
 
 
 fn _op_impl[
-    op_name: StringLiteral
+    op_name: StaticString
 ](
     lhs: Symbol,
     rhs: Symbol,
@@ -573,11 +574,11 @@ fn _op_impl[
 # Note: Keep alphabetized.
 
 
-def _unary_op[op_name: StringLiteral](value: Symbol) -> Symbol:
-    return value.graph().op(op_name, value, value.tensor_type())
+def _unary_op[op_name: StaticString](value: Symbol) -> Symbol:
+    return value.graph().op(String(op_name), value, value.tensor_type())
 
 
-def _unary_float_op[op_name: StringLiteral](value: Symbol) -> Symbol:
+def _unary_float_op[op_name: StaticString](value: Symbol) -> Symbol:
     var dtype = value.tensor_type().dtype
     if not dtype.is_floating_point():
         raise error(
@@ -586,12 +587,12 @@ def _unary_float_op[op_name: StringLiteral](value: Symbol) -> Symbol:
             " only supports floating point inputs. Please explicitly cast to",
             " your desired float type first.",
         )
-    return value.graph().op(op_name, value, value.tensor_type())
+    return value.graph().op(String(op_name), value, value.tensor_type())
 
 
-def _unary_comparison_op[op_name: StringLiteral](value: Symbol) -> Symbol:
+def _unary_comparison_op[op_name: StaticString](value: Symbol) -> Symbol:
     var result_type = value.tensor_type().cast(DType.bool)
-    return value.graph().op(op_name, value, result_type)
+    return value.graph().op(String(op_name), value, result_type)
 
 
 def abs(value: Symbol) -> Symbol:

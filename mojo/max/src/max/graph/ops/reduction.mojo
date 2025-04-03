@@ -6,12 +6,13 @@
 """Ops that accumulate or reduce a tensor along an axis."""
 
 from collections import Optional
+from collections.string.string_slice import StaticString
 
 from ..error import error
 
 
 fn _reduce[
-    op: StringLiteral
+    op: StaticString
 ](v: Symbol, owned axis: Int, dtype: Optional[DType] = None) raises -> Symbol:
     var g = v.graph()
     var v_type = v.tensor_type()
@@ -25,7 +26,9 @@ fn _reduce[
     if dtype:
         v_type.dtype = dtype.value()
 
-    return g.op(op, List[Symbol](v, g.scalar[DType.int64](axis)), v_type)
+    return g.op(
+        String(op), List[Symbol](v, g.scalar[DType.int64](axis)), v_type
+    )
 
 
 def mean(v: Symbol, axis: Int = -1) -> Symbol:

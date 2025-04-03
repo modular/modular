@@ -150,24 +150,6 @@ struct Model:
 
         return result^
 
-    fn execute(
-        self, *inputs: Tuple[StringLiteral, EngineNumpyView]
-    ) raises -> TensorMap:
-        """Execute model with given inputs.
-
-        Args:
-          inputs: A variadic list of tuples with first element of tuple is
-                  input name and second element is non owning view of a Numpy
-                  array.
-
-        Returns:
-            A TensorMap with output names as keys.
-        """
-        var input_map = TensorMap(self._ctx, self._lib, self._session)
-        for pair in inputs:
-            input_map.borrow(pair[][0], pair[][1])
-        return self.execute(input_map)
-
     fn execute[
         type: DType
     ](self, name: String, input: Tensor[type]) raises -> TensorMap:

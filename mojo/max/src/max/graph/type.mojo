@@ -9,6 +9,7 @@ from collections import Optional
 
 import _mlir
 from max.tensor import TensorSpec
+from collections.string import StaticString
 
 from utils.variant import Variant
 
@@ -168,7 +169,7 @@ struct Dim(CollectionElement):
         Args:
             name: The name of the symbolic dimension.
         """
-        self.value = SymbolicDim(name)
+        self.value = SymbolicDim(String(name))
 
     @staticmethod
     fn static(dim: Int64) -> Self:
