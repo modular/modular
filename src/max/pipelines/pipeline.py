@@ -118,23 +118,27 @@ class ModelInputs:
     Use this class to encapsulate inputs for your model.
     You may store any number of dataclass fields
 
-    Example:
-        >>> class ReplitInputs(ModelInputs):
-        ...     tokens: Tensor
-        ...     input_row_offsets: Tensor
-        ...
-        ...     def __init__(self, tokens: Tensor, input_row_offsets: Tensor):
-        ...         self.tokens = tokens
-        ...         self.input_row_offsets = input_row_offsets
-        ...
-        >>> # Create tensors
-        >>> tokens = Tensor.zeros((1, 2, 3), DType.int64)
-        >>> input_row_offsets = Tensor.zeros((1, 1, 1), DType.int64)
-        >>> # Initialize inputs
-        >>> inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
-        >>> # Access tensors
-        >>> list(inputs) == [tokens, input_row_offsets]
-        True
+    The following example demonstrates how to create a custom inputs class for a model:
+
+    .. code-block:: python
+
+        class ReplitInputs(ModelInputs):
+            tokens: Tensor
+            input_row_offsets: Tensor
+
+            def __init__(self, tokens: Tensor, input_row_offsets: Tensor):
+                self.tokens = tokens
+                self.input_row_offsets = input_row_offsets
+
+        # Create tensors
+        tokens = Tensor.zeros((1, 2, 3), DType.int64)
+        input_row_offsets = Tensor.zeros((1, 1, 1), DType.int64)
+
+        # Initialize inputs
+        inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
+
+        # Access tensors
+        list(inputs) == [tokens, input_row_offsets]  # Output: True
     """
 
     kv_cache_inputs: KVCacheInputs | None = None
@@ -199,24 +203,32 @@ class PipelineModel(ABC, Generic[T]):
         """Calculate the optimal max sequence length for the model.
         Models are expected to implement this method.
 
-        Example:
-            >>> class MistralModel(PipelineModel):
-            ...     @classmethod
-            ...     def calculate_max_seq_len(cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig) -> int:
-            ...         try:
-            ...             return upper_bounded_default(
-            ...                 upper_bound=huggingface_config.max_seq_len,
-            ...                 default=pipeline_config.max_length,
-            ...             )
-            ...         except ValueError as e:
-            ...             msg = (
-            ...                 "Unable to infer max_length for Mistral, the provided "
-            ...                 f"max_length ({pipeline_config.max_length}) exceeds the "
-            ...                 f"model's max_seq_len "
-            ...                 f"({huggingface_config.max_seq_len})."
-            ...             )
-            ...             raise ValueError(msg) from e
-            ...
+        The following example shows how to implement this method for a Mistral model:
+
+        .. code-block:: python
+
+            class MistralModel(PipelineModel):
+                @classmethod
+                def calculate_max_seq_len(cls, pipeline_config, huggingface_config) -> int:
+                    try:
+                        return upper_bounded_default(
+                            upper_bound=huggingface_config.max_seq_len,
+                            default=pipeline_config.max_length,
+                        )
+                    except ValueError as e:
+                        msg = (
+                            "Unable to infer max_length for Mistral, the provided "
+                            f"max_length ({pipeline_config.max_length}) exceeds the "
+                            f"model's max_seq_len ({huggingface_config.max_seq_len})."
+                        )
+                        raise ValueError(msg) from e
+
+        Args:
+            pipeline_config: Configuration for the pipeline.
+            huggingface_config: Hugging Face model configuration.
+
+        Returns:
+            int: The maximum sequence length to use.
         """
         raise NotImplementedError(
             "PipelineModel must implement calculate_max_seq_len"
