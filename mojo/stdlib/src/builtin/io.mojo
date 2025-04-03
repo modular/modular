@@ -345,8 +345,8 @@ fn print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StringLiteral = " ",
-    end: StringLiteral = "\n",
+    sep: StaticString = " ",
+    end: StaticString = "\n",
     flush: Bool = False,
     owned file: FileDescriptor = stdout,
 ):

@@ -474,15 +474,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # NOTE: validating StringLiterals would cause recursive loops
         self._slice = lit.as_bytes()
 
-    fn __init__[
-        debug_assert_validate: Bool = True,
-        location: Optional[_SourceLocation] = None,
-    ](out self, *, unsafe_from_utf8: Span[Byte, origin]):
-        """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
+    fn __init__(
+        out self, *, unsafe_from_utf8_no_validation: Span[Byte, origin]
+    ):
+        """Unsafely construct a StringSlice with no checks. This is to avoid
+        recursive code-paths. Internal use only.
 
-        Parameters:
-            debug_assert_validate: Whether to validate the utf8 buffer.
-            location: The location of the call (default `__call_location`).
+        Args:
+            unsafe_from_utf8_no_validation: A `Span[Byte]` encoded in UTF-8.
+
+        Safety:
+            `unsafe_from_utf8_no_validation` MUST be valid UTF-8 encoded data.
+        """
+        self._slice = unsafe_from_utf8_no_validation
+
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, origin]):
+        """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Args:
             unsafe_from_utf8: A `Span[Byte]` encoded in UTF-8.
@@ -491,16 +498,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             `unsafe_from_utf8` MUST be valid UTF-8 encoded data.
         """
 
-        @parameter
-        if debug_assert_validate:
-            # NOTE: using the comptime version is because the fast runtime one
-            # causes recursive loops when used here
-            if not _is_valid_utf8_comptime(unsafe_from_utf8):
-                alias msg = "buffer is not valid UTF-8"
-                if is_compile_time():
-                    abort(msg)
-                # FIXME: this should have location=location.or_else(__call_location())
-                debug_assert(False, msg)
+        # NOTE: using the comptime version is because the fast runtime one
+        # causes recursive loops when used here
+        if not _is_valid_utf8_comptime(unsafe_from_utf8):
+            alias msg = "buffer is not valid UTF-8"
+            if is_compile_time():
+                abort(msg)
+            # FIXME: this should have location=location.or_else(__call_location())
+            debug_assert(False, msg)
 
         self._slice = unsafe_from_utf8
 
@@ -563,9 +568,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A copy of the value.
         """
-        return Self.__init__[debug_assert_validate=False](
-            unsafe_from_utf8=self._slice
-        )
+        return Self(unsafe_from_utf8_no_validation=self._slice)
 
     @implicit
     fn __init__[

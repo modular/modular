@@ -1317,9 +1317,7 @@ struct String(
         Returns:
             A string slice pointing to the data owned by this string.
         """
-        return StringSlice.__init__[location = __call_location()](
-            unsafe_from_utf8=self.as_bytes()
-        )
+        return StringSlice(unsafe_from_utf8=self.as_bytes())
 
     @always_inline
     fn byte_length(self) -> Int:
