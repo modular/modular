@@ -428,7 +428,7 @@ class FakeModel:
     def __init__(self, kv_manager: PagedKVCacheManager):
         self.page_size = kv_manager.page_size
         self.total_num_pages = kv_manager.total_num_pages
-        # block_projections maps from block_id -> offset -> prefix tokens
+        # block_projections maps from bid -> offset -> prefix tokens
         self.block_projections: dict[int, dict[int, np.ndarray]] = defaultdict(
             lambda: defaultdict(lambda: np.array([]))
         )
@@ -440,8 +440,8 @@ class FakeModel:
 
         def mock_enqueue_block_copy(self, copy_op: BlockCopyOp) -> Any:
             assert copy_op.block_copy_type == BlockCopyType.D2D_COW
-            block_src = copy_op.src.block_id
-            block_dst = copy_op.dst.block_id
+            block_src = copy_op.src.bid
+            block_dst = copy_op.dst.bid
             num_tokens = copy_op.num_tokens
 
             assert block_src in fake_model.block_projections
@@ -509,8 +509,8 @@ class FakeModel:
 
             for idx in range(len(tokens)):
                 prefix = tokens[: idx + 1]
-                block_idx = idx // self.page_size
-                block = blocks[block_idx]
+                bidx = idx // self.page_size
+                block = blocks[bidx]
                 block_offset = idx % self.page_size
 
                 if idx < cache_len:
@@ -759,7 +759,7 @@ async def test_prefix_caching_rollback_prompt_n_num_step_1() -> None:
     kv_manager.step([ctx])
 
     req_blocks = kv_manager.block_manager.req_to_blocks[seq_id]
-    req_hashes = kv_manager.block_manager.req_to_block_hashes[seq_id]
+    req_hashes = kv_manager.block_manager.req_to_hashes[seq_id]
     # block 1: 1 2 3
     # block 2: 4 15 16
     assert ctx.committed_idx == 6
@@ -781,7 +781,7 @@ async def test_prefix_caching_rollback_prompt_n_num_step_1() -> None:
     kv_manager.rollback([ctx])
 
     req_blocks = kv_manager.block_manager.req_to_blocks[seq_id]
-    req_hashes = kv_manager.block_manager.req_to_block_hashes[seq_id]
+    req_hashes = kv_manager.block_manager.req_to_hashes[seq_id]
     # block 1: 1 2 3
     # block 2: 4 ? ?
     assert ctx.committed_idx == 3
@@ -808,7 +808,7 @@ async def test_prefix_caching_rollback_prompt_1_num_step_n() -> None:
     kv_manager.step([ctx])
 
     req_blocks = kv_manager.block_manager.req_to_blocks[seq_id]
-    req_hashes = kv_manager.block_manager.req_to_block_hashes[seq_id]
+    req_hashes = kv_manager.block_manager.req_to_hashes[seq_id]
     # block 1: 1 2 3
     # block 2: 4 15 16
     assert ctx.committed_idx == 6
@@ -830,7 +830,7 @@ async def test_prefix_caching_rollback_prompt_1_num_step_n() -> None:
     kv_manager.rollback([ctx])
 
     req_blocks = kv_manager.block_manager.req_to_blocks[seq_id]
-    req_hashes = kv_manager.block_manager.req_to_block_hashes[seq_id]
+    req_hashes = kv_manager.block_manager.req_to_hashes[seq_id]
     # block 1: 1 2 3
     # block 2: 4 ? ?
     assert ctx.committed_idx == 3
