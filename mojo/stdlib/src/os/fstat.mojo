@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the file system stat operations.
+"""Implements file system status operations.
 
 You can import these APIs from the `os` package. For example:
 
@@ -96,8 +96,7 @@ struct stat_result(Stringable, Writable):
     """User defined flags for file."""
 
     fn __init__(
-        mut self,
-        /,
+        out self,
         *,
         st_mode: Int,
         st_ino: Int,

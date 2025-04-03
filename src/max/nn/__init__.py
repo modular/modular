@@ -16,7 +16,6 @@ from .attention import (
     AttentionImpl,
     AttentionImplQKV,
     AttentionQKV,
-    AttentionWithoutMask,
     AttentionWithRope,
     AttentionWithRopeQKV,
     AttentionWithRopeV2,
@@ -25,13 +24,22 @@ from .attention import (
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     NaiveAttentionWithRope,
+    RaggedAttention,
 )
 from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv2D, Conv3D
 from .embedding import Embedding, EmbeddingV2, VocabParallelEmbedding
 from .kernels import MHAMaskVariant
 from .layer import Layer, Module
-from .linear import MLP, MLPV2, DistributedMLP, GPTQLinearV2, Linear, LinearV2
+from .linear import (
+    MLP,
+    MLPV2,
+    ColumnParallelLinear,
+    DistributedMLP,
+    GPTQLinearV2,
+    Linear,
+    LinearV2,
+)
 from .norm import DistributedRMSNorm, LayerNorm, LayerNormV2, RMSNorm, RMSNormV2
 from .rotary_embedding import (
     Llama3RopeScalingParams,
@@ -58,12 +66,13 @@ __all__ = [
     "AttentionWithRope",
     "AttentionWithRopeQKV",
     "AttentionWithRopeV2",
-    "AttentionWithoutMask",
+    "RaggedAttention",
     "Conv1D",
     "Conv2D",
     "Conv3D",
     "DistributedAttentionImpl",
     "DistributedAttentionWithRope",
+    "ColumnParallelLinear",
     "DistributedMLP",
     "DistributedRMSNorm",
     "DistributedTransformer",

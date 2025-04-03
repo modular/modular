@@ -25,7 +25,7 @@ from testing import (
     assert_true,
 )
 
-from utils import StringSlice
+from utils import StringSlice, StaticString
 from utils.numerics import inf, nan
 
 
@@ -122,10 +122,10 @@ def test_assert_almost_equal():
 
     @parameter
     def _should_succeed[
-        type: DType, size: Int
+        dtype: DType, size: Int
     ](
-        lhs: SIMD[type, size],
-        rhs: SIMD[type, size],
+        lhs: SIMD[dtype, size],
+        rhs: SIMD[dtype, size],
         *,
         atol: Float64 = 0,
         rtol: Float64 = 0,
@@ -159,10 +159,10 @@ def test_assert_almost_equal():
 
     @parameter
     def _should_fail[
-        type: DType, size: Int
+        dtype: DType, size: Int
     ](
-        lhs: SIMD[type, size],
-        rhs: SIMD[type, size],
+        lhs: SIMD[dtype, size],
+        rhs: SIMD[dtype, size],
         *,
         atol: Float64 = 0,
         rtol: Float64 = 0,
@@ -241,16 +241,12 @@ def test_assert_custom_location():
 
 
 def test_assert_equal_stringslice():
-    str1 = "This is Mojo"
+    str1 = StaticString("This is Mojo")
     str2 = String("This is Mojo")
-    str3 = "This is mojo"
+    str3 = StaticString("This is mojo")
 
-    fn _build(
-        value: StringLiteral, start: Int, end: Int
-    ) -> StringSlice[StaticConstantOrigin]:
-        return StringSlice[StaticConstantOrigin](
-            ptr=value.unsafe_ptr() + start, length=end - start
-        )
+    fn _build(value: StaticString, start: Int, end: Int) -> StaticString:
+        return StaticString(ptr=value.unsafe_ptr() + start, length=end - start)
 
     fn _build(
         read value: String, start: Int, end: Int

@@ -31,9 +31,9 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    TextAndVisionContext,
     upper_bounded_default,
 )
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -44,6 +44,7 @@ from max.pipelines.kv_cache import (
 from transformers import AutoConfig
 
 from .model.graph import _build_text_graph, _build_vision_graph
+from .model_config import PixtralConfig
 from .vision_encoder.attention_utils import causal_attention_mask_2d_from_imgs
 
 logger = logging.getLogger("max.pipelines")
@@ -102,6 +103,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -112,6 +114,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
@@ -150,9 +153,17 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=False,
         )
-        assert not self.pipeline_config.enable_echo
-        assert isinstance(model_outputs[0], Tensor)
-        return ModelOutputs(next_token_logits=model_outputs[0])
+        if len(model_outputs) == 3:
+            return ModelOutputs(
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Tensor, model_outputs[1]),
+                logit_offsets=cast(Tensor, model_outputs[2]),
+            )
+        else:
+            return ModelOutputs(
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Tensor, model_outputs[0]),
+            )
 
     def prepare_initial_token_inputs(
         self,
@@ -229,7 +240,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.text_config.num_hidden_layers
+        return PixtralConfig.get_num_layers(huggingface_config)
 
     @classmethod
     def get_kv_params(
@@ -239,14 +250,11 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            page_size=kv_cache_config.kv_cache_page_size,
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.text_config.num_key_value_heads,
-            head_dim=huggingface_config.text_config.head_dim,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+        return PixtralConfig.get_kv_params(
+            huggingface_config=huggingface_config,
             n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     @classmethod

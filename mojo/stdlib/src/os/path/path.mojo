@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the os.path operations.
+"""Provides a set of operating-system independent functions for manipulating
+file system paths.
 
 You can import these APIs from the `os.path` package. For example:
 

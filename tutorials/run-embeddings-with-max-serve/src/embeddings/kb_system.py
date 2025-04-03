@@ -13,7 +13,6 @@
 
 import logging
 from functools import lru_cache
-from typing import Dict, List, Tuple
 
 import numpy as np
 import requests
@@ -27,13 +26,13 @@ logger = logging.getLogger(__name__)
 class SmartKnowledgeBase:
     def __init__(self, endpoint: str = "http://localhost:8000/v1/embeddings"):
         self.endpoint = endpoint
-        self.documents: List[str] = []
-        self.doc_titles: List[str] = []
+        self.documents: list[str] = []
+        self.doc_titles: list[str] = []
         self.embeddings: np.ndarray = None
-        self.clusters: Dict[int, List[int]] = {}
+        self.clusters: dict[int, list[int]] = {}
 
     def _get_embedding(
-        self, texts: List[str], max_retries: int = 3
+        self, texts: list[str], max_retries: int = 3
     ) -> np.ndarray:
         """Get embeddings with retry logic."""
         for attempt in range(max_retries):
@@ -95,7 +94,7 @@ class SmartKnowledgeBase:
 
     def search(
         self, query: str, top_k: int = 3
-    ) -> List[Tuple[str, str, float]]:
+    ) -> list[tuple[str, str, float]]:
         """Find documents most similar to the query."""
         query_embedding = self._get_embedding_cached(query)
         similarities = cosine_similarity([query_embedding], self.embeddings)[0]
@@ -105,7 +104,7 @@ class SmartKnowledgeBase:
             for i in top_indices
         ]
 
-    def get_topic_documents(self, topic_id: int) -> List[Tuple[str, str]]:
+    def get_topic_documents(self, topic_id: int) -> list[tuple[str, str]]:
         """Get all documents in a topic cluster."""
         return [
             (self.doc_titles[i], self.documents[i])
@@ -114,7 +113,7 @@ class SmartKnowledgeBase:
 
     def suggest_topics(
         self, query: str, top_k: int = 2
-    ) -> List[Tuple[int, float]]:
+    ) -> list[tuple[int, float]]:
         query_embedding = self._get_embedding_cached(query)
         topic_similarities = []
 

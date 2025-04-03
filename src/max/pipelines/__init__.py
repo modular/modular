@@ -16,17 +16,8 @@
 from typing import Callable as _Callable
 from typing import Union as _Union
 
-from .config import (
-    KVCacheConfig,
-    MAXModelConfig,
-    PipelineConfig,
-    PipelineEngine,
-    ProfilingConfig,
-    RopeType,
-    SamplingConfig,
-    SupportedEncoding,
-)
-from .context import InputContext, TextAndVisionContext, TextContext
+from .config import PipelineConfig
+from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceFile, download_weight_files
 from .interfaces import (
@@ -45,6 +36,12 @@ from .interfaces import (
     TokenGeneratorResponseFormat,
 )
 from .log_probabilities import compute_log_probabilities
+from .max_config import (
+    KVCacheConfig,
+    MAXModelConfig,
+    ProfilingConfig,
+    SamplingConfig,
+)
 from .pipeline import (
     ModelInputs,
     ModelOutputs,
@@ -86,14 +83,12 @@ __all__ = [
     "TokenGeneratorResponseFormat",
     "TokenGeneratorRequestFunction",
     "IdentityPipelineTokenizer",
-    "InputContext",
-    "TextContext",
-    "TextAndVisionContext",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "TextTokenizer",
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
+    "RepoType",
     "RopeType",
     "PipelineModel",
     "ModelInputs",
@@ -103,6 +98,7 @@ __all__ = [
     "EmbeddingsPipeline",
     "EmbeddingsResponse",
     "SpeculativeDecodingTextGenerationPipeline",
+    "compute_log_probabilities",
     "upper_bounded_default",
     "download_weight_files",
 ]

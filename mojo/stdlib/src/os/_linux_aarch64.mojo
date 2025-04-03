@@ -29,7 +29,7 @@ alias blksize_t = Int32
 
 
 @value
-struct _c_stat(Stringable):
+struct _c_stat(Stringable, Writable):
     var st_dev: dev_t  #  ID of device containing file
     var st_ino: Int64  # File serial number
     var st_mode: mode_t  # Mode of file

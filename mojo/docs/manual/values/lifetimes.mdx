@@ -129,10 +129,11 @@ value that exists for the entire duration of the program.
 
 For example, the `StringLiteral` method
 [`as_string_slice()`](/mojo/stdlib/builtin/string_literal/StringLiteral#as_string_slice)
-returns a [`StringSlice`](/mojo/stdlib/utils/string_slice/StringSlice) pointing
-to the original string literal. String literals are static—they're allocated at
-compile time and never destroyed—so the slice is created with an immutable,
-static origin.
+returns a
+[`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice)
+pointing to the original string literal. String literals are static—they're
+allocated at compile time and never destroyed—so the slice is created with an
+immutable, static origin.
 
 #### Derived origins
 

@@ -107,8 +107,6 @@ class MaxMoEGate(Module):
         scores = ops.softmax(logits.cast(DType.float32))
 
         # select top k experts
-        topk_weight, topk_idx = ops.top_k(
-            scores, self.num_experts_per_tok, -1, False
-        )
+        topk_weight, topk_idx = ops.top_k(scores, self.num_experts_per_tok, -1)
 
         return topk_idx, topk_weight

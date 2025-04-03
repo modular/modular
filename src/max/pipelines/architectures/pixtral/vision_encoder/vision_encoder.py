@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 from max.dtype import DType
 from max.graph import TensorValueLike, ops
@@ -44,7 +43,7 @@ class VisionEncoder(Layer):
     max_image_size: int = 1024
 
     def __call__(
-        self, imgs: List[TensorValueLike], attention_mask: TensorValueLike
+        self, imgs: list[TensorValueLike], attention_mask: TensorValueLike
     ):
         """
         imgs: list of images of shape = (height, width, num_channels)

@@ -81,17 +81,23 @@ class Llama3(Transformer):
             linear_cls = LinearV2
         mlp_cls = StackedMLP if config.stacked_mlp else MLPV2
         attention_cls: Callable[..., AttentionWithRopeV2]
-        if config.quantization_encoding == QuantizationEncoding.GPTQ:
+        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             assert config.quantization_config is not None
+            assert not config.attention_bias, (
+                "Attention bias is not supported for GPTQAttentionWithRope."
+            )
             attention_cls = functools.partial(
                 GPTQAttentionWithRope,
                 quantization_config=config.quantization_config,
                 scale=config.attention_multiplier,
             )
-        elif config.quantization_encoding is not None:
+        elif config.model_quantization_encoding is not None:
+            assert not config.attention_bias, (
+                "Attention bias is not supported for GGUFQAttentionWithRope."
+            )
             attention_cls = functools.partial(
                 GGUFQAttentionWithRope,
-                quantization_encoding=config.quantization_encoding,
+                quantization_encoding=config.model_quantization_encoding,
                 scale=config.attention_multiplier,
             )
         else:
@@ -100,6 +106,7 @@ class Llama3(Transformer):
                 stacked_qkv=config.stacked_qkv,
                 scale=config.attention_multiplier,
                 clip_qkv=config.clip_qkv,
+                has_bias=config.attention_bias,
             )
 
         layers = [
@@ -117,7 +124,7 @@ class Llama3(Transformer):
                 ),
                 mlp=mlp_cls(
                     config.dtype,
-                    config.quantization_encoding,
+                    config.model_quantization_encoding,
                     config.hidden_size,
                     config.intermediate_size,
                     linear_cls,
@@ -132,8 +139,8 @@ class Llama3(Transformer):
 
         # Create Embedding and output layers.
         embedding_output_dtype = config.dtype
-        embedding_output_quantization = config.quantization_encoding
-        if config.quantization_encoding == QuantizationEncoding.GPTQ:
+        embedding_output_quantization = config.model_quantization_encoding
+        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
         embedding_layer = EmbeddingV2(
@@ -185,7 +192,7 @@ class Llama3(Transformer):
             kv_collection_constructor=kv_collection_cls(
                 config.kv_params, num_layers=config.num_hidden_layers
             ),
-            all_logits=config.all_logits,
+            return_n_logits=config.return_n_logits,
             embedding_multiplier=config.embedding_multiplier,
             logits_postprocessor=config.logits_postprocessor,
         )

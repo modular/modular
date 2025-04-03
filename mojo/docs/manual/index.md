@@ -62,6 +62,12 @@ feedback](https://www.modular.com/community).
   - [Intro to pointers](/mojo/manual/pointers/)
   - [Unsafe pointers](/mojo/manual/pointers/unsafe-pointers)
 
+- **GPU programming**
+
+  - [Get started with GPU programming with Mojo and the MAX
+    Driver](/mojo/manual/gpu/intro-tutorial)
+  - [GPU basics](/mojo/manual/gpu/basics)
+
 - **Python**
 
   - [Python integration](/mojo/manual/python/)

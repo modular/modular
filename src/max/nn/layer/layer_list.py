@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from max.graph import TensorValue
 

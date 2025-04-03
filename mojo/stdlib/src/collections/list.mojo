@@ -134,6 +134,16 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self._len = 0
         self.capacity = capacity
 
+    fn __init__(out self, *, length: UInt, fill: T):
+        """Constructs a list with the given capacity.
+
+        Args:
+            length: The requested length of the list.
+            fill: The element to fill each element of the list.
+        """
+        self = Self()
+        self.resize(length, fill)
+
     fn __init__(out self, owned *values: T):
         """Constructs a list from the given values.
 
@@ -677,9 +687,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         for j in range(normalized_idx + 1, self._len):
             (self.data + j).move_pointee_into(self.data + j - 1)
         self._len -= 1
-        if self._len * 4 < self.capacity:
-            if self.capacity > 1:
-                self._realloc(self.capacity // 2)
+
         return ret_val^
 
     fn reserve(mut self, new_capacity: Int):

@@ -36,7 +36,7 @@ fn is_compile_time() -> Bool:
 
 
 @value
-struct _OptimizationLevel(Intable):
+struct _OptimizationLevel(Intable, Writable):
     """Represents the optimization level used during compilation.
 
     The optimization level is determined by the __OPTIMIZATION_LEVEL environment
@@ -96,7 +96,7 @@ alias OptimizationLevel = _OptimizationLevel()
 
 
 @value
-struct _DebugLevel:
+struct _DebugLevel(Writable, Stringable):
     """Represents the debug level used during compilation.
 
     The debug level is determined by the __DEBUG_LEVEL environment variable,

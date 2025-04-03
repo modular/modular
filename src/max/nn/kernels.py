@@ -456,6 +456,70 @@ def matmul_kv_cache_ragged(
     )
 
 
+def matmul_k_cache_ragged(
+    kv_params: KVCacheParams,
+    hidden_states: TensorValue,
+    input_row_offsets: TensorValue,
+    weight: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: int | np.integer,
+) -> None:
+    """Computes key projections with ragged input.
+
+    `hidden_states` and `input_row_offsets` are used together to
+    implement the ragged tensor.
+    `input_row_offsets` indicates where each batch starts and ends in `input`
+    """
+    if hidden_states.dtype != weight.dtype:
+        msg = (
+            "expected hidden_states and weight to have the same dtype, but got"
+            f" {hidden_states.dtype} and {weight.dtype}, respectively."
+        )
+        raise ValueError(msg)
+
+    hidden_states_rank_expected = 2
+    if hidden_states.rank != hidden_states_rank_expected:
+        msg = (
+            "expected hidden_states to have rank "
+            f"{hidden_states_rank_expected}, was {hidden_states.rank}"
+        )
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = (
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+    }
+    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        assert kv_params.page_size is not None
+        parameters["page_size"] = kv_params.page_size
+
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+    op_name = f"mo.k_matmul.ragged.{cache_strategy_str}"
+
+    ops.inplace_custom(
+        name=op_name,
+        values=[
+            hidden_states,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            ops.constant(layer_idx, DType.uint32),
+        ],
+        parameters=parameters,
+    )
+
+
 def fused_qk_ragged_rope(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -899,6 +963,88 @@ def flash_attention_ragged(
     )[0].tensor
 
 
+def flare_mla_decode_ragged(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    qk_rope_dim: int = 64,
+) -> TensorValue:
+    """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
+
+    Notably, this materializes the attention mask (dependent on MHAMaskVariant)
+    within the kernel.
+    `input` and `input_row_offsets` are used together to implement the ragged
+    tensor.
+    `input_row_offsets` indicates where each batch starts and ends in `input`
+
+    Note that this is self attention and the KV sequence length is
+    assumed to be equal to the Q sequence length.
+    For KV sequence length != Q sequence length, use `cross_attention_ragged`.
+    """
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        msg = (
+            f"expected input of rank {input_rank_expected} but got {input.rank}"
+        )
+        raise ValueError(msg)
+
+    if input.dtype != kv_params.dtype:
+        msg = (
+            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected uint32 layer_idx but got {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    op_name = f"mo.mla.decode.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+
+    return ops.inplace_custom(
+        op_name,
+        values=[
+            input,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            # NOTE: The scale argument to flash attention is constrained to float32.
+            ops.constant(scale, dtype=DType.float32),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[
+                    input.shape[0],
+                    input.shape[1],
+                    input.shape[2] - qk_rope_dim,
+                ],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def cross_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -1044,14 +1190,21 @@ def swish_glu(
 
 def rms_norm_key_cache(
     kv_params: KVCacheParams,
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: ContinuousBatchingKVCacheCollection | PagedKVCacheCollection,
     gamma: TensorValue,
     epsilon: float | np.floating,
     layer_idx: int | np.integer,
     total_seq_len: Dim,
     input_row_offsets: TensorValue,
+    rms_norm_cols: Optional[int] = None,
 ) -> None:
     """Computes RMSNorm on the _new_ entries in the KVCache.
+
+    This function applies RMSNorm to either all dimensions or a subset of
+    dimensions in each head of the key cache. The size of the gamma tensor
+    determines how many dimensions will be normalized. If gamma's size doesn't
+    match head_dim, rms_norm_cols must be explicitly specified to confirm the
+    intention to normalize only a subset of dimensions.
 
     Currently, the KVCacheT class itself isn't aware of the new cache entries
     until cache length increment, which happens after model forward.
@@ -1071,6 +1224,26 @@ def rms_norm_key_cache(
         msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         raise ValueError(msg)
 
+    if gamma.shape[0] != kv_params.head_dim:
+        if rms_norm_cols is None:
+            msg = (
+                "Size of gamma doesn't match head_dim. Please pass rms_norm_cols "
+                "explicitly if you intend to apply RMSNorm to only a subset of "
+                "head dimensions"
+            )
+            raise ValueError(msg)
+        elif rms_norm_cols != gamma.shape[0]:
+            msg = f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
+            raise ValueError(msg)
+
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+    }
+    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        assert kv_params.page_size is not None
+        parameters["page_size"] = kv_params.page_size
+
     ops.inplace_custom(
         op_name,
         values=[
@@ -1081,8 +1254,5 @@ def rms_norm_key_cache(
             ops.cast(TensorValue.from_dim(total_seq_len), DType.uint32),
             input_row_offsets,
         ],
-        parameters={
-            "num_heads": kv_params.n_kv_heads_per_device,
-            "head_dim": kv_params.head_dim,
-        },
+        parameters=parameters,
     )

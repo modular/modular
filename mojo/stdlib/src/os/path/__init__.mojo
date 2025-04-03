@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides a set of operating-system independent functions for manipulating
+file system paths."""
 
 from .path import (
     basename,

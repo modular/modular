@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the StringLiteral class.
+"""Implements the StringLiteral struct.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -27,6 +27,8 @@ from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_char
 
 from memory import Span, UnsafePointer, memcpy
+
+from os import PathLike
 
 from utils import Writable, Writer
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -51,6 +53,9 @@ struct StringLiteral(
     Stringable,
     FloatableRaising,
     _HashableWithHasher,
+    PathLike,
+    EqualityComparableCollectionElement,
+    _CurlyEntryFormattable,
 ):
     """This type represents a string literal.
 
@@ -87,43 +92,6 @@ struct StringLiteral(
             A copy of the value.
         """
         return self
-
-    # TODO(MOCO-1460): This should be: fn __init__[*, value: String](out self):
-    # but Mojo tries to bind the parameter in `StringLiteral["foo"]()` to the
-    # type instead of the initializer.  Use a static method to work around this
-    # for now.
-    @always_inline("nodebug")
-    @staticmethod
-    fn get[value: String]() -> StringLiteral:
-        """Form a string literal from an arbitrary compile-time String value.
-
-        Parameters:
-            value: The value to convert to StringLiteral.
-
-        Returns:
-            The string value as a StringLiteral.
-        """
-        return __mlir_attr[
-            `#kgen.param.expr<data_to_str,`,
-            value.byte_length().value,
-            `,`,
-            value.unsafe_ptr().address,
-            `> : !kgen.string`,
-        ]
-
-    @always_inline("nodebug")
-    @staticmethod
-    fn get[type: Stringable, //, value: type]() -> StringLiteral:
-        """Form a string literal from an arbitrary compile-time stringable value.
-
-        Parameters:
-            type: The type of the value.
-            value: The value to serialize.
-
-        Returns:
-            The string value as a StringLiteral.
-        """
-        return Self.get[String(value)]()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -444,7 +412,7 @@ struct StringLiteral(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @always_inline("builtin")
     fn byte_length(self) -> Int:
         """Get the string length in bytes.
 
@@ -485,7 +453,7 @@ struct StringLiteral(
         """
         return self.unsafe_ptr().bitcast[c_char]()
 
-    @always_inline
+    @always_inline("nodebug")
     fn as_string_slice(self) -> StaticString:
         """Returns a string slice of this static string literal.
 
@@ -494,7 +462,7 @@ struct StringLiteral(
         """
         return StaticString(self)
 
-    @always_inline
+    @always_inline("nodebug")
     fn as_bytes(self) -> Span[Byte, StaticConstantOrigin]:
         """
         Returns a contiguous Span of the bytes owned by this string.
@@ -888,6 +856,57 @@ struct StringLiteral(
             A copy of the string with no leading whitespaces.
         """
         return String(String(self).lstrip())
+
+
+# FIXME(MOCO-1707): This should be named get_string_literal[value: StringSlice],
+# but Mojo isn't picking the most specific overload correctly.
+@always_inline("nodebug")
+fn get_string_literal_slice[value: StringSlice]() -> StringLiteral:
+    """Form a string literal from an arbitrary compile-time StringSlice value.
+
+    Parameters:
+        value: The value to convert to StringLiteral.
+
+    Returns:
+        The string value as a StringLiteral.
+    """
+    return __mlir_attr[
+        `#kgen.param.expr<data_to_str,`,
+        value.byte_length().value,
+        `,`,
+        value.unsafe_ptr().address,
+        `> : !kgen.string`,
+    ]
+
+
+# TODO(MOCO-1460): get_string_literal should be an initializer, but Mojo tries
+# to bind the parameter in `StringLiteral["foo"]()` to the type instead of the
+# initializer.   Use a global function to work around this for now.
+@always_inline("nodebug")
+fn get_string_literal[value: String]() -> StringLiteral:
+    """Form a string literal from an arbitrary compile-time String value.
+
+    Parameters:
+        value: The value to convert to StringLiteral.
+
+    Returns:
+        The string value as a StringLiteral.
+    """
+    return get_string_literal_slice[value]()
+
+
+@always_inline("nodebug")
+fn get_string_literal[type: Stringable, //, value: type]() -> StringLiteral:
+    """Form a string literal from an arbitrary compile-time stringable value.
+
+    Parameters:
+        type: The type of the value.
+        value: The value to serialize.
+
+    Returns:
+        The string value as a StringLiteral.
+    """
+    return get_string_literal_slice[String(value)]()
 
 
 fn _base64_encode[str: StringLiteral]() -> StringLiteral:

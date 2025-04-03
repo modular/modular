@@ -64,6 +64,7 @@ class Whisper(PipelineModel):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -74,6 +75,7 @@ class Whisper(PipelineModel):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
         self.model = self.load_model(session)
 

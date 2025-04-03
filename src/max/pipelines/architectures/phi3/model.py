@@ -36,18 +36,20 @@ class Phi3Model(LlamaModelBase):
         session: InferenceSession,
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
-        device: list[Device],
+        devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
             session,
             huggingface_config,
             encoding,
-            device,
+            devices,
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )

@@ -15,8 +15,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable
 
 import numpy as np
 from max.dtype import DType
@@ -158,6 +159,110 @@ class LinearV2(Module):
         return res
 
 
+class ColumnParallelLinear(LinearV2):
+    """A Linear layer where the weight and bias are sharded onto multiple
+    devices.
+
+    This layer first computes :math:`y = xW_i^T + b_i` for each device `i` in
+    `[0,..., num_devices]`:
+
+    +-----+       +-----+ T     +-----+       +-----+
+    |     |       | W_0 |       | b_0 |       | y_0 | GPU0
+    +     +       +-----+       +-----+       +-----+
+    |     |       | W_1 |       | b_1 |       | y_1 | GPU1
+    +  x  +   @   +-----+   +   +-----+   =   +-----+
+    |     |       | W_2 |       | b_2 |       | y_2 | GPU2
+    +     +       +-----+       +-----+       +-----+
+    |     |       | W_3 |       | b_3 |       | y_3 | GPU3
+    +-----+       +-----+       +-----+       +-----+
+
+    The values are then collected using an Allgather op, producing the same
+    output tensor :math:`y = xW^T + b` on each device.
+
+    .GPU0  GPU1  GPU2  GPU3                      GPU0  GPU1  GPU2  GPU3
+    +-----+-----+-----+-----+                   +-----+-----+-----+-----+
+    | y_0 |  -  |  -  |  -  |                   | y_0 | y_0 | y_0 | y_0 |
+    +-----+-----+-----+-----+                   +-----+-----+-----+-----+
+    |  -  | y_1 |  -  |  -  |                   | y_1 | y_1 | y_1 | y_1 |
+    +-----+-----+-----+-----+  -- Allgather --> +-----+-----+-----+-----+
+    |  -  |  -  | y_2 |  -  |                   | y_2 | y_2 | y_2 | y_2 |
+    +-----+-----+-----+-----+                   +-----+-----+-----+-----+
+    |  -  |  -  |  -  | y_3 |                   | y_3 | y_3 | y_3 | y_3 |
+    +-----+-----+-----+-----+                   +-----+-----+-----+-----+
+
+    Example usage:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import DeviceRef
+        from max.nn import ColumnParallelLinear
+
+        num_devices = 4
+        distributed_linear = ColumnParallelLinear(
+            in_dim,
+            out_dim,
+            DType.float32,
+            devices=[DeviceRef.GPU(i) for i in range(num_devices)],
+        )
+    """
+
+    def __init__(
+        self,
+        *args,
+        devices: list[DeviceRef],
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+
+        self.devices = devices
+        self.num_devices = len(self.devices)
+
+        def row_sharding_strategy(weight: Weight, i) -> TensorValue:
+            row_size = int(weight.shape[0]) // self.num_devices
+            return weight[i * row_size : (i + 1) * row_size, ...]
+
+        # Use row sharding strategy because the weight is transposed.
+        self.weight.set_sharding_strategy(row_sharding_strategy)
+        if self.bias is not None:
+            self.bias.set_sharding_strategy(row_sharding_strategy)
+
+        # Create normal Linear layers for each device. These layers and weights
+        # are not recorded by the nn.Module and do not appear in the state dict.
+        self.distributed_linear_layers = []
+        for n, device in enumerate(self.devices):
+            layer = LinearV2(*args, **kwargs)
+            layer.device = device
+            layer.weight = self.weight.shard(n, device)
+            if self.bias is not None:
+                layer.bias = self.bias.shard(n, device)
+            self.distributed_linear_layers.append(layer)
+
+    def __call__(  # type: ignore[override]
+        self, x: list[TensorValue]
+    ) -> list[TensorValue]:
+        """Applies a linear transformation to the input data.
+
+        Args:
+            x: Input tensor of shape ``(..., in_dim)``.
+                The last dimension must match the layer's ``in_dim``.
+                The input tensor must reside on :obj:`device`.
+            signal_buffers: Buffers for peer-to-peer communication in allreduce.
+
+        Returns:
+            Output tensor of shape ``(..., out_dim)``.
+            The result resides on the device specified in :obj:`device`.
+
+        Raises:
+            ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
+        """
+        linear_outs = [
+            self.distributed_linear_layers[i](x[i])
+            for i in range(self.num_devices)
+        ]
+        return ops.allgather(linear_outs, dim=-1)
+
+
 def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:
     if isinstance(value, Weight):
         return value
@@ -189,7 +294,7 @@ class Linear(Layer):
         weights: Weights | Weight,
         bias: Weights | Weight | None = None,
         quantization_config: QuantizationConfig | None = None,
-    ) -> "Linear":
+    ) -> Linear:
         """Factory method to create a Linear layer with appropriate implementation."""
         if not quantization_encoding:
             weight = _allocate_if_needed(
@@ -230,7 +335,7 @@ class QLinear(Linear):
         weights: Weights | Weight,
         bias: Weights | Weight | None,
         quantization_config: QuantizationConfig | None,
-    ) -> "Linear":
+    ) -> Linear:
         if quantization_encoding != QuantizationEncoding.GPTQ:
             weight = _allocate_if_needed(
                 weights, dtype, [in_features, out_features]
@@ -289,7 +394,7 @@ class GPTQLinear(QLinear):
         weights: Weights | Weight,
         bias: Weights | Weight | None,
         quantization_config: QuantizationConfig | None,
-    ) -> "Linear":
+    ) -> Linear:
         """Internal method to create a Linear layer from GPTQ weights."""
 
         assert quantization_config, (

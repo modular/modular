@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Optional, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 import numpy as np
 import torch
@@ -30,7 +30,8 @@ from transformers import (
     BatchEncoding,
 )
 
-from .config import PipelineConfig
+if TYPE_CHECKING:
+    from .config import PipelineConfig
 from .context import TextContext
 from .interfaces import (
     EmbeddingsGenerator,

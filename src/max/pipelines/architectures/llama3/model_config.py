@@ -24,22 +24,22 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import Llama3RopeScalingParams
 from max.pipelines import upper_bounded_default
-from max.pipelines.config import (
-    KVCacheConfig,
-    MAXConfig,
-    PipelineConfig,
-    RopeType,
-)
+from max.pipelines.config import PipelineConfig
+from max.pipelines.config_enums import RopeType
 from max.pipelines.kv_cache import KVCacheParams
+from max.pipelines.max_config import (
+    KVCacheConfig,
+    MAXModelConfig,
+    MAXModelConfigBase,
+)
 from transformers import AutoConfig
 
 
-# TODO(zheng): Move this under MAXModelConfig. The challenge here is that
-# MAXModelConfig has optional fields, and Llama3Config has required fields.
-# We can work around this by having a superclass of MAXModelConfig that has
-# the abstract methods, and then having Llama3Config extend that.
 @dataclass
-class Llama3Config(MAXConfig):
+class Llama3ConfigBase(MAXModelConfigBase):
+    """Base configuration for Llama3 models."""
+
+    # Required fields
     hidden_size: int
     num_attention_heads: int
     num_key_value_heads: int
@@ -51,11 +51,12 @@ class Llama3Config(MAXConfig):
     interleaved_rope_weights: bool
     vocab_size: int
     dtype: DType
-    quantization_encoding: Optional[QuantizationEncoding]
+    model_quantization_encoding: Optional[QuantizationEncoding]
     quantization_config: Optional[QuantizationConfig]
     kv_params: KVCacheParams
-    all_logits: bool
+    return_n_logits: int
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
+    attention_bias: bool
     rms_norm_eps: Optional[float]
     tie_word_embeddings: bool
     stacked_mlp: bool
@@ -70,6 +71,11 @@ class Llama3Config(MAXConfig):
     @staticmethod
     def help() -> dict[str, str]:
         return {}
+
+
+@dataclass
+class Llama3Config(MAXModelConfig, Llama3ConfigBase):
+    """Implementation of MAXModelConfig for Llama3 models."""
 
     @staticmethod
     def calculate_attention_multiplier(
@@ -119,8 +125,14 @@ class Llama3Config(MAXConfig):
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
+            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             n_devices=n_devices,
         )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers
 
     # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     # Also, these should just be class properties since they're already made
@@ -155,7 +167,9 @@ class Llama3Config(MAXConfig):
         logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
+        return_n_logits: int,
         norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        attention_bias: bool = False,
     ) -> Llama3Config:
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
@@ -190,15 +204,28 @@ class Llama3Config(MAXConfig):
         )
         rope_scaling_params = None
         rope_scaling = huggingface_config.rope_scaling
-        if rope_scaling is not None and rope_scaling["rope_type"] == "llama3":
-            rope_scaling_params = Llama3RopeScalingParams(
-                factor=rope_scaling["factor"],
-                low_freq_factor=rope_scaling["low_freq_factor"],
-                high_freq_factor=rope_scaling["high_freq_factor"],
-                orig_max_position=rope_scaling[
-                    "original_max_position_embeddings"
-                ],
-            )
+
+        if rope_scaling is not None:
+            # Since "rope_type" huggingface config is not standardized, we need
+            # to check for both "type" and "rope_type" keys.
+            # TODO: A better solution would be for those family of models to
+            # create their own subclass of MAXModelConfig or Llama3Config, then
+            # parts of it like rope_scaling to account for such differences.
+            rope_type = rope_scaling.get("type")
+            rope_type_alt = rope_scaling.get("rope_type")
+            if rope_type is None and rope_type_alt is None:
+                raise ValueError(
+                    "Neither 'type' nor 'rope_type' found in rope_scaling huggingface config"
+                )
+            if rope_type == "llama3" or rope_type_alt == "llama3":
+                rope_scaling_params = Llama3RopeScalingParams(
+                    factor=rope_scaling["factor"],
+                    low_freq_factor=rope_scaling["low_freq_factor"],
+                    high_freq_factor=rope_scaling["high_freq_factor"],
+                    orig_max_position=rope_scaling[
+                        "original_max_position_embeddings"
+                    ],
+                )
 
         return Llama3Config(
             hidden_size=huggingface_config.hidden_size,
@@ -212,9 +239,13 @@ class Llama3Config(MAXConfig):
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
-            quantization_encoding=pipeline_config.graph_quantization_encoding,
+            # TODO: Since pipeline_config.model_config is a MAXModelConfig, these
+            # fields should not have to reinstantiated. Once we roll out the final
+            # iteration of MAXModelConfig, it will automatically instantiate based
+            # on the underlying model repo id.
+            model_quantization_encoding=pipeline_config.model_config.graph_quantization_encoding,
             quantization_config=pipeline_config.model_config._quant_config,
-            all_logits=pipeline_config.enable_echo,
+            return_n_logits=return_n_logits,
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
@@ -225,6 +256,7 @@ class Llama3Config(MAXConfig):
                 cache_dtype=cache_dtype,
             ),
             norm_method=norm_method,
+            attention_bias=attention_bias,
             tie_word_embeddings=tie_word_embeddings,
             stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
             stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,

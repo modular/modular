@@ -17,6 +17,7 @@ from sys import alignof, sizeof
 import python._cpython as cp
 from memory import UnsafePointer, stack_allocation
 from python import Python, PythonObject, TypedPythonObject
+from collections.string import StringSlice
 from python._bindings import (  # Imported for use by the compiler
     ConvertibleFromPython,
     PyMojoObject,
@@ -36,14 +37,16 @@ from python._cpython import (
 from python.python import _get_global_python_itf
 
 alias PyModule = TypedPythonObject["Module"]
+alias MLIRKGENString = __mlir_type.`!kgen.string`
 
 
 fn get_cpython() -> CPython:
     return _get_global_python_itf().cpython()
 
 
-fn create_pybind_module[name: StringLiteral]() raises -> PyModule:
-    return Python.create_module(name)
+# This function is used by the compiler to create a new module.
+fn create_pybind_module[name: MLIRKGENString]() raises -> PyModule:
+    return Python.create_module(String(StringLiteral(name)))
 
 
 fn fail_initialization(owned err: Error) -> PythonObject:
@@ -101,14 +104,14 @@ fn add_wrapper_to_module[
     wrapper_func: fn (
         PythonObject, TypedPythonObject["Tuple"]
     ) raises -> PythonObject,
-    func_name: StringLiteral,
+    func_name: MLIRKGENString,
 ](mut module_obj: PythonObject) raises:
     var module = TypedPythonObject["Module"](unsafe_unchecked_from=module_obj)
     Python.add_functions(
         module,
         List[PyMethodDef](
             PyMethodDef.function[
-                py_c_function_wrapper[wrapper_func], func_name
+                py_c_function_wrapper[wrapper_func], StringLiteral(func_name)
             ]()
         ),
     )
@@ -161,8 +164,8 @@ fn check_and_get_or_convert_arg[
 fn _try_convert_arg[
     T: ConvertibleFromPython
 ](
-    func_name: StringLiteral,
-    type_name_id: StringLiteral,
+    func_name: StringSlice,
+    type_name_id: StringSlice,
     py_args: TypedPythonObject["Tuple"],
     argidx: Int,
     out result: T,

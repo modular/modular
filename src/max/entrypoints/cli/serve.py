@@ -45,9 +45,13 @@ def serve_pipeline(
     batch_timeout: float = 0.0,
     model_name: Union[str, None] = None,
     failure_percentage: Optional[int] = None,
+    experimental_enable_kvcache_agent: bool = False,
 ):
     # Initialize settings
     settings = Settings(MAX_SERVE_USE_HEARTBEAT=False)
+    settings.experimental_enable_kvcache_agent = (
+        experimental_enable_kvcache_agent
+    )
 
     # TODO: This is a workaround to support embeddings generation until the
     # changes to tie pipelines to tasks is complete. This will be removed.

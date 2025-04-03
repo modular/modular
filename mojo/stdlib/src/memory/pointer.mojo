@@ -45,7 +45,6 @@ struct _GPUAddressSpace(EqualityComparable):
     """Local address space."""
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -160,7 +159,13 @@ struct _GPUAddressSpace(EqualityComparable):
 
 @value
 @register_passable("trivial")
-struct AddressSpace(EqualityComparable, Stringable, Writable):
+struct AddressSpace(
+    EqualityComparable,
+    Stringable,
+    Writable,
+    CollectionElement,
+    EqualityComparableCollectionElement,
+):
     """Address space of the pointer."""
 
     var _value: Int
@@ -169,7 +174,6 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
     """Generic address space."""
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: Int):
         """Initializes the address space from the underlying integral value.
 
@@ -179,7 +183,6 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
         self._value = value
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: _GPUAddressSpace):
         """Initializes the address space from the underlying integral value.
 
@@ -301,7 +304,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](CollectionElementNew, Stringable):
+](CollectionElementNew, Stringable, CollectionElement):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to

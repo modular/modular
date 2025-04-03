@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Callable
+from typing import Callable, cast
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
@@ -96,7 +96,7 @@ class Transformer(Module):
             | FetchPagedKVCacheCollection
             | FetchPagedKVCacheCollectionFA3Fallback
         ),
-        all_logits: bool = False,
+        return_n_logits: int = 1,
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
         | None = None,
@@ -110,9 +110,15 @@ class Transformer(Module):
         self.embed_tokens = embedding
         self.kv_params = kv_params
         self.kv_collection_constructor = kv_collection_constructor
-        self.all_logits = all_logits
         self.embedding_multiplier = embedding_multiplier
         self.logits_postprocessor = logits_postprocessor
+        self.return_n_logits = return_n_logits
+
+        if return_n_logits == 0 or return_n_logits < -1:
+            raise ValueError(
+                "return_n_logits must be greater than or equal to -1"
+                "and cannot be 0."
+            )
 
     def _apply_logits_postprocessor(
         self, output: tuple[TensorValue, ...]
@@ -127,51 +133,77 @@ class Transformer(Module):
         kv_cache_inputs: Sequence[TensorValue],
         **kwargs,
     ) -> tuple[TensorValue, ...]:
-        # TODO: Split into a ragged and non-ragged version.
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
             h = h * ops.constant(self.embedding_multiplier, h.dtype)
 
-        ragged = "input_row_offsets" in kwargs
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
         cache_lengths = kv_cache_inputs[1]
 
-        if ragged:
-            input_row_offsets = kwargs["input_row_offsets"]
-            prompt_lengths = ops.rebind(
-                input_row_offsets[1:] - input_row_offsets[:-1],
-                cache_lengths.shape,
-            )
-        else:
-            prompt_lengths = kwargs["valid_lengths"]
+        input_row_offsets = kwargs["input_row_offsets"]
+        prompt_lengths = ops.rebind(
+            input_row_offsets[1:] - input_row_offsets[:-1],
+            cache_lengths.shape,
+        )
 
         context_lengths = prompt_lengths + cache_lengths
         kwargs["context_lengths"] = context_lengths
 
         for _, layer in enumerate(self.layers):
-            h = layer(h, kv_collection, **kwargs)
-
-        normalized = self.norm(h)
-
-        if "input_row_offsets" in kwargs:
-            # Ragged inputs/activations
-            last_indices = kwargs["input_row_offsets"][1:] - 1
-            last_tokens = ops.gather(normalized, last_indices, axis=0)
-        else:
-            # Dense padded inputs/activations
-            valid_lengths = kwargs["valid_lengths"]
-            # TODO: Remove once `gather_nd` works with nonstatic last dims.
-            indices = ops.unsqueeze(valid_lengths - 1, -1)
-            last_tokens = ops.gather_nd(normalized, indices, batch_dims=1)
-
-        # Always return float32 logits, no matter the activation type.
-        last_token_logits = ops.cast(self.lm_head(last_tokens), DType.float32)
-
-        if self.all_logits:
-            all_logits = ops.cast(self.lm_head(normalized), DType.float32)
-            return self._apply_logits_postprocessor(
-                (last_token_logits, all_logits)
+            h = layer(
+                h,
+                kv_collection,
+                **kwargs,
             )
 
-        return self._apply_logits_postprocessor((last_token_logits,))
+        # Retrieve a variable number of tokens
+        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
+        last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
+        logits = None
+        offsets = None
+
+        if self.return_n_logits > 1:
+            return_n_logits_range = ops.range(
+                ops.constant(self.return_n_logits, DType.int64),
+                ops.constant(0, DType.int64),
+                ops.constant(-1, DType.int64),
+                out_dim="return_n_logits_range",
+            )
+            offsets = (
+                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+            )
+            last_indices = ops.reshape(offsets, shape=(-1,))
+            last_tokens = ops.gather(h, last_indices, axis=0)
+            logits = ops.cast(
+                self.lm_head(self.norm(last_tokens)), DType.float32
+            )
+            offsets = ops.range(
+                ops.constant(0, DType.int64),
+                last_indices.shape[0],
+                ops.constant(self.return_n_logits, DType.int64),
+                out_dim="logit_offsets",
+            )
+        elif self.return_n_logits == -1:
+            logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
+            offsets = cast(TensorValue, kwargs["input_row_offsets"])
+        elif self.return_n_logits == 0 or self.return_n_logits < -1:
+            raise ValueError(
+                f"return_n_logits provided ({self.return_n_logits}), must be greater than -1, and cannot be 0"
+            )
+
+        if logits:
+            last_logits, logits = self._apply_logits_postprocessor(
+                (
+                    last_logits,
+                    logits,
+                )
+            )
+        else:
+            last_logits = self._apply_logits_postprocessor((last_logits,))[0]
+
+        if offsets is not None:
+            assert logits is not None
+            return (last_logits, logits, offsets)
+        else:
+            return (last_logits,)

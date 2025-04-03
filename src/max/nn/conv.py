@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 from max.graph import TensorValue, TensorValueLike, Weight, ops
 
@@ -23,14 +23,25 @@ from .layer import Layer
 class Conv2D(Layer):
     """A 2D convolution over an input signal composed of several input
     planes.
+
+    Example:
+        .. code-block:: python
+
+            conv = nn.Conv2D(
+                filter=filter_2d,
+                bias=bias_2d,
+                stride=2,
+                padding=1
+            )
+            output = conv(x)
     """
 
     filter: TensorValueLike
     bias: Optional[TensorValueLike] = None
 
-    stride: Union[int, Tuple[int, int]] = (1, 1)
-    padding: Union[int, Tuple[int, int, int, int]] = (0, 0, 0, 0)
-    dilation: Union[int, Tuple[int, int]] = (1, 1)
+    stride: Union[int, tuple[int, int]] = (1, 1)
+    padding: Union[int, tuple[int, int, int, int]] = (0, 0, 0, 0)
+    dilation: Union[int, tuple[int, int]] = (1, 1)
     groups: int = 1
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -70,6 +81,16 @@ class Conv2D(Layer):
 class Conv1D(Layer):
     """A 1D convolution over an input signal composed of several input
     planes.
+
+    Example:
+        .. code-block:: python
+
+            conv = nn.Conv1D(
+                filter=filter_1d,
+                bias=bias_1d,
+                stride=1,
+                padding=1
+            )
     """
 
     filter: TensorValueLike  # [kernel_size, in_channels, out_channels]
@@ -117,13 +138,23 @@ class Conv1D(Layer):
 class Conv3D(Layer):
     """A 3D convolution over an input signal composed of several input
     planes.
+
+    Example:
+        .. code-block:: python
+
+            conv = nn.Conv3D(
+                filter=filter_3d,
+                bias=bias_3d,
+                stride=1,
+                padding=1
+            )
     """
 
     filter: TensorValueLike  # [depth, height, width, in_channels / num_groups, out_channels]
     bias: Optional[TensorValueLike] = None  # [out_channels]
 
-    stride: Union[int, Tuple[int, int, int]] = (1, 1, 1)
-    padding: Union[int, Tuple[int, int, int, int, int, int]] = (
+    stride: Union[int, tuple[int, int, int]] = (1, 1, 1)
+    padding: Union[int, tuple[int, int, int, int, int, int]] = (
         0,
         0,
         0,
@@ -131,7 +162,7 @@ class Conv3D(Layer):
         0,
         0,
     )
-    dilation: Union[int, Tuple[int, int, int]] = (1, 1, 1)
+    dilation: Union[int, tuple[int, int, int]] = (1, 1, 1)
     groups: int = 1
 
     def __call__(self, x: TensorValueLike) -> TensorValue:

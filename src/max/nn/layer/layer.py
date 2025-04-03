@@ -17,15 +17,12 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Iterable, Mapping
 from functools import wraps
 from inspect import signature
 from typing import (
     Any,
     Callable,
-    Dict,
-    Iterable,
-    Mapping,
-    Tuple,
     Union,
     get_args,
 )
@@ -43,7 +40,7 @@ DLPackCompatible = Union[DLPackArray, np.ndarray]
 
 
 class Layer:
-    """Base Layer class.
+    """Base Layer class (deprecated, use `max.nn.Module` instead).
 
     Currently, only functionality is for adding hooks to the call function of
     each layer to support testing, debugging or profiling.
@@ -70,10 +67,43 @@ class Layer:
 
 
 class Module(Layer, ABC):
-    """(new) Base class for model layers with weight management.
+    """Base class for model layers with weight management.
 
-    This will be merged with the above class once all layers have been moved to
-    V2.
+    This class can be used to write layers and construct networks of layers.
+
+    Example usage:
+
+    .. code-block:: python
+
+        from max import nn
+        from max.dtype import DType
+        from max.graph import Weight, ops
+
+        class Linear(nn.Module):
+            def __init__(self, in_dims, out_dims):
+                super().__init__()
+                self.weight = Weight("weight", DType.float32, (in_dim, out_dim))
+
+            def __call__(self, x):
+                return x @ self.weight.T
+
+        class MLP(nn.Module):
+            def __init__(self):
+                self.up = Linear(5, 10)
+                self.gate = Linear(5, 10)
+                self.down = Linear(10, 5)
+
+            def __call__(self, x):
+                return self.down(ops.silu(self.gate(x)) + self.up(x))
+
+        model = MLP()
+        print(model.state_dict())  # {"up.weight": Tensor([5, 10]), ...}
+
+    Constructing a graph without `max.nn.Module` can result in name collisions
+    with the weights (in this example, there would be three weights with the
+    name `Weight`). With `max.nn.Module`, you can use `state_dict()` or
+    `load_state_dict()` to initialize or set the weights values, and finalize
+    the weight names to be unique within the model.
     """
 
     def __init__(self):
@@ -360,7 +390,7 @@ _LAYER_HOOKS = _LOCAL._layer_hooks = []
 
 
 def add_layer_hook(
-    fn: Callable[[Layer, Tuple[Any, ...], Dict[str, Any], Any], Any],
+    fn: Callable[[Layer, tuple[Any, ...], dict[str, Any], Any], Any],
 ) -> None:
     """Adds a hook to call a function after each layer's `__call__`.
 

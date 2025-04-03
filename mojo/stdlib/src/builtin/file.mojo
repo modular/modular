@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the file based methods.
+"""Provides APIs to read and write files.
 
 These are Mojo built-ins, so you don't need to import them.
 
@@ -66,7 +66,7 @@ struct _OwnedStringRef(Boolable):
         return self.length != 0
 
 
-struct FileHandle:
+struct FileHandle(Writer):
     """File handle to an opened file."""
 
     var handle: OpaquePointer
@@ -194,8 +194,10 @@ struct FileHandle:
         return String(ptr=buf, length=Int(size_copy) + 1)
 
     fn read[
-        type: DType
-    ](self, ptr: UnsafePointer[Scalar[type]], size: Int64 = -1) raises -> Int64:
+        dtype: DType
+    ](
+        self, ptr: UnsafePointer[Scalar[dtype]], size: Int64 = -1
+    ) raises -> Int64:
         """Read data from the file into the pointer. Setting size will read up
         to `sizeof(type) * size`. The default value of `size` is -1 which
         will read to the end of the file. Starts reading from the file handle
@@ -203,7 +205,7 @@ struct FileHandle:
         seek pointer.
 
         Parameters:
-            type: The type that will the data will be represented as.
+            dtype: The type that will the data will be represented as.
 
         Args:
             ptr: The pointer where the data will be read to.
@@ -260,7 +262,7 @@ struct FileHandle:
         ](
             self.handle,
             ptr,
-            size * sizeof[type](),
+            size * sizeof[dtype](),
             Pointer.address_of(err_msg),
         )
 

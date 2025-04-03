@@ -16,44 +16,23 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Iterator,
-    List,
-    Sequence,
-    Type,
-    TypeVar,
-    cast,
-    final,
-    overload,
-)
+from typing import Any, TypeVar, cast, overload
 
-import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.pipelines.context import InputContext
 from typing_extensions import TypeGuard
 
 from .cache_params import KVCacheParams
 
-
-@dataclass
-class _FetchMetadata:
-    """Metadata about sequences that are inflight.
-
-    Inflight refers to sequences that have executed `fetch` but not `step`.
-    """
-
-    prompt: np.ndarray
-    num_steps: int
-
-
 _T = TypeVar("_T")
 
 
-def _is_sequence_of(x: Any, ty: Type[_T]) -> TypeGuard[Sequence[_T]]:
+def _is_sequence_of(x: Any, ty: type[_T]) -> TypeGuard[Sequence[_T]]:
     return isinstance(x, Sequence) and all(isinstance(item, ty) for item in x)
 
 
@@ -182,7 +161,7 @@ class KVCacheManager(ABC):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: List[Device],
+        devices: list[Device],
         session: InferenceSession,
         is_ragged: bool = False,
     ) -> None:
@@ -195,7 +174,7 @@ class KVCacheManager(ABC):
 
         # Attributes for managing available slots.
         self.available = set(range(self.max_batch_size))
-        self.cache_lengths: dict[int, int] = {}
+        self.active: set[int] = set()
 
         self.is_ragged = is_ragged
         increment_cache_lengths_graph = (
@@ -204,7 +183,6 @@ class KVCacheManager(ABC):
         self.increment_cache_lengths_model = session.load(
             increment_cache_lengths_graph
         )
-        self.fetch_metadata: dict[int, _FetchMetadata] = {}
 
     @classmethod
     @abstractmethod
@@ -215,7 +193,7 @@ class KVCacheManager(ABC):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         """Returns the estimated total memory usage of the kv cache."""
@@ -229,43 +207,21 @@ class KVCacheManager(ABC):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         """Returns the estimated optimal batch size for the kv cache."""
         ...
 
     @abstractmethod
-    def _fetch(
-        self,
-        seq_ids_and_prompts: dict[int, np.ndarray],
-        num_steps: int = 1,
-    ) -> List[KVCacheInputs]:
-        """Used by `fetch` and should be implemented by child classes."""
-        ...
-
-    @final
     def fetch(
         self,
-        seq_ids_and_prompts: dict[int, np.ndarray],
+        batch: list[InputContext],
         num_steps: int = 1,
-    ) -> List[KVCacheInputs]:
+    ) -> list[KVCacheInputs]:
         """Returns blocks and other inputs to kv cache kernel for given
         sequence ids and prompts."""
-        # Call into `_fetch` method implemented by child classes.
-        # This may trim the prompts in place so the fetch metadata is updated
-        # afterwards.
-        res = self._fetch(seq_ids_and_prompts, num_steps)
-
-        # Update the fetch metadata for the given sequence ids and prompts.
-        for seq_id, prompt in seq_ids_and_prompts.items():
-            assert seq_id not in self.fetch_metadata
-            self.fetch_metadata[seq_id] = _FetchMetadata(
-                prompt=prompt,
-                num_steps=num_steps,
-            )
-
-        return res
+        ...
 
     @abstractmethod
     def input_symbols(
@@ -274,7 +230,7 @@ class KVCacheManager(ABC):
         """Returns the input symbols for the kv cache manager."""
         ...
 
-    def claim(self, n: int) -> List[int]:
+    def claim(self, n: int) -> list[int]:
         """Claims `n` blocks of memory in the cache for incoming requests.
 
         This returns a list of sequence ids, which identify a sequence's
@@ -286,61 +242,55 @@ class KVCacheManager(ABC):
         seq_ids = []
 
         for _ in range(n):
-            id = self.available.pop()
-            seq_ids.append(id)
-            self.cache_lengths[id] = 0
+            seq_id = self.available.pop()
+            self.active.add(seq_id)
+            seq_ids.append(seq_id)
 
         return seq_ids
 
-    def external_claim(self, seq_ids: List[int]) -> None:
+    def external_claim(self, seq_ids: list[int]) -> None:
         """Variant of the above where sequence ids are reserved externally."""
         for seq_id in seq_ids:
-            self.available.remove(seq_id)
-            self.cache_lengths[seq_id] = 0
+            if seq_id in self.active:
+                raise ValueError(
+                    f"Attempted to claim {seq_id} but it is already in active set"
+                )
 
-    def _step(
-        self,
-        seq_ids_and_new_tokens: dict[int, np.ndarray],
-    ) -> None:
-        """Used by `step` and can optionally be overridden by child classes."""
+            self.available.remove(seq_id)
+            self.active.add(seq_id)
+
+    def step(self, batch: list[InputContext]) -> None:
+        """Commit the new tokens into the prefix cache.
+
+        This is a no-op if prefix caching is disabled."""
         ...
 
-    def step(self, seq_ids_and_new_tokens: dict[int, np.ndarray]) -> None:
-        """Update the `cache_lengths` objects to note that a new
-        kv projection step has occurred, and that the underlying memory
-        has been written to. This `cache_lengths` value is then used
-        downstream in `fetch` to track what section of memory should
-        be used in the kernels.
+    def rollback(self, batch: list[InputContext]) -> None:
+        """Rollback the KVCache for speculative decoding by discarding all data
+        after ctx.start_idx. This should be called after stepping normally.
+
+        This is a no-op except for paged kv cache manager.
+
+        Usage:
+            >>> manager.fetch([ctx]])
+            >>> manager.step([ctx]])
+            >>> ctx.bump_token_indices(start_idx=-100, ...)
+            >>> manager.rollback([ctx])
         """
-        # Call into `_step` method possibly overridden by child classes.
-        self._step(seq_ids_and_new_tokens)
-
-        # Update the cache lengths and delete the fetch metadata for the given
-        # sequence ids and prompts.
-        for seq_id, new_tokens in seq_ids_and_new_tokens.items():
-            if seq_id not in self.cache_lengths:
-                raise ValueError(f"seq_id: {seq_id} not in cache.")
-
-            assert seq_id in self.fetch_metadata
-            metadata = self.fetch_metadata[seq_id]
-            del self.fetch_metadata[seq_id]
-
-            assert metadata.num_steps == len(new_tokens)
-            self.cache_lengths[seq_id] += (
-                len(metadata.prompt) + metadata.num_steps - 1
-            )
+        ...
 
     def release(self, seq_id: int) -> None:
         """Release `seq_id` provided, marking this sequence as complete.
         This returns the seq_id back to the available pool of cache memory,
         allowing it to be reused when a new sequence is claimed.
         """
+        if seq_id not in self.active:
+            raise ValueError(
+                f"Attempted to release {seq_id} but it is not in active set"
+            )
 
-        if seq_id not in self.cache_lengths:
-            raise ValueError(f"seq_id: {id} not in cache.")
-
+        self.active.remove(seq_id)
         self.available.add(seq_id)
-        del self.cache_lengths[seq_id]
 
     def contains(self, seq_id: int) -> bool:
         return seq_id not in self.slots_remaining
@@ -349,11 +299,6 @@ class KVCacheManager(ABC):
     def slots_remaining(self) -> set[int]:
         """The outstanding cache slots available."""
         return self.available
-
-    @property
-    def max_sequence_length(self) -> int:
-        """The maximum sequence length in current cache."""
-        return max(self.cache_lengths.values())
 
     def num_kv_inputs(self) -> int:
         """Returns the default number of KV cache inputs for KV managers.
@@ -365,9 +310,9 @@ class KVCacheManager(ABC):
 
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: List[RaggedKVCacheInputs] | List[PaddedKVCacheInputs],
+        kv_cache_inputs: list[RaggedKVCacheInputs] | list[PaddedKVCacheInputs],
         prev_model_inputs: Any,
-    ) -> List[RaggedKVCacheInputs] | List[PaddedKVCacheInputs]:
+    ) -> list[RaggedKVCacheInputs] | list[PaddedKVCacheInputs]:
         """
         Prepare the inputs for a multistep execution, generally by incrementing
         the cache lengths. This should not require a device synchronization,
@@ -391,9 +336,9 @@ class KVCacheManager(ABC):
 
     def _increment_cache_lengths_ragged(
         self,
-        kv_cache_inputs: List[RaggedKVCacheInputs],
+        kv_cache_inputs: list[RaggedKVCacheInputs],
         prev_model_inputs: Any,
-    ) -> List[RaggedKVCacheInputs]:
+    ) -> list[RaggedKVCacheInputs]:
         """Prepares cache inputs for the next token in multistep execution.
 
         Updates the cache lengths for the next inference step without requiring device
@@ -440,9 +385,9 @@ class KVCacheManager(ABC):
 
     def _increment_cache_lengths_padded(
         self,
-        kv_cache_inputs: List[PaddedKVCacheInputs],
+        kv_cache_inputs: list[PaddedKVCacheInputs],
         prev_model_inputs: Any,
-    ) -> List[PaddedKVCacheInputs]:
+    ) -> list[PaddedKVCacheInputs]:
         """
         Prepare the inputs for a multistep execution, generally by incrementing
         the cache lengths. This should not require a device synchronization,

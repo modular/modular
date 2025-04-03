@@ -509,11 +509,11 @@ def test_float_conversion():
 
 
 def test_string_literal_from_stringable():
-    assert_equal(StringLiteral.get["hello"](), "hello")
-    assert_equal(StringLiteral.get[String("hello")](), "hello")
-    assert_equal(StringLiteral.get[42](), "42")
+    assert_equal(get_string_literal["hello"](), "hello")
+    assert_equal(get_string_literal[String("hello")](), "hello")
+    assert_equal(get_string_literal[42](), "42")
     assert_equal(
-        StringLiteral.get[SIMD[DType.int64, 4](1, 2, 3, 4)](), "[1, 2, 3, 4]"
+        get_string_literal[SIMD[DType.int64, 4](1, 2, 3, 4)](), "[1, 2, 3, 4]"
     )
 
 

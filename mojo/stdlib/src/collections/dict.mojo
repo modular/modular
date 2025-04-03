@@ -38,7 +38,6 @@ See the `Dict` docs for more details.
 """
 from sys.ffi import OpaquePointer
 
-from bit import is_power_of_two
 from memory import UnsafePointer, bitcast, memcpy
 
 from .optional import Optional
@@ -83,7 +82,7 @@ struct _DictEntryIter[
     var src: Pointer[Dict[K, V], dict_origin]
 
     fn __init__(
-        mut self, index: Int, seen: Int, ref [dict_origin]dict: Dict[K, V]
+        out self, index: Int, seen: Int, ref [dict_origin]dict: Dict[K, V]
     ):
         self.index = index
         self.seen = seen
@@ -515,7 +514,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
         """
         debug_assert(
-            bit.is_power_of_two(power_of_two_initial_capacity)
+            power_of_two_initial_capacity.is_power_of_two()
             and power_of_two_initial_capacity >= 8,
             "power_of_two_initial_capacity need to be >=8 and a power of two",
         )

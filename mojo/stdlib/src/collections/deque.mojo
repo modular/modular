@@ -141,7 +141,7 @@ struct Deque[ElementType: CollectionElement](
         """
         self = Self(elements=values^)
 
-    fn __init__(mut self, *, owned elements: VariadicListMem[ElementType, _]):
+    fn __init__(out self, *, owned elements: VariadicListMem[ElementType, _]):
         """Constructs a deque from the given values.
 
         Args:
