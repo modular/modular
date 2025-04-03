@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from . import allreduce
 from .allgather import allgather
+from .argsort import argsort
 from .band_part import band_part
 from .broadcast_to import broadcast_to
 from .buffer import buffer_load, buffer_store, buffer_store_slice
