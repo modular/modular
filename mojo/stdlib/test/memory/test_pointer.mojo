@@ -46,6 +46,19 @@ def test_pointer_to():
     assert_not_equal(0, Pointer(to=local)[])
 
 
+# We don't actually need to run this,
+# but Mojo's exclusivity check shouldn't complain
+def test_get_immutable():
+    fn foo(x: Pointer[Int], y: Pointer[Int]) -> Int:
+        return x[]
+
+    var x = Int(0)
+    return foo(
+        Pointer(to=x).get_immutable(),
+        Pointer(to=x).get_immutable(),
+    )
+
+
 def main():
     test_copy_reference_explicitly()
     test_equality()

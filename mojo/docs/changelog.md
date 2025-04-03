@@ -30,6 +30,9 @@ what we publish.
 
 ### Standard library changes
 
+- `Pointer` now has `get_immutable()` to return a new `Pointer`
+  with the same underlying data but an `ImmutableOrigin`.
+
 - You can now forward a `VariadicPack` that is `Writable` to a writer using
 `WritableVariadicPack`:
 
