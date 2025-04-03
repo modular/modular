@@ -269,7 +269,7 @@ class PagedKVCacheManager(KVCacheManager):
     enable_prefix_caching: bool
     """Flag indicating if prefix caching (block reuse) is enabled."""
 
-    enable_swapping_to_host: bool
+    enable_kvcache_swapping_to_host: bool
     """Flag indicating if swapping blocks to host memory is enabled."""
 
     prefetched_seq_ids: set[int]
@@ -446,7 +446,7 @@ class PagedKVCacheManager(KVCacheManager):
         self.enable_prefix_caching = self.params.enable_prefix_caching
 
         # Whether kvcache swapping to host is enabled
-        self.enable_swapping_to_host = (
+        self.enable_kvcache_swapping_to_host = (
             self.params.enable_kvcache_swapping_to_host
         )
 
@@ -773,8 +773,8 @@ class PagedKVCacheManager(KVCacheManager):
     @traced
     def _enqueue_block_copy(self, copy_op: BlockCopyOp) -> None:
         copy_type = copy_op.block_copy_type
-        dst_idx = copy_op.dst.block_id
-        src_idx = copy_op.src.block_id
+        dst_idx = copy_op.dst.bid
+        src_idx = copy_op.src.bid
         if copy_type == BlockCopyType.D2D_COW:
             # TODO E2EOPT-142: Schedule each memcpy on a different stream
             if dst_idx != src_idx:
@@ -854,7 +854,7 @@ class PagedKVCacheManager(KVCacheManager):
         if self.block_manager.host_block_pool is None:
             return 0
         host_committed_blocks = len(
-            self.block_manager.host_block_pool.block_hash_to_committed_block
+            self.block_manager.host_block_pool.hash_to_committed_block
         )
         pct = host_committed_blocks / self.total_num_host_pages
         assert 0 <= pct <= 1

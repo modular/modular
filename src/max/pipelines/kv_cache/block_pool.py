@@ -71,7 +71,7 @@ class BlockPool:
         # between requests for prefix caching. The cached block may be used by
         # running requests or in the free_block_queue that could potentially
         # be evicted.
-        self.block_hash_to_committed_block: dict[int, KVCacheBlock] = {}
+        self.hash_to_committed_block: dict[int, KVCacheBlock] = {}
 
         # Mapping from parent block hash to a trie of all child block hashes.
         self.parent_hash_to_child_token_ids: dict[int, SimpleTrie] = (
@@ -93,7 +93,7 @@ class BlockPool:
 
         # Commit the block into the prefix cache.
         hash_value = block_hash.value
-        self.block_hash_to_committed_block[hash_value] = block
+        self.hash_to_committed_block[hash_value] = block
 
         # Update the parent hash to child token_ids trie.
         parent_hash_value = block_hash.parent_hash_value
@@ -127,11 +127,11 @@ class BlockPool:
         into the prefix cache and return None.
         """
         hash_value = block_hash.value
-        if hash_value in self.block_hash_to_committed_block:
+        if hash_value in self.hash_to_committed_block:
             # Check if a block with the same hash is already committed.
             # If so, we reuse the already committed block.
-            prefix_cache_block = self.block_hash_to_committed_block[hash_value]
-            if block.block_id == prefix_cache_block.block_id:
+            prefix_cache_block = self.hash_to_committed_block[hash_value]
+            if block.bid == prefix_cache_block.bid:
                 return None
 
             self.touch(prefix_cache_block)
@@ -152,12 +152,12 @@ class BlockPool:
         hash_value = block.block_hash.value
 
         # Nothing to do if it is not committed.
-        if hash_value not in self.block_hash_to_committed_block:
+        if hash_value not in self.hash_to_committed_block:
             return
 
         # Delete the block from the prefix cache
         parent_hash_value = block.block_hash.parent_hash_value
-        del self.block_hash_to_committed_block[hash_value]
+        del self.hash_to_committed_block[hash_value]
         del self.parent_hash_to_child_token_ids[parent_hash_value][
             block.block_hash.token_ids
         ]
@@ -228,7 +228,7 @@ class BlockPool:
         return self.free_block_queue.free_blocks
 
     @traced
-    def assert_runtime_invariants(self, active_block_ids: list[int]) -> None:
+    def assert_runtime_invariants(self, active_bids: list[int]) -> None:
         """If runtime checks are enabled, assert that the runtime checks are
         correct.
         """
@@ -239,10 +239,10 @@ class BlockPool:
         for (
             block_hash,
             block,
-        ) in self.block_hash_to_committed_block.items():
+        ) in self.hash_to_committed_block.items():
             assert block.block_hash is not None
             assert block.block_hash.value == block_hash
 
         # Check that the total number of blocks is correct.
         free_blocks = len(self.free_block_queue)
-        assert free_blocks + len(set(active_block_ids)) == self.total_num_blocks
+        assert free_blocks + len(set(active_bids)) == self.total_num_blocks

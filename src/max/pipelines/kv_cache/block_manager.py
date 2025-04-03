@@ -90,17 +90,13 @@ class BlockManager:
         # Mapping from request ID to kv block hashes.
         # This is to avoid recomputing the block hashes for each call of
         # `get_computed_blocks` or `allocate_slots`.
-        self.req_to_block_hashes: dict[int, list[BlockHashType]] = defaultdict(
-            list
-        )
+        self.req_to_hashes: dict[int, list[BlockHashType]] = defaultdict(list)
 
         # Mapping from request ID to block copy operations.
         # Note that the BlockCopyOp owns an instance of a Host block.
         # We should increment it when creating a BlockCopyOp and decrement it
         # when the block copy operation is deleted.
-        self.req_to_block_copy_ops: dict[int, list[BlockCopyOp]] = defaultdict(
-            list
-        )
+        self.req_to_copy_ops: dict[int, list[BlockCopyOp]] = defaultdict(list)
         self.d2h_eviction_copy_ops: list[BlockCopyOp] = []
 
         # Cache hit rate metrics.
@@ -119,7 +115,7 @@ class BlockManager:
             return
 
         # Compute block hashes. These hashes are used by the subsequent methods.
-        self.compute_block_hashes_for_request(ctx)
+        self.compute_hashes_for_request(ctx)
 
         # Now that we generated new tokens, we can possibly commit additional
         # blocks into prefix cache.
@@ -134,7 +130,7 @@ class BlockManager:
         This may delete block hashes and blocks assigned to a request."""
 
         new_num_hashes = ctx.start_idx // self.block_size
-        req_hashes = self.req_to_block_hashes[ctx.cache_seq_id]
+        req_hashes = self.req_to_hashes[ctx.cache_seq_id]
 
         # Delete all hashes after ctx.start_idx
         assert len(req_hashes) >= new_num_hashes
@@ -164,25 +160,25 @@ class BlockManager:
         )
 
     @traced
-    def compute_block_hashes_for_request(
+    def compute_hashes_for_request(
         self,
         ctx: InputContext,
     ):
         """Compute the block hashes for the request."""
 
         seq_id = ctx.cache_seq_id
-        block_hashes = self.req_to_block_hashes[seq_id]
-        parent_block_hash_value = None
-        if len(block_hashes) > 0:
-            parent_block_hash_value = block_hashes[-1].value
+        hashes = self.req_to_hashes[seq_id]
+        parent_hash_value = None
+        if len(hashes) > 0:
+            parent_hash_value = hashes[-1].value
 
         unhashed_tokens = ctx.tokens[
-            len(block_hashes) * self.block_size : ctx.current_length
+            len(hashes) * self.block_size : ctx.current_length
         ]
-        new_block_hashes = hash_request_tokens(
-            self.block_size, unhashed_tokens, parent_block_hash_value
+        new_hashes = hash_request_tokens(
+            self.block_size, unhashed_tokens, parent_hash_value
         )
-        block_hashes.extend(new_block_hashes)
+        hashes.extend(new_hashes)
 
     @traced
     def reuse_blocks_from_prefix_cache(self, ctx: InputContext) -> None:
@@ -207,7 +203,7 @@ class BlockManager:
             return
 
         # Compute block hashes. These hashes are used by the subsequent methods.
-        self.compute_block_hashes_for_request(ctx)
+        self.compute_hashes_for_request(ctx)
 
         # Query prefix cache for full blocks.
         prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(ctx)
@@ -265,7 +261,7 @@ class BlockManager:
                     num_tokens=tokens_matched,
                     block_hash=block_hash,
                 )
-                self.req_to_block_copy_ops[seq_id].append(cow_op)
+                self.req_to_copy_ops[seq_id].append(cow_op)
 
                 # Check that the cached_idx has increased.
                 assert ctx.start_idx > orig_start_idx
@@ -287,25 +283,23 @@ class BlockManager:
         assert self.enable_prefix_caching
 
         seq_id = ctx.cache_seq_id
-        req_block_hashes = self.req_to_block_hashes[seq_id]
+        req_hashes = self.req_to_hashes[seq_id]
         num_committed_blocks = ctx.committed_idx // self.block_size
         # we exclude the last inflight token to ensure that there is at least
         # one prompt token to be encoded.
         num_inflight_blocks = (ctx.current_length - 1) // self.block_size
-        uncommitted_block_hashes = req_block_hashes[
+        uncommitted_hashes = req_hashes[
             num_committed_blocks:num_inflight_blocks
         ]
 
         blocks = []
-        device_prefix_cache = (
-            self.device_block_pool.block_hash_to_committed_block
-        )
+        device_prefix_cache = self.device_block_pool.hash_to_committed_block
         host_prefix_cache = (
-            self.host_block_pool.block_hash_to_committed_block
+            self.host_block_pool.hash_to_committed_block
             if self.host_block_pool is not None
             else None
         )
-        for block_hash in uncommitted_block_hashes:
+        for block_hash in uncommitted_hashes:
             hash_value = block_hash.value
             if hash_value in device_prefix_cache:
                 block = device_prefix_cache[hash_value]
@@ -334,7 +328,7 @@ class BlockManager:
                     num_tokens=self.block_size,
                     block_hash=host_block.block_hash,
                 )
-                self.req_to_block_copy_ops[seq_id].append(h2d_op)
+                self.req_to_copy_ops[seq_id].append(h2d_op)
             else:
                 break
 
@@ -352,12 +346,12 @@ class BlockManager:
             return None, 0
 
         seq_id = ctx.cache_seq_id
-        req_block_hashes = self.req_to_block_hashes[seq_id]
+        req_hashes = self.req_to_hashes[seq_id]
         num_committed_blocks = ctx.committed_idx // self.block_size
 
         parent_hash = ROOT_BLOCK_HASH
         if num_committed_blocks > 0:
-            parent_hash = req_block_hashes[num_committed_blocks - 1]
+            parent_hash = req_hashes[num_committed_blocks - 1]
         parent_tokens = ctx.tokens[
             num_committed_blocks * self.block_size : ctx.current_length - 1
         ]
@@ -388,7 +382,7 @@ class BlockManager:
             parent_hash.value,
             np.array(best_child_tokens),
         )
-        child_block = self.device_block_pool.block_hash_to_committed_block[
+        child_block = self.device_block_pool.hash_to_committed_block[
             child_hash.value
         ]
         return child_block, best_tokens_matched
@@ -409,7 +403,7 @@ class BlockManager:
 
         seq_id = ctx.cache_seq_id
         req_blocks = self.req_to_blocks[seq_id]
-        req_block_hashes = self.req_to_block_hashes[seq_id]
+        req_hashes = self.req_to_hashes[seq_id]
         num_committed_blocks = ctx.committed_idx // self.block_size
 
         # Count the number of tokens for which we know the values of and align
@@ -421,7 +415,7 @@ class BlockManager:
             block = req_blocks[block_idx]
 
             # Get the block hash.
-            block_hash = req_block_hashes[block_idx]
+            block_hash = req_hashes[block_idx]
 
             # Get the parent block hash.
             new_block = self.device_block_pool.get_or_commit_into_prefix_cache(
@@ -448,7 +442,7 @@ class BlockManager:
             self.device_block_pool.free_block(block)
 
         self.req_to_blocks[seq_id] = []
-        self.req_to_block_hashes[seq_id] = []
+        self.req_to_hashes[seq_id] = []
 
     @traced
     def allocate_new_blocks(
@@ -488,7 +482,7 @@ class BlockManager:
             return
 
         # Should not swap if another block with the same hash is present.
-        if old_hash.value in self.host_block_pool.block_hash_to_committed_block:
+        if old_hash.value in self.host_block_pool.hash_to_committed_block:
             return
 
         # Allocate a host block
@@ -536,7 +530,7 @@ class BlockManager:
 
     def get_req_blocks(self, seq_id: int) -> list[int]:
         """Get the block ids for a request."""
-        return [block.block_id for block in self.req_to_blocks[seq_id]]
+        return [block.bid for block in self.req_to_blocks[seq_id]]
 
     def reset_d2h_eviction_copy_ops(self) -> None:
         """Reset the D2H eviction operations."""
@@ -544,11 +538,11 @@ class BlockManager:
 
     def reset_req_copy_ops(self, seq_id: int) -> None:
         """Reset the block copy operations for a request."""
-        self.req_to_block_copy_ops[seq_id].clear()
+        self.req_to_copy_ops[seq_id].clear()
 
     def get_req_copy_ops(self, seq_id: int) -> list[BlockCopyOp]:
         """Get the block copy operations for a request."""
-        return self.req_to_block_copy_ops[seq_id]
+        return self.req_to_copy_ops[seq_id]
 
     @traced
     def assert_runtime_invariants(self, ctx: InputContext) -> None:
@@ -562,7 +556,7 @@ class BlockManager:
         active_block_ids = []
         for blocks in self.req_to_blocks.values():
             for block in blocks:
-                active_block_ids.append(block.block_id)
+                active_block_ids.append(block.bid)
                 # Check that all active blocks have a ref_cnt > 0
                 assert block.ref_cnt > 0
 
@@ -571,7 +565,7 @@ class BlockManager:
 
         # Get the request hashes and blocks
         seq_id = ctx.cache_seq_id
-        req_hashes = self.req_to_block_hashes[seq_id]
+        req_hashes = self.req_to_hashes[seq_id]
         req_blocks = self.req_to_blocks[seq_id]
 
         # Check that the number of committed blocks for request is correct
@@ -598,10 +592,10 @@ class BlockManager:
         for hash_idx in range(1, len(req_hashes)):
             # check that hashing parent with token ids of current block
             # yields the same hash as the parent block hash
-            curr_block_hash = req_hashes[hash_idx]
-            prev_block_hash = req_hashes[hash_idx - 1]
-            assert curr_block_hash.parent_hash_value == prev_block_hash.value
-            assert curr_block_hash == hash_block_tokens(
-                prev_block_hash.value,
-                np.array(curr_block_hash.token_ids),
+            curr_hash = req_hashes[hash_idx]
+            prev_hash = req_hashes[hash_idx - 1]
+            assert curr_hash.parent_hash_value == prev_hash.value
+            assert curr_hash == hash_block_tokens(
+                prev_hash.value,
+                np.array(curr_hash.token_ids),
             )
