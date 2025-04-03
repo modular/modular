@@ -11,6 +11,7 @@ from gpu.host import *
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, stack_allocation
 from testing import *
+from collections.string import StaticString
 
 alias target_short_ptr = __mlir_attr[
     `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
@@ -33,7 +34,7 @@ alias target_regular = __mlir_attr[
 ]
 
 
-def test_data_layout_llvm[emission_kind: StringLiteral]():
+def test_data_layout_llvm[emission_kind: StaticString]():
     fn my_func(src: UnsafePointer[Int32]):
         return
 
