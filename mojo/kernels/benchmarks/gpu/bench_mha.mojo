@@ -146,11 +146,12 @@ fn run_mha[
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        flash_attention(
+        flash_attention[add_attn_mask=False](
             output_device,
             q_device,
             k_device,
             v_device,
+            mask4d,
             CausalMask(),
             IdentityScoreMod(),
             scale,
