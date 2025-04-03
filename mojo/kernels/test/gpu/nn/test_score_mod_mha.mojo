@@ -6,7 +6,8 @@
 
 # FIXME: KERN-1377
 # UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug %s -t
+# RUN: %mojo-no-debug %s -t | FileCheck %s
+# CHECK-NOT: CUDA ERROR
 
 
 from math import exp2, iota, isclose, isqrt
@@ -19,7 +20,7 @@ from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from memory import UnsafePointer
 from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, NullMask, MaterializedMask
+from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from testing import assert_almost_equal
 
@@ -335,11 +336,12 @@ def execute_flash_attention[
         max_seq_len_in_batch,
         max_cache_len_in_batch,
     )
-    flash_attention[use_score_mod=True](
+    flash_attention[add_attn_mask=False, use_score_mod=True](
         test_output_device.tensor,
         q_device.tensor,
         k_cache_device,
         v_cache_device,
+        mask_device.tensor,
         CausalMask(),
         AlibiScoreMod[num_q_heads](),
         valid_length_device.tensor,
@@ -349,12 +351,13 @@ def execute_flash_attention[
     )
 
     # Here pass mask that includes bias in q_idx >= k_idx (to compare).
-    flash_attention(
+    flash_attention[add_attn_mask=True](
         ref_output_device.tensor,
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        MaterializedMask(mask_device_mod.tensor, start_pos=cache_lengths),
+        mask_device_mod.tensor,
+        NullMask(),
         IdentityScoreMod(),
         valid_length_device.tensor,
         # TODO take scale from argument GEX-750
@@ -488,7 +491,10 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
 
 def main():
-    with DeviceContext() as ctx:
-        execute_flash_attention_suite(ctx)
+    try:
+        with DeviceContext() as ctx:
+            execute_flash_attention_suite(ctx)
 
-    print("Success!")
+        print("Success!")
+    except e:
+        print("CUDA ERROR:", String(e))

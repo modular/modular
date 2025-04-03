@@ -24,7 +24,7 @@ from nn.mha import (
     mha_gpu_naive,
 )
 from nn.mla import flare_mla_decoding, flare_mla_prefill
-from nn.mha_mask import MaterializedMask, CausalMask
+from nn.mha_mask import NullMask, CausalMask
 from nn.mha_operand import NDBufferMHAOperand
 from nn.mha_score_mod import IdentityScoreMod
 
@@ -211,10 +211,14 @@ fn test[
     fn kernel_launch(ctx: DeviceContext) raises:
         @parameter
         if use_causal_mask:
-            flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k,](
+            flare_mla_decoding[
+                decoding_warp_split_k=decoding_warp_split_k,
+                add_attn_mask=False,
+            ](
                 output_device,
                 q_device,
                 k_device,
+                mask3d,
                 CausalMask(),
                 IdentityScoreMod(),
                 scale,
@@ -226,7 +230,8 @@ fn test[
                 output_device,
                 q_device,
                 k_device,
-                MaterializedMask(mask3d),
+                mask3d,
+                NullMask(),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -237,7 +242,8 @@ fn test[
                 output_device,
                 q_device,
                 k_device,
-                MaterializedMask(mask4d),
+                mask4d,
+                NullMask(),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -278,10 +284,14 @@ fn test[
             var null_valid_length = NDBuffer[DType.uint32, 1](
                 UnsafePointer[UInt32](), Index(0)
             )
-            mha_gpu_naive[_is_cache_length_accurate=True,](
+            mha_gpu_naive[
+                _is_cache_length_accurate=True,
+                use_mask_tensor=False,
+            ](
                 q_device,
                 k_operand,
                 k_operand,
+                mask3d,
                 CausalMask(),
                 output_ref_device,
                 null_valid_length,
@@ -642,10 +652,11 @@ fn test_prefill[
     var v_ref_operand = NDBufferMHAOperand(v_ref_device)
 
     # create reference output
-    mha_gpu_naive[_is_cache_length_accurate=True](
+    mha_gpu_naive[_is_cache_length_accurate=True, use_mask_tensor=False,](
         q_device_rank4,
         k_ref_operand,
         v_ref_operand,
+        dummy_mask,
         CausalMask(),
         output_ref_device,
         null_valid_length,

@@ -226,11 +226,12 @@ def execute_ragged_flash_attention(
 
     # "true CE" execution
     print("true")
-    flash_attention[ragged=True](
+    flash_attention[add_attn_mask=False, ragged=True](
         true_ce_output_device.tensor,
         true_ce_q_ragged_device.tensor,
         true_ce_k_cache_device,
         true_ce_v_cache_paged_device,
+        dummy_mask,
         CausalMask(),
         IdentityScoreMod(),
         true_ce_row_offsets_device.tensor,
@@ -242,11 +243,12 @@ def execute_ragged_flash_attention(
 
     # "mixed CE" execution
     print("mixed")
-    flash_attention[ragged=True](
+    flash_attention[add_attn_mask=False, ragged=True](
         mixed_ce_output_device.tensor,
         mixed_ce_q_ragged_device.tensor,
         mixed_ce_k_cache_device,
         mixed_ce_v_cache_paged_device,
+        dummy_mask,
         CausalMask(),
         IdentityScoreMod(),
         mixed_ce_row_offsets_device.tensor,

@@ -232,11 +232,12 @@ def execute_ragged_flash_attention[
     )
 
     # continuous execution
-    flash_attention[ragged=True](
+    flash_attention[add_attn_mask=False, ragged=True](
         ref_output_device.tensor,
         q_ragged_device.tensor,
         k_cache_continuous_device,
         v_cache_continuous_device,
+        dummy_mask,
         CausalMask(),
         IdentityScoreMod(),
         input_row_offsets_device.tensor,
@@ -246,11 +247,12 @@ def execute_ragged_flash_attention[
     )
 
     # paged execution
-    flash_attention[ragged=True](
+    flash_attention[add_attn_mask=False, ragged=True](
         test_output_device.tensor,
         q_ragged_device.tensor,
         k_cache_paged_device,
         v_cache_paged_device,
+        dummy_mask,
         CausalMask(),
         IdentityScoreMod(),
         input_row_offsets_device.tensor,

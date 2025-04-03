@@ -20,7 +20,7 @@ from gpu.host.info import DEFAULT_GPU_ARCH
 from memory import UnsafePointer
 from nn.mha_utils import MHAConfig
 from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import CausalMask, MaterializedMask
+from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
@@ -172,11 +172,12 @@ fn test[
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[config=config](
+        flash_attention[add_attn_mask=False, config=config](
             output_device,
             q_device,
             k_device,
             v_device,
+            mask4d,
             CausalMask(),
             IdentityScoreMod(),
             scale,
@@ -215,7 +216,8 @@ fn test[
         q_device,
         k_device,
         v_device,
-        MaterializedMask(mask4d),
+        mask4d,
+        NullMask(),
         IdentityScoreMod(),
         scale,
         ctx,

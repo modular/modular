@@ -18,7 +18,7 @@ from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from layout.tensor_core import get_mma_shape
 from memory import UnsafePointer
 from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
-from nn.mha_mask import NullMask, MaterializedMask
+from nn.mha_mask import NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal, assert_equal
 from utils.numerics import get_accum_type
@@ -239,11 +239,12 @@ def execute_flash_attention[
         max_seq_len_in_batch,
         max_context_len_in_batch,
     )
-    mha_gpu_naive(
+    mha_gpu_naive[use_mask_tensor=True](
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        MaterializedMask(mask_device.tensor, start_pos=cache_lengths),
+        mask_device.tensor,
+        NullMask(),
         ref_output_device.tensor,
         valid_length_device.tensor,
         scale_host.tensor.data[0],
@@ -303,7 +304,8 @@ def execute_flash_attention[
                 q_device.tensor,
                 k_cache_device,
                 v_cache_device,
-                MaterializedMask(mask_device.tensor, start_pos=cache_lengths),
+                mask_device.tensor,
+                NullMask(),
                 IdentityScoreMod(),
                 valid_length_device.tensor,
                 # TODO take scale from argument GEX-750
@@ -327,15 +329,10 @@ def execute_flash_attention[
                         for hd in range(Int(kv_params.head_size)):
                             var ref_val = ref_out[bs, s, h, hd]
                             var test_val = test_out[bs, s, h, hd]
-                            try:
-                                assert_almost_equal(
-                                    ref_val, test_val, atol=1e-5, rtol=8e-3
-                                )
-                            except e:
-                                print(
-                                    "bs: ", bs, "s: ", s, "h: ", h, "hd: ", hd
-                                )
-                                raise e
+                            assert_almost_equal(
+                                ref_val, test_val, atol=1e-5, rtol=8e-3
+                            )
+
     _ = q_device^
     _ = q_host^
     _ = ref_output_device^
@@ -372,7 +369,6 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 64
         cache_valid_length[0] = 0
         cache_valid_length[1] = 0
-        print("test0")
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
             bs, valid_length, 128, 1024, cache_valid_length, ctx
         )
@@ -382,7 +378,6 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 65
         cache_valid_length[0] = 0
         cache_valid_length[1] = 0
-        print("test1")
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
             bs, valid_length, 128, 1024, cache_valid_length, ctx
         )
@@ -392,7 +387,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 1
         cache_valid_length[0] = 200
         cache_valid_length[1] = 256
-        print("test2")
+
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
             bs, valid_length, 1, 1024, cache_valid_length, ctx
         )
@@ -402,7 +397,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 1
         cache_valid_length[0] = 200
         cache_valid_length[1] = 255
-        print("test3")
+
         execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
             bs, valid_length, 1, 1024, cache_valid_length, ctx
         )

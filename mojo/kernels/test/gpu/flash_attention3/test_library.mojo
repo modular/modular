@@ -226,11 +226,12 @@ def test_flash_attention[
         layer_idx,
         PagedCacheType.ValueIdx,
     )
-    flash_attention[ragged=True](
+    flash_attention[add_attn_mask=False, ragged=True](
         ref_output_device.tensor,
         q_device.tensor,
         k_cache_opaque,
         v_cache_opaque,
+        dummy_mask,
         CausalMask(),
         IdentityScoreMod(),
         input_row_offsets_ui32_device.tensor,

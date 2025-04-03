@@ -23,7 +23,7 @@ from nn.mha import (
     flash_attention,
     mha_gpu_naive,
 )
-from nn.mha_mask import MaterializedMask
+from nn.mha_mask import NullMask
 from nn.mha_score_mod import IdentityScoreMod
 
 from utils.index import Index
@@ -230,7 +230,8 @@ fn test[
                 q_device,
                 k_device,
                 v_device,
-                MaterializedMask(mask3d),
+                mask3d,
+                NullMask(),
                 IdentityScoreMod(),
                 scale,
                 ctx,
@@ -242,7 +243,8 @@ fn test[
                 q_device,
                 k_device,
                 v_device,
-                MaterializedMask(mask4d),
+                mask4d,
+                NullMask(),
                 IdentityScoreMod(),
                 scale,
                 ctx,
