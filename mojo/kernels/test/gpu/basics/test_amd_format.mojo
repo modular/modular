@@ -16,6 +16,7 @@ from builtin.simd import Float8_e4m3fn, Float8_e5m2
 from gpu.host import DeviceContext
 from memory import Span, memcmp, memcpy
 from testing import assert_true
+from collections.string import StaticString
 
 from utils.write import _WriteBufferStack
 
@@ -45,7 +46,7 @@ struct Buffer[capacity: Int](Writer):
         args.each[write_arg]()
 
 
-fn check_float[type: DType, //, expected: StringLiteral](f8: Scalar[type]):
+fn check_float[type: DType, //, expected: StaticString](f8: Scalar[type]):
     var f8_str = Buffer[len(expected)]()
     _write_float(f8_str, f8)
     var res = memcmp(
@@ -55,11 +56,11 @@ fn check_float[type: DType, //, expected: StringLiteral](f8: Scalar[type]):
         abort()
 
 
-fn check_8e5m2[expected: StringLiteral](f8: Float8_e5m2):
+fn check_8e5m2[expected: StaticString](f8: Float8_e5m2):
     check_float[expected](f8)
 
 
-fn check_8e4m3[expected: StringLiteral](f8: Float8_e4m3fn):
+fn check_8e4m3[expected: StaticString](f8: Float8_e4m3fn):
     check_float[expected](f8)
 
 

@@ -8,15 +8,16 @@
 # RUN: %mojo-no-debug %s
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from testing import assert_true
+from collections.string import StaticString
 
 
 def test_operation[
     dtype: DType,
-    target_arch: StringLiteral,
+    target_arch: StaticString,
     op_fn: fn[width: Int] (x: SIMD[dtype, width], y: __type_of(x)) -> __type_of(
         x
     ),
-    op_name: StringLiteral,
+    op_name: StaticString,
 ]():
     var scalar: String
     var pairwise: String
@@ -33,7 +34,7 @@ def test_operation[
     if target_arch == "sm_80" and dtype is DType.bfloat16:
         prefix = "fma.rn"
     else:
-        prefix = op_name
+        prefix = String(op_name)
 
     @parameter
     if dtype is DType.float16:
@@ -50,21 +51,21 @@ def test_operation[
     assert_true(pairwise in _compile_code_asm[op_fn[width=8], target=target]())
 
 
-def test_add[dtype: DType, target_arch: StringLiteral]():
+def test_add[dtype: DType, target_arch: StaticString]():
     fn add[width: Int](x: SIMD[dtype, width], y: __type_of(x)) -> __type_of(x):
         return x + y
 
     test_operation[dtype, target_arch, add, "add"]()
 
 
-def test_sub[dtype: DType, target_arch: StringLiteral]():
+def test_sub[dtype: DType, target_arch: StaticString]():
     fn sub[width: Int](x: SIMD[dtype, width], y: __type_of(x)) -> __type_of(x):
         return x - y
 
     test_operation[dtype, target_arch, sub, "sub"]()
 
 
-def test_mul[dtype: DType, target_arch: StringLiteral]():
+def test_mul[dtype: DType, target_arch: StaticString]():
     fn mul[width: Int](x: SIMD[dtype, width], y: __type_of(x)) -> __type_of(x):
         return x * y
 
@@ -72,7 +73,7 @@ def test_mul[dtype: DType, target_arch: StringLiteral]():
 
 
 def test_half_float_instruction_selection():
-    def test_operations[dtype: DType, target_arch: StringLiteral]():
+    def test_operations[dtype: DType, target_arch: StaticString]():
         test_add[dtype, target_arch]()
         test_sub[dtype, target_arch]()
         test_mul[dtype, target_arch]()
