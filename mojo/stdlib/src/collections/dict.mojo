@@ -193,7 +193,7 @@ struct _DictValueIter[
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
         return Self.ref_type(
-            to=UnsafePointer.address_of(entry_ref[].value).origin_cast[
+            to=UnsafePointer(to=entry_ref[].value).origin_cast[
                 origin=dict_origin
             ]()[]
         )

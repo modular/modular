@@ -80,7 +80,7 @@ def test_multiple_refs():
 
 def test_basic_del():
     var deleted = False
-    var b = OwnedPointer(ObservableDel(UnsafePointer.address_of(deleted)))
+    var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
 
     assert_false(deleted)
 
@@ -97,7 +97,7 @@ def test_take():
 
 def test_moveinit():
     var deleted = False
-    var b = OwnedPointer(ObservableDel(UnsafePointer.address_of(deleted)))
+    var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
     var p1 = b.unsafe_ptr()
 
     var b2 = b^
@@ -113,7 +113,7 @@ def test_steal_data():
     var deleted = False
 
     var owned_ptr = OwnedPointer(
-        ObservableDel(UnsafePointer.address_of(deleted))
+        ObservableDel(UnsafePointer(to=deleted))
     )
 
     var ptr = owned_ptr^.steal_data()

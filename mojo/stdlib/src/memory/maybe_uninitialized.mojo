@@ -233,7 +233,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](
         Returns:
             A pointer to the underlying element.
         """
-        return UnsafePointer.address_of(self._array).bitcast[Self.ElementType]()
+        return UnsafePointer(to=self._array).bitcast[Self.ElementType]()
 
     @always_inline
     fn assume_initialized_destroy(mut self):

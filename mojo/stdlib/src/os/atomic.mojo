@@ -162,7 +162,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Returns:
             The original value before addition.
         """
-        var value_addr = UnsafePointer.address_of(self.value)
+        var value_addr = UnsafePointer(to=self.value)
         return Self._fetch_add(value_addr, rhs)
 
     @always_inline
@@ -196,7 +196,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         Returns:
             The original value before subtraction.
         """
-        var value_addr = UnsafePointer.address_of(self.value.value)
+        var value_addr = UnsafePointer(to=self.value.value)
         return __mlir_op.`pop.atomic.rmw`[
             bin_op = __mlir_attr.`#pop<bin_op sub>`,
             ordering = __mlir_attr.`#pop<atomic_ordering seq_cst>`,
@@ -240,7 +240,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         @parameter
         if dtype.is_integral():
             return _compare_exchange_weak_integral_impl[scope=scope](
-                UnsafePointer.address_of(self.value), expected, desired
+                UnsafePointer(to=self.value), expected, desired
             )
 
         # For the floating point case, we need to bitcast the floating point
@@ -248,7 +248,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         # operation on that.
 
         alias integral_type = _integral_type_of[dtype]()
-        var value_integral_addr = UnsafePointer.address_of(self.value).bitcast[
+        var value_integral_addr = UnsafePointer(to=self.value).bitcast[
             Scalar[integral_type]
         ]()
         var expected_integral = bitcast[integral_type](expected)
@@ -295,7 +295,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
         constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
 
-        Self.max(UnsafePointer.address_of(self.value), rhs)
+        Self.max(UnsafePointer(to=self.value), rhs)
 
     @staticmethod
     @always_inline
@@ -336,7 +336,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
         constrained[dtype.is_numeric(), "the input type must be arithmetic"]()
 
-        Self.min(UnsafePointer.address_of(self.value), rhs)
+        Self.min(UnsafePointer(to=self.value), rhs)
 
 
 # ===-----------------------------------------------------------------------===#

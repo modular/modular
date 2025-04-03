@@ -187,11 +187,11 @@ struct LinkedList[
         var length = len(elements)
 
         for i in range(length):
-            var src = UnsafePointer.address_of(elements[i])
+            var src = UnsafePointer(to=elements[i])
             var node = Self._NodePointer.alloc(1)
             if not node:
                 abort("Out of memory")
-            var dst = UnsafePointer.address_of(node[].value)
+            var dst = UnsafePointer(to=node[].value)
             src.move_pointee_into(dst)
             node[].next = Self._NodePointer()
             node[].prev = self._tail
@@ -258,7 +258,7 @@ struct LinkedList[
         var addr = Self._NodePointer.alloc(1)
         if not addr:
             abort("Out of memory")
-        var value_ptr = UnsafePointer.address_of(addr[].value)
+        var value_ptr = UnsafePointer(to=addr[].value)
         value_ptr.init_pointee_move(value^)
         addr[].prev = self._tail
         addr[].next = Self._NodePointer()
@@ -512,7 +512,7 @@ struct LinkedList[
             var node = Self._NodePointer.alloc(1)
             if not node:
                 abort("Out of memory")
-            var data = UnsafePointer.address_of(node[].value)
+            var data = UnsafePointer(to=node[].value)
             data[] = elem^
             node[].next = next
             node[].prev = current

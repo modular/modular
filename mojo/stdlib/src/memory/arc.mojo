@@ -163,7 +163,7 @@ struct ArcPointer[T: Movable](
             The `UnsafePointer` to the pointee.
         """
         # TODO: consider removing this method.
-        return UnsafePointer.address_of(self._inner[].payload)
+        return UnsafePointer(to=self._inner[].payload)
 
     fn count(self) -> UInt64:
         """Count the amount of current references.

@@ -190,7 +190,7 @@ fn load_incomplete_simd[
     DType.uint8, simd_width
 ]:
     var result = SIMD[DType.uint8, simd_width](0)
-    var tmp_buffer_pointer = UnsafePointer.address_of(result).bitcast[UInt8]()
+    var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
     memcpy(dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load)
     return result
 

@@ -121,7 +121,7 @@ fn python_type_object[
     )
 
     # Construct a Python 'type' object from our type spec.
-    var type_obj = cpython.PyType_FromSpec(UnsafePointer.address_of(type_spec))
+    var type_obj = cpython.PyType_FromSpec(UnsafePointer(to=type_spec))
 
     if type_obj.is_null():
         Python.throw_python_exception_if_error_state(cpython)

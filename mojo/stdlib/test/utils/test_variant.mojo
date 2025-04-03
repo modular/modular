@@ -124,7 +124,7 @@ def test_del():
     alias TestDeleterVariant = Variant[ObservableDel, Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(
-        ObservableDel(UnsafePointer.address_of(deleted))
+        ObservableDel(UnsafePointer(to=deleted))
     )
     _ = v1^  # call __del__
     assert_true(deleted)
@@ -137,9 +137,9 @@ def test_set_calls_deleter():
     var deleted: Bool = False
     var deleted2: Bool = False
     var v1 = TestDeleterVariant(
-        ObservableDel(UnsafePointer.address_of(deleted))
+        ObservableDel(UnsafePointer(to=deleted))
     )
-    v1.set[ObservableDel](ObservableDel(UnsafePointer.address_of(deleted2)))
+    v1.set[ObservableDel](ObservableDel(UnsafePointer(to=deleted2)))
     assert_true(deleted)
     assert_false(deleted2)
     _ = v1^
@@ -159,7 +159,7 @@ def test_take_doesnt_call_deleter():
     alias TestDeleterVariant = Variant[ObservableDel, Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(
-        ObservableDel(UnsafePointer.address_of(deleted))
+        ObservableDel(UnsafePointer(to=deleted))
     )
     assert_false(deleted)
     var v2 = v1.unsafe_take[ObservableDel]()

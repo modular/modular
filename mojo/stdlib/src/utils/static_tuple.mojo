@@ -47,7 +47,7 @@ fn _set_array_elem[
         array: the array which is captured by reference.
     """
     var ptr = __mlir_op.`pop.array.gep`(
-        UnsafePointer.address_of(array).address, index.value
+        UnsafePointer(to=array).address, index.value
     )
     UnsafePointer(ptr)[] = val
 
@@ -207,7 +207,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
         """
         debug_assert(size > index(idx), "index must be within bounds")
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer.address_of(self.array).address, index(idx)
+            UnsafePointer(to=self.array).address, index(idx)
         )
         return UnsafePointer(ptr)[]
 
@@ -225,7 +225,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
         debug_assert(size > index(idx), "index must be within bounds")
         var tmp = self
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer.address_of(tmp.array).address, index(idx)
+            UnsafePointer(to=tmp.array).address, index(idx)
         )
         UnsafePointer(ptr)[] = val
         self = tmp

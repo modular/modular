@@ -218,7 +218,7 @@ struct _Function(CollectionElement, CollectionElementNew):
     fn __init__[FnT: AnyTrivialRegType](out self, value: FnT):
         # FIXME: No "pointer bitcast" for signature function pointers.
         var f = UnsafePointer[Int16]()
-        UnsafePointer.address_of(f).bitcast[FnT]()[] = value
+        UnsafePointer(to=f).bitcast[FnT]()[] = value
         self.value = f
 
     @always_inline
@@ -236,15 +236,15 @@ struct _Function(CollectionElement, CollectionElementNew):
 
     @always_inline
     fn invoke(owned self) raises -> object:
-        return UnsafePointer.address_of(self.value).bitcast[Self.fn0]()[]()
+        return UnsafePointer(to=self.value).bitcast[Self.fn0]()[]()
 
     @always_inline
     fn invoke(owned self, arg0: object) raises -> object:
-        return UnsafePointer.address_of(self.value).bitcast[Self.fn1]()[](arg0)
+        return UnsafePointer(to=self.value).bitcast[Self.fn1]()[](arg0)
 
     @always_inline
     fn invoke(owned self, arg0: object, arg1: object) raises -> object:
-        return UnsafePointer.address_of(self.value).bitcast[Self.fn2]()[](
+        return UnsafePointer(to=self.value).bitcast[Self.fn2]()[](
             arg0, arg1
         )
 
@@ -252,7 +252,7 @@ struct _Function(CollectionElement, CollectionElementNew):
     fn invoke(
         owned self, arg0: object, arg1: object, arg2: object
     ) raises -> object:
-        return UnsafePointer.address_of(self.value).bitcast[Self.fn3]()[](
+        return UnsafePointer(to=self.value).bitcast[Self.fn3]()[](
             arg0, arg1, arg2
         )
 
