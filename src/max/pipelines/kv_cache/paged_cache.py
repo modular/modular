@@ -346,18 +346,22 @@ class PagedKVCacheManager(KVCacheManager):
             )
 
         if max_batch_size > self.total_num_pages:
+            memory_needed_str = to_human_readable_bytes(
+                max_batch_size * single_page_size_bytes
+            )
             logger.warning(
                 f"Insufficient cache memory to support a batch containing {max_batch_size} requests with one token per request. "
-                f"Need to allocate at least {max_batch_size} pages, but only have enough memory for {self.total_num_pages} pages. "
-                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
+                f"Need to allocate at least {max_batch_size} pages ({memory_needed_str}), but only have enough memory for {self.total_num_pages} pages ({cache_memory_per_device_str})."
             )
 
         blocks_needed_for_max_seq_len = ceildiv(max_seq_len, page_size)
         if blocks_needed_for_max_seq_len > self.total_num_pages:
+            memory_needed_str = to_human_readable_bytes(
+                blocks_needed_for_max_seq_len * single_page_size_bytes
+            )
             logger.warning(
                 f"Insufficient cache memory to support a batch containing one request at the max sequence length of {max_seq_len} tokens. "
-                f"Need to allocate at least {blocks_needed_for_max_seq_len} pages, but only have enough memory for {self.total_num_pages} pages. "
-                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
+                f"Need to allocate at least {blocks_needed_for_max_seq_len} pages ({memory_needed_str}), but only have enough memory for {self.total_num_pages} pages ({cache_memory_per_device_str})."
             )
 
         logger.info(
