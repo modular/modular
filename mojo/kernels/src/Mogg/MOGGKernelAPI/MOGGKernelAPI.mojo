@@ -2365,7 +2365,7 @@ struct BroadcastTo:
     #
     # Sometimes with a call to the below shape function.
     @staticmethod
-    fn execute() raises:
+    fn execute(input: InputTensor, shape: InputTensor) raises:
         raise Error("Should never be called!")
 
     @staticmethod
@@ -2650,7 +2650,7 @@ struct Reshape:
     #
     # Sometimes with a call to the below shape function.
     @staticmethod
-    fn execute() raises:
+    fn execute(input: InputTensor, shape: InputTensor) raises:
         raise Error("Should never be called!")
 
     @staticmethod
@@ -3651,6 +3651,7 @@ struct PadConstant:
     ](
         input: InputTensor[type=type, rank=rank],
         padding: InputTensor[rank=1],
+        constant: Scalar[dtype=type],
     ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
             managed_tensor_slice_to_ndbuffer(input),
@@ -4491,7 +4492,12 @@ struct RandomNormal:
     @staticmethod
     fn shape[
         output_rank: Int
-    ](shape: InputTensor[rank=1]) -> IndexList[output_rank]:
+    ](
+        shape: InputTensor[rank=1],
+        mean: Scalar,
+        variance: Scalar,
+        seed_value: Scalar,
+    ) -> IndexList[output_rank]:
         var unrolled_shape = IndexList[output_rank]()
         for i in range(output_rank):
             unrolled_shape[i] = Int(shape[i])
@@ -4919,7 +4925,12 @@ struct Split:
 @compiler.register("split_ith_output_shape")
 struct SplitOutputShapeHelper:
     @staticmethod
-    fn execute() raises:
+    fn execute(
+        input_buf: InputTensor,
+        split_sizes_buf: InputTensor,
+        split_axis: Scalar,
+        output_idx: Scalar,
+    ) raises:
         raise Error("Should not be called directly.")
 
     @staticmethod
@@ -5461,7 +5472,18 @@ struct WithMaskFlashAttentionSplitKVCPU:
         )
 
     @staticmethod
-    fn shape(q: InputTensor) -> IndexList[q.rank]:
+    fn shape[
+        type: DType,
+        rank: Int,
+    ](
+        q: InputTensor[type=type, rank=rank],
+        k: InputTensor[type=type, rank=rank],
+        v: InputTensor[type=type, rank=rank],
+        k_cache: InputTensor[type=type, rank = rank + 1],
+        v_cache: InputTensor[type=type, rank = rank + 1],
+        mask: InputTensor[type=type],
+        scale: Scalar[dtype = DType.float32],
+    ) -> IndexList[q.rank]:
         return q.shape()
 
 
@@ -5685,7 +5707,6 @@ struct VroomQ4KRepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        a: InputTensor[type = DType.float32, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
@@ -5775,7 +5796,6 @@ struct VroomQ6KRepackWeights:
     @staticmethod
     @always_inline
     fn shape(
-        a: InputTensor[type = DType.float32, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
     ) -> IndexList[2]:
         return b.shape()
@@ -7192,7 +7212,7 @@ struct LayoutTransformQRSFC2FQRSCf:
 struct PackConvFilterShape:
     @always_inline
     @staticmethod
-    fn execute() raises:
+    fn execute(filter_buf: InputTensor) raises:
         raise Error("Only meant to be used for shape function!")
 
     @always_inline
@@ -7250,7 +7270,10 @@ struct PackConvFilterShape:
 struct PackConvTransposeFilterShape:
     @always_inline
     @staticmethod
-    fn execute() raises:
+    fn execute[
+        rank: Int,
+        filter_type: DType,
+    ](filter_buf: NDBuffer[filter_type, rank, MutableAnyOrigin]) raises:
         raise Error("Only meant to be used for shape function!")
 
     @always_inline
@@ -7258,7 +7281,6 @@ struct PackConvTransposeFilterShape:
     fn shape[
         rank: Int,
         filter_type: DType,
-        _synchronous: Bool,
     ](filter_buf: NDBuffer[filter_type, rank, MutableAnyOrigin]) -> IndexList[
         rank + 1
     ]:
@@ -7391,7 +7413,7 @@ struct LayoutTransformMatmulNK2KNkni:
 struct PackMatmulBShapeFunc:
     @always_inline
     @staticmethod
-    fn execute() raises:
+    fn execute(b_input: InputTensor) raises:
         raise Error("Only meant to be used for shape function!")
 
     @always_inline
