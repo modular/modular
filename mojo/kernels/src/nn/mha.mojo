@@ -74,7 +74,7 @@ from linalg.transpose import transpose
 from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
-from nn.mha_mask import MHAMask, NullMask, TileMaskStatus, MaterializedMask
+from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 from nn.mha_sm90 import mha_sm90
@@ -103,6 +103,7 @@ fn flash_attention[
     rank: Int,
     type: DType,
     q_shape: DimList, //,
+    add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
     decoding_warp_split_k: Bool = False,
@@ -137,6 +138,7 @@ fn flash_attention[
         ](),
     ):
         return flash_attention[
+            add_attn_mask=add_attn_mask,
             use_score_mod=use_score_mod,
             config=config,
             decoding_warp_split_k=decoding_warp_split_k,
@@ -146,7 +148,8 @@ fn flash_attention[
             q,
             k,
             v,
-            MaterializedMask(mask),
+            mask,
+            NullMask(),
             IdentityScoreMod(),
             scale,
             context.get_device_context(),
@@ -167,11 +170,15 @@ fn get_mha_decoding_num_partitions[
     return 1
 
 
-fn flash_attention_hw_supported[qkv_type: DType]() -> Bool:
+fn flash_attention_hw_supported[qkv_type: DType, add_attn_mask: Bool]() -> Bool:
     return (
         has_nvidia_gpu_accelerator()
         or env_get_bool["FLASH_ATTENTION_HW_SUPPORTED", False]()
-        or (has_amd_gpu_accelerator() and qkv_type == DType.bfloat16)
+        or (
+            has_amd_gpu_accelerator()
+            and qkv_type == DType.bfloat16
+            and (not add_attn_mask)
+        )
     )
 
 
@@ -184,6 +191,7 @@ fn flash_attention[
     score_mod_t: ScoreModTrait,
     type: DType,
     q_shape: DimList, //,
+    add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
@@ -196,6 +204,7 @@ fn flash_attention[
     q: NDBuffer[type, rank, _, q_shape, *_],
     k: cache_t,
     v: cache_t,
+    mask: NDBuffer,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: NDBuffer[DType.uint32, 1, *_],
@@ -237,6 +246,7 @@ fn flash_attention[
     constrained[
         not ragged or rank == 3, "only support rank 3 inputs for ragged inputs."
     ]()
+    constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
     constrained[
         q.type == cache_t.type == output.type,
         "Q, K, V, output should have same type.",
@@ -280,7 +290,7 @@ fn flash_attention[
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]()
         # Current impl has only been verified for depth = 128.
-        alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and q.shape.get[rank-1]() == 128 and not naive_kernel
+        alias flash_attention_applicable = flash_attention_hw_supported[type, add_attn_mask]() and head_depth_known and q.shape.get[rank-1]() == 128 and not naive_kernel
         # fmt: on
         alias kv_num_heads = cache_t.kv_params.num_heads
 
@@ -300,6 +310,7 @@ fn flash_attention[
 
         flash_attention_dispatch[
             kv_num_heads=kv_num_heads,
+            add_attn_mask=add_attn_mask,
             use_score_mod=use_score_mod,
             config=config,
             ragged=ragged,
@@ -311,6 +322,7 @@ fn flash_attention[
             q,
             k_operand,
             v_operand,
+            mask,
             mask_functor,
             score_mod_functor,
             valid_length,
@@ -334,6 +346,7 @@ fn flash_attention_dispatch[
     type: DType,
     q_shape: DimList, //,
     kv_num_heads: Int,
+    add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
@@ -356,6 +369,7 @@ fn flash_attention_dispatch[
     q: NDBuffer[type, rank, _, q_shape, *_],
     k: k_t,
     v: v_t,
+    mask: NDBuffer,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: NDBuffer[DType.uint32, 1, *_],
@@ -393,8 +407,13 @@ fn flash_attention_dispatch[
 
     @parameter
     if _is_flash_attention_applicable:
-        if not is_token_generation:
-            # TODO note that we have to handle mask tensor alignment here.
+        # Attention mask tensor needs to be aligned to even length. This
+        # is not needed when computing mask on the fly.
+        mask_tensor_col = max_cache_valid_length
+
+        if not is_token_generation and (
+            mask_tensor_col % 2 == 0 or not add_attn_mask
+        ):
             # Choose matmul parameters based on dtype.
             alias BM = config.block_m()
             alias BK = config.block_k()
@@ -402,6 +421,7 @@ fn flash_attention_dispatch[
             @parameter
             if (
                 ctx.device_info is H100
+                and not add_attn_mask
                 and q_half_float
                 and (ragged or not _use_valid_length)
             ):
@@ -428,9 +448,11 @@ fn flash_attention_dispatch[
                 ]()
                 alias num_heads_per_block: UInt32 = config.num_heads_per_block()
                 alias kernel_sm90 = mha_sm90[
+                    mask.rank,
                     config.type,
                     k_t,
                     v_t,
+                    mask.type,
                     output.type,
                     mask_t,
                     score_mod_t,
@@ -468,15 +490,19 @@ fn flash_attention_dispatch[
                 )
             else:
                 alias smem_use = config.shared_mem_bytes[is_shared_kv]()
+
                 alias kernel = mha[
+                    mask.rank,
                     config.type,
                     k_t,
                     v_t,
+                    mask.type,
                     output.type,
                     mask_t,
                     score_mod_t,
                     config,
                     group=group,
+                    use_mask_tensor=add_attn_mask,
                     use_score_mod=use_score_mod,
                     ragged=ragged,
                     is_shared_kv=is_shared_kv,
@@ -487,6 +513,7 @@ fn flash_attention_dispatch[
                     q.data,
                     k,
                     v,
+                    mask.data,
                     output.data,
                     scale,
                     batch_size,
@@ -543,9 +570,11 @@ fn flash_attention_dispatch[
             alias num_blocks_y = num_heads // group
 
             alias kernel = mha_decoding[
+                mask.rank,
                 q.type,
                 k_t,
                 v_t,
+                mask.type,
                 output.type,
                 mask_t,
                 score_mod_t,
@@ -559,6 +588,7 @@ fn flash_attention_dispatch[
                 num_threads=num_threads,
                 num_pipeline_stages=num_pipeline_stages,
                 group=group,
+                use_mask_tensor=add_attn_mask,
                 use_score_mod=use_score_mod,
                 ragged=ragged,
                 is_shared_kv=is_shared_kv,
@@ -581,11 +611,13 @@ fn flash_attention_dispatch[
                 ](
                     batch_size, max_cache_valid_length, ctx
                 )
+
             if num_partitions_value == 1:
                 ctx.enqueue_function[kernel](
                     q.data,
                     k,
                     v,
+                    mask.data,
                     output.data,
                     nullptr,
                     nullptr,
@@ -613,6 +645,7 @@ fn flash_attention_dispatch[
             else:
                 # allocate memory for intermediate results
                 # q # [B, S, H, D]
+
                 var output_intermediate_data = ctx.enqueue_create_buffer[
                     output.type
                 ](num_heads * depth * batch_size * num_partitions_value)
@@ -653,6 +686,7 @@ fn flash_attention_dispatch[
                     q.data,
                     k,
                     v,
+                    mask.data,
                     output_intermediate.data,
                     exp_sum.data,
                     qk_max.data,
@@ -705,6 +739,7 @@ fn flash_attention_dispatch[
         else:
             # Assumes BSHD.
             mha_gpu_naive[
+                use_mask_tensor=add_attn_mask,
                 ragged=ragged,
                 _use_valid_length=_use_valid_length,
                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -712,6 +747,7 @@ fn flash_attention_dispatch[
                 q,
                 k,
                 v,
+                mask,
                 mask_functor,
                 output,
                 valid_length,
@@ -729,6 +765,7 @@ fn flash_attention_dispatch[
     else:
         # Assumes BSHD.
         mha_gpu_naive[
+            use_mask_tensor=add_attn_mask,
             ragged=ragged,
             _use_valid_length=_use_valid_length,
             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -736,6 +773,7 @@ fn flash_attention_dispatch[
             q,
             k,
             v,
+            mask,
             mask_functor,
             output,
             valid_length,
@@ -756,6 +794,7 @@ fn flash_attention[
     score_mod_t: ScoreModTrait,
     type: DType,
     q_shape: DimList, //,
+    add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
     decoding_warp_split_k: Bool = False,
@@ -765,6 +804,7 @@ fn flash_attention[
     q: NDBuffer[type, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
+    mask: NDBuffer,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     scale: Float32,
@@ -775,6 +815,7 @@ fn flash_attention[
     # See the kV cache overloads for comments.
 
     constrained[rank == 4, "only support rank 4 inputs."]()
+    constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
 
     # Runtime dimensions.
     var batch_size = q.dim[0]()
@@ -786,11 +827,14 @@ fn flash_attention[
     # fmt: off
     alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
     # Current impl has only been verified for depth = 128.
-    alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and q.shape.get[3]() == 128 and not naive_kernel
+    alias flash_attention_applicable = flash_attention_hw_supported[type, add_attn_mask]() and head_depth_known and q.shape.get[3]() == 128 and not naive_kernel
 
     alias q_half_float = q.type in (DType.float16, DType.bfloat16)
     alias kv_num_heads = k.shape.get[2]()
     # fmt: on
+
+    # TODO: This should be done based on smem size instead of arch.
+    alias is_shared_kv = ctx.device_info is not A100
 
     var is_token_generation = seq_len == 1 and num_keys > seq_len
 
@@ -803,6 +847,7 @@ fn flash_attention[
 
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,
+        add_attn_mask=add_attn_mask,
         use_score_mod=use_score_mod,
         config=config,
         ragged=False,
@@ -815,6 +860,7 @@ fn flash_attention[
         q,
         k_operand,
         v_operand,
+        mask,
         mask_functor,
         score_mod_functor,
         valid_length,
@@ -837,14 +883,17 @@ fn flash_attention[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
 )
 fn mha[
+    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
+    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     config: MHAConfig,
     group: Int = 1,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
     ragged: Bool = False,
     is_shared_kv: Bool = False,
@@ -854,6 +903,7 @@ fn mha[
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     batch_size: Int,
@@ -876,6 +926,12 @@ fn mha[
     var num_keys: Int
     var mask_tensor_col = num_keys_arg
     var start_pos: UInt32 = 0
+    var mask_batch_offset: Int = (
+        batch_idx
+        * max_seq_len
+        * mask_tensor_col
+        * (config.num_heads if mask_rank == 4 else 1)
+    )
 
     @parameter
     if ragged:
@@ -940,13 +996,16 @@ fn mha[
         @parameter
         if is_shared_kv:
             mha_single_batch_pipelined[
+                mask_rank,
                 config=config,
                 group=group,
+                use_mask_tensor=use_mask_tensor,
                 use_score_mod=use_score_mod,
             ](
                 q_ptr.offset(q_batch_offset),
                 k,
                 v,
+                mask_ptr.offset(mask_batch_offset),
                 output_ptr.offset(q_batch_offset),
                 scale,
                 seq_len,
@@ -960,13 +1019,16 @@ fn mha[
             )
         else:
             mha_single_batch[
+                mask_rank,
                 config=config,
                 group=group,
+                use_mask_tensor=use_mask_tensor,
                 use_score_mod=use_score_mod,
             ](
                 q_ptr.offset(q_batch_offset),
                 k,
                 v,
+                mask_ptr.offset(mask_batch_offset),
                 output_ptr.offset(q_batch_offset),
                 scale,
                 seq_len,
@@ -980,8 +1042,11 @@ fn mha[
             )
     else:
         constrained[
-            use_score_mod == False,
-            "use_score_mod must be False for AMD flash attention",
+            use_mask_tensor == False and use_score_mod == False,
+            (
+                "use_mask_tensor and use_score_mod must be False for AMD flash"
+                " attention"
+            ),
         ]()
         amd_mha_single_batch[group=group, config=config](
             output_ptr.offset(q_batch_offset),
@@ -1001,20 +1066,24 @@ fn mha[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
 )
 fn mha_single_batch[
+    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
+    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     *,
     config: MHAConfig,
     group: Int = 1,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
@@ -1196,6 +1265,10 @@ fn mha_single_batch[
 
     # Mask global memory iterator.
     var mask_block_row: UInt32 = q_tile_idx * BM
+    var mask_offset = mask_block_row * mask_tensor_col + (
+        head_idx * max_seq_len * mask_tensor_col if mask_rank == 4 else 0
+    )
+    var mask_tile_ptr = mask_ptr + Int(mask_offset)
     var mask_warp_row = warp_y * WM
     var mask_warp_col = warp_x * WN
 
@@ -1368,7 +1441,8 @@ fn mha_single_batch[
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
         @parameter
-        fn _apply_mask[masked: Bool]():
+        if use_mask_tensor:
+            # TODO: Construct mask tensor with runtime layout.
             @parameter
             for m_mma in range(Int(num_m_mmas)):
 
@@ -1384,77 +1458,141 @@ fn mha_single_batch[
                     mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
                     mask_frag_col += lane * p_frag_simdwidth % MMA_N
 
+                    alias mask_align = alignof[
+                        SIMD[mask_type, p_frag_simdwidth]
+                    ]()
+
                     @parameter
                     for i in range(2):
-                        # The row in score matrix of shape seq_len x num_keys.
-                        # Mask col is score col since we don't partition in col.
-                        var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
-                        var score_col = mask_frag_col
+                        # The intermediate result is logically BM x BN.
+                        # The overall mask tensor is seqlen x seqlen, some remainder tiles
+                        # may not fit in BM x BN.
+                        if (
+                            mask_frag_row + i * MMA_M // 2 < seq_len
+                            and mask_frag_col < num_keys
+                        ):
+                            var mask_vec = (
+                                mask_tile_ptr
+                                + Int(
+                                    (mask_frag_row + i * MMA_M // 2)
+                                    * mask_tensor_col
+                                    + mask_frag_col
+                                )
+                            ).load[
+                                width=p_frag_simdwidth, alignment=mask_align
+                            ]()
 
-                        score_row_with_start_pos = score_row + start_pos
+                            p_reg_vec2[mma_id, i] = (
+                                p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
+                                + rebind[p_reg_vec2.element_type](
+                                    mask_vec.cast[accum_type]()
+                                )
+                            ) * log2e
+                        else:
+                            p_reg_vec2[mma_id, i] = rebind[
+                                p_reg_vec2.element_type
+                            ](
+                                SIMD[accum_type, p_frag_simdwidth](
+                                    min_or_neg_inf[accum_type]()
+                                )
+                            )
 
-                        p_reg_vec2[mma_id, i] = (
-                            p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
-                        )
+        else:
+
+            @parameter
+            fn _apply_mask[masked: Bool]():
+                var scale_log2e: SIMD[accum_type, 1] = scale.cast[
+                    accum_type
+                ]() if use_score_mod else scale.cast[accum_type]() * log2e
+
+                @parameter
+                for m_mma in range(Int(num_m_mmas)):
+
+                    @parameter
+                    for n_mma in range(Int(num_n_mmas)):
+                        alias mma_id = n_mma * num_m_mmas + m_mma
+
+                        # Coordinates in mask for current mma tile.
+                        var mask_frag_row = mask_warp_row + m_mma * MMA_M
+                        var mask_frag_col = mask_warp_col + n_mma * MMA_N
+
+                        # Offset to current thread's fragment
+                        mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
+                        mask_frag_col += lane * p_frag_simdwidth % MMA_N
 
                         @parameter
-                        if masked:
-                            p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[
-                                    4,
-                                    element_bitwidth=32,
-                                    unsigned=True,
-                                ](
-                                    Int(block_idx.z),
-                                    Int(block_idx.y),
-                                    Int(score_row_with_start_pos),
-                                    Int(score_col),
-                                ),
-                                p_reg_vec2[mma_id, i],
-                            )
+                        for i in range(2):
+                            # The row in score matrix of shape seq_len x num_keys.
+                            # Mask col is score col since we don't partition in col.
+                            var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
+                            var score_col = mask_frag_col
 
-                        @parameter
-                        if use_score_mod:
-                            p_reg_vec2[mma_id, i] = score_mod.score_mod(
-                                IndexList[
-                                    4,
-                                    element_bitwidth=32,
-                                    unsigned=True,
-                                ](
-                                    Int(block_idx.z),
-                                    Int(block_idx.y),
-                                    Int(score_row_with_start_pos),
-                                    Int(score_col),
-                                ),
-                                p_reg_vec2[mma_id, i],
-                                max_seq_len,
-                            )
-                        p_reg_vec2[mma_id, i] = p_reg_vec2[mma_id, i] * log2e
+                            score_row_with_start_pos = score_row + start_pos
 
-                        if not not_last_iter:
-                            p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](Int(score_row), Int(score_col)),
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](
-                                    seq_len,
-                                    num_keys,
-                                ),
-                                p_reg_vec2[mma_id, i],
-                            )
+                            @parameter
+                            if masked:
+                                p_reg_vec2[mma_id, i] = mask.mask(
+                                    IndexList[
+                                        4,
+                                        element_bitwidth=32,
+                                        unsigned=True,
+                                    ](
+                                        Int(block_idx.z),
+                                        Int(block_idx.y),
+                                        Int(score_row_with_start_pos),
+                                        Int(score_col),
+                                    ),
+                                    p_reg_vec2[mma_id, i] * scale_log2e,
+                                )
+                            else:
+                                p_reg_vec2[mma_id, i] = (
+                                    p_reg_vec2[mma_id, i] * scale_log2e
+                                )
 
-        unswitch[_apply_mask](
-            mask.status(
-                Index[element_bitwidth=32, unsigned=True](
-                    Int(q_tile_idx * BM + start_pos),
-                    kv_tile_start_row,
-                ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                            @parameter
+                            if use_score_mod:
+                                p_reg_vec2[mma_id, i] = (
+                                    score_mod.score_mod(
+                                        IndexList[
+                                            4,
+                                            element_bitwidth=32,
+                                            unsigned=True,
+                                        ](
+                                            Int(block_idx.z),
+                                            Int(block_idx.y),
+                                            Int(score_row_with_start_pos),
+                                            Int(score_col),
+                                        ),
+                                        p_reg_vec2[mma_id, i],
+                                        max_seq_len,
+                                    )
+                                    * log2e
+                                )
+
+                            if not not_last_iter:
+                                p_reg_vec2[mma_id, i] = _kernel_mask(
+                                    IndexList[
+                                        2, element_bitwidth=32, unsigned=True
+                                    ](Int(score_row), Int(score_col)),
+                                    IndexList[
+                                        2, element_bitwidth=32, unsigned=True
+                                    ](
+                                        seq_len,
+                                        num_keys,
+                                    ),
+                                    p_reg_vec2[mma_id, i],
+                                )
+
+            unswitch[_apply_mask](
+                mask.status(
+                    Index[element_bitwidth=32, unsigned=True](
+                        Int(q_tile_idx * BM + start_pos),
+                        kv_tile_start_row,
+                    ),
+                    Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                )
+                == TileMaskStatus.PARTIAL_MASK
             )
-            == TileMaskStatus.PARTIAL_MASK
-        )
 
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
@@ -1662,20 +1800,24 @@ fn mha_single_batch[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
 )
 fn mha_single_batch_pipelined[
+    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
+    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     *,
     config: MHAConfig,
     group: Int = 1,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
@@ -1851,6 +1993,10 @@ fn mha_single_batch_pipelined[
 
     # Mask global memory iterator.
     var mask_block_row: UInt32 = q_tile_idx * BM
+    var mask_offset = mask_block_row * mask_tensor_col + (
+        head_idx * max_seq_len * mask_tensor_col if mask_rank == 4 else 0
+    )
+    var mask_tile_ptr = mask_ptr + Int(mask_offset)
     var mask_warp_row = warp_y * WM
     var mask_warp_col = warp_x * WN
 
@@ -1994,7 +2140,8 @@ fn mha_single_batch_pipelined[
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
         @parameter
-        fn _apply_mask[masked: Bool]():
+        if use_mask_tensor:
+            # TODO: Construct mask tensor with runtime layout.
             @parameter
             for m_mma in range(Int(num_m_mmas)):
 
@@ -2006,6 +2153,7 @@ fn mha_single_batch_pipelined[
                     var mask_frag_row = mask_warp_row + m_mma * MMA_M
                     var mask_frag_col = mask_warp_col + n_mma * MMA_N
 
+                    # Offset to current thread's fragment
                     @parameter
                     if is_nvidia_gpu():
                         mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
@@ -2014,44 +2162,107 @@ fn mha_single_batch_pipelined[
                         mask_frag_row += (lane // MMA_N) * p_frag_simdwidth
                         mask_frag_col += lane % MMA_N
 
+                    alias mask_align = alignof[
+                        SIMD[mask_type, p_frag_simdwidth]
+                    ]()
+
                     @parameter
                     for i in range(2 if is_nvidia_gpu() else 1):
-                        # The row in score matrix of shape seq_len x num_keys.
-                        # Mask col is score col since we don't partition in col.
-                        var score_row = mask_block_row + mask_frag_row + (
+                        # The intermediate result is logically BM x BN.
+                        # The overall mask tensor is seqlen x seqlen, some remainder tiles
+                        # may not fit in BM x BN.
+                        var mask_frag_row_i = mask_frag_row + (
                             i * MMA_M // 2 if is_nvidia_gpu() else 0
                         )
-                        var score_col = mask_frag_col
-
-                        var score_row_with_start_pos = score_row + start_pos
-
-                        p_reg_vec2[mma_id, i] = (
-                            p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
-                        )
-
-                        @parameter
-                        if masked:
+                        if (
+                            mask_frag_row_i < seq_len
+                            and mask_frag_col < num_keys
+                        ):
+                            var mask_vec = SIMD[mask_type, p_frag_simdwidth]()
 
                             @parameter
                             if is_nvidia_gpu():
-                                p_reg_vec2[mma_id, i] = mask.mask(
-                                    IndexList[
-                                        4,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
-                                        Int(block_idx.z),
-                                        Int(block_idx.y),
-                                        Int(score_row_with_start_pos),
-                                        Int(score_col),
-                                    ),
-                                    p_reg_vec2[mma_id, i],
-                                )
+                                mask_vec = (
+                                    mask_tile_ptr
+                                    + Int(
+                                        (mask_frag_row_i) * mask_tensor_col
+                                        + mask_frag_col
+                                    )
+                                ).load[
+                                    width=p_frag_simdwidth, alignment=mask_align
+                                ]()
                             else:
 
                                 @parameter
                                 for j in range(p_frag_simdwidth):
-                                    p_reg_vec2[mma_id, i][j] = mask.mask(
+                                    mask_vec[j] = (
+                                        mask_tile_ptr
+                                        + Int(
+                                            (mask_frag_row_i + j)
+                                            * mask_tensor_col
+                                            + mask_frag_col
+                                        )
+                                    ).load[width=1, alignment=mask_align]()
+
+                            p_reg_vec2[mma_id, i] = (
+                                p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
+                                + rebind[p_reg_vec2.element_type](
+                                    mask_vec.cast[accum_type]()
+                                )
+                            ) * log2e
+                        else:
+                            p_reg_vec2[mma_id, i] = rebind[
+                                p_reg_vec2.element_type
+                            ](
+                                SIMD[accum_type, p_frag_simdwidth](
+                                    min_or_neg_inf[accum_type]()
+                                )
+                            )
+
+        else:
+
+            @parameter
+            fn _apply_mask[masked: Bool]():
+                var scale_log2e: SIMD[accum_type, 1] = scale.cast[
+                    accum_type
+                ]() if use_score_mod else scale.cast[accum_type]() * log2e
+
+                @parameter
+                for m_mma in range(Int(num_m_mmas)):
+
+                    @parameter
+                    for n_mma in range(Int(num_n_mmas)):
+                        alias mma_id = n_mma * num_m_mmas + m_mma
+
+                        # Coordinates in mask for current mma tile.
+                        var mask_frag_row = mask_warp_row + m_mma * MMA_M
+                        var mask_frag_col = mask_warp_col + n_mma * MMA_N
+
+                        @parameter
+                        if is_nvidia_gpu():
+                            mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
+                            mask_frag_col += lane * p_frag_simdwidth % MMA_N
+                        else:
+                            mask_frag_row += (lane // MMA_N) * p_frag_simdwidth
+                            mask_frag_col += lane % MMA_N
+
+                        @parameter
+                        for i in range(2 if is_nvidia_gpu() else 1):
+                            # The row in score matrix of shape seq_len x num_keys.
+                            # Mask col is score col since we don't partition in col.
+                            var score_row = mask_block_row + mask_frag_row + (
+                                i * MMA_M // 2 if is_nvidia_gpu() else 0
+                            )
+                            var score_col = mask_frag_col
+
+                            var score_row_with_start_pos = score_row + start_pos
+
+                            @parameter
+                            if masked:
+
+                                @parameter
+                                if is_nvidia_gpu():
+                                    p_reg_vec2[mma_id, i] = mask.mask(
                                         IndexList[
                                             4,
                                             element_bitwidth=32,
@@ -2059,77 +2270,103 @@ fn mha_single_batch_pipelined[
                                         ](
                                             Int(block_idx.z),
                                             Int(block_idx.y),
-                                            Int(score_row_with_start_pos + j),
+                                            Int(score_row_with_start_pos),
                                             Int(score_col),
                                         ),
-                                        p_reg_vec2[mma_id, i][j],
+                                        p_reg_vec2[mma_id, i] * scale_log2e,
                                     )
+                                else:
 
-                        @parameter
-                        if use_score_mod:
-                            p_reg_vec2[mma_id, i] = score_mod.score_mod(
-                                IndexList[
-                                    4,
-                                    element_bitwidth=32,
-                                    unsigned=True,
-                                ](
-                                    Int(block_idx.z),
-                                    Int(block_idx.y),
-                                    Int(score_row_with_start_pos),
-                                    Int(score_col),
-                                ),
-                                p_reg_vec2[mma_id, i],
-                                max_seq_len,
-                            )
-                        p_reg_vec2[mma_id, i] = p_reg_vec2[mma_id, i] * log2e
-
-                        if not not_last_iter:
+                                    @parameter
+                                    for j in range(p_frag_simdwidth):
+                                        p_reg_vec2[mma_id, i][j] = mask.mask(
+                                            IndexList[
+                                                4,
+                                                element_bitwidth=32,
+                                                unsigned=True,
+                                            ](
+                                                Int(block_idx.z),
+                                                Int(block_idx.y),
+                                                Int(
+                                                    score_row_with_start_pos + j
+                                                ),
+                                                Int(score_col),
+                                            ),
+                                            p_reg_vec2[mma_id, i][j]
+                                            * scale_log2e,
+                                        )
+                            else:
+                                p_reg_vec2[mma_id, i] = (
+                                    p_reg_vec2[mma_id, i] * scale_log2e
+                                )
 
                             @parameter
-                            if is_nvidia_gpu():
-                                p_reg_vec2[mma_id, i] = _kernel_mask(
-                                    IndexList[
-                                        2,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](Int(score_row), Int(score_col)),
-                                    IndexList[
-                                        2,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](seq_len, num_keys),
-                                    p_reg_vec2[mma_id, i],
+                            if use_score_mod:
+                                p_reg_vec2[mma_id, i] = (
+                                    score_mod.score_mod(
+                                        IndexList[
+                                            4,
+                                            element_bitwidth=32,
+                                            unsigned=True,
+                                        ](
+                                            Int(block_idx.z),
+                                            Int(block_idx.y),
+                                            Int(score_row_with_start_pos),
+                                            Int(score_col),
+                                        ),
+                                        p_reg_vec2[mma_id, i],
+                                        max_seq_len,
+                                    )
+                                    * log2e
                                 )
-                            else:
+
+                            if not not_last_iter:
 
                                 @parameter
-                                for j in range(p_frag_simdwidth):
-                                    p_reg_vec2[mma_id, i][j] = _kernel_mask(
+                                if is_nvidia_gpu():
+                                    p_reg_vec2[mma_id, i] = _kernel_mask(
                                         IndexList[
                                             2,
                                             element_bitwidth=32,
                                             unsigned=True,
-                                        ](
-                                            Int(score_row + j),
-                                            Int(score_col),
-                                        ),
+                                        ](Int(score_row), Int(score_col)),
                                         IndexList[
                                             2,
                                             element_bitwidth=32,
                                             unsigned=True,
                                         ](seq_len, num_keys),
-                                        p_reg_vec2[mma_id, i][j],
+                                        p_reg_vec2[mma_id, i],
                                     )
+                                else:
 
-        unswitch[_apply_mask](
-            mask.status(
-                Index[element_bitwidth=32, unsigned=True](
-                    Int(q_tile_idx * BM + start_pos), kv_tile_start_row
-                ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                                    @parameter
+                                    for j in range(p_frag_simdwidth):
+                                        p_reg_vec2[mma_id, i][j] = _kernel_mask(
+                                            IndexList[
+                                                2,
+                                                element_bitwidth=32,
+                                                unsigned=True,
+                                            ](
+                                                Int(score_row + j),
+                                                Int(score_col),
+                                            ),
+                                            IndexList[
+                                                2,
+                                                element_bitwidth=32,
+                                                unsigned=True,
+                                            ](seq_len, num_keys),
+                                            p_reg_vec2[mma_id, i][j],
+                                        )
+
+            unswitch[_apply_mask](
+                mask.status(
+                    Index[element_bitwidth=32, unsigned=True](
+                        Int(q_tile_idx * BM + start_pos), kv_tile_start_row
+                    ),
+                    Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                )
+                == TileMaskStatus.PARTIAL_MASK
             )
-            == TileMaskStatus.PARTIAL_MASK
-        )
 
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
@@ -2363,9 +2600,11 @@ fn mha_single_batch_pipelined[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
 fn mha_decoding[
+    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
+    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -2379,6 +2618,7 @@ fn mha_decoding[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
     ragged: Bool = False,
     is_shared_kv: Bool = False,
@@ -2389,6 +2629,7 @@ fn mha_decoding[
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
@@ -2443,12 +2684,22 @@ fn mha_decoding[
     if not _is_cache_length_accurate:
         num_keys += seq_len
 
+    # This is:
+    # batch_idx *
+    # full_seq_len (=longest KV cache entry + longest seq in the batch,
+    # which is 1 for decoding) *
+    # longest seq in batch (in case TG=1) * num_heads (if multi-head attention).
+    var mask_batch_offset = batch_idx * (max_cache_valid_length) * (
+        num_heads if mask_rank == 4 else 1
+    )
+
     @parameter
     if is_nvidia_gpu():
 
         @parameter
         if is_shared_kv:
             mha_decoding_single_batch_pipelined[
+                mask_rank,
                 BM=BM,
                 BN=BN,
                 BK=BK,
@@ -2459,12 +2710,14 @@ fn mha_decoding[
                 num_threads=num_threads,
                 num_pipeline_stages=num_pipeline_stages,
                 group=group,
+                use_mask_tensor=use_mask_tensor,
                 use_score_mod=use_score_mod,
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
                 q_ptr.offset(q_batch_offset),
                 k,
                 v,
+                mask_ptr.offset(mask_batch_offset),
                 output_ptr.offset(output_batch_offset),
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
@@ -2478,6 +2731,7 @@ fn mha_decoding[
             )
         else:
             mha_decoding_single_batch[
+                mask_rank,
                 BM=BM,
                 BN=BN,
                 BK=BK,
@@ -2488,12 +2742,14 @@ fn mha_decoding[
                 num_threads=num_threads,
                 num_pipeline_stages=num_pipeline_stages,
                 group=group,
+                use_mask_tensor=use_mask_tensor,
                 use_score_mod=use_score_mod,
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
                 q_ptr.offset(q_batch_offset),
                 k,
                 v,
+                mask_ptr.offset(mask_batch_offset),
                 output_ptr.offset(output_batch_offset),
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
@@ -2519,8 +2775,11 @@ fn mha_decoding[
             k_group_size=group,
         )
         constrained[
-            use_score_mod == False,
-            "use_score_mod must be False for AMD flash attention",
+            use_mask_tensor == False and use_score_mod == False,
+            (
+                "use_mask_tensor and use_score_mod must be False for AMD flash"
+                " attention"
+            ),
         ]()
         amd_mha_decoding_single_batch[group=group, config=config](
             output_ptr.offset(output_batch_offset),
@@ -2540,18 +2799,22 @@ fn mha_decoding[
 fn _scale_and_mask_helper_nvidia[
     p_type: DType,
     p_layout: Layout,
+    mask_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     group: Int,
+    mask_rank: Int,
     num_n_mmas: Int,
     WN: Int,
     MMA_N: Int,
     simd_width: Int,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
 ](
     p_reg_tile: LayoutTensor[
         p_type, p_layout, address_space = AddressSpace.LOCAL
     ],
+    mask_warp_ptr: UnsafePointer[Scalar[mask_type]],
     scale: Float32,
     num_keys: UInt,
     bound: UInt,
@@ -2576,6 +2839,9 @@ fn _scale_and_mask_helper_nvidia[
 
     var group_idx = lane // 4
     var q_head_idx = block_idx.y * group + group_idx
+    var q_head_offset = Int(mask_stride * group_idx) if mask_rank == 4 else 0
+
+    var q_mask_warp_ptr = mask_warp_ptr + q_head_offset
 
     @parameter
     for n_mma in range(Int(num_n_mmas)):
@@ -2586,66 +2852,86 @@ fn _scale_and_mask_helper_nvidia[
         # Current thread's index in current mma tile, e.g. T1 is 2 in 16x8 mma output.
         var frag_lane_col = Int((lane % 4) * simd_width)
 
-        @parameter
-        for i in range(simd_width):
-            var score_row = batch_cache_valid_length
-            var score_col = kv_tile_start_row + key_offset + frag_lane_col + i
+        var mask_frag_ptr = q_mask_warp_ptr + frag_offset
 
-            p_reg_tile[n_mma, i] = mask.mask(
-                Index(
-                    Int(block_idx.z),
-                    Int(q_head_idx),
-                    Int(score_row),
-                    Int(score_col),
-                ),
-                p_reg_tile[n_mma, i] * scale.cast[p_type](),
-            )
+        @parameter
+        if use_mask_tensor:
 
             @parameter
-            if use_score_mod:
-                p_reg_tile[n_mma, i] = score_mod.score_mod(
+            for i in range(simd_width):
+                if key_offset + frag_lane_col + i < bound:
+                    p_reg_tile[n_mma, i] = (
+                        p_reg_tile[n_mma, i] * scale.cast[p_type]()
+                        + mask_frag_ptr[frag_lane_col + i].cast[p_type]()
+                    )
+                else:
+                    p_reg_tile[n_mma, i] = min_or_neg_inf[p_type]()
+        else:
+
+            @parameter
+            for i in range(simd_width):
+                var score_row = batch_cache_valid_length
+                var score_col = kv_tile_start_row + key_offset + frag_lane_col + i
+
+                p_reg_tile[n_mma, i] = mask.mask(
                     Index(
                         Int(block_idx.z),
                         Int(q_head_idx),
                         Int(score_row),
                         Int(score_col),
                     ),
-                    p_reg_tile[n_mma, i],
-                    max_seq_len,
+                    p_reg_tile[n_mma, i] * scale.cast[p_type](),
                 )
 
-            p_reg_tile[n_mma, i] = _kernel_mask(
-                Index(score_row, score_col),
-                Index(
-                    batch_cache_valid_length + 1,
-                    # The following setting ensures that out of bound check happens at
-                    # every function call, also it corrects the bounds to be exact.
-                    # Previous version was using batch_cache_valid_length + 1 which was fine
-                    # with the non-split-k based mha as the ooo would have been triggered only
-                    # for the last iteration of the outer loop. So while the bound was not exact, it
-                    # led to correct output.
-                    kv_tile_start_row + bound,
-                ),
-                p_reg_tile[n_mma, i],
-            )
+                @parameter
+                if use_score_mod:
+                    p_reg_tile[n_mma, i] = score_mod.score_mod(
+                        Index(
+                            Int(block_idx.z),
+                            Int(q_head_idx),
+                            Int(score_row),
+                            Int(score_col),
+                        ),
+                        p_reg_tile[n_mma, i],
+                        max_seq_len,
+                    )
+
+                p_reg_tile[n_mma, i] = _kernel_mask(
+                    Index(score_row, score_col),
+                    Index(
+                        batch_cache_valid_length + 1,
+                        # The following setting ensures that out of bound check happens at
+                        # every function call, also it corrects the bounds to be exact.
+                        # Previous version was using batch_cache_valid_length + 1 which was fine
+                        # with the non-split-k based mha as the ooo would have been triggered only
+                        # for the last iteration of the outer loop. So while the bound was not exact, it
+                        # led to correct output.
+                        kv_tile_start_row + bound,
+                    ),
+                    p_reg_tile[n_mma, i],
+                )
 
 
 @always_inline
 fn _scale_and_mask_helper_amd[
     p_type: DType,
     p_layout: Layout,
+    mask_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     group: Int,
+    mask_rank: Int,
     num_n_mmas: Int,
     WN: Int,
     MMA_N: Int,
     simd_width: Int,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
 ](
     p_reg_tile: LayoutTensor[
         p_type, p_layout, address_space = AddressSpace.LOCAL
     ],
+    mask_warp_ptr: UnsafePointer[Scalar[mask_type]],
     scale: Float32,
     num_keys: UInt,
     bound: UInt,
@@ -2681,66 +2967,90 @@ fn _scale_and_mask_helper_amd[
         var frag_lane_col = Int(lane % 16)
 
         @parameter
-        for i in range(simd_width):
-            var score_row = batch_cache_valid_length
-            var score_col = kv_tile_start_row + key_offset + frag_lane_col
-            var group_idx = (lane // 16) * simd_width + i
-            var q_head_idx = block_idx.y * group + group_idx
-            p_reg_tile[n_mma, i] = mask.mask(
-                Index(
-                    Int(block_idx.z),
-                    Int(q_head_idx),
-                    Int(score_row),
-                    Int(score_col),
-                ),
-                p_reg_tile[n_mma, i] * scale.cast[p_type](),
-            )
+        if use_mask_tensor:
 
             @parameter
-            if use_score_mod:
-                p_reg_tile[n_mma, i] = score_mod.score_mod(
+            for i in range(simd_width):
+                var group_idx = (lane // 16) * simd_width + i
+                var q_head_offset = Int(
+                    mask_stride * group_idx
+                ) if mask_rank == 4 else 0
+                var q_mask_warp_ptr = mask_warp_ptr + q_head_offset
+                var mask_frag_ptr = q_mask_warp_ptr + frag_offset
+                if key_offset + frag_lane_col < bound:
+                    p_reg_tile[n_mma, i] = (
+                        p_reg_tile[n_mma, i] * scale.cast[p_type]()
+                        + mask_frag_ptr[frag_lane_col].cast[p_type]()
+                    )
+                else:
+                    p_reg_tile[n_mma, i] = min_or_neg_inf[p_type]()
+        else:
+
+            @parameter
+            for i in range(simd_width):
+                var score_row = batch_cache_valid_length
+                var score_col = kv_tile_start_row + key_offset + frag_lane_col
+                var group_idx = (lane // 16) * simd_width + i
+                var q_head_idx = block_idx.y * group + group_idx
+                p_reg_tile[n_mma, i] = mask.mask(
                     Index(
                         Int(block_idx.z),
                         Int(q_head_idx),
                         Int(score_row),
                         Int(score_col),
                     ),
-                    p_reg_tile[n_mma, i],
-                    max_seq_len,
+                    p_reg_tile[n_mma, i] * scale.cast[p_type](),
                 )
 
-            p_reg_tile[n_mma, i] = _kernel_mask(
-                Index(score_row, score_col),
-                Index(
-                    batch_cache_valid_length + 1,
-                    # The following setting ensures that out of bound check happens at
-                    # every function call, also it corrects the bounds to be exact.
-                    # Previous version was using batch_cache_valid_length + 1 which was fine
-                    # with the non-split-k based mha as the ooo would have been triggered only
-                    # for the last iteration of the outer loop. So while the bound was not exact, it
-                    # led to correct output.
-                    kv_tile_start_row + bound,
-                ),
-                p_reg_tile[n_mma, i],
-            )
+                @parameter
+                if use_score_mod:
+                    p_reg_tile[n_mma, i] = score_mod.score_mod(
+                        Index(
+                            Int(block_idx.z),
+                            Int(q_head_idx),
+                            Int(score_row),
+                            Int(score_col),
+                        ),
+                        p_reg_tile[n_mma, i],
+                        max_seq_len,
+                    )
+
+                p_reg_tile[n_mma, i] = _kernel_mask(
+                    Index(score_row, score_col),
+                    Index(
+                        batch_cache_valid_length + 1,
+                        # The following setting ensures that out of bound check happens at
+                        # every function call, also it corrects the bounds to be exact.
+                        # Previous version was using batch_cache_valid_length + 1 which was fine
+                        # with the non-split-k based mha as the ooo would have been triggered only
+                        # for the last iteration of the outer loop. So while the bound was not exact, it
+                        # led to correct output.
+                        kv_tile_start_row + bound,
+                    ),
+                    p_reg_tile[n_mma, i],
+                )
 
 
 @always_inline
 fn scale_and_mask_helper[
     p_type: DType,
     p_layout: Layout,
+    mask_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
     group: Int,
+    mask_rank: Int,
     num_n_mmas: Int,
     WN: Int,
     MMA_N: Int,
     simd_width: Int,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
 ](
     p_reg_tile: LayoutTensor[
         p_type, p_layout, address_space = AddressSpace.LOCAL
     ],
+    mask_warp_ptr: UnsafePointer[Scalar[mask_type]],
     scale: Float32,
     num_keys: UInt,
     bound: UInt,
@@ -2757,16 +3067,20 @@ fn scale_and_mask_helper[
         _scale_and_mask_helper_nvidia[
             p_type,
             p_layout,
+            mask_type,
             mask_t,
             score_mod_t,
             group,
+            mask_rank,
             num_n_mmas,
             WN,
             MMA_N,
             simd_width,
+            use_mask_tensor,
             use_score_mod,
         ](
             p_reg_tile,
+            mask_warp_ptr,
             scale,
             num_keys,
             bound,
@@ -2782,16 +3096,20 @@ fn scale_and_mask_helper[
         _scale_and_mask_helper_amd[
             p_type,
             p_layout,
+            mask_type,
             mask_t,
             score_mod_t,
             group,
+            mask_rank,
             num_n_mmas,
             WN,
             MMA_N,
             simd_width,
+            use_mask_tensor,
             use_score_mod,
         ](
             p_reg_tile,
+            mask_warp_ptr,
             scale,
             num_keys,
             bound,
@@ -2841,9 +3159,11 @@ fn _get_start_and_end_for_partitions[
 
 
 fn mha_decoding_single_batch[
+    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
+    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -2858,12 +3178,14 @@ fn mha_decoding_single_batch[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
@@ -3013,6 +3335,10 @@ fn mha_decoding_single_batch[
 
     # Mask global memory iterator
     var stride = max_cache_valid_length
+    var kv_head_offset = Int(
+        kv_head_idx * group * stride
+    ) if mask_rank == 4 else 0
+    var warp_offset = warp_y * WM * num_keys + warp_x * WN
 
     # Account for group query.
     alias kv_num_heads = num_heads // group
@@ -3032,6 +3358,10 @@ fn mha_decoding_single_batch[
     start, end = _get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
     )
+
+    var mask_warp_ptr = mask_ptr + Int(kv_head_offset) + Int(
+        warp_offset
+    ) + start
 
     alias q_num_vecs = BM * BK // simd_size
 
@@ -3154,10 +3484,13 @@ fn mha_decoding_single_batch[
             WN=WN,
             MMA_N=MMA_N,
             simd_width=p_frag_simdwidth,
+            use_mask_tensor=use_mask_tensor,
             use_score_mod=use_score_mod,
             group=group,
+            mask_rank=mask_rank,
         ](
             p_reg_tile,
+            mask_warp_ptr,
             scale,
             num_keys,
             kv_tile_num_rows,
@@ -3169,6 +3502,8 @@ fn mha_decoding_single_batch[
             stride,
             max_cache_valid_length,
         )
+        # Increment mask to next BM x BN block.
+        mask_warp_ptr += BN
 
         # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
         # G <= 8 typically holds
@@ -3424,9 +3759,11 @@ fn mha_decoding_single_batch[
 
 
 fn mha_decoding_single_batch_pipelined[
+    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
+    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -3441,12 +3778,14 @@ fn mha_decoding_single_batch_pipelined[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
     v: v_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
@@ -3588,6 +3927,10 @@ fn mha_decoding_single_batch_pipelined[
 
     # Mask global memory iterator, seq_len = 1
     var stride = max_cache_valid_length
+    var kv_head_offset = Int(
+        kv_head_idx * group * stride
+    ) if mask_rank == 4 else 0
+    var warp_offset = warp_y * WM * num_keys + warp_x * WN
 
     # Account for group query.
     alias kv_num_heads = num_heads // group
@@ -3608,6 +3951,9 @@ fn mha_decoding_single_batch_pipelined[
     start, end = _get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
     )
+    var mask_warp_ptr = mask_ptr + Int(kv_head_offset) + Int(
+        warp_offset
+    ) + start
 
     @always_inline
     @parameter
@@ -3677,10 +4023,13 @@ fn mha_decoding_single_batch_pipelined[
             WN=WN,
             MMA_N=MMA_N,
             simd_width=p_frag_simdwidth,
+            use_mask_tensor=use_mask_tensor,
             use_score_mod=use_score_mod,
             group=group,
+            mask_rank=mask_rank,
         ](
             p_reg_tile,
+            mask_warp_ptr,
             scale,
             num_keys,
             kv_tile_num_rows,
@@ -3692,6 +4041,8 @@ fn mha_decoding_single_batch_pipelined[
             stride,
             max_cache_valid_length,
         )
+        # Increment mask to next BM x BN block.
+        mask_warp_ptr += BN
 
         @parameter
         if is_nvidia_gpu():
@@ -3994,11 +4345,14 @@ alias _NAIVE_BMM_BLOCK_TUPLE = StaticTuple[Int32, 1](
 
 
 fn mha_gpu_naive[
+    mask_type: DType,
     output_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
     mask_t: MHAMask,
+    mask_rank: Int,
     rank: Int, //,
+    use_mask_tensor: Bool = True,
     ragged: Bool = False,
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
@@ -4006,6 +4360,7 @@ fn mha_gpu_naive[
     q: NDBuffer[_, rank, *_],
     k: k_t,
     v: v_t,
+    mask: NDBuffer[mask_type, mask_rank, *_, **_],
     mask_functor: mask_t,
     output: NDBuffer[output_type, rank, *_],
     valid_length: NDBuffer[DType.uint32, 1, *_],
@@ -4036,9 +4391,12 @@ fn mha_gpu_naive[
     var q_ptr = q.data
     alias kernel = _bmm0_bs[
         q_type,
+        mask_type,
         k_t,
         mask_t,
         p_type,
+        mask_rank,
+        use_mask_tensor=use_mask_tensor,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
     ]
@@ -4047,6 +4405,7 @@ fn mha_gpu_naive[
         p_ptr,
         q_ptr,
         k,
+        mask.data,
         valid_length,
         scale,
         batch_size,
@@ -4110,15 +4469,19 @@ fn mha_gpu_naive[
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
 fn _bmm0_bs[
     q_type: DType,
+    mask_type: DType,
     k_t: MHAOperand,
     mask_t: MHAMask,
     p_type: DType,
+    mask_rank: Int,
+    use_mask_tensor: Bool = True,
     ragged: Bool = False,
     _use_valid_length: Bool = False,
 ](
     p_ptr: UnsafePointer[Scalar[p_type]],
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
     scale: Float32,
     batch_size: Int,
@@ -4181,6 +4544,11 @@ fn _bmm0_bs[
 
     var p = p_ptr + Int(p_offset)
 
+    var mask_offset = (
+        batch if mask_rank == 3 else batch_head
+    ) * max_prompt_len * padded_num_keys
+    var mask = mask_ptr + Int(mask_offset)
+
     var accum = SIMD[p_type, 1](0.0)
 
     if x < cur_cache_len and y < cur_query_len:
@@ -4218,17 +4586,25 @@ fn _bmm0_bs[
                 var k_val = k_ptr[d]
                 accum += (q_val.cast[k_type]() * k_val).cast[p_type]()
 
-    var score_row = y + cur_cache_len - cur_query_len
-    var score_col = x
-    p[y * padded_num_keys + x] = mask_functor.mask(
-        Index(
-            Int(batch),
-            Int(head),
-            Int(score_row),
-            Int(score_col),
-        ),
-        accum * scale.cast[p_type](),
-    )
+    @parameter
+    if use_mask_tensor:
+        p[y * padded_num_keys + x] = (
+            accum * scale.cast[p_type]()
+            + mask[y * padded_num_keys + x].cast[p_type]()
+        )
+
+    else:
+        var score_row = y + cur_cache_len - cur_query_len
+        var score_col = x
+        p[y * padded_num_keys + x] = mask_functor.mask(
+            Index(
+                Int(batch),
+                Int(head),
+                Int(score_row),
+                Int(score_col),
+            ),
+            accum * scale.cast[p_type](),
+        )
 
     if x >= cur_cache_len or y >= cur_query_len:
         p[y * padded_num_keys + x] = min_or_neg_inf[p_type]()
@@ -4349,7 +4725,8 @@ fn mha_gpu_naive[
         q,
         k_operand,
         v_operand,
-        MaterializedMask(mask),
+        mask,
+        NullMask(),
         output,
         null_valid_length,
         scale,
@@ -4365,15 +4742,19 @@ fn mha_gpu_naive[
 
 fn mha_gpu_naive[
     q_type: DType,
+    mask_type: DType,
     output_type: DType,
     cache_t: KVCacheT,
     mask_t: MHAMask,
+    mask_rank: Int,
     rank: Int, //,
+    use_mask_tensor: Bool = True,
     ragged: Bool = False,
 ](
     q: NDBuffer[q_type, rank, *_],
     k: cache_t,
     v: cache_t,
+    mask: NDBuffer[mask_type, mask_rank, *_, **_],
     mask_functor: mask_t,
     output: NDBuffer[mut=True, output_type, rank, *_],
     valid_length: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
@@ -4389,10 +4770,15 @@ fn mha_gpu_naive[
     var k_operand = KVCacheMHAOperand(k)
     var v_operand = KVCacheMHAOperand(v)
 
-    mha_gpu_naive[_use_valid_length=True, _is_cache_length_accurate=False,](
+    mha_gpu_naive[
+        use_mask_tensor=use_mask_tensor,
+        _use_valid_length=True,
+        _is_cache_length_accurate=False,
+    ](
         q,
         k_operand,
         v_operand,
+        mask,
         mask_functor,
         output,
         valid_length,

@@ -371,6 +371,9 @@ fn _apply_mask[
     mask: mask_t,
     p_reg_vectorized: LayoutTensor[accum_type, **_],
 ):
+    var scale_log2e: SIMD[accum_type, 1] = scale.cast[accum_type]() * (
+        log2e if use_exp2 else Scalar[accum_type](1)
+    )
     var lane = lane_id()
     alias output_frag_size = fragment_layout.size()
 
@@ -406,9 +409,6 @@ fn _apply_mask[
             ) if token_gen else mask_block_row + mask_frag_row
             var score_col = mask_frag_col
             var score_row_with_start_pos = score_row + start_pos
-            p_reg_vectorized[mma_id, 0] = (
-                p_reg_vectorized[mma_id, 0] * scale.cast[accum_type]()
-            )
 
             @parameter
             if masked:
@@ -428,9 +428,12 @@ fn _apply_mask[
                             Int(score_row_with_start_pos + fragment_row),
                             Int(score_col + fragment_col),
                         ),
-                        p_reg_vectorized[mma_id, 0][j],
+                        p_reg_vectorized[mma_id, 0][j] * scale_log2e,
                     )
-            p_reg_vectorized[mma_id, 0] = p_reg_vectorized[mma_id, 0] * log2e
+            else:
+                p_reg_vectorized[mma_id, 0] = (
+                    p_reg_vectorized[mma_id, 0] * scale_log2e
+                )
 
             if not not_last_iter or token_gen:
                 var bound_y = kv_tile_start_row + kv_tile_num_rows if token_gen else num_keys

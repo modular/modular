@@ -92,6 +92,7 @@ fn flare_mla_decoding[
     score_mod_t: ScoreModTrait,
     type: DType,
     q_shape: DimList, //,
+    add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
@@ -102,6 +103,7 @@ fn flare_mla_decoding[
     output: NDBuffer[mut=True, _, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],
     k: cache_t,
+    mask: NDBuffer,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: NDBuffer[DType.uint32, 1, *_],
@@ -134,6 +136,7 @@ fn flare_mla_decoding[
     constrained[
         not ragged or rank == 3, "only support rank 3 inputs for ragged inputs."
     ]()
+    constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
     constrained[
         q.type == cache_t.type == output.type,
         "Q, K, V, output should have same type.",
@@ -167,6 +170,7 @@ fn flare_mla_decoding[
 
         flare_mla_decoding_dispatch[
             kv_num_heads=kv_num_heads,
+            add_attn_mask=add_attn_mask,
             use_score_mod=use_score_mod,
             config=config,
             ragged=ragged,
@@ -175,6 +179,7 @@ fn flare_mla_decoding[
             output,
             q,
             k_operand,
+            mask,
             mask_functor,
             score_mod_functor,
             valid_length,
@@ -194,6 +199,7 @@ fn flare_mla_decoding[
     score_mod_t: ScoreModTrait,
     type: DType,
     q_shape: DimList, //,
+    add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
     decoding_warp_split_k: Bool = False,
@@ -201,6 +207,7 @@ fn flare_mla_decoding[
     output: NDBuffer[mut=True, _, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
+    mask: NDBuffer,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     scale: Float32,
@@ -209,6 +216,7 @@ fn flare_mla_decoding[
     num_partitions: OptionalReg[Int] = None,
 ) raises:
     constrained[rank == 4, "only support rank 4 inputs."]()
+    constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
 
     alias kv_num_heads = k.shape.get[2]()
 
@@ -222,6 +230,7 @@ fn flare_mla_decoding[
 
     flare_mla_decoding_dispatch[
         kv_num_heads=kv_num_heads,
+        add_attn_mask=add_attn_mask,
         use_score_mod=use_score_mod,
         config=config,
         ragged=False,
@@ -232,6 +241,7 @@ fn flare_mla_decoding[
         output,
         q,
         k_operand,
+        mask,
         mask_functor,
         score_mod_functor,
         valid_length,
@@ -253,6 +263,7 @@ fn flare_mla_decoding_dispatch[
     type: DType,
     q_shape: DimList, //,
     kv_num_heads: Int,
+    add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
@@ -271,6 +282,7 @@ fn flare_mla_decoding_dispatch[
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, _, q_shape, *_],
     k: k_t,
+    mask: NDBuffer,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
     valid_length: NDBuffer[DType.uint32, 1, *_],
@@ -349,8 +361,10 @@ fn flare_mla_decoding_dispatch[
     alias num_blocks_y = num_heads // BM
 
     alias kernel = mla_decoding[
+        mask.rank,
         q.type,
         k_t,
+        mask.type,
         output.type,
         mask_t,
         score_mod_t,
@@ -364,6 +378,7 @@ fn flare_mla_decoding_dispatch[
         num_threads=num_threads,
         num_pipeline_stages=num_pipeline_stages,
         group=group,
+        use_mask_tensor=add_attn_mask,
         use_score_mod=use_score_mod,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
@@ -378,6 +393,7 @@ fn flare_mla_decoding_dispatch[
     ctx.enqueue_function[kernel](
         q.data,
         k,
+        mask.data,
         output.data,
         nullptr,
         nullptr,
@@ -401,8 +417,10 @@ fn flare_mla_decoding_dispatch[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
 fn mla_decoding[
+    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
+    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -416,6 +434,7 @@ fn mla_decoding[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
     ragged: Bool = False,
     _use_valid_length: Bool = False,
@@ -424,6 +443,7 @@ fn mla_decoding[
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
@@ -480,7 +500,17 @@ fn mla_decoding[
     if not _is_cache_length_accurate:
         num_keys += seq_len
 
+    # This is:
+    # batch_idx *
+    # full_seq_len (=longest KV cache entry + longest seq in the batch,
+    # which is 1 for decoding) *
+    # longest seq in batch (in case TG=1) * num_heads (if multi-head attention).
+    var mask_batch_offset = batch_idx * (max_cache_valid_length) * (
+        num_heads if mask_rank == 4 else 1
+    )
+
     mla_decoding_single_batch[
+        mask_rank,
         BM=BM,
         BN=BN,
         BK=BK,
@@ -492,11 +522,13 @@ fn mla_decoding[
         num_threads=num_threads,
         num_pipeline_stages=num_pipeline_stages,
         group=group,
+        use_mask_tensor=use_mask_tensor,
         use_score_mod=use_score_mod,
         decoding_warp_split_k=decoding_warp_split_k,
     ](
         q_ptr.offset(q_batch_offset),
         k,
+        mask_ptr.offset(mask_batch_offset),
         output_ptr.offset(output_batch_offset),
         exp_sum_batch_ptr,
         qk_max_batch_ptr,
@@ -512,8 +544,10 @@ fn mla_decoding[
 
 @always_inline
 fn mla_decoding_single_batch[
+    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
+    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -529,11 +563,13 @@ fn mla_decoding_single_batch[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
+    use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
@@ -705,6 +741,11 @@ fn mla_decoding_single_batch[
     # Mask global memory iterator, seq_len = 1
     alias seq_len = 1
     var stride = max_cache_valid_length
+    var q_head_group_offset = Int(
+        q_head_group * BM * stride
+    ) if mask_rank == 4 else 0
+    var mask_tile_ptr = mask_ptr + Int(q_head_group_offset)
+    var mask_warp_row = warp_y * WM
     var mask_warp_col = warp_x * WN + start
 
     alias q_num_vecs = BM * BK // simd_size
@@ -839,7 +880,8 @@ fn mla_decoding_single_batch[
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
         @parameter
-        fn _apply_mask[masked: Bool]():
+        if use_mask_tensor:
+            # TODO: Construct mask tensor with runtime layout.
             @parameter
             for m_mma in range(Int(num_m_mmas)):
 
@@ -848,88 +890,149 @@ fn mla_decoding_single_batch[
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
-                    var q_head_idx = q_head_group * BM + m_mma * MMA_M
+                    var mask_frag_row = mask_warp_row + m_mma * MMA_M
                     var mask_frag_col = mask_warp_col + n_mma * MMA_N
 
                     # Offset to current thread's fragment
+                    mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
                     mask_frag_col += lane * p_frag_simdwidth % MMA_N
 
-                    # Offset to current thread's head idx
-                    q_head_idx += lane // (MMA_N // p_frag_simdwidth)
+                    alias mask_align = alignof[
+                        SIMD[mask_type, p_frag_simdwidth]
+                    ]()
 
                     @parameter
                     for i in range(2):
-                        # The row in score matrix of shape seq_len x num_keys.
-                        # Mask col is score col since we don't partition in col.
-                        var score_col = mask_frag_col
+                        var q_head_offset = (
+                            mask_frag_row + i * MMA_M // 2
+                        ) * stride if mask_rank == 4 else 0
 
-                        var score_head_idx = q_head_idx + i * MMA_M // 2
+                        # The intermediate result is logically BM x BN.
+                        # The overall mask tensor is seqlen x seqlen, some remainder tiles
+                        # may not fit in BM x BN.
+                        if mask_frag_col < num_keys:
+                            var mask_vec = (
+                                mask_tile_ptr
+                                + Int(q_head_offset + mask_frag_col)
+                            ).load[
+                                width=p_frag_simdwidth, alignment=mask_align
+                            ]()
 
-                        var score_row_with_start_pos = num_keys - 1
-                        var score_row = 0  # this is a decoding kernel with seq_len = 1
+                            p_reg_vec2[mma_id, i] = (
+                                p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
+                                + rebind[p_reg_vec2.element_type](
+                                    mask_vec.cast[accum_type]()
+                                )
+                            ) * log2e
+                        else:
+                            p_reg_vec2[mma_id, i] = rebind[
+                                p_reg_vec2.element_type
+                            ](
+                                SIMD[accum_type, p_frag_simdwidth](
+                                    min_or_neg_inf[accum_type]()
+                                )
+                            )
 
-                        p_reg_vec2[mma_id, i] = (
-                            p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
-                        )
+        else:
+
+            @parameter
+            fn _apply_mask[masked: Bool]():
+                var scale_log2e: SIMD[accum_type, 1] = scale.cast[
+                    accum_type
+                ]() if use_score_mod else scale.cast[accum_type]() * log2e
+
+                @parameter
+                for m_mma in range(Int(num_m_mmas)):
+
+                    @parameter
+                    for n_mma in range(Int(num_n_mmas)):
+                        alias mma_id = n_mma * num_m_mmas + m_mma
+
+                        # Coordinates in mask for current mma tile.
+                        var q_head_idx = q_head_group * BM + m_mma * MMA_M
+                        var mask_frag_col = mask_warp_col + n_mma * MMA_N
+
+                        # Offset to current thread's fragment
+                        mask_frag_col += lane * p_frag_simdwidth % MMA_N
+
+                        # Offset to current thread's head idx
+                        q_head_idx += lane // (MMA_N // p_frag_simdwidth)
 
                         @parameter
-                        if masked:
-                            p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[
-                                    4,
-                                    element_bitwidth=32,
-                                    unsigned=True,
-                                ](
-                                    block_idx.z,
-                                    score_head_idx,
-                                    score_row_with_start_pos,
-                                    score_col,
-                                ),
-                                p_reg_vec2[mma_id, i],
-                            )
+                        for i in range(2):
+                            # The row in score matrix of shape seq_len x num_keys.
+                            # Mask col is score col since we don't partition in col.
+                            var score_col = mask_frag_col
 
-                        @parameter
-                        if use_score_mod:
-                            p_reg_vec2[mma_id, i] = score_mod.score_mod(
-                                IndexList[
-                                    4,
-                                    element_bitwidth=32,
-                                    unsigned=True,
-                                ](
-                                    block_idx.z,
-                                    score_head_idx,
-                                    score_row_with_start_pos,
-                                    score_col,
-                                ),
-                                p_reg_vec2[mma_id, i],
-                                1,
-                            )
-                        p_reg_vec2[mma_id, i] = p_reg_vec2[mma_id, i] * log2e
+                            var score_head_idx = q_head_idx + i * MMA_M // 2
 
-                        if not not_last_iter:
-                            p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](score_row, score_col),
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](
-                                    seq_len,
-                                    num_keys,
-                                ),
-                                p_reg_vec2[mma_id, i],
-                            )
+                            var score_row_with_start_pos = num_keys - 1
+                            var score_row = 0  # this is a decoding kernel with seq_len = 1
 
-        unswitch[_apply_mask](
-            mask.status(
-                Index[element_bitwidth=32, unsigned=True](
-                    num_keys,
-                    kv_tile_start_row,
-                ),
-                Index[element_bitwidth=32, unsigned=True](1, BN),
+                            @parameter
+                            if masked:
+                                p_reg_vec2[mma_id, i] = mask.mask(
+                                    IndexList[
+                                        4,
+                                        element_bitwidth=32,
+                                        unsigned=True,
+                                    ](
+                                        block_idx.z,
+                                        score_head_idx,
+                                        score_row_with_start_pos,
+                                        score_col,
+                                    ),
+                                    p_reg_vec2[mma_id, i] * scale_log2e,
+                                )
+                            else:
+                                p_reg_vec2[mma_id, i] = (
+                                    p_reg_vec2[mma_id, i] * scale_log2e
+                                )
+
+                            @parameter
+                            if use_score_mod:
+                                p_reg_vec2[mma_id, i] = (
+                                    score_mod.score_mod(
+                                        IndexList[
+                                            4,
+                                            element_bitwidth=32,
+                                            unsigned=True,
+                                        ](
+                                            block_idx.z,
+                                            score_head_idx,
+                                            score_row_with_start_pos,
+                                            score_col,
+                                        ),
+                                        p_reg_vec2[mma_id, i],
+                                        1,
+                                    )
+                                    * log2e
+                                )
+
+                            if not not_last_iter:
+                                p_reg_vec2[mma_id, i] = _kernel_mask(
+                                    IndexList[
+                                        2, element_bitwidth=32, unsigned=True
+                                    ](score_row, score_col),
+                                    IndexList[
+                                        2, element_bitwidth=32, unsigned=True
+                                    ](
+                                        seq_len,
+                                        num_keys,
+                                    ),
+                                    p_reg_vec2[mma_id, i],
+                                )
+
+            unswitch[_apply_mask](
+                mask.status(
+                    Index[element_bitwidth=32, unsigned=True](
+                        num_keys,
+                        kv_tile_start_row,
+                    ),
+                    Index[element_bitwidth=32, unsigned=True](1, BN),
+                )
+                == TileMaskStatus.PARTIAL_MASK
             )
-            == TileMaskStatus.PARTIAL_MASK
-        )
 
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
