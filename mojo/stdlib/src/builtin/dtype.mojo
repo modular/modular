@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import KeyElement
-from collections.string import StringSlice
+from collections.string import StringSlice, StaticString
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import bitwidthof, os_is_windows, sizeof
 
@@ -851,8 +851,8 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
 # ===-------------------------------------------------------------------===#
 
 
-fn _scientific_notation_digits[dtype: DType]() -> StringLiteral:
-    """Get the number of digits as a StringLiteral for the scientific notation
+fn _scientific_notation_digits[dtype: DType]() -> StaticString:
+    """Get the number of digits as a StaticString for the scientific notation
     representation of a float.
     """
     constrained[dtype.is_floating_point(), "expected floating point type"]()
@@ -923,7 +923,7 @@ fn _uint_type_of_width[width: Int]() -> DType:
 
 
 @always_inline
-fn _index_printf_format() -> StringLiteral:
+fn _index_printf_format() -> StaticString:
     @parameter
     if bitwidthof[Int]() == 32:
         return "%d"
@@ -934,7 +934,7 @@ fn _index_printf_format() -> StringLiteral:
 
 
 @always_inline
-fn _get_dtype_printf_format[dtype: DType]() -> StringLiteral:
+fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
     @parameter
     if dtype is DType.bool:
         return _index_printf_format()

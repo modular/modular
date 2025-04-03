@@ -30,6 +30,9 @@ what we publish.
 
 ### Standard library changes
 
+- `Pointer` now has `get_immutable()` to return a new `Pointer`
+  with the same underlying data but an `ImmutableOrigin`.
+
 - You can now forward a `VariadicPack` that is `Writable` to a writer using
 `WritableVariadicPack`:
 
@@ -71,6 +74,11 @@ for i in range(iteration_range):
 
 - The `is_power_of_two(x)` function in the `bit` package is now a method on
   `Int`, `UInt` and `SIMD`.
+
+- The `constrained[cond, string]()` function now accepts multiple strings that
+  are printed concatenated on failure, so you can use:
+  `constrained[cond, "hello: ", String(n), ": world"]()` which is more comptime
+  efficient and somewhat more ergonomic than using string concatenation.
 
 - The types `StringSlice` and `StaticString` are now part of the prelude, there
   is no need to import them anymore.
@@ -119,7 +127,29 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 - The `type` parameter of `SIMD` has been renamed to `dtype`.
 
+- The `Pointer.address_of(...)` function has been deprecated.  Please use the
+  `Pointer(to=...)` constructor instead.  Conceptually, this is saying "please
+  initialize a `Pointer` (a reference, if you will) to *some other address in
+  memory*.  In the future, `Pointer.address_of(...)` function will be removed.
+
+- The `logger` package is now open sourced (along with its commit history)!
+  This helps continue our commitment to progressively open sourcing more
+  of the standard library.
+
 ### Tooling changes
+
+### Mojo Compiler
+
+- The Mojo compiler is now able to interpret all arithmetic operations from
+the `index` dialect that are used in methods of `Int` and `UInt` types.
+That allows users to finally compute constants at compile time:
+
+```mojo
+alias a: Int = 1000000000
+alias b: Int = (5 * a) // 2
+```
+
+previously compiler would throw error "cannot fold operation".
 
 ### ❌ Removed
 

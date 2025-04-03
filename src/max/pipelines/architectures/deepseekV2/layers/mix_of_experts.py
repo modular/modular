@@ -30,9 +30,6 @@ class MoE(Module):
     experts_per_rank: int
     """Number of experts per rank."""
 
-    ep_rank: int
-    """Rank in expert parallel group."""
-
     moe_intermediate_size: int
     """Hidden dimension size for MoE intermediate layer."""
 
@@ -47,7 +44,6 @@ class MoE(Module):
         num_experts_per_tok: int = 6,
         ep_size: int = 1,
         experts_per_rank: int = 64,
-        ep_rank: int = 0,
         moe_intermediate_size: int = 1408,
         max_position_embeddings: int = 2048,
         n_shared_experts: int = 2,
@@ -58,7 +54,6 @@ class MoE(Module):
             num_experts_per_tok: Number of experts to route each token to.
             ep_size: Size of expert parallel group.
             experts_per_rank: Number of experts per rank.
-            ep_rank: Rank in expert parallel group.
             moe_intermediate_size: Hidden dimension size for MoE intermediate layer.
             max_position_embeddings: Maximum sequence length.
         """
@@ -66,7 +61,6 @@ class MoE(Module):
         self.num_experts_per_tok = num_experts_per_tok
         self.ep_size = ep_size
         self.experts_per_rank = experts_per_rank
-        self.ep_rank = ep_rank
         self.moe_intermediate_size = moe_intermediate_size
         self.max_position_embeddings = max_position_embeddings
         self.n_shared_experts = n_shared_experts

@@ -133,6 +133,7 @@ def main():
         "top_k_sampler",
         # The dtype and shape of the probabilities being passed in
         input_types=[TensorType(DType.float32, shape=[batch_size, K])],
+        custom_extensions=[path],
     ) as graph:
         # Take the probabilities as a single input to the graph.
         probs, *_ = graph.inputs
@@ -157,7 +158,7 @@ def main():
     device = CPU() if args.cpu or accelerator_count() == 0 else Accelerator()
 
     # Set up an inference session for running the graph.
-    session = InferenceSession(devices=[device], custom_extensions=path)
+    session = InferenceSession(devices=[device])
 
     # Compile the graph.
     model = session.load(graph)

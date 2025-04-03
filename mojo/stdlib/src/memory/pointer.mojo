@@ -355,6 +355,7 @@ struct Pointer[
 
     @staticmethod
     @always_inline("nodebug")
+    @deprecated("Use Pointer(to=...) constructor instead.")
     fn address_of(ref [origin, address_space]value: type) -> Self:
         """Constructs a Pointer from a reference to a value.
 
@@ -375,6 +376,25 @@ struct Pointer[
             A copy of the value.
         """
         return Self(_mlir_value=self._value)
+
+    @always_inline
+    fn get_immutable(
+        self,
+        out result: Pointer[
+            type,
+            ImmutableOrigin.cast_from[origin].result,
+            address_space=address_space,
+        ],
+    ):
+        """Constructs a new Pointer with the same underlying target
+        and an ImmutableOrigin.
+
+        Note that this does **not** copy the underlying data.
+
+        Returns:
+            A new Pointer with the same target as self and an ImmutableOrigin.
+        """
+        return __type_of(result)(_mlir_value=self._value)
 
     # ===------------------------------------------------------------------===#
     # Operator dunders

@@ -173,7 +173,7 @@ fn env_get_int[name: StaticString, default: Int]() -> Int:
         return default
 
 
-fn env_get_string[name: StaticString]() -> StringLiteral:
+fn env_get_string[name: StaticString]() -> StaticString:
     """Try to get a string-valued define. Compilation fails if the
     name is not defined.
 
@@ -183,16 +183,16 @@ fn env_get_string[name: StaticString]() -> StringLiteral:
     Returns:
         A string parameter value.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<get_env, `,
-        get_string_literal_slice[name]().value,
-        `> : !kgen.string`,
-    ]
+    return StringLiteral(
+        __mlir_attr[
+            `#kgen.param.expr<get_env, `,
+            get_string_literal_slice[name]().value,
+            `> : !kgen.string`,
+        ]
+    )
 
 
-fn env_get_string[
-    name: StaticString, default: StringLiteral
-]() -> StringLiteral:
+fn env_get_string[name: StaticString, default: StaticString]() -> StaticString:
     """Try to get a string-valued define. If the name is not defined, return
     a default value instead.
 

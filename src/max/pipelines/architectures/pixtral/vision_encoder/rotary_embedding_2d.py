@@ -26,13 +26,13 @@ def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
     width = Dim(width)
     row_indices = ops.range(
         ops.constant(0, DType.int64),
-        TensorValue.from_dim(height),
+        TensorValue(height),
         ops.constant(1, DType.int64),
         out_dim=height,
     )
     col_indices = ops.range(
         ops.constant(0, DType.int64),
-        TensorValue.from_dim(width),
+        TensorValue(width),
         ops.constant(1, DType.int64),
         out_dim=width,
     )

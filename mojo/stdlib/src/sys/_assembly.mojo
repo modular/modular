@@ -13,17 +13,17 @@
 """This module includes the inlined_assembly function."""
 
 from builtin.string_literal import get_string_literal_slice
-from collections.string.string_slice import StringSlice
+from collections.string.string_slice import StaticString
 
 from .intrinsics import _mlirtype_is_eq
 
 
 @always_inline("nodebug")
 fn inlined_assembly[
-    asm: StringSlice,
+    asm: StaticString,
     result_type: AnyTrivialRegType,
     *types: AnyType,
-    constraints: StringSlice,
+    constraints: StaticString,
     has_side_effect: Bool = True,
 ](*args: *types) -> result_type:
     """Generates assembly via inline assembly."""

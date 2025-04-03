@@ -79,11 +79,11 @@ struct _SpanIter[
     ):
         @parameter
         if forward:
-            p = Pointer.address_of(self.src[self.index])
+            p = Pointer(to=self.src[self.index])
             self.index += 1
         else:
             self.index -= 1
-            p = Pointer.address_of(self.src[self.index])
+            p = Pointer(to=self.src[self.index])
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -344,6 +344,7 @@ struct Span[
     # Methods
     # ===------------------------------------------------------------------===#
 
+    @always_inline
     fn unsafe_ptr(
         self,
     ) -> UnsafePointer[
@@ -360,6 +361,7 @@ struct Span[
         """
         return self._data
 
+    @always_inline
     fn as_ref(self) -> Pointer[T, origin, address_space=address_space]:
         """
         Gets a `Pointer` to the first element of this span.
@@ -368,9 +370,7 @@ struct Span[
             A `Pointer` pointing at the first element of this span.
         """
 
-        return Pointer[T, origin, address_space=address_space].address_of(
-            self._data[0]
-        )
+        return Pointer[T, origin, address_space=address_space](to=self._data[0])
 
     @always_inline
     fn copy_from[

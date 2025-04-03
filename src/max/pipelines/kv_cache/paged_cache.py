@@ -248,6 +248,42 @@ class FetchPagedKVCacheCollection:
 
 
 class PagedKVCacheManager(KVCacheManager):
+    page_size: int
+    """Number of tokens stored per block."""
+
+    total_num_pages: int
+    """Total number of blocks allocated per device."""
+
+    device_tensors: list[Tensor]
+    """List of tensors holding the KV cache blocks, one per device."""
+
+    host_tensor: Tensor | None
+    """Tensor holding the KV cache blocks on the host for swapping (if enabled)."""
+
+    total_num_host_pages: int
+    """Total number of blocks allocated on the host for swapping (if enabled)."""
+
+    block_manager: BlockManager
+    """Manages allocation, eviction, and reuse of KV cache blocks."""
+
+    enable_prefix_caching: bool
+    """Flag indicating if prefix caching (block reuse) is enabled."""
+
+    enable_swapping_to_host: bool
+    """Flag indicating if swapping blocks to host memory is enabled."""
+
+    prefetched_seq_ids: set[int]
+    """Set of sequence IDs whose blocks have been prefetched."""
+
+    d2d_blocks_copied: int
+    """Count of blocks copied device-to-device (e.g., for COW)."""
+
+    d2h_blocks_copied: int
+    """Count of blocks copied device-to-host (e.g., for eviction)."""
+
+    h2d_blocks_copied: int
+    """Count of blocks copied host-to-device (e.g., for cache hits from host)."""
+
     @traced
     def __init__(
         self,
@@ -310,18 +346,22 @@ class PagedKVCacheManager(KVCacheManager):
             )
 
         if max_batch_size > self.total_num_pages:
+            memory_needed_str = to_human_readable_bytes(
+                max_batch_size * single_page_size_bytes
+            )
             logger.warning(
                 f"Insufficient cache memory to support a batch containing {max_batch_size} requests with one token per request. "
-                f"Need to allocate at least {max_batch_size} pages, but only have enough memory for {self.total_num_pages} pages. "
-                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
+                f"Need to allocate at least {max_batch_size} pages ({memory_needed_str}), but only have enough memory for {self.total_num_pages} pages ({cache_memory_per_device_str})."
             )
 
         blocks_needed_for_max_seq_len = ceildiv(max_seq_len, page_size)
         if blocks_needed_for_max_seq_len > self.total_num_pages:
+            memory_needed_str = to_human_readable_bytes(
+                blocks_needed_for_max_seq_len * single_page_size_bytes
+            )
             logger.warning(
                 f"Insufficient cache memory to support a batch containing one request at the max sequence length of {max_seq_len} tokens. "
-                f"Need to allocate at least {blocks_needed_for_max_seq_len} pages, but only have enough memory for {self.total_num_pages} pages. "
-                f"One page requires {single_page_size_bytes_str} but only {cache_memory_per_device_str} are available."
+                f"Need to allocate at least {blocks_needed_for_max_seq_len} pages ({memory_needed_str}), but only have enough memory for {self.total_num_pages} pages ({cache_memory_per_device_str})."
             )
 
         logger.info(

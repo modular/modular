@@ -7916,7 +7916,7 @@ busy this week.
 - 📢 Two magic operators, named `__get_lvalue_as_address(x)` and
   `__get_address_as_lvalue` convert stored LValues to and from `!kgen.pointer`
   types (respectively).  This is most useful when using the `Pointer[T]`
-  library type.  The `Pointer.address_of(lvalue)` method uses the first one
+  library type.  The `Pointer(to=lvalue)` method uses the first one
   internally.  The second one must currently be used explicitly, and can be
   used to project a pointer to a reference that you can pass around and use
   as a self value, for example:

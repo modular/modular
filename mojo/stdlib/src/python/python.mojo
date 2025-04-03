@@ -317,7 +317,7 @@ struct Python:
     @staticmethod
     fn add_object(
         mut module: TypedPythonObject["Module"],
-        name: StringLiteral,
+        name: String,
         value: PythonObject,
     ) raises:
         """Add a new object to `module` with the given name and value.

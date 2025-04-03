@@ -10,7 +10,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements basic object methods for working with strings."""
+"""The core `String` type implementation for Mojo.
+
+This module provides the primary `String` type and its fundamental operations. The `String` type
+is designed to handle UTF-8 encoded text efficiently while providing a safe and ergonomic
+interface for string manipulation.
+
+Key Features:
+- UTF-8 encoded string storage
+- Memory-safe string operations
+- Efficient string concatenation and slicing
+- String-to-number conversions (atof, atol)
+- ASCII string utilities
+- Character code conversions (chr, ord)
+
+The `String` type is the main interface for text manipulation in Mojo, providing:
+- Mutable string data
+- Efficient string operations optimized for common cases
+- Unicode support through UTF-8 encoding. A handful of operations are known to
+  not be Unicode / UTF-8 compliant yet, but will be fixed as time permits.
+- Safe memory management and bounds checking
+
+Example:
+    ```mojo
+    from collections.string import String
+
+    # String creation and basic operations
+    var s1 = String("Hello")
+    var s2 = String("World")
+    var combined = s1 + " " + s2  # "Hello World"
+
+    # String-to-number conversion
+    var num = atof("3.14")
+    var int_val = atol("42")
+
+    # Character operations
+    var char = chr(65)  # "A"
+    var code = ord("A")  # 65
+
+    # ASCII utilities
+    var ascii_str = ascii("Hello")  # ASCII-only string
+    ```
+"""
 
 from collections import KeyElement, List, Optional
 from collections._index_normalization import normalize_index

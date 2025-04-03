@@ -86,7 +86,7 @@ struct FileHandle(Writer):
         var err_msg = _OwnedStringRef()
         var handle = external_call[
             "KGEN_CompilerRT_IO_FileOpen", OpaquePointer
-        ](path, mode, Pointer.address_of(err_msg))
+        ](path, mode, Pointer(to=err_msg))
 
         if err_msg:
             self.handle = OpaquePointer()
@@ -108,7 +108,7 @@ struct FileHandle(Writer):
 
         var err_msg = _OwnedStringRef()
         external_call["KGEN_CompilerRT_IO_FileClose", NoneType](
-            self.handle, Pointer.address_of(err_msg)
+            self.handle, Pointer(to=err_msg)
         )
 
         if err_msg:
@@ -184,8 +184,8 @@ struct FileHandle(Writer):
             "KGEN_CompilerRT_IO_FileRead", UnsafePointer[UInt8]
         ](
             self.handle,
-            Pointer.address_of(size_copy),
-            Pointer.address_of(err_msg),
+            Pointer(to=size_copy),
+            Pointer(to=err_msg),
         )
 
         if err_msg:
@@ -263,7 +263,7 @@ struct FileHandle(Writer):
             self.handle,
             ptr,
             size * sizeof[dtype](),
-            Pointer.address_of(err_msg),
+            Pointer(to=err_msg),
         )
 
         if err_msg:
@@ -329,8 +329,8 @@ struct FileHandle(Writer):
             "KGEN_CompilerRT_IO_FileReadBytes", UnsafePointer[UInt8]
         ](
             self.handle,
-            Pointer.address_of(size_copy),
-            Pointer.address_of(err_msg),
+            Pointer(to=size_copy),
+            Pointer(to=err_msg),
         )
 
         if err_msg:
@@ -387,7 +387,7 @@ struct FileHandle(Writer):
         )
         var err_msg = _OwnedStringRef()
         var pos = external_call["KGEN_CompilerRT_IO_FileSeek", UInt64](
-            self.handle, offset, whence, Pointer.address_of(err_msg)
+            self.handle, offset, whence, Pointer(to=err_msg)
         )
 
         if err_msg:
@@ -408,7 +408,7 @@ struct FileHandle(Writer):
             self.handle,
             bytes.unsafe_ptr(),
             len(bytes),
-            Pointer.address_of(err_msg),
+            Pointer(to=err_msg),
         )
 
         if err_msg:
@@ -448,7 +448,7 @@ struct FileHandle(Writer):
             self.handle,
             ptr.address,
             len,
-            Pointer.address_of(err_msg),
+            Pointer(to=err_msg),
         )
 
         if err_msg:

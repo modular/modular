@@ -573,7 +573,7 @@ struct PythonObject(
         Python.throw_python_exception_if_error_state(cpython)
         return _PyIter(PythonObject(iter))
 
-    fn __getattr__(self, name: StringLiteral) raises -> PythonObject:
+    fn __getattr__(self, name: StringSlice) raises -> PythonObject:
         """Return the value of the object attribute with the given name.
 
         Args:
@@ -589,7 +589,7 @@ struct PythonObject(
             raise Error("Attribute is not found.")
         return PythonObject(result)
 
-    fn __setattr__(self, name: StringLiteral, new_value: PythonObject) raises:
+    fn __setattr__(self, name: StringSlice, new_value: PythonObject) raises:
         """Set the given value for the object attribute with the given name.
 
         Args:
@@ -598,7 +598,7 @@ struct PythonObject(
         """
         return self._setattr(name, new_value.py_object)
 
-    fn _setattr(self, name: StringLiteral, new_value: PyObjectPtr) raises:
+    fn _setattr(self, name: StringSlice, new_value: PyObjectPtr) raises:
         var cpython = _get_global_python_itf().cpython()
         var result = cpython.PyObject_SetAttrString(
             self.py_object, name, new_value

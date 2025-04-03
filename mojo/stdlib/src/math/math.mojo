@@ -34,11 +34,11 @@ from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 from sys.info import _current_arch
 
-from bit import count_trailing_zeros
+from bit import count_trailing_zeros, count_leading_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer
-from collections.string import StringSlice
+from collections.string import StaticString
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
@@ -2358,6 +2358,26 @@ fn clamp(
 
 
 # ===----------------------------------------------------------------------=== #
+# next_power_of_two
+# ===----------------------------------------------------------------------=== #
+
+
+fn next_power_of_two(n: Int) -> Int:
+    """Computes the next power of two greater than or equal to the input.
+
+    Args:
+        n: The input value.
+
+    Returns:
+        The next power of two greater than or equal to the input.
+    """
+    if n <= 1:
+        return 1
+
+    return 1 << (bitwidthof[Int]() - count_leading_zeros(n - 1))
+
+
+# ===----------------------------------------------------------------------=== #
 # utilities
 # ===----------------------------------------------------------------------=== #
 
@@ -2367,7 +2387,7 @@ fn _type_is_libm_supported(dtype: DType) -> Bool:
 
 
 fn _call_libm[
-    func_name: StringSlice,
+    func_name: StaticString,
     arg_type: DType,
     simd_width: Int,
     *,
@@ -2395,7 +2415,7 @@ fn _call_libm[
 
 
 fn _call_libm_impl[
-    func_name: StringSlice,
+    func_name: StaticString,
     arg_type: DType,
     simd_width: Int,
     *,
@@ -2417,8 +2437,8 @@ fn _call_libm_impl[
 fn _call_ptx_intrinsic_scalar[
     dtype: DType, //,
     *,
-    instruction: StringSlice,
-    constraints: StringSlice,
+    instruction: StaticString,
+    constraints: StaticString,
 ](arg: Scalar[dtype]) -> Scalar[dtype]:
     return inlined_assembly[
         instruction + " $0, $1;",
@@ -2431,8 +2451,8 @@ fn _call_ptx_intrinsic_scalar[
 fn _call_ptx_intrinsic_scalar[
     dtype: DType, //,
     *,
-    instruction: StringSlice,
-    constraints: StringSlice,
+    instruction: StaticString,
+    constraints: StaticString,
 ](arg0: Scalar[dtype], arg1: Scalar[dtype]) -> Scalar[dtype]:
     return inlined_assembly[
         instruction + " $0, $1, $2;",
@@ -2446,8 +2466,8 @@ fn _call_ptx_intrinsic[
     dtype: DType,
     simd_width: Int, //,
     *,
-    instruction: StringSlice,
-    constraints: StringSlice,
+    instruction: StaticString,
+    constraints: StaticString,
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     @parameter
     if simd_width == 1:
@@ -2469,10 +2489,10 @@ fn _call_ptx_intrinsic[
     dtype: DType,
     simd_width: Int, //,
     *,
-    scalar_instruction: StringSlice,
-    vector2_instruction: StringSlice,
-    scalar_constraints: StringSlice,
-    vector_constraints: StringSlice,
+    scalar_instruction: StaticString,
+    vector2_instruction: StaticString,
+    scalar_constraints: StaticString,
+    vector_constraints: StaticString,
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     @parameter
     if simd_width == 1:
@@ -2500,10 +2520,10 @@ fn _call_ptx_intrinsic[
     dtype: DType,
     simd_width: Int, //,
     *,
-    scalar_instruction: StringSlice,
-    vector2_instruction: StringSlice,
-    scalar_constraints: StringSlice,
-    vector_constraints: StringSlice,
+    scalar_instruction: StaticString,
+    vector2_instruction: StaticString,
+    scalar_constraints: StaticString,
+    vector_constraints: StaticString,
 ](arg0: SIMD[dtype, simd_width], arg1: SIMD[dtype, simd_width]) -> SIMD[
     dtype, simd_width
 ]:

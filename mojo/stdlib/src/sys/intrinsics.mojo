@@ -24,7 +24,7 @@ from sys.info import is_gpu, _is_sm_9x
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
-from collections.string import StringSlice
+from collections.string import StaticString
 from builtin.string_literal import get_string_literal_slice
 
 from ._assembly import inlined_assembly
@@ -37,7 +37,7 @@ from .info import is_amd_gpu, is_nvidia_gpu, sizeof
 
 @always_inline("nodebug")
 fn llvm_intrinsic[
-    intrin: StringSlice,
+    intrin: StaticString,
     type: AnyTrivialRegType,
     *types: AnyType,
     has_side_effect: Bool = True,
@@ -950,16 +950,34 @@ fn implicitarg_ptr() -> (
 @always_inline
 fn readfirstlane(value: Int32) -> Int32:
     """
-    Get the lowest acitve lane of the input operand.
+    Get the value in the lowest active lane of the input operand.
 
     Args:
-        value: The input thread.
+        value: The input value.
 
     Returns:
         The value in the lowest active lane of the input operand.
     """
     constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
     return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
+
+
+# TODO: this can be parameterized for AnyTrivialRegType but I am hitting compiler errors so skipping for now
+@always_inline
+fn readfirstlane(value: UnsafePointer) -> __type_of(value):
+    """
+    Get the value in the lowest active lane of the input operand.
+
+    Args:
+        value: The input pointer.
+
+    Returns:
+        The value in the lowest active lane of the input operand.
+    """
+    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
+    return llvm_intrinsic[
+        "llvm.amdgcn.readfirstlane", __type_of(value), __type_of(value)
+    ](value)
 
 
 # ===-----------------------------------------------------------------------===#

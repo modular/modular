@@ -113,9 +113,7 @@ fn _clock_gettime(clockid: Int) -> _CTimeSpec:
     var ts = _CTimeSpec()
 
     # Call libc's clock_gettime.
-    _ = external_call["clock_gettime", Int32](
-        Int32(clockid), Pointer.address_of(ts)
-    )
+    _ = external_call["clock_gettime", Int32](Int32(clockid), Pointer(to=ts))
 
     return ts
 
@@ -154,7 +152,7 @@ fn _monotonic_nanoseconds() -> UInt:
     elif os_is_windows():
         var ft = _FILETIME()
         external_call["GetSystemTimePreciseAsFileTime", NoneType](
-            Pointer.address_of(ft)
+            Pointer(to=ft)
         )
 
         return ft.as_nanoseconds()

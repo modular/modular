@@ -66,6 +66,7 @@ from .math import (
     log10,
     logb,
     modf,
+    next_power_of_two,
     recip,
     remainder,
     scalb,

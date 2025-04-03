@@ -69,7 +69,7 @@ from sys import (
     CompilationTarget,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _current_arch, _is_sm_9x
+from sys.info import _is_sm_9x
 
 from bit import byte_swap, pop_count
 from builtin._format_float import _write_float
@@ -1577,8 +1577,7 @@ struct SIMD[dtype: DType, size: Int](
                     self
                 )
 
-            # FIXME(MOCO-1752): This should be an alias
-            var mask = FPUtils[dtype].exponent_mantissa_mask()
+            alias mask = FPUtils[dtype].exponent_mantissa_mask()
             return Self.from_bits(self.to_bits() & mask)
         else:
             return (self < 0).select(-self, self)

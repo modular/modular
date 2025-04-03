@@ -345,7 +345,7 @@ struct Deque[ElementType: CollectionElement](
         Returns:
             An iterator of the references to the deque elements.
         """
-        return _DequeIter(0, Pointer.address_of(self))
+        return _DequeIter(0, Pointer(to=self))
 
     fn __reversed__(
         ref self,
@@ -355,7 +355,7 @@ struct Deque[ElementType: CollectionElement](
         Returns:
             A reversed iterator of the references to the deque elements.
         """
-        return _DequeIter[forward=False](len(self), Pointer.address_of(self))
+        return _DequeIter[forward=False](len(self), Pointer(to=self))
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -1016,11 +1016,11 @@ struct _DequeIter[
     fn __next__(mut self, out p: Pointer[ElementType, deque_lifetime]):
         @parameter
         if forward:
-            p = Pointer.address_of(self.src[][self.index])
+            p = Pointer(to=self.src[][self.index])
             self.index += 1
         else:
             self.index -= 1
-            p = Pointer.address_of(self.src[][self.index])
+            p = Pointer(to=self.src[][self.index])
 
     fn __len__(self) -> Int:
         @parameter

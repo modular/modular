@@ -48,6 +48,7 @@ def main():
             TensorType(dtype, shape=[N, D]),
             TensorType(dtype, shape=[N, D]),
         ],
+        custom_extensions=[path],
     ) as graph:
         q, k, v, *_ = graph.inputs
         results = ops.custom(
@@ -62,7 +63,7 @@ def main():
     device = CPU() if accelerator_count() == 0 else Accelerator()
 
     # Set up an inference session for running the graph.
-    session = InferenceSession(devices=[device], custom_extensions=path)
+    session = InferenceSession(devices=[device])
 
     # Compile the graph.
     model = session.load(graph)
