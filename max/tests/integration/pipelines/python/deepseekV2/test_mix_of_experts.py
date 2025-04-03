@@ -64,13 +64,13 @@ def generate_max_outputs(
     state_dict = {"gate.gate_score.weight": dummy_moe_weight.cpu()}
 
     for i in range(len(expert_weights)):
-        state_dict[f"gate_proj{i}.weight"] = expert_weights[i][
+        state_dict[f"experts.{i}.gate_proj.weight"] = expert_weights[i][
             "gate_proj.weight"
         ].cpu()
-        state_dict[f"down_proj{i}.weight"] = expert_weights[i][
+        state_dict[f"experts.{i}.down_proj.weight"] = expert_weights[i][
             "down_proj.weight"
         ].cpu()
-        state_dict[f"up_proj{i}.weight"] = expert_weights[i][
+        state_dict[f"experts.{i}.up_proj.weight"] = expert_weights[i][
             "up_proj.weight"
         ].cpu()
 
