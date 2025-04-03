@@ -106,7 +106,7 @@ Fastest Mean: 0.012015649999999999
 Slowest Mean: 0.012421204081632654
 ```
 
-The unit's are just aliases for `StringLiteral`, so you can for example:
+The unit's are just aliases for string constants, so you can for example:
 
 ```mojo
 print(report.mean("ms"))
