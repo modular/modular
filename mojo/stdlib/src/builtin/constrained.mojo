@@ -14,12 +14,12 @@
 
 These are Mojo built-ins, so you don't need to import them.
 """
-from collections.string.string_slice import StaticString
+from collections.string.string_slice import StringSlice
 from builtin.string_literal import get_string_literal_slice
 
 
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: StaticString]():
+fn constrained[cond: Bool, msg: StringSlice]():
     """Compile time checks that the condition is true.
 
     The `constrained` is similar to `static_assert` in C++ and is used to
