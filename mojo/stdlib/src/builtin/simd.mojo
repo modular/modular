@@ -2630,21 +2630,23 @@ struct SIMD[dtype: DType, size: Int](
             "The element type of the vector must be integer or boolean.",
         ]()
 
-        @always_inline
         @parameter
-        fn and_reduce_body[
-            dtype: DType, width: Int
-        ](v1: SIMD[dtype, width], v2: SIMD[dtype, width]) -> SIMD[dtype, width]:
-            return v1 & v2
+        if size_out > 1:
+
+            @always_inline
+            @parameter
+            fn and_reduce_body[
+                dtype: DType, width: Int
+            ](v1: SIMD[dtype, width], v2: SIMD[dtype, width]) -> SIMD[
+                dtype, width
+            ]:
+                return v1 & v2
+
+            return self.reduce[and_reduce_body, size_out]()
 
         @parameter
         if size == 1:
             return rebind[SIMD[dtype, size_out]](self)
-        elif size_out > 1:
-            return self.reduce[and_reduce_body, size_out]()
-
-        if is_compile_time():
-            return self.reduce[and_reduce_body, size_out]()
 
         return llvm_intrinsic[
             "llvm.vector.reduce.and",

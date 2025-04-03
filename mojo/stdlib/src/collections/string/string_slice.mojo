@@ -21,7 +21,6 @@ from collections.string import StringSlice
 ```
 """
 
-from builtin._location import __call_location, _SourceLocation
 from collections import List, Optional
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string._utf8 import (
@@ -504,7 +503,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             alias msg = "buffer is not valid UTF-8"
             if is_compile_time():
                 abort(msg)
-            # FIXME: this should have location=location.or_else(__call_location())
+            # FIXME(#4146): this should have location=location.or_else(__call_location())
             debug_assert(False, msg)
 
         self._slice = unsafe_from_utf8

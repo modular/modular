@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Implements basic object methods for working with strings."""
 
-
-from builtin._location import __call_location
 from collections import KeyElement, List, Optional
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
@@ -1317,6 +1315,7 @@ struct String(
         Returns:
             A string slice pointing to the data owned by this string.
         """
+        # FIXME(#4146): this should have location=location.or_else(__call_location())
         return StringSlice(unsafe_from_utf8=self.as_bytes())
 
     @always_inline
