@@ -85,7 +85,7 @@ modular_genrule(
     """.format(
         driver = ":stubfiles/driver/__init__.pyi",
         engine = ":stubfiles/engine/__init__.pyi",
-        excludes = "graph/__init__.pyi,dialects/mo/__init__.pyi,dialects/mosh/__init__.pyi,dialects/builtin/__init__.pyi,dialects/kgen/__init__.pyi",
+        excludes = "dialects/mo/__init__.pyi,dialects/mosh/__init__.pyi,dialects/builtin/__init__.pyi,dialects/kgen/__init__.pyi",
         module = "_core",
         ruff = "//utils/bazel/lint:ruff-wrapper",
         stubgen = ":_core.stubfile_generator",
@@ -114,7 +114,6 @@ modular_python_binding_py_library(
 # 2. For other tooling that uses them, such as docs or (perhaps in the future) copybara.
 # We can also select which ones to commit, if some of the generated ones are not to our
 # liking, since we don't directly depend on any of the generated ones.
-# FIXME (SDLC-1866): Currently, we don't use the generate stubgs for _core.graph.
 
 # Can run `./utils/sync-stubfiles.py` to sync the committed ones to the generated ones.
 [
@@ -126,6 +125,7 @@ modular_python_binding_py_library(
     for name in (
         "driver",
         "dtype",
+        "graph",
         "engine",
         "profiler",
     )
