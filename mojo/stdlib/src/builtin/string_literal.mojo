@@ -544,19 +544,6 @@ struct StringLiteral(
         """
         return self.as_string_slice().rfind(substr, start=start)
 
-    fn replace(self, old: StringLiteral, new: StringLiteral) -> StringLiteral:
-        """Return a copy of the string with all occurrences of substring `old`
-        if replaced by `new`. This operation only works in the param domain.
-
-        Args:
-            old: The substring to replace.
-            new: The substring to replace with.
-
-        Returns:
-            The string where all occurrences of `old` are replaced with `new`.
-        """
-        return __mlir_op.`pop.string.replace`(self.value, old.value, new.value)
-
     fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 

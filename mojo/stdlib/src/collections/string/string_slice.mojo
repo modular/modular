@@ -1022,6 +1022,75 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     # Methods
     # ===------------------------------------------------------------------===#
 
+    fn replace(self, old: StringSlice, new: StringSlice) -> String:
+        """Return a copy of the string with all occurrences of substring `old`
+        if replaced by `new`.
+
+        Args:
+            old: The substring to replace.
+            new: The substring to replace with.
+
+        Returns:
+            The string where all occurrences of `old` are replaced with `new`.
+        """
+        if not old:
+            return self._interleave(new)
+
+        var occurrences = self.count(old)
+        if occurrences == -1:
+            return String(self)
+
+        var self_start = self.unsafe_ptr()
+        var self_ptr = self.unsafe_ptr()
+        var new_ptr = new.unsafe_ptr()
+
+        var self_len = self.byte_length()
+        var old_len = old.byte_length()
+        var new_len = new.byte_length()
+
+        var res = String._buffer_type()
+        res.reserve(self_len + (old_len - new_len) * occurrences + 1)
+
+        for _ in range(occurrences):
+            var curr_offset = Int(self_ptr) - Int(self_start)
+
+            var idx = self.find(old, curr_offset)
+
+            debug_assert(idx >= 0, "expected to find occurrence during find")
+
+            # Copy preceding unchanged chars
+            for _ in range(curr_offset, idx):
+                res.append(self_ptr[])
+                self_ptr += 1
+
+            # Insert a copy of the new replacement string
+            for i in range(new_len):
+                res.append(new_ptr[i])
+
+            self_ptr += old_len
+
+        while True:
+            var val = self_ptr[]
+            if val == 0:
+                break
+            res.append(self_ptr[])
+            self_ptr += 1
+
+        res.append(0)
+        return String(res^)
+
+    fn _interleave(self, val: StringSlice) -> String:
+        var res = String._buffer_type()
+        var val_ptr = val.unsafe_ptr()
+        var self_ptr = self.unsafe_ptr()
+        res.reserve(val.byte_length() * self.byte_length() + 1)
+        for i in range(self.byte_length()):
+            for j in range(val.byte_length()):
+                res.append(val_ptr[j])
+            res.append(self_ptr[i])
+        res.append(0)
+        return String(res^)
+
     fn split[
         sep_mut: Bool,
         sep_origin: Origin[sep_mut], //,

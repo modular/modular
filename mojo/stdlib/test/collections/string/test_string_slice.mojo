@@ -719,11 +719,11 @@ def test_splitlines():
 
     # test \x85 \u2028 \u2029
     var next_line = String(buffer=List[UInt8](0xC2, 0x85, 0))
-    """TODO: \\x85"""
+    _ = """TODO: \\x85"""
     var unicode_line_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA8, 0))
-    """TODO: \\u2028"""
+    _ = """TODO: \\u2028"""
     var unicode_paragraph_sep = String(buffer=List[UInt8](0xE2, 0x80, 0xA9, 0))
-    """TODO: \\u2029"""
+    _ = """TODO: \\u2029"""
 
     for i in List(next_line, unicode_line_sep, unicode_paragraph_sep):
         u = i[]
@@ -1050,6 +1050,22 @@ def test_string_slice_from_pointer():
     assert_true("D", d[-1])
 
 
+def test_replace():
+    assert_equal(StringSlice("").replace("", "hello world"), "")
+    assert_equal(
+        StringSlice("hello").replace("", "something"),
+        "somethinghsomethingesomethinglsomethinglsomethingo",
+    )
+    assert_equal(StringSlice("hello world").replace("world", ""), "hello ")
+    assert_equal(
+        StringSlice("hello world").replace("world", "mojo"), "hello mojo"
+    )
+    assert_equal(
+        StringSlice("hello world hello world").replace("world", "mojo"),
+        "hello mojo hello mojo",
+    )
+
+
 def main():
     test_string_slice_layout()
     test_string_literal_byte_span()
@@ -1082,3 +1098,4 @@ def main():
     test_count()
     test_chars_iter()
     test_string_slice_from_pointer()
+    test_replace()
