@@ -393,6 +393,7 @@ fn next_power_of_two(val: Int) -> Int:
     )
 
 
+@always_inline
 fn next_power_of_two(val: UInt) -> UInt:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value. Any integral value less than or equal to 1 will be ceiled to 1.
