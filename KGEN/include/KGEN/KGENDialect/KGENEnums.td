@@ -85,9 +85,6 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // This takes one operand, the list of pointer types.
   I32EnumAttrCase<"VariadicPtrRemoveMap", 37, "variadic_ptrremove_map">,
 
-  /// Replace the symbol reference to a StructGeneratorOp with a reference to
-  /// the concreteized StructInstanceOp.
-  I32EnumAttrCase<"InstantiateStructRef", 38, "inst_struct_ref">,
   /// Convert an arbitrary MLIR attribute into a !kgen.string using
   /// mlir::debugString on the attribute.
   I32EnumAttrCase<"AttrToStr", 39, "attr_to_str">,

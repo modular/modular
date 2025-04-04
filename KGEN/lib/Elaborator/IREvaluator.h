@@ -39,7 +39,8 @@ public:
   IREvaluator(const IREvaluator &other);
 
   /// Evaluate symbolic expressions using the symbol table.
-  FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
+  FailureOr<TypedAttr>
+  evaluateExpression(EvaluatableAttrInterface attr) override;
 
   /// Given a generic parameter expression, substitute known values for
   /// parameters into it and fold it down to a simple constant. This returns an
@@ -73,9 +74,6 @@ private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
-  /// Evaluate a `inst_struct_ref` operator.
-  FailureOr<TypeConstantRefAttr>
-  evaluateInstantiateStruct(ParamOperatorAttr op);
   /// Evaluate a `get_env` operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
   /// Evaluate a `compile_assembly` operator.

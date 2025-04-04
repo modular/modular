@@ -169,6 +169,11 @@ def TypeConstantRefAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def TypeInstanceRefAttr : DialectAttribute<(attr
+  ConcreteAttribute<"SymbolRefAttr">:$symbol,
+  Type:$type
+)>;
+
 def DTypeConstantAttr : DialectAttribute<(attr
   Custom<"KGENDType">:$dType
 )>;
@@ -268,6 +273,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     WrappedTypeConstantAttr,
     BindParamsAttr,
     TypeConstantRefAttr,
+    TypeInstanceRefAttr,
     DTypeConstantAttr,
     SymbolConstantAttr,
     TargetParamAttr,

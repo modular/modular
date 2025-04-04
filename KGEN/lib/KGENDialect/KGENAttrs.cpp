@@ -401,11 +401,9 @@ BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // TypeConstantRefAttr
 //===----------------------------------------------------------------------===//
 
-/// This symbol is a constant its bindings are constants.
-bool TypeConstantRefAttr::isConstant() const {
-  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant) &&
-         !isParameterizedType(getType());
-}
+/// Generator references are not constant. Must be evaluated into an instance
+/// reference (during elaboration).
+bool TypeConstantRefAttr::isConstant() const { return false; }
 
 LogicalResult
 TypeConstantRefAttr::verifySymbolUses(Operation *module,
@@ -452,6 +450,13 @@ TypeConstantRefAttr::verifySymbolUses(Operation *module,
 
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// TypeInstanceRefAttr
+//===----------------------------------------------------------------------===//
+
+/// This symbol is a constant its bindings are constants.
+bool TypeInstanceRefAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
 // DTypeConstantAttr
@@ -1120,7 +1125,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::CompileOffloadClosure:
   case POC::GetVTableEntry:
   case POC::PtrBitcast:
-  case POC::InstantiateStructRef:
   case POC::AttrToStr:
   case POC::DataToStr:
   case POC::VariadicPtrMap:
@@ -1334,10 +1338,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::LoadFromMem:
     if (operands.size() != 1)
       return emitError() << "'load_from_mem' expects one operand";
-    break;
-  case POC::InstantiateStructRef:
-    if (operands.size() != 1)
-      return emitError() << "'inst_struct_ref' expects one operand";
     break;
   case POC::VariadicPtrMap:
     return verifyVariadicPtrMap(operands, type, emitError);
@@ -2717,7 +2717,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::CompileAssembly:
   case POC::GetLinkageName:
   case POC::CompileOffloadClosure:
-  case POC::InstantiateStructRef:
   case POC::AttrToStr:
     result = {};
     break;

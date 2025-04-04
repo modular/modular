@@ -718,6 +718,8 @@ kgen.generator @impl<S: struct<(index, index)>>() -> !pop.array<3, i32> {
   kgen.return %0 : !pop.array<3, i32>
 }
 
+kgen.struct.generator @Dummy = struct_inst<"Dummy">
+
 // CHECK-LABEL: kgen.func @root
 // CHECK-NEXT: %index1 = kgen.param.constant = <1>
 // CHECK-NEXT: kgen.return %index1 : index

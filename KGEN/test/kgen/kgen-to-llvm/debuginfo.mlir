@@ -6,8 +6,8 @@
 !structTest = !kgen.struct<(index, struct<(index)>)>
 !variantTest = !pop.union<index, index>
 !signatureTest = !kgen.generator<(index) -> index>
-!typeValuePairTest = !kgen.typevalue<[typevalue<#kgen.typeref<@Pair>>, struct<(index, i1)>]>
-!typeValueRecursionTest = !kgen.typevalue<[typevalue<#kgen.typeref<@ListNode>>, struct<(pointer<none>)>]>
+!typeValuePairTest = !kgen.typevalue<[typevalue<#kgen.typeinstref<@Pair>>, struct<(index, i1)>]>
+!typeValueRecursionTest = !kgen.typevalue<[typevalue<#kgen.typeinstref<@ListNode>>, struct<(pointer<none>)>]>
 
 // CHECK-DAG: ![[INDEX:.*]] = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
 
@@ -69,17 +69,17 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   kgen.struct.instance @Int = struct_inst<"Int"(value: index)>
 
   kgen.struct.instance @Pair = struct_inst<"Pair"(
-    first: typevalue<#kgen.typeref<@Int>>,
+    first: typevalue<#kgen.typeinstref<@Int>>,
     second: i1
   )>
 
   kgen.struct.instance @Pointer_ListNode = struct_inst<"Pointer"[ty]
-    <:type [typevalue<#kgen.typeref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>(
-      address: pointer<typevalue<[typevalue<#kgen.typeref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>>
+    <:type [typevalue<#kgen.typeinstref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>(
+      address: pointer<typevalue<[typevalue<#kgen.typeinstref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>>
     )>
 
   kgen.struct.instance @ListNode = struct_inst<"ListNode"(
-    next: typevalue<#kgen.typeref<@Pointer_ListNode>>
+    next: typevalue<#kgen.typeinstref<@Pointer_ListNode>>
   ) memoryOnly>
 
   kgen.func @foo() {

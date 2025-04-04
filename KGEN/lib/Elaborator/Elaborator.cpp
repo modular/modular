@@ -498,12 +498,16 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
   return node->getFirstConcreteFunc();
 }
 
-ErrorTreeOr<TypeConstantRefAttr>
+ErrorTreeOr<TypeInstanceRefAttr>
 Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
                                            TypeConstantRefAttr typeref) {
   StringAttr name = cast<FlatSymbolRefAttr>(typeref.getSymbol()).getAttr();
   auto gen = oldSymTab.lookup<GeneratorOpInterface>(name);
-  assert(gen && isa<StructGeneratorOp>(*gen) && "unknown struct generator");
+  assert(gen && "expected a valid generator reference");
+  // If this doesn't reference anything in the existing module, then it must
+  // already refer to a concrete struct type in the new module.
+  // if (!gen)
+  //   return typeref;
 
   auto vals =
       ParameterExprArrayAttr::get(loc.getContext(), typeref.getParamValues());
@@ -525,7 +529,7 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
           [this, parent] { completeImplNodeProcessing(parent); });
     }
   }
-  return TypeConstantRefAttr::get(
+  return TypeInstanceRefAttr::get(
       SymbolRefAttr::get(loc->getContext(), calleeNode->getMangledName()),
       typeref.getType());
 }

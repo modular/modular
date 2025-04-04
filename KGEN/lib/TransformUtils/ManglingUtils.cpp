@@ -51,6 +51,11 @@ void KGEN::prettyPrintParameter(TypedAttr value, raw_ostream &os) {
     return;
   }
 
+  if (auto typeInstanceRef = dyn_cast<TypeInstanceRefAttr>(value)) {
+    os << typeInstanceRef.getSymbol().getLeafReference().strref();
+    return;
+  }
+
   // Fallback to default format.
   os << getParamAsString(value);
 }

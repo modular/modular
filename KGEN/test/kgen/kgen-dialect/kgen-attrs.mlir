@@ -113,11 +113,11 @@ kgen.generator @entry2() -> index {
 // CHECK-SAME:   [T, x]
 // CHECK-SAME:   <:type T, :!kgen.param<T> x>
 // CHECK-SAME:   (data: typevalue<T>,
-// CHECK-SAME:    next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>)>)
+// CHECK-SAME:    next: typevalue<#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>>)
 kgen.struct.generator @LinkedList<T: type, x: !kgen.param<T>> =
   struct_inst<"LinkedList"[T, x]<:type T, :!kgen.param<T> x>(
     data: typevalue<T>,
-    next: typevalue<inst_struct_ref(#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>)>
+    next: typevalue<#kgen.typeref<@LinkedList<:type T, :!kgen.param<T> x>>>
   )>
 
 

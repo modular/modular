@@ -97,7 +97,8 @@ public:
   /// Evaluate a potentially symbolic expression. This hook should be overridden
   /// to process symbol expressions using some global state, including a symbol
   /// table.
-  virtual FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op);
+  virtual FailureOr<TypedAttr>
+  evaluateExpression(EvaluatableAttrInterface attr);
 
   /// Dump the parameter evaluator state.
   void dump() const;
