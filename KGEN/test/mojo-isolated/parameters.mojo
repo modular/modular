@@ -958,11 +958,11 @@ fn mapSingle[A: AnyType, B: AnyType, R: AnyType](
   a: A, b: B
 ) -> R:
   return f(a, b)
-fn useMapSingle() -> object:
-  fn f(x: object, y: object) -> object:
-    return object()
-  # CHECK: lit.call {{.*}}mapSingle{{.*}}<:!AnyType [!object, {{.*}}], :!AnyType [!object, {{.*}}], :!AnyType [!object, {{.*}}]>
-  return mapSingle(f, object(), object())
+fn useMapSingle() -> String:
+  fn f(x: String, y: String) -> String:
+    return String()
+  # CHECK: lit.call {{.*}}mapSingle{{.*}}<:!AnyType [!String, {{.*}}], :!AnyType [!String, {{.*}}], :!AnyType [!String, {{.*}}]>
+  return mapSingle(f, "a", "b")
 
 
 # COM: Test that keyword-only parameter can be inferred after variadic.
