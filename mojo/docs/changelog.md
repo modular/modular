@@ -164,6 +164,8 @@ previously compiler would throw error "cannot fold operation".
 - The `StringableCollectionElement` trait has been removed in favor of
   `WritableCollectionElement`.
 
+- The `object` type has been removed.
+
 ### 🛠️ Fixed
 
 - [#3510](https://github.com/modular/max/issues/3510) - `PythonObject` doesn't

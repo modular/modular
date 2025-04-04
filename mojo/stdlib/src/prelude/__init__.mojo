@@ -71,7 +71,6 @@ from builtin.math import (
     round,
 )
 from builtin.none import NoneType
-from builtin.object import Attr, object
 from builtin.range import range
 from builtin.rebind import rebind
 from builtin.repr import Representable, repr
