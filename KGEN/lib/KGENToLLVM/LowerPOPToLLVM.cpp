@@ -39,6 +39,13 @@ namespace M::KGEN {
 
 namespace {
 
+/// POP dialect fastmath flags match the LLVM ones.
+static LLVM::FastmathFlagsAttr
+convertFastmathFlags(FastmathFlags fmf, ConversionPatternRewriter &rewriter) {
+  return rewriter.getAttr<LLVM::FastmathFlagsAttr>(
+      static_cast<LLVM::FastmathFlags>(fmf));
+}
+
 //===----------------------------------------------------------------------===//
 // OneToOneFloatOrIntConversion
 //===----------------------------------------------------------------------===//
@@ -150,9 +157,9 @@ struct ConvertPOPFMA : public ConvertPOPToLLVMPattern<FMAOp> {
                                               adaptor.getB());
       rewriter.replaceOpWithNewOp<LLVM::AddOp>(op, lhs, adaptor.getC());
     } else {
-      rewriter.replaceOpWithNewOp<LLVM::FMAOp>(op, adaptor.getA(),
-                                               adaptor.getB(), adaptor.getC(),
-                                               LLVM_FASTMATH_FLAGS);
+      rewriter.replaceOpWithNewOp<LLVM::FMAOp>(
+          op, adaptor.getA(), adaptor.getB(), adaptor.getC(),
+          convertFastmathFlags(op.getFastmathFlags(), rewriter));
     }
     return success();
   }
@@ -1609,14 +1616,6 @@ struct ConvertPOPCallLLVMIntrinsic
         expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
         convertFastmathFlags(op.getFastmathFlags(), rewriter));
     return success();
-  }
-
-private:
-  /// POP dialect fastmath flags match the LLVM ones.
-  static LLVM::FastmathFlagsAttr
-  convertFastmathFlags(FastmathFlags fmf, ConversionPatternRewriter &rewriter) {
-    return rewriter.getAttr<LLVM::FastmathFlagsAttr>(
-        static_cast<LLVM::FastmathFlags>(fmf));
   }
 };
 

@@ -313,7 +313,9 @@ class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
     POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
   let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$a,
                        UnboundOrIndexOrArithmeticSIMD:$b,
-                       UnboundOrIndexOrArithmeticSIMD:$c);
+                       UnboundOrIndexOrArithmeticSIMD:$c,
+                       DefaultValuedAttr<POP_FastmathFlagsAttr,
+                         "FastmathFlags::none">:$fastmathFlags);
   let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
 
   let assemblyFormat = [{
