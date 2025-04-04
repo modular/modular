@@ -680,28 +680,6 @@ fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     alias b = variadic_mem_only(x, y)
 
 
-# CHECK-LABEL: lit.fn @"implicit_return_obj
-# CHECK-SAME: object{{.*}} byref_result
-def implicit_return_obj(p: Bool) -> object:
-    # CHECK: if
-    if p:
-        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
-        # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
-        # CHECK: return [[FALSE]]
-        return
-    # CHECK: else
-    else:
-        # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
-        # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
-        # CHECK: return [[FALSE]]
-        return 5
-    # CHECK: lit.call {{.*}}object::@"__init__
-    # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
-    # CHECK: return [[FALSE]]
-    _ = 5
-    return object()
-
-
 ##===----------------------------------------------------------------------===##
 # raises specifier.
 ##===----------------------------------------------------------------------===##

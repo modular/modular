@@ -119,30 +119,6 @@ struct Error:
         pass
 
 
-struct object:
-    fn __init__(out self):
-        pass
-
-    @implicit
-    fn __init__(out self, value: NoneType):
-        pass
-
-    @implicit
-    fn __init__(out self, value: Int):
-        pass
-
-    # FIXME: None literal should be of NoneType not !kgen.none.
-    @implicit
-    fn __init__(out self, x: __mlir_type.`!kgen.none`):
-        pass
-
-    fn __moveinit__(out self, owned existing: Self):
-        pass
-
-    fn __copyinit__(out self, existing: Self, /):
-        pass
-
-
 @register_passable("trivial")
 struct NoneType:
     alias _mlir_type = __mlir_type.`!kgen.none`
