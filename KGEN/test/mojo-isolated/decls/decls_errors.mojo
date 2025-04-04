@@ -8,8 +8,8 @@
 
 ##===----------------------------------------------------------------------===##
 # Functions
-
 ##===----------------------------------------------------------------------===##
+
 struct NotBoolConvertible: pass
 # expected-note @+1 {{function declared here}}
 fn test_bool_context(a: NotBoolConvertible): pass
@@ -48,7 +48,6 @@ def top_level_fn(a: Int):
     # expected-error @below {{TODO: closures cannot have parameters}}
     fn bar[b: Int]() -> Int:
       return a
-
 
 def use_non_copyable_type(a: ThingWithStaticMethod):
   pass
@@ -102,6 +101,10 @@ struct BadInitResult:
   fn __init__(mut self) raises -> None:
     pass
 
+# expected-error @+1 {{argument type must be specified}}
+def defaultArgumentUntyped(a=1):
+    pass
+
 
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
@@ -111,23 +114,23 @@ struct BadInitResult:
 fn missing_arg_type_or_default(
     a: Int = 9,
     # expected-error @+2 {{required positional argument follows optional positional argument}}
-    # expected-error @+1 {{'fn' argument type must be specified}}
+    # expected-error @+1 {{argument type must be specified}}
     b,
     c: Int,  # expected-error {{required positional argument follows optional positional argument}}
     d: Int = 0,
     # expected-error @+2 {{required positional argument follows optional positional argument}}
-    # expected-error @+1 {{'fn' argument type must be specified}}
+    # expected-error @+1 {{argument type must be specified}}
     e,
-    # expected-error @+1 {{'fn' argument type must be specified}}
+    # expected-error @+1 {{argument type must be specified}}
     **kwargs,
 ):
     pass
 
 def missing_default(
-    a=9,
-    b,  # expected-error {{equired positional argument follows optional positional argument}}
-    c=0,
-    d,  # expected-error {{required positional argument follows optional positional argument}}
+    a: Int=9,
+    b: Int,  # expected-error {{equired positional argument follows optional positional argument}}
+    c: Int=0,
+    d: Int,  # expected-error {{required positional argument follows optional positional argument}}
 ):
     pass
 
@@ -607,7 +610,7 @@ struct SpecialFunctions:
 @register_passable
 struct WrongType:
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'None'}}
-  def __init__(self): pass
+  def __init__(self: None): pass
 
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}
   fn __init__(out self: Int): pass

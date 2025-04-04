@@ -3162,7 +3162,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   argList.effects = effects;
 
   SpecialFunctionInfo fnInfo; // Not a named function.
-  TypeCheckedFnSignature tcSignature(paramList, argList, originExpr, isDef,
+  TypeCheckedFnSignature tcSignature(paramList, argList, originExpr,
                                      /*fnDecl=*/nullptr, fnInfo);
 
   // Compute the signature of the function.

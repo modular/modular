@@ -279,24 +279,10 @@ fn fn_raises_with_return_type(x: Index) raises -> Index:
     """
     return `0`
 
-
-@value
-struct object:
-    """Object type stub to allow decoupling from the builtins."""
-
-    pass
-
-
-def def_implicit_object_return_type(x: Index):
+def def_implicit_return_type(x: Index):
     """This is a `def` function with no explicit return type.
-
-    Because it implicitly returns an object, it has a hidden `__result__`
-    argument. However, this doc string should not document this hidden argument.
 
     Args:
         x: An explicit argument.
-
-    Returns:
-        Implicitly, this returns a None object.
     """
     pass

@@ -362,8 +362,8 @@ fn bad_tuple(a: Int):
   iTup = (1, 2.0)
 
 
-def tuple_return():
-  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, Int]' value to 'object'}}
+def tuple_return() -> Int:
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, Int]' value to 'Int'}}
   return 32, 17
 
 

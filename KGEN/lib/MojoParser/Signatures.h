@@ -206,8 +206,8 @@ public:
   /// declaration.
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
-                         const ExprNode *originExpr, bool isDef,
-                         ASTDecl *fnDecl, SpecialFunctionInfo &fnInfo);
+                         const ExprNode *originExpr, ASTDecl *fnDecl,
+                         SpecialFunctionInfo &fnInfo);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
 

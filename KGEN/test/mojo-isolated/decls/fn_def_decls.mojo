@@ -120,9 +120,9 @@ struct NonTrivialReg:
     pass
 
 
-# CHECK-LABEL: lit.fn @"defTests({{.*}}, %untyped: !lit.ref<!object, imm {{.*}}> read_mem,
+# CHECK-LABEL: lit.fn @"defTests({{.*}},
 def defTests(
-    a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg, untyped
+    a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg
 ) -> None:
     # CHECK-NEXT: lit.var.decl "defTests"
 

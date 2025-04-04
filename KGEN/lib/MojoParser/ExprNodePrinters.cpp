@@ -467,8 +467,6 @@ void ParsedArgument::dump() const {
 
 void FunctionTypeNode::print(raw_indented_ostream &os) const {
   os << "FunctionType {\n";
-  os.indent() << "isDef: " << isDef << "\n";
-
   os << "params: [\n";
   os.indent();
   for (const ParsedArgument &param : parsedParams)

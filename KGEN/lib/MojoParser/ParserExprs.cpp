@@ -987,14 +987,11 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   ParsedParamList paramList;
   ParsedArgumentList fnSignature;
 
-  bool isDef = false;
-
   // Parse the function effects from the leading keyword.
   fnSignature.effects.setAsync(consumeIf(Token::kw_async));
-  if (consumeToken().is(Token::kw_def)) {
+  // 'def' implies throws.
+  if (consumeToken().is(Token::kw_def))
     fnSignature.effects.setThrows();
-    isDef = true;
-  }
 
   // Parameter signature, argument list and the function effects next.
   if (paramList.parseParametersIfPresent(*this,
@@ -1021,7 +1018,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs),
       copyArrayRef<ParsedArgument>(fnSignature.resultArg)[0],
-      fnSignature.effects, originExpr, endLoc, isDef);
+      fnSignature.effects, originExpr, endLoc);
   return success();
 }
 
