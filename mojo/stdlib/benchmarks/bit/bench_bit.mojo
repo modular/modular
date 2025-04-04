@@ -77,7 +77,7 @@ fn bench_next_power_of_two_v2(mut b: Bencher) raises:
     fn call_fn() raises:
         for _ in range(10_000):
             for i in range(len(values)):
-                var result = next_wer_of_two_v2(values.unsafe_get(i))
+                var result = next_power_of_two_v2(values.unsafe_get(i))
                 keep(result)
 
     b.iter[call_fn]()
