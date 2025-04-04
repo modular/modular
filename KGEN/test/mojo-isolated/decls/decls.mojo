@@ -554,12 +554,6 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 
 
-# CHECK-LABEL: lit.fn @"defaultArgumentUntyped
-# CHECK-SAME: read_mem = apply_result_slot({{.*}}object::@"__init__
-def defaultArgumentUntyped(a=1):
-    pass
-
-
 struct MemoryType:
     var value: Int
 
@@ -688,7 +682,7 @@ fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 
 # CHECK-LABEL: lit.fn @"implicit_return_obj
 # CHECK-SAME: object{{.*}} byref_result
-def implicit_return_obj(p: Bool):
+def implicit_return_obj(p: Bool) -> object:
     # CHECK: if
     if p:
         # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
@@ -705,6 +699,7 @@ def implicit_return_obj(p: Bool):
     # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
     # CHECK: return [[FALSE]]
     _ = 5
+    return object()
 
 
 ##===----------------------------------------------------------------------===##

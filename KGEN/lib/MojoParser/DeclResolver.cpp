@@ -790,8 +790,6 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     kNonRaisingNoneMain,
     // A raising function that returns None.
     kRaisingNoneMain,
-    // A raising function that returns object.
-    kRaisingObjectMain,
   };
   MainKind mainKind = kNonRaisingNoneMain;
 
@@ -812,20 +810,6 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     }
 
     // Process a main returning object.
-  } else if (userResultType.isEqualCanon(
-                 shared.lookupObjectType(*containingDecl, funcDecl.getLoc()))) {
-    // Check that the function is raising, e.g. the `def main()` mode.
-    if (!userMainSignature.isThrows()) {
-      shared.emitError(
-          loc, "expected 'main' function returning object to be raising");
-      return;
-    }
-    mainKind = kRaisingObjectMain;
-
-    // Drop the result and error from the argument list.
-    argTypes = argTypes.drop_front(2);
-
-    // Otherwise, this is an unrecognized main.
   } else {
     shared.emitError(loc, "expected 'main' function to return 'None'");
     return;
@@ -897,9 +881,6 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     break;
   case kRaisingNoneMain:
     mainWrapperName = "__wrap_and_execute_raising_main";
-    break;
-  case kRaisingObjectMain:
-    mainWrapperName = "__wrap_and_execute_object_raising_main";
     break;
   }
   ASTDecl *mainWrapperDecl = resolveStartDecl(mainWrapperName);

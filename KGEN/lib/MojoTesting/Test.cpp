@@ -410,12 +410,7 @@ struct Test::TestDiscovery {
       return argTypes.empty() ||
              (fnSignature.isThrows() && argTypes.size() == 2);
     }
-
-    // Otherwise, check for a test of the form `def test()`. This form returns
-    // an object and raises.
-    return resultType.isEqualCanon(
-               shared.lookupObjectType(context, context.getLoc())) &&
-           fnSignature.isThrows() && argTypes.size() == 2;
+    return false;
   }
 
   static bool doesDeclDefineUnitTest(MojoASTDeclRef decl, SharedState &shared) {

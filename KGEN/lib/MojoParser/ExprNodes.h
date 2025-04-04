@@ -573,10 +573,10 @@ struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
                    ArrayRef<ParsedArgument> parsedArgs,
                    const ParsedArgument &resultArg, FnEffects effects,
-                   const ExprNode *originExpr, SMLoc endLoc, bool isDef)
+                   const ExprNode *originExpr, SMLoc endLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArg(resultArg), effects(effects),
-        originExpr(originExpr), endLoc(endLoc), isDef(isDef) {}
+        originExpr(originExpr), endLoc(endLoc) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> parsedParams; // Parameter list
@@ -585,7 +585,6 @@ struct FunctionTypeNode final : public ExprNode {
   FnEffects effects;
   const ExprNode *originExpr;
   SMLoc endLoc;
-  bool isDef;
 
   static bool classof(const ExprNode *node) {
     return node->kind == kFunctionType;

@@ -1132,7 +1132,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 /// their type+default value expressions as PValues, so we need to ensure that
 /// they are emitted and have declarations registered in the scope so that later
 /// lookups can find them.
-static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
+static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
                                  ASTDecl *fnDecl,
                                  TypeCheckedFnSignature &tcSignature) {
   ParsedArgument &arg = tcSignature.argList.parsedArgs[idx];
@@ -1172,16 +1172,11 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
              !isStaticMethod) {
     // If this is the 'self' argument in a struct, default the type to Self.
     type = tcSignature.selfType;
-  } else if (isDef) {
-    // In 'def', arguments with no types default to 'object'.
-    type = shared.lookupObjectType(declScope, arg.loc);
-    if (!type) {
-      type = shared.getTypeCheckErrorType();
-      arg.isErroneous = true;
-    }
   } else {
-    // In an 'fn' we report an error.
-    shared.emitError(arg.loc, "'fn' argument type must be specified")
+    // Otherwise, this is an error.
+    // TODO: We could explore making type annotations optional in 'def'
+    // functions when we have a functional "Object" type.
+    shared.emitError(arg.loc, "argument type must be specified")
         << SourceRange(arg.loc, arg.loc);
     type = shared.getTypeCheckErrorType();
     arg.isErroneous = true;
@@ -1357,22 +1352,11 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
       return;
 
     auto collectionElement = cast<TraitType>(inputUnboundParams[0].getType());
-    PValue binding;
-    if (!arg.typeExpr) {
-      assert(isDef);
-      // If we're in a `def` function without an explicit argument type, we need
-      // a synthetic type expression.
-      SyntheticNode typeExpr(arg.loc);
-      binding = typeEmitter.emitPValue({fullType, typeExpr}, EC_Type,
-                                       collectionElement);
-    } else {
-      binding = typeEmitter.emitPValue({fullType, arg.typeExpr}, EC_Type,
-                                       collectionElement);
-    }
+    SyntheticNode typeExpr(arg.loc);
+    auto typeExprToUse = arg.typeExpr ? arg.typeExpr : &typeExpr;
+    auto binding = typeEmitter.emitPValue({fullType, typeExprToUse}, EC_Type,
+                                          collectionElement);
     if (!binding) {
-      shared.emitError(arg.loc)
-          << "argument type must conform to 'CollectionElement' to be used in "
-             "a keyword variadic argument";
       arg.isErroneous = true;
       return;
     }
@@ -1429,7 +1413,7 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
 /// Type check the result type for the function.  `resultTypeExpr` will be
 /// non-null if explicitly specified in source code, and the `resultLoc` will
 /// always be valid point for end of the argument list.
-static void typeCheckResult(ParsedArgument resultArg, bool isDef,
+static void typeCheckResult(ParsedArgument resultArg,
                             const SpecialFunctionInfo &fnInfo, ASTDecl *fnDecl,
                             TypeCheckedFnSignature &tcSignature) {
   ASTDecl &declScope = tcSignature.paramList.declScope;
@@ -1455,12 +1439,6 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
              resultArg.convention == ParsedArgument::kConventionOut) {
     // If this is an initializer with an 'out self' argument, infer Self.
     resultType = tcSignature.selfType;
-  } else if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
-    // If this is a 'def', then we want to default to 'object' unless this is a
-    // known function that doesn't support that.
-    resultType = shared.lookupObjectType(declScope, resultArg.loc);
-    if (!resultType)
-      resultType = shared.getTypeCheckErrorType();
   } else {
     // If the result type wasn't specified, we default to "None".
     resultType = shared.getNoneType();
@@ -1646,7 +1624,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
 TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                ParsedArgumentList &argList,
                                                const ExprNode *originExpr,
-                                               bool isDef, ASTDecl *fnDecl,
+                                               ASTDecl *fnDecl,
                                                SpecialFunctionInfo &fnInfo)
     : paramList(paramList), argList(argList) {
   SharedState &shared = paramList.shared;
@@ -1754,10 +1732,10 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // Resolve all argument types, generating type check error types for any types
   // that could not be correctly resolved.
   for (size_t i = 0, e = argList.parsedArgs.size(); i != e; ++i)
-    typeCheckOneArgument(i, isDef, isStaticMethod, fnDecl, *this);
+    typeCheckOneArgument(i, isStaticMethod, fnDecl, *this);
 
   // Compute the result type.
-  typeCheckResult(argList.resultArg, isDef, fnInfo, fnDecl, *this);
+  typeCheckResult(argList.resultArg, fnInfo, fnDecl, *this);
 
   // If a capture origin set was specified, emit it. It will be added to the
   // signature type later.

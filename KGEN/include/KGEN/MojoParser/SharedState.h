@@ -403,12 +403,6 @@ public:
   /// success.
   ASTType lookupNamedType(StringRef name, ASTDecl &context, llvm::SMLoc loc);
 
-  /// Lookup the `object` type in the specified context and return it if found,
-  /// otherwise emit an error and return TypeCheckErrorType.
-  ASTType lookupObjectType(ASTDecl &context, llvm::SMLoc loc) {
-    return lookupNamedType("object", context, loc);
-  }
-
   /// Get a builtin type, or emit an error and return TypeCheckErrorType if
   /// invalid. These never return null.
   ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc) {

@@ -1135,8 +1135,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Emit the argument and result types.
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
   TypeCheckedFnSignature tcSignature(paramList, fnSignature,
-                                     /*captureOrigins=*/nullptr, isDef, &decl,
-                                     fnInfo);
+                                     /*captureOrigins=*/nullptr, &decl, fnInfo);
 
   // If any of the arguments had an error or if the result type is a type check
   // error, then we won't allow forming a reference to this function.
@@ -1558,21 +1557,6 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     if (ASTType(funcOp.getUserResultType()).isNoneType() ||
         funcOp.getNamedResultAttr())
       needDefaultReturn = true;
-
-    // In `def foo():` 'return' returns a None object by default.
-    if (funcOp.isDef()) {
-      ASTType objType = shared.lookupObjectType(decl, decl.getLoc());
-      ASTType resultType = funcOp.getUserResultType();
-      if (resultType.isEqualCanon(objType) && funcOp.getNumArguments()) {
-        // Emit `object()` into the memory type return slot.
-        // TODO: Use an expr form of result emission.
-        ValueDest resultDest(MLValue(funcOp.getArguments().back()),
-                             EC_ReturnValue);
-        emitter.emitConstructorCall(objType, {}, SyntheticNode(decl.getLoc()),
-                                    CallSyntax::kTypeCall, resultDest);
-        needDefaultReturn = true;
-      }
-    }
 
     // Emit a none if needed and emit an EndFunc.
     if (needDefaultReturn)
