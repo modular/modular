@@ -10,9 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any, Optional
+
+import numpy as np
+from max.profiler import traced
 
 Key = Any
 
@@ -37,7 +41,8 @@ class SimpleTrie:
     def __init__(self):
         self.root = SimpleNode()
 
-    def insert(self, s: Sequence[Key]):
+    @traced
+    def insert(self, s: Sequence[Key] | np.ndarray):
         """Inserts a sequence into the trie."""
         curr = self.root
         for ch in s:
@@ -46,7 +51,10 @@ class SimpleTrie:
             curr = curr.children[ch]
         curr.is_eow = True
 
-    def _search(self, s: Sequence[Key]) -> tuple[SimpleNode, list[Key]]:
+    @traced
+    def _search(
+        self, s: Sequence[Key] | np.ndarray
+    ) -> tuple[SimpleNode, list[Key]]:
         """Internal helper method to search for a sequence in the trie.
 
         Args:
@@ -66,8 +74,9 @@ class SimpleTrie:
             curr = curr.children[ch]
         return curr, matched
 
+    @traced
     def find_string_with_largest_common_prefix(
-        self, target: Sequence[Key]
+        self, target: Sequence[Key] | np.ndarray
     ) -> Optional[tuple[Sequence[Key], int]]:
         """Returns a sequence in the trie that shares the longest common prefix
         with the target.
@@ -95,12 +104,12 @@ class SimpleTrie:
 
         return s, prefix_len
 
-    def __contains__(self, s: Sequence[Key]) -> bool:
+    def __contains__(self, s: Sequence[Key] | np.ndarray) -> bool:
         """Checks if the trie contains the exact sequence."""
         node, matched = self._search(s)
         return len(matched) == len(s) and node.is_eow
 
-    def __delitem__(self, s: Sequence[Key]) -> None:
+    def __delitem__(self, s: Sequence[Key] | np.ndarray) -> None:
         """Deletes a sequence from the trie."""
 
         def _remove(

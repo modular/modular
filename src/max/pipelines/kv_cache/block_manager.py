@@ -168,6 +168,13 @@ class BlockManager:
 
         seq_id = ctx.cache_seq_id
         hashes = self.req_to_hashes[seq_id]
+
+        num_unhashed_tokens = ctx.current_length - (
+            len(hashes) * self.block_size
+        )
+        if num_unhashed_tokens < self.block_size:
+            return
+
         parent_hash_value = None
         if len(hashes) > 0:
             parent_hash_value = hashes[-1].value
@@ -192,15 +199,15 @@ class BlockManager:
         """
         self.assert_runtime_invariants(ctx)
 
+        if not self.enable_prefix_caching or ctx.active_length == 1:
+            return
+
         seq_id = ctx.cache_seq_id
         req_blocks = self.req_to_blocks[seq_id]
 
         # Update cache hit rate metrics.
         orig_prompt_len = ctx.active_length
         self.prompt_tokens += orig_prompt_len - 1
-
-        if not self.enable_prefix_caching:
-            return
 
         # Compute block hashes. These hashes are used by the subsequent methods.
         self.compute_hashes_for_request(ctx)
@@ -364,9 +371,7 @@ class BlockManager:
         ]
 
         parent_tokens = parent_tokens[: self.block_size]
-        res = children.find_string_with_largest_common_prefix(
-            tuple(parent_tokens)
-        )
+        res = children.find_string_with_largest_common_prefix(parent_tokens)
         if res is None:
             return None, 0
         best_child_tokens, best_tokens_matched = res
@@ -528,6 +533,7 @@ class BlockManager:
             start_idx=ctx.committed_idx,
         )
 
+    @traced
     def get_req_blocks(self, seq_id: int) -> list[int]:
         """Get the block ids for a request."""
         return [block.bid for block in self.req_to_blocks[seq_id]]

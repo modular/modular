@@ -660,7 +660,8 @@ class PagedKVCacheManager(KVCacheManager):
             seq_len = ctx.current_length + num_steps - 1
             num_required_blocks = ceildiv(seq_len, self.page_size)
             assert len(blocks) >= num_required_blocks
-            blocks = blocks[:num_required_blocks]
+            if len(blocks) > num_required_blocks:
+                blocks = blocks[:num_required_blocks]
 
             # Vectorized assignment of block indices to lookup table
             lut_table_np[batch_idx, : len(blocks)] = np.array(

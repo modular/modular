@@ -98,7 +98,7 @@ class BlockPool:
         # Update the parent hash to child token_ids trie.
         parent_hash_value = block_hash.parent_hash_value
         self.parent_hash_to_child_token_ids[parent_hash_value].insert(
-            tuple(block_hash.token_ids)
+            block_hash.token_ids
         )
 
         if self.kv_cache_agent_queue is None:
