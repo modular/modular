@@ -47,6 +47,11 @@ fn _default_alignment[dtype: DType, width: Int = 1]() -> Int:
     return _default_alignment[Scalar[dtype]]()
 
 
+@always_inline
+fn _default_invariant[mut: Bool]() -> Bool:
+    return is_gpu() and mut == False
+
+
 alias _must_be_mut_err = "UnsafePointer must be mutable for this operation"
 
 
@@ -484,7 +489,7 @@ struct UnsafePointer[
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
-        invariant: Bool = False,
+        invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_]) -> SIMD[dtype, width]:
         """Loads the value the pointer points to.
 
@@ -560,7 +565,7 @@ struct UnsafePointer[
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
-        invariant: Bool = False,
+        invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_], offset: Scalar) -> SIMD[
         dtype, width
     ]:
@@ -599,7 +604,7 @@ struct UnsafePointer[
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
-        invariant: Bool = False,
+        invariant: Bool = _default_invariant[mut](),
     ](self: UnsafePointer[Scalar[dtype], **_], offset: I) -> SIMD[dtype, width]:
         """Loads the value the pointer points to with the given offset.
 
