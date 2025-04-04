@@ -1656,47 +1656,6 @@ bool StringConcatAttr::isConstant() const { return false; }
 Type StringConcatAttr::getType() const { return StringType::get(getContext()); }
 
 //===----------------------------------------------------------------------===//
-// StringReplaceAttr
-//===----------------------------------------------------------------------===//
-
-static void replaceAll(std::string &str, const std::string &from,
-                       const std::string &to) {
-  if (from.empty())
-    return;
-  size_t startPos = 0;
-  while ((startPos = str.find(from, startPos)) != std::string::npos) {
-    str.replace(startPos, from.length(), to);
-    startPos += to.length();
-  }
-}
-
-TypedAttr StringReplaceAttr::get(MLIRContext *ctx, TypedAttr strA,
-                                 TypedAttr srcA, TypedAttr targetA) {
-  // If all inputs are string literals, we can fold this
-  auto strAttr = ::dyn_cast_or_null<StringAttr>(strA);
-  auto srcAttr = ::dyn_cast_or_null<StringAttr>(srcA);
-  auto targetAttr = ::dyn_cast_or_null<StringAttr>(targetA);
-  if (!strAttr || !srcAttr || !targetAttr)
-    return Base::get(ctx, strA, srcA, targetA);
-
-  StringRef str = strAttr.strref(), src = srcAttr.strref();
-
-  auto occurrences = str.count(src);
-  if (occurrences == 0)
-    return strA;
-
-  std::string replacement = str.str();
-  replaceAll(replacement, src.str(), targetAttr.str());
-  return StringAttr::get(replacement, strA.getType());
-}
-
-bool StringReplaceAttr::isConstant() const { return false; }
-
-Type StringReplaceAttr::getType() const {
-  return StringType::get(getContext());
-}
-
-//===----------------------------------------------------------------------===//
 // StringHashAttr
 //===----------------------------------------------------------------------===//
 
