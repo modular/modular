@@ -32,7 +32,7 @@ class StringType;
 class StructType;
 class StructInstanceType;
 class TypeParamAttr;
-class TypeConstantRefAttr;
+class TypeInstanceRefAttr;
 class TypeValueType;
 
 namespace POP {
@@ -351,7 +351,7 @@ private:
 
   /// Build fully resolved debug type from kgen type values.
   DebugInfo::DIType buildDebugType(TypeParamAttr attr);
-  DebugInfo::DIType buildDebugType(TypeConstantRefAttr attr);
+  DebugInfo::DIType buildDebugType(TypeInstanceRefAttr attr);
 };
 
 //===----------------------------------------------------------------------===//

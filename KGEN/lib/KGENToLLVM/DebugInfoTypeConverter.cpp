@@ -298,7 +298,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(TypeValueType type) {
   TypedAttr typeValue = type.getTypeValue();
   if (auto cst = dyn_cast<TypeParamAttr>(typeValue))
     return buildDebugType(cst);
-  if (auto ref = dyn_cast<TypeConstantRefAttr>(typeValue))
+  if (auto ref = dyn_cast<TypeInstanceRefAttr>(typeValue))
     return buildDebugType(ref);
   llvm_unreachable("illegal non-concrete type value");
 }
@@ -307,7 +307,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(TypeParamAttr attr) {
   return convertDebugType(attr.getTypeValue());
 }
 
-DIType KGEN::DebugInfoTypeConverter::buildDebugType(TypeConstantRefAttr attr) {
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(TypeInstanceRefAttr attr) {
   assert(attr.isConstant() && "illegal non-concrete type-constant reference");
   auto structInst =
       symtab.lookup<StructInstanceOp>(attr.getSymbol().getLeafReference());

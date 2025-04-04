@@ -26,10 +26,10 @@ lit.struct.decl @Bar<size, dt: dtype> register_passable {
 // CHECK: kgen.generator @anystructs
 kgen.generator @anystructs() {
   // COM: Partially bound types will not have uses at the KGEN level.
-  // CHECK-NEXT: declare Partial: type = <[typevalue<inst_struct_ref(#kgen.typeref<@Bar<?, :dtype f32>>)>, simd<?, f32>]>
+  // CHECK-NEXT: declare Partial: type = <[typevalue<#kgen.typeref<@Bar<?, :dtype f32>>>, simd<?, f32>]>
   kgen.param.declare Partial: meta<!lit.struct<@Bar<?, :dtype f32>, <index>>> = <#lit.bind_type<:meta<!lit.struct<@Bar<?, :dtype ?>, <index, dtype>>> ?, [?, f32]>>
 
-  // CHECK-NEXT: declare BoundFromPartial: type = <[typevalue<inst_struct_ref(#kgen.typeref<@[[STRUCT_BAR]]<16, :dtype f32>>)>, simd<16, f32>]>
+  // CHECK-NEXT: declare BoundFromPartial: type = <[typevalue<#kgen.typeref<@[[STRUCT_BAR]]<16, :dtype f32>>>, simd<16, f32>]>
   kgen.param.declare BoundFromPartial: meta<!lit.struct<@Bar<16, :dtype f32>>> = <#lit.bind_type<:meta<!lit.struct<@Bar<?, :dtype f32>, <index>>> Partial, [16]>>
   kgen.return
 }

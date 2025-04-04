@@ -495,8 +495,9 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
 // TypeConstantRefAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_TypeConstantRefAttr : KGEN_ExprAttr<"TypeConstantRef", "typeref",
-    [DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
+def KGEN_TypeConstantRefAttr : KGEN_ExprAttr<"TypeConstantRef", "typeref", [
+    EvaluatableAttrInterface,
+    DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
   let summary = "type constant reference";
   let description = [{
     This is a symbolic reference to a type-value. Its type is the metatype of
@@ -523,6 +524,29 @@ def KGEN_TypeConstantRefAttr : KGEN_ExprAttr<"TypeConstantRef", "typeref",
   let assemblyFormat = [{
     `<` $symbol `` custom<ParameterValues>($paramValues) `` `>`
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// TypeInstanceRefAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_TypeInstanceRefAttr : KGEN_ExprAttr<"TypeInstanceRef", "typeinstref"> {
+  let summary = "type instance reference";
+  let description = [{
+    This is a symbolic reference to a concrete type-value instance. Its type
+    is the metatype of the type-value.
+  }];
+
+  let parameters = (ins "SymbolRefAttr":$symbol,
+                        AttributeSelfTypeParameter<"">:$type);
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol,
+                                        "Type":$type), [{
+      return get(type.getContext(), symbol, type);
+    }]>
+  ];
+  let assemblyFormat = "`<` $symbol `>`";
 }
 
 //===----------------------------------------------------------------------===//
@@ -890,6 +914,7 @@ def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
 // associative operations are take arbitrary arity, also to make
 // canonicalization simpler.
 def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
+    EvaluatableAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface,
                                 ["isLessThan", "validateForElaborator"]>
   ]> {

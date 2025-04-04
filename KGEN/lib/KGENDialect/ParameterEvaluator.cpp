@@ -71,7 +71,7 @@ ParameterEvaluator::ParameterEvaluator(ArrayRef<TypedAttr> paramValues) {
 // NOTE: This is out of line to provide a home for the ParameterEvaluator
 // vtable.
 FailureOr<TypedAttr>
-ParameterEvaluator::evaluateExpression(ParamOperatorAttr op) {
+ParameterEvaluator::evaluateExpression(EvaluatableAttrInterface attr) {
   return failure();
 }
 
@@ -158,9 +158,10 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
       result = attr.replaceImmediateSubElements(newAttrs, newTypes);
   }
 
-  // If an operator persisted, try to simplify it with the symbol table.
-  if (auto op = dyn_cast<ParamOperatorAttr>(result))
-    if (FailureOr<TypedAttr> expr = evaluateExpression(op); succeeded(expr))
+  // If an evaluatable parameter persisted, try to simplify it with additional
+  // context.
+  if (auto attr = dyn_cast<EvaluatableAttrInterface>(result))
+    if (FailureOr<TypedAttr> expr = evaluateExpression(attr); succeeded(expr))
       result = *expr;
 
   return result;

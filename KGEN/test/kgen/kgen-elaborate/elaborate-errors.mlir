@@ -238,7 +238,7 @@ kgen.generator @use_type<T: type>() {
   kgen.return
 }
 
-#weird_struct = #kgen.type<typevalue<inst_struct_ref(#kgen.typeref<@WeirdStruct<:type index>>)>, struct<(array<2, index>)>> : !kgen.type
+#weird_struct = #kgen.type<typevalue<#kgen.typeref<@WeirdStruct<:type index>>>, struct<(array<2, index>)>> : !kgen.type
 
 kgen.generator export @gen_structs() {
   // expected-error @below {{call expansion failed}}

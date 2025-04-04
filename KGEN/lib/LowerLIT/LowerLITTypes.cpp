@@ -321,10 +321,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
                 StructMetaType::get(LIT::StructType::get(
                     decl.symRef, loweredParamValues, ref.getSignature())),
                 TypeDomain::AsType));
-
-        auto appliedStructTypeAttr =
-            ParamOperatorAttr::get(POC::InstantiateStructRef, {concreteSymRef});
-        return TypeValueType::get(appliedStructTypeAttr);
+        return TypeValueType::get(concreteSymRef);
       },
       TypeDomain::AsValue);
 }

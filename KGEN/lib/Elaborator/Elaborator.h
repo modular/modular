@@ -245,7 +245,7 @@ public:
   /// Otherwise, dispatch an elaboration of the struct generator and immediately
   /// return the concrete symbol reference (the symbol may not exist yet, but
   /// its elaboration will have been scheduled).
-  ErrorTreeOr<TypeConstantRefAttr>
+  ErrorTreeOr<TypeInstanceRefAttr>
   getConcreteStructTypeReference(ImplNode *parent, Location loc,
                                  TypeConstantRefAttr typeref);
 

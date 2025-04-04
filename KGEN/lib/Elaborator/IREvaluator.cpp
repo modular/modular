@@ -91,7 +91,8 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
 // Expression Evaluation
 //===----------------------------------------------------------------------===//
 
-FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
+FailureOr<TypedAttr>
+IREvaluator::evaluateExpression(EvaluatableAttrInterface attr) {
   // Don't try to evaluate a parameter operator that still contains parametric
   // things in it, since it may be transitory.
   struct IndexRefFinder : IndexParameterReplacer<IndexRefFinder> {
@@ -108,9 +109,24 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
 
     bool escapingReference = false;
   } finder;
-  finder.replace(op);
+  finder.replace(attr);
   if (finder.escapingReference)
-    return {op};
+    return cast<TypedAttr>(attr);
+
+  if (auto typeref = dyn_cast<TypeConstantRefAttr>(attr)) {
+    // Attempt to concretize the function first.
+    ErrorTreeOr<TypeInstanceRefAttr> symOr =
+        elaborator->getConcreteStructTypeReference(parent, *errorLoc, typeref);
+    if (symOr.isError()) {
+      emitError(symOr.takeError());
+      return failure();
+    }
+    return cast<TypedAttr>(symOr.takeValue());
+  }
+
+  // Must be a parameter operator then.
+  auto op = dyn_cast<ParamOperatorAttr>(attr);
+  assert(op && "unknown attribute with EvaluatableAttrInterface");
 
   // Try to narrow this operator to an expression we can evaluate. We only need
   // to emit an error during the evaluation attempt.
@@ -130,8 +146,6 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     return evaluateApplyLike(op, /*withResultSlot=*/false);
   case POC::ApplyResultSlot:
     return evaluateApplyLike(op, /*withResultSlot=*/true);
-  case POC::InstantiateStructRef:
-    return evaluateInstantiateStruct(op);
   case POC::AttrToStr:
     return {StringAttr::get(mlir::debugString(op.getOperands().front()),
                             StringType::get(op.getContext()))};
@@ -212,20 +226,6 @@ FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
   }
   emitError(result.takeError());
   return TypedAttr();
-}
-
-FailureOr<TypeConstantRefAttr>
-IREvaluator::evaluateInstantiateStruct(ParamOperatorAttr op) {
-  // Attempt to concretize the function first.
-  ErrorTreeOr<TypeConstantRefAttr> symOr =
-      elaborator->getConcreteStructTypeReference(
-          parent, *errorLoc,
-          cast<TypeConstantRefAttr>(op.getOperands().front()));
-  if (symOr.isError()) {
-    emitError(symOr.takeError());
-    return failure();
-  }
-  return symOr.takeValue();
 }
 
 // See if we can decode the first 'numBytes' of the memory blob into a
