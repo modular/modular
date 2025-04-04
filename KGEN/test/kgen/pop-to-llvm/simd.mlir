@@ -15,8 +15,10 @@ kgen.func @trivial_conversions(%a: !pop.simd<4, f32>, %b: !pop.simd<4, f32>, %c:
   %3 = pop.mul %a, %b : !pop.simd<4, f32>
   // CHECK: llvm.intr.fma
   %4 = pop.fma %a, %b, %c : !pop.simd<4, f32>
+  // CHECK: llvm.intr.fma{{.*}} {fastmathFlags = #llvm.fastmath<nsz>}
+  %5 = pop.fma %a, %b, %c {fastmathFlags = #pop<fmf nsz>} : !pop.simd<4, f32>
   // CHECK: llvm.select
-  %5 = pop.simd.select %d, %a, %b : !pop.simd<4, f32>
+  %6 = pop.simd.select %d, %a, %b : !pop.simd<4, f32>
   kgen.return
 }
 
