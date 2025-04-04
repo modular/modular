@@ -426,6 +426,7 @@ class TokenGenerationScheduler(Scheduler):
         # Limit logging about preemptions to at most once per second
         current_time = time.monotonic()
         self.total_preemption_count += 1
+        METRICS.preemption()
         if current_time - self.last_preemption_logging_time > 1:
             self.last_preemption_logging_time = current_time
             logger.info(
@@ -581,6 +582,20 @@ class TokenGenerationScheduler(Scheduler):
         tg_batch = self._create_tg_batch()
         return tg_batch
 
+    def _fire_cache_metrics(
+        self,
+        used_blocks: int,
+        total_blocks: int,
+        cache_hit_rate: float,
+        cache_hits: int,
+        cache_misses: int,
+    ) -> None:
+        METRICS.cache_num_used_blocks(used_blocks)
+        METRICS.cache_num_total_blocks(total_blocks)
+        METRICS.cache_hit_rate(cache_hit_rate)
+        METRICS.cache_hits(cache_hits)
+        METRICS.cache_misses(cache_misses)
+
     def _log_metrics(
         self,
         sch_output: SchedulerOutput,
@@ -667,6 +682,23 @@ class TokenGenerationScheduler(Scheduler):
             elif paged_manager.enable_prefix_caching:
                 blocks_copied_str = f"Blocks copied: {d2d_blocks_copied} D2D | "
             paged_manager.reset_blocks_copied()
+
+        used_blocks = self.paged_manager.total_num_pages - len(
+            self.paged_manager.free_blocks
+        )
+
+        cache_hits = sch_output.cached_prompt_tokens
+        cache_misses = (
+            sch_output.prompt_tokens - sch_output.cached_prompt_tokens
+        )
+
+        self._fire_cache_metrics(
+            used_blocks=used_blocks,
+            total_blocks=total_blocks,
+            cache_hits=cache_hits,
+            cache_misses=cache_misses,
+            cache_hit_rate=cache_hit_rate,
+        )
 
         logger.debug(
             f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "

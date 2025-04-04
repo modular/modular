@@ -96,6 +96,12 @@ class Settings(BaseSettings):
             except OSError as e:
                 raise ValueError(f"port {port} is already in use") from e
 
+    metrics_port: int = Field(
+        description="Port to use for the metrics endpoint",
+        default=8001,
+        alias="MAX_SERVE_METRICS_ENDPOINT_PORT",
+    )
+
     # Telemetry and logging configuration
     logs_console_level: str = Field(
         default="INFO",
@@ -161,7 +167,7 @@ class Settings(BaseSettings):
 
     metric_level: MetricLevel = Field(
         default=MetricLevel.BASIC,
-        description="",
+        description="Determines the level of detail in the metrics emitted. Metrics tagged at a higher level will be dropped. This does nothing if metric recording is disabled.",
         alias="MAX_SERVE_METRIC_LEVEL",
     )
 

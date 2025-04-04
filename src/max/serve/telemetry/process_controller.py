@@ -9,12 +9,14 @@ import logging
 import multiprocessing
 import multiprocessing.queues
 import queue
+import threading
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional
 
-from max.serve.config import MetricLevel, Settings
+import prometheus_client
+from max.serve.config import MetricLevel, MetricRecordingMethod, Settings
 from max.serve.scheduler.process_control import (
     ProcessControl,
     ProcessMonitor,
@@ -25,6 +27,7 @@ from max.serve.telemetry.metrics import (
     MetricClient,
     TelemetryFn,
 )
+from uvicorn import Config, Server
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +55,13 @@ class ProcessMetricClient(MetricClient):
         self.queue = q
         # buffer detailed metrics observations until it is safe to flush
         self.detailed_buffer: list[MaxMeasurement] = []
-        self.level = settings.metric_level
+        self.metric_detail_level = settings.metric_level
 
     def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
-        if level > self.level:
+        if level > self.metric_detail_level:
+            logger.debug(
+                f"Skipping metric {m.instrument_name} at level {level} because detail level is {self.metric_detail_level}"
+            )
             return
 
         if level >= MetricLevel.DETAILED:
@@ -70,7 +76,9 @@ class ProcessMetricClient(MetricClient):
                 self.queue.put_nowait(self.detailed_buffer)
         except queue.Full:
             # we would rather lose data than slow the server
-            logger.error("Telemetry Queue is full.  Dropping data")
+            logger.warning(
+                f"Telemetry Queue is full.  Dropping {len(self.detailed_buffer)} measurements"
+            )
         finally:
             if self.detailed_buffer:
                 self.detailed_buffer.clear()
@@ -81,7 +89,7 @@ class ProcessMetricClient(MetricClient):
                 self.queue.put_nowait(self.detailed_buffer)
         except queue.Full:
             # we would rather lose data than slow the server
-            logger.error("Telemetry Queue is full.  Dropping data")
+            logger.warning("Telemetry Queue is full.  Dropping data")
         finally:
             if self.detailed_buffer:
                 self.detailed_buffer.clear()
@@ -143,8 +151,37 @@ def init_and_process(
     q: multiprocessing.queues.Queue,  # Queue[MaxMeasurement]
     commit_fn: TelemetryFn,
 ) -> None:
+    """Initialize logging & metrics, and start the metrics server if enabled. This is expected to run from the Telemetry process."""
     configure_logging(settings)
     configure_metrics(settings)
+
+    if (
+        not settings.disable_telemetry
+        and settings.metric_recording == MetricRecordingMethod.PROCESS
+    ):
+        app = prometheus_client.make_asgi_app()
+        config = Config(
+            app=app,
+            host="0.0.0.0",
+            port=settings.metrics_port,
+            access_log=False,
+            log_level="warning",
+        )
+        server = Server(config)
+
+        def run_server():
+            logger.warning(
+                f"Starting ASGI metrics server on port {settings.metrics_port}"
+            )
+            try:
+                server.run()
+            except Exception:
+                logger.exception("Error running ASGI metrics server")
+
+        # Start the server in a daemon thread
+        server_thread = threading.Thread(target=run_server, daemon=True)
+        server_thread.start()
+
     return process_telemetry(pc, settings, q, commit_fn)
 
 

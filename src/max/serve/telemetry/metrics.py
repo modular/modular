@@ -113,6 +113,37 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.batch_size",
         description="Distribution of batch sizes",
     ),  # type: ignore
+    # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
+    "maxserve.cache.num_used_blocks": _meter.create_counter(
+        "maxserve.cache.num_used_blocks",
+        unit="blocks",
+        description="Number of used blocks or pages, measured at the scheduler after batch work.",
+    ),  # type: ignore
+    # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
+    "maxserve.cache.num_total_blocks": _meter.create_counter(
+        "maxserve.cache.num_total_blocks",
+        unit="blocks",
+        description="Total number of blocks or pages, measured at the scheduler after batch work.",
+    ),  # type: ignore
+    "maxserve.cache.hit_rate": _meter.create_histogram(
+        "maxserve.cache.hit_rate",
+        unit="percent_utilization",
+        description="Cache hit rate, measured at the scheduler after batch work. This is dividing the batche's cached_prompt_tokens by prompt_tokens.",
+    ),  # type: ignore
+    "maxserve.cache.preemption_count": _meter.create_counter(
+        "maxserve.cache.preemption_count",
+        description="Total number of preemptions",
+    ),  # type: ignore
+    "maxserve.cache.hits": _meter.create_counter(
+        "maxserve.cache.hits",
+        unit="requests",
+        description="Number of KV cache hits in a batch by the scheduler.",
+    ),  # type: ignore
+    "maxserve.cache.misses": _meter.create_counter(
+        "maxserve.cache.misses",
+        unit="requests",
+        description="Number of KV cache misses in a batch by the scheduler.",
+    ),  # type: ignore
 }
 
 
@@ -149,7 +180,10 @@ class MaxMeasurement:
 
         # instrument should be one of the supported sdk types now
         if not isinstance(instrument, get_args(SDK_INSTRUMENTS)):
-            # If you're hitting this, metrics were likely not configured.
+            # If you're hitting this, metrics were likely not configured properly.
+            logger.error(
+                f"instrument {self.instrument_name} is not one of the supported sdk types"
+            )
             return
 
         # convert to an otel measurement
@@ -160,9 +194,11 @@ class MaxMeasurement:
             context.get_current(),
             self.attributes,
         )
+
         # record the measurement
         consumer = instrument._measurement_consumer
         consumer.consume_measurement(m)
+        logger.debug(f"consumed measurement for {self.instrument_name}")
 
 
 TelemetryFn = Callable[[MaxMeasurement], None]
@@ -288,6 +324,42 @@ class _AsyncMetrics:
                 "maxserve.batch_size",
                 size,
             ),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_num_used_blocks(self, num_used_blocks: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.cache.num_used_blocks", num_used_blocks),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_num_total_blocks(self, total_blocks: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.cache.num_total_blocks", total_blocks),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_hit_rate(self, hit_rate: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.cache.hit_rate", hit_rate),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_hits(self, hits: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.cache.hits", hits),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_misses(self, cache_misses: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.cache.misses", cache_misses),
+            MetricLevel.DETAILED,
+        )
+
+    def preemption(self) -> None:
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.cache.preemption_count", 1),
             MetricLevel.DETAILED,
         )
 

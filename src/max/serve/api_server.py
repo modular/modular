@@ -17,7 +17,7 @@ import uvloop
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from max.pipelines import PipelinesFactory, PipelineTokenizer
-from max.serve.config import APIType, Settings
+from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
@@ -39,7 +39,6 @@ from max.serve.telemetry.common import (
     send_telemetry_log,
 )
 from max.serve.telemetry.metrics import METRICS
-from prometheus_client import disable_created_metrics, make_asgi_app
 from uvicorn import Config, Server
 
 ROUTES = {
@@ -86,6 +85,7 @@ async def lifespan(
             metric_client = await exit_stack.enter_async_context(
                 start_telemetry_consumer(settings)
             )
+
             METRICS.configure(client=metric_client)
             # start model worker
             engine_queue = await exit_stack.enter_async_context(
@@ -131,6 +131,13 @@ def version():
         return JSONResponse({"version": "unknown"})
 
 
+def make_metrics_app():
+    from prometheus_client import disable_created_metrics, make_asgi_app
+
+    disable_created_metrics()
+    return make_asgi_app()
+
+
 def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
@@ -144,6 +151,7 @@ def fastapi_app(
             serving_settings=serving_settings,
         ),
     )
+
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
         app.add_middleware(
@@ -154,7 +162,12 @@ def fastapi_app(
             include_responses=settings.transaction_recording_include_responses,
         )
 
-    app.mount("/metrics", make_metrics_app())
+    if (
+        not settings.disable_telemetry
+        and settings.metric_recording == MetricRecordingMethod.ASYNCIO
+    ):
+        app.mount("/metrics", make_metrics_app())
+
     app.add_api_route("/version", version)
 
     for api_type in settings.api_types:
@@ -178,11 +191,6 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
     for route in app.routes:
         logger.debug("Route enabled : %s", route)
     return config
-
-
-def make_metrics_app():
-    disable_created_metrics()
-    return make_asgi_app()
 
 
 async def main() -> None:
