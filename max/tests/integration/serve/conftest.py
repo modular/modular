@@ -63,7 +63,13 @@ def pipeline_config(request):
 
 
 @pytest.fixture(scope="session")
-def app(pipeline_config):
+def settings_config(request):
+    """Fixture to control settings configuration"""
+    return getattr(request, "param", {"MAX_SERVE_USE_HEARTBEAT": True})
+
+
+@pytest.fixture(scope="session")
+def app(pipeline_config, settings_config):
     """The FastAPI app used to serve the model."""
 
     if not PIPELINE_REGISTRY.architectures:
@@ -91,7 +97,7 @@ def app(pipeline_config):
         tokenizer=tokenizer,
     )
 
-    settings = Settings(MAX_SERVE_USE_HEARTBEAT=True)
+    settings = Settings(**settings_config)
     configure_metrics(settings)
     app = fastapi_app(settings, serving_settings)
     return app
