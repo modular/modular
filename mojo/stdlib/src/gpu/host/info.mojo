@@ -1246,9 +1246,9 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     Returns:
         Info instance for the specified target architecture.
     """
-    alias target_arch = get_string_literal_slice[target_arch0]().replace(
-        "sm_", ""
-    )
+    alias target_arch = get_string_literal_slice[
+        target_arch0.replace("sm_", "")
+    ]()
 
     constrained[
         target_arch
