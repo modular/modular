@@ -255,6 +255,12 @@ def test_dunder_methods(mut python: Python):
     assert_equal(c, -35)
 
 
+def test_num_conversion() -> None:
+    alias n = UInt64(0xFEDC_BA09_8765_4321)
+    alias n_str = String(n)
+    assert_equal(n_str, String(PythonObject(n)))
+
+
 def test_bool_conversion() -> None:
     var x: PythonObject = 1
     assert_true(x == 0 or x == 1)
@@ -592,6 +598,7 @@ def main():
     var python = Python()
 
     test_dunder_methods(python)
+    test_num_conversion()
     test_bool_conversion()
     test_string_conversions()
     test_len()

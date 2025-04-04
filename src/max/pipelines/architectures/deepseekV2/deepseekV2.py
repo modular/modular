@@ -15,8 +15,10 @@
 from __future__ import annotations
 
 from max.nn import (
+    MLPV2,
     EmbeddingV2,
     LinearV2,
+    Module,
     OptimizedRotaryEmbedding,
     RMSNormV2,
     Transformer,
@@ -58,15 +60,7 @@ class DeepseekV2(Transformer):
                     qk_rope_head_dim=config.qk_rope_head_dim,
                     v_head_dim=config.v_head_dim,
                 ),
-                mlp=MoE(
-                    num_experts_per_tok=config.num_experts_per_tok,
-                    ep_size=config.ep_size,
-                    experts_per_rank=config.n_routed_experts // config.ep_size,
-                    moe_intermediate_size=config.moe_intermediate_size,
-                    max_position_embeddings=config.max_position_embeddings,
-                    n_shared_experts=config.n_shared_experts,
-                    dtype=config.dtype,
-                ),
+                mlp=self._get_mlp(config, i),
                 attention_norm=RMSNormV2(
                     config.hidden_size,
                     config.rms_norm_eps,
@@ -106,3 +100,37 @@ class DeepseekV2(Transformer):
                 config.kv_params
             ),
         )
+
+    def _get_mlp(self, config: DeepseekV2Config, i: int) -> Module:
+        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
+        for the TransformerBlock's mlp depending on the layer idx.
+
+        Args:
+            config: Configuration object containing model parameters
+            i: Layer index
+
+        Returns:
+            Either a MoE or MLPV2 module depending on the layer index and config
+        """
+        if (
+            config.n_routed_experts is not None
+            and i >= config.first_k_dense_replace
+            and i % config.moe_layer_freq == 0
+        ):
+            return MoE(
+                num_experts_per_tok=config.num_experts_per_tok,
+                ep_size=config.ep_size,
+                experts_per_rank=config.n_routed_experts // config.ep_size,
+                moe_intermediate_size=config.moe_intermediate_size,
+                max_position_embeddings=config.max_position_embeddings,
+                n_shared_experts=config.n_shared_experts,
+                dtype=config.dtype,
+            )
+        else:
+            return MLPV2(
+                dtype=config.dtype,
+                quantization_encoding=None,
+                hidden_dim=config.hidden_size,
+                feed_forward_length=config.intermediate_size,
+                devices=config.devices,
+            )

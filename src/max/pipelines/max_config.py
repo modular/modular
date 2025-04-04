@@ -320,11 +320,12 @@ class MAXModelConfig(MAXModelConfigBase):
     @cached_property
     def huggingface_weights_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(
-            (
+            repo_id=(
                 self._weights_repo_id
                 if self._weights_repo_id
                 else self.model_path
             ),
+            revision=self.huggingface_revision,
             trust_remote_code=self.trust_remote_code,
         )
 
@@ -723,9 +724,10 @@ def repo_exists_with_retry(repo_id: str) -> bool:
     )
 
 
-@dataclass
+@dataclass(frozen=True)
 class HuggingFaceRepo:
     repo_id: str
+    revision: str = huggingface_hub.constants.DEFAULT_REVISION
     trust_remote_code: bool = False
     repo_type: Optional[RepoType] = None
 
@@ -733,9 +735,9 @@ class HuggingFaceRepo:
         # Get repo type.
         if not self.repo_type:
             if os.path.exists(self.repo_id):
-                self.repo_type = RepoType.local
+                object.__setattr__(self, "repo_type", RepoType.local)
             else:
-                self.repo_type = RepoType.online
+                object.__setattr__(self, "repo_type", RepoType.online)
 
         if self.repo_type == RepoType.online and not repo_exists_with_retry(
             self.repo_id
@@ -747,6 +749,16 @@ class HuggingFaceRepo:
 
     def __repr__(self) -> str:
         return self.repo_id
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.repo_id,
+                self.revision,
+                self.trust_remote_code,
+                self.repo_type,
+            )
+        )
 
     @cached_property
     def info(self) -> huggingface_hub.ModelInfo:

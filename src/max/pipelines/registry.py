@@ -44,7 +44,7 @@ from .interfaces import (
     TokenGenerator,
 )
 from .kv_cache import KVCacheStrategy
-from .max_config import KVCacheConfig
+from .max_config import HuggingFaceRepo, KVCacheConfig, MAXModelConfig
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer
@@ -151,6 +151,7 @@ class SupportedArchitecture:
 class PipelineRegistry:
     def __init__(self, architectures: list[SupportedArchitecture]):
         self.architectures = {arch.name: arch for arch in architectures}
+        self._cached_huggingface_configs: dict[HuggingFaceRepo, AutoConfig] = {}
 
     def register(self, architecture: SupportedArchitecture):
         """Add new architecture to registry."""
@@ -184,6 +185,41 @@ class PipelineRegistry:
 
         return None
 
+    def _get_active_huggingface_config(
+        self, model_config: MAXModelConfig
+    ) -> AutoConfig:
+        """Retrieves or creates a cached HuggingFace AutoConfig for the given
+        model configuration.
+
+        This method maintains a cache of HuggingFace configurations to avoid
+        reloading them unnecessarily which incurs a huggingface hub API call.
+        If a config for the given model hasn't been loaded before, it will
+        create a new one using AutoConfig.from_pretrained() with the model's
+        settings.
+
+        Args:
+            model_config: The MAX model configuration containing model path and
+            loading settings.
+
+        Returns:
+            AutoConfig: The HuggingFace configuration object for the model.
+        """
+        if (
+            model_config.huggingface_weights_repo
+            not in self._cached_huggingface_configs
+        ):
+            self._cached_huggingface_configs[
+                model_config.huggingface_weights_repo
+            ] = AutoConfig.from_pretrained(
+                model_config.model_path,
+                trust_remote_code=model_config.trust_remote_code,
+                revision=model_config.huggingface_revision,
+            )
+
+        return self._cached_huggingface_configs[
+            model_config.huggingface_weights_repo
+        ]
+
     def _estimate_memory_footprint(
         self,
         pipeline_config: PipelineConfig,
@@ -192,11 +228,8 @@ class PipelineRegistry:
     ):
         model_cls = arch.pipeline_model
         model_config = pipeline_config.model_config
-        huggingface_config = AutoConfig.from_pretrained(
-            model_config.model_path,
-            trust_remote_code=model_config.trust_remote_code,
-            revision=model_config.huggingface_revision,
-        )
+
+        huggingface_config = self._get_active_huggingface_config(model_config)
 
         try:
             free_memory = int(sum(d.stats["free_memory"] for d in devices))
@@ -836,11 +869,10 @@ class PipelineRegistry:
             )
 
             # Load HuggingFace Config
-            huggingface_config = AutoConfig.from_pretrained(
-                pipeline_config.model_config.model_path,
-                trust_remote_code=pipeline_config.model_config.trust_remote_code,
-                revision=pipeline_config.model_config.huggingface_revision,
+            huggingface_config = self._get_active_huggingface_config(
+                pipeline_config.model_config
             )
+
             # Architecture should not be None here, as the engine is MAX.
             assert arch is not None
             devices = load_devices(pipeline_config.model_config.device_specs)

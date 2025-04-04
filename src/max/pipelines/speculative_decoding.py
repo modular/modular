@@ -110,6 +110,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         draft_hf_repo = HuggingFaceRepo(
             repo_id=self.pipeline_config.draft_model,
+            revision=self.pipeline_config.model_config.huggingface_revision,
             trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
             repo_type=RepoType.online,
         )

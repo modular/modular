@@ -98,8 +98,8 @@ def hash_request_tokens(
 class KVCacheBlock:
     """KV-cache block metadata."""
 
-    # Block ID, ranging from 0 to num_gpu_blocks - 1.
-    block_id: int
+    # Block ID, ranging from 0 to total_num_blocks - 1.
+    bid: int
     # Reference count.
     ref_cnt: int = 0
     # The hash of the block composed of (block hash, tuple of token IDs).
@@ -112,7 +112,7 @@ class KVCacheBlock:
     next_free_block: KVCacheBlock | None = None
 
     def __repr__(self) -> str:
-        return f"KVCacheBlock(block_id={self.block_id}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash})"
+        return f"KVCacheBlock(bid={self.bid}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash})"
 
 
 class BlockCopyType(Enum):
@@ -154,7 +154,7 @@ class FreeKVCacheBlockQueue:
 
     def __init__(self, blocks: list[KVCacheBlock]) -> None:
         self.num_free_blocks = len(blocks)
-        self.free_blocks = set(block.block_id for block in blocks)
+        self.free_blocks = set(block.bid for block in blocks)
 
         # Initialize the doubly linked list of free blocks.
         self.free_list_head: KVCacheBlock | None = blocks[0]
@@ -206,7 +206,7 @@ class FreeKVCacheBlockQueue:
         # Remove the block from the linked list.
         block.prev_free_block = block.next_free_block = None
         self.num_free_blocks -= 1
-        self.free_blocks.remove(block.block_id)
+        self.free_blocks.remove(block.bid)
 
     @traced
     def append(self, block: KVCacheBlock) -> None:
@@ -228,7 +228,7 @@ class FreeKVCacheBlockQueue:
 
         block.next_free_block = None
         self.num_free_blocks += 1
-        self.free_blocks.add(block.block_id)
+        self.free_blocks.add(block.bid)
 
     @traced
     def get_all_free_blocks(self) -> list[KVCacheBlock]:

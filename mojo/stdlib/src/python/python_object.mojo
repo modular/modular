@@ -383,16 +383,19 @@ struct PythonObject(
         Args:
             value: The scalar value.
         """
-        cpython = _get_global_python_itf().cpython()
+        var cpython = _get_global_python_itf().cpython()
 
         @parameter
         if dtype is DType.bool:
             self.py_object = cpython.PyBool_FromLong(Int(value))
+        elif dtype.is_unsigned():
+            var uint_val = value.cast[DType.index]().value
+            self.py_object = cpython.PyLong_FromSize_t(uint_val)
         elif dtype.is_integral():
-            int_val = value.cast[DType.index]().value
+            var int_val = value.cast[DType.index]().value
             self.py_object = cpython.PyLong_FromSsize_t(int_val)
         else:
-            fp_val = value.cast[DType.float64]()
+            var fp_val = value.cast[DType.float64]()
             self.py_object = cpython.PyFloat_FromDouble(fp_val)
 
     @implicit
