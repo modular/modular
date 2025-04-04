@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from max._core.driver import __version__  # type: ignore
+from max._core import __version__
 from max._core_types.driver import DLPackArray
 
 from .driver import (
