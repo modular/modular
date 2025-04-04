@@ -344,21 +344,21 @@ fn fn_with_implicit_params[p: Int](arg: MyStruct):
 # CHECK:  "name": "pos_only_print",
 # CHECK:  "overloads":
 # CHECK:      "args":
-# CHECK:          "name": "obj"
+# CHECK:          "name": "x"
 # CHECK:          "passingKind": "pos",
-# CHECK:          "type": "object"
+# CHECK:          "type": "String"
 
 # CHECK:          "name": "sep"
 # CHECK:          "passingKind": "pos_or_kw",
 # CHECK:          "type": "String"
-# CHECK:      "signature": "pos_only_print(obj: object, /, sep: String)",
+# CHECK:      "signature": "pos_only_print(x: String, /, sep: String)",
 
 
-fn pos_only_print(obj: object, /, sep: String):
-    """Prints an object type.
+fn pos_only_print(x: String, /, sep: String):
+    """Prints a String type.
 
     Args:
-        obj: The object to print.
+        x: The String to print.
         sep: The separator.
     """
     pass
@@ -480,17 +480,17 @@ fn variadic_arg_hack[
 
 # CHECK:         "name": "**kwargs",
 # CHECK:         "passingKind": "kw",
-# CHECK:         "type": "object"
+# CHECK:         "type": "String"
 
 # CHECK:     "parameters":
 # CHECK:         "name": "*nums",
 # CHECK:         "passingKind": "pos_or_kw",
 # CHECK:         "type": "Int"
 
-# CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, owned **kwargs: object)",
+# CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, owned **kwargs: String)",
 
 
-fn variadic_params_args[*nums: Int](*vals: Int, **kwargs: object):
+fn variadic_params_args[*nums: Int](*vals: Int, **kwargs: String):
     """Test variadic argument/parameter type printing.
 
     Parameters:
