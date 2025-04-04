@@ -174,7 +174,6 @@ alias NoGPU = Info(
     shared_memory_allocation_unit_size=0,
     warp_allocation_granularity=0,
     max_thread_block_size=0,
-    flops=Flops(fp16=0, tf32=0, fp64=0, i8=0, i4=0),
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -235,7 +234,6 @@ alias A100 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    flops=Flops(fp16=312, tf32=156, fp64=19.5, i8=624, i4=1248),
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -288,7 +286,6 @@ alias A10 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    flops=Flops(fp16=125, tf32=62.5, i8=250, i4=500),
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -341,7 +338,6 @@ alias OrinNano = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    flops=Flops(fp16=19, tf32=10.5, i8=38, i4=77),
 )
 
 
@@ -395,7 +391,6 @@ alias L4 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    flops=Flops(fp16=121, i8=242, i4=485),
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -449,7 +444,6 @@ alias H100 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    flops=Flops(fp8=3958, fp16=1979, tf32=989, fp64=67, i8=3958, i4=7916),
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -503,108 +497,7 @@ alias MI300X = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    # From https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf
-    flops=Flops(tf32=653.7, fp16=1307.4, fp8=1307.4, i8=2614.9, i4=0),
 )
-
-# ===-----------------------------------------------------------------------===#
-# Flops
-# ===-----------------------------------------------------------------------===#
-
-
-@value
-@register_passable
-struct Flops(Writable):
-    """
-    Represents floating point operations per second for different precisions.
-
-    This struct stores FLOPS values for various precision formats including
-    FP8, FP16, TF32, FP64, and integer operations.
-    """
-
-    var fp8: Float64
-    """FP8 operations per second in TFLOPS."""
-
-    var fp16: Float64
-    """FP16 operations per second in TFLOPS."""
-
-    var tf32: Float64
-    """TF32 operations per second in TFLOPS."""
-
-    var fp64: Float64
-    """FP64 operations per second in TFLOPS."""
-
-    var i8: Float64
-    """INT8 operations per second in TOPS."""
-
-    var i4: Float64
-    """INT4 operations per second in TOPS."""
-
-    fn __init__(
-        out self,
-        *,
-        fp16: Float64,
-        i8: Float64,
-        i4: Float64,
-        fp8: Float64 = 0,
-        tf32: Float64 = 0,
-        fp64: Float64 = 0,
-    ):
-        """
-        Initializes a Flops instance with performance metrics.
-
-        Args:
-            fp16: FP16 operations per second in TFLOPS.
-            i8: INT8 operations per second in TOPS.
-            i4: INT4 operations per second in TOPS.
-            fp8: FP8 operations per second in TFLOPS (default: 0).
-            tf32: TF32 operations per second in TFLOPS (default: 0).
-            fp64: FP64 operations per second in TFLOPS (default: 0).
-        """
-        self.fp8 = fp8
-        self.fp16 = fp16
-        self.tf32 = tf32
-        self.fp64 = fp64
-        self.i8 = i8
-        self.i4 = i4
-
-    @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
-        """Writes FLOPS information to a writer.
-
-        This method formats and outputs all non-zero FLOPS metrics to the provided writer.
-        FP8 and FP16 values are written together, while TF32 and FP64 are only written
-        if they have non-zero values. INT8 and INT4 metrics are always written.
-
-        Parameters:
-            W: The type of writer to use for output. Must implement the Writer trait.
-
-        Args:
-            writer: The writer object that implements the Writer trait, used to output
-                   the formatted FLOPS information.
-        """
-        if self.fp8:
-            writer.write("flops_fp8: ", self.fp8, "\n")
-            writer.write("flops_fp16: ", self.fp16, "\n")
-        if self.tf32:
-            writer.write("flops_tf32: ", self.tf32, "\n")
-        if self.fp64:
-            writer.write("flops_fp64: ", self.fp64, "\n")
-        writer.write("flops_i8: ", self.i8, "\n")
-        writer.write("flops_i4: ", self.i4)
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the FLOPS metrics.
-
-        This method converts all the FLOPS metrics into a human-readable string format
-        by utilizing the write_to method with a String writer.
-
-        Returns:
-            A formatted string containing all relevant FLOPS values, with each metric
-            on its own line and properly labeled with its precision type.
-        """
-        return String.write(self)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -694,9 +587,6 @@ struct Info(Writable):
 
     var max_thread_block_size: Int
     """Maximum number of threads allowed in a thread block."""
-
-    var flops: Flops
-    """Floating-point operations per second capabilities for different precisions."""
 
     fn target(self) -> __mlir_type.`!kgen.target`:
         """
@@ -1145,7 +1035,6 @@ struct Info(Writable):
         writer.write(
             "max_thread_block_size: ", self.max_thread_block_size, "\n"
         )
-        writer.write(self.flops)
 
     @no_inline
     fn __str__(self) -> String:
