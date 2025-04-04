@@ -58,7 +58,9 @@ def test_from_tensor_incorrect():
         tensor2 = anytensor^.to_tensor[DType.int32, 2]()
 
 
-def _function_that_takes_anytensor(owned t1: AnyTensor, owned t2: AnyTensor):
+def _function_that_takes_anytensor(
+    owned t1: AnyTensor, owned t2: AnyTensor
+) -> Int:
     return t1.get_rank() + t2.get_rank()
 
 
