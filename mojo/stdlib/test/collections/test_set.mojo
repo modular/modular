@@ -499,7 +499,7 @@ def test_set_str():
     AE(Set[Int]().__str__(), "{}")
 
 
-fn test[name: String, test_fn: fn () raises -> object]() raises:
+fn test[name: String, test_fn: fn () raises]() raises:
     print("Test", name, "...", end="")
     try:
         _ = test_fn()

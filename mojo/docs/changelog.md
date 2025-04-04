@@ -28,6 +28,11 @@ what we publish.
   attach other kinds of attributes, and this helps guard against typos and mojo
   code getting outdated when the dialect changes.
 
+- `def` functions now require type annotations on arguments, and treat a missing
+  return type as returning `None`. Previously these defaulted to the `object`
+  type which led to a variety of problems.  Support for `object` is being
+  removed until we have time to investigate a proper replacement.
+
 ### Standard library changes
 
 - `Pointer` now has `get_immutable()` to return a new `Pointer`

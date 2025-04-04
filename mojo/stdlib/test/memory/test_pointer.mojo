@@ -48,7 +48,7 @@ def test_pointer_to():
 
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
-def test_get_immutable():
+def test_get_immutable() -> Int:
     fn foo(x: Pointer[Int], y: Pointer[Int]) -> Int:
         return x[]
 

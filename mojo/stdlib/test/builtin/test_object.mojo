@@ -179,13 +179,13 @@ def test_object_bitwise():
     assert_true(15 ^ object(7) == 8)
 
 
-def test_function(lhs, rhs) -> object:
+def test_function(lhs: object, rhs: object) -> object:
     return lhs + rhs
 
 
 # These are all marked read-only because 'object' doesn't support function
 # types with owned arguments.
-def test_function_raises(a) -> object:
+def test_function_raises(a: object) -> object:
     raise Error("Error from function type")
 
 
@@ -204,16 +204,16 @@ def test_non_object_getattr():
         a.foo(2)
 
 
-def matrix_getitem(self, i) -> object:
+def matrix_getitem(self: object, i: object) -> object:
     return self.value[i]
 
 
-def matrix_setitem(self, i, value) -> object:
+def matrix_setitem(self: object, i: object, value: object) -> object:
     self.value[i] = value
     return None
 
 
-def matrix_append(self, value) -> object:
+def matrix_append(self: object, value: object) -> object:
     var impl = self.value
     impl.append(value)
     return None
@@ -231,7 +231,7 @@ def matrix_init(rows: Int, cols: Int) -> object:
     )
 
 
-def matmul_untyped(C, A, B):
+def matmul_untyped(C: object, A: object, B: object):
     for m in range(C.rows):
         for n in range(C.cols):
             for k in range(A.rows):
