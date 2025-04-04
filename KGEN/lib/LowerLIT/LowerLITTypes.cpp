@@ -315,7 +315,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
             map_range(ref.getParamValues(), [&](TypedAttr value) {
               return replacer.replaceParameter(value);
             }));
-        auto concreteSymRef = TypeConstantRefAttr::get(
+        auto concreteSymRef = TypeGeneratorRefAttr::get(
             decl.symRef, loweredParamValues,
             replacer.replace(
                 StructMetaType::get(LIT::StructType::get(

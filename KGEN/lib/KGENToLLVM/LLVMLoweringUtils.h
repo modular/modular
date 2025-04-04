@@ -308,7 +308,7 @@ ErrorOr<Value> convertParameterToLLVM(
 
 /// A specialized debug info type converter for converting from POP types to
 /// LLVM.
-/// An optional SymbolTable can be provided to lower TypeConstantRefAttrs.
+/// An optional SymbolTable can be provided to lower TypeInstanceRefAttrs.
 class DebugInfoTypeConverter : public DebugInfo::DebugInfoTypeConverter {
 public:
   DebugInfoTypeConverter(POPToLLVMTypeConverter &tc, TargetInfoAttr targetInfo,

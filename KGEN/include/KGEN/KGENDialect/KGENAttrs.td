@@ -492,17 +492,19 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
 }
 
 //===----------------------------------------------------------------------===//
-// TypeConstantRefAttr
+// TypeGeneratorRefAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_TypeConstantRefAttr : KGEN_ExprAttr<"TypeConstantRef", "typeref", [
+def KGEN_TypeGeneratorRefAttr : KGEN_ExprAttr<"TypeGeneratorRef", "genref", [
     EvaluatableAttrInterface,
     DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
-  let summary = "type constant reference";
+  let summary = "type generator reference";
   let description = [{
-    This is a symbolic reference to a type-value. Its type is the metatype of
-    the type-value. If the type-value is parametric, additional parameter values
-    may be bound.
+    This is a symbolic reference to a type-value generator. Its type is the
+    metatype of the type-value. If the type-value is parametric, additional
+    parameter values may be bound.
+
+    TODO: Merge SymbolConstantAttr into this.
   }];
 
   let parameters = (ins "SymbolRefAttr":$symbol,
@@ -530,7 +532,7 @@ def KGEN_TypeConstantRefAttr : KGEN_ExprAttr<"TypeConstantRef", "typeref", [
 // TypeInstanceRefAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_TypeInstanceRefAttr : KGEN_ExprAttr<"TypeInstanceRef", "typeinstref"> {
+def KGEN_TypeInstanceRefAttr : KGEN_ExprAttr<"TypeInstanceRef", "instref"> {
   let summary = "type instance reference";
   let description = [{
     This is a symbolic reference to a concrete type-value instance. Its type
