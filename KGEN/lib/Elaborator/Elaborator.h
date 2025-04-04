@@ -247,7 +247,7 @@ public:
   /// its elaboration will have been scheduled).
   ErrorTreeOr<TypeInstanceRefAttr>
   getConcreteStructTypeReference(ImplNode *parent, Location loc,
-                                 TypeConstantRefAttr typeref);
+                                 TypeGeneratorRefAttr genref);
 
   /// Add an owned function operation that should be appended to the moydule at
   /// the end of elaboration. This is where generated functions during

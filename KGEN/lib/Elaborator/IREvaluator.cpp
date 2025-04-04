@@ -113,10 +113,10 @@ IREvaluator::evaluateExpression(EvaluatableAttrInterface attr) {
   if (finder.escapingReference)
     return cast<TypedAttr>(attr);
 
-  if (auto typeref = dyn_cast<TypeConstantRefAttr>(attr)) {
+  if (auto genref = dyn_cast<TypeGeneratorRefAttr>(attr)) {
     // Attempt to concretize the function first.
     ErrorTreeOr<TypeInstanceRefAttr> symOr =
-        elaborator->getConcreteStructTypeReference(parent, *errorLoc, typeref);
+        elaborator->getConcreteStructTypeReference(parent, *errorLoc, genref);
     if (symOr.isError()) {
       emitError(symOr.takeError());
       return failure();

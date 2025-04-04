@@ -500,17 +500,17 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
 
 ErrorTreeOr<TypeInstanceRefAttr>
 Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
-                                           TypeConstantRefAttr typeref) {
-  StringAttr name = cast<FlatSymbolRefAttr>(typeref.getSymbol()).getAttr();
+                                           TypeGeneratorRefAttr genref) {
+  StringAttr name = cast<FlatSymbolRefAttr>(genref.getSymbol()).getAttr();
   auto gen = oldSymTab.lookup<GeneratorOpInterface>(name);
   assert(gen && "expected a valid generator reference");
   // If this doesn't reference anything in the existing module, then it must
   // already refer to a concrete struct type in the new module.
   // if (!gen)
-  //   return typeref;
+  //   return genref;
 
   auto vals =
-      ParameterExprArrayAttr::get(loc.getContext(), typeref.getParamValues());
+      ParameterExprArrayAttr::get(loc.getContext(), genref.getParamValues());
   ParamNode *calleeNode =
       g.getOrCreate(runtime, vals, gen, parent->parent->depth + 1);
 
@@ -531,7 +531,7 @@ Elaborator::getConcreteStructTypeReference(ImplNode *parent, Location loc,
   }
   return TypeInstanceRefAttr::get(
       SymbolRefAttr::get(loc->getContext(), calleeNode->getMangledName()),
-      typeref.getType());
+      genref.getType());
 }
 
 StringAttr Elaborator::getExpectedMangledName(GeneratorOp func,

@@ -163,7 +163,7 @@ def BindParamsAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
-def TypeConstantRefAttr : DialectAttribute<(attr
+def TypeGeneratorRefAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
   Type:$type
@@ -272,7 +272,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     VTableEntryAttr,
     WrappedTypeConstantAttr,
     BindParamsAttr,
-    TypeConstantRefAttr,
+    TypeGeneratorRefAttr,
     TypeInstanceRefAttr,
     DTypeConstantAttr,
     SymbolConstantAttr,

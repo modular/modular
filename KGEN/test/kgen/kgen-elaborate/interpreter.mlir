@@ -725,7 +725,7 @@ kgen.struct.generator @Dummy = struct_inst<"Dummy">
 // CHECK-NEXT: kgen.return %index1 : index
 kgen.generator @root() -> index {
     kgen.param.declare X : !kgen.variadic<type> = <#kgen.variadic<[
-        typevalue<#kgen.typeref<@"Dummy">>,
+        typevalue<#kgen.genref<@"Dummy">>,
         struct<(index, index)>,
         {"impl": <struct<(index, index)>>() -> !pop.array<apply(:(!kgen.pointer<struct<(index, index)>>) -> index
           @second,

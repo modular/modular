@@ -398,19 +398,18 @@ BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
-// TypeConstantRefAttr
+// TypeGeneratorRefAttr
 //===----------------------------------------------------------------------===//
 
 /// Generator references are not constant. Must be evaluated into an instance
 /// reference (during elaboration).
-bool TypeConstantRefAttr::isConstant() const { return false; }
+bool TypeGeneratorRefAttr::isConstant() const { return false; }
 
-LogicalResult
-TypeConstantRefAttr::verifySymbolUses(Operation *module,
-                                      mlir::LockedSymbolTableCollection &symtab,
-                                      Location loc) const {
+LogicalResult TypeGeneratorRefAttr::verifySymbolUses(
+    Operation *module, mlir::LockedSymbolTableCollection &symtab,
+    Location loc) const {
   VerboseCompilerTimeTraceScope traceScope(
-      "TypeConstantRefAttr::verifySymbolUses");
+      "TypeGeneratorRefAttr::verifySymbolUses");
 
   // The leaf symbol is expected to only refer to a struct generator now.
   SymbolRefAttr symbol = getSymbol();

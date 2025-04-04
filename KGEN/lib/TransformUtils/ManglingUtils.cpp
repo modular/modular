@@ -36,14 +36,14 @@ void KGEN::prettyPrintParameter(TypedAttr value, raw_ostream &os) {
     return;
   }
 
-  if (auto typeref = dyn_cast<TypeConstantRefAttr>(value)) {
+  if (auto genref = dyn_cast<TypeGeneratorRefAttr>(value)) {
     // Print type symbol references with its name and its parameters
     // recursively.
-    os << typeref.getSymbol().getLeafReference().strref();
-    if (!typeref.getParamValues().empty()) {
+    os << genref.getSymbol().getLeafReference().strref();
+    if (!genref.getParamValues().empty()) {
       os << '[';
       llvm::interleave(
-          typeref.getParamValues(), os,
+          genref.getParamValues(), os,
           [&](TypedAttr paramValue) { prettyPrintParameter(paramValue, os); },
           ",");
       os << ']';
