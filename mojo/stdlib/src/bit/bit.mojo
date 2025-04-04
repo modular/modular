@@ -21,6 +21,7 @@ from bit import count_leading_zeros
 
 from sys import llvm_intrinsic, sizeof
 from sys.info import bitwidthof
+from utils._select import _select_register_value as select
 
 # ===-----------------------------------------------------------------------===#
 # count_leading_zeros
@@ -385,12 +386,8 @@ fn next_power_of_two(val: Int) -> Int:
     Notes:
         This operation is called `bit_ceil()` in C++.
     """
-    var v = Scalar[DType.index](val)
-    return Int(
-        (v <= 1)
-        .select(1, 1 << (bitwidthof[Int]() - count_leading_zeros(v - 1)))
-        .__index__()
-    )
+    alias w = bitwidthof[Int]()
+    return Int(select(val <= 1, 1, 1 << (w - count_leading_zeros(val - 1))))
 
 
 @always_inline
@@ -408,12 +405,8 @@ fn next_power_of_two(val: UInt) -> UInt:
     Notes:
         This operation is called `bit_ceil()` in C++.
     """
-    var v = Scalar[DType.index](val)
-    return UInt(
-        (v == 0)
-        .select(1, 1 << (bitwidthof[Int]() - count_leading_zeros(v - 1)))
-        .__index__()
-    )
+    alias w = bitwidthof[Int]()
+    return UInt(select(val == 0, 1, 1 << (w - count_leading_zeros(val - 1))))
 
 
 @always_inline
