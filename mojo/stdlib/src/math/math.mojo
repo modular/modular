@@ -34,7 +34,7 @@ from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 from sys.info import _current_arch
 
-from bit import count_trailing_zeros, count_leading_zeros, next_power_of_two
+from bit import count_trailing_zeros, count_leading_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
 from memory import Span, UnsafePointer

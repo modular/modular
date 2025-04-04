@@ -386,10 +386,7 @@ fn next_power_of_two(val: Int) -> Int:
     if val <= 1:
         return 1
 
-    if val.is_power_of_two():
-        return val
-
-    return 1 << bit_width(val - 1)
+    return 1 << (bitwidthof[Int]() - count_leading_zeros(val - 1))
 
 
 @always_inline
