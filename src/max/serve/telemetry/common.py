@@ -214,7 +214,7 @@ def configure_metrics(settings: Settings):
     if settings.disable_telemetry:
         logger.info("Metrics disabled.")
     else:
-        logger.info("Metrics intialized.")
+        logger.info("Metrics initialized.")
 
 
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK
