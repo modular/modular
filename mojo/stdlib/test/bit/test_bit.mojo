@@ -314,6 +314,7 @@ def test_bit_width_simd():
 
 
 def test_next_power_of_two():
+    # test for Int
     assert_equal(next_power_of_two(Int(-(2**59))), 1)
     assert_equal(next_power_of_two(Int(-2)), 1)
     assert_equal(next_power_of_two(Int(-1)), 1)
@@ -322,7 +323,7 @@ def test_next_power_of_two():
     assert_equal(next_power_of_two(Int(2)), 2)
     assert_equal(next_power_of_two(Int(4)), 4)
     assert_equal(next_power_of_two(Int(5)), 8)
-    assert_equal(next_power_of_two(2**59 - 3), 2**59)
+    assert_equal(next_power_of_two(Int(2**59 - 3)), 2**59)
 
     # test for UInt
     assert_equal(next_power_of_two(UInt(0)), 1)
