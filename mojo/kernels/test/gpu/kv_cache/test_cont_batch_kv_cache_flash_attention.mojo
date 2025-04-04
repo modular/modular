@@ -15,7 +15,7 @@ from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import NullMask
+from nn.mha_mask import MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
@@ -267,20 +267,18 @@ def execute_flash_attention[
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        mask_device.tensor,
-        NullMask(),
+        MaterializedMask(mask_device.tensor, start_pos=cache_lengths_device_nd),
         IdentityScoreMod(),
         valid_length_device.tensor,
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
 
-    mha_gpu_naive[use_mask_tensor=True](
+    mha_gpu_naive(
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        mask_device.tensor,
-        NullMask(),
+        MaterializedMask(mask_device.tensor, start_pos=cache_lengths_device_nd),
         ref_output_device.tensor,
         valid_length_device.tensor,
         scale_host.tensor.data[0],

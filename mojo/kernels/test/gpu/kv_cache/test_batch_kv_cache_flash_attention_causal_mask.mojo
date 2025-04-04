@@ -15,7 +15,7 @@ from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from memory import UnsafePointer
 from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, NullMask
+from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 from sys import has_nvidia_gpu_accelerator
@@ -264,12 +264,11 @@ def execute_flash_attention[
         max_cache_len_in_batch,
     )
 
-    flash_attention[add_attn_mask=False](
+    flash_attention(
         test_output_device.tensor,
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        mask_device.tensor,
         CausalMask(),
         IdentityScoreMod(),
         valid_length_device.tensor,
@@ -278,13 +277,12 @@ def execute_flash_attention[
         ctx,
     )
 
-    flash_attention[add_attn_mask=True](
+    flash_attention(
         ref_output_device.tensor,
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        mask_device.tensor,
-        NullMask(),
+        MaterializedMask(mask_device.tensor, start_pos=cache_lengths),
         IdentityScoreMod(),
         valid_length_device.tensor,
         # TODO take scale from argument GEX-750

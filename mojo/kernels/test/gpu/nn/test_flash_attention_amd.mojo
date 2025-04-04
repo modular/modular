@@ -23,7 +23,7 @@ from nn.mha import (
     flash_attention,
     mha_gpu_naive,
 )
-from nn.mha_mask import NullMask
+from nn.mha_mask import MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
@@ -210,26 +210,24 @@ fn test[
     fn kernel_launch(ctx: DeviceContext) raises:
         @parameter
         if mask_rank == 3:
-            flash_attention[add_attn_mask=False](
+            flash_attention(
                 output_device,
                 q_device,
                 k_device,
                 v_device,
-                mask3d,
-                NullMask(),
+                MaterializedMask(mask3d),
                 IdentityScoreMod(),
                 scale,
                 ctx,
                 num_partitions,
             )
         else:
-            flash_attention[add_attn_mask=False](
+            flash_attention(
                 output_device,
                 q_device,
                 k_device,
                 v_device,
-                mask4d,
-                NullMask(),
+                MaterializedMask(mask4d),
                 IdentityScoreMod(),
                 scale,
                 ctx,
