@@ -19,6 +19,7 @@ from bit import bit_width, count_leading_zeros
 from collections import Dict
 from random import random_ui64, seed
 from sys import bitwidthof
+from sys.intrinsics import unlikely, likely
 
 
 # ===-----------------------------------------------------------------------===#
@@ -30,7 +31,7 @@ from sys import bitwidthof
 # ===-----------------------------------------------------------------------===#
 
 
-fn next_power_of_two_v1(val: Int) -> Int:
+fn next_power_of_two_int_v1(val: Int) -> Int:
     if val <= 1:
         return 1
 
@@ -40,44 +41,91 @@ fn next_power_of_two_v1(val: Int) -> Int:
     return 1 << bit_width(val - 1)
 
 
-fn next_power_of_two_v2(val: Int) -> Int:
+fn next_power_of_two_int_v2(val: Int) -> Int:
     if val <= 1:
         return 1
 
     return 1 << (bitwidthof[Int]() - count_leading_zeros(val - 1))
 
 
-fn _build_list() -> List[Int]:
+fn next_power_of_two_int_v3(val: Int) -> Int:
+    var v = Scalar[DType.index](val)
+    return Int(
+        (v <= 1)
+        .select(1, 1 << (bitwidthof[Int]() - count_leading_zeros(v - 1)))
+        .__index__()
+    )
+
+
+fn next_power_of_two_int_v4(val: Int) -> Int:
+    return 1 << (
+        (bitwidthof[Int]() - count_leading_zeros(val - 1))
+        & -Int(likely(val > 1))
+    )
+
+
+fn next_power_of_two_uint_v1(val: UInt) -> UInt:
+    if unlikely(val == 0):
+        return 1
+
+    return 1 << (bitwidthof[UInt]() - count_leading_zeros(val - 1))
+
+
+fn next_power_of_two_uint_v2(val: UInt) -> UInt:
+    var v = Scalar[DType.index](val)
+    return UInt(
+        (v == 0)
+        .select(1, 1 << (bitwidthof[UInt]() - count_leading_zeros(v - 1)))
+        .__index__()
+    )
+
+
+fn next_power_of_two_uint_v3(val: UInt) -> UInt:
+    return 1 << (
+        bitwidthof[UInt]() - count_leading_zeros(val - UInt(likely(val > 0)))
+    )
+
+
+fn next_power_of_two_uint_v4(val: UInt) -> UInt:
+    return 1 << (
+        bitwidthof[UInt]()
+        - count_leading_zeros((val | UInt(unlikely(val == 0))) - 1)
+    )
+
+
+fn _build_list[start: Int, stop: Int]() -> List[Int]:
     var values = List[Int](capacity=10_000)
     for _ in range(10_000):
-        values.append(Int(random_ui64(0, 2 ^ 64 - 1)))
+        values.append(Int(random_ui64(start, stop)))
     return values^
 
 
-var values = _build_list()
+alias width = bitwidthof[Int]()
+var int_values = _build_list[-(2 ** (width - 1)), 2 ** (width - 1) - 1]()
+var uint_values = _build_list[0, 2**width - 1]()
 
 
 @parameter
-fn bench_next_power_of_two_v1(mut b: Bencher) raises:
+fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
         for _ in range(10_000):
-            for i in range(len(values)):
-                var result = next_power_of_two_v1(values.unsafe_get(i))
+            for i in range(len(uint_values)):
+                var result = func(uint_values.unsafe_get(i))
                 keep(result)
 
     b.iter[call_fn]()
 
 
 @parameter
-fn bench_next_power_of_two_v2(mut b: Bencher) raises:
+fn bench_next_power_of_two_uint[func: fn (UInt) -> UInt](mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
         for _ in range(10_000):
-            for i in range(len(values)):
-                var result = next_power_of_two_v2(values.unsafe_get(i))
+            for i in range(len(uint_values)):
+                var result = func(uint_values.unsafe_get(i))
                 keep(result)
 
     b.iter[call_fn]()
@@ -89,11 +137,29 @@ fn bench_next_power_of_two_v2(mut b: Bencher) raises:
 def main():
     seed()
     var m = Bench(BenchConfig(num_repetitions=10))
-    m.bench_function[bench_next_power_of_two_v1](
-        BenchId("bench_next_power_of_two_v1")
+    m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v1]](
+        BenchId("bench_next_power_of_two_int_v1")
     )
-    m.bench_function[bench_next_power_of_two_v2](
-        BenchId("bench_next_power_of_two_v2")
+    m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v2]](
+        BenchId("bench_next_power_of_two_int_v2")
+    )
+    m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v3]](
+        BenchId("bench_next_power_of_two_int_v3")
+    )
+    m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v4]](
+        BenchId("bench_next_power_of_two_int_v4")
+    )
+    m.bench_function[bench_next_power_of_two_uint[next_power_of_two_uint_v1]](
+        BenchId("bench_next_power_of_two_uint_v1")
+    )
+    m.bench_function[bench_next_power_of_two_uint[next_power_of_two_uint_v2]](
+        BenchId("bench_next_power_of_two_uint_v2")
+    )
+    m.bench_function[bench_next_power_of_two_uint[next_power_of_two_uint_v3]](
+        BenchId("bench_next_power_of_two_uint_v3")
+    )
+    m.bench_function[bench_next_power_of_two_uint[next_power_of_two_uint_v4]](
+        BenchId("bench_next_power_of_two_uint_v4")
     )
 
     results = Dict[String, (Float64, Int)]()

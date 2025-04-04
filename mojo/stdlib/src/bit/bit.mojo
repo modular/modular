@@ -375,18 +375,44 @@ fn next_power_of_two(val: Int) -> Int:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value. Any integral value less than or equal to 1 will be ceiled to 1.
 
-    This operation is called `bit_ceil()` in C++.
+    Args:
+        val: The input value.
+
+    Returns:
+        The smallest power of 2 that is greater than or equal to the input
+        value.
+
+    Notes:
+        This operation is called `bit_ceil()` in C++.
+    """
+    var v = Scalar[DType.index](val)
+    return Int(
+        (v <= 1)
+        .select(1, 1 << (bitwidthof[Int]() - count_leading_zeros(v - 1)))
+        .__index__()
+    )
+
+
+fn next_power_of_two(val: UInt) -> UInt:
+    """Computes the smallest power of 2 that is greater than or equal to the
+    input value. Any integral value less than or equal to 1 will be ceiled to 1.
 
     Args:
         val: The input value.
 
     Returns:
-        The smallest power of 2 that is greater than or equal to the input value.
-    """
-    if val <= 1:
-        return 1
+        The smallest power of 2 that is greater than or equal to the input
+        value.
 
-    return 1 << (bitwidthof[Int]() - count_leading_zeros(val - 1))
+    Notes:
+        This operation is called `bit_ceil()` in C++.
+    """
+    var v = Scalar[DType.index](val)
+    return UInt(
+        (v == 0)
+        .select(1, 1 << (bitwidthof[Int]() - count_leading_zeros(v - 1)))
+        .__index__()
+    )
 
 
 @always_inline
