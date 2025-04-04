@@ -71,7 +71,7 @@ fn bench_next_power_of_two_v1(mut b: Bencher) raises:
 
 
 @parameter
-fn bench_next_wer_of_two_v2(mut b: Bencher) raises:
+fn bench_next_power_of_two_v2(mut b: Bencher) raises:
     @always_inline
     @parameter
     fn call_fn() raises:
