@@ -1034,38 +1034,6 @@ fn get_kernel_simd_width[type: DType, target: StaticString]() -> Int:
     ]()
 
 
-# This version of the function supports CPU only. For GPU, use the one with the
-# DeviceContextPtr.
-@doc_private
-@__mogg_intrinsic_attr("mogg.for_each")
-@no_inline
-fn foreach[
-    type: DType,
-    rank: Int, //,
-    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
-    *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[type, target](),
-    _synchronous: Bool = False,
-    _trace_name: StaticString = "mogg.for_each",
-](tensor: ManagedTensorSlice[mut=True, type=type, rank=rank]) raises:
-    @parameter
-    @always_inline
-    fn elementwise_fn_wrapper[
-        width: Int, rank: Int
-    ](index: IndexList[rank]) capturing:
-        var val = func[width](rebind[IndexList[tensor.rank]](index))
-        tensor._fused_store(index, val)
-
-    algorithm.functional.elementwise[
-        elementwise_fn_wrapper,
-        simd_width,
-        use_blocking_impl=_synchronous,
-        target=target,
-        _trace_description=_trace_name,
-    ](tensor.shape())
-
-
 @__mogg_intrinsic_attr("mogg.for_each")
 @no_inline
 fn foreach[
@@ -1079,7 +1047,7 @@ fn foreach[
     _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[mut=True, type=type, rank=rank],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
 
@@ -1096,6 +1064,10 @@ fn foreach[
         tensor: The output tensor slice which receives the return values from `func`.
         ctx: The call context (forward this from the custom operation).
     """
+    debug_assert(
+        ctx.handle_ or is_cpu[target](),
+        "Expecting non-null device ctx for GPU kernels",
+    )
 
     @parameter
     @always_inline
