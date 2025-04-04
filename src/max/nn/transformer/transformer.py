@@ -180,7 +180,7 @@ class Transformer(Module):
             )
             offsets = ops.range(
                 ops.constant(0, DType.int64),
-                last_indices.shape[0],
+                last_indices.shape[0] + self.return_n_logits,
                 ops.constant(self.return_n_logits, DType.int64),
                 out_dim="logit_offsets",
             )
