@@ -341,7 +341,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
   DenseMap<TargetInfoAttr, DenseMap<uint64_t, OffloadCompilationResult>> result;
 
+  // Compiling offload for different targets.
+  // This loop cannot be parallelized since different targets may need
+  // different llvm options that are global states.
   for (auto [target, offloadInfo] : targetOffloadInfos) {
+
     DenseMap<uint64_t, OffloadCompilationResult> &targetResult = result[target];
 
     IRMapping mapping;
@@ -438,6 +442,18 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       }
     }
 
+    // Handle the emission options.
+    // These are the global llvm options needed to compile this target.
+    // These options can't be kernel specific since they are global llvm states,
+    // they are shared for parallel kernel compilation.
+    // However, offloads for different targets won't have to share since
+    // we compile them in order and we can reset these options for each targets.
+    ErrorOrSuccess parseResult =
+        parseEmissionOptions(offloadInfo.emissionOptions);
+    if (parseResult.isError()) {
+      return parseResult.takeError();
+    }
+
     ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>> compiledKernelsOr =
         compiler->emitGPUKernels(std::move(module), kernelEmissionKinds);
 
@@ -472,6 +488,13 @@ static ElaboratorCompileOffloadRetType compileOffloads(
                                               b.getIndexAttr(numCaptures),
                                               populateFnRef,
                                               std::move(contents)}});
+    }
+
+    // Reset the global llvm options once compiling this target is done.
+    ErrorOrSuccess resetResult =
+        resetEmissionOptions(offloadInfo.emissionOptions);
+    if (resetResult.isError()) {
+      return resetResult.takeError();
     }
   }
 
@@ -710,6 +733,38 @@ ErrorOrSuccess KGENCompiler::runElaborationPipeline(
   return success();
 }
 
+static ErrorOrSuccess
+setEmissionOptions(llvm::StringMap<llvm::cl::Option *> &options,
+                   StringRef emissionOpt, bool reset) {
+  if (!emissionOpt.contains("=")) {
+    return Error("emission option must be of the form `option=value`");
+  }
+  auto [key, value] = emissionOpt.split("=");
+  if (value.equals_insensitive("true") || value.equals_insensitive("false")) {
+    auto *boolVal = static_cast<llvm::cl::opt<bool> *>(options[key]);
+    if (!boolVal)
+      return Error("emission option \"" + Twine(key) + "\" is not found");
+    if (reset) {
+      boolVal->reset();
+    } else {
+      boolVal->addOccurrence(0, key,
+                             std::to_string(value.equals_insensitive("true")));
+    }
+  } else if (llvm::all_of(value, llvm::isDigit)) {
+    auto *intVal = static_cast<llvm::cl::opt<int> *>(options[key]);
+    if (!intVal)
+      return Error("emission option \"" + Twine(key) + "\" is not found");
+    if (reset)
+      intVal->reset();
+    else
+      intVal->addOccurrence(0, key, value);
+  } else {
+    return Error("invalid emission option (only boolean and integer values "
+                 "are currently supported)");
+  }
+  return success();
+}
+
 ErrorOrSuccess KGEN::parseEmissionOptions(EmissionOptions emissionOptions) {
   // Handle the emission options.
   // Parse the emission options from a comma separated list of values.
@@ -717,20 +772,39 @@ ErrorOrSuccess KGEN::parseEmissionOptions(EmissionOptions emissionOptions) {
       llvm::cl::getRegisteredOptions();
 
   for (StringRef elem : emissionOptions) {
-    if (!elem.contains("=")) {
-      return Error("emission option must be of the form `option=value`");
-    }
-    auto [key, value] = elem.split("=");
-    if (value.equals_insensitive("true") || value.equals_insensitive("false")) {
-      auto *boolVal = static_cast<llvm::cl::opt<bool> *>(options[key]);
-      boolVal->setValue(value.equals_insensitive("true"));
-    } else if (llvm::all_of(value, llvm::isDigit)) {
-      auto *intVal = static_cast<llvm::cl::opt<int> *>(options[key]);
-      intVal->setValue(std::atoi(value.data()));
-    } else {
-      return Error("invalid emission option (only boolean and integer values "
-                   "are currently supported)");
-    }
+    ErrorOrSuccess setOr = setEmissionOptions(options, elem, false);
+    if (setOr.isError())
+      return setOr.takeError();
+  }
+  return success();
+}
+
+ErrorOrSuccess
+KGEN::parseEmissionOptions(llvm::SmallSet<StringRef, 4> &emissionOptions) {
+  // Handle the emission options.
+  // Parse the emission options from a comma separated list of values.
+  llvm::StringMap<llvm::cl::Option *> options =
+      llvm::cl::getRegisteredOptions();
+
+  for (StringRef elem : emissionOptions) {
+    ErrorOrSuccess setOr = setEmissionOptions(options, elem, false);
+    if (setOr.isError())
+      return setOr.takeError();
+  }
+  return success();
+}
+
+ErrorOrSuccess
+KGEN::resetEmissionOptions(llvm::SmallSet<StringRef, 4> &emissionOptions) {
+  // Handle the emission options.
+  // Parse the emission options from a comma separated list of values.
+  llvm::StringMap<llvm::cl::Option *> options =
+      llvm::cl::getRegisteredOptions();
+
+  for (StringRef elem : emissionOptions) {
+    ErrorOrSuccess setOr = setEmissionOptions(options, elem, true);
+    if (setOr.isError())
+      return setOr.takeError();
   }
   return success();
 }

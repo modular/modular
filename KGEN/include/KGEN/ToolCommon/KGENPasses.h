@@ -125,6 +125,7 @@ struct OffloadInfo {
   uint64_t numKernels = 0;
   ExportMap exportedSymbols;
   llvm::MapVector<Operation *, SymbolInfo> symbols;
+  llvm::SmallSet<StringRef, 4> emissionOptions;
 };
 
 struct OffloadCompilationResult {
@@ -243,6 +244,11 @@ void registerLowerToLLVMPipeline();
 
 ///
 ErrorOrSuccess parseEmissionOptions(EmissionOptions emissionOptions);
+ErrorOrSuccess
+parseEmissionOptions(llvm::SmallSet<StringRef, 4> &emissionOptions);
+
+ErrorOrSuccess
+resetEmissionOptions(llvm::SmallSet<StringRef, 4> &emissionOptions);
 
 } // namespace KGEN
 } // namespace M

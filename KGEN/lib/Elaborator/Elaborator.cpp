@@ -1672,13 +1672,6 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
   emissionOptionsStr.split(emissionOptions, /*Separator=*/",",
                            /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
-  // Handle the emission options.
-  ErrorOrSuccess parseResult = parseEmissionOptions(emissionOptions);
-  if (parseResult.isError()) {
-    parent->setToError(ErrorTree(op.getLoc(), parseResult.takeError()));
-    return failure();
-  }
-
   // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
   Builder b(ctx);
@@ -1695,6 +1688,9 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
 
   targetOffloadInfos.modify([&](auto &info) {
     OffloadInfo &offloadInfo = info[target];
+
+    for (StringRef emissionOpt : emissionOptions)
+      offloadInfo.emissionOptions.insert(emissionOpt);
 
     auto iter =
         offloadInfo.symbols.insert({func, OffloadInfo::SymbolInfo{}}).first;
