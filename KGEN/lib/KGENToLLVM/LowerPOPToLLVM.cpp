@@ -329,9 +329,10 @@ private:
            llvm::is_contained(allowedGPUs, target.getArch());
   }
 
-  // Return true if target is NVPTX and arch is sm_90 or sm_90a
-  bool isNVPTX_SM90(TargetInfoAttr target) const {
-    return isNVPTX(target, {"sm_90", "sm_90a"});
+  // Return true if target is NVPTX and arch is of hopper architecture or above.
+  bool isNVPTX_HopperAndAbove(TargetInfoAttr target) const {
+    return isNVPTX(
+        target, {"sm_90", "sm_90a", "sm_100", "sm_100a", "sm_120", "sm_120a"});
   }
 
   LLVM::InlineAsmOp createInlineAsm(ConversionPatternRewriter &rewriter,
@@ -438,9 +439,9 @@ private:
   convertF32ToF8OnNVPTX(ConversionPatternRewriter &rewriter, CastOp op,
                         Value value, APFloat::Semantics fromFloatSemantics,
                         APFloat::Semantics toFloatSemantics) const {
-    assert(
-        isNVPTX(getTypeConverter()->getTarget(), {"sm_90", "sm_90a"}) &&
-        "fast lowering of f32 to bf16 only supported on 'sm_90' and 'sm_90a'");
+    assert(isNVPTX_HopperAndAbove(getTypeConverter()->getTarget()) &&
+           "fast lowering of f32 to bf16 only supported on NVIDIA Hopper "
+           "architectures or above");
     Location loc = op.getLoc();
     auto simd = cast<SIMDType>(op.getInput().getType());
     const uint64_t size = *simd.getResolvedSize();
@@ -520,7 +521,7 @@ private:
       // what stdlib does for now. Might be better to use approach similar to
       // NVPTX backend of getting SM version and expecting targeted GPU has at
       // least that version.
-      if (simd && isNVPTX_SM90(target)) {
+      if (simd && isNVPTX_HopperAndAbove(target)) {
         return convertF32ToF8OnNVPTX(rewriter, cast, value, fromFloatSemantics,
                                      toFloatSemantics);
       }
