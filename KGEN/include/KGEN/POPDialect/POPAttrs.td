@@ -565,36 +565,6 @@ def POP_StringConcatAttr : POP_ExprAttr<"StringConcat", "string_concat"> {
 }
 
 //===----------------------------------------------------------------------===//
-// StringReplaceAttr
-//===----------------------------------------------------------------------===//
-
-def POP_StringReplaceAttr : POP_ExprAttr<"StringReplace", "string_replace"> {
-  let summary = "Replace all occurrences of a substring with another string.";
-  let description = [{
-    The `#pop.string_replace` attribute replaces all occurrences of the
-    substring `src` with the `target` substring.
-  }];
-
-  let parameters = (ins "TypedAttr":$str, "TypedAttr":$src, "TypedAttr":$target);
-
-  let assemblyFormat = [{
-    `<` custom<ParamValue>($str, "StringType::get($_ctxt)") `,`
-       custom<ParamValue>($src, "StringType::get($_ctxt)") `,`
-       custom<ParamValue>($target, "StringType::get($_ctxt)") `>`
-  }];
-
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return an StringReplaceAttr.
-    AttrBuilder<(ins "TypedAttr":$str, "TypedAttr":$src, "TypedAttr":$target),
-                 "", "TypedAttr">,
-  ];
-
-  let extraClassDeclaration = [{ Type getType() const; }];
-} 
-
-//===----------------------------------------------------------------------===//
 // StringHashAttr
 //===----------------------------------------------------------------------===//
 

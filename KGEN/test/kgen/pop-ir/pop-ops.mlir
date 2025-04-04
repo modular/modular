@@ -1030,8 +1030,6 @@ kgen.func @string_ops(%a: !kgen.string,
   %1 = pop.string.size %a
   // CHECK: pop.string.concat %arg0, %arg0
   %2 = pop.string.concat %a, %a
-  // CHECK: pop.string.replace %arg0, %arg1, %arg2
-  %3 = pop.string.replace %a, %src, %target
   // CHECK: pop.string.hash %a
   %4 = pop.string.hash %a
   // CHECK: pop.string.base64.encode %a

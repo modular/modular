@@ -2090,20 +2090,6 @@ OpFoldResult StringConcatOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// StringReplaceOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult StringReplaceOp::fold(FoldAdaptor adaptor) {
-  auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr());
-  auto src = dyn_cast_or_null<TypedAttr>(adaptor.getSrc());
-  auto target = dyn_cast_or_null<TypedAttr>(adaptor.getTarget());
-  if (!str || !src || !target)
-    return {};
-
-  return StringReplaceAttr::get(getContext(), str, src, target);
-}
-
-//===----------------------------------------------------------------------===//
 // StringHashOp
 //===----------------------------------------------------------------------===//
 
