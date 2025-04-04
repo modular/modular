@@ -814,7 +814,11 @@ static APInt
 floatLiteralConvertGetBitstring(const IPRational &input,
                                 const llvm::fltSemantics &fltSemantics) {
   unsigned totalLength = APFloat::getSizeInBits(fltSemantics);
-  unsigned bias = APFloat::semanticsMaxExponent(fltSemantics);
+  // For semantics without inf e.g. e4m3fn, the max exponent is bias + 1
+  // since inf (all ones for exponent) is used for values.
+  unsigned bias = APFloat::semanticsHasInf(fltSemantics)
+                      ? APFloat::semanticsMaxExponent(fltSemantics)
+                      : APFloat::semanticsMaxExponent(fltSemantics) - 1;
   unsigned exponentLength =
       llvm::Log2_64(APFloat::semanticsMaxExponent(fltSemantics) -
                     APFloat::semanticsMinExponent(fltSemantics) + 3);
