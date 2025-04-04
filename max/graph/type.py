@@ -186,6 +186,9 @@ class Dim:
         return lhs + -self
 
     def __floordiv__(self, rhs: DimLike) -> Dim:
+        if isinstance(rhs, (int, StaticDim)) and int(rhs) == 0:
+            raise ZeroDivisionError
+
         rhs = Dim(rhs)
         return Dim._algebraic_op(AlgebraicDim._Opcode.Div, self, rhs)
 

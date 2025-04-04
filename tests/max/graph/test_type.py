@@ -8,6 +8,7 @@
 import re
 
 import pytest
+from conftest import static_dims
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from max import mlir
@@ -65,6 +66,12 @@ def test_static_dim__compares_to_dim_value(i: int):
 def test_static_dim_too_big(dim: int):
     with pytest.raises(ValueError):
         StaticDim(dim)
+
+
+@given(numerator=static_dims())
+def test_static_dim__division_by_zero(numerator: StaticDim):
+    with pytest.raises(ZeroDivisionError):
+        _ = numerator // 0
 
 
 def test_algebraic_dim_simplify_and_comparison(mlir_context):
