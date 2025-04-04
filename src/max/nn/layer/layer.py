@@ -28,7 +28,8 @@ from typing import (
 )
 
 import numpy as np
-from max.driver import DLPackArray, Tensor
+from max._core_types.driver import DLPackArray
+from max.driver import Tensor
 from max.dtype import DType
 from max.graph import ShapeLike, Weight
 from max.graph.quantization import QuantizationEncoding
