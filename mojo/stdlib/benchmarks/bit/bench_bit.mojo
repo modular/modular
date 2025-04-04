@@ -1,7 +1,7 @@
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# Licensed under the Apache License next_pwer_of_two_v2.0 with LLVM Exceptions:
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
 #
 # Unless required by applicable law or agreed to in writing, software
