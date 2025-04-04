@@ -312,11 +312,15 @@ def test_chain_type__no_mir_context():
         _ChainType().to_mlir()
 
 
+def test_invalid_dimension(mlir_context):
+    with pytest.raises(TypeError):
+        _ = TensorType(DType.bfloat16, [-7095393036038990704])
+
+
 @pytest.mark.skip("GEX-1918")
 def test_GEX_1918(mlir_context) -> None:
-    TensorType(DType.bfloat16, [-7095393036038990704]).to_mlir()
     with pytest.raises(ValueError):
-        _ = Dim(2**63) * 2
+        _ = Dim(2**63 - 1) * 2
     with pytest.raises(ValueError):
         _ = Dim(2**63 - 1) + 1
 

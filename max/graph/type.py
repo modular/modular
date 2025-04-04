@@ -521,7 +521,7 @@ class Shape(list[Dim]):
     @property
     def static_dims(self) -> list[int]:
         """Returns all static dims in the shape as a list of integers."""
-        return [StaticDim(d).dim for d in self if isinstance(d, StaticDim)]
+        return [d.dim for d in self if isinstance(d, StaticDim)]
 
 
 @dataclass(frozen=True)
@@ -706,16 +706,17 @@ class TensorType(Type):
         self.shape = Shape(shape)
         self.device = device
 
+        if any(dim < 0 for dim in self.shape.static_dims):
+            raise TypeError(
+                f"Static tensor dimensions must be non-negative; got {shape=}"
+            )
+
     def to_mlir(self) -> mlir.Type:
         """Converts to an ``mlir.Type`` instance.
 
         Returns:
             An ``mlir.Type`` in the specified Context.
         """
-        # TODO(MAXPLAT-149): This should fall out of the TensorType constructor
-        if any(isinstance(dim, StaticDim) and dim < 0 for dim in self.shape):
-            raise TypeError("Can't convert negative dim to tensor type.")
-
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
         if self.device:
