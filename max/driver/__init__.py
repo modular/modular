@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max._core.driver import __version__  # type: ignore
+from max._core_types.driver import DLPackArray
 
 from .driver import (
     CPU,
@@ -17,7 +18,7 @@ from .driver import (
     load_devices,
     scan_available_devices,
 )
-from .tensor import DLPackArray, MemMapTensor, Tensor
+from .tensor import MemMapTensor, Tensor
 
 del driver  # type: ignore
 del tensor  # type: ignore

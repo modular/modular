@@ -23,13 +23,14 @@ import numpy as np
 import numpy.typing as npt
 from max._core.engine import FrameworkFormat as _FrameworkFormat
 from max._core.engine import InferenceSession as _InferenceSession
-from max._core.engine import Model as _Model
+from max._core.engine import Model as Model
 from max._core.engine import MojoValue, PrintStyle
 from max._core.engine import TensorData as _TensorData
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.engine import TorchInputSpec as TorchInputSpec
 from max._core.profiler import set_gpu_profiling_state
-from max.driver import CPU, Device, DLPackArray, Tensor
+from max._core_types.driver import DLPackArray
+from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.profiler import Tracer, traced
 
@@ -133,292 +134,108 @@ def _map_execute_kwarg(
     return _wrap_tensor(input_value)
 
 
-class Model:
-    """A loaded model that you can execute.
+@traced
+def _Model_execute(
+    self: Model,
+    *args: InputType,
+    copy_inputs_to_device: bool = True,
+) -> list[Tensor | MojoValue]:
+    tracer = Tracer()
+    input_impls: list[Union[Tensor, MojoValue]] = []
 
-    Do not instantiate this class directly. Instead, create it with
-    :obj:`InferenceSession`.
-    """
+    input_idx = 0
+    for idx, arg in enumerate(args):
+        _raise_if_not_contiguous(arg)
 
-    _impl: _Model
+        # Validate that input is one of supported types and convert if
+        # necessary.
+        if isinstance(arg, MojoValue):
+            input_impls.append(arg)
+            continue
 
-    @classmethod
-    def _init(cls, _core_model):
-        model = cls()
-        model._impl = _core_model
-        return model
-
-    def _export_mef(self, path):
-        """Exports the compiled model as a mef to a file.
-
-        Args:
-          path: The filename where the mef is exported to.
-        """
-        self._impl._export_mef(path)  # type: ignore
-
-    @traced
-    def execute(
-        self,
-        *args: InputType,
-        copy_inputs_to_device: bool = True,
-    ) -> list[Tensor | MojoValue]:
-        """Executes the model with the provided input and returns the outputs.
-
-        For example, if the model has one input tensor:
-
-        .. code-block:: python
-
-            input_tensor = np.random.rand(1, 224, 224, 3)
-            model.execute(input_tensor)
-
-        Args:
-            args:
-              A list of input tensors. We currently support :obj:`np.ndarray`,
-              :obj:`torch.Tensor`, and :obj:`max.driver.Tensor` inputs. All
-              inputs will be copied to the device that the model is resident on
-              prior to executing.
-
-            copy_inputs_to_device:
-              Whether to copy all input tensors to the model's device. Defaults
-              to :obj:`True`. If set to :obj:`False`, input tensors will remain
-              on whatever device they're currently on, which the model must be
-              prepared for.
-
-        Returns:
-            A list of output tensors and Mojo values. The output tensors will be
-            resident on the execution device.
-
-        Raises:
-            RuntimeError: If the given input tensors' shape don't match what
-              the model expects.
-
-            TypeError: If the given input tensors' dtype cannot be cast to what
-              the model expects.
-
-            ValueError: If positional inputs are not one of the supported
-              types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
-              :obj:`max.driver.Tensor`.
-        """
-        tracer = Tracer()
-        input_impls: list[Union[Tensor, MojoValue]] = []
-
-        input_idx = 0
-        for idx, arg in enumerate(args):
-            _raise_if_not_contiguous(arg)
-
-            # Validate that input is one of supported types and convert if
-            # necessary.
-            if isinstance(arg, MojoValue):
-                input_impls.append(arg)
-                continue
-
-            if isinstance(arg, Tensor):
-                tensor = arg
-            elif isinstance(arg, DLPackArray):
-                tensor = Tensor.from_dlpack(arg)
-            elif isinstance(arg, ScalarType):
-                spec = self.input_metadata[idx]
-                tensor = Tensor.scalar(arg, spec.dtype, self.devices[0])
-            else:
+        if isinstance(arg, Tensor):
+            tensor = arg
+        elif isinstance(arg, DLPackArray):
+            tensor = Tensor.from_dlpack(arg)
+        elif isinstance(arg, ScalarType):
+            spec = self.input_metadata[idx]
+            tensor = Tensor.scalar(arg, spec.dtype, self.devices[0])
+        else:
+            raise ValueError(
+                "All positional arguments must be of the type"
+                " `max.driver.Tensor`, `MojoValue`, or a tensor type"
+                " implementing the dlpack protocol. We do not"
+                f" currently support inputs of the type {type(arg)}."
+            )
+        if copy_inputs_to_device:
+            tracer.push(f"copy_inputs_to_device_{input_idx}")
+            input_devices = self.input_devices
+            if input_idx >= len(input_devices):
                 raise ValueError(
-                    "All positional arguments must be of the type"
-                    " `max.driver.Tensor`, `MojoValue`, or a tensor type"
-                    " implementing the dlpack protocol. We do not"
-                    f" currently support inputs of the type {type(arg)}."
+                    "Number of inputs does not match expected number ("
+                    f"{len(input_devices)}) for model"
                 )
-            if copy_inputs_to_device:
-                tracer.push(f"copy_inputs_to_device_{input_idx}")
-                input_devices = self.input_devices
-                if input_idx >= len(input_devices):
-                    raise ValueError(
-                        "Number of inputs does not match expected number ("
-                        f"{len(input_devices)}) for model"
-                    )
-                tensor = tensor.to(input_devices[input_idx])
-                input_idx = input_idx + 1
-                tracer.pop()
-            input_impls.append(tensor)
-        results = self._impl.execute_device_tensors(input_impls)
+            tensor = tensor.to(input_devices[input_idx])
+            input_idx = input_idx + 1
+            tracer.pop()
+        input_impls.append(tensor)
+    results = self._execute_device_tensors(input_impls)
 
-        processed_results: list[Tensor | MojoValue] = []
-        for idx, result in enumerate(results):
-            tracer.push(f"process_result_{idx}")
-            # If the output is a MojoValue, we return it directly.
-            if not isinstance(result, Tensor):
-                processed_results.append(result)
-                tracer.pop()
-                continue
+    processed_results: list[Tensor | MojoValue] = []
+    for idx, result in enumerate(results):
+        tracer.push(f"process_result_{idx}")
+        # If the output is a MojoValue, we return it directly.
+        if not isinstance(result, Tensor):
             processed_results.append(result)
             tracer.pop()
-        return processed_results
+            continue
+        processed_results.append(result)
+        tracer.pop()
+    return processed_results
 
-    def __call__(
-        self, *args: InputType, **kwargs: InputType
-    ) -> list[Tensor | MojoValue]:
-        """Executes the model with the provided input and returns the outputs.
 
-        Models can be called with any mixture of positional and named inputs:
+def _Model_call(
+    self: Model, *args: InputType, **kwargs: InputType
+) -> list[Tensor | MojoValue]:
+    bound = self.signature.bind(*args, **kwargs)
+    return self.execute(*bound.arguments.values())
 
-        .. code-block:: python
 
-            model(a, b, d=d, c=c)
+def _Model_execute_legacy(
+    self: Model,
+    **kwargs: Any,
+) -> dict[str, Union[np.ndarray, dict, list, tuple]]:
+    # Wrapping the tensors happens by recording their addresses, which does
+    # not increase reference count, so we need to ensure the garbage
+    # collector does not free them. Since numpy arrays are not hashable, we
+    # do this with a dictionary with pointer keys.
+    keep_referenced: dict[int, Any] = {}
+    dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
+    for input_name, input_value in kwargs.items():
+        kwargs[input_name] = _map_execute_kwarg(
+            input_value, dtype_map[input_name], keep_referenced
+        )
+    return self._execute(**kwargs)
 
-        This function assumes that positional inputs cannot collide with any
-        named inputs that would be present in the same position. If we have a
-        model that takes named inputs `a`, `b`, `c`, and `d` (in that order),
-        the following is invalid.
 
-        .. code-block:: python
+def _Model_repr(self: Model) -> str:
+    return f"Model(inputs={self.input_metadata})"
 
-            model(a, d, b=b, c=c)
 
-        The function will assume that input `d` will map to the same position as
-        input `b`.
+def _Model_signature(self: Model) -> Signature:
+    """Get input signature for model."""
+    parameters = [
+        Parameter(input.name, Parameter.POSITIONAL_OR_KEYWORD)
+        for input in self.input_metadata
+    ]
+    return Signature(parameters=parameters)
 
-        Args:
-            args: A list of input tensors. We currently support the following
-              input types:
 
-              * Any tensors implementing the DLPack protocol, such as
-                :obj:`np.ndarray`, :obj:`torch.Tensor`
-              * Max Driver tensors, i.e. :obj:`max.driver.Tensor`
-              * Scalar inputs, i.e. :obj:`bool`, :obj:`float`, :obj:`int`,
-                :obj:`np.generic`
-              * Mojo value inputs, i.e. :obj:`MojoValue` (internal use)
-
-            kwargs: Named inputs. We can support the same types supported
-              in :obj:`args`.
-
-        Returns:
-            A list of output tensors. The output tensors will be
-            resident on the execution device.
-
-        Raises:
-            RuntimeError: If the given input tensors' shape don't match what
-              the model expects.
-
-            TypeError: If the given input tensors' dtype cannot be cast to
-              what the model expects.
-
-            ValueError: If positional inputs are not one of the supported
-              types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
-              :obj:`max.driver.Tensor`.
-
-            ValueError: If an input name does not correspond to what the model
-              expects.
-
-            ValueError: If any positional and named inputs collide.
-
-            ValueError: If the number of inputs is less than what the model
-              expects.
-        """
-        bound = self.signature.bind(*args, **kwargs)
-        return self.execute(*bound.arguments.values())
-
-    def execute_legacy(
-        self,
-        **kwargs: Any,
-    ) -> dict[str, Union[np.ndarray, dict, list, tuple]]:
-        """Executes the model with a set of named tensors. This API is maintained
-        primarily to support frameworks that require named inputs (i.e. ONNX).
-
-        NOTICE: This API does not support GPU inputs and is slated for
-        deprecation.
-
-        For example, if the model has one input tensor named `input0`:
-
-        .. code-block:: python
-
-            input_tensor = np.random.rand(1, 224, 224, 3)
-            model.execute_legacy(input0=input_tensor)
-
-        Args:
-            kwargs: The input tensors, each specified with the appropriate
-              tensor name as a keyword and its value as an :obj:`np.ndarray`.
-              You can find the tensor names to use as keywords from
-              :obj:`~Model.input_metadata`.
-
-        Returns:
-            A dictionary of output values, each as an :obj:`np.ndarray`,
-            :obj:`Dict`, :obj:`List`, or :obj:`Tuple` identified by its output
-            name.
-
-        Raises:
-            RuntimeError: If the given input tensors' name and shape don't
-              match what the model expects.
-
-            TypeError: If the given input tensors' dtype cannot be cast to what
-              the model expects.
-
-        """
-        # Wrapping the tensors happens by recording their addresses, which does
-        # not increase reference count, so we need to ensure the garbage
-        # collector does not free them. Since numpy arrays are not hashable, we
-        # do this with a dictionary with pointer keys.
-        keep_referenced: dict[int, Any] = {}
-        dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
-        for input_name, input_value in kwargs.items():
-            kwargs[input_name] = _map_execute_kwarg(
-                input_value, dtype_map[input_name], keep_referenced
-            )
-        return self._impl.execute(**kwargs)
-
-    def __repr__(self) -> str:
-        return f"Model(inputs={self.input_metadata})"
-
-    @property
-    def input_metadata(self) -> list[TensorSpec]:
-        """Metadata about the model's input tensors, as a list of
-        :obj:`TensorSpec` objects.
-
-        For example, you can print the input tensor names, shapes, and dtypes:
-
-        .. code-block:: python
-
-            for tensor in model.input_metadata:
-                print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
-        """
-        return self._impl.input_metadata
-
-    @property
-    def output_metadata(self) -> list[TensorSpec]:
-        """Metadata about the model's output tensors, as a list of
-        :obj:`TensorSpec` objects.
-
-        For example, you can print the output tensor names, shapes, and dtypes:
-
-        .. code-block:: python
-
-            for tensor in model.output_metadata:
-                print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
-        """
-        return self._impl.output_metadata
-
-    @property
-    def signature(self) -> Signature:
-        """Get input signature for model."""
-        parameters = [
-            Parameter(input.name, Parameter.POSITIONAL_OR_KEYWORD)
-            for input in self.input_metadata
-        ]
-        return Signature(parameters=parameters)
-
-    @property
-    def devices(self) -> list[Device]:
-        """Returns the device objects used in the Model."""
-        return self._impl.devices
-
-    @property
-    def input_devices(self) -> list[Device]:
-        """Device of the model's input tensors, as a list of
-        :obj:`Device` objects."""
-        return self._impl.input_devices
-
-    @property
-    def output_devices(self) -> list[Device]:
-        """Device of the model's output tensors, as a list of
-        :obj:`Device` objects."""
-        return self._impl.output_devices
+Model.execute = _Model_execute  # type: ignore[method-assign]
+Model.__call__ = _Model_call  # type: ignore[method-assign]
+Model.execute_legacy = _Model_execute_legacy  # type: ignore[method-assign]
+Model.__repr__ = _Model_repr  # type: ignore[method-assign]
+Model.signature = property(_Model_signature)  # type: ignore[assignment]
 
 
 def _TensorSpec_str(self) -> str:
@@ -796,8 +613,8 @@ class InferenceSession:
                     f"Weight '{weight_name}' is not contiguous: {str(e)}"
                 ) from e
 
-        _model.load(weights_registry_real)
-        return Model._init(_model)
+        _model._load(weights_registry_real)
+        return _model
 
     def _get_torch_custom_op_schemas(self):
         return self._impl._get_torch_custom_op_schemas()  # type: ignore

@@ -61,10 +61,6 @@ modular_genrule(
     export folder=$(dirname $(location stubfiles/_core.pyi))
     $(execpath {stubgen}) -r -m max._core -O $folder -p $(location :patterns.nb) --include-private --quiet
 
-    # Fix missing `typing` imports, since these are manually replaced
-    # These will get merged with other `typing` imports during formatting.
-    echo "from typing import Any, Mapping\n$(cat $(location {engine}))" > $(location {engine})
-
     # Add copyright headers
     header="
 # ===----------------------------------------------------------------------=== #
@@ -99,7 +95,10 @@ modular_genrule(
 
 modular_python_binding_py_library(
     name = "_core",
-    srcs = glob(["_core/*.pyi"]),
+    srcs = glob([
+        "_core/*.pyi",
+        "_core_types/*.py",
+    ]),
     bindings_data = [":_core.bindings"],
     imports = [".."],
     deps = [

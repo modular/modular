@@ -10,7 +10,7 @@ from collections.abc import Generator, Sequence
 from itertools import product
 from mmap import mmap
 from os import PathLike
-from typing import Any, Optional, Protocol, Union, runtime_checkable
+from typing import Any, Optional, Union
 
 import numpy as np
 from max._core.driver import Tensor as Tensor
@@ -21,13 +21,6 @@ from .driver import CPU
 _IdxElType = Union[int, slice]
 IndexType = Union[Sequence[_IdxElType], _IdxElType]
 ShapeType = Sequence[int]
-
-
-@runtime_checkable
-class DLPackArray(Protocol):
-    def __dlpack__(self) -> Any: ...
-
-    def __dlpack_device__(self) -> Any: ...
 
 
 def _iterate_indices(self) -> Generator[ShapeType]:
