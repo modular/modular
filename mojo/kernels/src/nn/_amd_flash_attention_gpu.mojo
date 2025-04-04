@@ -372,7 +372,8 @@ fn _apply_mask[
     p_reg_vectorized: LayoutTensor[accum_type, **_],
 ):
     var scale_log2e: SIMD[accum_type, 1] = scale.cast[accum_type]() * (
-        log2e if use_exp2 else Scalar[accum_type](1)
+        log2e if use_exp2
+        and not mask_t.apply_log2e_after_mask else Scalar[accum_type](1)
     )
     var lane = lane_id()
     alias output_frag_size = fragment_layout.size()
@@ -433,6 +434,12 @@ fn _apply_mask[
             else:
                 p_reg_vectorized[mma_id, 0] = (
                     p_reg_vectorized[mma_id, 0] * scale_log2e
+                )
+
+            @parameter
+            if mask_t.apply_log2e_after_mask:
+                p_reg_vectorized[mma_id, 0] = (
+                    p_reg_vectorized[mma_id, 0] * log2e
                 )
 
             if not not_last_iter or token_gen:

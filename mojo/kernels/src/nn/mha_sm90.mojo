@@ -81,11 +81,9 @@ from utils.static_tuple import StaticTuple
     )
 )
 fn mha_sm90[
-    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
-    mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -173,7 +171,6 @@ fn mha_sm90[
     @parameter
     if config.algorithm == FlashAttentionAlgorithm(3):
         _mha_single_batch_sm90_fa3[
-            mask_rank,
             config=config,
             group=group,
             use_score_mod=use_score_mod,
@@ -195,7 +192,6 @@ fn mha_sm90[
     else:
         constrained[config.algorithm == FlashAttentionAlgorithm(2)]()
         _mha_single_batch_sm90_fa2[
-            mask_rank,
             config=config,
             group=group,
             use_score_mod=use_score_mod,
@@ -435,6 +431,10 @@ fn _apply_mask[
                                 )
                                 * log2e
                             )
+                        elif mask_t.apply_log2e_after_mask:
+                            p_reg_vec2[mma_id, i + j * 2] = (
+                                p_reg_vec2[mma_id, i + j * 2] * log2e
+                            )
 
                         @parameter
                         if masked:
@@ -457,7 +457,6 @@ fn _apply_mask[
 
 @always_inline
 fn _mha_single_batch_sm90_fa3[
-    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -1090,11 +1089,9 @@ fn _mha_single_batch_sm90_fa3[
         # Mask global memory iterator.
         mask_warp_row = warp_y * WM
         mask_warp_col = warp_x * WN
-
         var scale_log2e: Scalar[accum_type] = (
-            scale.cast[accum_type]() if use_score_mod else scale.cast[
-                accum_type
-            ]()
+            scale.cast[accum_type]() if use_score_mod
+            or mask_t.apply_log2e_after_mask else scale.cast[accum_type]()
             * log2e
         )
         read_pipeline_states = PipelineState[pipeline_stages]()
@@ -1486,7 +1483,6 @@ fn _mha_single_batch_sm90_fa3[
 
 @always_inline
 fn _mha_single_batch_sm90_fa2[
-    mask_rank: Int,
     q_type: DType,
     k_t: MHAOperand,
     v_t: MHAOperand,
@@ -1820,8 +1816,8 @@ fn _mha_single_batch_sm90_fa2[
     alias num_k_iters_0 = Int(depth // BK)
     alias num_k_iters_1 = Int(BN // BK)
     var scale_log2e: Scalar[accum_type] = (
-        scale.cast[accum_type]() if use_score_mod else scale.cast[accum_type]()
-        * log2e
+        scale.cast[accum_type]() if use_score_mod
+        or mask_t.apply_log2e_after_mask else scale.cast[accum_type]() * log2e
     )
 
     @parameter
