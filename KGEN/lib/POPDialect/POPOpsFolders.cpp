@@ -649,35 +649,49 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
       return rhs ? getLhs() : getRhs();
   }
 
-  // Fold `ge(unsigned_val, 0), le(0, unsigned_val)` into true and false
-  // otherwise.
-  if (operandTy && operandTy->isUInt() &&
-      llvm::is_contained({CmpPredicate::LE, CmpPredicate::GE}, getPred())) {
+  // Fold
+  // * `gt(0, unsigned_val)` into false
+  // * `le(0, unsigned_val)` into true
+  // * `ge(unsigned_val, 0)` into true
+  // * `lt(unsigned_val, 0)` into false
+  if (operandTy && operandTy->isUInt()) {
+    auto foldUnsignedCmp = [&](CmpPredicate foldIntoTrue,
+                               CmpPredicate foldIntoFalse, CmpPredicate pred,
+                               Attribute op1, Attribute op2) -> OpFoldResult {
+      if (!llvm::is_contained({foldIntoTrue, foldIntoFalse}, pred))
+        return {};
 
-    // Only one input will be constant.
-    auto lhs = dyn_cast_or_null<SIMDAttr>(adaptor.getLhs());
-    auto rhs = dyn_cast_or_null<SIMDAttr>(adaptor.getRhs());
-    assert(!(lhs && rhs) && "constant case should be handled");
+      // Only one input will be constant.
+      auto op1SimdAttr = dyn_cast_or_null<SIMDAttr>(op1);
+      auto op2SimdAttr = dyn_cast_or_null<SIMDAttr>(op2);
+      assert(!(op1SimdAttr && op2SimdAttr) &&
+             "constant case should be handled");
 
-    // If `lhs` contains the constant, move it to `rhs` so that `rhs` is now
-    // constant.
-    bool isSwapped = false;
-    if (lhs) {
-      isSwapped = true;
-      std::swap(lhs, rhs);
-    }
+      if (!op2SimdAttr) {
+        // Always expect constant value in op2
+        return {};
+      }
 
-    // If the `rhs` is constant and zero, then we can simplify the comparison.
-    if (rhs && llvm::all_equal(rhs.getValues()) &&
-        rhs.getValues()[0].getData().isZero()) {
+      // If the `op2SimdAttr` is constant and zero, then we can simplify the
+      // comparison.
+      if (llvm::all_equal(op2SimdAttr.getValues()) &&
+          op2SimdAttr.getValues()[0].getData().isZero()) {
 
-      bool cond = getPred() == CmpPredicate::GE;
-      if (isSwapped)
-        cond = !cond;
+        SmallVector<DTypeValue> values(
+            *size, DTypeValue(pred == foldIntoTrue, KGENDType::kBool));
+        return SIMDAttr::get(values, getType());
+      }
+      return {};
+    };
 
-      SmallVector<DTypeValue> values(*size, DTypeValue(cond, KGENDType::kBool));
-      return SIMDAttr::get(values, getType());
-    }
+    if (OpFoldResult res =
+            foldUnsignedCmp(CmpPredicate::GT, CmpPredicate::LE, getPred(),
+                            adaptor.getRhs(), adaptor.getLhs()))
+      return res;
+    if (OpFoldResult res =
+            foldUnsignedCmp(CmpPredicate::GE, CmpPredicate::LT, getPred(),
+                            adaptor.getLhs(), adaptor.getRhs()))
+      return res;
   }
 
   return {};
