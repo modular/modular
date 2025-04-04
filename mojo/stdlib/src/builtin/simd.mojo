@@ -1962,9 +1962,9 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
 
-        return __mlir_op.`pop.fma`(
-            self.value, multiplier.value, accumulator.value
-        )
+        return __mlir_op.`pop.fma`[
+            fastmathFlags = __mlir_attr.`#pop<fmf contract>`
+        ](self.value, multiplier.value, accumulator.value)
 
     @always_inline("nodebug")
     fn _shuffle_variadic[
