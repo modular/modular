@@ -13,7 +13,7 @@ from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines import SamplingConfig
-from max.pipelines.sampling import token_sampler
+from max.pipelines.sampling import rejection_sampler, token_sampler
 from transformers import AutoConfig, AutoTokenizer
 
 
@@ -153,3 +153,68 @@ def test_sampling_return_logits():
         numpy_logits = generated_logits.to_numpy()
         for i, token_idx in enumerate(new_tokens.to_numpy()):
             assert numpy_logits[i, j] == logits[i, token_idx]
+
+
+def test_rejection_sampler():
+    device = Accelerator()
+
+    graph = rejection_sampler(
+        SamplingConfig(
+            top_k=1,
+            enable_structured_output=False,
+            in_dtype=DType.float32,
+            out_dtype=DType.float32,
+        ),
+    )
+
+    session = InferenceSession(devices=[device])
+    sampler = session.load(graph)
+
+    # Variables
+    batch_size = 3
+    num_steps = 5
+    vocab_size = 10
+
+    # Generate Random Logits and Pass Through
+    draft_logits = np.random.default_rng().random(
+        size=(batch_size, num_steps), dtype=np.float32
+    )
+    draft_tokens = np.random.randint(
+        0, vocab_size, size=(batch_size, num_steps)
+    )
+    target_logits = np.random.default_rng().random(
+        size=(batch_size * (num_steps + 1), vocab_size),
+        dtype=np.float32,
+    )
+    target_logit_offsets = np.arange(
+        0, (batch_size + 1) * (num_steps + 1), num_steps + 1
+    )
+
+    first_rejected_token, sampled_tokens = sampler(
+        Tensor.from_dlpack(draft_tokens).to(device),
+        Tensor.from_dlpack(draft_logits).to(device),
+        Tensor.from_dlpack(target_logits).to(device),
+        Tensor.from_dlpack(target_logit_offsets).to(device),
+    )
+
+    # Bring these back to CPU
+    first_rejected_token = first_rejected_token.to_numpy()
+    sampled_tokens = sampled_tokens.to_numpy()
+
+    # Basic Rejection Sampler Impl in Python
+    for x in range(batch_size):
+        for i in range(num_steps):
+            target_idx = (x * (num_steps + 1)) + i
+            draft_logit = draft_logits[x][i]
+            token_idx = draft_tokens[x][i]
+            target_logit = target_logits[target_idx][token_idx]
+
+            if draft_logit > target_logit:
+                assert first_rejected_token[x][0] == i, f"x: {x}, i: {i}"
+                assert (
+                    np.argmax(target_logits[target_idx]) == sampled_tokens[x][0]
+                ), (
+                    f"target_logits: {target_logits[target_idx]}, sampled: {sampled_tokens[x][0]}"
+                )
+
+                break
