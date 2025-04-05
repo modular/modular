@@ -15,7 +15,7 @@ from memory import UnsafePointer, bitcast
 from collections import InlineArray
 from utils import StaticTuple
 from utils.index import Index
-from builtin.string_literal import get_string_literal
+from collections.string.string_slice import _get_kgen_string
 
 
 @always_inline
@@ -962,8 +962,8 @@ fn wgmma_async[
         mat_b_desc.desc.value
     )
 
-    alias layout_a_value = get_string_literal[layout_a]().value
-    alias layout_b_value = get_string_literal[layout_b]().value
+    alias layout_a_value = _get_kgen_string[layout_a]()
+    alias layout_b_value = _get_kgen_string[layout_b]()
 
     @parameter
     if (
@@ -1101,8 +1101,8 @@ fn wgmma_async[
         mat_b_desc.desc.value
     )
 
-    alias layout_a_value = get_string_literal[layout_a]().value
-    alias layout_b_value = get_string_literal[layout_b]().value
+    alias layout_a_value = _get_kgen_string[layout_a]()
+    alias layout_b_value = _get_kgen_string[layout_b]()
 
     @parameter
     if a_type is DType.tensor_float32:
@@ -1478,7 +1478,7 @@ fn wgmma_async[
         )
 
         alias input_reg_spec = _str_iota[n // 2, prefix="$"]()
-        alias input_constraints_prefix = get_string_literal["=f," * (n // 2)]()
+        alias input_constraints_prefix = "=f," * (n // 2)
         alias input_constraints_suffix = _str_iota[n // 2, sep=","]()
         alias constraints = input_constraints_prefix + "r,r,r,r,l,n,n,n,n," + input_constraints_suffix
 
@@ -1757,8 +1757,7 @@ fn wgmma_async[
 fn _str_iota[
     count: Int, *, prefix: StaticString = "", sep: StaticString = ", "
 ]() -> String:
-    alias s = _str_iota_impl[count, prefix=prefix, sep=sep]()
-    return get_string_literal[s]()
+    return _str_iota_impl[count, prefix=prefix, sep=sep]()
 
 
 @always_inline("nodebug")

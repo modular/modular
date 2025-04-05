@@ -1387,8 +1387,7 @@ struct DeviceFunction[
 
     @staticmethod
     fn _dump_q[name: String, val: _DumpPath]() -> (Bool, _DumpPath):
-        alias name_upper = get_string_literal[name.upper()]()
-        alias env_var = "DUMP_GPU_" + name_upper
+        alias env_var = "DUMP_GPU_" + name.upper()
 
         @parameter
         if is_defined[env_var]():

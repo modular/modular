@@ -30,6 +30,7 @@ from .host.info import H100, Info
 from .memory import AddressSpace, _int_to_str
 
 from sys.intrinsics import readfirstlane
+from collections.string.string_slice import get_static_string
 
 
 # ===-----------------------------------------------------------------------===#
@@ -616,7 +617,7 @@ fn threadfence[scope: Scope = Scope.GPU]():
 
 
 fn _get_type_suffix[type: DType]() -> StaticString:
-    alias str = get_string_literal["u", _int_to_str[bitwidthof[type]()]()]()
+    alias str = get_static_string["u", _int_to_str[bitwidthof[type]()]()]()
     return str
 
 

@@ -16,7 +16,6 @@ from os import abort
 from sys import env_get_string
 from sys.info import _accelerator_arch, _get_arch
 from collections.string.string_slice import StringSlice, StaticString
-from builtin.string_literal import get_string_literal
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()
 alias DEFAULT_GPU = Info.from_name[DEFAULT_GPU_ARCH]()
@@ -1191,30 +1190,30 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     Returns:
         Info instance for the specified target architecture.
     """
-    alias target_arch = get_string_literal[target_arch0.replace("sm_", "")]()
+    alias target_arch = target_arch0.replace("sm_", "")
 
     constrained[
-        target_arch
+        StaticString(target_arch)
         in (
-            "cuda",
-            "80",
-            "86",
-            "87",
-            "89",
-            "90",
-            "90a",
-            "120a",
-            "nvidia:80",
-            "nvidia:86",
-            "nvidia:87",
-            "nvidia:89",
-            "nvidia:90",
-            "nvidia:90a",
-            "nvidia:120a",
-            "amdgpu:94",
-            "mi300x",
-            "gfx942",
-            "",
+            StaticString("cuda"),
+            StaticString("80"),
+            StaticString("86"),
+            StaticString("87"),
+            StaticString("89"),
+            StaticString("90"),
+            StaticString("90a"),
+            StaticString("120a"),
+            StaticString("nvidia:80"),
+            StaticString("nvidia:86"),
+            StaticString("nvidia:87"),
+            StaticString("nvidia:89"),
+            StaticString("nvidia:90"),
+            StaticString("nvidia:90a"),
+            StaticString("nvidia:120a"),
+            StaticString("amdgpu:94"),
+            StaticString("mi300x"),
+            StaticString("gfx942"),
+            StaticString(""),
         ),
         "the target architecture '",
         target_arch,
@@ -1222,19 +1221,28 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     ]()
 
     @parameter
-    if target_arch in ("80", "nvidia:80"):
+    if target_arch == "80" or target_arch == "nvidia:80":
         return A100
-    elif target_arch in ("86", "nvidia:86"):
+    elif target_arch == "86" or target_arch == "nvidia:86":
         return A10
-    elif target_arch in ("87", "nvidia:87"):
+    elif target_arch == "87" or target_arch == "nvidia:87":
         return OrinNano
-    elif target_arch in ("89", "nvidia:89"):
+    elif target_arch == "89" or target_arch == "nvidia:89":
         return L4
-    elif target_arch in ("90", "90a", "nvidia:90", "nvidia:90a"):
+    elif (
+        target_arch == "90"
+        or target_arch == "90a"
+        or target_arch == "nvidia:90"
+        or target_arch == "nvidia:90a"
+    ):
         return H100
-    elif target_arch in ("120a", "nvidia:120a"):
+    elif target_arch == "120a" or target_arch == "nvidia:120a":
         return RTX5090
-    elif target_arch in ("gfx942", "mi300x", "amdgpu:94"):
+    elif (
+        target_arch == "gfx942"
+        or target_arch == "mi300x"
+        or target_arch == "amdgpu:94"
+    ):
         return MI300X
     elif DEFAULT_GPU_ARCH == "":
         return NoGPU
