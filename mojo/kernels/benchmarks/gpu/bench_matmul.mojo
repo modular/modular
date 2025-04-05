@@ -14,7 +14,6 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from gpu._cublas.cublas import (
-    check_cublas_error,
     cublasContext,
     cublasCreate,
     cublasDestroy,
