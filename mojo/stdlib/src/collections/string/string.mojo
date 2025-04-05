@@ -668,6 +668,8 @@ struct String(
         self = String()
         write_buffered(self, args, sep=sep, end=end)
 
+    # TODO(MOCO-1791): Default arguments and param inference aren't powerful
+    # to declare sep/end as StringSlice.
     @staticmethod
     @no_inline
     fn __init__[

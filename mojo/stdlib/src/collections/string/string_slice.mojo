@@ -73,6 +73,7 @@ from math import align_down
 from bit import count_leading_zeros, count_trailing_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
+from utils.write import _WriteBufferStack
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
@@ -2115,6 +2116,44 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         memcpy(buffer.unsafe_ptr().offset(start), self.unsafe_ptr(), len(self))
         var result = String(buffer=buffer)
         return result^
+
+    fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            T: The types of the elements.
+
+        Args:
+            elems: The input values.
+
+        Returns:
+            The joined string.
+        """
+        var string = String()
+        var buffer = _WriteBufferStack(string)
+        for i in range(len(elems)):
+            buffer.write(elems[i])
+            if i < len(elems) - 1:
+                buffer.write(self)
+        buffer.flush()
+        return string
+
+    # TODO(MOCO-1791): The corresponding String.__init__ is limited to
+    # StaticString. This is because default arguments and param inference aren't
+    # powerful enough to declare sep/end as StringSlice.
+    fn join[*Ts: Writable](self: StaticString, *elems: *Ts) -> String:
+        """Joins string elements using the current string as a delimiter.
+
+        Parameters:
+            Ts: The types of the elements.
+
+        Args:
+            elems: The input values.
+
+        Returns:
+            The joined string.
+        """
+        return String(elems, sep=self)
 
 
 # ===-----------------------------------------------------------------------===#

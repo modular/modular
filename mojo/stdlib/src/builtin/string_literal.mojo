@@ -21,7 +21,6 @@ from collections.string.string_slice import (
     StaticString,
     StringSlice,
     CodepointSliceIter,
-    _to_string_list,
 )
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_char
@@ -32,7 +31,6 @@ from os import PathLike
 
 from utils import Writable, Writer
 from utils._visualizers import lldb_formatter_wrapping_type
-from utils.write import _WriteBufferStack
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
@@ -543,108 +541,6 @@ struct StringLiteral(
           The offset of `substr` relative to the beginning of the string.
         """
         return self.as_string_slice().rfind(substr, start=start)
-
-    fn join[T: WritableCollectionElement](self, elems: List[T, *_]) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            T: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        var string = String()
-        var buffer = _WriteBufferStack(string)
-        for i in range(len(elems)):
-            buffer.write(elems[i])
-            if i < len(elems) - 1:
-                buffer.write(self)
-        buffer.flush()
-        return string
-
-    fn join[*Ts: Writable](self, *elems: *Ts) -> String:
-        """Joins string elements using the current string as a delimiter.
-
-        Parameters:
-            Ts: The types of the elements.
-
-        Args:
-            elems: The input values.
-
-        Returns:
-            The joined string.
-        """
-        return String(elems, sep=self)
-
-    fn split(self, sep: StringSlice, maxsplit: Int = -1) raises -> List[String]:
-        """Split the string literal by a separator.
-
-        Args:
-            sep: The string to split on.
-            maxsplit: The maximum amount of items to split from String.
-                Defaults to unlimited.
-
-        Returns:
-            A List of Strings containing the input split by the separator.
-
-        Examples:
-
-        ```mojo
-        # Splitting a space
-        _ = "hello world".split(" ") # ["hello", "world"]
-        # Splitting adjacent separators
-        _ = "hello,,world".split(",") # ["hello", "", "world"]
-        # Splitting with maxsplit
-        _ = "1,2,3".split(",", 1) # ['1', '2,3']
-        ```
-        .
-        """
-        return String(self).split(sep, maxsplit)
-
-    fn split(self, sep: NoneType = None, maxsplit: Int = -1) -> List[String]:
-        """Split the string literal by every whitespace separator.
-
-        Args:
-            sep: None.
-            maxsplit: The maximum amount of items to split from string. Defaults
-                to unlimited.
-
-        Returns:
-            A List of Strings containing the input split by the separator.
-
-        Examples:
-
-        ```mojo
-        # Splitting an empty string or filled with whitespaces
-        _ = "      ".split() # []
-        _ = "".split() # []
-
-        # Splitting a string with leading, trailing, and middle whitespaces
-        _ = "      hello    world     ".split() # ["hello", "world"]
-        # Splitting adjacent universal newlines:
-        _ = "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world".split()
-        # ["hello", "world"]
-        ```
-        .
-        """
-        return String(self).split(sep, maxsplit)
-
-    fn splitlines(self, keepends: Bool = False) -> List[String]:
-        """Split the string literal at line boundaries. This corresponds to Python's
-        [universal newlines:](
-            https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-        `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
-
-        Args:
-            keepends: If True, line breaks are kept in the resulting strings.
-
-        Returns:
-            A List of Strings containing the input split by line boundaries.
-        """
-        return _to_string_list(self.as_string_slice().splitlines(keepends))
 
     fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring

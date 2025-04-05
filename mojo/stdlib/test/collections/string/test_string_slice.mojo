@@ -17,6 +17,7 @@ from sys.info import alignof, sizeof
 
 from memory import Span, UnsafePointer
 from testing import assert_equal, assert_false, assert_raises, assert_true
+from collections.string import StaticString
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
@@ -1066,6 +1067,32 @@ def test_replace():
     )
 
 
+def test_join():
+    assert_equal(StaticString("").join(), "")
+    assert_equal(StaticString("").join("a", "b", "c"), "abc")
+    assert_equal(StaticString(" ").join("a", "b", "c"), "a b c")
+    assert_equal(StaticString(" ").join("a", "b", "c", ""), "a b c ")
+    assert_equal(StaticString(" ").join("a", "b", "c", " "), "a b c  ")
+
+    var sep = StaticString(",")
+    var s = String("abc")
+    assert_equal(sep.join(s, s, s, s), "abc,abc,abc,abc")
+    assert_equal(sep.join(1, 2, 3), "1,2,3")
+    assert_equal(sep.join(1, "abc", 3), "1,abc,3")
+
+    var s2 = StaticString(",").join(List[UInt8](1, 2, 3))
+    assert_equal(s2, "1,2,3")
+
+    var s3 = StaticString(",").join(List[UInt8](1, 2, 3, 4, 5, 6, 7, 8, 9))
+    assert_equal(s3, "1,2,3,4,5,6,7,8,9")
+
+    var s4 = StaticString(",").join(List[UInt8]())
+    assert_equal(s4, "")
+
+    var s5 = StaticString(",").join(List[UInt8](1))
+    assert_equal(s5, "1")
+
+
 def main():
     test_string_slice_layout()
     test_string_literal_byte_span()
@@ -1099,3 +1126,4 @@ def main():
     test_chars_iter()
     test_string_slice_from_pointer()
     test_replace()
+    test_join()
