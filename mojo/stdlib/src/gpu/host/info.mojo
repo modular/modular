@@ -446,6 +446,60 @@ alias H100 = Info(
     max_thread_block_size=1024,
 )
 
+
+# ===-----------------------------------------------------------------------===#
+# RTX5090
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_rtx5090_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA RTX5090 GPU.
+
+    Returns:
+        MLIR target configuration for RTX5090.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_120", `,
+        `features = "+ptx85,+sm_120", `,
+        `tune_cpu = "sm_120", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+# https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/
+alias RTX5090 = Info(
+    name="RTX5090",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="hopper",
+    compile_options="nvptx-short-ptr=true",
+    compute=12.0,
+    version="sm_120a",
+    sm_count=170,
+    warp_size=32,
+    threads_per_sm=-1,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=1536,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=58 * _KB,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=32,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
 # ===-----------------------------------------------------------------------===#
 # MI300X
 # ===-----------------------------------------------------------------------===#
@@ -1149,12 +1203,14 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
             "89",
             "90",
             "90a",
+            "120a",
             "nvidia:80",
             "nvidia:86",
             "nvidia:87",
             "nvidia:89",
             "nvidia:90",
             "nvidia:90a",
+            "nvidia:120a",
             "amdgpu:94",
             "mi300x",
             "gfx942",
@@ -1176,6 +1232,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
         return L4
     elif target_arch in ("90", "90a", "nvidia:90", "nvidia:90a"):
         return H100
+    elif target_arch in ("120a", "nvidia:120a"):
+        return RTX5090
     elif target_arch in ("gfx942", "mi300x", "amdgpu:94"):
         return MI300X
     elif DEFAULT_GPU_ARCH == "":
