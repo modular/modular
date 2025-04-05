@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from compile import _internal_compile_code
+from compile import compile_info
 from gpu.host._compile import _get_gpu_target
 from layout import Layout, LayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
@@ -32,7 +32,7 @@ fn test_no_alloca_fill():
 
     # CHECK-NOT: alloca float, i64 16, align 4
     print(
-        _internal_compile_code[
+        compile_info[
             layout_tensor_kernel,
             emission_kind="llvm",
             target = _get_gpu_target(),
