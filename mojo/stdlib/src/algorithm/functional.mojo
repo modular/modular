@@ -1393,8 +1393,8 @@ fn elementwise[
         )
 
     alias kind = get_string_literal[
-        "elementwise"
-        + ("(" + _trace_description + ")" if _trace_description else "")
+        "elementwise",
+        ("(" + _trace_description + ")" if _trace_description else ""),
     ]()
 
     with Trace[TraceLevel.OP, target=target](
