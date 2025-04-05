@@ -829,9 +829,9 @@ fn matmul[
         # Create a string literal so that the event label works with the
         # AsyncRT profiler, whose event labels must be `StaticString`s.
         get_string_literal[
-            "matmul("
-            + _trace_description
-            + String(")") if _trace_description else String("matmul")
+            "matmul(",
+            _trace_description,
+            StaticString(")") if _trace_description else StaticString("matmul"),
         ](),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
