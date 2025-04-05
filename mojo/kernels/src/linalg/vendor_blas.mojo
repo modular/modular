@@ -76,6 +76,7 @@ from layout import Layout
 from memory import UnsafePointer
 
 from utils.variant import Variant
+from collections.string.string_slice import StringSlice
 from sys.ffi import external_call, OpaquePointer, _get_global_or_null
 
 # ===----------------------------------------------------------------------===#
@@ -275,14 +276,16 @@ fn _get_handle[
         var result = UnsafePointer.address_of(handle_ptr).bitcast[
             Handle[backend]
         ]()[]
-        _ = handle_ptr
+        # TODO: This is always true, but we somehow need it otherwise the handle
+        # gets corrupted.
+        if not handle_ptr:
+            print(handle_ptr)
         return result
 
-    var ptr = UnsafePointer[Handle[backend]].alloc(1)
     var handle = Handle[backend]()
-    ptr[] = handle
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        handle_name, ptr.bitcast[OpaquePointer]()[]
+        StringSlice(handle_name),
+        UnsafePointer.address_of(handle).bitcast[OpaquePointer]()[],
     )
 
     return handle

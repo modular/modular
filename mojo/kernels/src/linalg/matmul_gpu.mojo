@@ -32,7 +32,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import A100, H100, DEFAULT_GPU_ARCH
+from gpu.host.info import A100, H100, DEFAULT_GPU
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import IntTuple
@@ -77,6 +77,7 @@ from .utils_gpu import (
 )
 from linalg.matmul_tile_scheduler import MatmulSchedule
 from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
+from .matmul_sm100 import matmul as matmul_sm100
 
 alias tile_shapes_64X64X32 = _get_block_warp_tile_shape[64, 64, 32]()
 alias tile_shapes_64X128X32 = _get_block_warp_tile_shape[64, 128, 32]()
@@ -337,6 +338,22 @@ fn _matmul_gpu[
                                         and a_shape.has_value[1]() \
                                         and c_shape.has_value[1]()
     # fmt: on
+
+    @parameter
+    if DEFAULT_GPU > H100:
+        constrained[
+            use_tensor_core,
+            "Tensor core matmul is not supported on '",
+            DEFAULT_GPU.name,
+            "' architecture",
+        ]()
+        matmul_sm100[
+            use_tensor_core=use_tensor_core,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            config=config,
+        ](c, a, b, ctx)
+        return
 
     @parameter
     if (
