@@ -455,8 +455,8 @@ lit.trait.decl @Trait2 {}
 lit.trait.decl @Trait3 {}
 
 // CHECK-LABEL: lit.struct.decl @StructHasTraits
-// CHECK-SAME: (trait<@Trait1>, trait<@Trait2>[trait<@Trait3>])
-lit.struct.decl @StructHasTraits(trait<@Trait1>, trait<@Trait2>[trait<@Trait3>]) {}
+// CHECK-SAME: (trait<@Trait1, @Trait2, @Trait3>)
+lit.struct.decl @StructHasTraits(trait<@Trait1, @Trait2, @Trait3>) {}
 
 // CHECK-LABEL: lit.fn @lit_loop
 lit.fn @lit_loop() {

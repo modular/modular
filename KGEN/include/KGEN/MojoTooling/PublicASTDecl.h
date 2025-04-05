@@ -58,6 +58,9 @@ public:
   KGEN::LIT::ASTDecl *operator->() { return decl; }
   const KGEN::LIT::ASTDecl &operator*() const { return *decl; }
   const KGEN::LIT::ASTDecl *operator->() const { return decl; }
+  bool operator==(const MojoASTDeclRef &other) const {
+    return decl == other.decl;
+  }
 
   /// Returns the type corresponding to this declaration. If not available, this
   /// returns an invalid `MojoASTTypeRef`.

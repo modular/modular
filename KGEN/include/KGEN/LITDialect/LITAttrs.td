@@ -917,46 +917,6 @@ def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
 }
 
 //===----------------------------------------------------------------------===//
-// TypeLineageAttr
-//===----------------------------------------------------------------------===//
-
-def LIT_TypeLineageAttr : LITAttr<"TypeLineage", "type_lineage"> {
-  let summary = "a type and where it was inherited from";
-  let description = [{
-    The `#lit.type_lineage` attribute contains a type and a lineage of types it
-    was inherited from. This attribute is used to provide nicer diagnostics in
-    the parser when diagnosing errors with inherited types.
-
-    The attribute simply encodes a straight line of ancestor types that the type
-    was inherited from, instead of the full graph representation of the
-    ancestry.
-
-    Example:
-
-    ```mlir
-    #lit.type_lineage<trait<@Foo>, [trait<@Bar>]>
-    ```
-  }];
-
-  let parameters = (ins "Type":$type,
-                        OptionalArrayRefParameter<"Type">:$inheritedFrom);
-  let assemblyFormat = "`<` $type (`,` `[` $inheritedFrom^ `]`)? `>`";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "Type":$type,
-                                        "ArrayRef<Type>":$inheritedFrom), [{
-      return get(type.getContext(), type, inheritedFrom);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "Type":$type), [{
-      return get(type, {});
-    }]>
-  ];
-}
-
-def TypeLineageArrayAttr : ArrayOfAttr<LITDialect, "TypeLineageArray",
-                                       "type_lineage.array", "TypeLineageAttr">;
-
-//===----------------------------------------------------------------------===//
 // RefPackAttr
 //===----------------------------------------------------------------------===//
 

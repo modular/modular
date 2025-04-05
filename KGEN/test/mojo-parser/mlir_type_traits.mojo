@@ -21,7 +21,7 @@ fn mlir_type_trait_conformance():
     # CHECK-SAME: "__del__"
     alias Move: Movable = __mlir_type.index
     # CHECK: !Composition = <[index,
-    # CHECK-SAME: "__moveinit__"
     # CHECK-SAME: "__del__"
     # CHECK-SAME: "__copyinit__"
+    # CHECK-SAME: "__moveinit__"
     alias Comp: Composition = __mlir_type.index

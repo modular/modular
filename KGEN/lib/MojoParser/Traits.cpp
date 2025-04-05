@@ -26,11 +26,13 @@ using namespace LIT;
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
-static std::pair<FnTypeGeneratorType, ParamBindings> getTraitFunctionSignature(
-    ExprEmitter &emitter, FnOp traitFn, ASTType structSelfType, TraitType trait,
-    const ExprNode *expr, const DenseMap<StringAttr, TypedAttr> &aliasValues,
-    ParameterEvaluator &traitAliasReplacer) {
-
+static std::pair<FnTypeGeneratorType, ParamBindings>
+getTraitFunctionSignature(ExprEmitter &emitter, FnOp traitFn,
+                          ASTType structSelfType, SymbolRefAttr traitSymbol,
+                          const ExprNode *expr,
+                          const DenseMap<StringAttr, TypedAttr> &aliasValues,
+                          ParameterEvaluator &traitAliasReplacer) {
+  TraitType trait = TraitType::get(traitSymbol);
   FnTypeGeneratorType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
   ArrayRef<Type> paramTypes = signature.getInputParamTypes();
@@ -138,27 +140,20 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl,
       Value(b.create<ParamConstantOp>(b.getAttr<NoneAttr>())));
 }
 
-LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
-                                     TypeLineageAttr parent,
+LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
                                      std::optional<InflightDiag> &diag) {
-  auto trait = dyn_cast<TraitType>(parent.getType());
-  if (!trait)
-    return success();
-
   auto &shared = structDecl.getShared();
   auto structDeclOp = cast<StructDeclOp>(structDecl);
 
   // TODO(MOCO-1468): Pull out into a helper method.
   bool implicitlyDestructible = false;
-  for (auto parentAttr : structDeclOp.getParentTypes()) {
-    for (SymbolRefAttr symbol :
-         cast<TraitType>(parentAttr.getType()).getSymbols()) {
-      ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-      if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
-        if (parentTrait.getSymName() == "AnyType") {
-          implicitlyDestructible = true;
-          break;
-        }
+  for (auto parentSymbol : structDeclOp.getCanonicalTrait().getSymbols()) {
+    ASTDecl &parentDecl =
+        shared.declResolver->getDeclForTypeSymbol(parentSymbol);
+    if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
+      if (parentTrait.getSymName() == "AnyType") {
+        implicitlyDestructible = true;
+        break;
       }
     }
   }
@@ -173,15 +168,14 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   // These are the special methods that need to be synthesized.
   SmallVector<SpecialFunctionKind> specialFns;
 
-  ASTType traitASTType = ASTType(trait);
-  ASTDecl &traitDecl = *traitASTType.getDecl(shared);
+  ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(parent);
+  TraitDeclOp traitDeclOp = cast<TraitDeclOp>(traitDecl);
 
   // Make sure to fully resolve the trait first.
   if (failed(shared.declResolver->resolveFully(traitDecl, structDecl.getLoc())))
     return failure();
 
-  if (traitASTType.isRegisterPassable(structDecl.getLoc(), shared) &&
-      !regPassable) {
+  if (traitDeclOp.isRegisterPassable() && !regPassable) {
     diag = shared.emitError(structDecl.getLoc(),
                             "a struct must be register passable in order to "
                             "inherit from a register passable trait");
@@ -195,7 +189,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   // Prepare an error. It will be abandoned if the check succeeds.
   diag = shared.emitError(structDecl.getLoc(), "struct ")
          << selfType << " does not implement all requirements for "
-         << traitASTType;
+         << ASTType(TraitType::get(parent));
 
   // Returns failure() to stop the verifyConformance loop.
   auto checkMethod = [&](const mlir::StringAttr &name, ASTDecl *traitFnDecl,
@@ -228,7 +222,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [traitSignature, bindings] = getTraitFunctionSignature(
-        emitter, traitFn, selfType, trait, syntheticNode, aliasValues,
+        emitter, traitFn, selfType, parent, syntheticNode, aliasValues,
         traitAliasReplacer);
 
     // Match against the transformed calling convention if the struct is
@@ -342,15 +336,16 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     diag.reset();
   } else if (traitDecl.getIfOperation()) {
     diag->attachNote(traitDecl.getLoc())
-        << "trait " << traitASTType << " declared here";
-    if (!parent.getInheritedFrom().empty()) {
-      ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
-          cast<TraitType>(parent.getInheritedFrom().front())
-              .getSymbols()
-              .front());
-      diag->attachNote(parentDecl.getLoc())
-          << "inherited through '" << *parentDecl.getNameIfOperation()
-          << "' here";
+        << "trait " << ASTType(TraitType::get(parent)) << " declared here";
+    if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
+      if (auto it = inheritedFrom->find(parent);
+          it != inheritedFrom->end() && it->second.first != parent) {
+        ASTDecl &parentDecl =
+            emitter.getDeclResolver().getDeclForTypeSymbol(it->second.first);
+        diag->attachNote(parentDecl.getLoc())
+            << "inherited through '" << *parentDecl.getNameIfOperation()
+            << "' here";
+      }
     }
     hadErrors = true;
   }
@@ -368,52 +363,67 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 /// abandoned based on the client's needs.
 bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
                                        std::optional<InflightDiag> &diag) {
-  assert((::isa<StructDeclOp, TraitDeclOp>(*this)) && "Invalid decl kind");
-
   if (failed(shared.declResolver->resolveFully(*this, getLoc())))
     return false; // Error emitted.
 
-  ArrayRef<TypeLineageAttr> parentTypes;
-  auto structOp = dyn_cast<StructDeclOp>(*this);
-  if (structOp)
-    parentTypes = structOp.getParentTypes();
-  else
-    parentTypes = cast<TraitDeclOp>(*this).getParentTypes();
+  // Collect all the symbols that the type explicitly provides.
+  TraitType providedCanonTrait;
+  if (auto structOp = dyn_cast<StructDeclOp>(*this)) {
+    providedCanonTrait = structOp.getCanonicalTrait();
+  } else if (auto traitOp = dyn_cast<TraitDeclOp>(*this)) {
+    providedCanonTrait = traitOp.getCanonicalTrait();
+  } else if (TraitType canonTraitType =
+                 dyn_cast_or_null<TraitType>(getIfTypeValue())) {
+    providedCanonTrait = canonTraitType;
+  } else {
+    llvm_unreachable("Invalid decl kind");
+  }
 
-  // Check if the type explicitly conforms to the trait.
-  if (contains_if(parentTypes, [trait](TypeLineageAttr type) {
-        return type.getType() == trait;
-      }))
+  if (providedCanonTrait == trait)
     return true;
+  ArrayRef<SymbolRefAttr> providedSymbols = providedCanonTrait.getSymbols();
 
-  // Check to see if this is already literally this trait.
-  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
-  if (!traitDecl)
-    return false; // Erroneous.
+  // Check the provided symbols against the required symbols by the target
+  // trait. There's no need to canonicalize the required symbols as long as
+  // the provided symbols list is canonical.
+  DenseSet<SymbolRefAttr> requiredSymbols;
+  requiredSymbols.insert(trait.getSymbols().begin(), trait.getSymbols().end());
+  for (SymbolRefAttr symbol : providedSymbols)
+    requiredSymbols.erase(symbol);
 
-  // Self conformance.
-  if (traitDecl == this)
+  if (requiredSymbols.empty())
     return true;
 
   // Only structs can implicitly conform to traits.
+  auto structOp = dyn_cast<StructDeclOp>(*this);
   if (!structOp)
     return false;
 
   // Check if the type *implicitly* conforms to the trait.
-  SmallVector<TypeLineageAttr> newParentTypes =
-      llvm::to_vector(structOp.getParentTypes());
-  unsigned curNumParents = newParentTypes.size();
-  for (SymbolRefAttr symbol : trait.getSymbols()) {
-    ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-    StructEmitter::appendTraits(newParentTypes, &memberDecl);
-  }
-  for (TypeLineageAttr newParent :
-       llvm::drop_begin(newParentTypes, curNumParents))
-    if (failed(verifyConformance(*this, newParent, diag)))
+  DenseSet<SymbolRefAttr> newSymbols;
+  newSymbols.insert(providedSymbols.begin(), providedSymbols.end());
+
+  SmallVector<SymbolRefAttr> fullRequiredSymbols(requiredSymbols.begin(),
+                                                 requiredSymbols.end());
+  canonicalizeTraitCompositionSymbols(shared, fullRequiredSymbols);
+  for (SymbolRefAttr symbol : fullRequiredSymbols) {
+    if (newSymbols.contains(symbol))
+      continue;
+
+    if (failed(verifyConformance(*this, symbol, diag)))
       return false;
+    newSymbols.insert(symbol);
+  }
 
   // If we succeeded, remember this so we don't check again.
-  structOp.setParentTypes(newParentTypes);
+  SmallVector<SymbolRefAttr> newSymbolsVec(newSymbols.begin(),
+                                           newSymbols.end());
+  // No need to pull in ancestors again as `newSymbols` and
+  // `fullRequiredSymbols` both contain the full ancestor chain already, so
+  // their merged set also contains the full list.
+  sortAndDeduplicateSymbols(newSymbolsVec);
+  structOp.setCanonicalTrait(
+      TraitType::get(structOp.getContext(), newSymbolsVec));
   return true;
 }
 
@@ -426,11 +436,7 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
   return result;
 }
 
-void LIT::canonicalizeTraitCompositionSymbols(
-    SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols) {
-  // TODO: Remove any symbol that is a parent of another symbol in the list.
-
-  // Sort and deduplicate the symbols.
+void LIT::sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols) {
   llvm::sort(symbols, [&](SymbolRefAttr a, SymbolRefAttr b) {
     if (a.getRootReference() != b.getRootReference())
       return a.getRootReference().getValue() < b.getRootReference().getValue();
@@ -444,4 +450,23 @@ void LIT::canonicalizeTraitCompositionSymbols(
     return aSegments.size() < bSegments.size();
   });
   symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
+}
+
+void LIT::canonicalizeTraitCompositionSymbols(
+    SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols) {
+  // Pull in the entire ancestor chain.
+  DenseSet<SymbolRefAttr> seen;
+  for (SymbolRefAttr symbol : symbols) {
+    if (!seen.insert(symbol).second)
+      continue;
+    ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+    auto traitOp = cast<TraitDeclOp>(memberDecl);
+    // Only one level of parent lookup is needed because parentTypes always
+    // include their entire ancestor chain.
+    ArrayRef<SymbolRefAttr> parentSymbols =
+        traitOp.getCanonicalTrait().getSymbols();
+    seen.insert(parentSymbols.begin(), parentSymbols.end());
+  }
+  symbols.assign(seen.begin(), seen.end());
+  sortAndDeduplicateSymbols(symbols);
 }

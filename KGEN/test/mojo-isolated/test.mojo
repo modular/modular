@@ -13,8 +13,15 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+# CHECK: !AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility = !lit.trait<
+# CHECK-SAME: @stdlib::@builtin::@stubs::@AnyType,
+# CHECK-SAME: @stdlib::@builtin::@stubs::@Copyable,
+# CHECK-SAME: @stdlib::@builtin::@stubs::@ExplicitlyCopyable,
+# CHECK-SAME: @stdlib::@builtin::@stubs::@Movable,
+# CHECK-SAME: @stdlib::@builtin::@stubs::@UnknownDestructibility>
 
-# CHECK: lit.struct.decl @BoxedInt(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
+
+# CHECK: lit.struct.decl @BoxedInt(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
 @value
 struct BoxedInt:
     var value: Index

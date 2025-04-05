@@ -16,12 +16,17 @@ class InflightDiag;
 namespace M::KGEN::LIT {
 class ASTDecl;
 class SharedState;
-class TraitType;
-class TypeLineageAttr;
 
-/// Check conformance of a struct against a given trait type.
-LogicalResult verifyConformance(ASTDecl &structDecl, TypeLineageAttr parent,
+/// Check conformance of a struct against a given trait decl. Inherited methods
+/// are not checked, so to verify full conformance of an inheriting trait decl,
+/// its full ancestor chain of decls must also be checked here too. This logic
+/// is left for the caller so optimizations is possible when the struct is
+/// already known to conform to certain ancestors.
+LogicalResult verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
                                 std::optional<InflightDiag> &diag);
+
+/// Sort & deduplicate the list of symbols deterministically.
+void sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols);
 
 /// Canonicalize the list of symbols that form a trait composition.
 void canonicalizeTraitCompositionSymbols(

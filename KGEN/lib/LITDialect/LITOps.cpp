@@ -1001,28 +1001,20 @@ static void printTypeConvention(AsmPrinter &p, Operation *op,
 static ParseResult parseStructParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &params,
                                             TypeAttr &signature,
-                                            TypeLineageArrayAttr &parentTypes) {
+                                            TypeAttr &canonicalTraitAttr) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
   PogListAttr paramListAttr;
   if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
 
-  SmallVector<TypeLineageAttr> parentTypeExprs;
-  auto parseTypeAndLineage = [&]() -> ParseResult {
-    Type type;
-    SmallVector<Type> lineage;
-    if (parseParamType(p, type) ||
-        p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare, [&] {
-          return parseParamType(p, lineage.emplace_back());
-        }))
+  TraitType canonicalTrait;
+  if (succeeded(p.parseOptionalLParen())) {
+    if (parseParamType(p, canonicalTrait) || p.parseRParen())
       return failure();
-    parentTypeExprs.push_back(TypeLineageAttr::get(type, lineage));
-    return success();
-  };
-  if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalParen,
-                                parseTypeAndLineage))
-    return failure();
-  parentTypes = TypeLineageArrayAttr::get(p.getContext(), parentTypeExprs);
+  } else {
+    canonicalTrait = TraitType::get(p.getContext(), {});
+  }
+  canonicalTraitAttr = TypeAttr::get(canonicalTrait);
 
   auto sig = TypeSignatureType::remapToSignature(
       [&] { return p.emitError(startLoc); }, params, paramListAttr);
@@ -1035,21 +1027,15 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
 static void printStructParameterSpec(AsmPrinter &p, Operation *op,
                                      ArrayRef<ParamDeclAttr> params,
                                      TypeAttr signature,
-                                     ArrayRef<TypeLineageAttr> parentTypes) {
+                                     TypeAttr canonicalTraitAttr) {
   auto sig = cast<TypeSignatureType>(signature.getValue());
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params, sig.getParamListAttrs(), evaluator);
-  if (!parentTypes.empty()) {
+
+  TraitType canonicalTrait = cast<TraitType>(canonicalTraitAttr.getValue());
+  if (!canonicalTrait.getSymbols().empty()) {
     p << '(';
-    llvm::interleaveComma(parentTypes, p, [&](TypeLineageAttr type) {
-      printParamType(p, type.getType());
-      if (!type.getInheritedFrom().empty()) {
-        p << '[';
-        llvm::interleaveComma(type.getInheritedFrom(), p,
-                              [&](Type type) { printParamType(p, type); });
-        p << ']';
-      }
-    });
+    printParamType(p, canonicalTrait);
     p << ')';
   }
 }
@@ -1132,7 +1118,8 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
-        TypeLineageArrayAttr::get(ctx, {}), /*isSynthetic=*/{},
+        TypeAttr::get(TraitType::get(ctx, {})),
+        /*isSynthetic=*/{},
         /*nonmaterializableTarget=*/{}, /*destructor=*/{}, /*moveInit=*/{},
         /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
         /*docString=*/{}, /*deprecationWarning=*/{}, /*sourceName=*/{},
@@ -1400,7 +1387,8 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name) {
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
-        ParamDeclArrayAttr::get(ctx, {}), TypeLineageArrayAttr::get(ctx, {}),
+        ParamDeclArrayAttr::get(ctx, {}),
+        TypeAttr::get(TraitType::get(ctx, {})),
         /*convention=*/TypeConvention::Unspecified,
         /*dtorSig=*/{}, /*docString=*/{}, /*deprecationWarning=*/{},
         /*linearTypeErrorMsg*/ {});

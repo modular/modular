@@ -153,13 +153,6 @@ public:
       FnEffects fnEffects = FnEffects(), StringRef suffix = "",
       bool synthetic = true);
 
-  /// Given a struct and a trait declaration, make the trait inherit from the
-  /// struct if it does not already. This adds the trait decl to the struct's
-  /// parent list and all transitive parents that are not already there.
-  static void addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl);
-  static void appendTraits(SmallVectorImpl<TypeLineageAttr> &parentTypes,
-                           ASTDecl *traitDecl);
-
 private:
   FnOp createFunction(ASTDecl &parent, StringRef name,
                       ArrayRef<ParamDeclAttr> params,

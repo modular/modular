@@ -210,6 +210,11 @@ public:
   /// ASTDecl instance and help generate such names.
   unsigned getNextUniqueID() { return counter++; }
 
+  /// Get the map of trait conformance lineage for this decl. This is lazily
+  /// initialized because it is only needed for structs.
+  DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *
+  getTraitConformanceLineage(bool createIfMissing = false);
+
   /// Dump the underlying IR value.
   void dump() const;
 
@@ -302,6 +307,14 @@ private:
   using UnresolvedWildcardImportsType =
       llvm::MapVector<StringAttr, std::pair<SMLoc, bool>>;
   std::unique_ptr<UnresolvedWildcardImportsType> unresolvedWildcardImports;
+
+  /// A map from each trait symbol that a struct conforms to, to the first
+  /// symbol that explicitly inherits from it. This provides better diagnostics
+  /// when a struct does not conform to a trait. This is lazily initialized
+  /// because it is only needed for structs.
+  using TraitConformanceLineageType =
+      DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>>;
+  std::unique_ptr<TraitConformanceLineageType> traitConformanceLineage;
 };
 
 } // namespace M::KGEN::LIT
