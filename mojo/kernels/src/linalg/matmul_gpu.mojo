@@ -32,7 +32,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import A100, H100, DEFAULT_GPU
+from gpu.host.info import A100, H100, DEFAULT_GPU, Vendor
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import IntTuple
@@ -340,7 +340,7 @@ fn _matmul_gpu[
     # fmt: on
 
     @parameter
-    if DEFAULT_GPU > H100:
+    if DEFAULT_GPU.vendor == Vendor.NVIDIA_GPU and DEFAULT_GPU > H100:
         constrained[
             use_tensor_core,
             "Tensor core matmul is not supported on '",
