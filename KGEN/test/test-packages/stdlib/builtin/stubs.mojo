@@ -339,6 +339,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
     ](out self: StringSlice[O], ref [O]value: String):
         pass
 
+    @implicit
+    fn __init__(out self: StaticString, lit: StringLiteral):
+        pass
+
     @always_inline
     fn unsafe_ptr(
         self,
@@ -372,7 +376,7 @@ fn get_string_literal2[
 
 @always_inline("nodebug")
 fn get_string_literal[
-    string: String, *extra: StaticString
+    string: StaticString, *extra: StaticString
 ](out result: __type_of(get_string_literal2[string, extra]())):
     result = __type_of(result)()
 

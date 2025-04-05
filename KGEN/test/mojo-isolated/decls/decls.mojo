@@ -368,7 +368,7 @@ fn llvm_arg_meta[x: Int](a: Int, b: Int, c: Int, d: Int, e: Int):
     pass
 
 
-fn alias_parametric_fn() -> String:
+fn alias_parametric_fn() -> StaticString:
     @parameter
     if True:
         return "nvvm.maxntid"
