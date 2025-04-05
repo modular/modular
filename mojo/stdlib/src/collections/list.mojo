@@ -54,7 +54,7 @@ struct _ListIter[
 
     alias list_type = List[T, hint_trivial_type]
 
-    var index: Int
+    var index: UInt
     var src: Pointer[Self.list_type, list_origin]
 
     fn __iter__(self) -> Self:
@@ -102,9 +102,9 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     # Fields
     var data: UnsafePointer[T]
     """The underlying storage for the list."""
-    var _len: Int
+    var _len: UInt
     """The number of elements in the list."""
-    var capacity: Int
+    var capacity: UInt
     """The amount of elements that can fit in the list without resizing it."""
 
     # ===-------------------------------------------------------------------===#
@@ -128,7 +128,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             copy.append(e[])
         return copy^
 
-    fn __init__(out self, *, capacity: Int):
+    fn __init__(out self, *, capacity: UInt):
         """Constructs a list with the given capacity.
 
         Args:
@@ -318,7 +318,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
                 return True
         return False
 
-    fn __mul__(self, x: Int) -> Self:
+    fn __mul__(self, x: UInt) -> Self:
         """Multiplies the list by x and returns a new list.
 
         Args:
@@ -334,7 +334,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         result *= x
         return result^
 
-    fn __imul__(mut self, x: Int):
+    fn __imul__(mut self, x: UInt):
         """Appends the original elements of this list x-1 times or clears it if
         x is <= 0.
 
@@ -498,7 +498,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn byte_length(self) -> Int:
+    fn byte_length(self) -> UInt:
         """Gets the byte length of the List (`len(self) * sizeof[T]()`).
 
         Returns:
@@ -507,7 +507,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         return len(self) * sizeof[T]()
 
     @no_inline
-    fn _realloc(mut self, new_capacity: Int):
+    fn _realloc(mut self, new_capacity: UInt):
         var new_data = UnsafePointer[T].alloc(new_capacity)
 
         @parameter
@@ -568,11 +568,11 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             i: The index for the value.
             value: The value to insert.
         """
-        debug_assert(i <= len(self), "insert index out of range")
 
-        var normalized_idx = i
+        var normalized_idx = UInt(i)
         if i < 0:
             normalized_idx = max(0, len(self) + i)
+        debug_assert(normalized_idx <= len(self), "insert index out of range")
 
         var earlier_idx = len(self)
         var later_idx = len(self) - 1
@@ -642,7 +642,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     fn extend[
         D: DType, //
-    ](mut self: List[Scalar[D], *_, **_], value: SIMD[D, _], *, count: Int):
+    ](mut self: List[Scalar[D], *_, **_], value: SIMD[D, _], *, count: UInt):
         """Extends this list with `count` number of elements from a vector.
 
         Parameters:
@@ -689,11 +689,11 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Returns:
             The popped value.
         """
-        debug_assert(-self._len <= i < self._len, "pop index out of range")
 
-        var normalized_idx = i
+        var normalized_idx = UInt(i)
         if i < 0:
-            normalized_idx += self._len
+            normalized_idx = self._len + i
+        debug_assert(normalized_idx < self._len, "pop index out of range")
 
         var ret_val = (self.data + normalized_idx).take_pointee()
         for j in range(normalized_idx + 1, self._len):
@@ -702,7 +702,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         return ret_val^
 
-    fn reserve(mut self, new_capacity: Int):
+    fn reserve(mut self, new_capacity: UInt):
         """Reserves the requested capacity.
 
         If the current capacity is greater or equal, this is a no-op.
@@ -715,7 +715,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             return
         self._realloc(new_capacity)
 
-    fn resize(mut self, new_size: Int, value: T):
+    fn resize(mut self, new_size: UInt, value: T):
         """Resizes the list to the given new size.
 
         If the new size is smaller than the current one, elements at the end
@@ -734,7 +734,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
                 (self.data + i).init_pointee_copy(value)
             self._len = new_size
 
-    fn resize(mut self, *, unsafe_uninit_length: Int):
+    fn resize(mut self, *, unsafe_uninit_length: UInt):
         """Resizes the list to the given new size leaving any new elements
         uninitialized.
 
@@ -751,7 +751,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             self.reserve(unsafe_uninit_length)
             self._len = unsafe_uninit_length
 
-    fn shrink(mut self, new_size: Int):
+    fn shrink(mut self, new_size: UInt):
         """Resizes to the given new size which must be <= the current size.
 
         With no new value provided, the new size must be smaller than or equal
@@ -933,25 +933,24 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             A reference to the element at the given index.
         """
 
-        @parameter
-        if _type_is_eq[I, UInt]():
-            return (self.data + idx)[]
-        else:
-            var normalized_idx = Int(idx)
-            debug_assert(
-                -self._len <= normalized_idx < self._len,
-                "index: ",
-                normalized_idx,
-                " is out of bounds for `List` of length: ",
-                self._len,
-            )
-            if normalized_idx < 0:
-                normalized_idx += len(self)
+        var normalized_idx = UInt(idx.__index__())
 
-            return (self.data + normalized_idx)[]
+        @parameter
+        if not _type_is_eq[I, UInt]():
+            if Int(idx) < 0:
+                normalized_idx = len(self) + Int(idx)
+        debug_assert(
+            normalized_idx < self._len,
+            "index: ",
+            normalized_idx,
+            " is out of bounds for `List` of length: ",
+            self._len,
+        )
+
+        return (self.data + normalized_idx)[]
 
     @always_inline
-    fn unsafe_get(ref self, idx: Int) -> ref [self] Self.T:
+    fn unsafe_get(ref self, idx: UInt) -> ref [self] Self.T:
         """Get a reference to an element of self without checking index bounds.
 
         Users should consider using `__getitem__` instead of this method as it
@@ -979,7 +978,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         return (self.data + idx)[]
 
     @always_inline
-    fn unsafe_set(mut self, idx: Int, owned value: T):
+    fn unsafe_set(mut self, idx: UInt, owned value: T):
         """Write a value to a given location without checking index bounds.
 
         Users should consider using `my_list[idx] = value` instead of this method as it
@@ -1036,7 +1035,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
                 count += 1
         return count
 
-    fn swap_elements(mut self, elt_idx_1: Int, elt_idx_2: Int):
+    fn swap_elements(mut self, elt_idx_1: UInt, elt_idx_2: UInt):
         """Swaps elements at the specified indexes if they are different.
 
         ```mojo
