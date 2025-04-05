@@ -662,7 +662,7 @@ OpFoldResult CmpOp::fold(FoldAdaptor adaptor) {
         return {};
 
       // Only one input will be constant.
-      auto op1SimdAttr = dyn_cast_or_null<SIMDAttr>(op1);
+      [[maybe_unused]] auto op1SimdAttr = dyn_cast_or_null<SIMDAttr>(op1);
       auto op2SimdAttr = dyn_cast_or_null<SIMDAttr>(op2);
       assert(!(op1SimdAttr && op2SimdAttr) &&
              "constant case should be handled");
