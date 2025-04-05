@@ -3645,6 +3645,7 @@ struct DeviceContext(CollectionElement):
         self.enqueue_memset[type](dst, val)
 
     @doc_private
+    @always_inline
     fn stream(self) raises -> DeviceStream:
         return DeviceStream(self)
 
