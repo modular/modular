@@ -21,7 +21,7 @@ from benchmark import (
 )
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from compile import _internal_compile_code
+from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from stdlib.builtin.io import _snprintf
@@ -330,9 +330,7 @@ fn bench_compile_time[
         fn bench_iter() raises:
             @parameter
             if emission_kind == "asm" or emission_kind == "llvm":
-                var s = _internal_compile_code[
-                    func, emission_kind=emission_kind
-                ]()
+                var s = compile_info[func, emission_kind=emission_kind]().asm
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
                 with DeviceContext() as ctx:
