@@ -2,7 +2,7 @@
 // RUN: llvm-module-split %t --per-func | FileCheck %s
 
 llvm.mlir.global internal constant @str0("str0\00") {addr_space = 0 : i32, alignment = 16 : i64}
-llvm.mlir.global private constant @str1("str1\00") {addr_space = 0 : i32, alignment = 16 : i64}
+llvm.mlir.global internal constant @str1("str1\00") {addr_space = 0 : i32, alignment = 16 : i64}
 
 llvm.func @f(%arg0: !llvm.ptr) {
   %0 = llvm.mlir.addressof @str0: !llvm.ptr
