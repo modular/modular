@@ -6,6 +6,8 @@
 # RUN: kgen -elaborate %s -S -o - | FileCheck %s --check-prefix=ELABORATE
 # RUN: mojo %s | FileCheck %s
 
+from collections.string.string_slice import StaticString, get_static_string
+
 
 @value
 struct StringParam[value: String]:
@@ -30,8 +32,8 @@ fn instantiateElsewhere():
     stringInputParam["thrice"]()
 
 
-fn test_literal_from_comptime_string[s: String]() -> StringLiteral:
-    return get_string_literal[s, "-", s]()
+fn test_literal_from_comptime_string[s: String]() -> StaticString:
+    return get_static_string[s, "-", s]()
 
 
 fn main():
@@ -50,11 +52,11 @@ fn main():
 
     # CHECK: hihi-hihi
     alias hi: String = "hi"
-    var strlit: StringLiteral = test_literal_from_comptime_string[hi * 2]()
-    print(strlit)
+    var str = test_literal_from_comptime_string[hi * 2]()
+    print(str)
 
     # CHECK: 33
-    print(get_string_literal[String(33)]())
+    print(get_static_string[String(33)]())
 
     # CHECK: 42
-    print(get_string_literal[String(Int64(42))]())
+    print(get_static_string[String(Int64(42))]())
