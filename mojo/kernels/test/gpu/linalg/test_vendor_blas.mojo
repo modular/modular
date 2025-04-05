@@ -57,8 +57,7 @@ fn test_cublas(ctx: DeviceContext) raises:
     var c = NDBuffer[type, 2, _, DimList(M, N)](c_device.unsafe_ptr())
     var c_ref = NDBuffer[type, 2, _, DimList(M, N)](c_device_ref.unsafe_ptr())
 
-    with vendor_blas.Handle() as handle:
-        vendor_blas.matmul(ctx, handle, c, a, b, c_row_major=True)
+    vendor_blas.matmul(ctx, c, a, b, c_row_major=True)
 
     ctx.enqueue_copy(c_host, c_device)
 

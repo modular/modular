@@ -118,16 +118,14 @@ def test_hopper_matmul0_tma_wgmma[
 
     ctx.synchronize()
 
-    with vendor_blas.Handle() as handle:
-        vendor_blas.matmul(
-            ctx,
-            handle,
-            c_device_ref.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )
+    vendor_blas.matmul(
+        ctx,
+        c_device_ref.tensor,
+        a_device.tensor,
+        b_device.tensor,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
 
     ctx.synchronize()
 

@@ -343,16 +343,14 @@ def test_tma_wgmma[
         block_dim=(128),
     )
 
-    with vendor_blas.Handle() as handle:
-        vendor_blas.matmul(
-            ctx,
-            handle,
-            c_ref.device_buffer(),
-            a.device_buffer[update=False](),
-            b.device_buffer[update=False](),
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )
+    vendor_blas.matmul(
+        ctx,
+        c_ref.device_buffer(),
+        a.device_buffer[update=False](),
+        b.device_buffer[update=False](),
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
 
     ctx.synchronize()
 

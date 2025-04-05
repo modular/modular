@@ -280,16 +280,14 @@ fn wgmma_bf16_bf16_f32[
         c_ref.device_tensor().ptr
     )
 
-    with vendor_blas.Handle() as handle:
-        vendor_blas.matmul(
-            ctx,
-            handle,
-            c_ref_buf,
-            a_buf,
-            b_buf,
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )
+    vendor_blas.matmul(
+        ctx,
+        c_ref_buf,
+        a_buf,
+        b_buf,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
 
     for m in range(M):
         for n in range(N):

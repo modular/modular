@@ -176,16 +176,14 @@ fn test_split_k_multistage_gemm[
 
     print("copied from device")
 
-    with vendor_blas.Handle() as handle:
-        vendor_blas.matmul(
-            ctx,
-            handle,
-            c_dev_list[0].tensor,
-            a_submat[0].tensor,
-            b_submat[0].tensor,
-            c_row_major=True,
-            transpose_b=transpose_b,
-        )
+    vendor_blas.matmul(
+        ctx,
+        c_dev_list[0].tensor,
+        a_submat[0].tensor,
+        b_submat[0].tensor,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
 
     print("cublas'd")
 
