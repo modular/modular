@@ -6,8 +6,10 @@
 
 # RUN: %mojo %s --debug-level full 2>&1 | FileCheck %s
 
+from collections.string import StaticString
 
-def try_it(c0: Bool, c1: Bool) -> StringLiteral:
+
+def try_it(c0: Bool, c1: Bool) -> StaticString:
     try:
         try:
             print("try")

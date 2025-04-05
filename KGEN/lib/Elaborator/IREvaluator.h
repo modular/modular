@@ -127,6 +127,13 @@ struct ImplNode {
   /// Take the provided error and set this node to an `error` state. Erase all
   /// state dominated by this node.
   void setToError(ErrorTree &&err) {
+    if (error) {
+      llvm::errs() << "INTERNAL ELABORATOR ERROR PROCESSING: " << baseName
+                   << "\n";
+      std::move(*error).emit([](Location loc) { return mlir::emitError(loc); },
+                             "HERE");
+      abort();
+    }
     assert(!error && "impl node already has an error");
     hasError.store(true);
     error = std::move(err);
