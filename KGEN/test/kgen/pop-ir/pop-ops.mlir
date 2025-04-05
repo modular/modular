@@ -1032,14 +1032,6 @@ kgen.func @string_ops(%a: !kgen.string,
   %2 = pop.string.concat %a, %a
   // CHECK: pop.string.hash %a
   %4 = pop.string.hash %a
-  // CHECK: pop.string.base64.encode %a
-  %5 = pop.string.base64.encode %a
-  // CHECK: pop.string.base64.decode %a
-  %6 = pop.string.base64.decode %a
-  // CHECK: pop.string.compress %a
-  %7 = pop.string.compress %a
-  // CHECK: pop.string.decompress %a
-  %8 = pop.string.decompress %a
   kgen.return %1: index
 }
 

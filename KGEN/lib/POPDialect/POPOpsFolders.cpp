@@ -2114,46 +2114,6 @@ OpFoldResult StringHashOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// StringBase64EncodeOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult StringBase64EncodeOp::fold(FoldAdaptor adaptor) {
-  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
-    return StringBase64EncodeAttr::get(getContext(), str);
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
-// StringBase64DecodeOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult StringBase64DecodeOp::fold(FoldAdaptor adaptor) {
-  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
-    return StringBase64DecodeAttr::get(getContext(), str);
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
-// StringCompressOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult StringCompressOp::fold(FoldAdaptor adaptor) {
-  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
-    return StringCompressAttr::get(getContext(), str);
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
-// StringDecompressOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult StringDecompressOp::fold(FoldAdaptor adaptor) {
-  if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
-    return StringDecompressAttr::get(getContext(), str);
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
 // DTypeToUI8
 //===----------------------------------------------------------------------===//
 
