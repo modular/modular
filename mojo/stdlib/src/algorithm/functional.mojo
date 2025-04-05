@@ -15,7 +15,7 @@ from algorithm import map
 from math import align_down, ceildiv
 from os import abort
 from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
-from collections.string import StaticString
+from collections.string.string_slice import StaticString, get_static_string
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -1392,13 +1392,14 @@ fn elementwise[
             vector_width_str,
         )
 
-    alias kind = get_string_literal[
+    # Intern the kind string as a static string so we don't allocate.
+    alias kind = get_static_string[
         "elementwise",
         ("(" + _trace_description + ")" if _trace_description else ""),
     ]()
 
     with Trace[TraceLevel.OP, target=target](
-        StaticString(kind),
+        kind,
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
 
