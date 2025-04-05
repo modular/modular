@@ -22,7 +22,7 @@ from utils import Index
 
 def _to_device_str(gpu_id: Int, sm_ver: Int) -> String:
     # TODO fix this for AMD
-    return "Device(type=gpu,id={0})".format(gpu_id)
+    return String("Device(type=gpu,id={0})").format(gpu_id)
 
 
 def test_accelerator_device():
