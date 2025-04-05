@@ -17,7 +17,11 @@ from gpu._cublas.cublas import (
     cublasCreate,
     cublasDestroy,
     cublasGemmEx,
+    cublasSetStream,
+    cublasLoggerConfigure,
     cublasOperation_t,
+    cublasMath_t,
+    cublasSetMathMode,
 )
 from gpu._cublas.cublaslt import (
     Context,
@@ -266,22 +270,42 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 # Matmul
 # ===----------------------------------------------------------------------===#
 
+alias _DEBUG_CUBLAS = True
+
+
+fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
+    @parameter
+    if handle.resolved_backend is Backend.CUBLAS:
+        check_cublas_error(
+            cublasSetStream(handle._get_cublas(), CUDA(ctx.stream()))
+        )
+
+        @parameter
+        if _DEBUG_CUBLAS:
+            check_cublas_error(
+                cublasLoggerConfigure(1, 1, 0, UnsafePointer[Int8]())
+            )
+
 
 fn _get_global_handle[
     backend: Backend = _resolve_backend[Backend.AUTOMATIC]()
-]() raises -> Handle[backend]:
+](ctx: DeviceContext) raises -> Handle[backend]:
     alias HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend)
     if global_ptr := _get_global_or_null[HANDLE_NAME]().bitcast[
         Handle[backend]
     ]():
+        _attach_handle_to_stream(ctx, global_ptr[])
         return global_ptr[]
 
+    # Otherwise, we have not initialized the handle yet.
     var handle_ptr = UnsafePointer[Handle[backend]].alloc(1)
     handle_ptr.init_pointee_move(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),
-        handle_ptr.bitcast[OpaquePointer](),
+        handle_ptr.bitcast[NoneType](),
     )
+
+    _attach_handle_to_stream(ctx, handle_ptr[])
 
     return handle_ptr[]
 
@@ -304,7 +328,7 @@ fn matmul[
 
     return matmul[use_tf32](
         ctx,
-        _get_global_handle(),
+        _get_global_handle(ctx),
         c,
         a,
         b,
@@ -424,6 +448,18 @@ fn _cublas_matmul[
     else:
         compute_type = (
             ComputeType.COMPUTE_32F_FAST_TF32 if use_tf32 else ComputeType.COMPUTE_32F
+        )
+
+    # When use_tf32 is True, CUBLAS will use TF32 to speedup the computation.
+    # However, the result is not bit-wise identical to the result of FP32.
+    @parameter
+    if use_tf32:
+        check_cublas_error(
+            cublasSetMathMode(handle, cublasMath_t.CUBLAS_TF32_TENSOR_OP_MATH)
+        )
+    else:
+        check_cublas_error(
+            cublasSetMathMode(handle, cublasMath_t.CUBLAS_DEFAULT_MATH)
         )
 
     # Rocblas is by default column-major but we like to have the output in row-major
