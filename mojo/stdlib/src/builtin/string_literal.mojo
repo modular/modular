@@ -720,7 +720,7 @@ struct StringLiteral(
 
 
 @always_inline("nodebug")
-fn get_string_literal_slice[
+fn get_string_literal[
     string: StaticString, *extra: StaticString
 ]() -> StringLiteral:
     """Form a string literal from a compile-time StringSlice value and additional
@@ -733,11 +733,11 @@ fn get_string_literal_slice[
     Returns:
         The string value as a StringLiteral.
     """
-    return get_string_literal_slice2[string, extra]()
+    return get_string_literal2[string, extra]()
 
 
 @always_inline("nodebug")
-fn get_string_literal_slice2[
+fn get_string_literal2[
     string: StaticString, extra: VariadicList[StaticString]
 ]() -> StringLiteral:
     """Form a string literal from N compile-time StringSlice values concatenated.
@@ -756,40 +756,6 @@ fn get_string_literal_slice2[
         extra.value,
         `> : !kgen.string`,
     ]
-
-
-# TODO(MOCO-1460): get_string_literal should be an initializer, but Mojo tries
-# to bind the parameter in `StringLiteral["foo"]()` to the type instead of the
-# initializer.   Use a global function to work around this for now.
-@always_inline("nodebug")
-fn get_string_literal[value: String, *extra: StaticString]() -> StringLiteral:
-    """Form a string literal from an arbitrary compile-time String value.
-
-    Parameters:
-        value: The value to convert to StringLiteral.
-        extra: Additional StringSlice values to concatenate.
-
-    Returns:
-        The string value as a StringLiteral.
-    """
-    return get_string_literal_slice2[value, extra]()
-
-
-@always_inline("nodebug")
-fn get_string_literal[
-    type: Stringable, //, value: type, *extra: StaticString
-]() -> StringLiteral:
-    """Form a string literal from an arbitrary compile-time stringable value.
-
-    Parameters:
-        type: The type of the value.
-        value: The value to serialize.
-        extra: Additional StringSlice values to concatenate.
-
-    Returns:
-        The string value as a StringLiteral.
-    """
-    return get_string_literal_slice2[String(value), extra]()
 
 
 fn _base64_encode[str: StringLiteral]() -> StringLiteral:

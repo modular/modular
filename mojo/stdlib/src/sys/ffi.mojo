@@ -15,7 +15,7 @@
 from collections.string import StringSlice, StaticString
 from os import abort
 from sys._libc import dlclose, dlerror, dlopen, dlsym
-from builtin.string_literal import get_string_literal_slice
+from builtin.string_literal import get_string_literal
 
 from memory import UnsafePointer
 
@@ -309,7 +309,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         """
         # Force the func_name into a StringLiteral so we know that it is
         # nul-terminated.
-        alias func_name_literal = get_string_literal_slice[func_name]()
+        alias func_name_literal = get_string_literal[func_name]()
 
         return self._get_function[result_type](
             func_name_literal.unsafe_cstr_ptr()
@@ -580,7 +580,7 @@ fn external_call[
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
     var loaded_pack = args.get_loaded_kgen_pack()
-    alias callee_literal = get_string_literal_slice[callee]().value
+    alias callee_literal = get_string_literal[callee]().value
 
     @parameter
     if _mlirtype_is_eq[return_type, NoneType]():
@@ -626,7 +626,7 @@ fn _external_call_const[
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
     var loaded_pack = args.get_loaded_kgen_pack()
-    alias callee_literal = get_string_literal_slice[callee]().value
+    alias callee_literal = get_string_literal[callee]().value
 
     return __mlir_op.`pop.external_call`[
         func=callee_literal,

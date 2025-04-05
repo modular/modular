@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes the inlined_assembly function."""
 
-from builtin.string_literal import get_string_literal_slice
+from builtin.string_literal import get_string_literal
 from collections.string.string_slice import StaticString
 
 from .intrinsics import _mlirtype_is_eq
@@ -29,8 +29,8 @@ fn inlined_assembly[
     """Generates assembly via inline assembly."""
     var loaded_pack = args.get_loaded_kgen_pack()
 
-    alias asm_literal = get_string_literal_slice[asm]().value
-    alias constraints_literal = get_string_literal_slice[constraints]().value
+    alias asm_literal = get_string_literal[asm]().value
+    alias constraints_literal = get_string_literal[constraints]().value
 
     @parameter
     if _mlirtype_is_eq[result_type, NoneType]():

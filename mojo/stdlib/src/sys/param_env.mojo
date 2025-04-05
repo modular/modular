@@ -41,7 +41,7 @@ from sys import is_defined
 """
 
 from collections.string import StaticString
-from builtin.string_literal import get_string_literal_slice
+from builtin.string_literal import get_string_literal
 
 
 fn is_defined[name: StaticString]() -> Bool:
@@ -55,7 +55,7 @@ fn is_defined[name: StaticString]() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<get_env, `,
-        get_string_literal_slice[name]().value,
+        get_string_literal[name]().value,
         `> : i1`,
     ]
 
@@ -128,7 +128,7 @@ fn env_get_int[name: StaticString]() -> Int:
     """
     return __mlir_attr[
         `#kgen.param.expr<get_env, `,
-        get_string_literal_slice[name]().value,
+        get_string_literal[name]().value,
         `> : index`,
     ]
 
@@ -186,7 +186,7 @@ fn env_get_string[name: StaticString]() -> StaticString:
     return StringLiteral(
         __mlir_attr[
             `#kgen.param.expr<get_env, `,
-            get_string_literal_slice[name]().value,
+            get_string_literal[name]().value,
             `> : !kgen.string`,
         ]
     )

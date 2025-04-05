@@ -25,7 +25,7 @@ from sys.info import is_gpu, _is_sm_9x
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
 from collections.string import StaticString
-from builtin.string_literal import get_string_literal_slice
+from builtin.string_literal import get_string_literal
 
 from ._assembly import inlined_assembly
 from .info import is_amd_gpu, is_nvidia_gpu, sizeof
@@ -60,7 +60,7 @@ fn llvm_intrinsic[
 
     var loaded_pack = args.get_loaded_kgen_pack()
 
-    alias intrin_literal = get_string_literal_slice[intrin]().value
+    alias intrin_literal = get_string_literal[intrin]().value
 
     @parameter
     if _mlirtype_is_eq[type, NoneType]():
