@@ -405,7 +405,7 @@ fn next_power_of_two(val: UInt) -> UInt:
     Notes:
         This operation is called `bit_ceil()` in C++.
     """
-    alias w = bitwidthof[Int]()
+    alias w = bitwidthof[UInt]()
     return UInt(select(val == 0, 1, 1 << (w - count_leading_zeros(val - 1))))
 
 
