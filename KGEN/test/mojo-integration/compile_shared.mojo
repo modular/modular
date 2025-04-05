@@ -7,7 +7,7 @@
 # RUN: %mojo %s -o %t
 # RUN: llvm-objdump -t %t | FileCheck %s
 
-from compile import _internal_compile_code
+from compile import compile_info
 from sys import argv, sizeof
 
 
@@ -23,9 +23,7 @@ fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
 def main():
     alias myCompiledFn = compiled_fn[DType.uint32]
     # compile myCompileFn into a shared object binary
-    var myShared = _internal_compile_code[
-        myCompiledFn, emission_kind="object"
-    ]()
+    var myShared = compile_info[myCompiledFn, emission_kind="object"]()
 
     idx = 0
     args = argv()

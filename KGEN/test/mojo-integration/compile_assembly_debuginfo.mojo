@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from compile import _internal_compile_code
+from compile import compile_info
 from sys import sizeof
 
 
@@ -20,7 +20,7 @@ fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
 
 fn main():
     alias myCompiledFn = compiled_fn[DType.uint32]
-    var myAsm = _internal_compile_code[myCompiledFn, emission_kind="llvm"]()
+    var myAsm = compile_info[myCompiledFn, emission_kind="llvm"]()
     print(myAsm)
 
 

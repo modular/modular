@@ -8,7 +8,7 @@
 # CHECK: 'compile_offload' function is not fully bound
 # CHECK-SAME: param_fn{{.*}} missing 1 parameter binding(s)
 
-from compile import _internal_compile_code
+from compile import compile_info
 
 
 fn param_fn[x: Int, y: Int]() -> Int:
@@ -18,5 +18,5 @@ fn param_fn[x: Int, y: Int]() -> Int:
 def main():
     # intentionally missing one parameter
     alias myInstantiatedFn = param_fn[2]
-    var asm = _internal_compile_code[myInstantiatedFn]()
+    var asm = compile_info[myInstantiatedFn]()
     print(asm)
