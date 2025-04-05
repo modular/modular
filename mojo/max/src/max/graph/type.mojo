@@ -164,7 +164,7 @@ struct Dim(CollectionElement):
 
     @implicit
     fn __init__(out self, name: StringLiteral):
-        """StringLiteral symbolic dimension conversion constructor.
+        """Named symbolic dimension conversion constructor.
 
         Args:
             name: The name of the symbolic dimension.
