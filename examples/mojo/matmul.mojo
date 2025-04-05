@@ -22,6 +22,7 @@ from sys import info, simdwidthof
 import benchmark
 from algorithm import Static2DTileUnitFunc as Tile2DFunc
 from algorithm import parallelize, vectorize
+from collections.string import StaticString
 from memory import UnsafePointer, memset_zero, stack_allocation
 from python import Python, PythonObject
 
@@ -282,7 +283,7 @@ fn matmul_reordered(mut C: Matrix, A: Matrix, B: Matrix):
 
 @always_inline
 fn bench[
-    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StringLiteral
+    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StaticString
 ](base_gflops: Float64, np_gflops: Float64) raises:
     var A = Matrix[M, K].rand()
     var B = Matrix[K, N].rand()

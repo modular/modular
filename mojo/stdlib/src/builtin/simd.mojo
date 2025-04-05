@@ -76,6 +76,7 @@ from builtin._format_float import _write_float
 from builtin.dtype import _uint_type_of_width
 from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
+from collections.string import StaticString
 from documentation import doc_private
 from memory import Span, UnsafePointer, bitcast, memcpy
 
@@ -1900,7 +1901,7 @@ struct SIMD[dtype: DType, size: Int](
 
         return array^
 
-    fn _floor_ceil_trunc_impl[intrinsic: StringLiteral](self) -> Self:
+    fn _floor_ceil_trunc_impl[intrinsic: StaticString](self) -> Self:
         constrained[
             intrinsic == "llvm.floor"
             or intrinsic == "llvm.ceil"

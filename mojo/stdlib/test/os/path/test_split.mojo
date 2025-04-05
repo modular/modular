@@ -62,6 +62,6 @@ def main():
     assert_equal(tail, "c.txt")
 
     # Test with __source_location()
-    source_location = __source_location().file_name
+    source_location = String(__source_location().file_name)
     head, tail = split(source_location)
     assert_equal(head + os.sep + tail, source_location)

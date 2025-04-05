@@ -15,11 +15,12 @@ to data elements in arrays."""
 
 from sys.intrinsics import _type_is_eq
 from sys import sizeof
+from collections.string import StaticString
 
 
 @always_inline
 fn normalize_index[
-    I: Indexer, //, container_name: StringLiteral
+    I: Indexer, //, container_name: StaticString
 ](idx: I, length: UInt) -> UInt:
     """Normalize the given index value to a valid index value for the given container length.
 
@@ -92,7 +93,7 @@ fn normalize_index[
 
 @always_inline
 fn normalize_index[
-    I: Indexer, //, container_name: StringLiteral
+    I: Indexer, //, container_name: StaticString
 ](idx: I, length: Int) -> Int:
     """Normalize the given index value to a valid index value for the given container length.
 

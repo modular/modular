@@ -484,6 +484,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     # Initializers
     # ===------------------------------------------------------------------===#
 
+    @doc_private
+    @always_inline
+    @implicit
+    fn __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
+        # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
+        # encoded, they can be arbitrary binary data.
+        var length: Int = __mlir_op.`pop.string.size`(_kgen)
+        var ptr = UnsafePointer(__mlir_op.`pop.string.address`(_kgen)).bitcast[
+            Byte
+        ]()
+        self._slice = Span[Byte, StaticConstantOrigin](ptr=ptr, length=length)
+
     @always_inline
     @implicit
     fn __init__(out self: StaticString, lit: StringLiteral):
@@ -499,7 +511,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         #   StringLiteral is guaranteed to use UTF-8 encoding.
         # FIXME(MSTDL-160):
         #   Ensure StringLiteral _actually_ always uses UTF-8 encoding.
-        self = StaticString(unsafe_from_utf8=lit.as_bytes())
+        self = StaticString(lit.value)
 
     @always_inline("builtin")
     fn __init__(out self, *, unsafe_from_utf8: Span[Byte, origin]):
@@ -2215,7 +2227,7 @@ fn get_static_string[
     Returns:
         The string value as a StaticString.
     """
-    return StringLiteral(_get_kgen_string[string, extra]())
+    return _get_kgen_string[string, extra]()
 
 
 fn _to_string_list[

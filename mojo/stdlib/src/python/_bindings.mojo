@@ -324,7 +324,7 @@ fn check_arguments_arity(
             raise Error(
                 String.format(
                     "TypeError: {}() missing {} required positional {}",
-                    StringLiteral(func_name),
+                    StaticString(func_name),
                     missing_arg_count,
                     _pluralize(missing_arg_count, "argument", "arguments"),
                 )
@@ -333,7 +333,7 @@ fn check_arguments_arity(
             raise Error(
                 String.format(
                     "TypeError: {}() takes {} positional {} but {} were given",
-                    StringLiteral(func_name),
+                    StaticString(func_name),
                     arity,
                     _pluralize(arity, "argument", "arguments"),
                     arg_count,

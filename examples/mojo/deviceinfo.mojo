@@ -33,6 +33,7 @@ from sys import (
 # This sample prints the current host system information using APIs from the
 # sys module.
 from sys.info import _current_arch, _current_target, _triple_attr
+from collections.string import StaticString
 
 
 def main():
@@ -44,7 +45,7 @@ def main():
     else:
         os = "windows"
     var cpu = _current_arch()
-    var arch = _triple_attr()
+    var arch = StaticString(_triple_attr())
     var cpu_features = String("")
     if CompilationTarget.has_sse4():
         cpu_features += " sse4"

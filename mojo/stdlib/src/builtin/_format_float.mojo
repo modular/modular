@@ -32,6 +32,7 @@ from memory import Span, bitcast
 
 from utils import StaticTuple
 from utils.numerics import FPUtils, isinf, isnan
+from collections.string import StaticString
 
 
 @value
@@ -1430,7 +1431,7 @@ alias cache_f64 = StaticTuple[_UInt128, 619](
     _UInt128(0xF70867153AA2DB38, 0xB8CBEE4FC66D1EA8),
 )
 
-alias float8_e5m2_to_str = StaticTuple[StringLiteral, 256](
+alias float8_e5m2_to_str = StaticTuple[StaticString, 256](
     "0.0",
     "1.52587890625e-05",
     "3.0517578125e-05",

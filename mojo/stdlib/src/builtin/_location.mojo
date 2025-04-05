@@ -13,6 +13,8 @@
 """Implements utilities to capture and represent source code location.
 """
 
+from collections.string import StaticString
+
 
 @value
 @register_passable("trivial")
@@ -21,7 +23,7 @@ struct _SourceLocation(Writable, Stringable, CollectionElement):
 
     var line: Int
     var col: Int
-    var file_name: StringLiteral
+    var file_name: StaticString
 
     fn __init__(out self, *, other: Self):
         self = other

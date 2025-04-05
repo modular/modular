@@ -22,7 +22,7 @@ print(CompilationTarget.is_x86())
 """
 
 from memory import UnsafePointer
-from collections.string import StaticString
+from collections.string.string_slice import StaticString, _get_kgen_string
 
 from .ffi import OpaquePointer, _external_call_const, external_call
 
@@ -47,7 +47,7 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
 
     @always_inline("nodebug")
     @staticmethod
-    fn _has_feature[name: StringLiteral]() -> Bool:
+    fn _has_feature[name: StaticString]() -> Bool:
         """Checks if the target has a specific feature.
 
         Parameters:
@@ -60,7 +60,7 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
             `#kgen.param.expr<target_has_feature,`,
             Self.value,
             `,`,
-            name.value,
+            _get_kgen_string[name](),
             `> : i1`,
         ]
 
@@ -87,12 +87,10 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
 
 @always_inline("nodebug")
 fn _accelerator_arch() -> StaticString:
-    return StringLiteral(
-        __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
-    )
+    return __mlir_attr.`#kgen.param.expr<accelerator_arch> : !kgen.string`
 
 
-fn _get_arch[target: __mlir_type.`!kgen.target`]() -> StringLiteral:
+fn _get_arch[target: __mlir_type.`!kgen.target`]() -> StaticString:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
         target,
@@ -102,13 +100,18 @@ fn _get_arch[target: __mlir_type.`!kgen.target`]() -> StringLiteral:
 
 
 @always_inline("nodebug")
-fn _current_arch() -> StringLiteral:
+fn _current_arch_kgen() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
         _current_target(),
         `, "arch" : !kgen.string`,
         `> : !kgen.string`,
     ]
+
+
+@always_inline("nodebug")
+fn _current_arch() -> StaticString:
+    return _current_arch_kgen()
 
 
 @always_inline("nodebug")
@@ -289,7 +292,7 @@ fn is_apple_m1() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _current_arch().value,
+        _current_arch_kgen(),
         `, "apple-m1" : !kgen.string`,
         `> : i1`,
     ]
@@ -306,7 +309,7 @@ fn is_apple_m2() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _current_arch().value,
+        _current_arch_kgen(),
         `, "apple-m2" : !kgen.string`,
         `> : i1`,
     ]
@@ -323,7 +326,7 @@ fn is_apple_m3() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _current_arch().value,
+        _current_arch_kgen(),
         `, "apple-m3" : !kgen.string`,
         `> : i1`,
     ]
@@ -340,7 +343,7 @@ fn is_apple_m4() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _current_arch().value,
+        _current_arch_kgen(),
         `, "apple-m4" : !kgen.string`,
         `> : i1`,
     ]
@@ -368,7 +371,7 @@ fn is_neoverse_n1() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _current_arch().value,
+        _current_arch_kgen(),
         `, "neoverse-n1" : !kgen.string`,
         `> : i1`,
     ]
@@ -391,7 +394,7 @@ fn has_intel_amx() -> Bool:
 
 
 @always_inline("nodebug")
-fn _os_attr() -> StringLiteral:
+fn _os_attr() -> StaticString:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
         _current_target(),
@@ -410,14 +413,14 @@ fn os_is_macos() -> Bool:
     return (
         __mlir_attr[
             `#kgen.param.expr<eq,`,
-            _os_attr().value,
+            _get_kgen_string[_os_attr()](),
             `,`,
             `"darwin" : !kgen.string`,
             `> : i1`,
         ]
         or __mlir_attr[
             `#kgen.param.expr<eq,`,
-            _os_attr().value,
+            _get_kgen_string[_os_attr()](),
             `,`,
             `"macosx" : !kgen.string`,
             `> : i1`,
@@ -434,7 +437,7 @@ fn os_is_linux() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _os_attr().value,
+        _get_kgen_string[_os_attr()](),
         `,`,
         `"linux" : !kgen.string`,
         `> : i1`,
@@ -450,7 +453,7 @@ fn os_is_windows() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _os_attr().value,
+        _get_kgen_string[_os_attr()](),
         `,`,
         `"windows" : !kgen.string`,
         `> : i1`,
@@ -460,7 +463,7 @@ fn os_is_windows() -> Bool:
 @always_inline("nodebug")
 fn _triple_attr[
     triple: __mlir_type.`!kgen.target` = _current_target()
-]() -> StringLiteral:
+]() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
         `#kgen.param.expr<target_get_field,`,
         triple,
@@ -485,7 +488,7 @@ fn is_triple[
     """
     return __mlir_attr[
         `#kgen.param.expr<eq,`,
-        _triple_attr[target]().value,
+        _triple_attr[target](),
         `, `,
         name.value,
         `> : i1`,
@@ -533,7 +536,7 @@ fn is_nvidia_gpu() -> Bool:
 
 
 @always_inline("nodebug")
-fn is_nvidia_gpu[subarch: StringLiteral]() -> Bool:
+fn is_nvidia_gpu[subarch: StaticString]() -> Bool:
     """Returns True if the target triple of the compiler is `nvptx64-nvidia-cuda`
     and we are compiling for the specified sub-architecture and False otherwise.
 

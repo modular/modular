@@ -183,13 +183,11 @@ fn env_get_string[name: StaticString]() -> StaticString:
     Returns:
         A string parameter value.
     """
-    return StringLiteral(
-        __mlir_attr[
-            `#kgen.param.expr<get_env, `,
-            _get_kgen_string[name](),
-            `> : !kgen.string`,
-        ]
-    )
+    return __mlir_attr[
+        `#kgen.param.expr<get_env, `,
+        _get_kgen_string[name](),
+        `> : !kgen.string`,
+    ]
 
 
 fn env_get_string[name: StaticString, default: StaticString]() -> StaticString:
