@@ -18,6 +18,7 @@ fn _select_register_value[
 ](condition: Bool, lhs: T, rhs: T) -> T:
     """Choose one value based on a condition, without IR-level branching.
         Use this over normal `if` branches to reduce the size of the generated IR.
+
         This should not be used pervasively in general code. It should only be
         used in very low level libraries where IR size/compile time matters because it
         flattens if statements early in the compiler pipeline.
