@@ -7,7 +7,7 @@
 from math import exp2, iota
 from sys import bitwidthof
 
-from bit import log2_floor
+from bit import next_power_of_two
 
 from utils.index import IndexList
 
@@ -66,8 +66,7 @@ struct AlibiScoreMod[
         if num_heads.is_power_of_two():
             scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
         else:
-            var log2_floor_num_heads = log2_floor(num_heads)
-            var closest_power_of_2 = 2**log2_floor_num_heads
+            alias closest_power_of_2 = next_power_of_two(num_heads)
             if head_idx[0] < closest_power_of_2:
                 scale = exp2(
                     -((head_idx + 1).cast[type]() * 8.0 / closest_power_of_2)
