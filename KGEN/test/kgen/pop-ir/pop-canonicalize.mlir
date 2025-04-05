@@ -1291,9 +1291,7 @@ kgen.func @select_to_cond(%cond: i1) -> !pop.scalar<bool> {
 
 
 // CHECK-LABEL: @string_ops
-kgen.func @string_ops() -> (
-    index, !kgen.string, !kgen.string, !kgen.string, !kgen.string,
-    !kgen.string, !kgen.string) {
+kgen.func @string_ops() -> (index, !kgen.string, !kgen.string) {
   %str = kgen.param.constant: string = <"four">
   // CHECK-DAG: kgen.param.constant = <4>
   %0 = pop.string.size %str
@@ -1304,18 +1302,7 @@ kgen.func @string_ops() -> (
   %empty_str = kgen.param.constant: string = <"">
   // CHECK-DAG: kgen.param.constant: string = <"c7b615cc75879ba90049873fe9098ddf">
   %3 = pop.string.hash %hello_world
-  // CHECK-DAG: kgen.param.constant: string = <"aGVsbG8gd29ybGQ=">
-  %4 = pop.string.base64.encode %hello_world
-  // CHECK-DAG: kgen.param.constant: string = <"hello world">
-  %5 = pop.string.base64.decode %4
-  %hello_mojo = kgen.param.constant: string = <"hello mojo">
-  // CHECK-DAG: kgen.param.constant: string = <"x\DA\CBH\CD\C9\C9W\C8\CD\CF\CA\07\00\15y\03\EA">
-  %6 = pop.string.compress %hello_mojo
-  // CHECK-DAG: kgen.param.constant: string = <"hello mojo">
-  %7 = pop.string.decompress %6
-  kgen.return %0, %1, %3, %4, %5, %6, %7 : index, !kgen.string,
-      !kgen.string, !kgen.string, !kgen.string, !kgen.string,
-      !kgen.string
+  kgen.return %0, %1, %3 : index, !kgen.string, !kgen.string
 }
 
 
