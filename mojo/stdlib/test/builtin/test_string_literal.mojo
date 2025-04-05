@@ -22,12 +22,6 @@ from testing import (
     assert_raises,
     assert_true,
 )
-from builtin.string_literal import (
-    _base64_encode,
-    _base64_decode,
-    _compress,
-    _decompress,
-)
 
 
 def test_add():
@@ -372,24 +366,6 @@ def test_float_conversion():
         _ = ("not a float").__float__()
 
 
-def test_base64_encode_decode():
-    assert_equal(_base64_encode["hello"](), "aGVsbG8=")
-    assert_equal(_base64_decode["aGVsbG8="](), "hello")
-
-    alias encoded = _base64_encode["I'm a mojo string"]()
-    alias decoded = _base64_decode[encoded]()
-    assert_equal(decoded, "I'm a mojo string")
-
-
-def test_compress_decompress():
-    alias compressed = _compress["hello"]()
-    alias decompressed = _decompress[compressed]()
-    alias compressed_base64 = _base64_encode[compressed]()
-    assert_equal(compressed_base64, "eNrLSM3JyQcABiwCFQ==")
-    assert_equal(len(compressed), 13)
-    assert_equal(decompressed, "hello")
-
-
 def main():
     test_add()
     test_mul()
@@ -417,5 +393,3 @@ def main():
     test_endswith()
     test_strip()
     test_float_conversion()
-    test_base64_encode_decode()
-    test_compress_decompress()
