@@ -12,6 +12,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.io import _printf
+from collections.string import StaticString
 from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
@@ -94,7 +95,7 @@ fn run_cublas[
             m.iter_custom[kernel_launch](ctx)
 
         @parameter
-        fn get_bench_id() -> StringLiteral:
+        fn get_bench_id() -> String:
             @parameter
             if enable_tc:
                 return "cublas_tensorcore"
