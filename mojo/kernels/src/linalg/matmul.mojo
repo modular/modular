@@ -6,7 +6,7 @@
 from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from sys.info import alignof, has_neon, has_nvidia_gpu_accelerator, simdwidthof
-from collections.string import StaticString
+from collections.string.string_slice import StaticString, get_static_string
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import NDBuffer
@@ -828,7 +828,7 @@ fn matmul[
     with Trace[TraceLevel.OP, target=target](
         # Create a string literal so that the event label works with the
         # AsyncRT profiler, whose event labels must be `StaticString`s.
-        get_string_literal[
+        get_static_string[
             "matmul(",
             _trace_description,
             StaticString(")") if _trace_description else StaticString("matmul"),
