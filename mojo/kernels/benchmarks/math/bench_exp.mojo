@@ -23,7 +23,7 @@ from benchmark import (
 from buffer import NDBuffer
 from builtin.range import _StridedRange
 from builtin.simd import _simd_apply
-from compile import _internal_compile_code
+from compile import compile_info
 from layout import *
 from memory import UnsafePointer, bitcast
 
@@ -413,7 +413,7 @@ def main():
     var args = argv()
     for i in range(len(args)):
         if args[i] == "-c":
-            print(_internal_compile_code[llvm_ldexp[DType.float32, 4]]())
+            print(compile_info[llvm_ldexp[DType.float32, 4]]())
             return
 
     var m = Bench()
