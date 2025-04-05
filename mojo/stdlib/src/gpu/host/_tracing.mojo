@@ -81,9 +81,9 @@ fn _init_dylib() -> _OwnedDLHandle:
     var library_path = _find_library_path()
 
     if not library_path:
-        var msg = "the GPU tracing library was not found at " + ",".join(
-            LIBRARY_PATHS
-        )
+        var msg = "the GPU tracing library was not found at " + StaticString(
+            ","
+        ).join(LIBRARY_PATHS)
 
         @parameter
         if has_nvidia_gpu_accelerator():
