@@ -15,6 +15,7 @@ from memory import UnsafePointer
 from sys import argv, sizeof
 from sys.info import _current_target
 from gpu.host._compile import _get_gpu_target
+from collections.string.string_slice import _get_kgen_string
 
 
 @value
@@ -27,7 +28,7 @@ struct _Info:
 @value
 @register_passable("trivial")
 struct Info:
-    var kernel: StringLiteral
+    var kernel: StaticString
     var num_captures: Int
 
 
@@ -37,13 +38,13 @@ fn _compile_info[
     func: func_type,
     /,
     emission_kind: Int = 0,
-    compile_options: StringLiteral = "nvptx-short-ptr=true",
+    compile_options: StaticString = "nvptx-short-ptr=true",
     compile_target: __mlir_type.`!kgen.target` = _get_gpu_target(),
 ]() -> Info:
     var info = __mlir_op.`kgen.compile_offload`[
         target_type=compile_target,
         emission_kind = index(emission_kind),
-        emission_option = compile_options.value,
+        emission_option = _get_kgen_string[compile_options](),
         func=func,
         _type=_Info,
     ]()

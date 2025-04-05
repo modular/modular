@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 fn use(a: Int): pass
-fn use(a: StringLiteral): pass
+fn use(a: StaticString): pass
 
 fn test():
     # True dead code - check for warnings
