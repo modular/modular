@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
 
+from builtin.stubs import _get_kgen_string
 
 ##===----------------------------------------------------------------------===##
 # fn/def
@@ -376,7 +377,7 @@ fn alias_parametric_fn() -> StaticString:
         return "rocdl.flat_work_group_size"
 
 
-alias mname1 = get_string_literal[alias_parametric_fn()]().value
+alias mname1 = _get_kgen_string[alias_parametric_fn()]()
 
 # CHECK-LABEL: lit.fn @"kernel3{{.*}}"<x:
 

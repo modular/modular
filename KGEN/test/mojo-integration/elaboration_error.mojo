@@ -7,8 +7,7 @@
 # RUN: kgen %s -elaborate -verify-diagnostics
 
 
-from collections.string.string_slice import StaticString
-from builtin.string_literal import get_string_literal
+from collections.string.string_slice import StaticString, _get_kgen_string
 
 
 @export
@@ -53,7 +52,7 @@ fn parametric[param: Int]():  # expected-note {{function instantiation failed}}
 # This is copied so the note ends up in this file.
 @always_inline("nodebug")
 fn constrained[cond: Bool, msg: StaticString]():
-    alias msg_literal = get_string_literal[msg]().value
+    alias msg_literal = _get_kgen_string[msg]()
     __mlir_op.`kgen.param.assert`[
         cond = cond.__mlir_i1__(), message=msg_literal
     ]()  # expected-note {{constraint failed: param must be 2}}

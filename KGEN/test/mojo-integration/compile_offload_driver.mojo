@@ -13,8 +13,7 @@ from memory import UnsafePointer
 from sys import argv, sizeof
 from sys.info import _current_target
 from gpu.host._compile import _get_gpu_target
-from builtin.string_literal import get_string_literal
-from collections.string import StaticString
+from collections.string.string_slice import StaticString, _get_kgen_string
 
 
 @value
@@ -43,7 +42,7 @@ fn _compile_info[
     var info = __mlir_op.`kgen.compile_offload`[
         target_type=compile_target,
         emission_kind = index(emission_kind),
-        emission_option = get_string_literal[compile_options]().value,
+        emission_option = _get_kgen_string[compile_options](),
         func=func,
         _type=_Info,
     ]()

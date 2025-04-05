@@ -357,28 +357,31 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]]:
 alias StaticString = StringSlice[StaticConstantOrigin]
 
 
-@always_inline("nodebug")
-fn get_string_literal2[
+@always_inline("builtin")
+fn _get_kgen_string[
     string: StaticString, extra: VariadicList[StaticString]
-](
-    out result: StringLiteral[
-        __mlir_attr[
-            `#kgen.param.expr<data_to_str,`,
-            string,
-            `,`,
-            extra.value,
-            `> : !kgen.string`,
-        ]
+]() -> __mlir_type.`!kgen.string`:
+    return __mlir_attr[
+        `#kgen.param.expr<data_to_str,`,
+        string,
+        `,`,
+        extra.value,
+        `> : !kgen.string`,
     ]
-):
-    result = __type_of(result)()
+
+
+@always_inline("builtin")
+fn _get_kgen_string[
+    string: StaticString, *extra: StaticString
+]() -> __mlir_type.`!kgen.string`:
+    return _get_kgen_string[string, extra]()
 
 
 @always_inline("nodebug")
-fn get_string_literal[
+fn get_static_string[
     string: StaticString, *extra: StaticString
-](out result: __type_of(get_string_literal2[string, extra]())):
-    result = __type_of(result)()
+]() -> StaticString:
+    return StringLiteral(_get_kgen_string[string, extra]())
 
 
 struct String(KeyElement):
