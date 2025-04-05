@@ -968,10 +968,9 @@ floatLiteralConvertGetBitstring(const IPRational &input,
     // The subnormal range is tagged with minExponent - 1, but the exponent
     // value is effectively the same as minExponent. However, instead of an
     // implicit leading 1 before the decimal, there is a leading 0. So subnormal
-    // numbers cover down to minExponent - (mantissaWidth - 1) exponent, but
+    // numbers cover down to minExponent - mantissaWidth exponent, but
     // losing one bit of mantissa precision for each exponent lowering.
-    IPInt minSubnormalExponent = minExponent - (mantissaLength - 1);
-    if (exponent < minSubnormalExponent) {
+    if (exponent < minCalculationExponent) {
       // We could let this fall through and be handled by the shifting and bit
       // mangling, but at this point we know that every bit is zero except
       // (maybe) the sign.
