@@ -22,7 +22,11 @@ alias cublasContext = NoneType
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_CUBLAS_LIBRARY_PATH = "/usr/local/cuda/lib64/libcublas.so.12"
+alias CUDA_CUBLAS_LIBRARY_PATHS = List[String](
+    "/usr/local/cuda/lib64/libcublas.so",
+    "/usr/local/cuda/lib64/libcublas.so.0",
+    "/usr/local/cuda/lib64/libcublas.so.12",
+)
 
 
 alias CUDA_CUBLAS_LIBRARY = _Global[
@@ -30,13 +34,23 @@ alias CUDA_CUBLAS_LIBRARY = _Global[
 ]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
-    if not Path(CUDA_CUBLAS_LIBRARY_PATH).exists():
-        return abort[_OwnedDLHandle](
-            "the CUDA cuBLAS library was not found at "
-            + CUDA_CUBLAS_LIBRARY_PATH
+fn _get_library_path() -> String:
+    for path in CUDA_CUBLAS_LIBRARY_PATHS:
+        if Path(path[]).exists():
+            return path[]
+    return abort[String](
+        String(
+            (
+                "the CUDA cuBLAS library was not found in any of the"
+                " following paths: "
+            ),
+            String(", ").join(CUDA_CUBLAS_LIBRARY_PATHS),
         )
-    return _OwnedDLHandle(CUDA_CUBLAS_LIBRARY_PATH)
+    )
+
+
+fn _init_dylib() -> _OwnedDLHandle:
+    return _OwnedDLHandle(_get_library_path())
 
 
 @always_inline

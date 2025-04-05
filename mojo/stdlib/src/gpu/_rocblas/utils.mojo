@@ -17,21 +17,33 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias ROCM_ROCBLAS_LIBRARY_PATH = "/opt/rocm/lib/librocblas.so.4"
+alias ROCM_ROCBLAS_LIBRARY_PATHS = List[String](
+    "/opt/rocm/lib/librocblas.so",
+    "/opt/rocm/lib/librocblas.so.4",
+)
 
 alias ROCM_ROCBLAS_LIBRARY = _Global[
     "ROCM_ROCBLAS_LIBRARY", _OwnedDLHandle, _init_dylib
 ]()
 
 
-fn _init_dylib() -> _OwnedDLHandle:
-    if not Path(ROCM_ROCBLAS_LIBRARY_PATH).exists():
-        return abort[_OwnedDLHandle](
-            "the ROCM rocBLAS library was not found at "
-            + ROCM_ROCBLAS_LIBRARY_PATH
+fn _get_library_path() -> String:
+    for path in ROCM_ROCBLAS_LIBRARY_PATHS:
+        if Path(path[]).exists():
+            return path[]
+    return abort[String](
+        String(
+            (
+                "the ROCM rocBLAS library was not found in any of the"
+                " following paths: "
+            ),
+            String(", ").join(ROCM_ROCBLAS_LIBRARY_PATHS),
         )
-    var dylib = _OwnedDLHandle(ROCM_ROCBLAS_LIBRARY_PATH)
-    return dylib^
+    )
+
+
+fn _init_dylib() -> _OwnedDLHandle:
+    return _OwnedDLHandle(_get_library_path())
 
 
 @always_inline
