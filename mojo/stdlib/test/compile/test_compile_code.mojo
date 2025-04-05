@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from compile import _internal_compile_code, compile_info
+from compile import compile_info
 from testing import *
 
 
@@ -17,7 +17,7 @@ def test_compile_llvm():
         return x + y
 
     alias func = my_add_function[DType.float32, 4]
-    var asm = _internal_compile_code[func, emission_kind="llvm"]()
+    var asm = compile_info[func, emission_kind="llvm"]()
 
     assert_true("fadd" in asm)
 

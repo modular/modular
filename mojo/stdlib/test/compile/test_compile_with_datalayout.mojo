@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from compile import _internal_compile_code, compile_info
+from compile import compile_info
 from gpu import *
 from gpu.host import *
 from gpu.memory import AddressSpace
@@ -38,10 +38,10 @@ def test_data_layout_llvm[emission_kind: StaticString]():
     fn my_func(src: UnsafePointer[Int32]):
         return
 
-    var target_short_llvm = _internal_compile_code[
+    var target_short_llvm = compile_info[
         my_func, emission_kind=emission_kind, target=target_short_ptr
     ]()
-    var target_regular_llvm = _internal_compile_code[
+    var target_regular_llvm = compile_info[
         my_func, emission_kind=emission_kind, target=target_regular
     ]()
 
@@ -64,7 +64,7 @@ def test_data_layout_asm():
         a[thread_idx.x] = src[0]
         barrier()
 
-    var target_short_asm = _internal_compile_code[
+    var target_short_asm = compile_info[
         my_func,
         emission_kind="asm",
         compile_options="nvptx-short-ptr=true",
