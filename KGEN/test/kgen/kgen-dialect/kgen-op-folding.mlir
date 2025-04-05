@@ -256,17 +256,21 @@ kgen.func @float_literal_convert()
 
 // CHECK-LABEL: @float_e4m3_literal_convert
 kgen.func @float_e4m3_literal_convert()
-  -> (!pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3>, !pop.scalar<f8e4m3>) {
+  -> (!pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3>, !pop.scalar<f8e4m3>, !pop.scalar<f8e4m3>) {
   // CHECK: kgen.param.constant: scalar<f8e4m3fn> = <"0.75">
   %r1 = kgen.param.constant: scalar<f8e4m3fn> = <#pop<float_literal_convert<#pop.float_literal<3|4>>>>
   // CHECK: kgen.param.constant: scalar<f8e4m3fn> = <"1">
   %r2 = kgen.param.constant: scalar<f8e4m3fn> = <#pop<float_literal_convert<#pop.float_literal<1|1>>>>
+  // CHECK: kgen.param.constant: scalar<f8e4m3fn> = <"0.00195">
+  %r3 = kgen.param.constant: scalar<f8e4m3fn> = <#pop<float_literal_convert<#pop.float_literal<1|512>>>>
   // CHECK: kgen.param.constant: scalar<f8e4m3> = <"0.75">
-  %r3 = kgen.param.constant: scalar<f8e4m3> = <#pop<float_literal_convert<#pop.float_literal<3|4>>>>
+  %r4 = kgen.param.constant: scalar<f8e4m3> = <#pop<float_literal_convert<#pop.float_literal<3|4>>>>
   // CHECK: kgen.param.constant: scalar<f8e4m3> = <"1">
-  %r4 = kgen.param.constant: scalar<f8e4m3> = <#pop<float_literal_convert<#pop.float_literal<1|1>>>>
-  kgen.return %r1, %r2, %r3, %r4
-    : !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3>, !pop.scalar<f8e4m3>
+  %r5 = kgen.param.constant: scalar<f8e4m3> = <#pop<float_literal_convert<#pop.float_literal<1|1>>>>
+  // CHECK: kgen.param.constant: scalar<f8e4m3> = <"0.00195">
+  %r6 = kgen.param.constant: scalar<f8e4m3> = <#pop<float_literal_convert<#pop.float_literal<1|512>>>>
+  kgen.return %r1, %r2, %r3, %r4, %r5, %r6
+    : !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3>, !pop.scalar<f8e4m3>, !pop.scalar<f8e4m3>
 }
 
 // CHECK-LABEL: @float_literal_to_int_literal
