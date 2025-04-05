@@ -11,6 +11,7 @@ from sys import (
     bitwidthof,
     env_get_bool,
     env_get_int,
+    has_accelerator,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_defined,
@@ -358,7 +359,7 @@ fn _matmul_gpu[
     @parameter
     if (
         matmul_supported_format
-        and (has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator())
+        and has_accelerator()
         and use_tensor_core
         and multistage_gemm_supported_shape
     ):
