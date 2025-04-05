@@ -269,26 +269,21 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 
 fn _get_global_handle[
     backend: Backend = _resolve_backend[Backend.AUTOMATIC]()
-](out self: Handle[backend],) raises:
-    alias handle_name = String("VENDOR_BLAS_", backend)
-    var handle_ptr = _get_global_or_null[handle_name]()
-    if handle_ptr:
-        var result = UnsafePointer.address_of(handle_ptr).bitcast[
-            Handle[backend]
-        ]()[]
-        # TODO: This is always true, but we somehow need it otherwise the handle
-        # gets corrupted.
-        if not handle_ptr:
-            print(handle_ptr)
-        return result
+]() raises -> Handle[backend]:
+    alias HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend)
+    if global_ptr := _get_global_or_null[HANDLE_NAME]().bitcast[
+        Handle[backend]
+    ]():
+        return global_ptr[]
 
-    var handle = Handle[backend]()
+    var handle_ptr = UnsafePointer[Handle[backend]].alloc(1)
+    handle_ptr.init_pointee_move(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(handle_name),
-        UnsafePointer.address_of(handle).bitcast[OpaquePointer]()[],
+        StringSlice(HANDLE_NAME),
+        handle_ptr.bitcast[OpaquePointer](),
     )
 
-    return handle
+    return handle_ptr[]
 
 
 fn matmul[
