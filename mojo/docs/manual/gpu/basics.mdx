@@ -392,7 +392,7 @@ on a device they will be scheduled to run in the order that you enqueue them:
 alias size = 4
 alias dtype_u8 = DType.uint8
 
-fn dummy_kernel(buffer: HostBuffer[dtype_u8]):
+fn dummy_kernel(buffer: UnsafePointer[Scalar[dtype_u8]]):
     buffer[thread_idx.x] = thread_idx.x
 
 # All of these method calls run in the order that they were enqueued
