@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections.string.string_slice import StringSlice
+from collections.string.string_slice import StringSlice, get_static_string
 from sys.info import alignof, sizeof
 
 from memory import Span, UnsafePointer
@@ -1093,6 +1093,16 @@ def test_join():
     assert_equal(s5, "1")
 
 
+def test_string_slice_intern():
+    assert_equal(get_static_string["hello"](), "hello")
+    assert_equal(get_static_string[String("hello")](), "hello")
+    assert_equal(get_static_string[String(42)](), "42")
+    alias simd = SIMD[DType.int64, 4](1, 2, 3, 4)
+    assert_equal(get_static_string[String(simd)](), "[1, 2, 3, 4]")
+    # Test get_static_string with multiple string arguments.
+    assert_equal(get_static_string["a", "b", "c"](), "abc")
+
+
 def main():
     test_string_slice_layout()
     test_string_literal_byte_span()
@@ -1127,3 +1137,4 @@ def main():
     test_string_slice_from_pointer()
     test_replace()
     test_join()
+    test_string_slice_intern()

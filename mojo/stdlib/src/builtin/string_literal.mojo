@@ -719,45 +719,6 @@ struct StringLiteral(
         return String(String(self).lstrip())
 
 
-@always_inline("nodebug")
-fn get_string_literal[
-    string: StaticString, *extra: StaticString
-]() -> StringLiteral:
-    """Form a string literal from a compile-time StringSlice value and additional
-    compile-time StringSlice values.
-
-    Parameters:
-        string: The first StringSlice value.
-        extra: Additional StringSlice values to concatenate.
-
-    Returns:
-        The string value as a StringLiteral.
-    """
-    return get_string_literal2[string, extra]()
-
-
-@always_inline("nodebug")
-fn get_string_literal2[
-    string: StaticString, extra: VariadicList[StaticString]
-]() -> StringLiteral:
-    """Form a string literal from N compile-time StringSlice values concatenated.
-
-    Parameters:
-        string: The first string slice to use.
-        extra: Additional string slices to concatenate.
-
-    Returns:
-        The string value as a StringLiteral.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<data_to_str,`,
-        string,
-        `,`,
-        extra.value,
-        `> : !kgen.string`,
-    ]
-
-
 fn _base64_encode[str: StringLiteral]() -> StringLiteral:
     """Encode the string literal using Base64 encoding.
 

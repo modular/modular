@@ -2161,6 +2161,63 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline("nodebug")
+fn _get_kgen_string[
+    string: StaticString, *extra: StaticString
+]() -> __mlir_type.`!kgen.string`:
+    """Form a `!kgen.string` from compile-time StringSlice values concatenated.
+
+    Parameters:
+        string: The first StringSlice value.
+        extra: Additional StringSlice values to concatenate.
+
+    Returns:
+        The string value as a StringLiteral.
+    """
+    return _get_kgen_string[string, extra]()
+
+
+@always_inline("nodebug")
+fn _get_kgen_string[
+    string: StaticString, extra: VariadicList[StaticString]
+]() -> __mlir_type.`!kgen.string`:
+    """Form a `!kgen.string` from compile-time StringSlice values concatenated.
+
+    Parameters:
+        string: The first string slice to use.
+        extra: Additional string slices to concatenate.
+
+    Returns:
+        The string value as a StringLiteral.
+    """
+    return __mlir_attr[
+        `#kgen.param.expr<data_to_str,`,
+        string,
+        `,`,
+        extra.value,
+        `> : !kgen.string`,
+    ]
+
+
+@always_inline("nodebug")
+fn get_static_string[
+    string: StaticString, *extra: StaticString
+]() -> StaticString:
+    """Form a StaticString from compile-time StringSlice values. This
+    guarantees that the returned string is compile-time constant in static
+    memory.  It also guarantees that there is a 'nul' zero byte at the end,
+    which is not included in the returned range.
+
+    Parameters:
+        string: The first StringSlice value.
+        extra: Additional StringSlice values to concatenate.
+
+    Returns:
+        The string value as a StaticString.
+    """
+    return StringLiteral(_get_kgen_string[string, extra]())
+
+
 fn _to_string_list[
     T: CollectionElement,  # TODO(MOCO-1446): Make `T` parameter inferred
     len_fn: fn (T) -> Int,

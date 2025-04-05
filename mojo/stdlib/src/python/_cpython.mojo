@@ -18,7 +18,11 @@ Documentation for these functions can be found online at:
 """
 
 from collections import InlineArray, Optional
-from collections.string import StringSlice, StaticString
+from collections.string.string_slice import (
+    StringSlice,
+    StaticString,
+    get_static_string,
+)
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path
@@ -371,10 +375,12 @@ struct PyMethodDef(CollectionElement):
         #   type, similar to `get_linkage_name()`?
 
         # FIXME: PyMethodDef is capturing the pointer without an origin.
-        # Immortalize it so we know it is permanent.
-        alias func_name_literal = get_string_literal[func_name]()
+
+        # Immortalize the string so we know it is permanent, and force it to be
+        # nul terminated.
+        alias func_name_str = get_static_string[func_name]()
         return PyMethodDef(
-            func_name_literal.unsafe_cstr_ptr(),
+            func_name_str.unsafe_ptr().bitcast[c_char](),
             func,
             METH_VARARGS,
             docstring.unsafe_cstr_ptr(),

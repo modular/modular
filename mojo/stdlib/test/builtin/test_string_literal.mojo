@@ -13,7 +13,6 @@
 # RUN: %mojo %s
 
 from sys.ffi import c_char
-from builtin.string_literal import get_string_literal
 
 from memory import UnsafePointer
 from testing import (
@@ -373,16 +372,6 @@ def test_float_conversion():
         _ = ("not a float").__float__()
 
 
-def test_string_literal_from_stringable():
-    assert_equal(get_string_literal["hello"](), "hello")
-    assert_equal(get_string_literal[String("hello")](), "hello")
-    assert_equal(get_string_literal[String(42)](), "42")
-    alias simd = SIMD[DType.int64, 4](1, 2, 3, 4)
-    assert_equal(get_string_literal[String(simd)](), "[1, 2, 3, 4]")
-    # Test get_string_literal with multiple string arguments.
-    assert_equal(get_string_literal["a", "b", "c"](), "abc")
-
-
 def test_base64_encode_decode():
     assert_equal(_base64_encode["hello"](), "aGVsbG8=")
     assert_equal(_base64_decode["aGVsbG8="](), "hello")
@@ -428,6 +417,5 @@ def main():
     test_endswith()
     test_strip()
     test_float_conversion()
-    test_string_literal_from_stringable()
     test_base64_encode_decode()
     test_compress_decompress()

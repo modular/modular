@@ -40,8 +40,7 @@ from sys import is_defined
 ```
 """
 
-from collections.string import StaticString
-from builtin.string_literal import get_string_literal
+from collections.string.string_slice import StaticString, _get_kgen_string
 
 
 fn is_defined[name: StaticString]() -> Bool:
@@ -55,19 +54,20 @@ fn is_defined[name: StaticString]() -> Bool:
     """
     return __mlir_attr[
         `#kgen.param.expr<get_env, `,
-        get_string_literal[name]().value,
+        _get_kgen_string[name](),
         `> : i1`,
     ]
 
 
 fn _is_bool_like[val: StaticString]() -> Bool:
-    return get_string_literal[val.lower()]() in (
-        "true",
-        "1",
-        "on",
-        "false",
-        "0",
-        "off",
+    alias lower_val = val.lower()
+    return (
+        lower_val == "true"
+        or lower_val == "1"
+        or lower_val == "on"
+        or lower_val == "false"
+        or lower_val == "0"
+        or lower_val == "off"
     )
 
 
@@ -81,7 +81,7 @@ fn env_get_bool[name: StaticString]() -> Bool:
     Returns:
         An boolean parameter value.
     """
-    alias val = get_string_literal[env_get_string[name]().lower()]()
+    alias val = env_get_string[name]().lower()
 
     constrained[
         _is_bool_like[val](),
@@ -94,7 +94,7 @@ fn env_get_bool[name: StaticString]() -> Bool:
         ),
     ]()
 
-    return val in ("true", "1", "on")
+    return val == "true" or val == "1" or val == "on"
 
 
 fn env_get_bool[name: StaticString, default: Bool]() -> Bool:
@@ -128,7 +128,7 @@ fn env_get_int[name: StaticString]() -> Int:
     """
     return __mlir_attr[
         `#kgen.param.expr<get_env, `,
-        get_string_literal[name]().value,
+        _get_kgen_string[name](),
         `> : index`,
     ]
 
@@ -186,7 +186,7 @@ fn env_get_string[name: StaticString]() -> StaticString:
     return StringLiteral(
         __mlir_attr[
             `#kgen.param.expr<get_env, `,
-            get_string_literal[name]().value,
+            _get_kgen_string[name](),
             `> : !kgen.string`,
         ]
     )

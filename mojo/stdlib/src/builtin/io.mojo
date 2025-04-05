@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import InlineArray
-from collections.string import StringSlice
+from collections.string.string_slice import StringSlice, get_static_string
 from sys import _libc as libc
 from sys import (
     bitwidthof,
@@ -35,7 +35,6 @@ from sys.intrinsics import _type_is_eq
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
 from memory import UnsafePointer, bitcast, memcpy
-from builtin.string_literal import get_string_literal
 from utils import StaticString, write_args, write_buffered
 
 # ===----------------------------------------------------------------------=== #
@@ -58,7 +57,8 @@ struct _fdopen[mode: StaticString = "a"]:
 
         self.handle = fdopen(
             dup(stream_id.value),
-            get_string_literal[mode]().unsafe_cstr_ptr(),
+            # Guarantee this is nul terminated.
+            get_static_string[mode]().unsafe_ptr().bitcast[c_char](),
         )
 
     fn __enter__(self) -> Self:
@@ -195,7 +195,8 @@ fn _printf_cpu[
             _type=Int32,
         ](
             fd,
-            get_string_literal[fmt]().unsafe_cstr_ptr(),
+            # Guarantee this is nul terminated.
+            get_static_string[fmt]().unsafe_ptr().bitcast[c_char](),
             args.get_loaded_kgen_pack(),
         )
 
@@ -216,7 +217,8 @@ fn _printf[
             var loaded_pack = args.get_loaded_kgen_pack()
 
             _ = external_call["vprintf", Int32](
-                get_string_literal[fmt]().unsafe_cstr_ptr(),
+                # Guarantee this is nul terminated.
+                get_static_string[fmt]().unsafe_ptr(),
                 Pointer(to=loaded_pack),
             )
         elif is_amd_gpu():
@@ -342,7 +344,8 @@ fn _snprintf[
         ](
             str,
             size,
-            get_string_literal[fmt]().unsafe_cstr_ptr(),
+            # Guarantee this is nul terminated.
+            get_static_string[fmt]().unsafe_ptr(),
             loaded_pack,
         )
     )

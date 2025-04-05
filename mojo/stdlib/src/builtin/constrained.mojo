@@ -14,8 +14,7 @@
 
 These are Mojo built-ins, so you don't need to import them.
 """
-from collections.string.string_slice import StaticString
-from builtin.string_literal import get_string_literal2
+from collections.string.string_slice import StaticString, _get_kgen_string
 
 
 @always_inline("nodebug")
@@ -54,7 +53,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     """
     __mlir_op.`kgen.param.assert`[
         cond = cond.__mlir_i1__(),
-        message = get_string_literal2[msg, extra]().value,
+        message = _get_kgen_string[msg, extra](),
     ]()
 
 
