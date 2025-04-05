@@ -326,13 +326,13 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
         elif ord_letter_min[1] <= ord_current <= ord_letter_max[1]:
             result += ord_current - ord_letter_min[1] + 10
             found_valid_chars_after_start = True
-        elif Codepoint(UInt8(ord_current)).is_posix_space():
+        elif Codepoint(UInt8(ord_current)).is_ascii_space():
             has_space_after_number = True
             start = pos + 1
             break
         else:
             raise Error(_str_to_base_error(base, str_slice))
-        if pos + 1 < str_len and not Codepoint(buff[pos + 1]).is_posix_space():
+        if pos + 1 < str_len and not Codepoint(buff[pos + 1]).is_ascii_space():
             var nextresult = result * real_base
             if nextresult < result:
                 raise Error(
@@ -346,7 +346,7 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     if has_space_after_number:
         for pos in range(start, str_len):
-            if not Codepoint(buff[pos]).is_posix_space():
+            if not Codepoint(buff[pos]).is_ascii_space():
                 raise Error(_str_to_base_error(base, str_slice))
     if is_negative:
         result = -result
@@ -368,7 +368,7 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
     """
     var buff = str_slice.unsafe_ptr()
     var start: Int = 0
-    while start < str_len and Codepoint(buff[start]).is_posix_space():
+    while start < str_len and Codepoint(buff[start]).is_ascii_space():
         start += 1
     var p: Bool = buff[start] == ord("+")
     var n: Bool = buff[start] == ord("-")

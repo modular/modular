@@ -87,7 +87,6 @@ def test_char_is_posix_space():
 
     # Checking false cases
     assert_false(Codepoint.ord("a").is_posix_space())
-    assert_false(Codepoint.ord("a").is_posix_space())
     assert_false(Codepoint.ord("u").is_posix_space())
     assert_false(Codepoint.ord("s").is_posix_space())
     assert_false(Codepoint.ord("t").is_posix_space())
@@ -95,6 +94,33 @@ def test_char_is_posix_space():
     assert_false(Codepoint.ord("n").is_posix_space())
     assert_false(Codepoint.ord("z").is_posix_space())
     assert_false(Codepoint.ord(".").is_posix_space())
+    assert_false(Codepoint.ord("\x1c").is_posix_space())
+    assert_false(Codepoint.ord("\x1d").is_posix_space())
+    assert_false(Codepoint.ord("\x1e").is_posix_space())
+
+
+def test_char_is_ascii_space():
+    # checking true cases
+    assert_true(Codepoint.ord(" ").is_ascii_space())
+    assert_true(Codepoint.ord("\n").is_ascii_space())
+    assert_true(Codepoint.ord("\n").is_ascii_space())
+    assert_true(Codepoint.ord("\t").is_ascii_space())
+    assert_true(Codepoint.ord("\r").is_ascii_space())
+    assert_true(Codepoint.ord("\v").is_ascii_space())
+    assert_true(Codepoint.ord("\f").is_ascii_space())
+    assert_true(Codepoint.ord("\x1c").is_ascii_space())
+    assert_true(Codepoint.ord("\x1d").is_ascii_space())
+    assert_true(Codepoint.ord("\x1e").is_ascii_space())
+
+    # Checking false cases
+    assert_false(Codepoint.ord("a").is_ascii_space())
+    assert_false(Codepoint.ord("u").is_ascii_space())
+    assert_false(Codepoint.ord("s").is_ascii_space())
+    assert_false(Codepoint.ord("t").is_ascii_space())
+    assert_false(Codepoint.ord("i").is_ascii_space())
+    assert_false(Codepoint.ord("n").is_ascii_space())
+    assert_false(Codepoint.ord("z").is_ascii_space())
+    assert_false(Codepoint.ord(".").is_ascii_space())
 
 
 def test_char_is_lower():
@@ -238,6 +264,7 @@ def main():
     test_char_formatting()
     test_char_properties()
     test_char_is_posix_space()
+    test_char_is_ascii_space()
     test_char_is_lower()
     test_char_is_upper()
     test_char_is_digit()
