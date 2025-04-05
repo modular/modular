@@ -388,7 +388,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   // Tell the diagnostics machinery how to find the end of a token lazily when
   // it needs it.
   diags.setTokenEndPointAdjustmentFn(
-      [=](SMLoc &loc) { adjustTokenEndPoint(*this, loc); });
+      [this](SMLoc &loc) { adjustTokenEndPoint(*this, loc); });
 
   if (options.getDebugInfoLevelForInput() > CompilationOptions::kSynthetic) {
     diBuilder = std::make_unique<DebugInfo::DIBuilder>(config.context);

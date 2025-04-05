@@ -173,18 +173,18 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   // KGEN
 
   // Convert `!kgen.none` to an empty struct.
-  addConversion([=](KGEN::NoneType) {
+  addConversion([this](KGEN::NoneType) {
     return LLVM::LLVMStructType::getLiteral(&getContext(), {});
   });
 
   // Convert string types to LLVM literal structs: struct{ptr, size} of type
   // !llvm.struct<(ptr<i8>, index).
-  addConversion([=](KGEN::StringType stringType) -> std::optional<Type> {
+  addConversion([this](KGEN::StringType stringType) -> std::optional<Type> {
     return getLLVMTypeForKGENStringType(stringType.getContext(),
                                         getIndexType());
   });
 
-  addConversion([=](FuncType signatureType) -> std::optional<Type> {
+  addConversion([this](FuncType signatureType) -> std::optional<Type> {
     MLIRContext *ctx = signatureType.getContext();
     if (signatureType.isCapturing()) {
       auto pointerTy = LLVM::LLVMPointerType::get(ctx);
@@ -195,13 +195,14 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // TODO(MOCO-1253): GeneratorType should not be allowed during LLVM lowering.
-  addConversion([=](FuncTypeGeneratorType sigGenType) -> std::optional<Type> {
-    return convertType(sigGenType.getBody());
-  });
+  addConversion(
+      [this](FuncTypeGeneratorType sigGenType) -> std::optional<Type> {
+        return convertType(sigGenType.getBody());
+      });
 
   // Variadic types are converted to a struct representing a pointer to the
   // elements of the sequence, and the sequence size.
-  addConversion([=](VariadicType variadic) -> std::optional<Type> {
+  addConversion([this](VariadicType variadic) -> std::optional<Type> {
     Type convertedType = convertType(variadic.getElementType());
     if (!convertedType)
       return {};
@@ -212,7 +213,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // Convert pointer types to LLVM pointer types.
-  addConversion([=](PointerType pointer) -> std::optional<Type> {
+  addConversion([](PointerType pointer) -> std::optional<Type> {
     unsigned addressSpace =
         cast<IntegerAttr>(pointer.getAddressSpace()).getInt();
     return LLVM::LLVMPointerType::get(pointer.getContext(), addressSpace);
@@ -222,7 +223,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   // POP
 
   // Convert array types to LLVM array types.
-  addConversion([=](POP::ArrayType array) -> std::optional<Type> {
+  addConversion([this](POP::ArrayType array) -> std::optional<Type> {
     std::optional<int64_t> size = array.getResolvedSize();
     if (!size)
       return {};
@@ -233,7 +234,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // Convert struct types to LLVM literal structs.
-  addConversion([=](StructType structType) -> std::optional<Type> {
+  addConversion([this](StructType structType) -> std::optional<Type> {
     SmallVector<Type> types;
     for (Type type : structType.getElementTypes()) {
       types.push_back(convertType(type));
@@ -244,7 +245,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // Convert SIMD types to vector types.
-  addConversion([=](POP::SIMDType simd) -> std::optional<Type> {
+  addConversion([this](POP::SIMDType simd) -> std::optional<Type> {
     std::optional<KGENDType> dtype = simd.getResolvedDType();
     std::optional<uint64_t> size = simd.getResolvedSize();
     if (!dtype || !size)
@@ -263,13 +264,13 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // Convert data type types to `i8`.
-  addConversion([=](DTypeType dtype) -> std::optional<Type> {
+  addConversion([this](DTypeType dtype) -> std::optional<Type> {
     return Builder(&getContext()).getI8Type();
   });
 
   // Convert union types to an array with enough space to contain the largest
   // union element type.
-  addConversion([=](POP::UnionType unionType) -> std::optional<Type> {
+  addConversion([this](POP::UnionType unionType) -> std::optional<Type> {
     // TODO: The generated assembly is sensitive to the content type of the
     // union type. This needs to be optimized. For now, use an array of
     // word-size integers.
