@@ -571,7 +571,7 @@ struct Mode:
             s.append(String(Self.VERIFY.handle))
         if Self.NONE == self:
             s.append(String(Self.NONE.handle))
-        return Self.SEP.join(s)
+        return StaticString(Self.SEP).join(s)
 
     fn __eq__(self, mode: Self) -> Bool:
         if mode._value == self._value == Self.NONE._value:
