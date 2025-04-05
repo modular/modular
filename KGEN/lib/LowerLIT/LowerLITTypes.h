@@ -15,12 +15,6 @@ struct StructDecl {
     return isRegisterPassable && fields.size() == 1;
   }
 
-  // Move-only type.
-  StructDecl(const StructDecl &) = delete;
-  StructDecl &operator=(const StructDecl &) = delete;
-  StructDecl(StructDecl &&other) = default;
-  StructDecl &operator=(StructDecl &&) = default;
-
   /// The un-parameterized SourceNameAttr for the struct decl.
   DebugInfo::SourceNameAttr sourceName;
   /// The struct input parameters.

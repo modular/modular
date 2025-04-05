@@ -455,12 +455,6 @@ struct ValueInfo {
   /// Return a ValueRef that covers this whole value.  The caller must provide
   /// the valueId.
   ValueRef getFullValueRef(unsigned valueId) const;
-
-  ValueInfo(ValueInfo &&) = default;
-
-private:
-  ValueInfo(const ValueInfo &) = delete;
-  ValueInfo &operator=(const ValueInfo &) = delete;
 };
 
 /// A ValueRef indicates a slice reference into the BitVector for all the
@@ -782,10 +776,11 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
   if (valueOrigin)
     originToValueIndex[valueOrigin] = valueInfos.size();
 
-  valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
-                        trackable.startsUninit, trackable.endInitState,
-                        trackable.isIndirect, trackable.isFullObjectLiveOnEntry,
-                        /*hasErrorDiagnosed=*/false, debugVariable});
+  valueInfos.push_back(
+      ValueInfo{val, firstValueBit, firstValueBit + numValueBits,
+                trackable.startsUninit, trackable.endInitState,
+                trackable.isIndirect, trackable.isFullObjectLiveOnEntry,
+                /*hasErrorDiagnosed=*/false, debugVariable});
 }
 
 raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
