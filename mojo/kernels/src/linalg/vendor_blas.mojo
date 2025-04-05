@@ -76,6 +76,7 @@ from layout import Layout
 from memory import UnsafePointer
 
 from utils.variant import Variant
+from sys.ffi import external_call, OpaquePointer, _get_global_or_null
 
 # ===----------------------------------------------------------------------===#
 # Backend
@@ -263,6 +264,56 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 # ===----------------------------------------------------------------------===#
 # Matmul
 # ===----------------------------------------------------------------------===#
+
+
+fn _get_handle[
+    backend: Backend = _resolve_backend[Backend.AUTOMATIC]()
+](out self: Handle[backend],) raises:
+    alias handle_name = String("VENDOR_BLAS_", backend)
+    var handle_ptr = _get_global_or_null[handle_name]()
+    if handle_ptr:
+        var result = UnsafePointer.address_of(handle_ptr).bitcast[
+            Handle[backend]
+        ]()[]
+        _ = handle_ptr
+        return result
+
+    var ptr = UnsafePointer[Handle[backend]].alloc(1)
+    var handle = Handle[backend]()
+    ptr[] = handle
+    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+        handle_name, ptr.bitcast[OpaquePointer]()[]
+    )
+
+    return handle
+
+
+fn matmul[
+    use_tf32: Bool = False
+](
+    ctx: DeviceContext,
+    c: NDBuffer[_, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
+    *,
+    c_row_major: Bool = False,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+) raises:
+    """
+    Matmul using the vendor BLAS library. With a global handle.
+    """
+
+    return matmul[use_tf32](
+        ctx,
+        _get_handle(),
+        c,
+        a,
+        b,
+        c_row_major=c_row_major,
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+    )
 
 
 fn matmul[
