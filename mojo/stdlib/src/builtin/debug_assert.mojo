@@ -34,18 +34,18 @@ from utils.write import (
     WritableVariadicPack,
 )
 
-alias defined_mode = env_get_string["ASSERT", "safe"]()
+alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()
 
 
 @no_inline
 fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     constrained[
-        defined_mode == "none"
-        or defined_mode == "warn"
-        or defined_mode == "safe"
-        or defined_mode == "all",
+        ASSERT_MODE == "none"
+        or ASSERT_MODE == "warn"
+        or ASSERT_MODE == "safe"
+        or ASSERT_MODE == "all",
         "-D ASSERT=",
-        defined_mode,
+        ASSERT_MODE,
         " but must be one of: none, warn, safe, all",
     ]()
     constrained[
@@ -56,12 +56,12 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
     ]()
 
     @parameter
-    if defined_mode == "none" or (is_gpu() and cpu_only):
+    if ASSERT_MODE == "none" or (is_gpu() and cpu_only):
         return False
-    elif defined_mode == "all" or defined_mode == "warn" or is_debug_build():
+    elif ASSERT_MODE == "all" or ASSERT_MODE == "warn" or is_debug_build():
         return True
     else:
-        return defined_mode == assert_mode
+        return ASSERT_MODE == assert_mode
 
 
 @always_inline
@@ -253,7 +253,7 @@ fn _debug_assert_msg[
             ": ",
             _GPUThreadInfo(),
             " Assert ",
-            "Warning: " if defined_mode == "warn" else "Error: ",
+            "Warning: " if ASSERT_MODE == "warn" else "Error: ",
             WritableVariadicPack(messages),
             sep="",
         )
@@ -263,13 +263,13 @@ fn _debug_assert_msg[
             loc,
             ": ",
             " Assert ",
-            "Warning: " if defined_mode == "warn" else "Error: ",
+            "Warning: " if ASSERT_MODE == "warn" else "Error: ",
             WritableVariadicPack(messages),
             sep="",
         )
 
     @parameter
-    if defined_mode != "warn":
+    if ASSERT_MODE != "warn":
         abort()
 
 
