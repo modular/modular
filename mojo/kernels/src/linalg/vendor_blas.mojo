@@ -267,7 +267,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 # ===----------------------------------------------------------------------===#
 
 
-fn _get_handle[
+fn _get_global_handle[
     backend: Backend = _resolve_backend[Backend.AUTOMATIC]()
 ](out self: Handle[backend],) raises:
     alias handle_name = String("VENDOR_BLAS_", backend)
@@ -309,7 +309,7 @@ fn matmul[
 
     return matmul[use_tf32](
         ctx,
-        _get_handle(),
+        _get_global_handle(),
         c,
         a,
         b,
@@ -465,7 +465,21 @@ fn _cublas_matmul[
                 N,
                 compute_type,
                 Algorithm.DEFAULT,
-            )
+            ),
+            msg=String(
+                "failed to operate on cublas on the shape C=",
+                c.dynamic_shape,
+                "x",
+                c.type,
+                ", A=",
+                a.dynamic_shape,
+                "x",
+                a.type,
+                ", B=",
+                b.dynamic_shape,
+                "x",
+                b.type,
+            ),
         )
     # Default column-major.
     check_cublas_error(
@@ -489,7 +503,21 @@ fn _cublas_matmul[
             M,
             compute_type,
             Algorithm.DEFAULT,
-        )
+        ),
+        msg=String(
+            "failed to operate on cublas on the shape C=",
+            c.dynamic_shape,
+            "x",
+            c.type,
+            ", A=",
+            a.dynamic_shape,
+            "x",
+            a.type,
+            ", B=",
+            b.dynamic_shape,
+            "x",
+            b.type,
+        ),
     )
 
 
