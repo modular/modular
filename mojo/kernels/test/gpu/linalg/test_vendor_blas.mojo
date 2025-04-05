@@ -14,7 +14,6 @@ from random import random_float64
 import linalg.vendor_blas
 from buffer import DimList, NDBuffer
 from gpu import block_dim, block_idx, thread_idx
-from gpu._cublas.cublas import *
 from gpu.host import DeviceContext
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
@@ -23,14 +22,9 @@ from testing import assert_almost_equal, assert_equal
 from utils.index import Index
 
 
-fn test_cublas(ctx: DeviceContext) raises:
-    print("== test_cublas")
-
-    alias M = 63
-    alias N = 65
-    alias K = 66
-    alias type = DType.float32
-
+def test_vendor_blas[
+    type: DType
+](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
     var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
     var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
@@ -52,18 +46,17 @@ fn test_cublas(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var a = NDBuffer[type, 2, _, DimList(M, K)](a_device.unsafe_ptr())
-    var b = NDBuffer[type, 2, _, DimList(K, N)](b_device.unsafe_ptr())
-    var c = NDBuffer[type, 2, _, DimList(M, N)](c_device.unsafe_ptr())
-    var c_ref = NDBuffer[type, 2, _, DimList(M, N)](c_device_ref.unsafe_ptr())
+    var a = NDBuffer[type, 2](a_device.unsafe_ptr(), (M, K))
+    var b = NDBuffer[type, 2](b_device.unsafe_ptr(), (K, N))
+    var c = NDBuffer[type, 2](c_device.unsafe_ptr(), (M, N))
+    var c_ref = NDBuffer[type, 2](c_device_ref.unsafe_ptr(), (M, N))
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True)
 
     ctx.enqueue_copy(c_host, c_device)
 
     alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[type, type, type, BLOCK_DIM]
-    ctx.enqueue_function[gemm_naive](
+    ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
         c_ref,
         a,
         b,
@@ -79,7 +72,12 @@ fn test_cublas(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     for i in range(M * N):
-        assert_almost_equal(c_host[i], c_host_ref[i], atol=1e-3, rtol=1e-3)
+        assert_almost_equal(
+            c_host[i],
+            c_host_ref[i],
+            atol=1e-2 if type.is_half_float() else 1e-3,
+            rtol=1e-2 if type.is_half_float() else 1e-3,
+        )
 
     _ = a_device
     _ = b_device
@@ -92,13 +90,14 @@ fn test_cublas(ctx: DeviceContext) raises:
     c_host_ref.free()
 
 
-def test_cublas_result_format():
-    assert_equal(String(Result.SUCCESS), "SUCCESS")
-    assert_equal(String(Result.LICENSE_ERROR), "LICENSE_ERROR")
+def dispatch_test_vendor_blas(*, M: Int, N: Int, K: Int, ctx: DeviceContext):
+    test_vendor_blas[type = DType.bfloat16](M=M, N=N, K=K, ctx=ctx)
+    test_vendor_blas[type = DType.float32](M=M, N=N, K=K, ctx=ctx)
 
 
 def main():
-    test_cublas_result_format()
-
     with DeviceContext() as ctx:
-        test_cublas(ctx)
+        dispatch_test_vendor_blas(M=63, N=65, K=66, ctx=ctx)
+        dispatch_test_vendor_blas(M=7, N=6144, K=4096, ctx=ctx)
+        dispatch_test_vendor_blas(M=1024, N=1024, K=1024, ctx=ctx)
+        dispatch_test_vendor_blas(M=1, N=1024, K=1024, ctx=ctx)
