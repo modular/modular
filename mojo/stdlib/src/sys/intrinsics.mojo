@@ -20,7 +20,7 @@ from sys import PrefetchLocality
 """
 
 import math
-from sys.info import is_gpu, _is_sm_9x
+from sys.info import is_gpu, _is_sm_9x_or_newer
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
@@ -1284,7 +1284,7 @@ struct _ClusterDim:
             The `x`, `y`, or `z` dimension of the cluster.
         """
         constrained[
-            is_nvidia_gpu() and _is_sm_9x(),
+            _is_sm_9x_or_newer(),
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
         constrained[
@@ -1326,7 +1326,7 @@ struct _ClusterIdx:
             The `x`, `y`, or `z` coordinates of a cluster within a grid.
         """
         constrained[
-            is_nvidia_gpu() and _is_sm_9x(),
+            _is_sm_9x_or_newer(),
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
         constrained[
@@ -1368,7 +1368,7 @@ struct _Cluster_BlockIdx:
             The `x`, `y`, or `z` coordinates of a threadblock within a cluster.
         """
         constrained[
-            is_nvidia_gpu() and _is_sm_9x(),
+            _is_sm_9x_or_newer(),
             "cluster_id is only supported on NVIDIA SM90+ GPUs",
         ]()
         constrained[

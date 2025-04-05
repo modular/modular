@@ -507,6 +507,21 @@ fn _is_sm_9x() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_sm_100x() -> Bool:
+    return is_nvidia_gpu["sm_100"]() or is_nvidia_gpu["sm_100a"]()
+
+
+@always_inline("nodebug")
+fn _is_sm_120x() -> Bool:
+    return is_nvidia_gpu["sm_120"]() or is_nvidia_gpu["sm_120a"]()
+
+
+@always_inline("nodebug")
+fn _is_sm_9x_or_newer() -> Bool:
+    return _is_sm_9x() or _is_sm_100x() or _is_sm_120x()
+
+
+@always_inline("nodebug")
 fn is_nvidia_gpu() -> Bool:
     """Returns True if the target triple of the compiler is `nvptx64-nvidia-cuda`
     False otherwise.
