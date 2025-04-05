@@ -31,7 +31,7 @@ fn instantiateElsewhere():
 
 
 fn test_literal_from_comptime_string[s: String]() -> StringLiteral:
-    return get_string_literal[s + "-" + s]()
+    return get_string_literal[s, "-", s]()
 
 
 fn main():
@@ -54,10 +54,7 @@ fn main():
     print(strlit)
 
     # CHECK: 33
-    print(get_string_literal[33]())
+    print(get_string_literal[String(33)]())
 
     # CHECK: 42
-    print(get_string_literal[Int64(42)]())
-
-    # CHECK: [1, 2, 3, 4]
-    print(get_string_literal[SIMD[DType.int64, 4](1, 2, 3, 4)]())
+    print(get_string_literal[String(Int64(42))]())
