@@ -1460,9 +1460,7 @@ struct SIMD[dtype: DType, size: Int](
             # a large unsigned
             return self.cast[_uint_type_of_width[int_width]()]().__int__()
         else:
-            return __mlir_op.`pop.cast`[
-                _type = __mlir_type.`!pop.scalar<index>`
-            ](rebind[Scalar[dtype]](self).value)
+            return rebind[Scalar[DType.index]](self.cast[DType.index]()).value
 
     @always_inline("nodebug")
     fn __index__(self) -> __mlir_type.index:
@@ -1487,9 +1485,7 @@ struct SIMD[dtype: DType, size: Int](
             The value as a float.
         """
         constrained[size == 1, "expected a scalar type"]()
-        return __mlir_op.`pop.cast`[_type = __mlir_type.`!pop.scalar<f64>`](
-            rebind[Scalar[dtype]](self).value
-        )
+        return rebind[Scalar[dtype]](self).cast[DType.float64]()
 
     @no_inline
     fn __str__(self) -> String:
@@ -1871,9 +1867,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             The integer value.
         """
-        var ptr: UnsafePointer[Scalar[dtype]] = bytes.unsafe_ptr().bitcast[
-            Scalar[dtype]
-        ]()
+        var ptr = bytes.unsafe_ptr().bitcast[Scalar[dtype]]()
         var value = ptr[]
 
         @parameter
