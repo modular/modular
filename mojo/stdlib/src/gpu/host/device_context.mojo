@@ -143,10 +143,8 @@ struct HostBuffer[
 
     alias _HostPtr = UnsafePointer[Scalar[type], address_space=address_space]
 
-    # _device_ptr must be the first word in the struct to enable passing of
-    # HostBuffer to kernels. The first word is passed to the kernel and
-    # it needs to contain the value registered with the driver.
-    var _device_ptr: Self._HostPtr
+    # We cache the pointer of the buffer here to provide access to elements.
+    var _host_ptr: Self._HostPtr
     var _handle: _DeviceBufferPtr
 
     @doc_private
@@ -158,9 +156,13 @@ struct HostBuffer[
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         alias elem_size = sizeof[type]()
         var cpp_handle = _DeviceBufferPtr()
-        var device_ptr = Self._HostPtr()
+        var host_ptr = Self._HostPtr()
 
         # const char *AsyncRT_DeviceContext_createHostBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
         _checked(
@@ -174,30 +176,38 @@ struct HostBuffer[
                 _SizeT,
             ](
                 UnsafePointer.address_of(cpp_handle),
-                UnsafePointer.address_of(device_ptr),
+                UnsafePointer.address_of(host_ptr),
                 ctx._handle,
                 size,
                 elem_size,
             )
         )
 
-        self._device_ptr = device_ptr
+        self._host_ptr = host_ptr
         self._handle = cpp_handle
 
     @doc_private
-    fn __init__(out self, handle: _DeviceBufferPtr, device_ptr: Self._HostPtr):
-        self._device_ptr = device_ptr
+    fn __init__(out self, handle: _DeviceBufferPtr, host_ptr: Self._HostPtr):
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        self._host_ptr = host_ptr
         self._handle = handle
 
     @doc_private
     fn __init__(
         out self,
         ctx: DeviceContext,
-        ptr: Self._HostPtr,
+        host_ptr: Self._HostPtr,
         size: Int,
         *,
         owning: Bool,
     ):
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         alias elem_size = sizeof[type]()
         var cpp_handle = _DeviceBufferPtr()
         # void AsyncRT_DeviceContext_createBuffer_owning(
@@ -215,13 +225,13 @@ struct HostBuffer[
         ](
             UnsafePointer.address_of(cpp_handle),
             ctx._handle,
-            ptr,
+            host_ptr,
             size,
             elem_size,
             owning,
         )
 
-        self._device_ptr = ptr
+        self._host_ptr = host_ptr
         self._handle = cpp_handle
 
     fn __copyinit__(out self, existing: Self):
@@ -234,6 +244,10 @@ struct HostBuffer[
         Args:
             existing: The host buffer to copy.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         # Increment the reference count before copying the handle.
         #
         # void AsyncRT_DeviceBuffer_retain(const DeviceBuffer *buffer)
@@ -242,7 +256,7 @@ struct HostBuffer[
             NoneType,
             _DeviceBufferPtr,
         ](existing._handle)
-        self._device_ptr = existing._device_ptr
+        self._host_ptr = existing._host_ptr
         self._handle = existing._handle
 
     @always_inline
@@ -252,6 +266,10 @@ struct HostBuffer[
         Returns:
             A copy of this value.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         return self
 
     fn __moveinit__(out self, owned existing: Self):
@@ -263,7 +281,11 @@ struct HostBuffer[
         Args:
             existing: The buffer to move from, which will no longer be valid after this call.
         """
-        self._device_ptr = existing._device_ptr
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        self._host_ptr = existing._host_ptr
         self._handle = existing._handle
 
     fn __del__(owned self):
@@ -273,6 +295,10 @@ struct HostBuffer[
         device context. The actual deallocation may occur asynchronously after
         all operations using this buffer have completed.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         # void AsyncRT_DeviceBuffer_release(const DeviceBuffer *buffer)
         external_call[
             "AsyncRT_DeviceBuffer_release", NoneType, _DeviceBufferPtr
@@ -289,6 +315,10 @@ struct HostBuffer[
         Returns:
             The number of elements in the buffer.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         # int64_t AsyncRT_DeviceBuffer_bytesize(const DeviceBuffer *buffer)
         return (
             external_call[
@@ -316,9 +346,13 @@ struct HostBuffer[
         Returns:
             A new HostBuffer referencing the specified region with the specified element type.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         alias elem_size = sizeof[view_type]()
         var new_handle = _DeviceBufferPtr()
-        var new_device_ptr = UnsafePointer[Scalar[view_type]]()
+        var new_host_ptr = UnsafePointer[Scalar[view_type]]()
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
         #     const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
@@ -334,14 +368,14 @@ struct HostBuffer[
                 _SizeT,
             ](
                 UnsafePointer.address_of(new_handle),
-                UnsafePointer.address_of(new_device_ptr),
+                UnsafePointer.address_of(new_host_ptr),
                 self._handle,
                 offset,
                 size,
                 elem_size,
             )
         )
-        return HostBuffer[view_type](new_handle, new_device_ptr)
+        return HostBuffer[view_type](new_handle, new_host_ptr)
 
     fn enqueue_copy_to(self, dst: HostBuffer[type, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to another host buffer.
@@ -365,6 +399,10 @@ struct HostBuffer[
         Args:
             dst: The destination device buffer to copy data to.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[type]]) raises:
@@ -377,6 +415,10 @@ struct HostBuffer[
         Args:
             dst_ptr: Pointer to the destination host memory location.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_copy(dst_ptr, self)
 
     fn enqueue_copy_from(self, src: HostBuffer[type, **_]) raises:
@@ -389,6 +431,10 @@ struct HostBuffer[
         Args:
             src: The source host buffer to copy data from.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src: DeviceBuffer[type, **_]) raises:
@@ -401,6 +447,10 @@ struct HostBuffer[
         Args:
             src: The source device buffer to copy data from.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[type]]) raises:
@@ -413,6 +463,10 @@ struct HostBuffer[
         Args:
             src_ptr: Pointer to the source host memory location.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_copy(self, src_ptr)
 
     fn enqueue_fill(self, val: Scalar[type]) raises -> Self:
@@ -428,6 +482,10 @@ struct HostBuffer[
         Returns:
             Self reference for method chaining.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_memset(self, val)
         return self
 
@@ -441,6 +499,10 @@ struct HostBuffer[
         Args:
             ctx: The new device context to take ownership of this buffer.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         # const char * AsyncRT_DeviceBuffer_reassignOwnershipTo(const DeviceBuffer *buf, const DeviceContext *ctx)
         _checked(
             external_call[
@@ -463,12 +525,16 @@ struct HostBuffer[
         Returns:
             The raw device pointer that was owned by this buffer.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
         external_call[
             "AsyncRT_DeviceBuffer_release_ptr", NoneType, _DeviceBufferPtr
         ](self._handle)
-        var result = self._device_ptr
-        self._device_ptr = Self._HostPtr()
+        var result = self._host_ptr
+        self._host_ptr = Self._HostPtr()
         return result
 
     @always_inline
@@ -483,7 +549,11 @@ struct HostBuffer[
         Returns:
             The raw device pointer owned by this buffer.
         """
-        return self._device_ptr
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        return self._host_ptr
 
     fn context(self) raises -> DeviceContext:
         """Returns the device context associated with this buffer.
@@ -494,6 +564,10 @@ struct HostBuffer[
         Returns:
             The device context associated with this buffer.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         # const DeviceContext *AsyncRT_DeviceBuffer_context(const DeviceBuffer *buffer)
         var ctx_ptr: _DeviceContextPtr = external_call[
             "AsyncRT_DeviceBuffer_context", _DeviceContextPtr, _DeviceBufferPtr
@@ -512,6 +586,10 @@ struct HostBuffer[
         Args:
             writer: The writer to output the formatted string to.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         writer.write("HostBuffer")
         writer.write("(")
 
@@ -542,6 +620,10 @@ struct HostBuffer[
         Returns:
             A string containing the formatted buffer contents.
         """
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
         return String.write(self)
 
     fn __getitem__(self, idx: Int) -> Scalar[type]:
@@ -556,7 +638,11 @@ struct HostBuffer[
         Returns:
             The scalar value at the specified index.
         """
-        return self._device_ptr[idx]
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        return self._host_ptr[idx]
 
     fn __setitem__(self: HostBuffer[type], idx: Int, val: Scalar[type]):
         """Sets the element at the specified index in the host buffer.
@@ -568,7 +654,11 @@ struct HostBuffer[
             idx: The index of the element to modify.
             val: The new value to store at the specified index.
         """
-        self._device_ptr[idx] = val
+        constrained[
+            not is_gpu(),
+            "HostBuffer is not supported on GPUs",
+        ]()
+        self._host_ptr[idx] = val
 
 
 struct DeviceBuffer[
@@ -605,6 +695,10 @@ struct DeviceBuffer[
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         alias elem_size = sizeof[type]()
         var cpp_handle = _DeviceBufferPtr()
         var device_ptr = Self._DevicePtr()
@@ -661,6 +755,10 @@ struct DeviceBuffer[
     fn __init__(
         out self, handle: _DeviceBufferPtr, device_ptr: Self._DevicePtr
     ):
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         self._device_ptr = device_ptr
         self._handle = handle
 
@@ -673,6 +771,10 @@ struct DeviceBuffer[
         *,
         owning: Bool,
     ):
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         alias elem_size = sizeof[type]()
         var cpp_handle = _DeviceBufferPtr()
         # void AsyncRT_DeviceContext_createBuffer_owning(
@@ -709,6 +811,10 @@ struct DeviceBuffer[
         Args:
             existing: The device buffer to copy.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         # Increment the reference count before copying the handle.
         #
         # void AsyncRT_DeviceBuffer_retain(const DeviceBuffer *buffer)
@@ -727,6 +833,10 @@ struct DeviceBuffer[
         Returns:
             A copy of this value.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         return self
 
     fn __moveinit__(out self, owned existing: Self):
@@ -738,6 +848,10 @@ struct DeviceBuffer[
         Args:
             existing: The buffer to move from, which will no longer be valid after this call.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         self._device_ptr = existing._device_ptr
         self._handle = existing._handle
 
@@ -749,6 +863,10 @@ struct DeviceBuffer[
         device context. The actual deallocation may occur asynchronously after
         all operations using this buffer have completed.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         # void AsyncRT_DeviceBuffer_release(const DeviceBuffer *buffer)
         external_call[
             "AsyncRT_DeviceBuffer_release", NoneType, _DeviceBufferPtr
@@ -765,6 +883,10 @@ struct DeviceBuffer[
         Returns:
             The number of elements in the buffer.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         # int64_t AsyncRT_DeviceBuffer_bytesize(const DeviceBuffer *buffer)
         return (
             external_call[
@@ -793,6 +915,10 @@ struct DeviceBuffer[
         Returns:
             A new DeviceBuffer referencing the specified region with the specified element type.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         alias elem_size = sizeof[view_type]()
         var new_handle = _DeviceBufferPtr()
         var new_device_ptr = UnsafePointer[Scalar[view_type]]()
@@ -830,6 +956,10 @@ struct DeviceBuffer[
         Args:
             dst: The destination device buffer to copy data to.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(self, dst: HostBuffer[type, **_]) raises:
@@ -842,6 +972,10 @@ struct DeviceBuffer[
         Args:
             dst: The destination host buffer to copy data to.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         dst.context().enqueue_copy(dst, self)
 
     fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[type]]) raises:
@@ -854,6 +988,10 @@ struct DeviceBuffer[
         Args:
             dst_ptr: Pointer to the destination host memory location.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_copy(dst_ptr, self)
 
     fn enqueue_copy_from(self, src: DeviceBuffer[type, **_]) raises:
@@ -866,6 +1004,10 @@ struct DeviceBuffer[
         Args:
             src: The source device buffer to copy data from.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src: HostBuffer[type, **_]) raises:
@@ -878,6 +1020,10 @@ struct DeviceBuffer[
         Args:
             src: The source host buffer to copy data from.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[type]]) raises:
@@ -890,6 +1036,10 @@ struct DeviceBuffer[
         Args:
             src_ptr: Pointer to the source host memory location.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_copy(self, src_ptr)
 
     fn enqueue_fill(self, val: Scalar[type]) raises -> Self:
@@ -905,6 +1055,10 @@ struct DeviceBuffer[
         Returns:
             Self reference for method chaining.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         self.context().enqueue_memset(self, val)
         return self
 
@@ -918,6 +1072,10 @@ struct DeviceBuffer[
         Args:
             ctx: The new device context to take ownership of this buffer.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         # const char * AsyncRT_DeviceBuffer_reassignOwnershipTo(const DeviceBuffer *buf, const DeviceContext *ctx)
         _checked(
             external_call[
@@ -941,6 +1099,10 @@ struct DeviceBuffer[
         Returns:
             The raw device pointer that was owned by this buffer.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
         external_call[
             "AsyncRT_DeviceBuffer_release_ptr", NoneType, _DeviceBufferPtr
@@ -961,6 +1123,10 @@ struct DeviceBuffer[
         Returns:
             The raw device pointer owned by this buffer.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         return self._device_ptr
 
     fn context(self) raises -> DeviceContext:
@@ -972,6 +1138,10 @@ struct DeviceBuffer[
         Returns:
             The device context associated with this buffer.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         # const DeviceContext *AsyncRT_DeviceBuffer_context(const DeviceBuffer *buffer)
         var ctx_ptr: _DeviceContextPtr = external_call[
             "AsyncRT_DeviceBuffer_context", _DeviceContextPtr, _DeviceBufferPtr
@@ -1018,6 +1188,10 @@ struct DeviceBuffer[
                 out_host[i] = 255
         ```
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         mapped_buffer = _HostMappedBuffer[
             type, __origin_of(self), address_space
         ](self.context(), self)
@@ -1034,6 +1208,10 @@ struct DeviceBuffer[
         Args:
             writer: The writer to output the formatted string to.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         try:
             with self.map_to_host() as host_buffer:
                 writer.write("DeviceBuffer")
@@ -1068,6 +1246,10 @@ struct DeviceBuffer[
         Returns:
             A string containing the formatted buffer contents.
         """
+        constrained[
+            not is_gpu(),
+            "DeviceBuffer is not supported on GPUs",
+        ]()
         return String.write(self)
 
 
