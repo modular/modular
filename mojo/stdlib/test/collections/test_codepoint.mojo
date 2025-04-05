@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
+from collections.string import StaticString
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
@@ -188,7 +189,9 @@ fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
     assert_equal(
         written,
         len(expected),
-        "wrong byte count written encoding codepoint: {}".format(codepoint),
+        StaticString("wrong byte count written encoding codepoint: {}").format(
+            codepoint
+        ),
     )
 
     # Normalize `expected` to length 4 so we can compare the written byte
@@ -199,7 +202,9 @@ fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
     assert_equal(
         buffer,
         expected,
-        "wrong byte values written encoding codepoint: {}".format(codepoint),
+        StaticString("wrong byte values written encoding codepoint: {}").format(
+            codepoint
+        ),
     )
 
 

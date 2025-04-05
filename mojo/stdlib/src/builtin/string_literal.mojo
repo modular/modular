@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import List
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
+from collections.string.format import _CurlyEntryFormattable
 from collections.string.string_slice import (
     StaticString,
     StringSlice,
@@ -476,32 +476,6 @@ struct StringLiteral(
         return Span[Byte, StaticConstantOrigin](
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
-
-    @always_inline
-    fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
-        """Format a template with `*args`.
-
-        Args:
-            args: The substitution values.
-
-        Parameters:
-            Ts: The types of substitution values that implement `Representable`
-                and `Stringable` (to be changed and made more flexible).
-
-        Returns:
-            The template with the given values substituted.
-
-        Examples:
-
-        ```mojo
-        # Manual indexing:
-        print("{0} {1} {0}".format("Mojo", 1.125)) # Mojo 1.125 Mojo
-        # Automatic indexing:
-        print("{} {}".format(True, "hello world")) # True hello world
-        ```
-        .
-        """
-        return _FormatCurlyEntry.format(self, args)
 
     fn write_to[W: Writer](self, mut writer: W):
         """

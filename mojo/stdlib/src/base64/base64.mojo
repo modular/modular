@@ -20,11 +20,11 @@ from base64 import b64encode
 """
 
 from collections import List
-from collections.string import StringSlice
+from collections.string import StringSlice, StaticString
+from memory import Span
 from sys import simdwidthof
 
 import bit
-from memory import Span
 
 from ._b64encode import b64encode_with_buffers as _b64encode_with_buffers
 
@@ -63,7 +63,9 @@ fn _ascii_to_value[validate: Bool = False](char: StringSlice) raises -> Int:
         @parameter
         if validate:
             raise Error(
-                'ValueError: Unexpected character "{}" encountered'.format(char)
+                StaticString(
+                    'ValueError: Unexpected character "{}" encountered'
+                ).format(char)
             )
         return -1
 
@@ -141,7 +143,9 @@ fn b64decode[validate: Bool = False](str: StringSlice) raises -> String:
     if validate:
         if n % 4 != 0:
             raise Error(
-                "ValueError: Input length {} must be divisible by 4".format(n)
+                StaticString(
+                    "ValueError: Input length {} must be divisible by 4"
+                ).format(n)
             )
 
     var p = String._buffer_type(capacity=n + 1)

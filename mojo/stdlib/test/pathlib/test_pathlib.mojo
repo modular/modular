@@ -13,6 +13,7 @@
 # RUN: %mojo  -D TEMP_FILE=%t %s
 
 import os
+from collections.string import StaticString
 from pathlib import DIR_SEPARATOR, Path, cwd
 from sys import env_get_string, os_is_windows
 
@@ -153,10 +154,12 @@ def test_stat():
     var stat = path.stat()
     assert_equal(
         String(stat),
-        "os.stat_result(st_mode={}, st_ino={}, st_dev={}, st_nlink={},"
-        " st_uid={}, st_gid={}, st_size={}, st_atime={}, st_mtime={},"
-        " st_ctime={}, st_birthtime={}, st_blocks={}, st_blksize={},"
-        " st_rdev={}, st_flags={})".format(
+        StaticString(
+            "os.stat_result(st_mode={}, st_ino={}, st_dev={}, st_nlink={},"
+            " st_uid={}, st_gid={}, st_size={}, st_atime={}, st_mtime={},"
+            " st_ctime={}, st_birthtime={}, st_blocks={}, st_blksize={},"
+            " st_rdev={}, st_flags={})"
+        ).format(
             stat.st_mode,
             stat.st_ino,
             stat.st_dev,
