@@ -15,7 +15,7 @@ from gpu.host import DeviceContext
 from stdlib.builtin.file import FileHandle
 from stdlib.builtin.io import _snprintf
 from testing import assert_true
-from collections.string import StaticString
+from collections.string import StaticString, StringSlice
 
 from utils.numerics import FlushDenormals
 
@@ -215,35 +215,18 @@ struct Format(Writable, Stringable):
     file.
     """
 
-    alias csv = "csv"
+    alias csv = StaticString("csv")
     """Comma separated values with no alignment."""
-    alias tabular = "tabular"
+    alias tabular = StaticString("tabular")
     """Comma separated values with dynamically aligned columns."""
-    alias table = "table"
+    alias table = StaticString("table")
     """Table format with dynamically aligned columns."""
 
     var value: StaticString
     """The format to print results."""
 
     @implicit
-    fn __init__(out self, value: StringLiteral):
-        """Constructs a Format object from a string literal.
-
-        Args:
-            value: The format to print results.
-        """
-        self.value = value
-
-    @implicit
-    fn __init__(out self, value: StaticString):
-        """Constructs a Format object from a string literal.
-
-        Args:
-            value: The format to print results.
-        """
-        self.value = value
-
-    fn __init__(out self, value: String):
+    fn __init__(out self, value: StringSlice):
         """Constructs a Format object from a string.
 
         Args:
