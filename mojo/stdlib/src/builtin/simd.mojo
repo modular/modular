@@ -523,7 +523,6 @@ struct SIMD[dtype: DType, size: Int](
         )
 
     @always_inline("nodebug")
-    @implicit
     fn __init__(out self, *elems: Scalar[dtype]):
         """Constructs a SIMD vector via a variadic list of elements.
 
