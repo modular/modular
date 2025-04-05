@@ -17,13 +17,13 @@ from test_package_trait.module import (
 )
 
 
-# CHECK: lit.struct.decl @MyType(!PackageTrait,
+# CHECK: lit.struct.decl @MyType({{.*}}PackageTrait
 struct MyType(PackageTrait):
     fn method(self):
         pass
 
 
-# CHECK: lit.struct.decl @MyRegType(!PackageTrait,
+# CHECK: lit.struct.decl @MyRegType({{.*}}PackageTrait
 @register_passable
 struct MyRegType(PackageTrait):
     fn method(self):
@@ -55,7 +55,7 @@ fn use_trait[T: PackageTrait](x: UseTrait, y: T):
 
 # CHECK: lit.trait.decl @PackageTrait
 # CHECK: lit.trait.decl @UsedInPackageTrait
-# CHECK: lit.struct.decl @UseTrait(!UsedInPackageTrait
+# CHECK: lit.struct.decl @UseTrait({{.*}}UsedInPackageTrait
 
 
 fn check_implicitly_conforming_package_trait():

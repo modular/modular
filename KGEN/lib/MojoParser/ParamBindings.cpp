@@ -91,14 +91,15 @@ void ParamBindings::operator=(ParamBindings &&other) {
 /// type is not a parametric user defined type, this returns empty bindings.
 ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
                                                 ASTType type,
-                                                const ExprNode *expr) {
+                                                const ExprNode *expr,
+                                                ASTType expectedSelfType) {
   ParamBindings paramBindings(declScope);
   // TODO: this will not work with arbitrary parametric ancestors.
   // Default params need to come from the original declaration, instead of
   // TypeSignatureType, as the latter won't contain the full defaults list if
   // any have been bound already (when `type` is partially specified).
-  Operation *decl = type.getDecl(declScope.getShared())->getIfOperation();
-  if (auto structDecl = dyn_cast<StructDeclOp>(decl)) {
+  ASTDecl *decl = type.getDecl(declScope.getShared());
+  if (auto structDecl = dyn_cast_or_null<StructDeclOp>(decl)) {
     paramBindings.defaultPosTypeParams =
         structDecl.getSignature().getDefaultPosParams();
     paramBindings.defaultKwTypeParams =
@@ -134,6 +135,13 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
           UpcastAttr::get(simpleTraitType, PValue(type),
                           VTableAttr::get(simpleTraitType.getContext(), {}));
     }
+    paramBindings.addPrechecked(expr, typeAttr);
+  } else if (isa<TraitType>(decl->getIfTypeValue())) {
+    assert(expectedSelfType && "expected self type for trait union");
+    // If the trait is a trait union (synthetic ASTDecl), upcast the input type.
+    TypedAttr typeAttr =
+        UpcastAttr::get(expectedSelfType.getMetaType(), PValue(type),
+                        VTableAttr::get(decl->getContext(), {}));
     paramBindings.addPrechecked(expr, typeAttr);
   }
 

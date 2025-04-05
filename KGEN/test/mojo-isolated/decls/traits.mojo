@@ -67,7 +67,7 @@ trait Trait2:
         ...
 
 
-# CHECK-LABEL: lit.struct.decl @StructWithTraits(!Trait1, {{.*}}, !Trait2)
+# CHECK-LABEL: lit.struct.decl @StructWithTraits({{.*}}Trait1_Trait2)
 struct StructWithTraits(Trait1, Trait2):
     # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<!StructWithTraits, imm {{.*}}> read_mem, ?, %{{.*}}: !lit.ref<!StructWithTraits, mut {{.*}}> byref_result) -> !kgen.none
     fn f(self) -> Self:
@@ -86,7 +86,7 @@ trait CFMTrait:
         pass
 
 
-# CHECK-LABEL: lit.struct.decl @CFMStruct(!CFMTrait
+# CHECK-LABEL: lit.struct.decl @CFMStruct({{.*}}CFMTrait)
 struct CFMStruct(CFMTrait):
     # CHECK: lit.fn @"f1({{.*}})"[{{.*}}](%self: !lit.ref<!CFMStruct, imm {{.*}}> read_mem) -> !kgen.none
     fn f1(self):
@@ -432,7 +432,7 @@ trait SimpleTraitB:
 
 
 # CHECK-LABEL: lit.struct.decl @TwoThunks
-# CHECK-SAME: (!SimpleTraitA, !UnknownDestructibility[!SimpleTraitA], !AnyType[!SimpleTraitA], !SimpleTraitB)
+# CHECK-SAME: (!AnyType_UnknownDestructibility_SimpleTraitA_SimpleTraitB)
 @register_passable
 struct TwoThunks(SimpleTraitA, SimpleTraitB):
     # CHECK: lit.fn @"method({{.*}}TwoThunks)"
@@ -557,7 +557,7 @@ trait ChildTraitSameSig(ParentTraitSameSig):
 
 
 # CHECK-LABEL: lit.trait.decl @GreatGrandFather
-# CHECK-SAME: (!UnknownDestructibility, !AnyType)
+# CHECK-SAME: (!AnyType_UnknownDestructibility_GreatGrandFather)
 trait GreatGrandFather:
     # CHECK: lit.fn @"foo
     fn foo(self):
@@ -565,7 +565,7 @@ trait GreatGrandFather:
 
 
 # CHECK-LABEL: lit.trait.decl @GrandFather
-# CHECK-SAME: (!GreatGrandFather,
+# CHECK-SAME: GreatGrandFather)
 trait GrandFather(GreatGrandFather):
     # CHECK: lit.fn @"bar
     fn bar(self):
@@ -575,7 +575,7 @@ trait GrandFather(GreatGrandFather):
 
 
 # CHECK-LABEL: lit.trait.decl @Father
-# CHECK-SAME: (!GrandFather, !GreatGrandFather[!GrandFather],
+# CHECK-SAME: GrandFather_GreatGrandFather)
 trait Father(GrandFather):
     # CHECK: lit.fn @"baz
     fn baz(self):
@@ -586,7 +586,7 @@ trait Father(GrandFather):
 
 
 # CHECK-LABEL: lit.struct.decl @TraitInheritance
-# CHECK-SAME: (!Father, !GrandFather[!Father], !GreatGrandFather[!GrandFather, !Father],
+# CHECK-SAME: Father_GrandFather_GreatGrandFather)
 struct TraitInheritance(Father):
     fn foo(self):
         pass
@@ -820,7 +820,7 @@ trait ImplicitChild(ImplicitParent):
 
 
 # CHECK-LABEL: lit.struct.decl @NoExplicitTraits
-# CHECK-SAME: (!UnknownDestructibility, !AnyType, !ImplicitConformance, !ImplicitParent, !ImplicitChild)
+# CHECK-SAME: (!AnyType_UnknownDestructibility_ImplicitChild_ImplicitConformance_ImplicitParent)
 struct NoExplicitTraits:
     fn implicit(self):
         pass
@@ -833,7 +833,7 @@ struct NoExplicitTraits:
 
 
 # CHECK-LABEL: lit.struct.decl @ChildFirst
-# CHECK-SAME: (!UnknownDestructibility, !AnyType, !ImplicitChild, !ImplicitParent[!ImplicitChild])
+# CHECK-SAME: (!AnyType_UnknownDestructibility_ImplicitChild_ImplicitParent)
 struct ChildFirst:
     fn child_method(self):
         pass
@@ -843,7 +843,7 @@ struct ChildFirst:
 
 
 # CHECK-LABEL: lit.struct.decl @RegisterPassable
-# CHECK-SAME: (!UnknownDestructibility, !AnyType, !Copyable, !ImplicitConformance)
+# CHECK-SAME: (!AnyType_Copyable_UnknownDestructibility_ImplicitConformance)
 @register_passable
 struct RegisterPassable:
     # CHECK: lit.fn @"__copyinit__{{.*}}"

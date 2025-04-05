@@ -930,7 +930,7 @@ struct LegacyInOutInit:
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMem(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
+# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
 # CHECK: move :!lit.generator<[2]({{.*}} owned_in_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
 @value
 struct ValueMem:
@@ -976,7 +976,7 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store [[TMP]], %[[PB]]
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
 @value
 struct ValueMemHasCopy:
     var a: Int
@@ -987,7 +987,7 @@ struct ValueMemHasCopy:
         self.b = other.b
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
 @value
 struct ValueMemHasMove:
     var a: Int
@@ -999,7 +999,7 @@ struct ValueMemHasMove:
 
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
-# CHECK-SAME: (!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable) register_passable_trivial
+# CHECK-SAME: (!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility) register_passable_trivial
 
 # CHECK: lit.fn @"__copyinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem,
 # CHECK-SAME: %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug
@@ -1059,7 +1059,7 @@ struct ValueReg:
 
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable) attributes
+# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility) attributes
 @value
 struct Foo:
     var a: Int

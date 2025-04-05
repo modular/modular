@@ -1477,7 +1477,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return declRef->emitIR(dest, moduleEmitter);
   }
 
-  if (!isa<StructDeclOp, TraitDeclOp>(*typeDecl)) {
+  if (!isa<StructDeclOp, TraitDeclOp>(*typeDecl) &&
+      !isa<TraitType>(typeDecl->getIfTypeValue())) {
     emitter.emitError(getLoc(), "cannot access attribute in type ")
         << baseVal.getType() << base->getRange();
     return {};
@@ -1522,8 +1523,10 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // of `[A, B, Int]`.  If we had ParameterizedType then we could model this
     // correctly as have an unspecified first set of bindings for the type,
     // and the Int binding could go in a subsequent parameter list.
-    auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
-                                                      baseRVType, this);
+    ASTType expectedSelfType =
+        memberDecls[0]->getParentDecl()->getTypeDeclSelf();
+    auto bindings = ParamBindings::getForDeclaredType(
+        emitter.getDeclScope(), baseRVType, this, expectedSelfType);
     auto result =
         OverloadSetUValue::create(spelling, memberDecls, std::move(bindings),
                                   this, CallSyntax::kDirectCall);
@@ -1551,7 +1554,8 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
 
     // If we get here, we're accessing an alias in a trait.
-    assert(isa<TraitDeclOp>(*typeDecl) &&
+    assert((isa<TraitDeclOp>(*typeDecl) ||
+            isa<TraitType>(typeDecl->getIfTypeValue())) &&
            "Alias's parent should be struct or trait");
     PValue basePValue = baseVal.getIfPValue();
     if (!basePValue) {
@@ -2342,7 +2346,8 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     if (lhsTrait && rhsTrait) {
       SmallVector<SymbolRefAttr> symbols(lhsTrait.getSymbols());
       llvm::append_range(symbols, rhsTrait.getSymbols());
-      return emitter.emitResult(TraitType::get(symbols), this, dest);
+      return emitter.emitResult(TraitType::get(emitter.getContext(), symbols),
+                                this, dest);
     }
   }
 

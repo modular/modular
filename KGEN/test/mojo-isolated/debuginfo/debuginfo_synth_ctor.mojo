@@ -9,7 +9,7 @@
 
 # COM: Synthesized constructors should not emit debuginfo.
 
-# CHECK: lit.struct.decl @MyValueStruct(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable, !ExplicitlyCopyable)
+# CHECK: lit.struct.decl @MyValueStruct(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
 # CHECK-SAME: attributes {sourceName = #MyValueStruct_name}
 
 # CHECK-NOT: #debuginfo.subprogram

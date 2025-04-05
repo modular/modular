@@ -1093,32 +1093,25 @@ FunctionDeclOverloadSet::toJSON(MojoParserContext &ctx) const {
 // PublicTraitDecl
 //===----------------------------------------------------------------------===//
 
-/// Collect the names of the various parent types of the given set of type
-/// lineages.
+/// Collect the names of the various parent decls of a decl given its set of
+/// canonical traits.
 /// TODO: Whenever we support inherited classes/structs, collect those as well.
-static void collectParentTypes(MojoParserContext &ctx,
-                               SmallVectorImpl<StringRef> &parentTraits,
-                               ArrayRef<TypeLineageAttr> parentTypes) {
-  DenseSet<Type> seenTypes;
-  auto addParentType = [&](Type parentType) {
-    if (!seenTypes.insert(parentType).second)
-      return;
-    MojoASTDeclRef decl = ctx.getDecl(parentType);
-    if (!decl)
-      return;
+static void collectParentTraits(MojoParserContext &ctx, MojoASTDeclRef self,
+                                SmallVectorImpl<StringRef> &parentTraits,
+                                TraitType canonicalTrait) {
+  DenseSet<SymbolRefAttr> seenDecls;
+  for (SymbolRefAttr symbol : canonicalTrait.getSymbols()) {
+    if (!seenDecls.insert(symbol).second)
+      continue;
+    MojoASTDeclRef decl = ctx.getDecl(TraitType::get(symbol));
+    if (!decl || decl == self)
+      continue;
     std::optional<StringRef> name = decl.getName();
     if (!name)
-      return;
+      continue;
     if (isa<TraitDeclOp>(*decl))
       parentTraits.push_back(*name);
   };
-
-  for (TypeLineageAttr parentType : parentTypes) {
-    addParentType(parentType.getType());
-    for (Type type : parentType.getInheritedFrom())
-      addParentType(type);
-  }
-
   llvm::sort(parentTraits);
 }
 
@@ -1143,8 +1136,8 @@ llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildDecls<PublicFunctionDecl, FnOp>(*decl, shouldHideFn));
   SmallVector<StringRef> parentTraits;
-  collectParentTypes(ctx, parentTraits,
-                     cast<TraitDeclOp>(*decl).getParentTypes());
+  collectParentTraits(ctx, decl, parentTraits,
+                      cast<TraitDeclOp>(*decl).getCanonicalTrait());
   return llvm::json::Object{
       {"deprecated", deprecated},
       {"description", description},
@@ -1204,8 +1197,8 @@ std::string PublicStructDecl::getDeclarationSnippet(
                                  os);
 
   SmallVector<StringRef> parentTraits;
-  collectParentTypes(ctx, parentTraits,
-                     cast<StructDeclOp>(*decl).getParentTypes());
+  collectParentTraits(ctx, decl, parentTraits,
+                      cast<StructDeclOp>(*decl).getCanonicalTrait());
   if (!parentTraits.empty()) {
     os << "\n# Traits: ";
     llvm::interleaveComma(parentTraits, os,
@@ -1257,8 +1250,8 @@ llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildDecls<PublicFunctionDecl, FnOp>(*decl));
   SmallVector<StringRef> parentTraits;
-  collectParentTypes(ctx, parentTraits,
-                     cast<StructDeclOp>(*decl).getParentTypes());
+  collectParentTraits(ctx, decl, parentTraits,
+                      cast<StructDeclOp>(*decl).getCanonicalTrait());
   return llvm::json::Object{
       {"aliases", toJSONArray(ctx, aliases)},
       {"constraints", constraints},

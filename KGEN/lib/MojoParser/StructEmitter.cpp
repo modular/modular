@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
+#include "Traits.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/StringExtras.h"
 #include <KGEN/KGENDialect/ParameterReplacer.h>
@@ -244,39 +245,18 @@ std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeFunction(
   return {funcOp, &funcDecl};
 }
 
-void StructEmitter::appendTraits(SmallVectorImpl<TypeLineageAttr> &parentTypes,
-                                 ASTDecl *traitDecl) {
-  llvm::MapVector<Type, TypeLineageAttr> parentTypeSet;
-  for (TypeLineageAttr parent : parentTypes)
-    parentTypeSet.insert({parent.getType(), parent});
-
-  auto targetTrait = cast<TraitDeclOp>(traitDecl);
-  Type type = targetTrait.bindReference();
-
-  // Add the trait parent if it isn't already there.
-  if (!parentTypeSet.insert({type, TypeLineageAttr::get(type)}).second)
-    return;
-
-  // Inherit all parent types.
-  for (TypeLineageAttr inherited : targetTrait.getParentTypes()) {
-    if (auto it = parentTypeSet.find(inherited.getType());
-        it != parentTypeSet.end())
-      continue;
-    SmallVector<Type> lineage = llvm::to_vector(inherited.getInheritedFrom());
-    lineage.push_back(type);
-    Type parent = inherited.getType();
-    parentTypeSet.insert({parent, TypeLineageAttr::get(parent, lineage)});
-  }
-
-  for (auto [_, type] : llvm::drop_begin(parentTypeSet, parentTypes.size()))
-    parentTypes.push_back(type);
-}
-
-void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
-  SmallVector<TypeLineageAttr> parentTypes =
-      llvm::to_vector(structOp.getParentTypes());
-  appendTraits(parentTypes, traitDecl);
-  structOp.setParentTypes(parentTypes);
+/// Given a struct and a trait declaration, make the struct inherit from the
+/// trait if it does not already.
+static void addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
+  // Pull in the entire ancestor chain of the new symbol.
+  SmallVector<SymbolRefAttr> newSymbols = {traitDecl->getSymbolRef()};
+  canonicalizeTraitCompositionSymbols(traitDecl->getShared(), newSymbols);
+  // Merge the new canonical symbols with the existing canonical trait symbols.
+  TraitType trait = structOp.getCanonicalTrait();
+  llvm::append_range(newSymbols, trait.getSymbols());
+  // No need to pull in any ancestors now. Just sort and deduplicate.
+  sortAndDeduplicateSymbols(newSymbols);
+  structOp.setCanonicalTrait(TraitType::get(structOp.getContext(), newSymbols));
 }
 
 FnOp StructEmitter::synthesizeMemberwiseInit(

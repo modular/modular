@@ -379,7 +379,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
     KGEN_DecoratorsAttr:$decorators,
-    TypeLineageArrayAttr:$parentTypes,
+    TypeAttrOf<LIT_TraitType>:$canonicalTrait,
     UnitAttr:$isSynthetic,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
     OptionalAttr<KGEN_SymbolConstantAttr>:$destructor,
@@ -397,7 +397,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name ``
-    custom<StructParameterSpec>($params, $signature, $parentTypes) ``
+    custom<StructParameterSpec>($params, $signature, $canonicalTrait) ``
     custom<TypeConvention>($convention) attr-dict-with-keyword
     (`\n` `destructor` custom<Symbol>($destructor)^ ``)?
     (`\n` `move` custom<Symbol>($moveInit)^ ``)?
@@ -586,7 +586,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     SymbolNameAttr:$sym_name,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
-    TypeLineageArrayAttr:$parentTypes,
+    TypeAttrOf<LIT_TraitType>:$canonicalTrait,
     EnumProp<"TypeConvention">:$convention,
     OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString,
@@ -600,7 +600,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
 
   let assemblyFormat = [{
     $sym_name ``
-    custom<StructParameterSpec>($params, $signature, $parentTypes)
+    custom<StructParameterSpec>($params, $signature, $canonicalTrait)
     custom<TypeConvention>($convention) attr-dict-with-keyword $fields
   }];
 

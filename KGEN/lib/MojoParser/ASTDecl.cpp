@@ -81,6 +81,13 @@ void ASTDecl::takeDecls(ASTDecl &src) {
   counter = src.counter;
 }
 
+DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *
+ASTDecl::getTraitConformanceLineage(bool createIfMissing) {
+  if (!traitConformanceLineage && createIfMissing)
+    traitConformanceLineage.reset(new TraitConformanceLineageType());
+  return traitConformanceLineage.get();
+}
+
 /// Return the nearest parameter scope (i.e. DeclInterface) for the given decl,
 /// as well as the total depth from the nearest file module.
 static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(

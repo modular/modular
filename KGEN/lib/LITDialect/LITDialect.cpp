@@ -66,6 +66,8 @@ struct LITOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 
     if (auto trait = dyn_cast<TraitType>(type)) {
       ArrayRef<SymbolRefAttr> symbols = trait.getSymbols();
+      if (symbols.empty())
+        return AliasResult::NoAlias;
       SmallVector<StringRef> names;
       for (SymbolRefAttr symbol : symbols) {
         if (std::optional<StringRef> name = StructType::getAliasName(symbol))

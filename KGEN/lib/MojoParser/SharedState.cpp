@@ -1484,7 +1484,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             .Case([&](StructDeclOp structOp) {
               // Resolve the types of any parameters.
               refWalker.walk(structOp.getParamsAttr());
-              refWalker.walk(structOp.getParentTypesAttr());
+              refWalker.walk(structOp.getCanonicalTrait());
               if (TypeAttr nmTarget = structOp.getNonmaterializableTargetAttr())
                 refWalker.walk(nmTarget);
               return success();

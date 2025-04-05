@@ -208,14 +208,10 @@ def LIT_TraitType: LITType<"Trait", "trait",
     ```
   }];
 
-  let parameters = (ins ArrayRefParameter<"SymbolRefAttr">:$symbols);
+  let parameters = (ins OptionalArrayRefParameter<"SymbolRefAttr">:$symbols);
   let assemblyFormat = "`<` $symbols `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "ArrayRef<SymbolRefAttr>":$symbols), [{
-      assert(!symbols.empty() && "cannot create empty trait type");
-      return get(symbols[0].getContext(), symbols);
-    }]>,
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
       return get(symbol.getContext(), {symbol});
     }]>

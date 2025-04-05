@@ -906,8 +906,8 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
     // Otherwise, generate bindings for each explicit conformance.
     assert(isa<StructMetaType>(metatype));
     auto structDecl = cast<StructDeclOp>(type.getDecl(shared));
-    for (TypeLineageAttr parentAttr : structDecl.getParentTypes()) {
-      auto trait = cast<TraitType>(parentAttr.getType());
+    for (SymbolRefAttr parent : structDecl.getCanonicalTrait().getSymbols()) {
+      auto trait = TraitType::get(parent);
       if (PValue result = emitter.emitMetaTypeToTraitConversion(
               {PValue(type), node}, trait))
         conformances.push_back(result);
@@ -1871,17 +1871,18 @@ ParseResult DeclResolver::resolveBody(AliasDeclOp op, Lexer &lexer,
 // Struct Decl implementation
 //===----------------------------------------------------------------------===//
 
-/// For a struct or trait declaration, parse an optional list of parent types to
-/// inherit from.
+/// For a struct or trait declaration, parse an optional list of parent traits
+/// to inherit from. `inheritedFrom` is a map from each inherited symbol to the
+/// first symbol that explicitly inherits from it.
 static ParseResult
-parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
-                        SmallVectorImpl<TypeLineageAttr> &parentTypes,
-                        SharedState &shared) {
+parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
+                             StringRef declName, SharedState &shared) {
   if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
     return success();
 
-  // Resolve the traits such that there are no duplicates.
-  llvm::MapVector<Type, std::pair<TypeLineageAttr, SMLoc>> parentTypeSet;
+  DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *inheritedFrom =
+      decl.getTraitConformanceLineage(/*createIfMissing=*/true);
+
   auto parseParent = [&]() -> ParseResult {
     ASTType type;
     SMLoc loc;
@@ -1892,11 +1893,10 @@ parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
     // Reject inheriting from types we don't support yet.
     if (!isa<TraitType>(type)) {
       if (isa<LIT::StructType>(type)) {
-        p.emitError(loc)
-            << "TODO: inheriting from other structs is not implemented";
+        p.emitError(loc) << "inheriting from structs is not allowed";
       } else if (isa<ParamType>(type)) {
-        p.emitError(loc) << "TODO: inheriting from a parameter expression is "
-                            "not implemented";
+        p.emitError(loc)
+            << "inheriting from a parameter expression is not allowed";
       } else {
         p.emitError(loc) << "don't know how to inherit from this type";
       }
@@ -1904,47 +1904,39 @@ parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
       return success();
     }
 
-    auto it = parentTypeSet.insert({type, {TypeLineageAttr::get(type), loc}});
-    if (!it.second) {
-      // If the user explicitly inherited a trait that is already provided
-      // elsewhere, provide a warning.
-      auto [cur, curLoc] = it.first->second;
-      InflightDiag diag = shared.emitWarning(loc, "'")
-                          << declName << "' already inherits from "
-                          << ASTType(type);
-      if (cur.getInheritedFrom().empty()) {
-        diag.attachNote(curLoc) << "previously inherited here";
-      } else {
-        diag.attachNote(curLoc)
-            << "inherited through " << ASTType(cur.getInheritedFrom().back())
-            << " here";
+    for (SymbolRefAttr symbol : cast<TraitType>(type).getSymbols()) {
+      auto [it, inserted] =
+          inheritedFrom->try_emplace(symbol, std::make_pair(symbol, loc));
+      if (!inserted) {
+        // If the user explicitly inherited a trait that is already provided
+        // elsewhere, provide a warning.
+        auto [cur, curLoc] = it->second;
+        InflightDiag diag = shared.emitWarning(loc, "'")
+                            << declName << "' already inherits from "
+                            << ASTType(TraitType::get(symbol));
+        if (cur == symbol)
+          diag.attachNote(curLoc) << "previously inherited here";
+        else
+          diag.attachNote(curLoc) << "inherited through "
+                                  << ASTType(TraitType::get(cur)) << " here";
       }
     }
+
     // Successively flatten the parent list so we always have all the parents
     // available to check.
     // TODO: Encode an "inherited from" here, to make diagnostics nice.
     for (SymbolRefAttr symbol : cast<TraitType>(type).getSymbols()) {
       ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-      for (TypeLineageAttr inherited :
-           cast<TraitDeclOp>(traitDecl).getParentTypes()) {
-        if (auto it = parentTypeSet.find(inherited.getType());
-            it != parentTypeSet.end())
-          continue;
-        SmallVector<Type> lineage =
-            llvm::to_vector(inherited.getInheritedFrom());
-        lineage.push_back(type);
-        Type parent = inherited.getType();
-        parentTypeSet.insert(
-            {parent, {TypeLineageAttr::get(parent, lineage), loc}});
-      }
+      TraitType canonicalParent =
+          cast<TraitDeclOp>(traitDecl).getCanonicalTrait();
+      for (SymbolRefAttr parent : canonicalParent.getSymbols())
+        inheritedFrom->try_emplace(parent, std::make_pair(symbol, loc));
     }
     return success();
   };
   if (p.parseCommaSeparatedList(parseParent, Token::r_paren) ||
       p.parseToken(Token::r_paren, "expected ')' for parameter list"))
     return failure();
-  for (auto [type, _] : llvm::make_second_range(parentTypeSet))
-    parentTypes.push_back(type);
   return success();
 }
 
@@ -1981,10 +1973,10 @@ static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
 
 /// Process a decorator that is resolved at the signature phase of resolution
 /// and return success, otherwise failure if it is handled later.
-static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
-                                                     StructDeclOp structOp,
-                                                     SharedState &shared,
-                                                     ASTDecl &structDecl) {
+static LogicalResult
+processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
+                                SharedState &shared, ASTDecl &structDecl,
+                                SmallVectorImpl<SymbolRefAttr> &traits) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
       structOp.setConvention(TypeConvention::RegisterPassable);
@@ -1995,10 +1987,10 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
       // During signature resolution, add the `Copyable` and `Movable` traits.
       if (ASTDecl *decl = shared.lookupBuiltinTrait(
               "Copyable", structDecl.getParentDecl(), decorator->getLoc()))
-        StructEmitter::addTraitParent(structOp, decl);
+        traits.push_back(decl->getSymbolRef());
       if (ASTDecl *decl = shared.lookupBuiltinTrait(
               "Movable", structDecl.getParentDecl(), decorator->getLoc()))
-        StructEmitter::addTraitParent(structOp, decl);
+        traits.push_back(decl->getSymbolRef());
       // Fallthrough the decorator to body resolution.
       return failure();
     }
@@ -2060,7 +2052,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                           decl.getLoc(), decl.getParentDecl());
 
   ParsedParamList parsedParams;
-  SmallVector<TypeLineageAttr> parentTypes;
 
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
@@ -2068,8 +2059,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
       parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList) ||
-      parseOptionalParentList(p, sigDecl, structOp.getSymName(), parentTypes,
-                              shared) ||
+      parseOptionalInheritanceList(p, sigDecl, decl, structOp.getSymName(),
+                                   shared) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.isErroneous())
     return failure();
@@ -2088,12 +2079,16 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     return failure();
   structOp.setParamsAttr(paramsArrayAttr);
   structOp.setSignature(sig);
-  structOp.setParentTypes(parentTypes);
+
+  SmallVector<SymbolRefAttr> parentTraits;
+  if (auto *inheritedFrom = decl.getTraitConformanceLineage())
+    for (auto [symbol, _] : *inheritedFrom)
+      parentTraits.push_back(symbol);
 
   // Make every nominal struct type inherit from `UnknownDestructibility`.
   if (ASTDecl *traitDecl = shared.lookupBuiltinTrait(
           "UnknownDestructibility", decl.getParentDecl(), decl.getLoc()))
-    StructEmitter::addTraitParent(structOp, traitDecl);
+    parentTraits.push_back(traitDecl->getSymbolRef());
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
@@ -2106,7 +2101,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   Decorators(decl).applySignatureDecorators(
       decoratorExprs, [&](ExprNode *decorator) {
         return processStructSignatureDecorator(decorator, structOp, shared,
-                                               decl);
+                                               decl, parentTraits);
       });
   std::string linearTypeErrorMsg;
   for (auto decoratorExpr : decoratorExprs) {
@@ -2144,9 +2139,11 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   } else {
     if (ASTDecl *implicitlyDestructibleDecl = shared.lookupBuiltinTrait(
             "AnyType", decl.getParentDecl(), decl.getLoc())) {
-      StructEmitter::addTraitParent(structOp, implicitlyDestructibleDecl);
+      parentTraits.push_back(implicitlyDestructibleDecl->getSymbolRef());
     }
   }
+
+  structOp.setCanonicalTrait(getCanonicalTrait(parentTraits));
 
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
@@ -2411,7 +2408,7 @@ static void processRegisterPassableDecorator(
 static LogicalResult verifyExplicitConformances(ASTDecl &structDecl) {
   bool hadErrors = false;
   auto structDeclOp = cast<StructDeclOp>(structDecl);
-  for (TypeLineageAttr parent : structDeclOp.getParentTypes()) {
+  for (SymbolRefAttr parent : structDeclOp.getCanonicalTrait().getSymbols()) {
     std::optional<InflightDiag> diag;
     hadErrors |= failed(verifyConformance(structDecl, parent, diag));
   }
@@ -2432,15 +2429,12 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   // TODO(MOCO-1468): Pull this out into a helper.
   bool implicitlyDestructible = false;
-  for (auto parentAttr : structOp.getParentTypes()) {
-    for (SymbolRefAttr symbol :
-         cast<TraitType>(parentAttr.getType()).getSymbols()) {
-      ASTDecl &parentDecl = getDeclForTypeSymbol(symbol);
-      if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
-        if (parentTrait.getSymName() == "AnyType") {
-          implicitlyDestructible = true;
-          break;
-        }
+  for (SymbolRefAttr symbol : structOp.getCanonicalTrait().getSymbols()) {
+    ASTDecl &parentDecl = getDeclForTypeSymbol(symbol);
+    if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
+      if (parentTrait.getSymName() == "AnyType") {
+        implicitlyDestructible = true;
+        break;
       }
     }
   }
@@ -2613,10 +2607,15 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
               "TODO: trait declarations do not support parameters yet");
     return failure();
   }
-  SmallVector<TypeLineageAttr> parentTypes;
-  if (parseOptionalParentList(p, *decl.getParentDecl(), traitOp.getSymName(),
-                              parentTypes, shared))
+
+  // Map from each symbol to the first symbol that explicitly inherits from it.
+  if (parseOptionalInheritanceList(p, *decl.getParentDecl(), decl,
+                                   traitOp.getSymName(), shared))
     return failure();
+  SmallVector<SymbolRefAttr> parentTraits;
+  if (auto *inheritedFrom = decl.getTraitConformanceLineage())
+    for (auto [symbol, _] : *inheritedFrom)
+      parentTraits.push_back(symbol);
 
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();
@@ -2630,11 +2629,11 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   }
 
   // Make every trait inherit from `UnknownDestructibility`, except itself.
-  if (parentTypes.empty() && traitOp.getSymName() != "UnknownDestructibility") {
-    if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
+  if (parentTraits.empty() &&
+      traitOp.getSymName() != "UnknownDestructibility") {
+    if (ASTDecl *unknownDestructibilityDecl = shared.lookupBuiltinTrait(
             "UnknownDestructibility", decl.getParentDecl(), decl.getLoc())) {
-      TraitType anyType = cast<TraitDeclOp>(anyTypeDecl).bindReference();
-      parentTypes.push_back(TypeLineageAttr::get(anyType));
+      parentTraits.push_back(unknownDestructibilityDecl->getSymbolRef());
     }
   }
 
@@ -2678,17 +2677,15 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
         traitOp.getSymName() != "UnknownDestructibility") {
       if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
               "AnyType", decl.getParentDecl(), decl.getLoc())) {
-        TraitType anyType = cast<TraitDeclOp>(anyTypeDecl).bindReference();
-        parentTypes.push_back(TypeLineageAttr::get(anyType));
+        parentTraits.push_back(anyTypeDecl->getSymbolRef());
       }
     }
   }
 
   // Insert the implicit trait parameter:
   // - _Self: a value of this trait type - the struct conforming to this trait.
-  TraitType traitType = traitOp.bindReference();
-  auto actualType =
-      ParamDeclAttr::get(decl.mangleParamName("_Self"), traitType);
+  auto actualType = ParamDeclAttr::get(decl.mangleParamName("_Self"),
+                                       traitOp.bindReference());
 
   MLIRContext *ctx = getContext();
   auto paramArray = ParamDeclArrayAttr::get(ctx, {actualType});
@@ -2700,7 +2697,11 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
     return failure();
   traitOp.setParams(paramArray);
   traitOp.setSignature(sig);
-  traitOp.setParentTypes(parentTypes);
+
+  // Add the trait itself to its canonical trait list.
+  parentTraits.push_back(getFullyResolvedSymbolRef(traitOp));
+  TraitType canonTrait = getCanonicalTrait(parentTraits);
+  traitOp.setCanonicalTrait(canonTrait);
 
   decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(traitOp));
 
@@ -2784,8 +2785,8 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
 
   // Now just pull in the functions in the bodies of all parents.
   Block &body = *traitOp.getBody();
-  for (TypeLineageAttr parent : traitOp.getParentTypes()) {
-    ASTDecl &parentDecl = *ASTType(parent.getType()).getDecl(shared);
+  for (SymbolRefAttr parent : traitOp.getCanonicalTrait().getSymbols()) {
+    ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
     if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
       continue;
 

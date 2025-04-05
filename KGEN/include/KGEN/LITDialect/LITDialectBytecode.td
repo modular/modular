@@ -206,11 +206,6 @@ def WrappedStructExtractAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
-def TypeLineageAttr : DialectAttribute<(attr
-  Type:$type,
-  TypeArray:$inheritedFrom
-)>;
-
 def TypeConventionAttr : DialectAttribute<(attr
   EnumAttr<"TypeConvention">:$value
 )>;
@@ -226,10 +221,6 @@ def VarDeclKindAttr : DialectAttribute<(attr
 def RefPackAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"RefPackType">:$type
-)>;
-
-def TypeLineageArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"TypeLineageAttr">:$value
 )>;
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
@@ -253,8 +244,6 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnresolvedAliasValueAttr,
     LITStructAttr,
     WrappedStructExtractAttr,
-    TypeLineageAttr,
-    TypeLineageArrayAttr,
     RefPackAttr,
     TypeConventionAttr,
     VarDeclKindAttr,

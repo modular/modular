@@ -48,10 +48,6 @@
 // CHECK-SAME: #kgen.none : !kgen.none
 "none.type"() {a = #kgen.none : !kgen.none} : () -> ()
 
-// CHECK-LABEL: "type_lineage.attr"
-// CHECK-SAME: #lit.type_lineage<index, [index]>
-"type_lineage.attr"() {a = #lit.type_lineage<index, [index]>} : () -> ()
-
 lit.struct.decl @Foo {
   lit.struct.field foo : index
   lit.struct.field bar : !kgen.dtype
