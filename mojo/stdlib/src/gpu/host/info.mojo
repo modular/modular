@@ -16,7 +16,7 @@ from os import abort
 from sys import env_get_string
 from sys.info import _accelerator_arch, _get_arch
 from collections.string.string_slice import StringSlice, StaticString
-from builtin.string_literal import get_string_literal_slice
+from builtin.string_literal import get_string_literal
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()
 alias DEFAULT_GPU = Info.from_name[DEFAULT_GPU_ARCH]()
@@ -1137,9 +1137,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     Returns:
         Info instance for the specified target architecture.
     """
-    alias target_arch = get_string_literal_slice[
-        target_arch0.replace("sm_", "")
-    ]()
+    alias target_arch = get_string_literal[target_arch0.replace("sm_", "")]()
 
     constrained[
         target_arch

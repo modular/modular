@@ -616,7 +616,7 @@ fn threadfence[scope: Scope = Scope.GPU]():
 
 
 fn _get_type_suffix[type: DType]() -> StaticString:
-    alias str = get_string_literal["u" + _int_to_str[bitwidthof[type]()]()]()
+    alias str = get_string_literal["u", _int_to_str[bitwidthof[type]()]()]()
     return str
 
 

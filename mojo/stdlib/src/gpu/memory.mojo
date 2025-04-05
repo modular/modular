@@ -36,7 +36,7 @@ from utils.numerics import get_accum_type
 from utils import IndexList, StaticTuple
 from .intrinsics import Scope
 from ._utils import to_i16, to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
-from builtin.string_literal import get_string_literal_slice
+from builtin.string_literal import get_string_literal
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -965,7 +965,7 @@ fn external_memory[
                 address_space=address_space,
                 alignment=alignment,
             ]._mlir_type,
-            name = get_string_literal_slice[name]().value,
+            name = get_string_literal[name]().value,
             alignment = alignment.value,
         ]()
     )
@@ -1904,4 +1904,4 @@ fn _int_to_str[val: Int]() -> StaticString:
     elif val == 256:
         return "256"
 
-    return get_string_literal[val]()
+    return get_string_literal[String(val)]()

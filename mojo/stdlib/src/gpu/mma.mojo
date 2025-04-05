@@ -15,7 +15,7 @@ from memory import UnsafePointer, bitcast
 from collections import InlineArray
 from utils import StaticTuple
 from utils.index import Index
-from builtin.string_literal import get_string_literal_slice
+from builtin.string_literal import get_string_literal
 
 
 @always_inline
@@ -962,8 +962,8 @@ fn wgmma_async[
         mat_b_desc.desc.value
     )
 
-    alias layout_a_value = get_string_literal_slice[layout_a]().value
-    alias layout_b_value = get_string_literal_slice[layout_b]().value
+    alias layout_a_value = get_string_literal[layout_a]().value
+    alias layout_b_value = get_string_literal[layout_b]().value
 
     @parameter
     if (
@@ -1101,8 +1101,8 @@ fn wgmma_async[
         mat_b_desc.desc.value
     )
 
-    alias layout_a_value = get_string_literal_slice[layout_a]().value
-    alias layout_b_value = get_string_literal_slice[layout_b]().value
+    alias layout_a_value = get_string_literal[layout_a]().value
+    alias layout_b_value = get_string_literal[layout_b]().value
 
     @parameter
     if a_type is DType.tensor_float32:
