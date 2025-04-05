@@ -23,15 +23,13 @@ fn get_linkage_name[
     Returns:
         Symbol name.
     """
-    return StringLiteral(
-        __mlir_attr[
-            `#kgen.param.expr<get_linkage_name,`,
-            target,
-            `,`,
-            func,
-            `> : !kgen.string`,
-        ]
-    )
+    return __mlir_attr[
+        `#kgen.param.expr<get_linkage_name,`,
+        target,
+        `,`,
+        func,
+        `> : !kgen.string`,
+    ]
 
 
 fn get_linkage_name[
