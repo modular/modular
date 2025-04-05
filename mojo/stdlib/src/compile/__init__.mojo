@@ -27,5 +27,5 @@ Example:
 ```
 """
 
-from .compile import Info, _internal_compile_code, compile_info
+from .compile import Info, compile_info
 from .reflection import get_linkage_name
