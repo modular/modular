@@ -82,10 +82,10 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var res_max_device = ctx.enqueue_create_buffer[F32](1).enqueue_fill(0)
 
     ctx.enqueue_function[reduce](
-        res_add_device,
-        res_min_device,
-        res_max_device,
-        vec_device,
+        res_add_device.unsafe_ptr(),
+        res_min_device.unsafe_ptr(),
+        res_max_device.unsafe_ptr(),
+        vec_device.unsafe_ptr(),
         n,
         grid_dim=ceildiv(n, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
