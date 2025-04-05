@@ -476,7 +476,7 @@ alias RTX5090 = Info(
     name="RTX5090",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
-    arch_name="hopper",
+    arch_name="blackwell",
     compile_options="nvptx-short-ptr=true",
     compute=12.0,
     version="sm_120a",
@@ -656,6 +656,8 @@ struct Info(Writable):
             return _get_l4_target()
         if self.name == "H100":
             return _get_h100_target()
+        if self.name == "RTX5090":
+            return _get_rtx5090_target()
         if self.name == "MI300X":
             return _get_mi300x_target()
         if self.name == "":
@@ -1190,7 +1192,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     Returns:
         Info instance for the specified target architecture.
     """
-    alias target_arch = target_arch0.replace("sm_", "")
+    alias target_arch = target_arch0.replace("sm_", "").replace("nvidia:", "")
 
     constrained[
         StaticString(target_arch)
@@ -1202,14 +1204,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
             StaticString("89"),
             StaticString("90"),
             StaticString("90a"),
+            StaticString("120"),
             StaticString("120a"),
-            StaticString("nvidia:80"),
-            StaticString("nvidia:86"),
-            StaticString("nvidia:87"),
-            StaticString("nvidia:89"),
-            StaticString("nvidia:90"),
-            StaticString("nvidia:90a"),
-            StaticString("nvidia:120a"),
             StaticString("amdgpu:94"),
             StaticString("mi300x"),
             StaticString("gfx942"),
@@ -1221,22 +1217,17 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     ]()
 
     @parameter
-    if target_arch == "80" or target_arch == "nvidia:80":
+    if target_arch == "80":
         return A100
-    elif target_arch == "86" or target_arch == "nvidia:86":
+    elif target_arch == "86":
         return A10
-    elif target_arch == "87" or target_arch == "nvidia:87":
+    elif target_arch == "87":
         return OrinNano
-    elif target_arch == "89" or target_arch == "nvidia:89":
+    elif target_arch == "89":
         return L4
-    elif (
-        target_arch == "90"
-        or target_arch == "90a"
-        or target_arch == "nvidia:90"
-        or target_arch == "nvidia:90a"
-    ):
+    elif target_arch == "90" or target_arch == "90a":
         return H100
-    elif target_arch == "120a" or target_arch == "nvidia:120a":
+    elif target_arch == "120" or target_arch == "120a":
         return RTX5090
     elif (
         target_arch == "gfx942"

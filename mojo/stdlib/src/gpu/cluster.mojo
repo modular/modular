@@ -14,7 +14,7 @@ Note: These are low-level primitives that correspond directly to PTX/NVVM instru
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
 from sys import is_nvidia_gpu, llvm_intrinsic
-from sys.info import _is_sm_9x
+from sys.info import _is_sm_9x_or_newer
 
 # ===-----------------------------------------------------------------------===#
 #  1D ctaid in a cluster
@@ -35,7 +35,7 @@ fn block_rank_in_cluster() -> UInt32:
     """
 
     constrained[
-        _is_sm_9x(),
+        _is_sm_9x_or_newer(),
         "block rank identifier is only supported by NVIDIA SM90+ GPUs",
     ]()
 
@@ -60,7 +60,7 @@ fn elect_one_sync() -> Bool:
           maintaining warp synchronization.
     """
     constrained[
-        _is_sm_9x(),
+        _is_sm_9x_or_newer(),
         "elect one sync is only implemented for NVIDIA SM90+ GPUs",
     ]()
     return Bool(__mlir_op.`nvvm.elect.sync`[_type = __mlir_type.`i1`]())
@@ -75,7 +75,7 @@ fn cluster_arrive_relaxed():
     in the cluster. Only supported on NVIDIA SM90+ GPUs.
     """
     constrained[
-        _is_sm_9x(),
+        _is_sm_9x_or_newer(),
         "cluster arrive relaxed is only supported by NVIDIA SM90+ GPUs",
     ]()
     __mlir_op.`nvvm.cluster.arrive.relaxed`[
@@ -92,7 +92,7 @@ fn cluster_arrive():
     other thread blocks in the cluster before proceeding. Only supported on NVIDIA SM90+ GPUs.
     """
     constrained[
-        _is_sm_9x(),
+        _is_sm_9x_or_newer(),
         "cluster arrive is only supported by NVIDIA SM90+ GPUs",
     ]()
     __mlir_op.`nvvm.cluster.arrive`[
@@ -109,7 +109,7 @@ fn cluster_wait():
     or cluster_arrive_relaxed(). Only supported on NVIDIA SM90+ GPUs.
     """
     constrained[
-        _is_sm_9x(),
+        _is_sm_9x_or_newer(),
         "cluster wait is only supported by NVIDIA SM90+ GPUs",
     ]()
     __mlir_op.`nvvm.cluster.wait`[

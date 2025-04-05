@@ -24,7 +24,7 @@ from collections.string import StaticString
 from sys import alignof, bitwidthof, is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
 from sys._assembly import inlined_assembly
 from sys.intrinsics import _RegisterPackType
-from sys.info import _is_sm_9x
+from sys.info import _is_sm_9x_or_newer
 
 from builtin.dtype import _uint_type_of_width
 from memory import UnsafePointer
@@ -1634,7 +1634,9 @@ fn _get_multimem_ld_reduce_asm[
         - Type must be float32, float16, or bfloat16.
         - Count must be 2 or 4.
     """
-    constrained[_is_sm_9x(), "multimem is only supported on SM90+ GPUs"]()
+    constrained[
+        _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
+    ]()
     constrained[type.is_floating_point(), "type must be floating point"]()
     constrained[
         type in (DType.float32, DType.float16, DType.bfloat16),
@@ -1754,7 +1756,9 @@ fn _get_multimem_st_asm[
     consistency: Consistency,
     width: Int = 1,
 ]() -> String:
-    constrained[_is_sm_9x(), "multimem is only supported on SM90+ GPUs"]()
+    constrained[
+        _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
+    ]()
     constrained[type.is_floating_point(), "type must be floating point"]()
     constrained[
         type in (DType.float32, DType.float16, DType.bfloat16),
