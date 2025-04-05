@@ -196,7 +196,7 @@ struct UnsafePointer[
     @staticmethod
     @always_inline
     fn alloc(
-        count: Int,
+        count: UInt,
     ) -> UnsafePointer[
         type,
         address_space = AddressSpace.GENERIC,
