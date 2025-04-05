@@ -471,6 +471,7 @@ struct HostBuffer[
         self._device_ptr = Self._HostPtr()
         return result
 
+    @always_inline
     fn unsafe_ptr(
         self,
     ) -> Self._HostPtr:
@@ -927,6 +928,7 @@ struct DeviceBuffer[
             ](self._handle, ctx._handle)
         )
 
+    @always_inline
     fn take_ptr(
         owned self,
     ) -> Self._DevicePtr:
@@ -947,6 +949,7 @@ struct DeviceBuffer[
         self._device_ptr = Self._DevicePtr()
         return result
 
+    @always_inline
     fn unsafe_ptr(
         self,
     ) -> Self._DevicePtr:
