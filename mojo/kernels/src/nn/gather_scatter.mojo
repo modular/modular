@@ -10,7 +10,7 @@ from math import align_down, ceildiv
 from sys import has_neon, simdwidthof, sizeof
 from sys.info import _current_target
 from sys.intrinsics import PrefetchOptions
-from builtin.string_literal import get_string_literal_slice
+from builtin.string_literal import get_string_literal
 
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import tile
@@ -958,7 +958,7 @@ fn scatter_nd_generator[
         for i in range(indices_rank - 1):
             iter_shape[i] = indices.dim[i]()
 
-        alias trace_description_str = get_string_literal_slice[
+        alias trace_description_str = get_string_literal[
             "elementwise_impl_" + _trace_description
         ]()
 
