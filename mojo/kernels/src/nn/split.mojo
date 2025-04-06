@@ -7,157 +7,111 @@
 from collections import List
 from sys import external_call
 
-from algorithm import sync_parallelize
+from sys import simdwidthof
+from collections.string import StaticString
+from algorithm import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from memory import memcpy
+from gpu.host.info import is_cpu
+from gpu.host import DeviceContext
+from sys.info import _current_target
+from gpu.host._compile import _get_gpu_target
 
-from utils import StaticTuple
+from utils import StaticTuple, IndexList
 from utils.index import product
-
-
-struct _NDBufferVector[type: DType, rank: Int](Sized):
-    """Utility to store a VariadicList of NDBuffers. Required because there is not
-    a clean way to convert a VariadicList of DynamicRankBuffers to a VariadicList
-    of NDBuffers."""
-
-    alias stack_capacity = 20
-    alias BufferType = NDBuffer[type, rank, MutableAnyOrigin]
-    alias StorageType = List[Self.BufferType]
-    var storage: Self.StorageType
-
-    @always_inline
-    @implicit
-    fn __init__(out self, num_inputs: Int):
-        self.storage = Self.StorageType(capacity=num_inputs)
-
-    @always_inline
-    @implicit
-    fn __init__(out self, *inputs: Self.BufferType):
-        self = Self(inputs)
-
-    @implicit
-    fn __init__(out self, input_list: VariadicList[Self.BufferType]):
-        self.storage = Self.StorageType(capacity=len(input_list))
-        for i in range(len(input_list)):
-            self.storage.append(input_list[i])
-
-    @implicit
-    fn __init__(
-        out self, inputs: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin]]
-    ):
-        self.storage = Self.StorageType(capacity=inputs.size)
-
-        @parameter
-        for i in range(inputs.size):
-            self.storage.append(inputs[i])
-
-    @always_inline
-    fn __getitem__(self, idx: Int) -> NDBuffer[type, rank, MutableAnyOrigin]:
-        return self.storage[idx]
-
-    @always_inline
-    fn __len__(self) -> Int:
-        return len(self.storage)
-
 
 # ===-----------------------------------------------------------------------===#
 # split
 # ===-----------------------------------------------------------------------===#
 
 
-fn _split[
-    type: DType,
-    rank: Int,
-](
-    input: NDBuffer[type, rank],
-    axis: Int,
-    outputs: _NDBufferVector[type, rank],
-):
-    """splits input along axis and store in outputs.
-
-    This simplifies the implementation by reshaping the output and inputs into 3D
-    buffers. output i has dims [h, wi, c]. The input has dims [h, sum(wi), c] where
-    i ranges from [0, num_outputs).
-
-    Reshaping the buffer does not change the memory layout. After reshaping to 3D
-    it is easy to visualize that the inputs can be copied in w x c sized
-    contiguous slices along the h dimension.
-
-    """
-
-    var shape = outputs[0].get_shape()
-    var h = product(shape, 0, axis)
-    var c = product(shape, axis + 1, rank)
-
-    var w_in: Int = 0
-    for i in range(len(outputs)):
-        w_in += outputs[i].dim(axis)
-
-    var stride_h_in = w_in * c
-    var stride_w_in = c
-
-    var w_offset: Int = 0
-    for i in range(len(outputs)):
-        # copy one w x c slice along h at a time
-        var w = outputs[i].dim(axis)
-        var out_buf = outputs[i].flatten()
-        for j in range(h):
-            var output_offset = j * w * c
-            var input_offset = j * stride_h_in + w_offset * stride_w_in
-            # these slices are contiguous
-            memcpy(
-                out_buf.data + output_offset,
-                input.data + input_offset,
-                w * c,
-            )
-        w_offset += w
-
-
-fn _split_inner[
-    type: DType, rank: Int, axis: Int
-](input: NDBuffer[type, rank], outputs: _NDBufferVector[type, rank]):
-    constrained[axis == 0, "_split_inner only supports axis 0"]()
-    var num_elems_copied: Int = 0
-    for i in range(len(outputs)):
-        var output_buf = outputs[i].flatten()
-        var buffer_len = len(output_buf)
-        memcpy(
-            output_buf.data,
-            input.data.offset(num_elems_copied),
-            buffer_len,
-        )
-        num_elems_copied += buffer_len
-
-
 fn split[
     type: DType,
     rank: Int,
+    num_outputs: Int,
+    target: StringLiteral,
+    trace_description: StaticString,
 ](
     input: NDBuffer[type, rank],
     axis: Int,
-    outputs: _NDBufferVector[type, rank],
+    outputs: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], num_outputs],
+    ctx: DeviceContext,
 ) raises:
     # check inputs have same rank and same dims except for axis dim
-    for i in range(len(outputs)):
-        if outputs[0].get_rank() != outputs[i].get_rank():
-            raise Error("all split inputs must have the same rank")
-        for j in range(outputs[i].get_rank()):
+    @parameter
+    for i in range(num_outputs):
+
+        @parameter
+        for j in range(rank):
             if j != axis and outputs[0].dim(j) != outputs[i].dim(j):
                 raise Error(
                     "all split outputs must have the same dimensions in the"
                     " non-split axes"
                 )
 
+    var input_shape = input.get_shape()
+    var output_sizes = IndexList[num_outputs]()
+
     @parameter
-    @always_inline
-    fn task_func(task_id: Int):
-        if axis == 0:
-            _split_inner[type, rank, 0](input, outputs)
-            return
+    for i in range(num_outputs):
+        output_sizes[i] = outputs[i].get_shape()[axis]
 
-        _split[type](input, axis, outputs)
+    @__copy_capture(output_sizes)
+    @parameter
+    fn elementwise_fn_wrapper[
+        width: Int, rank: Int
+    ](input_coords: IndexList[rank]) capturing:
+        # The associated index in the output tensor
+        var output_coords = IndexList[rank]()
 
-    # The task_func closure captures the stack allocated _NDBufferVector,
-    # so this kernel must run synchronously.
-    sync_parallelize[task_func](1)
+        # Which output index to write to
+        var output_idx = 0
+
+        # The current shape
+        var axis_output_dim = input_coords[axis]
+
+        # First determine which output we should write to
+        @parameter
+        for i in range(num_outputs):
+            if axis_output_dim >= output_sizes[i]:
+                axis_output_dim -= output_sizes[i]
+                output_idx += 1
+            else:
+                break
+
+        # Then derive the output coordinate
+        @parameter
+        for i in range(rank):
+            if i == axis:
+                output_coords[i] = axis_output_dim
+            else:
+                output_coords[i] = input_coords[i]
+
+        var value = input.load[width=width](input_coords)
+
+        # Hack to get around current shortcomings with origins.
+        rebind[NDBuffer[type, rank, MutableAnyOrigin]](
+            outputs[output_idx]
+        ).store[width=width](output_coords, value)
+
+    # Can vectorize only if not splitting over last dim.
+    if axis != rank - 1:
+        alias compile_target = _current_target() if is_cpu[
+            target
+        ]() else _get_gpu_target()
+        alias target_simd_width = simdwidthof[type, target=compile_target]()
+
+        elementwise[
+            elementwise_fn_wrapper,
+            target_simd_width,
+            target=target,
+            _trace_description=trace_description,
+        ](input.get_shape(), ctx)
+    else:
+        elementwise[
+            elementwise_fn_wrapper,
+            1,
+            target=target,
+            _trace_description=trace_description,
+        ](input.get_shape(), ctx)
