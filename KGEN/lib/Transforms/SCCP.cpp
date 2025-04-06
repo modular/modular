@@ -57,11 +57,11 @@ public:
   };
 
   /// Process a Region operation.
-  LogicalResult processRegion(Region &region, AnalysisStateType &state,
-                              bool &hasEarlyExits,
-                              SmallVector<bool> &shouldContinue,
-                              int64_t loopLevel,
-                              bool setBlockArgToEntryState = true);
+  LogicalResult
+  processRegion(Region &region, AnalysisStateType &state, bool &hasEarlyExits,
+                SmallVector<bool> &shouldContinue, int64_t loopLevel,
+                llvm::SmallSet<AnalysisStateType *, 4> &parentLoopExitStates,
+                bool setBlockArgToEntryState = true);
 
   /// Helper function to rewrite the IR with SCCP analysis results.
   LogicalResult rewrite(MLIRContext *context,
@@ -85,14 +85,15 @@ private:
   /// `shouldContinue` keeps track if operation traversing
   /// in the parent region should keep going or stop in case early exits
   /// happen, such as break, continue, return.
-  LogicalResult processControlFlowNode(ControlFlowNode node,
-                                       AnalysisStateType &state,
-                                       SmallVector<bool> &shouldContinue,
-                                       int64_t loopLevel);
+  LogicalResult processControlFlowNode(
+      ControlFlowNode node, AnalysisStateType &state,
+      SmallVector<bool> &shouldContinue, int64_t loopLevel,
+      llvm::SmallSet<AnalysisStateType *, 4> &parentLoopExitStates);
 
   /// Process a ControlFlowTerminator operation.
-  void processControlFlowTerminator(ControlFlowTerminator term,
-                                    AnalysisStateType &state);
+  void processControlFlowTerminator(
+      ControlFlowTerminator term, AnalysisStateType &state,
+      llvm::SmallSet<AnalysisStateType *, 4> &parentLoopExitStates);
 
   /// Visit a general operation to apply the transform function.
   static void visitOperation(Operation *op, AnalysisStateType &state);
@@ -280,7 +281,8 @@ int64_t SCCPAnalysis::getLoopConvergeThreshold(Operation *op,
 
 LogicalResult SCCPAnalysis::processControlFlowNode(
     ControlFlowNode node, AnalysisStateType &state,
-    SmallVector<bool> &shouldContinue, int64_t loopLevel) {
+    SmallVector<bool> &shouldContinue, int64_t loopLevel,
+    llvm::SmallSet<AnalysisStateType *, 4> &parentLoopExitStates) {
   VerboseCompilerTimeTraceScope traceScope(
       "SCCPAnalysis::processControlFlowNode",
       [name = node.getOperation()->getName()] {
@@ -299,12 +301,14 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
     node.getEntryTargets(constantOperands, targets);
 
     size_t numShouldNotJoin = 0;
+
     for (ControlFlowTarget target : targets) {
       if (target.index) {
         // Analyze region with entry state.
         bool hasEarlyExits = false;
         if (failed(processRegion(node->getRegion(target.index.value()), state,
-                                 hasEarlyExits, shouldContinue, loopLevel)))
+                                 hasEarlyExits, shouldContinue, loopLevel,
+                                 parentLoopExitStates)))
           return failure();
 
         if (hasEarlyExits)
@@ -324,6 +328,11 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
 
   bool skip = false;
   if (isa<LoopOp, ForOp>(node.getOperation())) {
+
+    // Starting a new parentLoopExitStates tracking here for the current loop
+    // and the loops within the current one.
+    llvm::SmallSet<AnalysisStateType *, 4> newParentLoopExitStates;
+
     // Prepare for initial loop inputs.
     SmallVector<Attribute> constantOperands;
     if (auto forOp = dyn_cast<ForOp>(node.getOperation()))
@@ -339,6 +348,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
     int64_t loopIter = 0;
     int64_t threshold =
         getLoopConvergeThreshold(node.getOperation(), loopLevel);
+
     while (!workList.empty() && loopIter < threshold) {
       SmallVector<Attribute> inputValues = workList.front();
       workList.pop();
@@ -364,6 +374,7 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
       shouldContinue.emplace_back(true);
       if (failed(processRegion(node->getRegions().front(), nestedState,
                                hasEarlyExits, shouldContinue, loopLevel + 1,
+                               newParentLoopExitStates,
                                /*setBlockArgToEntryState=*/false))) {
         shouldContinue.pop_back();
         return failure();
@@ -380,6 +391,12 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
       // Mark loop results as Unknown.
       for (Value result : node.getOperation()->getResults())
         setToEntryState(getLatticeElement(result, state));
+      // Mark any parent loop's results as Unknown as well if the current
+      // body has breaks that break those loops.
+      for (AnalysisStateType *state : newParentLoopExitStates) {
+        for (auto [value, lattice] : state->valueLattices)
+          setToEntryState(getLatticeElement(value, *state));
+      }
     }
     // Clean up states (which is being updated by this op's terminators) when
     // analyzing is done.
@@ -393,7 +410,8 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
       AnalysisStateType nestedState = state;
       bool hasEarlyExits = false;
       if (failed(processRegion(region, nestedState, hasEarlyExits,
-                               shouldContinue, loopLevel)))
+                               shouldContinue, loopLevel,
+                               parentLoopExitStates)))
         return failure();
       (void)mergeStates(state, nestedState);
     }
@@ -416,8 +434,9 @@ void SCCPAnalysis::updateParentOpOutputState(
   }
 }
 
-void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
-                                                AnalysisStateType &termState) {
+void SCCPAnalysis::processControlFlowTerminator(
+    ControlFlowTerminator term, AnalysisStateType &termState,
+    llvm::SmallSet<AnalysisStateType *, 4> &parentLoopExitStates) {
   VerboseCompilerTimeTraceScope traceScope(
       "SCCPAnalysis::processControlTerminator",
       [name = term.getOperation()->getName()] {
@@ -432,6 +451,11 @@ void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
 
     updateParentOpOutputState(term->getOperands(), parentLoop, termState,
                               cfOpStates->exitStates);
+
+    // Register the loop this op breaks which may not be the immediate loop who
+    // has the current region.
+    parentLoopExitStates.insert(&cfOpStates->exitStates);
+
     return;
   }
 
@@ -450,10 +474,10 @@ void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
 
   if (auto yieldOp = dyn_cast<YieldOp>(term.getOperation())) {
     Operation *parentOp = getParentNode(term);
-    ControlFlowOperationState *cfOpstates = getOrCreateCFState(parentOp);
+    ControlFlowOperationState *cfOpStates = getOrCreateCFState(parentOp);
     // update parent op's exit state
     updateParentOpOutputState(term->getOperands(), parentOp, termState,
-                              cfOpstates->exitStates);
+                              cfOpStates->exitStates);
     return;
   }
 
@@ -463,15 +487,15 @@ void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
     getValuesLattice(constantOperands, forYieldOp.getOperands(), termState);
     SmallVector<ControlFlowTarget> targets;
     forYieldOp.getBranchTargets(constantOperands, targets);
-    ControlFlowOperationState *cfOpstates = getOrCreateCFState(parentOp);
+    ControlFlowOperationState *cfOpStates = getOrCreateCFState(parentOp);
 
     for (ControlFlowTarget &target : targets) {
       if (target.index) {
         // Branch back to for-loop body.
-        cfOpstates->entryStates.push(constantOperands);
+        cfOpStates->entryStates.push(constantOperands);
       } else
         updateParentOpOutputState(forYieldOp.getReturnValues(), parentOp,
-                                  termState, cfOpstates->exitStates);
+                                  termState, cfOpStates->exitStates);
     }
     return;
   }
@@ -481,12 +505,11 @@ void SCCPAnalysis::processControlFlowTerminator(ControlFlowTerminator term,
     setToEntryState(getLatticeElement(result, termState));
 }
 
-LogicalResult SCCPAnalysis::processRegion(Region &region,
-                                          AnalysisStateType &state,
-                                          bool &hasEarlyExits,
-                                          SmallVector<bool> &shouldContinue,
-                                          int64_t loopLevel,
-                                          bool setBlockArgToEntryState) {
+LogicalResult SCCPAnalysis::processRegion(
+    Region &region, AnalysisStateType &state, bool &hasEarlyExits,
+    SmallVector<bool> &shouldContinue, int64_t loopLevel,
+    llvm::SmallSet<AnalysisStateType *, 4> &parentLoopExitStates,
+    bool setBlockArgToEntryState) {
   if (!llvm::hasSingleElement(region)) {
     return region.getParentOp()->emitError(
         "'sccp' can only be run on operations with all single block "
@@ -504,8 +527,8 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
       break;
 
     if (auto node = dyn_cast<ControlFlowNode>(op)) {
-      if (failed(
-              processControlFlowNode(node, state, shouldContinue, loopLevel)))
+      if (failed(processControlFlowNode(node, state, shouldContinue, loopLevel,
+                                        parentLoopExitStates)))
         return failure();
 
       if (!shouldContinue[loopLevel])
@@ -515,7 +538,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
     }
 
     if (auto term = dyn_cast<ControlFlowTerminator>(op)) {
-      processControlFlowTerminator(term, state);
+      processControlFlowTerminator(term, state, parentLoopExitStates);
       // Tell parent region that there is early exit (so that the parent region
       // can decide whether to continue traverse the rest of the operation or
       // not).
@@ -533,7 +556,8 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
         AnalysisStateType nestedState = state;
         bool hasEarlyExits = false;
         if (failed(processRegion(region, nestedState, hasEarlyExits,
-                                 shouldContinue, loopLevel)))
+                                 shouldContinue, loopLevel,
+                                 parentLoopExitStates)))
           return failure();
         (void)mergeStates(state, nestedState);
       }
@@ -634,9 +658,10 @@ LogicalResult SCCPAnalysis::run(Operation *op) {
   for (Region &region : op->getRegions()) {
     bool hasEarlyExits = false;
     SmallVector<bool> shouldContinue{true};
+    llvm::SmallSet<AnalysisStateType *, 4> parentLoopExitStates;
 
-    if (failed(
-            processRegion(region, topState, hasEarlyExits, shouldContinue, 0)))
+    if (failed(processRegion(region, topState, hasEarlyExits, shouldContinue, 0,
+                             parentLoopExitStates)))
       return failure();
   }
 

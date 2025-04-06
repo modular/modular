@@ -410,3 +410,44 @@ kgen.func @should_continue() -> index {
   %1 = kgen.call @f(%0) : (index) -> index
   kgen.return %1: index
 }
+
+
+// CHECK-LABEL: @indirect_loop_break
+kgen.func @indirect_loop_break(%cond: index) -> index {
+  // CHECK-DAG: %idx0 = index.constant 0
+  // CHECK-DAG: %idx1 = index.constant 1
+  // CHECK-DAG: %idx7 = index.constant 7
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx7 = index.constant 7
+
+  // CHECK: [[V0:%.*]] = hlcf.loop
+  %0 = hlcf.loop "inlined_cf_scope" () -> index {
+    // This loop can't converge and it will lead to the outer loop
+    // fail to converge too because one of the break inside breaks
+    // the outer loop.
+    %2 = hlcf.loop(%arg0 = %idx0: index) -> index {
+      // CHECK: index.cmp
+      %3 = index.cmp slt(%arg0, %cond)
+      hlcf.if %3 {
+        // This breaks to the outer loop instead of the inner one.
+        hlcf.break "inlined_cf_scope" %arg0 : index
+      } else {
+        %4 = index.cmp slt(%arg0, %idx7)
+        hlcf.if %4 {
+          hlcf.yield
+        } else {
+          %5 = index.add %arg0, %idx1
+          hlcf.break %5: index
+        }
+        hlcf.yield
+      }
+      %5 = index.add %arg0, %idx1
+      hlcf.continue %5 : index
+    }
+    hlcf.break "inlined_cf_scope" %idx0: index
+  }
+  // CHECK: kgen.call @f([[V0]])
+  %1 = kgen.call @f(%0) : (index) -> index
+  kgen.return %1: index
+}
