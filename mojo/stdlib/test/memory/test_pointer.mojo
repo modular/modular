@@ -17,7 +17,7 @@ from testing import assert_equal, assert_true, assert_not_equal
 def test_copy_reference_explicitly():
     var a = List[Int](1, 2, 3)
 
-    var b = Pointer.address_of(a)
+    var b = Pointer(to=a)
     var c = b.copy()
 
     c[][0] = 4
@@ -30,20 +30,33 @@ def test_equality():
     var a = List[Int](1, 2, 3)
     var b = List[Int](4, 5, 6)
 
-    assert_true(Pointer.address_of(a) == Pointer.address_of(a))
-    assert_true(Pointer.address_of(b) == Pointer.address_of(b))
-    assert_true(Pointer.address_of(a) != Pointer.address_of(b))
+    assert_true(Pointer(to=a) == Pointer(to=a))
+    assert_true(Pointer(to=b) == Pointer(to=b))
+    assert_true(Pointer(to=a) != Pointer(to=b))
 
 
 def test_str():
     var a = Int(42)
-    var a_ref = Pointer.address_of(a)
+    var a_ref = Pointer(to=a)
     assert_true(String(a_ref).startswith("0x"))
 
 
 def test_pointer_to():
     var local = 1
     assert_not_equal(0, Pointer(to=local)[])
+
+
+# We don't actually need to run this,
+# but Mojo's exclusivity check shouldn't complain
+def test_get_immutable():
+    fn foo(x: Pointer[Int], y: Pointer[Int]) -> Int:
+        return x[]
+
+    var x = Int(0)
+    return foo(
+        Pointer(to=x).get_immutable(),
+        Pointer(to=x).get_immutable(),
+    )
 
 
 def main():

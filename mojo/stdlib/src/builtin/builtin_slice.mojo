@@ -66,7 +66,7 @@ struct Slice(
 
     @always_inline
     fn __init__(
-        mut self,
+        out self,
         start: Optional[Int],
         end: Optional[Int],
         step: Optional[Int],

@@ -34,9 +34,9 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    TextContext,
     upper_bounded_default,
 )
+from max.pipelines.context import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams
 from transformers import AutoConfig
@@ -82,6 +82,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = -1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -92,6 +93,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
         self.model = self.load_model(session)
 
@@ -139,8 +141,10 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             model_inputs.attention_mask,
             copy_inputs_to_device=False,
         )
-        assert isinstance(model_outputs[0], Tensor)
-        return ModelOutputs(logits=model_outputs[0])
+
+        return ModelOutputs(
+            logits=cast(Tensor, model_outputs[0]),
+        )
 
     def prepare_initial_token_inputs(
         self,

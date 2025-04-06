@@ -163,7 +163,7 @@ fn max(x: SIMD, y: __type_of(x), /) -> __type_of(x):
     """
 
     constrained[
-        x.type is DType.bool or x.type.is_numeric(),
+        x.dtype is DType.bool or x.dtype.is_numeric(),
         "the SIMD type must be numeric or boolean",
     ]()
 
@@ -247,7 +247,7 @@ fn min(x: SIMD, y: __type_of(x), /) -> __type_of(x):
     """
 
     constrained[
-        x.type is DType.bool or x.type.is_numeric(),
+        x.dtype is DType.bool or x.dtype.is_numeric(),
         "the SIMD type must be numeric or boolean",
     ]()
 

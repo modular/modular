@@ -17,14 +17,15 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
+    TYPE_CHECKING,
     Generic,
     Optional,
     Protocol,
-    Sequence,
-    Type,
     TypeVar,
+    cast,
     runtime_checkable,
 )
 
@@ -47,7 +48,9 @@ from max.pipelines.kv_cache import (
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 
-from .config import PipelineConfig
+if TYPE_CHECKING:
+    from .config import PipelineConfig
+
 from .config_enums import SupportedEncoding
 from .context import InputContext
 from .hf_utils import download_weight_files
@@ -115,23 +118,27 @@ class ModelInputs:
     Use this class to encapsulate inputs for your model.
     You may store any number of dataclass fields
 
-    Example:
-        >>> class ReplitInputs(ModelInputs):
-        ...     tokens: Tensor
-        ...     input_row_offsets: Tensor
-        ...
-        ...     def __init__(self, tokens: Tensor, input_row_offsets: Tensor):
-        ...         self.tokens = tokens
-        ...         self.input_row_offsets = input_row_offsets
-        ...
-        >>> # Create tensors
-        >>> tokens = Tensor.zeros((1, 2, 3), DType.int64)
-        >>> input_row_offsets = Tensor.zeros((1, 1, 1), DType.int64)
-        >>> # Initialize inputs
-        >>> inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
-        >>> # Access tensors
-        >>> list(inputs) == [tokens, input_row_offsets]
-        True
+    The following example demonstrates how to create a custom inputs class for a model:
+
+    .. code-block:: python
+
+        class ReplitInputs(ModelInputs):
+            tokens: Tensor
+            input_row_offsets: Tensor
+
+            def __init__(self, tokens: Tensor, input_row_offsets: Tensor):
+                self.tokens = tokens
+                self.input_row_offsets = input_row_offsets
+
+        # Create tensors
+        tokens = Tensor.zeros((1, 2, 3), DType.int64)
+        input_row_offsets = Tensor.zeros((1, 1, 1), DType.int64)
+
+        # Initialize inputs
+        inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
+
+        # Access tensors
+        list(inputs) == [tokens, input_row_offsets]  # Output: True
     """
 
     kv_cache_inputs: KVCacheInputs | None = None
@@ -139,11 +146,14 @@ class ModelInputs:
 
 @dataclass(frozen=True)
 class ModelOutputs:
+    logits: Tensor
+    """Logits for a variable number of tokens per sequence."""
+
     next_token_logits: Tensor | None = None
     """Logits for just the next token."""
 
-    logits: Tensor | None = None
-    """Logits for the entire token sequence."""
+    logit_offsets: Tensor | None = None
+    """Offsets to access variable length logits for each sequence."""
 
 
 T = TypeVar("T", bound=InputContext)
@@ -164,7 +174,8 @@ class PipelineModel(ABC, Generic[T]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
+        adapter: Optional[WeightsAdapter],
+        return_n_logits: int,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
@@ -173,6 +184,7 @@ class PipelineModel(ABC, Generic[T]):
         self.kv_cache_config = kv_cache_config
         self.weights = weights
         self.adapter = adapter
+        self.return_n_logits = return_n_logits
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
@@ -191,24 +203,32 @@ class PipelineModel(ABC, Generic[T]):
         """Calculate the optimal max sequence length for the model.
         Models are expected to implement this method.
 
-        Example:
-            >>> class MistralModel(PipelineModel):
-            ...     @classmethod
-            ...     def calculate_max_seq_len(cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig) -> int:
-            ...         try:
-            ...             return upper_bounded_default(
-            ...                 upper_bound=huggingface_config.max_seq_len,
-            ...                 default=pipeline_config.max_length,
-            ...             )
-            ...         except ValueError as e:
-            ...             msg = (
-            ...                 "Unable to infer max_length for Mistral, the provided "
-            ...                 f"max_length ({pipeline_config.max_length}) exceeds the "
-            ...                 f"model's max_seq_len "
-            ...                 f"({huggingface_config.max_seq_len})."
-            ...             )
-            ...             raise ValueError(msg) from e
-            ...
+        The following example shows how to implement this method for a Mistral model:
+
+        .. code-block:: python
+
+            class MistralModel(PipelineModel):
+                @classmethod
+                def calculate_max_seq_len(cls, pipeline_config, huggingface_config) -> int:
+                    try:
+                        return upper_bounded_default(
+                            upper_bound=huggingface_config.max_seq_len,
+                            default=pipeline_config.max_length,
+                        )
+                    except ValueError as e:
+                        msg = (
+                            "Unable to infer max_length for Mistral, the provided "
+                            f"max_length ({pipeline_config.max_length}) exceeds the "
+                            f"model's max_seq_len ({huggingface_config.max_seq_len})."
+                        )
+                        raise ValueError(msg) from e
+
+        Args:
+            pipeline_config: Configuration for the pipeline.
+            huggingface_config: Hugging Face model configuration.
+
+        Returns:
+            int: The maximum sequence length to use.
         """
         raise NotImplementedError(
             "PipelineModel must implement calculate_max_seq_len"
@@ -413,7 +433,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: Type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         # TODO: This should be removed.
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
@@ -508,6 +528,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
             weights=weights,
             adapter=self._weight_adapters.get(_weight_format, None),
+            return_n_logits=-1 if self._pipeline_config.enable_echo else 1,
         )
 
         # Load sampler.
@@ -568,8 +589,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
         else:
             bitmask = None
 
-        seq_ids_and_prompts = {}
-        seq_ids_and_untrimmed_lengths = {}
         tracer.next("claim_cache_rows")
         for i, context in enumerate(batch):
             # Initialize a matcher if needed
@@ -613,12 +632,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     [context.cache_seq_id]
                 )
 
-            # Gather tokens and untrimmed lengths.
-            seq_ids_and_prompts[context.cache_seq_id] = context.next_tokens
-            seq_ids_and_untrimmed_lengths[context.cache_seq_id] = (
-                context.active_length
-            )
-
             # Update num_steps.
             num_steps = self.calculate_num_steps(num_steps, context)
 
@@ -629,26 +642,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
             ):
                 context.matcher.fill_next_token_bitmask(bitmask, index=i)
 
-        # `fetch` mutates the seq_ids_and_prompts input in place when tokens are
-        # retrieved from the cache. This shortens the prompt in the event that
-        # some tokens have backing KV cache entries.
+        # `fetch` may shorten the input context by bumping the start_idx.
         tracer.next("fetch_kv_cache")
         kv_cache_inputs = self._pipeline_model.kv_manager.fetch(
-            seq_ids_and_prompts, num_steps
+            cast(list[InputContext], batch), num_steps
         )
-
-        # Update the context with the new possibly shortened prompt.
-        tracer.next("trim_prompt")
-        for context in batch:
-            untrimmed_length = seq_ids_and_untrimmed_lengths[
-                context.cache_seq_id
-            ]
-            trimmed_length = len(seq_ids_and_prompts[context.cache_seq_id])
-            bump_length = untrimmed_length - trimmed_length
-            if bump_length > 0:
-                context.bump_token_indices(
-                    start_idx=bump_length,
-                )
 
         return (
             self._pipeline_model.prepare_initial_token_inputs(
@@ -666,15 +664,18 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self,
         logits: Tensor,
         prev_tokens: Tensor,
+        logit_offsets: Optional[Tensor],
         bitmask: Optional[Tensor],
     ) -> tuple[Tensor, Tensor]:
-        if bitmask is not None:
-            a, b = self._sampler(logits, prev_tokens, bitmask)[:2]
-        else:
-            a, b = self._sampler(
-                logits,
-                prev_tokens,
-            )[:2]
+        graph_inputs = [logits, prev_tokens]
+
+        if logit_offsets:
+            graph_inputs.append(logit_offsets)
+
+        if bitmask:
+            graph_inputs.append(bitmask)
+
+        a, b = self._sampler(*graph_inputs)[:2]
         assert isinstance(a, Tensor)
         assert isinstance(b, Tensor)
         return (a, b)
@@ -723,8 +724,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
             model_outputs = self._pipeline_model.execute(
                 model_inputs=curr_step_inputs,
             )
-            assert model_outputs.next_token_logits is not None
-            next_token_logits = model_outputs.next_token_logits
 
             if bitmask is not None:
                 assert self.vocab_size is not None
@@ -741,8 +740,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
             # Sample next token.
             tracer.next("sample_next_token")
             new_tokens, new_generated_tokens = self.sample_logits(
-                next_token_logits,
+                model_outputs.logits,
                 generated_tokens,
+                model_outputs.logit_offsets,
                 bitmask,
             )
 
@@ -802,15 +802,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
         )  # pops multistep_execution_loop_steps
         generated_tokens_host = generated_tokens.to_numpy()
 
-        # Actually update the cache lengths in our kv_cache manager
-        tracer.next("kv_manager.step")  # pops generated_tokens.to(CPU())
-        seq_ids_and_new_tokens = {
-            ctx.cache_seq_id: generated_tokens_host[i]
-            for i, ctx in enumerate(context_batch)
-        }
-        self._pipeline_model.kv_manager.step(seq_ids_and_new_tokens)
-        tracer.pop()  # pops kv_manager.step
-
         # Prepare the response, pruning away completed requests as we go.
         res: dict[str, TextGenerationResponse] = {}
         tracer.push("prepare_response")
@@ -829,7 +820,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     log_probs = log_probs_for_step[batch_index]
 
                 # Identify completion criteria.
-                is_eos = next_token in self._eos_token_id
+                if context.ignore_eos:
+                    is_eos = False
+                else:
+                    is_eos = next_token in self._eos_token_id
 
                 # Write this token into our pre-allocated tokens array.
                 context.update(
@@ -859,6 +853,14 @@ class TextGenerationPipeline(TokenGenerator[T]):
             # Walk outstanding completion tokens, and return to user.
             for token, log_probs in context.outstanding_completion_tokens():
                 res[request_id].append_token(TextResponse(token, log_probs))
+
+        # Update the cache lengths in our kv_cache manager.
+        # This should be done after the contexts are updated.
+        tracer.next("kv_manager.step")  # pops prepare_response
+        self._pipeline_model.kv_manager.step(
+            cast(list[InputContext], context_batch)
+        )
+        tracer.pop()  # pops kv_manager.step
 
         return res
 

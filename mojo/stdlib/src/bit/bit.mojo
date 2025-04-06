@@ -42,12 +42,12 @@ fn count_leading_zeros(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn count_leading_zeros[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of leading zeros in a SIMD vector.
 
     Parameters:
-        type: `DType` used for the computation.
+        dtype: `DType` used for the computation.
         width: SIMD width used for the computation.
 
     Constraints:
@@ -60,7 +60,7 @@ fn count_leading_zeros[
         A SIMD value where the element at position `i` contains the number of
         leading zeros at position `i` of the input value.
     """
-    constrained[type.is_integral(), "must be integral"]()
+    constrained[dtype.is_integral(), "must be integral"]()
     return llvm_intrinsic["llvm.ctlz", __type_of(val), has_side_effect=False](
         val, False
     )
@@ -81,19 +81,17 @@ fn count_trailing_zeros(val: Int) -> Int:
     Returns:
         The number of trailing zeros of the input.
     """
-    return llvm_intrinsic[
-        "llvm.cttz", __mlir_type.index, has_side_effect=False
-    ](val.value, False.value)
+    return llvm_intrinsic["llvm.cttz", Int, has_side_effect=False](val, False)
 
 
 @always_inline("nodebug")
 fn count_trailing_zeros[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of trailing zeros in a SIMD vector.
 
     Parameters:
-        type: `dtype` used for the computation.
+        dtype: `dtype` used for the computation.
         width: SIMD width used for the computation.
 
     Constraints:
@@ -106,7 +104,7 @@ fn count_trailing_zeros[
         A SIMD value where the element at position `i` contains the number of
         trailing zeros at position `i` of the input value.
     """
-    constrained[type.is_integral(), "must be integral"]()
+    constrained[dtype.is_integral(), "must be integral"]()
     return llvm_intrinsic[
         "llvm.cttz", __type_of(val.value), has_side_effect=False
     ](val.value, False.value)
@@ -132,12 +130,12 @@ fn bit_reverse(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn bit_reverse[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Element-wise reverses the bitpattern of a SIMD vector of integer values.
 
     Parameters:
-        type: `dtype` used for the computation.
+        dtype: `dtype` used for the computation.
         width: SIMD width used for the computation.
 
     Args:
@@ -150,7 +148,7 @@ fn bit_reverse[
         A SIMD value where the element at position `i` has a reversed bitpattern
         of an integer value of the element at position `i` of the input value.
     """
-    constrained[type.is_integral(), "must be integral"]()
+    constrained[dtype.is_integral(), "must be integral"]()
     return llvm_intrinsic[
         "llvm.bitreverse", __type_of(val), has_side_effect=False
     ](val)
@@ -181,8 +179,8 @@ fn byte_swap(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn byte_swap[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Byte-swaps a SIMD vector of integer values with an even number of bytes.
 
     Byte swap an integer value or vector of integer values with an even number
@@ -194,7 +192,7 @@ fn byte_swap[
     concept to additional even-byte lengths (6 bytes, 8 bytes and more, respectively).
 
     Parameters:
-        type: `dtype` used for the computation.
+        dtype: `dtype` used for the computation.
         width: SIMD width used for the computation.
 
     Constraints:
@@ -208,7 +206,7 @@ fn byte_swap[
         A SIMD value where the element at position `i` is the value of the
         element at position `i` of the input value with its bytes swapped.
     """
-    constrained[type.is_integral(), "must be integral"]()
+    constrained[dtype.is_integral(), "must be integral"]()
     return llvm_intrinsic["llvm.bswap", __type_of(val), has_side_effect=False](
         val
     )
@@ -234,12 +232,12 @@ fn pop_count(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn pop_count[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the number of bits set in a SIMD vector of integer values.
 
     Parameters:
-        type: `dtype` used for the computation.
+        dtype: `dtype` used for the computation.
         width: SIMD width used for the computation.
 
     Constraints:
@@ -252,7 +250,7 @@ fn pop_count[
         A SIMD value where the element at position `i` contains the number of
         bits set in the element at position `i` of the input value.
     """
-    constrained[type.is_integral(), "must be integral"]()
+    constrained[dtype.is_integral(), "must be integral"]()
     return llvm_intrinsic["llvm.ctpop", __type_of(val), has_side_effect=False](
         val
     )
@@ -265,12 +263,12 @@ fn pop_count[
 
 @always_inline
 fn bit_not[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs a bitwise NOT operation on an SIMD vector of integer values.
 
     Parameters:
-        type: `dtype` used for the computation.
+        dtype: `dtype` used for the computation.
         width: SIMD width used for the computation.
 
     Constraints:
@@ -283,9 +281,8 @@ fn bit_not[
         A SIMD value where the element at position `i` is computed as a bitwise
         NOT of the integer value at position `i` of the input value.
     """
-    constrained[type.is_integral(), "must be integral"]()
-    var neg_one = SIMD[type, width](-1)
-    return __mlir_op.`pop.simd.xor`(val.value, neg_one.value)
+    constrained[dtype.is_integral(), "must be integral"]()
+    return ~val
 
 
 # ===-----------------------------------------------------------------------===#
@@ -310,13 +307,13 @@ fn bit_width(val: Int) -> Int:
 
 @always_inline
 fn bit_width[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the minimum number of bits required to represent the SIMD vector
     of integer values.
 
     Parameters:
-        type: `dtype` used for the computation.
+        dtype: `dtype` used for the computation.
         width: SIMD width used for the computation.
 
     Constraints:
@@ -331,12 +328,12 @@ fn bit_width[
         value.
     """
 
-    constrained[type.is_integral(), "must be integral"]()
+    constrained[dtype.is_integral(), "must be integral"]()
 
-    alias bitwidth = bitwidthof[type]()
+    alias bitwidth = bitwidthof[dtype]()
 
     @parameter
-    if type.is_unsigned():
+    if dtype.is_unsigned():
         return bitwidth - count_leading_zeros(val)
     else:
         var leading_zero_pos = count_leading_zeros(val)
@@ -367,53 +364,6 @@ fn log2_floor(val: Int) -> Int:
 
 
 # ===-----------------------------------------------------------------------===#
-# is_power_of_two
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-fn is_power_of_two(val: Int) -> Bool:
-    """Checks if the input value is a power of 2.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        True if the input value is a power of 2, False otherwise.
-    """
-    return (val > 0) & (val & (val - 1) == 0)
-
-
-@always_inline
-fn is_power_of_two[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[DType.bool, width]:
-    """Checks if the input value is a power of 2 for each element of a SIMD vector.
-
-    Parameters:
-        type: `dtype` used for the computation.
-        width: SIMD width used for the computation.
-
-    Constraints:
-        The element type of the input vector must be integral.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        A SIMD value where the element at position `i` is True if the integer at
-        position `i` of the input value is a power of 2, False otherwise.
-    """
-    constrained[type.is_integral(), "must be integral"]()
-
-    @parameter
-    if type.is_unsigned():
-        return pop_count(val) == 1
-    else:
-        return (val > 0) & (val & (val - 1) == 0)
-
-
-# ===-----------------------------------------------------------------------===#
 # next_power_of_two
 # ===-----------------------------------------------------------------------===#
 # reference: https://en.cppreference.com/w/cpp/numeric/bit_ceil
@@ -436,7 +386,7 @@ fn next_power_of_two(val: Int) -> Int:
     if val <= 1:
         return 1
 
-    if is_power_of_two(val):
+    if val.is_power_of_two():
         return val
 
     return 1 << bit_width(val - 1)
@@ -444,8 +394,8 @@ fn next_power_of_two(val: Int) -> Int:
 
 @always_inline
 fn next_power_of_two[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value for each element of a SIMD vector. Any integral value less than
     or equal to 1 will be ceiled to 1.
@@ -453,7 +403,7 @@ fn next_power_of_two[
     This operation is called `bit_ceil()` in C++.
 
     Parameters:
-        type: `dtype` used for the computation.
+        dtype: `dtype` used for the computation.
         width: SIMD width used for the computation.
 
     Constraints:
@@ -467,9 +417,9 @@ fn next_power_of_two[
         that is greater than or equal to the integer at position `i` of the input
         value.
     """
-    constrained[type.is_integral(), "must be integral"]()
+    constrained[dtype.is_integral(), "must be integral"]()
 
-    alias ones = SIMD[type, width](1)
+    alias ones = SIMD[dtype, width](1)
 
     return (val > 1).select(1 << bit_width(val - ones), ones)
 
@@ -501,8 +451,8 @@ fn prev_power_of_two(val: Int) -> Int:
 
 @always_inline
 fn prev_power_of_two[
-    type: DType, width: Int, //
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the largest power of 2 that is less than or equal to the input
     value for each element of a SIMD vector. Any integral value less than or
     equal to 0 will be floored to 0.
@@ -510,7 +460,7 @@ fn prev_power_of_two[
     This operation is called `bit_floor()` in C++.
 
     Parameters:
-        type: `dtype` used for the computation.
+        dtype: `dtype` used for the computation.
         width: SIMD width used for the computation.
 
     Constraints:
@@ -524,9 +474,9 @@ fn prev_power_of_two[
         that is less than or equal to the integer at position `i` of the input
         value.
     """
-    constrained[type.is_integral(), "must be integral and unsigned"]()
+    constrained[dtype.is_integral(), "must be integral and unsigned"]()
 
-    alias zeros = SIMD[type, width](0)
+    alias zeros = SIMD[dtype, width](0)
 
     return (val > 0).select(1 << (bit_width(val) - 1), zeros)
 
@@ -571,10 +521,10 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
 
 
 fn rotate_bits_left[
-    type: DType,
+    dtype: DType,
     width: Int, //,
     shift: Int,
-](x: SIMD[type, width]) -> SIMD[type, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Shifts bits to the left by `shift` positions (with wrap-around) for each
     element of a SIMD vector.
 
@@ -582,7 +532,7 @@ fn rotate_bits_left[
         `0 <= shift < size`
 
     Parameters:
-        type: The `dtype` of the input and output SIMD vector.
+        dtype: The `dtype` of the input and output SIMD vector.
               Constraints: must be integral and unsigned.
         width: The width of the input and output SIMD vector.
         shift: The number of positions by which to shift left the bits for each
@@ -596,7 +546,7 @@ fn rotate_bits_left[
         bits (with wrap-around).
     """
 
-    constrained[type.is_unsigned(), "Only unsigned types can be rotated."]()
+    constrained[dtype.is_unsigned(), "Only unsigned types can be rotated."]()
 
     @parameter
     if shift == 0:
@@ -605,7 +555,7 @@ fn rotate_bits_left[
         return rotate_bits_right[-shift](x)
     else:
         return llvm_intrinsic["llvm.fshl", __type_of(x), has_side_effect=False](
-            x, x, SIMD[type, width](shift)
+            x, x, SIMD[dtype, width](shift)
         )
 
 
@@ -649,10 +599,10 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
 
 
 fn rotate_bits_right[
-    type: DType,
+    dtype: DType,
     width: Int, //,
     shift: Int,
-](x: SIMD[type, width]) -> SIMD[type, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Shifts bits to the right by `shift` positions (with wrap-around) for each
     element of a SIMD vector.
 
@@ -660,7 +610,7 @@ fn rotate_bits_right[
         `0 <= shift < size`
 
     Parameters:
-        type: The `dtype` of the input and output SIMD vector.
+        dtype: The `dtype` of the input and output SIMD vector.
               Constraints: must be integral and unsigned.
         width: The width of the input and output SIMD vector.
         shift: The number of positions by which to shift right the bits for each
@@ -674,7 +624,7 @@ fn rotate_bits_right[
         bits (with wrap-around).
     """
 
-    constrained[type.is_unsigned(), "Only unsigned types can be rotated."]()
+    constrained[dtype.is_unsigned(), "Only unsigned types can be rotated."]()
 
     @parameter
     if shift == 0:
@@ -683,5 +633,5 @@ fn rotate_bits_right[
         return rotate_bits_left[-shift](x)
     else:
         return llvm_intrinsic["llvm.fshr", __type_of(x), has_side_effect=False](
-            x, x, SIMD[type, width](shift)
+            x, x, SIMD[dtype, width](shift)
         )

@@ -256,17 +256,17 @@ struct _VariadicListMemIter[
     ]
 
     fn __init__(
-        mut self, index: Int, ref [list_origin]list: Self.variadic_list_type
+        out self, index: Int, ref [list_origin]list: Self.variadic_list_type
     ):
         self.index = index
-        self.src = Pointer.address_of(list)
+        self.src = Pointer(to=list)
 
     fn __next__(mut self) -> Self.variadic_list_type.reference_type:
         self.index += 1
         # TODO: Need to make this return a dereferenced reference, not a
         # reference that must be deref'd by the user.
         return rebind[Self.variadic_list_type.reference_type](
-            Pointer.address_of(self.src[][self.index - 1])
+            Pointer(to=self.src[][self.index - 1])
         )
 
     @always_inline
@@ -655,6 +655,8 @@ struct VariadicPack[
     of the pack.
     """
 
+    # Returns all the elements in a kgen.pack.
+    # Useful for FFI, such as calling printf. Otherwise, avoid this if possible.
     @doc_private
     @always_inline("nodebug")
     fn get_loaded_kgen_pack(self) -> Self._loaded_kgen_pack_type:

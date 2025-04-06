@@ -15,13 +15,14 @@
 from os import PathLike, remove, unlink
 from os.path import exists
 from pathlib import Path
+from utils import StaticString
 
 from testing import assert_false, assert_raises, assert_true
 
 
 fn create_file_and_test_delete_path[
     func: fn[PathLike: PathLike] (PathLike) raises -> None,
-    name: StringLiteral,
+    name: StaticString,
 ](filepath: Path) raises:
     try:
         with open(filepath.__fspath__(), "w"):

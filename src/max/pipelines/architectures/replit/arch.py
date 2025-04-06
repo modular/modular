@@ -20,6 +20,7 @@ from max.pipelines import (
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 
+from . import weight_adapters
 from .model import ReplitModel
 
 replit_arch = SupportedArchitecture(
@@ -36,4 +37,7 @@ replit_arch = SupportedArchitecture(
     pipeline_model=ReplitModel,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.gguf,
+    weight_adapters={
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
+    },
 )

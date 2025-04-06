@@ -18,56 +18,74 @@ from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
 from max.pipelines.max_config import SamplingConfig
 
 
-def _sampling_input_types(sampling_config: SamplingConfig) -> list[TensorType]:
-    input_types = []
+def _sampling_input_types(
+    sampling_config: SamplingConfig, return_logits: bool
+) -> dict[str, TensorType]:
+    inputs = {}
 
     # Logits are always provided
     if sampling_config.enable_variable_logits:
         logits_in_type = TensorType(
             sampling_config.in_dtype, ["total_output_len", "vocab_size"]
         )
-        input_types.append(logits_in_type)
+        inputs["logits"] = logits_in_type
     else:
         logits_in_type = TensorType(
             sampling_config.in_dtype, ["batch", "vocab_size"]
         )
-        input_types.append(logits_in_type)
+        inputs["logits"] = logits_in_type
 
     # We are currently, always passing tokens through
     prev_tokens_type = TensorType(DType.int64, ["batch", "num_prev_steps"])
-    input_types.append(prev_tokens_type)
+    inputs["prev_tokens"] = prev_tokens_type
+
+    # If we need to return logits, introduce tensor to append to.
+    if return_logits:
+        logits_type = TensorType(DType.float32, ["batch", "num_prev_steps"])
+        inputs["existing_logits"] = logits_type
 
     # If we have variable token logits enabled
     if sampling_config.enable_variable_logits:
         logit_offset_type = TensorType(DType.uint32, ["logit_offsets_len"])
-        input_types.append(logit_offset_type)
+        inputs["logit_offsets"] = logit_offset_type
 
     # If we have structured_outputs enabled
     if sampling_config.enable_structured_output:
         bitmask_type = TensorType(DType.bool, ["batch", "vocab_size"])
-        input_types.append(bitmask_type)
+        inputs["bitmask"] = bitmask_type
 
-    return input_types
+    return inputs
 
 
-def token_sampler(sampling_config: SamplingConfig) -> Graph:
-    _input_types = _sampling_input_types(sampling_config)
-    with Graph("top_k_sampler", input_types=_input_types) as graph:
+def token_sampler(
+    sampling_config: SamplingConfig, return_logits: bool = False
+) -> Graph:
+    _input_dict = _sampling_input_types(sampling_config, return_logits)
+    with Graph("top_k_sampler", input_types=_input_dict.values()) as graph:
         # Deconstruct inputs
         # TODO: Explore better ways of indexing into these input values
         # tightly coupling the input order with element indices feels
         # quite brittle.
-        logits = graph.inputs[0].tensor
+        logits = graph.inputs[list(_input_dict).index("logits")].tensor
         logits = ops.cast(logits, sampling_config.out_dtype)
-        prev_tokens = graph.inputs[1].tensor
+        prev_tokens = graph.inputs[
+            list(_input_dict).index("prev_tokens")
+        ].tensor
 
-        if sampling_config.enable_variable_logits:
-            logit_offsets = graph.inputs[2].tensor
+        if "existing_logits" in _input_dict:
+            existing_logits = graph.inputs[
+                list(_input_dict).index("existing_logits")
+            ].tensor
+
+        if "logit_offsets" in _input_dict:
+            logit_offsets = graph.inputs[
+                list(_input_dict).index("logit_offsets")
+            ].tensor
             logits = ops.gather(logits, logit_offsets[1:] - 1, axis=0)
             logits = ops.rebind(logits, shape=("batch", "vocab_size"))
 
-        if sampling_config.enable_structured_output:
-            bitmask = graph.inputs[-1].tensor
+        if "bitmask" in _input_dict:
+            bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
             logits = ops.select(
                 bitmask, logits, ops.constant(-10000, dtype=DType.float32)
             )
@@ -85,8 +103,36 @@ def token_sampler(sampling_config: SamplingConfig) -> Graph:
         )[0]
         assert isinstance(tokens, TensorValue)
 
+        # Concat tokens to previous tokens.
         all_tokens = ops.concat([prev_tokens, tokens], -1)
-        tokens = ops.squeeze(tokens, -1)
-        graph.output(tokens, all_tokens)
+
+        # Gather logits if needed to return.
+        if "existing_logits" in _input_dict:
+            token_range = ops.reshape(
+                ops.range(
+                    ops.constant(0, dtype=DType.int64),
+                    tokens.shape[0],
+                    ops.constant(1, dtype=DType.int64),
+                    out_dim=Dim(tokens.shape[0]),
+                ),
+                shape=tokens.shape,
+            )
+
+            token_indices = ops.concat(
+                [
+                    token_range,
+                    tokens,
+                ],
+                axis=1,
+            )
+            new_logits = ops.reshape(
+                ops.gather_nd(logits, token_indices), shape=tokens.shape
+            )
+
+            all_logits = ops.concat([existing_logits, new_logits], -1)
+            graph.output(tokens, all_tokens, all_logits)
+        else:
+            tokens = ops.squeeze(tokens, -1)
+            graph.output(tokens, all_tokens)
 
         return graph

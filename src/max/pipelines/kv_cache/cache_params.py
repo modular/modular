@@ -41,6 +41,8 @@ class KVCacheParams:
         n_kv_heads: int,
         head_dim: int,
         enable_prefix_caching: bool = False,
+        enable_kvcache_swapping_to_host: bool = False,
+        host_kvcache_swap_space_gb: Optional[float] = None,
         cache_strategy: KVCacheStrategy = KVCacheStrategy.CONTINUOUS,
         page_size: Optional[int] = None,
         n_devices: int = 1,
@@ -54,11 +56,31 @@ class KVCacheParams:
         self.n_kv_heads_per_device = n_kv_heads // n_devices
         self.page_size = page_size
         self.enable_prefix_caching = enable_prefix_caching
+        self.enable_kvcache_swapping_to_host = enable_kvcache_swapping_to_host
+        self.host_kvcache_swap_space_gb = host_kvcache_swap_space_gb
 
         # Validate inputs.
         if enable_prefix_caching and cache_strategy != KVCacheStrategy.PAGED:
             raise ValueError(
                 "Prefix caching is only supported for paged cache strategy"
+            )
+        if (
+            enable_kvcache_swapping_to_host
+            and cache_strategy != KVCacheStrategy.PAGED
+        ):
+            raise ValueError(
+                "KVCache swapping to host is only supported for paged cache strategy"
+            )
+        if enable_kvcache_swapping_to_host and not enable_prefix_caching:
+            raise ValueError(
+                "KVCache swapping to host is only supported when prefix caching is enabled"
+            )
+        if (
+            enable_kvcache_swapping_to_host
+            and host_kvcache_swap_space_gb is None
+        ):
+            raise ValueError(
+                "host_kvcache_swap_space_gb is required when kvcache_swapping_to_host is enabled"
             )
         if page_size is None and cache_strategy == KVCacheStrategy.PAGED:
             raise ValueError("Page size is required for paged cache strategy")

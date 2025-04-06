@@ -122,7 +122,7 @@ struct PyKeysValuePair:
 
 @value
 @register_passable("trivial")
-struct PyObjectPtr:
+struct PyObjectPtr(CollectionElement):
     """Equivalent to `PyObject*` in C.
 
     It is crucial that this type has the same size and alignment as `PyObject*`
@@ -299,7 +299,7 @@ fn _py_finalize(lib: DLHandle):
 
 
 @value
-struct PyMethodDef:
+struct PyMethodDef(CollectionElement):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -418,7 +418,7 @@ struct PyType_Spec:
 
 @value
 @register_passable("trivial")
-struct PyType_Slot:
+struct PyType_Slot(CollectionElement):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
@@ -614,7 +614,7 @@ struct PyModuleDef_Slot:
     var value: OpaquePointer
 
 
-struct PyModuleDef(Stringable, Representable, Writable):
+struct PyModuleDef(Stringable, Representable, Writable, Movable):
     """The Python module definition structs that holds all of the information
     needed to create a module.
 

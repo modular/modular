@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements basic routines for working with the OS.
+"""Provides functions for working with environment variables.
 
 You can import these APIs from the `os` package. For example:
 

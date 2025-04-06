@@ -148,22 +148,22 @@ var needle = "school"  # a word intentionally not in the test data
 # ===-----------------------------------------------------------------------===#
 @always_inline
 fn _memmem_baseline[
-    type: DType
+    dtype: DType
 ](
-    haystack: UnsafePointer[Scalar[type]],
+    haystack: UnsafePointer[Scalar[dtype]],
     haystack_len: Int,
-    needle: UnsafePointer[Scalar[type]],
+    needle: UnsafePointer[Scalar[dtype]],
     needle_len: Int,
-) -> UnsafePointer[Scalar[type]]:
+) -> UnsafePointer[Scalar[dtype]]:
     if not needle_len:
         return haystack
     if needle_len > haystack_len:
-        return UnsafePointer[Scalar[type]]()
+        return UnsafePointer[Scalar[dtype]]()
     if needle_len == 1:
         return _memchr(haystack, needle[0], haystack_len)
 
     alias bool_mask_width = simdwidthof[DType.bool]()
-    var first_needle = SIMD[type, bool_mask_width](needle[0])
+    var first_needle = SIMD[dtype, bool_mask_width](needle[0])
     var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
     )
@@ -182,7 +182,7 @@ fn _memmem_baseline[
 
         if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
             return haystack + i
-    return UnsafePointer[Scalar[type]]()
+    return UnsafePointer[Scalar[dtype]]()
 
 
 # ===-----------------------------------------------------------------------===#

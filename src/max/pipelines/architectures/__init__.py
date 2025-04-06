@@ -13,9 +13,16 @@
 
 from max.pipelines import PIPELINE_REGISTRY
 
+_MODELS_ALREADY_REGISTERED = False
+
 
 def register_all_models():
     """Imports model architectures, thus registering the architecture in the shared :obj:`~max.pipelines.registry.PipelineRegistry`."""
+    global _MODELS_ALREADY_REGISTERED
+
+    if _MODELS_ALREADY_REGISTERED:
+        return
+
     from .exaone import exaone_arch
     from .granite import granite_arch
     from .llama3 import llama_arch
@@ -44,6 +51,8 @@ def register_all_models():
 
     for arch in architectures:
         PIPELINE_REGISTRY.register(arch)
+
+    _MODELS_ALREADY_REGISTERED = True
 
 
 __all__ = ["register_all_models"]

@@ -29,7 +29,7 @@ alias blksize_t = Int32
 
 
 @value
-struct _c_stat(Stringable):
+struct _c_stat(Stringable, Writable):
     var st_dev: dev_t  #  ID of device containing file
     var st_ino: Int64  # File serial number
     var st_mode: mode_t  # Mode of file
@@ -116,7 +116,7 @@ struct _c_stat(Stringable):
 fn _stat(path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__xstat", Int32](
-        Int32(0), path.unsafe_ptr(), Pointer.address_of(stat)
+        Int32(0), path.unsafe_ptr(), Pointer(to=stat)
     )
     if err == -1:
         raise "unable to stat '" + path + "'"
@@ -127,7 +127,7 @@ fn _stat(path: String) raises -> _c_stat:
 fn _lstat(path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["__lxstat", Int32](
-        Int32(0), path.unsafe_ptr(), Pointer.address_of(stat)
+        Int32(0), path.unsafe_ptr(), Pointer(to=stat)
     )
     if err == -1:
         raise "unable to lstat '" + path + "'"

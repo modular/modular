@@ -37,6 +37,7 @@ if __name__ == "__main__":
             TensorType(dtype, shape=[vector_width]),
             TensorType(dtype, shape=[vector_width]),
         ],
+        custom_extensions=[path],
     ) as graph:
         # Take in the two inputs to the graph.
         lhs, rhs = graph.inputs
@@ -55,7 +56,6 @@ if __name__ == "__main__":
     # Set up an inference session for running the graph.
     session = InferenceSession(
         devices=[device],
-        custom_extensions=path,
     )
 
     # Compile the graph.

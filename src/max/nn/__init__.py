@@ -16,7 +16,6 @@ from .attention import (
     AttentionImpl,
     AttentionImplQKV,
     AttentionQKV,
-    AttentionWithoutMask,
     AttentionWithRope,
     AttentionWithRopeQKV,
     AttentionWithRopeV2,
@@ -25,6 +24,7 @@ from .attention import (
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     NaiveAttentionWithRope,
+    RaggedAttention,
 )
 from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv2D, Conv3D
@@ -66,7 +66,7 @@ __all__ = [
     "AttentionWithRope",
     "AttentionWithRopeQKV",
     "AttentionWithRopeV2",
-    "AttentionWithoutMask",
+    "RaggedAttention",
     "Conv1D",
     "Conv2D",
     "Conv3D",

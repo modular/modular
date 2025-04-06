@@ -13,13 +13,14 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Optional
 
 from max.dtype import DType
 from max.graph import Dim, TensorValue, TensorValueLike, dtype_promotion, ops
-from max.nn import Conv3D
+from max.nn import MLP, Conv3D, Linear, RMSNorm
 from max.nn.layer import Module
 
 
@@ -30,15 +31,19 @@ class VisionPatchEmbed(Module):
     temporal_patch_size: int = 2
     in_channels: int = 3
     embed_dim: int = 1152
+    spatial_merge_unit: int = 4
 
     def __post_init__(self):
         super().__init__()
 
-    def __call__(self, x: TensorValueLike) -> TensorValue:
-        """
+    def __call__(
+        self, x: TensorValueLike, window_index: TensorValueLike
+    ) -> TensorValue:
+        """Generates patch embeddings from pixel_values of patches (`x`) and reorders them by window_index.
+
         Reshapes input to (batch_size, in_channels, depth, height, width).
         Permutes it to be compatible with max.pipelines.nn.Conv3D input tensor.
-        Permutes the output then flatten it.
+        Permutes the output then flattens it.
 
         Args:
             x: tensor representing pixel values of shape [resized_height, resized_width].
@@ -62,7 +67,16 @@ class VisionPatchEmbed(Module):
         x = self.proj(x)
         # Permute max output from (batch_size, depth, height, width, out_channels) to (batch_size, out_channels, depth, height, width)
         x = x.permute([0, 2, 3, 4, 1])
-        return x.reshape((-1, self.embed_dim))
+        x = x.reshape((-1, self.embed_dim))
+
+        seq_len = x.shape[0]
+        # Reshape into a 3D tensor of blocks.
+        h = x.reshape(
+            [seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1]
+        )
+        # Reorders patch_embeddings according to window_index indices.
+        h = ops.gather(h, window_index, axis=0).reshape([seq_len, -1])
+        return h
 
 
 @dataclass
@@ -113,7 +127,16 @@ class VisionRotaryEmbedding(Module):
         max_grid_size: int,
         seq_len: Dim,
     ) -> tuple[TensorValue, TensorValue]:
-        # Generate rot_embs assuming full grid.
+        """Generates rotary position embeddings for a maximum sequence length of max_grid_size
+        reordered by window_index. window_index is the indices of patches in the order they are
+        fed to WindowAttention.
+
+        Args:
+            max_grid_size: max value in spatial dimensions in the grid of image and video patches.
+                It represents the max no. of patches in an image or a frame. Used as the max positional embedding needed.
+            seq_len: total number of patches in the sequence of images and videos. Its also pixel_values.shape[0].
+        """
+        # Generate rot_embs assuming max number of patches.
         t = ops.range(
             ops.constant(0, DType.float64),
             ops.constant(max_grid_size, DType.float64),
@@ -121,29 +144,163 @@ class VisionRotaryEmbedding(Module):
             out_dim=max_grid_size,
         )
         rotary_pos_emb_full = ops.outer(t, self.inv_freqs)
-        # Retrieve position embeddings for ieach patch in nput images or videos.
+        # Retrieve position embeddings for each patch in input images or videos.
         rotary_pos_emb = ops.gather(rotary_pos_emb_full, rot_pos_ids, axis=0)
         rotary_pos_emb = rotary_pos_emb.flatten(1)
         rotary_pos_emb = rotary_pos_emb.reshape(
             [seq_len // spatial_merge_unit, spatial_merge_unit, -1]
         )
 
-        # Reorders rot position embeddings according to window_index indices.
+        # Reorders patches' rot position embeddings according to window_index indices.
         rotary_pos_emb = ops.gather(
             rotary_pos_emb, window_index, axis=0
         ).reshape([seq_len, -1])
-        # Generates a cos and a sin of rotary posiiton embeddings which will be applied later.
-        rotary_pos_emb = ops.concat(
-            (rotary_pos_emb, rotary_pos_emb), -1
-        )  # (seq_len, 2 * hidden_size).
-        position_embeddings = (ops.cos(rotary_pos_emb), ops.sin(rotary_pos_emb))
-        return position_embeddings
+        # Generates a cos and a sin of rotary position embeddings which will be applied later. Shape = (seq_len, 2 * hidden_size).
+        rotary_pos_emb = ops.concat((rotary_pos_emb, rotary_pos_emb), -1)
+
+        freqs_cis = (ops.cos(rotary_pos_emb), ops.sin(rotary_pos_emb))
+        return freqs_cis
 
     def __call__(
         self,
         x: TensorValue,
     ) -> TensorValue:
         raise NotImplementedError
+
+
+@dataclass
+class VisionWindowSdpaAttention(Module):
+    dim: int
+    n_heads: int
+    qkv: Linear
+    proj: Linear
+
+    @staticmethod
+    def apply_rotary_pos_emb_vision(
+        q: TensorValue, k: TensorValue, cos: TensorValue, sin: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        def _rotate_half(x: TensorValue) -> TensorValue:
+            """Rotates half the hidden dims of the input."""
+            head_dim = x.shape[-1]
+            head_dim_val = TensorValue(head_dim)
+            half_dim = head_dim // 2
+            half_dim_val = TensorValue(half_dim)
+            slice_re = (slice(0, half_dim_val), half_dim)
+            slice_im = (slice(half_dim_val, head_dim_val), half_dim)
+            x_re = x[..., slice_re]
+            x_im = x[..., slice_im]
+            return ops.concat((x_re, x_im), -1)
+
+        orig_q_dtype = q.dtype
+        orig_k_dtype = k.dtype
+        cos, sin = (
+            ops.cast(ops.unsqueeze(cos, -2), orig_q_dtype),
+            ops.cast(ops.unsqueeze(sin, -2), orig_q_dtype),
+        )
+        q_embed = (q * cos) + (_rotate_half(q) * sin)
+        k_embed = (k * cos) + (_rotate_half(k) * sin)
+        q_embed = ops.cast(q_embed, orig_q_dtype)
+        k_embed = ops.cast(k_embed, orig_k_dtype)
+        return q_embed, k_embed
+
+    @staticmethod
+    def scaled_dot_product_attention(
+        xq: TensorValue,
+        xk: TensorValue,
+        xv: TensorValue,
+        attention_mask: TensorValue,
+        dim: int,
+        n_heads: int,
+    ):
+        """Computes scaled dot product attention on query, key and value tensors, using an attention mask.
+        Shape of xq, xk, and xv = (n_heads, seq_len, head_dim) = (16, 14308, 80).
+        """
+        head_dim = (dim // n_heads) // 2
+        scale = math.sqrt(1.0 / head_dim)
+        scores = xq @ ops.transpose(xk, -2, -1)
+        # Note, the graph compiler currently requires the order of operands
+        # to be `scores * scale` in order to pattern match the fused attention
+        # operator.
+        scores = ops.softmax((scores * scale) + attention_mask)
+        return scores @ xv
+
+    def __call__(
+        self,
+        x: TensorValue,
+        position_embeddings: tuple[TensorValue, TensorValue],
+        attention_mask: TensorValue,
+    ) -> TensorValue:
+        """Naive Sliding Window Vision Attention Layer for Qwen2.5vVL. It does the following steps:
+            1. Linear Projections Q, K, V
+            2. Apply Rotary position embeddings on the Linear Projections Q, and K
+            3. Scaled dot product attention
+            4. Final Linear projection layer
+
+        Args:
+            x:
+            position_embeddings:
+            attention_mask:
+
+        Returns:
+            The output of applying sliding window attention on input `x` using `attention_mask`.
+            It applies rotary position embeddings `position_embeddings` in the process.
+
+        Shapes:
+            Input:
+                x: (seq_len, hidden_size)
+                position_embeddings: tuple of 2 tensors of shape ()
+                attention_mask: (1, seq_len, seq_len)
+            Output: tuple of:
+                - indices: (batch_size * seq_length, num_per_tok)
+                - weights: (batch_size * seq_length, num_per_tok)
+        """
+        seq_length = x.shape[0]
+        qkv = (
+            self.qkv(x)
+            .reshape([seq_length, 3, self.n_heads, -1])
+            .permute([1, 0, 2, 3])
+        )
+        # Split qkv into a tuple of tensors along the first dim: q, k, v = qkv.unbind(0)
+        xq, xk, xv = qkv[0], qkv[1], qkv[2]
+        cos, sin = position_embeddings
+        xq, xk = VisionWindowSdpaAttention.apply_rotary_pos_emb_vision(
+            xq, xk, cos, sin
+        )
+        xq = xq.transpose(0, 1)
+        xk = xk.transpose(0, 1)
+        xv = xv.transpose(0, 1)
+        attn_output = VisionWindowSdpaAttention.scaled_dot_product_attention(
+            xq, xk, xv, attention_mask, self.dim, self.n_heads
+        )
+        attn_output = attn_output.transpose(0, 1)
+        attn_output = attn_output.reshape((seq_length, -1))
+        attn_output = self.proj(attn_output)
+        return attn_output
+
+
+@dataclass
+class VisionBlock(Module):
+    norm1: RMSNorm
+    norm2: RMSNorm
+    attn: VisionWindowSdpaAttention
+    mlp: MLP
+
+    def __post_init__(self):
+        super().__init__()
+
+    def __call__(
+        self,
+        x: TensorValue,
+        position_embeddings: tuple[TensorValue, TensorValue],
+        attention_mask: TensorValue,
+    ) -> TensorValue:
+        h = x + self.attn(
+            self.norm1(x),
+            position_embeddings=position_embeddings,
+            attention_mask=attention_mask,
+        )
+        h = h + self.mlp(self.norm2(h))
+        return h
 
 
 @dataclass
@@ -174,6 +331,8 @@ class VisionTransformer(Module):
 
     patch_embed: VisionPatchEmbed
     rotary_pos_emb: VisionRotaryEmbedding
+    blocks: list[VisionBlock]
+    fullatt_block_indexes: list[int]
     spatial_merge_unit: int
 
     def __post_init__(self):
@@ -181,48 +340,51 @@ class VisionTransformer(Module):
 
     def __call__(
         self,
-        x: TensorValue,
-        grid_thw: TensorValue,
+        pixel_values: TensorValue,
         rot_pos_ids: TensorValue,
-        max_grid_size: int,
         window_index: TensorValue,
-        cu_window_seqlens: TensorValue,
+        attention_mask_window: TensorValue,
+        attention_mask_full: TensorValue,
+        max_grid_size: int,
     ) -> TensorValue:
         """Outputs raw hidden states of the transformer model on input `x`.
 
         1. Patch Embedding: Converts raw input into patches and embeds them.
-        2. Rotary Positional Embeddings: Computes and applies rotary positional encodings to the patches.
-        3. Windowing: Divides the sequence into windows and performs attention within those windows using the window_index.
-        4. Transformer Processing: Processes the sequence through multiple transformer blocks, with attention to cumulative sequence lengths and positional encodings.
-        5. Merging and Sorting: After transformer processing, the results are merged and sorted to restore the original sequence order.
-        6. Final Output: The processed hidden_states are returned as the model's output.
+        2. Rotary Positional Embeddings: Computes rotary positional encodings to the patches.
+        3. Windowing: Divides the sequence into windows to perform attention within those windows using the window_index.
+        4. Transformer Processing: Processes the sequence through multiple transformer blocks, with attention to cumulative window sequence lengths and positional encodings.
+        5. Merging and Sorting: transformer results are merged and sorted to restore the original sequence order before windowing.
+        6. The processed hidden_states are returned as the model's output.
 
         Args:
-            x: Tensor of images of shape (seq_len=n_patches, in_channels * temporal_patch_size * patch_size * patch_size)
-            seq_len depends on the spatial dims of the image or video and second dim of x for Qwen2.5VL is 1176.
-            Qwen2.5VL processor that handles multiple images of different shapes by flattening all dims and returning
-            a 2D tensor of all patches in all images + a grid_thw representing the coords of patches.
-            grid_thw: a tensor of temporal, height and width of feature shape of each image in LLM.
-                Its the represent the dimensions of patches in images. Shape = (num_images_or_videos, 3).
+            pixel_values: Tensor of images of shape (seq_len=n_patches, in_channels * temporal_patch_size * patch_size * patch_size)
+                seq_len depends on the spatial dims of the image or video and second dim of x for Qwen2.5VL is 1176.
+                Qwen2.5VL processor that handles multiple images of different shapes by flattening all dims and returning
+                a 2D tensor of all patches in all images + a grid_thw representing the temporal and spatial coords of patches.
             rotary_pos_ids: Tensor of shape (seq_len, 2) generated by data_processing.mrope_pos_ids_3d(grid_thw, spatial_merge_size).
-            max_grid_size: int representing the maximum spatial dimension in grid_thw
             window_index:  1D TensorValue generated by data_processing.get_window_index(grid_thw, window_size, spatial_merge_size, patch_size, spatial_merge_unit).
-            cu_window_seqlens: 1D TensorValue generated by data_processing.get_window_index(grid_thw, window_size, spatial_merge_size, patch_size, spatial_merge_unit).
+            attention_mask_window: a tensor of shape [1, seq_len, seq_len] that restricts patches from interacting
+                outside their valid segments for Window Attention mechanism (same sequence and same window).
+            attention_mask_full: a tensor of shape [1, seq_len, seq_len] that restricts patches from interacting outside
+                their valid segments for  Self Attention mechanism.
+            max_grid_size: max value in spatial dimensions in the grid of image and video patches.
+                It represents the max no. of patches in an image or a frame. Used as the max positional embedding needed.
 
         Returns:
-            TensorValue : hidden_states.
-        """
-        # The input image is passed through the ViT to obtain patch embeddings.
-        h = self.patch_embed(x)  # Shape = [seq_len, hidden_size]
-        seq_len = h.shape[0]
-        # Reshape into a 3D tensor of blocks.
-        h = h.reshape(
-            [seq_len // self.spatial_merge_unit, self.spatial_merge_unit, -1]
-        )
-        # Reorders patch_embeddings according to window_index indices.
-        h = ops.gather(h, window_index, axis=0).reshape([seq_len, -1])
+            TensorValue : output of vision transformer projected into the decoder's hidden_size.
 
-        # Compute rotary positional encodings to the input patches.
+        Shapes:
+            Input: pixel_values shape = (seq_len, in_channels * temporal_patch_size * patch_size * patch_size)
+                where seq_len = no. of patches in all images and videos.
+            Output:
+        """
+        # Pass input images or videos through a conv to obtain patch embeddings ordered by window_index.
+        h = self.patch_embed(
+            pixel_values, window_index
+        )  # Shape = [seq_len, hidden_size]
+        seq_len = h.shape[0]
+
+        # Compute rotary positional encodings to input patches ordered by window_index.
         position_embeddings = self.rotary_pos_emb.generate_rot_pos_embeddings(
             rot_pos_ids,
             window_index,
@@ -231,19 +393,16 @@ class VisionTransformer(Module):
             seq_len,
         )
 
-        # Calculate the Cumulative Sequence Lengths (number of tokens in each grid for each dim).
-        # TODO(GEX-1938): Implement ops.repeat_interleave with a vector of repeats
-        # cu_seqlens = ops.cumsum(
-        #     ops.repeat_interleave(
-        #         grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]
-        #     ),
-        #     0,
-        # )
-        # TODO(GEX-1861): Implement padding
-        # cu_seqlens = ops.pad(cu_seqlens, (1, 0), value=0)
+        # Pass patch and positional embeddings though Window Attention Blocks to get hidden states for each patch.
+        for layer_num, blk in enumerate(self.blocks):
+            if layer_num in self.fullatt_block_indexes:
+                attention_mask = attention_mask_full
+            else:
+                attention_mask = attention_mask_window
+            h = blk(
+                h,
+                position_embeddings=position_embeddings,
+                attention_mask=attention_mask,
+            )
 
-        cu_window_seqlens = ops.cast(cu_window_seqlens, grid_thw.dtype)
-        # TODO(GEX-1923): Implement ops.unique_consecutive and uncomment this
-        # cu_window_seqlens = ops.unique_consecutive(cu_window_seqlens)
-
-        return position_embeddings[0]
+        return h

@@ -161,7 +161,7 @@ def test_optional_copied():
     var data = String("foo")
 
     var opt_ref: Optional[Pointer[String, __origin_of(data)]] = Optional(
-        Pointer.address_of(data)
+        Pointer(to=data)
     )
 
     # Copy the optional Pointer value.

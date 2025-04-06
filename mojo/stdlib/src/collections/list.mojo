@@ -63,11 +63,11 @@ struct _ListIter[
     fn __next__(mut self, out p: Pointer[T, list_origin]):
         @parameter
         if forward:
-            p = Pointer.address_of(self.src[][self.index])
+            p = Pointer(to=self.src[][self.index])
             self.index += 1
         else:
             self.index -= 1
-            p = Pointer.address_of(self.src[][self.index])
+            p = Pointer(to=self.src[][self.index])
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -133,6 +133,16 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self.data = UnsafePointer[T].alloc(capacity)
         self._len = 0
         self.capacity = capacity
+
+    fn __init__(out self, *, length: UInt, fill: T):
+        """Constructs a list with the given capacity.
+
+        Args:
+            length: The requested length of the list.
+            fill: The element to fill each element of the list.
+        """
+        self = Self()
+        self.resize(length, fill)
 
     fn __init__(out self, owned *values: T):
         """Constructs a list from the given values.
@@ -353,7 +363,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Returns:
             An iterator of immutable references to the list elements.
         """
-        return _ListIter(0, Pointer.address_of(self))
+        return _ListIter(0, Pointer(to=self))
 
     fn __reversed__(
         ref self,
@@ -363,7 +373,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Returns:
             A reversed iterator of immutable references to the list elements.
         """
-        return _ListIter[forward=False](len(self), Pointer.address_of(self))
+        return _ListIter[forward=False](len(self), Pointer(to=self))
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -677,9 +687,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         for j in range(normalized_idx + 1, self._len):
             (self.data + j).move_pointee_into(self.data + j - 1)
         self._len -= 1
-        if self._len * 4 < self.capacity:
-            if self.capacity > 1:
-                self._realloc(self.capacity // 2)
+
         return ret_val^
 
     fn reserve(mut self, new_capacity: Int):

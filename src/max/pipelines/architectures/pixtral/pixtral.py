@@ -31,9 +31,9 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    TextAndVisionContext,
     upper_bounded_default,
 )
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -103,6 +103,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -113,6 +114,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
@@ -151,9 +153,17 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=False,
         )
-        assert not self.pipeline_config.enable_echo
-        assert isinstance(model_outputs[0], Tensor)
-        return ModelOutputs(next_token_logits=model_outputs[0])
+        if len(model_outputs) == 3:
+            return ModelOutputs(
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Tensor, model_outputs[1]),
+                logit_offsets=cast(Tensor, model_outputs[2]),
+            )
+        else:
+            return ModelOutputs(
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Tensor, model_outputs[0]),
+            )
 
     def prepare_initial_token_inputs(
         self,

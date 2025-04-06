@@ -58,7 +58,7 @@ struct Tuple[*element_types: CollectionElement](Sized, CollectionElement):
 
     @always_inline("nodebug")
     fn __init__(
-        mut self,
+        out self,
         *,
         owned storage: VariadicPack[_, CollectionElement, *element_types],
     ):

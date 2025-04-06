@@ -20,9 +20,9 @@ class Simple:
 class WithGetItem:
     def __getitem__(self, key):
         if isinstance(key, tuple):
-            return "Keys: {0}".format(", ".join(map(str, key)))
+            return "Keys: {}".format(", ".join(map(str, key)))
         else:
-            return "Key: {0}".format(key)
+            return f"Key: {key}"
 
 
 class WithGetItemException:

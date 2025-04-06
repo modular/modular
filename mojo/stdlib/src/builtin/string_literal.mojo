@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the StringLiteral class.
+"""Implements the StringLiteral struct.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -27,6 +27,8 @@ from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_char
 
 from memory import Span, UnsafePointer, memcpy
+
+from os import PathLike
 
 from utils import Writable, Writer
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -51,6 +53,9 @@ struct StringLiteral(
     Stringable,
     FloatableRaising,
     _HashableWithHasher,
+    PathLike,
+    EqualityComparableCollectionElement,
+    _CurlyEntryFormattable,
 ):
     """This type represents a string literal.
 
@@ -857,23 +862,41 @@ struct StringLiteral(
         return String(String(self).lstrip())
 
 
-# FIXME(MOCO-1707): This should be named get_string_literal[value: StringSlice],
-# but Mojo isn't picking the most specific overload correctly.
 @always_inline("nodebug")
-fn get_string_literal_slice[value: StringSlice]() -> StringLiteral:
-    """Form a string literal from an arbitrary compile-time StringSlice value.
+fn get_string_literal_slice[
+    string: StaticString, *extra: StaticString
+]() -> StringLiteral:
+    """Form a string literal from a compile-time StringSlice value and additional
+    compile-time StringSlice values.
 
     Parameters:
-        value: The value to convert to StringLiteral.
+        string: The first StringSlice value.
+        extra: Additional StringSlice values to concatenate.
+
+    Returns:
+        The string value as a StringLiteral.
+    """
+    return get_string_literal_slice2[string, extra]()
+
+
+@always_inline("nodebug")
+fn get_string_literal_slice2[
+    string: StaticString, extra: VariadicList[StaticString]
+]() -> StringLiteral:
+    """Form a string literal from N compile-time StringSlice values concatenated.
+
+    Parameters:
+        string: The first string slice to use.
+        extra: Additional string slices to concatenate.
 
     Returns:
         The string value as a StringLiteral.
     """
     return __mlir_attr[
         `#kgen.param.expr<data_to_str,`,
-        value.byte_length().value,
+        string,
         `,`,
-        value.unsafe_ptr().address,
+        extra.value,
         `> : !kgen.string`,
     ]
 
@@ -882,30 +905,34 @@ fn get_string_literal_slice[value: StringSlice]() -> StringLiteral:
 # to bind the parameter in `StringLiteral["foo"]()` to the type instead of the
 # initializer.   Use a global function to work around this for now.
 @always_inline("nodebug")
-fn get_string_literal[value: String]() -> StringLiteral:
+fn get_string_literal[value: String, *extra: StaticString]() -> StringLiteral:
     """Form a string literal from an arbitrary compile-time String value.
 
     Parameters:
         value: The value to convert to StringLiteral.
+        extra: Additional StringSlice values to concatenate.
 
     Returns:
         The string value as a StringLiteral.
     """
-    return get_string_literal_slice[value]()
+    return get_string_literal_slice2[value, extra]()
 
 
 @always_inline("nodebug")
-fn get_string_literal[type: Stringable, //, value: type]() -> StringLiteral:
+fn get_string_literal[
+    type: Stringable, //, value: type, *extra: StaticString
+]() -> StringLiteral:
     """Form a string literal from an arbitrary compile-time stringable value.
 
     Parameters:
         type: The type of the value.
         value: The value to serialize.
+        extra: Additional StringSlice values to concatenate.
 
     Returns:
         The string value as a StringLiteral.
     """
-    return get_string_literal_slice[String(value)]()
+    return get_string_literal_slice2[String(value), extra]()
 
 
 fn _base64_encode[str: StringLiteral]() -> StringLiteral:

@@ -38,6 +38,7 @@ class GraniteModel(Llama3Model):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -48,6 +49,7 @@ class GraniteModel(Llama3Model):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
 
         logits_scaling = getattr(huggingface_config, "logits_scaling", 1.0)

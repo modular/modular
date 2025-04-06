@@ -42,13 +42,14 @@ if __name__ == "__main__":
         input_types=[
             TensorType(DType.uint8, shape=[n]),
         ],
+        custom_extensions=[path],
     )
 
     # Place the graph on a GPU, if available. Fall back to CPU if not.
     device = CPU() if accelerator_count() == 0 else Accelerator()
 
     # Set up an inference session for running the graph.
-    session = InferenceSession(devices=[device], custom_extensions=path)
+    session = InferenceSession(devices=[device])
 
     # Compile the graph.
     model = session.load(graph)

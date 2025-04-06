@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol, Sequence, Union, runtime_checkable
+from collections.abc import Sequence
+from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
-
-from .interfaces import LogProbabilities
+from max.pipelines.interfaces import LogProbabilities
 
 CHUNK_SIZE = 128
 
@@ -43,6 +43,9 @@ class InputContext(Protocol):
     """
 
     @property
+    def ignore_eos(self) -> bool: ...
+
+    @property
     def active_idx(self) -> int: ...
 
     @property
@@ -50,6 +53,9 @@ class InputContext(Protocol):
 
     @property
     def end_idx(self) -> int: ...
+
+    @property
+    def committed_idx(self) -> int: ...
 
     @property
     def current_length(self) -> int:
@@ -89,6 +95,11 @@ class InputContext(Protocol):
         """
         ...
 
+    @property
+    def tokens(self) -> np.ndarray:
+        """All tokens in the context."""
+        ...
+
     def update(
         self,
         new_token: int,
@@ -104,15 +115,26 @@ class InputContext(Protocol):
 
     def bump_token_indices(
         self,
-        start_idx: Optional[int] = None,
-        active_idx: Optional[int] = None,
-        end_idx: Optional[int] = None,
+        start_idx: int = 0,
+        active_idx: int = 0,
+        end_idx: int = 0,
+        committed_idx: int = 0,
     ) -> None:
         """Update the start_idx, active_idx and end_idx without manipulating the token array."""
         ...
 
+    def set_token_indices(
+        self,
+        start_idx: Optional[int] = None,
+        active_idx: Optional[int] = None,
+        end_idx: Optional[int] = None,
+        committed_idx: Optional[int] = None,
+    ) -> None:
+        """Set the token indices without manipulating the token array."""
+        ...
+
     @property
-    def matcher(self) -> Optional["xgr.GrammarMatcher"]:  # type: ignore
+    def matcher(self) -> Optional[xgr.GrammarMatcher]:  # type: ignore
         """An optional xgr Grammar Matcher provided when using structured output."""
         ...
 
@@ -121,7 +143,7 @@ class InputContext(Protocol):
         """A json schema to use during constrained decoding."""
         ...
 
-    def set_matcher(self, matcher: "xgr.GrammarMatcher") -> None:  # type: ignore
+    def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
         """Set a grammar matcher for use during constrained decoding."""
         ...
 
@@ -177,6 +199,7 @@ class TextContext:
         log_probabilities: int = 0,
         log_probabilities_echo: bool = False,
         json_schema: str | None = None,
+        ignore_eos: bool = False,
     ) -> None:
         self._cache_seq_id = cache_seq_id
         self.prompt = prompt
@@ -192,14 +215,19 @@ class TextContext:
         # another array in the caller, which prevents us from resizing it directly.
         # The extra space is initialized to zero and will be filled with generated tokens.
         assert len(tokens) <= self.size
-        self.tokens = np.zeros(self.size, dtype=tokens.dtype)
-        self.tokens[: len(tokens)] = tokens
+        self._tokens = np.zeros(self.size, dtype=tokens.dtype)
+        self._tokens[: len(tokens)] = tokens
 
         self._active_idx = len(tokens)
         self._start_idx = 0
         self._end_idx = self._active_idx
         self._completion_start_idx = self._active_idx
         self._completion_end_idx = self._active_idx
+
+        # Which prefix of tokens have been committed into the prefix cache.
+        # This should be a multiple of page_size and less than start_idx.
+        # When prefix caching is disabled, this should be 0.
+        self._committed_idx = 0
 
         self.log_probabilities = log_probabilities
         self.log_probabilities_echo = log_probabilities_echo
@@ -208,6 +236,7 @@ class TextContext:
         self.matcher = None
         self.json_schema = json_schema
         self.is_initial_prompt = True
+        self.ignore_eos = ignore_eos
 
     @property
     def start_idx(self) -> int:
@@ -221,7 +250,11 @@ class TextContext:
     def end_idx(self) -> int:
         return self._end_idx
 
-    def set_matcher(self, matcher: "xgr.GrammarMatcher") -> None:  # type: ignore
+    @property
+    def committed_idx(self) -> int:
+        return self._committed_idx
+
+    def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
         self.matcher = matcher
 
     @property
@@ -240,14 +273,40 @@ class TextContext:
 
     def bump_token_indices(
         self,
+        start_idx: int = 0,
+        active_idx: int = 0,
+        end_idx: int = 0,
+        committed_idx: int = 0,
+    ) -> None:
+        """Update the start_idx, active_idx and end_idx without manipulating the token array."""
+        new_start_idx = start_idx + self._start_idx
+        new_active_idx = active_idx + self._active_idx
+        new_end_idx = end_idx + self._end_idx
+        new_committed_idx = committed_idx + self._committed_idx
+
+        self.set_token_indices(
+            start_idx=new_start_idx,
+            active_idx=new_active_idx,
+            end_idx=new_end_idx,
+            committed_idx=new_committed_idx,
+        )
+
+    def set_token_indices(
+        self,
         start_idx: Optional[int] = None,
         active_idx: Optional[int] = None,
         end_idx: Optional[int] = None,
+        committed_idx: Optional[int] = None,
     ) -> None:
-        """Update the start_idx, active_idx and end_idx without manipulating the token array."""
-        new_start_idx = (start_idx if start_idx else 0) + self._start_idx
-        new_active_idx = (active_idx if active_idx else 0) + self._active_idx
-        new_end_idx = (end_idx if end_idx else 0) + self._end_idx
+        """Set the token indices without manipulating the token array."""
+        new_start_idx = start_idx if start_idx is not None else self._start_idx
+        new_active_idx = (
+            active_idx if active_idx is not None else self._active_idx
+        )
+        new_end_idx = end_idx if end_idx is not None else self._end_idx
+        new_committed_idx = (
+            committed_idx if committed_idx is not None else self._committed_idx
+        )
 
         if new_start_idx >= new_active_idx:
             msg = f"""
@@ -266,15 +325,20 @@ class TextContext:
         self._start_idx = new_start_idx
         self._active_idx = new_active_idx
         self._end_idx = new_end_idx
+        self._committed_idx = new_committed_idx
 
     @property
     def next_tokens(self) -> np.ndarray:
-        return self.tokens[self._start_idx : self._active_idx]
+        return self._tokens[self._start_idx : self._active_idx]
+
+    @property
+    def tokens(self) -> np.ndarray:
+        return self._tokens[: self._end_idx]
 
     def _upsize(self) -> None:
         if self._end_idx >= self.size:
             self.size += CHUNK_SIZE
-            self.tokens = np.resize(self.tokens, self.size)
+            self._tokens = np.resize(self._tokens, self.size)
 
     def update(
         self,
@@ -294,7 +358,7 @@ class TextContext:
 
         # Update tokens and log probabilities data
         self._upsize()
-        self.tokens[self._active_idx] = new_token
+        self._tokens[self._active_idx] = new_token
         if log_probabilities:
             self._log_probabilities_data[self._active_idx] = log_probabilities
 
@@ -318,7 +382,7 @@ class TextContext:
         self._upsize()
 
         # Update tokens
-        self.tokens[self._active_idx] = new_token
+        self._tokens[self._active_idx] = new_token
 
         # Bump Indices
         self._active_idx += 1
@@ -333,7 +397,9 @@ class TextContext:
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
+        self.unassign_from_cache()
         self._start_idx = 0
+        self._committed_idx = 0
 
         self.is_initial_prompt = True
 
@@ -351,7 +417,7 @@ class TextContext:
             # this method never returns the same tokens more than once.
             res.append(
                 (
-                    self.tokens[token_idx],
+                    self._tokens[token_idx],
                     self._log_probabilities_data.pop(token_idx, None),
                 )
             )
@@ -386,6 +452,16 @@ class TextContext:
     def is_assigned_to_cache(self) -> bool:
         return self._cache_seq_id is not None
 
+    def __repr__(self) -> str:
+        return (
+            f"TextContext("
+            f"cache_seq_id={self._cache_seq_id}, "
+            f"committed_idx={self.committed_idx}, "
+            f"start_idx={self.start_idx}, "
+            f"active_idx={self.active_idx}, "
+            f"end_idx={self.end_idx})"
+        )
+
 
 class TextAndVisionContext(TextContext):
     """A base class for model context, specifically for Vision model variants."""
@@ -401,6 +477,7 @@ class TextAndVisionContext(TextContext):
         log_probabilities: int = 0,
         log_probabilities_echo: bool = False,
         json_schema: str | None = None,
+        ignore_eos: bool = False,
     ) -> None:
         super().__init__(
             cache_seq_id=cache_seq_id,
@@ -410,6 +487,7 @@ class TextAndVisionContext(TextContext):
             log_probabilities=log_probabilities,
             log_probabilities_echo=log_probabilities_echo,
             json_schema=json_schema,
+            ignore_eos=ignore_eos,
         )
         self.pixel_values = pixel_values
         self.extra_model_args = extra_model_args

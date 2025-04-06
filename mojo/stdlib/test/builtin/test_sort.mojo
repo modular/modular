@@ -14,7 +14,6 @@
 
 from pathlib import Path, _dir_of_current_file
 from random import random_float64, random_si64, random_ui64, seed
-from sys import env_get_string, os_is_windows
 
 from builtin.sort import _quicksort, _small_sort, _SortWrapper
 from testing import assert_equal, assert_false, assert_true
@@ -53,9 +52,7 @@ fn assert_sorted_string(mut list: List[String]) raises:
         )
 
 
-fn assert_sorted[
-    type: ComparableCollectionElement
-](mut list: List[type]) raises:
+fn assert_sorted[T: ComparableCollectionElement](mut list: List[T]) raises:
     for i in range(1, len(list)):
         assert_true(list[i] >= list[i - 1], String("error at index: ", i))
 

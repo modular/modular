@@ -16,7 +16,7 @@
 
 @value
 @register_passable("trivial")
-struct _SourceLocation(Writable, Stringable):
+struct _SourceLocation(Writable, Stringable, CollectionElement):
     """Type to carry file name, line, and column information."""
 
     var line: Int

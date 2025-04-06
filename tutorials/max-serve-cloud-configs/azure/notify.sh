@@ -25,7 +25,7 @@ fetch_logs() {
 
     LOGS=$(sshpass -p "$VM_PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=50 -v azureuser@$PUBLIC_IP "
         # First check if container is running
-        CONTAINER_ID=\$(sudo docker ps -q -f ancestor=docker.modular.com/modular/max-openai-api:latest)
+        CONTAINER_ID=\$(sudo docker ps -q -f ancestor=docker.modular.com/modular/max-nvidia-full:latest)
         if [ -n \"\$CONTAINER_ID\" ]; then
             echo '=== Docker Container Found ==='
             sudo docker logs \$CONTAINER_ID
@@ -52,7 +52,7 @@ check_server_status() {
     local logs=$1
     echo "🔍 Checking logs for server status..."
 
-    if echo "$logs" | grep -q "Pulling from docker.modular.com/modular/max-openai-api"; then
+    if echo "$logs" | grep -q "Pulling from docker.modular.com/modular/max-nvidia-full"; then
         echo "⏳ Docker image is still being pulled..."
         return 1
     fi

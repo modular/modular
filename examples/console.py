@@ -15,7 +15,7 @@ import os
 import subprocess
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 try:
     from rich.console import Console
@@ -37,7 +37,7 @@ EXCEEDED_RETRY_ERROR = (
 )
 
 
-def list_repositories() -> List[Tuple[str, str]]:
+def list_repositories() -> list[tuple[str, str]]:
     repos = []
     for top_repo in os.listdir(ROOT):
         # Skip notebook folder and files
@@ -63,8 +63,8 @@ class InputState(Enum):
 
 
 def prompt_validation(
-    console: Console, retries: int, repos: List[Tuple[str, str]]
-) -> Optional[Tuple[str, str]]:
+    console: Console, retries: int, repos: list[tuple[str, str]]
+) -> Optional[tuple[str, str]]:
     state = InputState.PROMPT_INPUT
     selected_index = None
     n_repos = len(repos)
@@ -122,8 +122,8 @@ def prompt_validation(
 
 def select_repository(
     console: Console,
-    repos: List[Tuple[str, str]],
-) -> Optional[Tuple[str, str]]:
+    repos: list[tuple[str, str]],
+) -> Optional[tuple[str, str]]:
     table = Table(title="Select the Example to Run", highlight=True)
     table.add_column("Index", style="cyan", justify="center")
     table.add_column(

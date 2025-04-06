@@ -130,7 +130,6 @@ from builtin.value import (
     ExplicitlyCopyable,
     Movable,
     RepresentableCollectionElement,
-    StringableCollectionElement,
     WritableCollectionElement,
 )
 from documentation import doc_private

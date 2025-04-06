@@ -20,11 +20,12 @@ import os
 from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Optional, get_type_hints
 
-from max.driver import (
-    DeviceSpec,
-)
+from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.config_enums import PipelineEngine, RopeType
+from max.pipelines.config_enums import (
+    PipelineEngine,
+    RopeType,
+)
 from max.pipelines.max_config import (
     KVCacheConfig,
     MAXConfig,
@@ -33,6 +34,8 @@ from max.pipelines.max_config import (
     SamplingConfig,
     repo_exists_with_retry,
 )
+from max.pipelines.registry import PIPELINE_REGISTRY
+from transformers import AutoTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -50,12 +53,6 @@ class PipelineConfig(MAXConfig):
 
     engine: Optional[PipelineEngine] = None
     """Engine backend to use for serving, 'max' for the max engine, or 'huggingface' as fallback option for improved model coverage."""
-
-    serialized_model_path: Optional[str] = None
-    """DEPRECATED: Serialization paths no longer supported."""
-
-    save_to_serialized_model_path: Optional[str] = None
-    """DEPRECATED: Serialization paths no longer supported."""
 
     max_length: Optional[int] = None
     """Maximum sequence length of the model."""
@@ -101,9 +98,6 @@ class PipelineConfig(MAXConfig):
 
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
-
-    max_cache_batch_size: Optional[int] = None
-    """DEPRECATED: The maximum cache batch size to use for the model. Use max_batch_size instead."""
 
     use_experimental_kernels: str = os.environ.get(
         "USE_EXPERIMENTAL_KERNELS", "false"
@@ -176,6 +170,12 @@ class PipelineConfig(MAXConfig):
                             **kv_cache_kwargs
                         )
                         setattr(self, config_name, model_config)
+                    elif config_name == "_sampling_config" and (
+                        self.enable_echo or self.draft_model
+                    ):
+                        sampling_config = config_class(**matched_kwargs)
+                        sampling_config.enable_variable_logits = True
+                        setattr(self, config_name, sampling_config)
                     else:
                         setattr(
                             self, config_name, config_class(**matched_kwargs)
@@ -190,32 +190,26 @@ class PipelineConfig(MAXConfig):
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
 
-        self.validate()
+        self.resolve()
 
-    def validate(self) -> None:
+    def resolve(self) -> None:
         """
-        Validate the config.
+        Validates and resolves the config.
 
         This method is called after the config is initialized, to ensure that all
         config fields have been initialized to a valid state.
         """
-        self._model_config.validate()
+        self.model_config.resolve()
 
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
             raise ValueError("max_length must be non-negative.")
 
-        if self.max_cache_batch_size is not None:
-            logger.warning(
-                "--max-cache-batch-size is deprecated, use `--max-batch-size` instead. This setting will stop working in a future release."
-            )
-            self.max_batch_size = self.max_cache_batch_size
-
         # Set sensible defaults. These are platform-specific.
         if self.max_num_steps < 0:
             if (
                 self.sampling_config.enable_structured_output
-                or self._model_config.device_specs[0] == DeviceSpec.cpu()
+                or self.model_config.device_specs[0] == DeviceSpec.cpu()
             ):
                 self.max_num_steps = 1
             else:
@@ -230,17 +224,158 @@ class PipelineConfig(MAXConfig):
             )
 
         if self.sampling_config.enable_structured_output:
-            if self._model_config.device_specs[0] == DeviceSpec.cpu():
+            if self.model_config.device_specs[0] == DeviceSpec.cpu():
                 raise ValueError(
                     "enable_structured_output is not currently supported on CPU."
                 )
 
-        if self.draft_model:
-            if not repo_exists_with_retry(self.draft_model):
-                raise ValueError(
-                    "draft_model provided does not exist on HuggingFace."
-                    "Only public HuggingFace draft models currently supported."
-                )
+        # Run Baseline Validation
+        self._validate_and_resolve_remaining_pipeline_config()
+
+        # Run Additional Checks for Speculative Decoding
+        self._validate_pipeline_config_for_speculative_decoding()
+
+    def _validate_pipeline_config_for_speculative_decoding(self) -> None:
+        """
+        Validate the pipeline configs when used in speculative decoding mode.
+        """
+        if self.draft_model is None:
+            return
+
+        if not repo_exists_with_retry(self.draft_model):
+            raise ValueError(
+                "draft_model provided does not exist on HuggingFace."
+                "Only public HuggingFace draft models currently supported."
+            )
+
+        # Assume `draft_model` is provided, and thus speculative decoding is enabled.
+        # We don't support running speculative decoding with the HuggingFace backend.
+        if self.engine == PipelineEngine.HUGGINGFACE:
+            msg = (
+                "Speculative Decoding not supported with the HuggingFace Engine"
+            )
+            raise ValueError(msg)
+
+        # Validate that both the `draft_model` and target model `model_path` have the same
+        # architecture
+        draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
+            self.draft_model,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+
+        if not draft_arch:
+            msg = "MAX-Optimized architecture not found for `draft_model`"
+            raise ValueError(msg)
+
+        target_arch = PIPELINE_REGISTRY.retrieve_architecture(
+            self.model_config.model_path,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+        if not target_arch:
+            msg = "MAX-Optimized architecture not found for target model (`model_path`)"
+            raise ValueError(msg)
+
+        if draft_arch != target_arch:
+            msg = f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
+            raise ValueError(msg)
+
+        # Validate that their tokenizers are identical.
+        draft_tokenizer = AutoTokenizer.from_pretrained(
+            self.draft_model,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+        target_tokenizer = AutoTokenizer.from_pretrained(
+            self.model_config.model_path,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+
+        # Compare Vocabularies
+        if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
+            msg = f"tokenizer for draft_model ({self.draft_model}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+            raise ValueError(msg)
+
+        # Compare Tokenizer Configuration
+        if draft_tokenizer.__dict__ == target_tokenizer.__dict__:
+            msg = f"tokenizer for draft_model ({self.draft_model}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+            raise ValueError(msg)
+
+        if self.enable_echo:
+            msg = "enable_echo not currently supported with speculative decoding enabled"
+            raise ValueError(msg)
+
+        if self._sampling_config.enable_structured_output:
+            msg = "structured outputs not currently supported with speculative decoding enabled"
+            raise ValueError(msg)
+
+    def _validate_and_resolve_remaining_pipeline_config(self) -> None:
+        """Update remaining pipeline config fields with appropriate values
+        if not provided. If invalid config is provided, error out with detailed
+        reason."""
+        # Retrieve the architecture
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            model_path=self.model_config.model_path,
+            trust_remote_code=self.model_config.trust_remote_code,
+        )
+
+        # If nothing is provided, we should not update any more params.
+        # Instead, fall back to the HuggingFace engine.
+        if not arch and self.engine == PipelineEngine.MAX:
+            raise ValueError(
+                "MAX-optimized architecture not available, failing as engine is provided as 'MAX'"
+            )
+
+        elif not arch:
+            msg = (
+                "MAX-optimized architecture not available for"
+                f" '{self.model_config.model_path}' falling back to"
+                " HuggingFace."
+            )
+            logger.warning(msg)
+            self.engine = PipelineEngine.HUGGINGFACE
+            return
+
+        self.model_config.validate_multi_gpu_supported(
+            multi_gpu_supported=arch.multi_gpu_supported
+        )
+
+        # The remainder of this function, assumes we have both a valid model_path,
+        # and a SupportedArchitecture. We should then validate the details of the existing architecture
+        # and fallback to HuggingFace if needed.
+
+        self.model_config.validate_and_resolve_quantization_encoding_weight_path(
+            default_encoding=arch.default_encoding
+        )
+
+        # by this point, the quantization_encoding must be provided. verify it is supported.
+        if (
+            self.model_config.quantization_encoding
+            not in arch.supported_encodings
+        ):
+            if self.engine == PipelineEngine.MAX:
+                msg = f"quantization_encoding of '{self.model_config.quantization_encoding}' not supported by MAX engine, unable to run with engine = 'max'."
+                raise ValueError(msg)
+
+            else:
+                msg = f"quantization_encoding of '{self.model_config.quantization_encoding}' not supported by MAX engine, falling back to HuggingFace."
+                logger.warning(msg)
+                self.engine = PipelineEngine.HUGGINGFACE
+                return
+
+        self.model_config.validate_and_resolve_with_set_quantization_encoding(
+            supported_encodings=arch.supported_encodings,
+            default_weights_format=arch.default_weights_format,
+        )
+
+        if self.rope_type is None:
+            self.rope_type = arch.rope_type
+
+        devices = load_devices(self.model_config.device_specs)
+        PIPELINE_REGISTRY._estimate_memory_footprint(self, arch, devices)
+
+        # If we pass validation ensure and the engine is not set, just set it
+        # to MAX.
+        if self.engine is None:
+            self.engine = PipelineEngine.MAX
 
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""
@@ -261,15 +396,12 @@ class PipelineConfig(MAXConfig):
         pipeline_help = {
             "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
-            "serialized_model_path": "DEPRECATED: Serialization paths no longer supported.",
-            "save_to_serialized_model_path": "DEPRECATED: Serialization paths no longer supported.",
             "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",
-            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-cache-batch-size`. Default is 32.",
+            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-batch-size`. Default is 32.",
             "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`",
             "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Requires chunked prefill.",
-            "max_cache_batch_size": "DEPRECATED: Use `max_batch_size` instead.",
             "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is set to 1.",
             "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",

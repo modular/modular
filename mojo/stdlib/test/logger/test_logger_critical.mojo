@@ -10,14 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
-
-from testing import assert_equal
+# RUN: not --crash %mojo-no-debug %s | FileCheck %s
 
 
-def test_str_none():
-    assert_equal(String(None), "None")
+from logger import Level, Logger
 
 
 def main():
-    test_str_none()
+    var log = Logger[Level.CRITICAL]()
+
+    # CHECK-NOT: DEBUG::: hello world
+    log.debug("hello", "world")
+
+    # CHECK-NOT: DEBUG::: hello world
+    log.info("hello", "world")
+
+    # CHECK: CRITICAL::: hello
+    log.critical("hello")

@@ -139,17 +139,19 @@ def test_isnan():
     assert_true(isnan(nan[DType.float64]()))
 
 
-fn overflow_int[type: DType]() -> Bool:
-    constrained[type.is_integral(), "comparison only valid on integral types"]()
-    return max_finite[type]() + 1 < max_finite[type]()
-
-
-fn overflow_fp[type: DType]() -> Bool:
+fn overflow_int[dtype: DType]() -> Bool:
     constrained[
-        type.is_floating_point(),
+        dtype.is_integral(), "comparison only valid on integral types"
+    ]()
+    return max_finite[dtype]() + 1 < max_finite[dtype]()
+
+
+fn overflow_fp[dtype: DType]() -> Bool:
+    constrained[
+        dtype.is_floating_point(),
         "comparison only valid on floating point types",
     ]()
-    return max_finite[type]() + 1 == max_finite[type]()
+    return max_finite[dtype]() + 1 == max_finite[dtype]()
 
 
 def test_max_finite():
@@ -171,17 +173,19 @@ def test_max_finite():
     assert_true(overflow_fp[DType.float64]())
 
 
-fn underflow_int[type: DType]() -> Bool:
-    constrained[type.is_integral(), "comparison only valid on integral types"]()
-    return min_finite[type]() - 1 > min_finite[type]()
-
-
-fn underflow_fp[type: DType]() -> Bool:
+fn underflow_int[dtype: DType]() -> Bool:
     constrained[
-        type.is_floating_point(),
+        dtype.is_integral(), "comparison only valid on integral types"
+    ]()
+    return min_finite[dtype]() - 1 > min_finite[dtype]()
+
+
+fn underflow_fp[dtype: DType]() -> Bool:
+    constrained[
+        dtype.is_floating_point(),
         "comparison only valid on floating point types",
     ]()
-    return min_finite[type]() - 1 == min_finite[type]()
+    return min_finite[dtype]() - 1 == min_finite[dtype]()
 
 
 def test_min_finite():

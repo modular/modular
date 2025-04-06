@@ -110,7 +110,5 @@ for output in outputs:
         print("-" * 45)
         for input_token, predicted_token in token_pairs:
             if input_token != "[PAD]":  # Exclude padding tokens
-                print(
-                    "| {:<20} | {:<18} |".format(input_token, predicted_token)
-                )
+                print(f"| {input_token:<20} | {predicted_token:<18} |")
         print("-" * 45)

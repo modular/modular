@@ -138,24 +138,22 @@ fn matmul_b_transpose(
                 ) * rebind[res.element_type](rhs[n, k].cast[res.dtype]())
 
 
-"""
-The bulk of the code below implements what the papers calls
-an "online softmax", which is local to each block.
-The algorithm is described as:
-
-$$$
-m_1 = rowmax(S_1)
-l_1 = rowsum(e^(S_1-m_1))
-P_1 = diag(l_1)^-1 * e^(S_1-m_1)
-O_1 = P_1*V_1 = diag(l_1)^-1 * e^(S_1-m_1) * V_1
-m_2 = max(m_1, rowmax(S_2)) = m
-l_2 = e^(m_1-m_2) * l_1 _ rowsum(e^(S_2-m_2))
-    = rowsum(e^(S_1-m)) + rowsum(e^(S_2-m)) = ls
-P_2 = diag(l_2)^-1 * e^(S_2-m_2)
-O_2 = diag(l_1/l_2)^-1 * O_1 + (P_2 * V_2)
-    = diag(l_2)^-1 * e^(S_2-m) * V
-$$$
-"""
+# The bulk of the code below implements what the papers calls
+# an "online softmax", which is local to each block.
+# The algorithm is described as:
+#
+# $$$
+# m_1 = rowmax(S_1)
+# l_1 = rowsum(e^(S_1-m_1))
+# P_1 = diag(l_1)^-1 * e^(S_1-m_1)
+# O_1 = P_1*V_1 = diag(l_1)^-1 * e^(S_1-m_1) * V_1
+# m_2 = max(m_1, rowmax(S_2)) = m
+# l_2 = e^(m_1-m_2) * l_1 _ rowsum(e^(S_2-m_2))
+#     = rowsum(e^(S_1-m)) + rowsum(e^(S_2-m)) = ls
+# P_2 = diag(l_2)^-1 * e^(S_2-m_2)
+# O_2 = diag(l_1/l_2)^-1 * O_1 + (P_2 * V_2)
+#     = diag(l_2)^-1 * e^(S_2-m) * V
+# $$$
 
 
 @always_inline

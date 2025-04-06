@@ -12,7 +12,3 @@
 # ===----------------------------------------------------------------------=== #
 
 """DeepseekV2 layer modules."""
-
-from .yarn_rope import YarnRotaryEmbedding
-
-__all__ = ["YarnRotaryEmbedding"]

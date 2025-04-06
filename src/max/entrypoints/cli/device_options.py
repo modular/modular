@@ -67,12 +67,19 @@ class DevicesOptionType(click.ParamType):
 
         return [DeviceSpec.accelerator(id=id) for id in requested_ids]
 
-    def convert(
-        self,
-        value: Any,
-        param: click.Parameter | None = None,
-        ctx: click.Context | None = None,
-    ) -> str | list[int]:
+    @staticmethod
+    def parse_from_str(value: str) -> str | list[int]:
+        """Parse a device string into either a string or list of ints.
+
+        Args:
+            value: The value provided as a string (e.g., "cpu", "gpu", "gpu:0,1,2")
+
+        Returns:
+            Either "cpu", "gpu", or a list of GPU IDs as integers
+
+        Raises:
+            ValueError: If the format is invalid
+        """
         if not value:
             return []
 
@@ -83,8 +90,17 @@ class DevicesOptionType(click.ParamType):
             # Support both "gpu:0,1" and old "0,1" formats.
             return [int(part) for part in value.replace("gpu:", "").split(",")]
         except ValueError:
-            self.fail(
-                f"'{value}' is not a valid device list. Use format 'cpu', 'gpu', or 'gpu:0,1'.",
-                param,
-                ctx,
+            raise ValueError(
+                f"'{value}' is not a valid device list. Use format 'cpu', 'gpu', or 'gpu:0,1'."
             )
+
+    def convert(
+        self,
+        value: Any,
+        param: click.Parameter | None = None,
+        ctx: click.Context | None = None,
+    ) -> str | list[int]:
+        try:
+            return self.parse_from_str(value)
+        except ValueError as e:
+            self.fail(str(e), param, ctx)

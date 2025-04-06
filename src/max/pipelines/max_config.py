@@ -31,16 +31,16 @@ import huggingface_hub
 import torch
 from huggingface_hub import constants as hf_hub_constants
 from huggingface_hub import errors as hf_hub_errors
-from max.driver import (
-    DeviceSpec,
-    devices_exist,
-    scan_available_devices,
-)
+from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.graph.weights import WeightsFormat
-from max.pipelines.config_enums import RepoType, SupportedEncoding
+from max.graph.weights import WeightsFormat, weights_format
+from max.pipelines.config_enums import (
+    _ALTERNATE_ENCODINGS,
+    RepoType,
+    SupportedEncoding,
+)
 from max.pipelines.kv_cache import KVCacheStrategy
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from transformers import AutoConfig
@@ -88,6 +88,9 @@ class KVCacheConfig(MAXConfig):
     enable_prefix_caching: bool = False
     """Whether to enable prefix caching for the paged attention KVCache."""
 
+    enable_kvcache_swapping_to_host: bool = False
+    """Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted."""
+
     device_memory_utilization: float = 0.9
     """The fraction of available device memory that the process should consume.
 
@@ -96,6 +99,12 @@ class KVCacheConfig(MAXConfig):
     .. math::
 
         kv\\_cache\\_workspace = (total\\_free\\_memory \\times device\\_memory\\_utilization) - model\\_weights\\_size
+    """
+
+    host_kvcache_swap_space_gb: float = 50.0
+    """The amount of host memory to use for the host KVCache in GiB.
+
+    This space is only allocated when kvcache_swapping_to_host is enabled.
     """
 
     _available_cache_memory: Optional[int] = None
@@ -107,7 +116,9 @@ class KVCacheConfig(MAXConfig):
             "cache_strategy": "Force a specific cache strategy: 'naive' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
             "kv_cache_page_size": "The number of tokens in a single page in the paged KVCache. Default is set to 512.",
             "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. This defaults to false.",
+            "enable_kvcache_swapping_to_host": "Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted. This defaults to false.",
             "device_memory_utilization": "The fraction of available device memory that the process should consume. This is used to inform the size of the KVCache workspace: kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size. Default is set to 0.9.",
+            "host_kvcache_swap_space_gb": "The amount of host memory to use for the host KVCache in GiB. This is only used when kvcache_swapping_to_host is enabled. Default is set to 50.0.",
         }
 
 
@@ -137,9 +148,6 @@ class MAXModelConfig(MAXModelConfigBase):
     # asserts just to keep mypy happy.
     model_path: str = ""
     """:obj:`repo_id` of a Hugging Face model repository to use."""
-
-    huggingface_repo_id: str = ""
-    """DEPRECATED: :obj:`repo_id` of a Hugging Face model repository to use. Use :obj:`model_path` instead."""
 
     weight_path: list[Path] = field(default_factory=list)
     """Optional path or url of the model weights to use."""
@@ -181,8 +189,8 @@ class MAXModelConfig(MAXModelConfigBase):
     # Realistically, this shouldn't become a problem in the long term once we
     # instantiate these MAXConfigs with probably DAG depedency flows in our
     # larger config refactor.
-    def validate(self):
-        """Validates the config.
+    def resolve(self) -> None:
+        """Validates and resolves the config.
 
         This method is called after the model config is initialized, to ensure that all
         config fields have been initialized to a valid state. It will also set
@@ -196,12 +204,6 @@ class MAXModelConfig(MAXModelConfigBase):
             msg += f"\navailable devices: {available_devices}"
             raise ValueError(msg)
 
-        if self.huggingface_repo_id != "":
-            logger.warning(
-                "--huggingface-repo-id is deprecated, use `--model-path` instead. This setting will stop working in a future release."
-            )
-            self.model_path = self.huggingface_repo_id
-
         # Replit model_paths are kinda broken due to transformers
         # version mismatch. We manually update trust_remote_code to True
         # because the modularai version does not have the custom Python code needed
@@ -213,15 +215,6 @@ class MAXModelConfig(MAXModelConfigBase):
         # trigger the error above if not set to True.
         if "replit" in self.model_path.lower():
             self.trust_remote_code = True
-
-        if (
-            "llama" not in self.model_path.lower()
-            and len(self.device_specs) > 1
-            and self.device_specs[0].device_type == "gpu"
-        ):
-            raise ValueError(
-                "Multiple GPU inference is currently not supported for non-Llama models."
-            )
 
         # Validate that if weight_paths are passed as strings, they are converted to Path.
         if isinstance(self.weight_path, tuple):
@@ -307,7 +300,286 @@ class MAXModelConfig(MAXModelConfigBase):
 
         return self.quantization_encoding.quantization_encoding
 
-    def finalize_encoding_config(self):
+    def weights_size(self) -> int:
+        size = 0
+        for file_path in self.weight_path:
+            if os.path.exists(file_path):
+                size += os.path.getsize(file_path)
+                continue
+
+            next_size = self.huggingface_weights_repo.size_of(str(file_path))
+
+            if next_size is None:
+                raise ValueError(
+                    f"Failed to get size of weight file {file_path}"
+                )
+            size += next_size
+
+        return size
+
+    @cached_property
+    def huggingface_weights_repo(self) -> HuggingFaceRepo:
+        return HuggingFaceRepo(
+            repo_id=(
+                self._weights_repo_id
+                if self._weights_repo_id
+                else self.model_path
+            ),
+            revision=self.huggingface_revision,
+            trust_remote_code=self.trust_remote_code,
+        )
+
+    def validate_multi_gpu_supported(self, multi_gpu_supported: bool) -> None:
+        """Validates that the model architecture supports multi-GPU inference.
+
+        Args:
+            multi_gpu_supported: Whether the model architecture supports multi-GPU inference.
+        """
+        if (
+            not multi_gpu_supported
+            and len(self.device_specs) > 1
+            and self.device_specs[0].device_type == "gpu"
+        ):
+            raise ValueError(
+                f"Multiple GPU inference is currently not supported for {self.model_path}."
+            )
+
+    def validate_and_resolve_quantization_encoding_weight_path(
+        self, default_encoding: SupportedEncoding
+    ) -> None:
+        """Verifies that the quantization encoding and weight path provided
+        are consistent.
+        """
+        # If weight_path and quantization_encoding are provided, verify that they are consistent.
+        try:
+            _weights_format = weights_format(self.weight_path)
+        except ValueError:
+            _weights_format = None
+        if (
+            self.weight_path
+            and self.quantization_encoding
+            # Cannot validate quantization_encoding for pytorch.
+            and _weights_format != WeightsFormat.pytorch
+        ):
+            # Get the encoding of the first weight path file.
+            if os.path.exists(self.weight_path[0]):
+                file_encoding = SupportedEncoding.parse_from_file_name(
+                    str(self.weight_path[0])
+                )
+            else:
+                file_encoding = self.huggingface_weights_repo.encoding_for_file(
+                    self.weight_path[0]
+                )
+
+            if file_encoding:
+                if file_encoding != self.quantization_encoding:
+                    msg = f"weight_path provided '{self.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.quantization_encoding}'. Please update one."
+                    raise ValueError(msg)
+        # If weight path is not None, infer the quantization_encoding from the weight_path.
+        elif (
+            self.weight_path
+            and not self.quantization_encoding
+            and _weights_format != WeightsFormat.pytorch
+        ):
+            if os.path.exists(self.weight_path[0]):
+                # Not currently supported. Infer encoding from local path.
+                if self.weight_path[0].suffix == ".safetensors":
+                    msg = "If a local safetensors file is provided, please provide a quantization_encoding."
+                    raise ValueError(msg)
+
+                if encoding := SupportedEncoding.parse_from_file_name(
+                    str(self.weight_path[0])
+                ):
+                    msg = f"encoding inferred from weights file: {encoding}"
+                    logger.debug(msg)
+                    self.quantization_encoding = encoding
+
+            else:
+                if encoding := self.huggingface_weights_repo.encoding_for_file(
+                    self.weight_path[0]
+                ):
+                    msg = f"encoding inferred from weights file: {encoding}"
+                    logger.debug(msg)
+                    self.quantization_encoding = encoding
+                else:
+                    msg = f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explictly."
+                    raise ValueError(msg)
+        elif not self.quantization_encoding:
+            # Check if the repo only has one quantization_encoding.
+            supported_encodings = (
+                self.huggingface_weights_repo.supported_encodings
+            )
+            if len(supported_encodings) == 1:
+                msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
+                logger.debug(msg)
+                self.quantization_encoding = supported_encodings[0]
+            elif (
+                not self.device_specs[0].device_type == "cpu"
+            ) and SupportedEncoding.bfloat16 in supported_encodings:
+                # TODO(AITLIB-137): replace this with more full featured logic.
+                # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
+                self.quantization_encoding = SupportedEncoding.bfloat16
+            else:
+                msg = f"encoding not provided, using default encoding of {default_encoding}"
+                logger.debug(msg)
+                self.quantization_encoding = default_encoding
+
+    def validate_and_resolve_with_set_quantization_encoding(
+        self,
+        supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
+        default_weights_format: WeightsFormat,
+    ) -> None:
+        """
+        Validates that the model path, and weight path
+        provided are consistent with a set quantization encoding. Also resolves
+        the KV cache strategy and finalizes the encoding config.
+        """
+        self._validate_quantization_encoding_device_compatibility(
+            supported_encodings_list=list(supported_encodings.keys()),
+        )
+        self._finalize_encoding_config()
+        self._resolve_weight_path(default_weights_format=default_weights_format)
+        self._resolve_kv_cache_strategy(supported_encodings=supported_encodings)
+        self._validate_final_architecture_model_path_weight_path()
+
+    def _validate_quantization_encoding_device_compatibility(
+        self,
+        supported_encodings_list: list[SupportedEncoding],
+    ) -> None:
+        """
+        Validates that the quantization encoding is supported on the specified
+        devices.
+
+        This method should only be called after the quantization encoding has
+        been set.
+        """
+
+        assert self.quantization_encoding, "quantization_encoding must be set."
+        # Check that the quantization encoding is supported on the specified
+        # devices.
+        for device_spec in self.device_specs:
+            if not self.quantization_encoding.supported_on(device_spec):
+                msg = (
+                    f"The encoding '{self.quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
+                    f"You have two options to resolve this:\n"
+                    f"1. Use a different device\n"
+                    f"2. Use a different encoding (encodings available for this model: {', '.join(str(enc) for enc in supported_encodings_list)})\n\n"
+                    f"Please use the --help flag for more information."
+                )
+
+                raise ValueError(msg)
+
+    def _resolve_weight_path(
+        self, default_weights_format: WeightsFormat
+    ) -> None:
+        """
+        Resolves the weight path.
+
+        This method should only be called after the quantization encoding has
+        been set.
+
+        Args:
+            default_weights_format: The default weights format to use if no weight_path is provided.
+        """
+        assert self.quantization_encoding, "quantization_encoding must be set."
+
+        # If no weight_path is provided, we should grab the default.
+        if not self.weight_path:
+            # Retrieve the default files for each weights format.
+
+            # Get alternate encoding (e.g. if float32 is requested and there are
+            # only bfloat16 weights, allow retrieving the bfloat16 weights
+            # because they can be cast to float32).
+            if self.quantization_encoding:
+                alternate_encoding = _ALTERNATE_ENCODINGS.get(
+                    self.quantization_encoding
+                )
+            else:
+                alternate_encoding = None
+
+            weight_files = self.huggingface_weights_repo.files_for_encoding(
+                encoding=self.quantization_encoding,
+                alternate_encoding=alternate_encoding,
+            )
+
+            if default_weight_files := weight_files.get(
+                default_weights_format, []
+            ):
+                self.weight_path = default_weight_files
+            elif weight_files:
+                # Load any available weight file.
+                self.weight_path = next(iter(weight_files.values()))
+
+        if not self.weight_path:
+            if self.quantization_encoding not in [
+                SupportedEncoding.bfloat16,
+                SupportedEncoding.float32,
+            ]:
+                msg = f"compatible weights cannot be found for '{self.quantization_encoding}' in 'gguf' format, in the provided repo: '{self.huggingface_weights_repo.repo_id}'"
+                raise ValueError(msg)
+            else:
+                msg = f"compatible weights cannot be found for '{self.quantization_encoding}'"
+                raise ValueError(msg)
+
+    def _resolve_kv_cache_strategy(
+        self,
+        supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
+    ) -> None:
+        """
+        Resolves the KVCacheStrategy.
+
+        This method should only be called after the quantization encoding has
+        been set.
+        """
+        assert self.quantization_encoding, "quantization_encoding must be set."
+        # Check supported_cache_strategy
+        supported_cache_strategies = supported_encodings.get(
+            self.quantization_encoding, []
+        )
+        if (
+            self.kv_cache_config.cache_strategy == KVCacheStrategy.MODEL_DEFAULT
+            and supported_cache_strategies
+        ):
+            default_strategy = supported_cache_strategies[0]
+            msg = f"default cache_strategy of '{default_strategy}' enabled"
+            logger.debug(msg)
+
+            self.kv_cache_config.cache_strategy = default_strategy
+        elif (
+            supported_cache_strategies
+            and self.kv_cache_config.cache_strategy
+            not in supported_cache_strategies
+        ):
+            supported_strategy = supported_cache_strategies[0]
+
+            msg = f"cache_strategy = '{self.kv_cache_config.cache_strategy}' not supported for '{self.quantization_encoding}', using '{supported_strategy}' cache strategy."
+            logger.warning(msg)
+
+            self.kv_cache_config.cache_strategy = supported_strategy
+
+    def _validate_final_architecture_model_path_weight_path(self) -> None:
+        # Assume at this point, an architecture,
+        # a model_path and weight_paths are available.
+        assert self.weight_path, "weight_path must be provided."
+        for path in self.weight_path:
+            # Check if file exists locally.
+            if not os.path.exists(path):
+                # If does not exist locally, verify that it exists on Huggingface.
+                if not self.huggingface_weights_repo.file_exists(str(path)):
+                    msg = (
+                        f"weight_path: '{path}' does not exist locally, and"
+                        f" '{self.model_path}/{path}' does"
+                        " not exist on HuggingFace."
+                    )
+                    raise ValueError(msg)
+
+    def _finalize_encoding_config(self):
+        """
+        Finalizes the encoding config.
+
+        This method should only be called after the quantization encoding has
+        been set.
+        """
         if self.quantization_encoding == SupportedEncoding.gptq:
             hf_config = AutoConfig.from_pretrained(
                 self.model_path,
@@ -329,46 +601,10 @@ class MAXModelConfig(MAXModelConfigBase):
                 sym=hf_quant_config["sym"],
             )
 
-    def weights_size(self) -> int:
-        size = 0
-        hf_repo = HuggingFaceRepo(
-            (
-                self._weights_repo_id
-                if self._weights_repo_id
-                else self.model_path
-            ),
-            trust_remote_code=self.trust_remote_code,
-        )
-        for file_path in self.weight_path:
-            if os.path.exists(file_path):
-                size += os.path.getsize(file_path)
-                continue
-
-            next_size = hf_repo.size_of(str(file_path))
-
-            if next_size is None:
-                raise ValueError(
-                    f"Failed to get size of weight file {file_path}"
-                )
-            size += next_size
-
-        return size
-
-    def huggingface_weights_repo(self) -> HuggingFaceRepo:
-        return HuggingFaceRepo(
-            (
-                self._weights_repo_id
-                if self._weights_repo_id
-                else self.model_path
-            ),
-            trust_remote_code=self.trust_remote_code,
-        )
-
     @staticmethod
     def help() -> dict[str, str]:
         max_model_help = {
             "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
-            "huggingface_repo_id": "DEPRECATED: Use `model_path` instead.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
             "huggingface_revision": "Branch or Git revision of Hugging Face model repository to use.",
@@ -464,6 +700,11 @@ def repo_exists_with_retry(repo_id: str) -> bool:
             logger.error(f"Hugging Face repository error: {str(e)}")
             raise
         except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
+            # Do not retry if Too Many Requests error received
+            if e.response.status_code == 429:
+                logger.error(e)
+                raise
+
             if attempt == max_attempts - 1:
                 logger.error(
                     f"Failed to connect to Hugging Face Hub after {max_attempts} attempts: {str(e)}"
@@ -483,9 +724,10 @@ def repo_exists_with_retry(repo_id: str) -> bool:
     )
 
 
-@dataclass
+@dataclass(frozen=True)
 class HuggingFaceRepo:
     repo_id: str
+    revision: str = huggingface_hub.constants.DEFAULT_REVISION
     trust_remote_code: bool = False
     repo_type: Optional[RepoType] = None
 
@@ -493,9 +735,9 @@ class HuggingFaceRepo:
         # Get repo type.
         if not self.repo_type:
             if os.path.exists(self.repo_id):
-                self.repo_type = RepoType.local
+                object.__setattr__(self, "repo_type", RepoType.local)
             else:
-                self.repo_type = RepoType.online
+                object.__setattr__(self, "repo_type", RepoType.online)
 
         if self.repo_type == RepoType.online and not repo_exists_with_retry(
             self.repo_id
@@ -507,6 +749,16 @@ class HuggingFaceRepo:
 
     def __repr__(self) -> str:
         return self.repo_id
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.repo_id,
+                self.revision,
+                self.trust_remote_code,
+                self.repo_type,
+            )
+        )
 
     @cached_property
     def info(self) -> huggingface_hub.ModelInfo:

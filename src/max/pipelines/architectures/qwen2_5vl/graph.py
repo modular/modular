@@ -16,9 +16,15 @@
 from max.dtype import DType
 from max.graph import ops
 from max.graph.weights import Weights
-from max.nn import Conv3D
+from max.nn import MLP, Conv3D, Linear, RMSNorm
+from transformers import AutoConfig
 
-from .nn.visual_transformer import VisionPatchEmbed, VisionRotaryEmbedding
+from .nn.visual_transformer import (
+    VisionBlock,
+    VisionPatchEmbed,
+    VisionRotaryEmbedding,
+    VisionWindowSdpaAttention,
+)
 
 
 def patch_embed(
@@ -66,4 +72,104 @@ def rotary_embedding_3d(
 ) -> VisionRotaryEmbedding:
     return VisionRotaryEmbedding(
         dim=hidden_size, n_heads=num_heads, theta=theta
+    )
+
+
+def linear_with_bias(
+    dtype: DType,
+    in_features: int,
+    out_features: int,
+    weights: Weights,
+) -> Linear:
+    return Linear(
+        weights.weight.allocate(
+            dtype,
+            [in_features, out_features],
+        ),
+        bias=weights.bias.allocate(
+            dtype,
+            [out_features],
+        ),
+    )
+
+
+def mlp_with_bias(
+    dtype: DType,
+    hidden_dim: int,
+    feed_forward_length: int,
+    weights: Weights,
+) -> MLP:
+    return MLP(
+        linear_with_bias(
+            dtype,
+            feed_forward_length,
+            hidden_dim,
+            weights.mlp.gate_proj,
+        ),
+        linear_with_bias(
+            dtype,
+            hidden_dim,
+            feed_forward_length,
+            weights.mlp.down_proj,
+        ),
+        linear_with_bias(
+            dtype,
+            feed_forward_length,
+            hidden_dim,
+            weights.mlp.up_proj,
+        ),
+    )
+
+
+def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
+    return RMSNorm(
+        weight=weights.weight.allocate(DType.float32, [dims]),
+        eps=eps,
+    )
+
+
+def vision_window_attention(
+    dtype: DType,
+    hidden_size: int,
+    num_heads: int,
+    weights: Weights,
+) -> VisionWindowSdpaAttention:
+    qkv = linear_with_bias(dtype, hidden_size, hidden_size, weights.qkv)
+    proj = linear_with_bias(
+        dtype,
+        in_features=hidden_size,
+        out_features=hidden_size * 3,
+        weights=weights.proj,
+    )
+    return VisionWindowSdpaAttention(hidden_size, num_heads, qkv, proj)
+
+
+def vision_transformer_block(
+    dtype: DType,
+    huggingface_config: AutoConfig,
+    weights: Weights,
+) -> VisionBlock:
+    return VisionBlock(
+        norm1=rms_norm(
+            huggingface_config.hidden_size,
+            huggingface_config.rms_norm_eps,
+            weights.norm1,
+        ),
+        norm2=rms_norm(
+            huggingface_config.hidden_size,
+            huggingface_config.rms_norm_eps,
+            weights.norm2,
+        ),
+        attn=vision_window_attention(
+            dtype,
+            huggingface_config.hidden_size,
+            huggingface_config.num_heads,
+            weights.attn,
+        ),
+        mlp=mlp_with_bias(
+            dtype,
+            huggingface_config.hidden_size,
+            huggingface_config.intermediate_size,
+            weights.mlp,
+        ),
     )

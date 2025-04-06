@@ -14,7 +14,6 @@
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import List
 
 from max.dtype import DType
 from max.graph import Dim, DimLike, TensorValue, TensorValueLike, ops
@@ -27,13 +26,13 @@ def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
     width = Dim(width)
     row_indices = ops.range(
         ops.constant(0, DType.int64),
-        TensorValue.from_dim(height),
+        TensorValue(height),
         ops.constant(1, DType.int64),
         out_dim=height,
     )
     col_indices = ops.range(
         ops.constant(0, DType.int64),
-        TensorValue.from_dim(width),
+        TensorValue(width),
         ops.constant(1, DType.int64),
         out_dim=width,
     )
@@ -50,7 +49,7 @@ def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
 
 
 def patch_position_ids(
-    patch_embeds: List[TensorValue], max_width: int
+    patch_embeds: list[TensorValue], max_width: int
 ) -> TensorValue:
     """
     Takes a list of patches, calculates the positional indices for each patch by

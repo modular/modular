@@ -671,9 +671,10 @@ Because infer-only parameters are declared at the beginning of the parameter
 list, other parameters can depend on them, and the compiler will always attempt
 to infer the infer-only values from bound parameters or arguments.
 
-There are sometimes cases where it's useful to specify an infer-only parameter by
-keyword. For example, the [`StringSlice`](/mojo/stdlib/utils/string_slice/StringSlice)
-type is parametric on [origin](/mojo/manual/values/lifetimes):
+There are sometimes cases where it's useful to specify an infer-only parameter
+by keyword. For example, the
+[`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice) type
+is parametric on [origin](/mojo/manual/values/lifetimes):
 
 ```mojo
 struct StringSlice[mut: Bool, //, origin: Origin[mut]]: ...

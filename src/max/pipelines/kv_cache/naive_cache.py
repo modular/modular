@@ -16,13 +16,13 @@
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, List, cast
+from typing import Any, cast
 
-import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, TensorType
+from max.pipelines.context import InputContext
 
 from .cache_params import KVCacheParams
 from .manager import (
@@ -48,7 +48,7 @@ class NaiveKVCacheManager(KVCacheManager):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: List[Device],
+        devices: list[Device],
         session: InferenceSession,
     ) -> None:
         assert len(devices) == 1, "Naive caching only supports a single device."
@@ -87,7 +87,7 @@ class NaiveKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         return (
@@ -108,7 +108,7 @@ class NaiveKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         cache_size_per_sequence = (
@@ -145,13 +145,15 @@ class NaiveKVCacheManager(KVCacheManager):
             params.head_dim,
         ]
 
-    def _fetch(
+    def fetch(
         self,
-        seq_ids_and_prompts: dict[int, np.ndarray],
+        batch: list[InputContext],
         num_steps: int = 1,
-    ) -> List[KVCacheInputs]:
-        existing_keys = list(self.cache_lengths.keys())
-        for i, (seq_id, prompt) in enumerate(seq_ids_and_prompts.items()):
+    ) -> list[KVCacheInputs]:
+        existing_keys = list(self.active)
+        for i, ctx in enumerate(batch):
+            seq_id = ctx.cache_seq_id
+            prompt = ctx.next_tokens
             if existing_keys[i] != seq_id:
                 msg = (
                     "seq_ids passed, are different than current inflight"
@@ -160,33 +162,33 @@ class NaiveKVCacheManager(KVCacheManager):
                 )
                 raise ValueError(msg)
 
-            total_length = (
-                self.cache_lengths[seq_id] + len(prompt) + num_steps - 1
-            )
+            total_length = ctx.start_idx + len(prompt) + num_steps - 1
             assert total_length <= self.max_seq_len, (
                 f"seq_id: {seq_id} would overrun the max cache length of {self.max_seq_len} "
-                f"with {len(prompt)} new tokens and {num_steps} steps. Existing length: {self.cache_lengths[seq_id]}"
+                f"with {len(prompt)} new tokens and {num_steps} steps. Existing length: {ctx.start_idx}"
             )
+
+        max_cache_len = max(ctx.start_idx for ctx in batch)
         padded_kv_cache_inputs = [
             PaddedKVCacheInputs(
                 k_cache=self.keys,
                 v_cache=self.values,
                 start_pos=Tensor.scalar(
-                    self.max_sequence_length, DType.int64, self.devices[0]
+                    max_cache_len, DType.int64, self.devices[0]
                 ),
                 # TODO: MSDK-1201 - This next variable is not used upstream.
                 # It is included here, as a placeholder, until we can dynamically
                 # return a number of tensors from both `fetch` and `input_symbols`.
                 null_op=Tensor.scalar(
-                    self.max_sequence_length, DType.int64, self.devices[0]
+                    max_cache_len, DType.int64, self.devices[0]
                 ),
             )
         ]
-        return cast(List[KVCacheInputs], padded_kv_cache_inputs)
+        return cast(list[KVCacheInputs], padded_kv_cache_inputs)
 
     def input_symbols(
         self,
-    ) -> List[NaiveKVCacheInputSymbols]:
+    ) -> list[NaiveKVCacheInputSymbols]:
         return [
             NaiveKVCacheInputSymbols(
                 k_cache=BufferType(

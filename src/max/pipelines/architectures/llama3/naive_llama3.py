@@ -163,6 +163,7 @@ class NaiveLlama3(NaiveTransformer):
             embedding=embedding_layer,
             embedding_multiplier=config.embedding_multiplier,
             logits_postprocessor=config.logits_postprocessor,
+            return_n_logits=config.return_n_logits,
         )
 
 

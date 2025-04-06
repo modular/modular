@@ -95,7 +95,7 @@ resources:
             --gpus 1 \
             -p 80:8000 \
             --ipc host \
-            docker.modular.com/modular/max-openai-api:latest \
+            docker.modular.com/modular/max-nvidia-full:latest \
             --model-path {{ properties['huggingFaceRepoId'] }}
 
 # Add firewall rule directly in template

@@ -35,10 +35,10 @@ def load_model_weights() -> PythonObject:
 
 @always_inline
 fn numpy_data_pointer[
-    type: DType
-](numpy_array: PythonObject) raises -> UnsafePointer[Scalar[type]]:
+    dtype: DType
+](numpy_array: PythonObject) raises -> UnsafePointer[Scalar[dtype]]:
     return numpy_array.__array_interface__["data"][0].unsafe_get_as_pointer[
-        type
+        dtype
     ]()
 
 
@@ -51,13 +51,13 @@ fn memcpy_from_numpy(array: PythonObject, tensor: Tensor) raises:
 
 
 @always_inline
-fn numpy_to_tensor[type: DType](array: PythonObject) raises -> Tensor[type]:
+fn numpy_to_tensor[dtype: DType](array: PythonObject) raises -> Tensor[dtype]:
     shape = List[Int]()
     array_shape = array.shape
     for dim in array_shape:
         shape.append(dim)
 
-    out = Tensor[type](shape)
+    out = Tensor[dtype](shape)
     memcpy_from_numpy(array, out)
     return out^
 

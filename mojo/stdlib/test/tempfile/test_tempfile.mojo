@@ -55,7 +55,7 @@ struct TempEnvWithCleanup:
     """Function called after the context manager exits if an error occurs."""
 
     fn __init__(
-        mut self,
+        out self,
         vars_to_set: Dict[String, String],
         clean_up_function: fn () raises -> None,
     ):

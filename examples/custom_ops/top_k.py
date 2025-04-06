@@ -14,7 +14,6 @@ import argparse
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import DefaultDict
 
 import numpy as np
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
@@ -46,7 +45,7 @@ class NextWordFrequency:
     def __init__(self, text):
         # nested `DefaultDict` to create the keys when first indexed
         # Structure looks like: {"word": {"next_word": count}}
-        self.word_frequencies: DefaultDict[str, DefaultDict[str, int]] = (
+        self.word_frequencies: defaultdict[str, defaultdict[str, int]] = (
             defaultdict(lambda: defaultdict(int))
         )
 
@@ -134,6 +133,7 @@ def main():
         "top_k_sampler",
         # The dtype and shape of the probabilities being passed in
         input_types=[TensorType(DType.float32, shape=[batch_size, K])],
+        custom_extensions=[path],
     ) as graph:
         # Take the probabilities as a single input to the graph.
         probs, *_ = graph.inputs
@@ -158,7 +158,7 @@ def main():
     device = CPU() if args.cpu or accelerator_count() == 0 else Accelerator()
 
     # Set up an inference session for running the graph.
-    session = InferenceSession(devices=[device], custom_extensions=path)
+    session = InferenceSession(devices=[device])
 
     # Compile the graph.
     model = session.load(graph)

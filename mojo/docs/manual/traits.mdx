@@ -318,12 +318,10 @@ own types. These standard library traits include:
 * [`Sized`](/mojo/stdlib/builtin/len/Sized)
 * [`Stringable`](/mojo/stdlib/builtin/str/Stringable)
 * [`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising)
-* [`StringRepresentable`](/mojo/stdlib/collections/string/StringRepresentable)
 * [`Roundable`](/mojo/stdlib/builtin/math/Roundable)
 * [`Writable`](/mojo/stdlib/utils/write/Writable)
 * [`WritableCollectionElement`](/mojo/stdlib/builtin/value/WritableCollectionElement)
 * [`Writer`](/mojo/stdlib/utils/write/Writer)
-* [`Truncable`](/mojo/stdlib/builtin/_math/Truncable)
 
 The API reference docs linked above include usage examples for each trait. The
 following sections discuss a few of these traits.
@@ -386,13 +384,13 @@ True
 
 The [`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait identifies a type
 that can be explicitly converted to
-[`String`](/mojo/stdlib/collections/string/String). The
+[`String`](/mojo/stdlib/collections/string/string/String). The
 [`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising) trait
 describes a type that can be converted to a `String`, but the conversion might
-raise an error. These traits also mean that the type can support
-both the `{!s}` and `{}` format specifiers of the `String` class's
-[`format()`](/mojo/stdlib/collections/string/String#format) method. These traits
-require the type to define the
+raise an error. These traits also mean that the type can support both the `{!s}`
+and `{}` format specifiers of the `String` class's
+[`format()`](/mojo/stdlib/collections/string/string/String#format) method. These
+traits require the type to define the
 [`__str__()`](/mojo/stdlib/builtin/str/Stringable#__str__) method.
 
 In contrast, the [`Representable`](/mojo/stdlib/builtin/repr/Representable)
@@ -403,11 +401,6 @@ define the [`__repr__()`](/mojo/stdlib/builtin/repr/Representable#__repr__)
 method, which should compute the "official" string representation of a type. If
 at all possible, this should look like a valid Mojo expression that could be
 used to recreate a struct instance with the same value.
-
-The [`StringRepresentable`](/mojo/stdlib/collections/string/StringRepresentable)
-trait denotes a trait composition of the `Stringable` and `Representable`
-traits. It requires a type to implement both a `__str__()` and a `__repr__()`
-method.
 
 The [`Writable`](/mojo/stdlib/utils/write/Writable) trait describes a
 type that can be converted to a stream of UTF-8 encoded data by writing to a
@@ -426,10 +419,11 @@ sequence of `Writable` arguments constituting the `String` representation of
 your type.
 
 While this might sound complex at first, in practice you can minimize
-boilerplate and duplicated code by using the [`String.write()`](/mojo/stdlib/collections/string/String#write) static function to
-implement the type's `Stringable` implementation in terms of its `Writable`
-implementation. Here is a simple example of a type that implements all of the
-`Stringable`, `Representable`, and `Writable` traits:
+boilerplate and duplicated code by using the
+[`String.write()`](/mojo/stdlib/collections/string/string/String#write) static
+function to implement the type's `Stringable` implementation in terms of its
+`Writable` implementation. Here is a simple example of a type that implements
+all of the `Stringable`, `Representable`, and `Writable` traits:
 
 ```mojo
 @value

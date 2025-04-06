@@ -10,6 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the pwd package."""
+"""Provides access to user and group information from the password database.
+
+Use the [`Passwd`](/mojo/stdlib/pwd/pwd/Passwd) type to access user account
+information such as user name, ID, group, and home directory.
+"""
 
 from .pwd import getpwnam, getpwuid

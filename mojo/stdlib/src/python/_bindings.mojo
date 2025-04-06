@@ -344,8 +344,8 @@ fn check_arguments_arity(
 fn check_argument_type[
     T: AnyType
 ](
-    func_name: StringSlice,
-    type_name_id: StringSlice,
+    func_name: StaticString,
+    type_name_id: StaticString,
     obj: PythonObject,
 ) raises -> UnsafePointer[T]:
     """Raise an error if the provided Python object does not contain a wrapped

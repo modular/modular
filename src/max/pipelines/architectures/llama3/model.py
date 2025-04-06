@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, List, Literal, Optional, Sequence, cast
+from collections.abc import Sequence
+from typing import Any, Callable, Literal, Optional, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -31,8 +32,8 @@ from max.pipelines import (
     PipelineConfig,
     PipelineModel,
     SupportedEncoding,
-    TextContext,
 )
+from max.pipelines.context import TextContext
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
 from max.pipelines.interfaces import LogProbabilities
 from max.pipelines.kv_cache import (
@@ -109,6 +110,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
     """Normalization layer."""
 
+    attention_bias: bool = False
+    """Whether to use attention bias."""
+
     logits_postprocessor: Callable[[TensorValue], TensorValue] | None = None
     """Postprocessor for the logits."""
 
@@ -125,6 +129,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         """
         Args:
@@ -140,6 +145,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )
         self.model = self.load_model(session)
 
@@ -196,14 +202,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
             ),
         )
 
-        if self.pipeline_config.enable_echo:
+        if len(model_outputs) == 3:
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0]),
                 logits=cast(Tensor, model_outputs[1]),
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logit_offsets=cast(Tensor, model_outputs[2]),
             )
         else:
             return ModelOutputs(
-                next_token_logits=cast(Tensor, model_outputs[0])
+                logits=cast(Tensor, model_outputs[0]),
+                next_token_logits=cast(Tensor, model_outputs[0]),
             )
 
     def _prepare_ragged_initial_token_inputs(
@@ -239,8 +247,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
         tokens = [ctx.next_tokens for ctx in context_batch]
 
         # Pad tokens and compute attention mask for the batch.
-        max_seq_len = self.kv_manager.max_sequence_length
-        start_pos = [max_seq_len] * len(context_batch)
+        max_cache_len = max(ctx.start_idx for ctx in context_batch)
+        start_pos = [max_cache_len] * len(context_batch)
         next_tokens_batch, _, attn_mask = batch_padded_tokens_and_mask(
             start_pos=start_pos,
             tokens=tokens,
@@ -342,7 +350,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         cls,
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         huggingface_config: AutoConfig,
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
@@ -393,7 +401,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[TensorValue]
-    ) -> List[tuple[TensorValue, ...]]:
+    ) -> list[tuple[TensorValue, ...]]:
         kv_params = Llama3Config.get_kv_params(
             huggingface_config=self.huggingface_config,
             n_devices=len(self.devices),
@@ -444,8 +452,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
             n_devices=len(self.devices),
             logits_postprocessor=self.logits_postprocessor,
             norm_method=self.norm_method,
+            attention_bias=self.attention_bias,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
+            return_n_logits=self.return_n_logits,
         )
         nn_model: Module
         if len(self.devices) > 1:
@@ -563,6 +573,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             norm_method=self.norm_method,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
+            return_n_logits=self.return_n_logits,
         )
         nn_model = NaiveLlama3(model_config)
 
@@ -607,10 +618,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 start_pos.tensor,
             )[0]
 
-            if self.pipeline_config.enable_echo:
-                graph.output(logits[:, -1], logits)
-            else:
-                graph.output(logits[:, -1])
+            graph.output(logits)
 
             return graph
 
@@ -717,6 +725,7 @@ class Llama3Model(LlamaModelBase):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -727,4 +736,5 @@ class Llama3Model(LlamaModelBase):
             kv_cache_config,
             weights,
             adapter,
+            return_n_logits,
         )

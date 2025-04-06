@@ -45,6 +45,8 @@ class LlamaVisionConfig(MAXModelConfig):
             page_size=kv_cache_config.kv_cache_page_size,
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
+            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
+            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             n_devices=n_devices,
         )
 

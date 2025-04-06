@@ -19,7 +19,12 @@ These are Mojo built-ins, so you don't need to import them.
 from math import ceildiv
 
 # FIXME(MOCO-658): Explicit conformance to these traits shouldn't be needed.
-from builtin._stubs import _IntIterable, _StridedIterable, _UIntStridedIterable
+from builtin._stubs import (
+    _IntIterable,
+    _StridedIterable,
+    _UIntStridedIterable,
+    _IntIter,
+)
 from python import (
     PythonObject,
 )  # TODO: remove this and fixup downstream imports
@@ -45,7 +50,9 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable):
+struct _ZeroStartingRange(
+    Sized, ReversibleRange, _IntIterable, CollectionElement
+):
     var curr: Int
     var end: Int
 
@@ -85,7 +92,9 @@ struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable):
 
 @value
 @register_passable("trivial")
-struct _SequentialRange(Sized, ReversibleRange, _IntIterable):
+struct _SequentialRange(
+    Sized, ReversibleRange, _IntIterable, CollectionElement
+):
     var start: Int
     var end: Int
 
@@ -119,7 +128,7 @@ struct _SequentialRange(Sized, ReversibleRange, _IntIterable):
 
 @value
 @register_passable("trivial")
-struct _StridedRangeIterator(Sized):
+struct _StridedRangeIterator(Sized, _IntIter):
     var start: Int
     var end: Int
     var step: Int
@@ -463,13 +472,13 @@ fn range(start: UInt, end: UInt, step: UInt = 1) -> _UIntStridedRange:
 
 
 @register_passable("trivial")
-struct _ZeroStartingScalarRange[type: DType]:
-    var curr: Scalar[type]
-    var end: Scalar[type]
+struct _ZeroStartingScalarRange[dtype: DType]:
+    var curr: Scalar[dtype]
+    var end: Scalar[dtype]
 
     @always_inline
     @implicit
-    fn __init__(out self, end: Scalar[type]):
+    fn __init__(out self, end: Scalar[dtype]):
         self.curr = max(0, end)
         self.end = self.curr
 
@@ -478,7 +487,7 @@ struct _ZeroStartingScalarRange[type: DType]:
         return self
 
     @always_inline
-    fn __next__(mut self) -> Scalar[type]:
+    fn __next__(mut self) -> Scalar[dtype]:
         var curr = self.curr
         self.curr -= 1
         return self.end - curr
@@ -488,34 +497,34 @@ struct _ZeroStartingScalarRange[type: DType]:
         return self.__len__() > 0
 
     @always_inline
-    fn __len__(self) -> Scalar[type]:
+    fn __len__(self) -> Scalar[dtype]:
         return self.curr
 
     @always_inline
-    fn __getitem__(self, idx: Scalar[type]) -> Scalar[type]:
+    fn __getitem__(self, idx: Scalar[dtype]) -> Scalar[dtype]:
         debug_assert(idx < self.__len__(), "index out of range")
         return idx
 
     @always_inline
-    fn __reversed__(self) -> _StridedScalarRange[type]:
+    fn __reversed__(self) -> _StridedScalarRange[dtype]:
         constrained[
-            not type.is_unsigned(), "cannot reverse an unsigned range"
+            not dtype.is_unsigned(), "cannot reverse an unsigned range"
         ]()
-        return range(self.end - 1, Scalar[type](-1), Scalar[type](-1))
+        return range(self.end - 1, Scalar[dtype](-1), Scalar[dtype](-1))
 
 
 @value
 @register_passable("trivial")
-struct _SequentialScalarRange[type: DType]:
-    var start: Scalar[type]
-    var end: Scalar[type]
+struct _SequentialScalarRange[dtype: DType]:
+    var start: Scalar[dtype]
+    var end: Scalar[dtype]
 
     @always_inline
     fn __iter__(self) -> Self:
         return self
 
     @always_inline
-    fn __next__(mut self) -> Scalar[type]:
+    fn __next__(mut self) -> Scalar[dtype]:
         var start = self.start
         self.start += 1
         return start
@@ -525,11 +534,11 @@ struct _SequentialScalarRange[type: DType]:
         return self.__len__() > 0
 
     @always_inline
-    fn __len__(self) -> Scalar[type]:
+    fn __len__(self) -> Scalar[dtype]:
         return max(0, self.end - self.start)
 
     @always_inline
-    fn __getitem__(self, idx: Scalar[type]) -> Scalar[type]:
+    fn __getitem__(self, idx: Scalar[dtype]) -> Scalar[dtype]:
         debug_assert(idx < self.__len__(), "index out of range")
         return self.start + idx
 
@@ -540,16 +549,16 @@ struct _SequentialScalarRange[type: DType]:
 
 @value
 @register_passable("trivial")
-struct _StridedScalarRangeIterator[type: DType]:
-    var start: Scalar[type]
-    var end: Scalar[type]
-    var step: Scalar[type]
+struct _StridedScalarRangeIterator[dtype: DType]:
+    var start: Scalar[dtype]
+    var end: Scalar[dtype]
+    var step: Scalar[dtype]
 
     @always_inline
     fn __has_next__(self) -> Bool:
         # If the type is unsigned, then 'step' cannot be negative.
         @parameter
-        if type.is_unsigned():
+        if dtype.is_unsigned():
             return self.start < self.end
         else:
             if self.step > 0:
@@ -557,7 +566,7 @@ struct _StridedScalarRangeIterator[type: DType]:
             return self.end < self.start
 
     @always_inline
-    fn __next__(mut self) -> Scalar[type]:
+    fn __next__(mut self) -> Scalar[dtype]:
         var result = self.start
         self.start += self.step
         return result
@@ -565,22 +574,24 @@ struct _StridedScalarRangeIterator[type: DType]:
 
 @value
 @register_passable("trivial")
-struct _StridedScalarRange[type: DType]:
-    var start: Scalar[type]
-    var end: Scalar[type]
-    var step: Scalar[type]
+struct _StridedScalarRange[dtype: DType]:
+    var start: Scalar[dtype]
+    var end: Scalar[dtype]
+    var step: Scalar[dtype]
 
     @always_inline
-    fn __iter__(self) -> _StridedScalarRangeIterator[type]:
+    fn __iter__(self) -> _StridedScalarRangeIterator[dtype]:
         return _StridedScalarRangeIterator(self.start, self.end, self.step)
 
 
 @always_inline
-fn range[type: DType, //](end: Scalar[type]) -> _ZeroStartingScalarRange[type]:
+fn range[
+    dtype: DType, //
+](end: Scalar[dtype]) -> _ZeroStartingScalarRange[dtype]:
     """Constructs a [start; end) Range with a given step.
 
     Parameters:
-        type: The range type.
+        dtype: The range dtype.
 
     Args:
         end: The end of the range.
@@ -593,12 +604,12 @@ fn range[type: DType, //](end: Scalar[type]) -> _ZeroStartingScalarRange[type]:
 
 @always_inline
 fn range[
-    type: DType, //
-](start: Scalar[type], end: Scalar[type]) -> _SequentialScalarRange[type]:
+    dtype: DType, //
+](start: Scalar[dtype], end: Scalar[dtype]) -> _SequentialScalarRange[dtype]:
     """Constructs a [start; end) Range with a given step.
 
     Parameters:
-        type: The range type.
+        dtype: The range dtype.
 
     Args:
         start: The start of the range.
@@ -612,14 +623,14 @@ fn range[
 
 @always_inline
 fn range[
-    type: DType, //
+    dtype: DType, //
 ](
-    start: Scalar[type], end: Scalar[type], step: Scalar[type]
-) -> _StridedScalarRange[type]:
+    start: Scalar[dtype], end: Scalar[dtype], step: Scalar[dtype]
+) -> _StridedScalarRange[dtype]:
     """Constructs a [start; end) Range with a given step.
 
     Parameters:
-        type: The range type.
+        dtype: The range dtype.
 
     Args:
         start: The start of the range.

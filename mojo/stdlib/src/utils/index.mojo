@@ -27,7 +27,6 @@ from sys import bitwidthof
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from builtin.io import _get_dtype_printf_format, _snprintf
 
-from . import unroll
 from .static_tuple import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
@@ -57,7 +56,7 @@ fn _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 
 @always_inline
 fn _int_tuple_binary_apply[
-    binary_fn: fn[type: DType] (Scalar[type], Scalar[type]) -> Scalar[type],
+    binary_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
 ](a: IndexList, b: __type_of(a)) -> __type_of(a):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
@@ -88,7 +87,7 @@ fn _int_tuple_binary_apply[
 
 @always_inline
 fn _int_tuple_compare[
-    comp_fn: fn[type: DType] (Scalar[type], Scalar[type]) -> Bool,
+    comp_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Bool,
 ](a: IndexList, b: __type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
     elements in two tuples and produces a tuple of Bools containing result.
@@ -161,8 +160,8 @@ fn _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
         return _int_type_of_width[bitwidth]()
 
 
-fn _is_unsigned[type: DType]() -> Bool:
-    return type in (DType.uint8, DType.uint16, DType.uint32, DType.uint64)
+fn _is_unsigned[dtype: DType]() -> Bool:
+    return dtype in (DType.uint8, DType.uint16, DType.uint32, DType.uint64)
 
 
 @value
@@ -177,6 +176,7 @@ struct IndexList[
     Stringable,
     Writable,
     Comparable,
+    CollectionElement,
 ):
     """A base struct that implements size agnostic index functions.
 
@@ -241,10 +241,8 @@ struct IndexList[
         var tup = Self()
 
         @parameter
-        fn fill[idx: Int]():
+        for idx in range(2):
             tup[idx] = rebind[Int](elems[idx])
-
-        unroll[fill, 2]()
 
         self = tup
 
@@ -267,10 +265,8 @@ struct IndexList[
         var tup = Self()
 
         @parameter
-        fn fill[idx: Int]():
+        for idx in range(3):
             tup[idx] = rebind[Int](elems[idx])
-
-        unroll[fill, 3]()
 
         self = tup
 
@@ -293,10 +289,8 @@ struct IndexList[
         var tup = Self()
 
         @parameter
-        fn fill[idx: Int]():
+        for idx in range(4):
             tup[idx] = rebind[Int](elems[idx])
-
-        unroll[fill, 4]()
 
         self = tup
 
@@ -500,8 +494,8 @@ struct IndexList[
 
         @always_inline
         fn apply_fn[
-            type: DType
-        ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
+            dtype: DType
+        ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a + b
 
         return _int_tuple_binary_apply[apply_fn](self, rhs)
@@ -519,8 +513,8 @@ struct IndexList[
 
         @always_inline
         fn apply_fn[
-            type: DType
-        ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
+            dtype: DType
+        ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a - b
 
         return _int_tuple_binary_apply[apply_fn](self, rhs)
@@ -538,8 +532,8 @@ struct IndexList[
 
         @always_inline
         fn apply_fn[
-            type: DType
-        ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
+            dtype: DType
+        ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a * b
 
         return _int_tuple_binary_apply[apply_fn](self, rhs)
@@ -557,8 +551,8 @@ struct IndexList[
 
         @always_inline
         fn apply_fn[
-            type: DType
-        ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
+            dtype: DType
+        ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a // b
 
         return _int_tuple_binary_apply[apply_fn](self, rhs)
@@ -588,8 +582,8 @@ struct IndexList[
 
         @always_inline
         fn apply_fn[
-            type: DType
-        ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
+            dtype: DType
+        ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             return a % b
 
         return _int_tuple_binary_apply[apply_fn](self, rhs)
@@ -608,7 +602,7 @@ struct IndexList[
         """
 
         @always_inline
-        fn apply_fn[type: DType](a: Scalar[type], b: Scalar[type]) -> Bool:
+        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a == b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -647,7 +641,7 @@ struct IndexList[
         """
 
         @always_inline
-        fn apply_fn[type: DType](a: Scalar[type], b: Scalar[type]) -> Bool:
+        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a < b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -671,7 +665,7 @@ struct IndexList[
         """
 
         @always_inline
-        fn apply_fn[type: DType](a: Scalar[type], b: Scalar[type]) -> Bool:
+        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a <= b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -695,7 +689,7 @@ struct IndexList[
         """
 
         @always_inline
-        fn apply_fn[type: DType](a: Scalar[type], b: Scalar[type]) -> Bool:
+        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a > b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -719,7 +713,7 @@ struct IndexList[
         """
 
         @always_inline
-        fn apply_fn[type: DType](a: Scalar[type], b: Scalar[type]) -> Bool:
+        fn apply_fn[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Bool:
             return a >= b
 
         return _bool_tuple_reduce[_reduce_and_fn](
@@ -770,24 +764,24 @@ struct IndexList[
 
     @always_inline
     fn cast[
-        type: DType
+        dtype: DType
     ](
         self,
         out result: IndexList[
             size,
-            element_bitwidth = bitwidthof[type](),
-            unsigned = _is_unsigned[type](),
+            element_bitwidth = bitwidthof[dtype](),
+            unsigned = _is_unsigned[dtype](),
         ],
     ):
         """Casts to the target DType.
 
         Parameters:
-            type: The type to cast towards.
+            dtype: The dtype to cast towards.
 
         Returns:
             The list casted to the target type.
         """
-        constrained[type.is_integral(), "the target type must be integral"]()
+        constrained[dtype.is_integral(), "the target type must be integral"]()
 
         var res = __type_of(result)()
 

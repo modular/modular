@@ -470,8 +470,8 @@ operators are supported.
 ### String operators
 
 As discussed in [Strings](/mojo/manual/types#strings), the
-[`String`](/mojo/stdlib/collections/string/String) type represents a mutable
-string value. In contrast, the
+[`String`](/mojo/stdlib/collections/string/string/String) type represents a
+mutable string value. In contrast, the
 [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral) type
 represents a literal string that is embedded into your compiled program. At
 run-time a `StringLiteral` is loaded into memory as a constant that persists for
@@ -481,8 +481,8 @@ The `String` type has a constructor that accepts a `StringLiteral` value, which
 means that a `StringLiteral` can be implicitly converted to a `String` at
 run-time if you pass it as an argument to a function or assign it to a `String`
 type variable. You also can use the [`String`
-constructor](/mojo/stdlib/collections/string/String#__init__) to explicitly
-convert the `StringLiteral` to a `String` value at run-time.
+constructor](/mojo/stdlib/collections/string/string/String#__init__) to
+explicitly convert the `StringLiteral` to a `String` value at run-time.
 
 #### String concatenation
 

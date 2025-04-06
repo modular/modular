@@ -59,7 +59,7 @@ trait Stringable:
     trait, instead.
 
     About the difference between `__repr__()` and `__str__()`:
-    The method `__repr__` compute the compute the "official" string representation of an object
+    The method `__repr__` computes the "official" string representation of an object
     while `__str__` computes the "informal" or nicely printable string representation of an object.
 
     This method differs from `__repr__()` in that there is no expectation that `__str__()`

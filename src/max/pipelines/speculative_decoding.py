@@ -13,7 +13,7 @@
 # mypy: disable-error-code="import-not-found"
 """Speculative Decoding Text Generation Pipeline"""
 
-from typing import Type, TypeVar
+from typing import Any, TypeVar
 
 from max.driver import load_devices, scan_available_devices
 from max.engine import InferenceSession
@@ -25,7 +25,6 @@ from max.graph.weights import (
 )
 from transformers import AutoConfig
 
-from .config import PipelineConfig
 from .config_enums import RepoType
 from .context import InputContext
 from .hf_utils import download_weight_files
@@ -41,8 +40,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
     def __init__(
         self,
-        pipeline_config: PipelineConfig,
-        pipeline_model: Type[PipelineModel],
+        pipeline_config: Any,  # PipelineConfig
+        pipeline_model: type[PipelineModel],
         eos_token_id: int,
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
@@ -88,6 +87,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format, None),
+            return_n_logits=self.pipeline_config.max_num_steps,
         )
 
         # Load draft model
@@ -110,6 +110,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         draft_hf_repo = HuggingFaceRepo(
             repo_id=self.pipeline_config.draft_model,
+            revision=self.pipeline_config.model_config.huggingface_revision,
             trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
             repo_type=RepoType.online,
         )
@@ -150,7 +151,19 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
             weights=draft_weights,
             adapter=weight_adapters.get(_draft_weights_format, None),
+            return_n_logits=1,
         )
+
+        # Check that the max length for both models are the same
+        draft_seq_len = self._draft_model.calculate_max_seq_len(
+            self.pipeline_config, draft_config
+        )
+        target_seq_len = self._target_model.calculate_max_seq_len(
+            self.pipeline_config, target_config
+        )
+        if draft_seq_len != target_seq_len:
+            msg = f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
+            raise ValueError(msg)
 
     def next_token(
         self, batch: dict[str, T], num_steps: int

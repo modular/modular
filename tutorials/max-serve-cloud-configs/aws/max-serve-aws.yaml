@@ -204,7 +204,7 @@ Resources:
           # Pull and run the MAX Serve container
           echo "Pulling and running MAX Serve container..."
           # Add error checking for docker pull
-          if ! sudo docker pull docker.modular.com/modular/max-openai-api:latest; then
+          if ! sudo docker pull docker.modular.com/modular/max-nvidia-full:latest; then
             echo "Failed to pull container image"
             /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource MaxServeInstance --region ${AWS::Region}
             exit 1
@@ -220,7 +220,7 @@ Resources:
             --gpus 1 \
             -p 80:8000 \
             --ipc=host \
-            docker.modular.com/modular/max-openai-api:latest \
+            docker.modular.com/modular/max-nvidia-full:latest \
             --model-path ${HuggingFaceRepoId})
 
           if [ $? -ne 0 ]; then
@@ -234,7 +234,7 @@ Resources:
 
           # Verify container is running
           echo "Checking container status..."
-          if ! sudo docker ps | grep max-openai-api; then
+          if ! sudo docker ps | grep max-nvidia-full; then
             echo "Container is not running"
             /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource MaxServeInstance --region ${AWS::Region}
             exit 1

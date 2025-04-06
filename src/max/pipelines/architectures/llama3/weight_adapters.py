@@ -13,9 +13,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import cached_property
 from os import PathLike
-from typing import Sequence
 
 import numpy as np
 from max.dtype import DType

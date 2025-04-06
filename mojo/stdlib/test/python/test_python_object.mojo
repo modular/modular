@@ -17,6 +17,7 @@ from collections import Dict
 
 from python import Python, PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
+from utils import StaticString
 
 
 def test_dunder_methods(mut python: Python):
@@ -254,6 +255,12 @@ def test_dunder_methods(mut python: Python):
     assert_equal(c, -35)
 
 
+def test_num_conversion() -> None:
+    alias n = UInt64(0xFEDC_BA09_8765_4321)
+    alias n_str = String(n)
+    assert_equal(n_str, String(PythonObject(n)))
+
+
 def test_bool_conversion() -> None:
     var x: PythonObject = 1
     assert_true(x == 0 or x == 1)
@@ -262,7 +269,7 @@ def test_bool_conversion() -> None:
 fn test_string_conversions() raises -> None:
     fn test_string_literal() -> None:
         try:
-            var mojo_str: StringLiteral = "mojo"
+            var mojo_str: StaticString = "mojo"
             var py_str = PythonObject(mojo_str)
             var py_capitalized = py_str.capitalize()
             var py = Python()
@@ -591,6 +598,7 @@ def main():
     var python = Python()
 
     test_dunder_methods(python)
+    test_num_conversion()
     test_bool_conversion()
     test_string_conversions()
     test_len()

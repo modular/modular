@@ -18,6 +18,7 @@ You can import these APIs from the `sys` package. For example:
 from sys import CompilationTarget
 
 print(CompilationTarget.is_x86())
+```
 """
 
 from memory import UnsafePointer
@@ -329,6 +330,23 @@ fn is_apple_m3() -> Bool:
 
 
 @always_inline("nodebug")
+fn is_apple_m4() -> Bool:
+    """Returns True if the host system is an Apple M4 with AMX support,
+    otherwise returns False.
+
+    Returns:
+        True if the host system is an Apple M4 with AMX support and False
+        otherwise.
+    """
+    return __mlir_attr[
+        `#kgen.param.expr<eq,`,
+        _current_arch().value,
+        `, "apple-m4" : !kgen.string`,
+        `> : i1`,
+    ]
+
+
+@always_inline("nodebug")
 fn is_apple_silicon() -> Bool:
     """Returns True if the host system is an Apple Silicon with AMX support,
     otherwise returns False.
@@ -337,7 +355,7 @@ fn is_apple_silicon() -> Bool:
         True if the host system is an Apple Silicon with AMX support and False
         otherwise.
     """
-    return is_apple_m1() or is_apple_m2() or is_apple_m3()
+    return is_apple_m1() or is_apple_m2() or is_apple_m3() or is_apple_m4()
 
 
 @always_inline("nodebug")
@@ -699,12 +717,12 @@ fn sizeof[
 
 @always_inline("nodebug")
 fn sizeof[
-    type: DType, target: __mlir_type.`!kgen.target` = _current_target()
+    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
 ]() -> Int:
     """Returns the size of (in bytes) of the dtype.
 
     Parameters:
-        type: The DType in question.
+        dtype: The DType in question.
         target: The target architecture.
 
     Returns:
@@ -714,7 +732,7 @@ fn sizeof[
         __mlir_attr[
             `#kgen.param.expr<get_sizeof, #kgen.type<`,
             `!pop.scalar<`,
-            type.value,
+            dtype.value,
             `>`,
             `> : !kgen.type,`,
             target,
@@ -756,12 +774,12 @@ fn alignof[
 
 @always_inline("nodebug")
 fn alignof[
-    type: DType, target: __mlir_type.`!kgen.target` = _current_target()
+    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
 ]() -> Int:
     """Returns the align of (in bytes) of the dtype.
 
     Parameters:
-        type: The DType in question.
+        dtype: The DType in question.
         target: The target architecture.
 
     Returns:
@@ -771,7 +789,7 @@ fn alignof[
         __mlir_attr[
             `#kgen.param.expr<get_alignof, #kgen.type<`,
             `!pop.scalar<`,
-            type.value,
+            dtype.value,
             `>`,
             `> : !kgen.type,`,
             target,
@@ -800,19 +818,19 @@ fn bitwidthof[
 
 @always_inline("nodebug")
 fn bitwidthof[
-    type: DType, target: __mlir_type.`!kgen.target` = _current_target()
+    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the dtype.
 
     Parameters:
-        type: The type in question.
+        dtype: The type in question.
         target: The target architecture.
 
     Returns:
         The size of the dtype in bits.
     """
     return bitwidthof[
-        __mlir_type[`!pop.scalar<`, type.value, `>`], target=target
+        __mlir_type[`!pop.scalar<`, dtype.value, `>`], target=target
     ]()
 
 
@@ -835,18 +853,18 @@ fn simdwidthof[
 
 @always_inline("nodebug")
 fn simdwidthof[
-    type: DType, target: __mlir_type.`!kgen.target` = _current_target()
+    dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
     Parameters:
-        type: The DType in question.
+        dtype: The DType in question.
         target: The target architecture.
 
     Returns:
         The vector size of the dtype on the host system.
     """
-    return simdwidthof[__mlir_type[`!pop.scalar<`, type.value, `>`], target]()
+    return simdwidthof[__mlir_type[`!pop.scalar<`, dtype.value, `>`], target]()
 
 
 @always_inline("nodebug")
@@ -900,7 +918,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
     var err = external_call["sysctlbyname", Int32](
         "kern.osproductversion".unsafe_cstr_ptr(),
         buf.data,
-        Pointer.address_of(buf_len),
+        Pointer(to=buf_len),
         OpaquePointer(),
         Int(0),
     )
