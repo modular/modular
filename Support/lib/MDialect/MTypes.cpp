@@ -69,6 +69,13 @@ ArrayType ArrayType::get(int64_t size, Type elementType) {
   return get(elementType.getContext(), size, elementType);
 }
 
+ArrayType ArrayType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                int64_t size, Type elementType) {
+  if (failed(verify(emitError, size, elementType)))
+    return {};
+  return get(size, elementType);
+}
+
 // We defer ArrayType::getShape till after ODS import since depends on
 // impl.
 

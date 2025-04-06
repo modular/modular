@@ -379,6 +379,15 @@ TypedAttr BindParamsAttr::get(TypedAttr generator,
   return get(generator.getContext(), generator, paramValues, resultType);
 }
 
+TypedAttr
+BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                           TypedAttr generator,
+                           ArrayRef<TypedAttr> paramValues) {
+  if (failed(verify(emitError, generator, paramValues, {})))
+    return {};
+  return get(generator, paramValues);
+}
+
 bool BindParamsAttr::isConstant() const { return false; }
 
 LogicalResult
@@ -759,13 +768,25 @@ LogicalResult StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-StructAttr StructAttr::get(ArrayRef<TypedAttr> values) {
-  assert(!values.empty() && "expected at least one value");
+StructType structTypeFromValues(ArrayRef<TypedAttr> values) {
   SmallVector<Type> types;
   types.reserve(values.size());
   for (TypedAttr value : values)
     types.push_back(value.getType());
-  return StructAttr::get(values, StructType::get(types));
+  return StructType::get(types);
+}
+
+StructAttr StructAttr::get(ArrayRef<TypedAttr> values) {
+  assert(!values.empty() && "expected at least one value");
+  return StructAttr::get(values, structTypeFromValues(values));
+}
+
+StructAttr StructAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  ArrayRef<TypedAttr> values) {
+  StructType type = structTypeFromValues(values);
+  if (failed(verify(emitError, values, type)))
+    return {};
+  return StructAttr::get(values, type);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2759,8 +2780,7 @@ ParamOperatorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return get(context, opcode, operandsIn, type);
 }
 
-TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
-  assert(!operandsIn.empty() && "Cannot have expr with no operands");
+Type inferParamOperatorResultType(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   // All operands must have the same type.  The result type is usually the
   // same as the operands, but is i1 for comparisons (overridden below).
   Type resultType;
@@ -2778,9 +2798,22 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
           opcode) ||
       llvm::all_of(operandsIn.drop_front(),
                    [&](auto op) { return op.getType() == resultType; }));
+  return resultType;
+}
 
+TypedAttr
+ParamOperatorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              POC opcode, ArrayRef<TypedAttr> operandsIn) {
+  if (failed(verify(emitError, opcode, operandsIn,
+                    inferParamOperatorResultType(opcode, operandsIn))))
+    return {};
+  return get(opcode, operandsIn);
+}
+
+TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
+  assert(!operandsIn.empty() && "Cannot have expr with no operands");
   return getParamOperator(operandsIn.front().getContext(), opcode, operandsIn,
-                          resultType);
+                          inferParamOperatorResultType(opcode, operandsIn));
 }
 
 /// Return (not x) which is the same as (xor x, true).  The `operand` value
