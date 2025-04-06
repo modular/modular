@@ -14,6 +14,7 @@ from max.entrypoints.cli import pipeline_config_options
 from max.pipelines import PipelineConfig
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.pipeline_cli_utils import CLITestCommand
+from test_common.pipeline_model import mock_estimate_memory_footprint
 
 
 @click.group()
@@ -204,6 +205,7 @@ def testing(
     [(cmd, i) for i, cmd in enumerate(TEST_COMMANDS)],
     ids=["TEST_COMMANDS[" + str(i) + "]" for i in range(len(TEST_COMMANDS))],
 )
+@mock_estimate_memory_footprint
 def test_cli__terminal_commands(command, idx):
     """
     Test individual terminal CLI commands

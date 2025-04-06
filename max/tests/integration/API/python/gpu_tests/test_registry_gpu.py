@@ -25,11 +25,13 @@ from test_common.pipeline_model import (
     DUMMY_ARCH,
     REPLIT_ARCH,
     DummyLlamaPipelineModel,
+    mock_estimate_memory_footprint,
     prepare_registry,
 )
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__test_register():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     assert "LlamaForCausalLM" in PIPELINE_REGISTRY.architectures
@@ -40,6 +42,7 @@ def test_registry__test_register():
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__test_retrieve_with_unknown_architecture_max_engine():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -55,6 +58,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine():
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -68,6 +72,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__test_retrieve_factory_with_known_architecture():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -81,6 +86,7 @@ def test_registry__test_retrieve_factory_with_known_architecture():
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__test_retrieve_factory_with_unsupported_model_path():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -95,6 +101,7 @@ def test_registry__test_retrieve_factory_with_unsupported_model_path():
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__test_load_factory_with_known_architecture_and_hf_repo_id():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -108,6 +115,7 @@ def test_registry__test_load_factory_with_known_architecture_and_hf_repo_id():
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__test_incompatible_quantization_encoding():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -133,6 +141,7 @@ def test_registry__test_incompatible_quantization_encoding():
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__update_cache_strategy():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -153,6 +162,7 @@ def test_registry__update_cache_strategy():
 
 @prepare_registry
 @pytest.mark.skip("TODO: AITLIB-238")
+@mock_estimate_memory_footprint
 def test_registry__update_weight_paths():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     PIPELINE_REGISTRY.register(REPLIT_ARCH)
@@ -434,6 +444,7 @@ def test_registry__raise_oom_error_max_batch_size_set_and_max_length_set():
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__validate_speculative_decoding_pipeline():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
@@ -481,6 +492,7 @@ def test_registry__validate_speculative_decoding_pipeline():
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_registry__validates_supported_device():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 

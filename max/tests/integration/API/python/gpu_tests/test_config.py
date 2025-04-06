@@ -8,10 +8,15 @@ import pytest
 from max.driver import DeviceSpec
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.config_enums import SupportedEncoding
-from test_common.pipeline_model import DUMMY_GPTQ_ARCH, prepare_registry
+from test_common.pipeline_model import (
+    DUMMY_GPTQ_ARCH,
+    mock_estimate_memory_footprint,
+    prepare_registry,
+)
 
 
 @prepare_registry
+@mock_estimate_memory_footprint
 def test_config__raises_with_unsupported_GPTQ_format():
     PIPELINE_REGISTRY.register(DUMMY_GPTQ_ARCH)
     # this should work

@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from functools import wraps
 from typing import Any, cast
+from unittest.mock import patch
 
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
@@ -352,5 +353,16 @@ def prepare_registry(func):
         result = func(*args, **kwargs)
 
         return result
+
+    return wrapper
+
+
+def mock_estimate_memory_footprint(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with patch.object(
+            PIPELINE_REGISTRY, "_estimate_memory_footprint", return_value=0
+        ):
+            return func(*args, **kwargs)
 
     return wrapper
