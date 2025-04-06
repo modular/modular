@@ -80,7 +80,7 @@ def test_mo_graph_op(mlir_context):
 
     module = builtin.ModuleOp(loc)
     builder = OpBuilder(module.body.end)
-    graph = builder.create(mo.GraphOp, loc, "hello", [], [], isSubgraph=False)
+    graph = builder.create(mo.GraphOp, loc, "hello", [], [], is_subgraph=False)
 
     # TODO(MAXPLAT-75): typing
     assert graph.name == "hello"  # type: ignore
