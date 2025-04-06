@@ -518,7 +518,7 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
         )
     elif dtype is DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3>`,
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fn>`,
         )
     elif dtype is DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
@@ -625,10 +625,6 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
     elif dtype is DType.float8_e5m2fnuz:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2fnuz>`,
-        )
-    elif dtype is DType.float8_e4m3fn:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3>`,
         )
     elif dtype is DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
