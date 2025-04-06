@@ -440,7 +440,7 @@ private:
                         Value value, APFloat::Semantics fromFloatSemantics,
                         APFloat::Semantics toFloatSemantics) const {
     assert(isNVPTX_HopperAndAbove(getTypeConverter()->getTarget()) &&
-           "fast lowering of f32 to bf16 only supported on NVIDIA Hopper "
+           "fast lowering of f32 to fp8 only supported on NVIDIA Hopper "
            "architectures or above");
     Location loc = op.getLoc();
     auto simd = cast<SIMDType>(op.getInput().getType());
@@ -459,7 +459,9 @@ private:
       return rewriter.create<LLVM::ExtractElementOp>(
           loc, f32Type, value, createConstant<uint32_t>(rewriter, loc, index));
     };
-    assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
+    // FIXME(MOCO-1794): Handle size == 1 case
+    assert(size != 1 && llvm::isPowerOf2_64(size) &&
+           "SIMD size must be a power of 2 and not 1");
     Value res = rewriter.create<LLVM::UndefOp>(
         op.getLoc(), VectorType::get(size / 2, rewriter.getIntegerType(16)));
     for (uint64_t i = 0; i < size; i += 2) {
@@ -467,8 +469,9 @@ private:
                                : createConstant(rewriter, loc, APFloat(0.0f));
       Value secondFp = extractElement(i);
       Value converted =
-          createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2", "=h,f,f",
-                          rewriter.getIntegerType(16), {firstFp, secondFp})
+          createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
+                          "=h,f,f", rewriter.getIntegerType(16),
+                          {firstFp, secondFp})
               .getResult(0);
       res = rewriter.create<LLVM::InsertElementOp>(
           loc, res, converted, createConstant<uint32_t>(rewriter, loc, i / 2));
