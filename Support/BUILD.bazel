@@ -11,6 +11,7 @@ load(
     "td_library",
 )
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES")
+load("//SDK/lib/API/python/bindings:tblgen.bzl", "mlir_nanobind")
 
 exports_files(["include/Support/Driver/DriverCommand.td"])
 
@@ -912,5 +913,18 @@ modular_nanobind_library(
     local_defines = ["Py_LIMITED_API=0x03090000"],
     deps = [
         "@llvm-project//llvm:Support",
+    ],
+)
+
+mlir_nanobind(
+    name = "MDialectNanobindInc",
+    srcs = [
+        "//Support:include/Support/MDialect/M.td",
+    ],
+    dialect = "MDialect",
+    output_dir = "include/Support/MDialect/Nanobind",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":MTdFiles",
     ],
 )
