@@ -26,35 +26,37 @@ from sys.ffi import c_int
 from memory import UnsafePointer
 
 
-fn setenv(name: String, value: String, overwrite: Bool = True) -> Bool:
+fn setenv(
+    name: StringSlice, value: StringSlice, overwrite: Bool = True
+) -> Bool:
     """Changes or adds an environment variable.
-
-    Constraints:
-      The function only works on macOS or Linux and returns False otherwise.
 
     Args:
       name: The name of the environment variable.
       value: The value of the environment variable.
       overwrite: If an environment variable with the given name already exists,
-        its value is not changed unless `overwrite` is True.
+          its value is not changed unless `overwrite` is True.
 
     Returns:
-      False if the name is empty or contains an `=` character. In any other
-      case, True is returned.
+        False if the name is empty or contains an `=` character. In any other
+        case, True is returned.
+
+    Constraints:
+        The function only works on macOS or Linux and returns False otherwise.
     """
     alias os_is_supported = os_is_linux() or os_is_macos()
     if not os_is_supported:
         return False
 
     var status = external_call["setenv", Int32](
-        name.unsafe_cstr_ptr(),
-        value.unsafe_cstr_ptr(),
+        name.unsafe_ptr().bitcast[c_int](),
+        value.unsafe_ptr().bitcast[c_int](),
         Int32(1 if overwrite else 0),
     )
     return status == 0
 
 
-fn unsetenv(name: String) -> Bool:
+fn unsetenv(name: StringSlice) -> Bool:
     """Unsets an environment variable.
 
     Args:
@@ -67,32 +69,43 @@ fn unsetenv(name: String) -> Bool:
         not os_is_windows(), "operating system must be Linux or macOS"
     ]()
 
-    return external_call["unsetenv", c_int](name.unsafe_cstr_ptr()) == 0
+    return (
+        external_call["unsetenv", c_int](name.unsafe_ptr().bitcast[c_int]())
+        == 0
+    )
 
 
-fn getenv(name: String, default: String = "") -> String:
+fn getenv[
+    O: ImmutableOrigin = StaticConstantOrigin
+](
+    name: StringSlice,
+    default: StringSlice[O] = rebind[StringSlice[O]](StringSlice("")),
+) -> String:
     """Returns the value of the given environment variable.
 
-    Constraints:
-      The function only works on macOS or Linux and returns an empty string
-      otherwise.
+    Parameters:
+        O: The origin of the default `StringSlice`.
 
     Args:
-      name: The name of the environment variable.
-      default: The default value to return if the environment variable
-        doesn't exist.
+        name: The name of the environment variable.
+        default: The default value to return if the environment variable
+            doesn't exist.
 
     Returns:
-      The value of the environment variable.
+        The value of the environment variable.
+
+    Constraints:
+        The function only works on macOS or Linux and returns an empty string
+        otherwise.
     """
     alias os_is_supported = os_is_linux() or os_is_macos()
 
     if not os_is_supported:
-        return default
+        return String(default)
 
     var ptr = external_call["getenv", UnsafePointer[UInt8]](
-        name.unsafe_cstr_ptr()
+        name.unsafe_ptr().bitcast[c_int]()
     )
     if not ptr:
-        return default
+        return String(default)
     return String(StringSlice[ptr.origin](unsafe_from_utf8_ptr=ptr))
