@@ -323,10 +323,9 @@ struct type_caster<::llvm::APInt> {
 
   bool from_python(handle_t<nb::int_> src, uint8_t flags,
                    cleanup_list *cleanup) noexcept {
-    // auto base10 = nb::cast<std::string>(nb::str(src));
-    // llvm::StringRef(base10).getAsInteger(10, value);
-    // return true;
-    return false;
+    auto base10 = nb::cast<std::string>(nb::str(src));
+    llvm::StringRef(base10).getAsInteger(10, value);
+    return true;
   }
 
   static handle from_cpp(::llvm::APInt t, rv_policy policy,
