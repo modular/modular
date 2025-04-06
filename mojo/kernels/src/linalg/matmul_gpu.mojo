@@ -78,7 +78,7 @@ from .utils_gpu import (
 )
 from linalg.matmul_tile_scheduler import MatmulSchedule
 from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
-from .matmul_sm100 import matmul as matmul_sm100
+from .matmul_vendor import matmul as matmul_vendor
 
 alias tile_shapes_64X64X32 = _get_block_warp_tile_shape[64, 64, 32]()
 alias tile_shapes_64X128X32 = _get_block_warp_tile_shape[64, 128, 32]()
@@ -341,20 +341,15 @@ fn _matmul_gpu[
     # fmt: on
 
     @parameter
-    if DEFAULT_GPU.vendor == Vendor.NVIDIA_GPU and DEFAULT_GPU > H100:
-        constrained[
-            use_tensor_core,
-            "Tensor core matmul is not supported on '",
-            DEFAULT_GPU.name,
-            "' architecture",
-        ]()
-        matmul_sm100[
+    if env_get_bool["MODULE_USE_VENDOR_BLAS", False]() or (
+        DEFAULT_GPU.vendor == Vendor.NVIDIA_GPU and DEFAULT_GPU > H100
+    ):
+        return matmul_vendor[
             use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             config=config,
         ](c, a, b, ctx)
-        return
 
     @parameter
     if (

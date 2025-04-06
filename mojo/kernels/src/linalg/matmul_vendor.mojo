@@ -16,7 +16,6 @@ from sys import simdwidthof, alignof
 from gpu.host._compile import _get_gpu_target
 
 
-@always_inline
 fn matmul[
     c_type: DType,
     a_type: DType,
@@ -48,12 +47,9 @@ fn matmul[
         alias epilogue = elementwise_lambda_fn.value()
         alias simd_size = simdwidthof[c.type, target = _get_gpu_target()]()
 
-        var m = c.dim[0]()
-        var n = c.dim[1]()
-
         @parameter
         @__copy_capture(c)
-        fn epilogue_0[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        fn epilogue_wrapper[simd_width: Int, rank: Int](idx: IndexList[rank]):
             var c_coord = Index(idx[0], idx[1])
             var c_val = c.load[
                 width=simd_width,
@@ -61,13 +57,17 @@ fn matmul[
             ](c_coord)
             epilogue[c.type, simd_width](c_coord, c_val)
 
-        # If c is already allocated, we can just use the vendor matmul and apply the
-        # epilogue.
+        # If c is already allocated, we can just use the vendor matmul and
+        # apply the epilogue.
         if c.data:
+            var m = c.dim[0]()
+            var n = c.dim[1]()
             vendor_matmul(
                 ctx, c, a, b, c_row_major=True, transpose_b=transpose_b
             )
-            elementwise[epilogue_0, simd_size, target="gpu"](Index(m, n), ctx)
+            elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                Index(m, n), ctx
+            )
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
@@ -75,25 +75,16 @@ fn matmul[
             c.num_elements()
         )
 
-        # We do not want to mark c as `mut` in the function signature, so we create a
-        # new shallow copy of c as a temporary buffer.
+        # We do not want to mark c as `mut` in the function signature, so we
+        # create a new shallow copy of c as a temporary buffer.
         var c_tmp = c
         c_tmp.data = tmp_device_buffer.unsafe_ptr()
 
-        @parameter
-        @__copy_capture(c_tmp)
-        fn epilogue_1[simd_width: Int, rank: Int](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = c_tmp.load[
-                width=simd_width,
-                alignment = alignof[SIMD[c_tmp.type, simd_width]](),
-            ](c_coord)
-            epilogue[c_tmp.type, simd_width](c_coord, c_val)
-
-        vendor_matmul(
-            ctx, c_tmp, a, b, c_row_major=True, transpose_b=transpose_b
-        )
-
-        elementwise[epilogue_1, simd_size, target="gpu"](Index(m, n), ctx)
+        matmul[
+            use_tensor_core=use_tensor_core,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            config=config,
+        ](c_tmp, a, b, ctx)
 
         _ = tmp_device_buffer^
