@@ -40,7 +40,7 @@ Example:
 """
 
 from collections import Optional
-from collections.string import StringSlice
+
 
 from bit import count_leading_zeros
 from memory import UnsafePointer

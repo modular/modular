@@ -38,7 +38,7 @@ Example:
 """
 
 from collections import InlineArray, Optional
-from collections.string import StringSlice
+
 from os import abort
 from sys import sizeof
 

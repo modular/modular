@@ -32,7 +32,6 @@ from memory import Span, bitcast
 
 from utils import StaticTuple
 from utils.numerics import FPUtils, isinf, isnan
-from collections.string import StaticString
 
 
 @value

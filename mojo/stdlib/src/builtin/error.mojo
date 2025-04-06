@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string import StringSlice, StaticString
+
 from sys import alignof, sizeof
 from sys.ffi import c_char
 

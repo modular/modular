@@ -36,7 +36,6 @@ from math import isclose
 from builtin._location import __call_location, _SourceLocation
 from memory import memcmp
 
-from utils import StringSlice
 
 # ===----------------------------------------------------------------------=== #
 # Assertions

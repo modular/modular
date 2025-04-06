@@ -23,7 +23,7 @@ from sys.info import is_nvidia_gpu
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from memory import UnsafePointer, bitcast
-from collections.string.string_slice import StaticString, _get_kgen_string
+from collections.string.string_slice import _get_kgen_string
 
 
 struct Atomic[dtype: DType, *, scope: StaticString = ""]:

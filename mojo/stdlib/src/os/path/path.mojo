@@ -27,8 +27,6 @@ from sys import has_neon, os_is_linux, os_is_macos, os_is_windows
 
 from memory import Span
 
-from utils import StringSlice
-
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
 from .._linux_aarch64 import _stat as _stat_linux_arm

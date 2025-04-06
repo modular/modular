@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections.string.string_slice import StringSlice, get_static_string
+from collections.string.string_slice import get_static_string
 from sys.info import alignof, sizeof
 
 from memory import Span, UnsafePointer
 from testing import assert_equal, assert_false, assert_raises, assert_true
-from collections.string import StaticString
+
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data

@@ -17,7 +17,6 @@ from sys.info import is_amd_gpu, is_gpu, is_nvidia_gpu
 
 from memory import Span, UnsafePointer, memcpy
 
-from utils import StaticString
 
 # ===-----------------------------------------------------------------------===#
 

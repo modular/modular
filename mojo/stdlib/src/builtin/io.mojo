@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import InlineArray
-from collections.string.string_slice import StringSlice, get_static_string
+from collections.string.string_slice import get_static_string
 from sys import _libc as libc
 from sys import (
     bitwidthof,
@@ -35,7 +35,7 @@ from sys.intrinsics import _type_is_eq
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
 from memory import UnsafePointer, bitcast, memcpy
-from utils import StaticString, write_args, write_buffered
+from utils import write_args, write_buffered
 
 # ===----------------------------------------------------------------------=== #
 #  _file_handle

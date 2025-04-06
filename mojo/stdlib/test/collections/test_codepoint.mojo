@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections.string import StaticString
+
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 

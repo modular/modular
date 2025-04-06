@@ -14,7 +14,7 @@
 
 
 import sys
-from collections.string import StaticString
+
 from tempfile import NamedTemporaryFile
 
 from builtin._location import __call_location, _SourceLocation

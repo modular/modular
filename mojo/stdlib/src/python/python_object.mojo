@@ -20,7 +20,7 @@ from python import PythonObject
 """
 
 from collections import Dict
-from collections.string import StringSlice
+
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_ssize_t
 from sys.intrinsics import _type_is_eq

@@ -16,7 +16,7 @@ from os import abort
 from sys.ffi import c_int
 from sys.info import sizeof
 
-from collections.string import StringSlice, StaticString
+
 from memory import UnsafePointer
 from python import PythonObject, TypedPythonObject
 from python._cpython import (

@@ -22,7 +22,7 @@ from builtin.math import (
     Absable,
 )
 from collections import KeyElement
-from collections.string import StringSlice
+
 from collections.string.format import _CurlyEntryFormattable
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
