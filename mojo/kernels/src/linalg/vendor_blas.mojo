@@ -270,7 +270,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 # Matmul
 # ===----------------------------------------------------------------------===#
 
-alias _DEBUG_CUBLAS = True
+alias _DEBUG_CUBLAS = False
 
 
 fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
