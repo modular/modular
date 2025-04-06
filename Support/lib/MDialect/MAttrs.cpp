@@ -239,6 +239,14 @@ PrimitiveArrayAttr PrimitiveArrayAttr::get(ArrayRef<uint8_t> data,
   return get(elementType.getContext(), data, elementType);
 }
 
+PrimitiveArrayAttr
+PrimitiveArrayAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                               ArrayRef<uint8_t> data, Type elementType) {
+  if (failed(verify(emitError, data, elementType)))
+    return {};
+  return get(data, elementType);
+}
+
 //===----------------------------------------------------------------------===//
 // ArrayElementsAttr
 //===----------------------------------------------------------------------===//
@@ -301,6 +309,17 @@ ArrayElementsAttr ArrayElementsAttr::get(ArrayRef<uint8_t> data,
                                          ShapedType type) {
   return get(type.getContext(),
              PrimitiveArrayAttr::get(data, type.getElementType()), type);
+}
+
+ArrayElementsAttr
+ArrayElementsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              ArrayRef<uint8_t> data, ShapedType type) {
+
+  PrimitiveArrayAttr dataAttr =
+      PrimitiveArrayAttr::get(data, type.getElementType());
+  if (failed(verify(emitError, dataAttr, type)))
+    return {};
+  return get(data, type);
 }
 
 ArrayRef<uint8_t> ArrayElementsAttr::getRawData() const {
@@ -1320,12 +1339,27 @@ DeviceSpecCollectionAttr M::fromRuntimeDeviceSpecs(
 // InOutSignatureAttr
 //===----------------------------------------------------------------------===//
 
-InOutSignatureAttr InOutSignatureAttr::get(MLIRContext *context,
-                                           ArrayRef<InOutSemantics> signature) {
+std::string
+signatureString(ArrayRef<InOutSignatureAttr::InOutSemantics> signature) {
   std::string str;
   str.resize(signature.size());
   for (size_t i = 0, n = signature.size(); i < n; ++i)
     str[i] = static_cast<char>(signature[i]);
+  return str;
+}
+
+InOutSignatureAttr InOutSignatureAttr::get(MLIRContext *context,
+                                           ArrayRef<InOutSemantics> signature) {
+  return InOutSignatureAttr::get(context, signatureString(signature));
+}
+
+InOutSignatureAttr
+InOutSignatureAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                               MLIRContext *context,
+                               ArrayRef<InOutSemantics> signature) {
+  std::string str = signatureString(signature);
+  if (failed(verify(emitError, str)))
+    return {};
   return InOutSignatureAttr::get(context, str);
 }
 

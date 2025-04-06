@@ -503,6 +503,16 @@ FuncType FuncType::get(MLIRContext *context, TypeRange inputs,
   return get(FunctionType::get(context, inputs, results));
 }
 
+FuncType FuncType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              MLIRContext *context, TypeRange inputs,
+                              TypeRange results) {
+  auto result = get(context, inputs, results);
+  if (failed(verify(emitError, result.getValues(), result.getArgConventions(),
+                    result.getFnEffects(), result.getMetadata())))
+    return {};
+  return result;
+}
+
 LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
                                FunctionType values,
                                ArrayRef<ArgConvention> argConventions,
@@ -668,8 +678,23 @@ PointerType PointerType::get(Type elementType, unsigned addressSpace) {
   return get(elementType, b.getIndexAttr(addressSpace));
 }
 
+PointerType
+PointerType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                        Type elementType, unsigned addressSpace) {
+  Builder b(elementType.getContext());
+  return getChecked(emitError, elementType, b.getIndexAttr(addressSpace));
+}
+
 PointerType PointerType::get(Type elementType, TypedAttr addressSpace) {
   return get(elementType.getContext(), elementType, addressSpace);
+}
+
+PointerType
+PointerType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                        Type elementType, TypedAttr addressSpace) {
+  if (failed(verify(emitError, elementType, addressSpace)))
+    return {};
+  return get(elementType, addressSpace);
 }
 
 std::optional<int64_t> PointerType::getTypeSize(TargetInfoAttr target) const {
@@ -1122,6 +1147,17 @@ StructInstanceType StructInstanceType::get(StringAttr name,
                                            ArrayRef<TypedAttr> paramValues,
                                            ArrayRef<StructDefFieldAttr> fields,
                                            bool isMemoryOnly) {
+  return get(name.getContext(), name, paramNames, paramValues, fields,
+             isMemoryOnly);
+}
+
+StructInstanceType StructInstanceType::getChecked(
+    function_ref<InFlightDiagnostic()> emitError, StringAttr name,
+    ArrayRef<StringAttr> paramNames, ArrayRef<TypedAttr> paramValues,
+    ArrayRef<StructDefFieldAttr> fields, bool isMemoryOnly) {
+  if (failed(verify(emitError, name, paramNames, paramValues, fields,
+                    isMemoryOnly)))
+    return {};
   return get(name.getContext(), name, paramNames, paramValues, fields,
              isMemoryOnly);
 }
