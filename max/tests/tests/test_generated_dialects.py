@@ -12,7 +12,7 @@ from max import mlir
 from max._core import OpBuilder, Type
 
 # TODO(MAXPLAT-75): typing
-from max._core.dialects import builtin, mo, mosh  # type: ignore
+from max._core.dialects import builtin, m, mo, mosh  # type: ignore
 from max._core.dtype import DType
 
 
@@ -86,3 +86,9 @@ def test_mo_graph_op(mlir_context):
     assert graph.name == "hello"  # type: ignore
     assert graph.input_params == []  # type: ignore
     assert graph.function_type == builtin.FunctionType(mlir_context, [], [])  # type: ignore
+
+
+def test_device_ref_attr(mlir_context):
+    attr = m.DeviceRefAttr(mlir_context, "cpu", 0)
+    assert attr.label == "cpu"
+    assert attr.id == 0
