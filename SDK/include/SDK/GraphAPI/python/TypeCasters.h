@@ -7,21 +7,68 @@
 #ifndef SDK_GRAPHAPI_PYTHON_TYPECASTERS_H
 #define SDK_GRAPHAPI_PYTHON_TYPECASTERS_H
 
+#include "KGEN/KGENDialect/KGENEnums.h"
+#include "Support/AssertStream.h"
 #include "Support/ML/DType.h"
 #include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
+#include "mlir/Support/LLVM.h"
 #include "nanobind/nanobind.h"
+#include "nanobind/stl/string.h"
 #include "nanobind/stl/string_view.h"
-#include <SDK/GraphAPI/python/Bindings.h>
-#include <Support/AssertStream.h>
-#include <mlir-c/Bindings/Python/Interop.h>
-#include <mlir-c/IR.h>
-#include <nanobind/stl/unique_ptr.h>
+#include "nanobind/stl/unique_ptr.h"
+#include "llvm/Support/raw_ostream.h"
 
 namespace nb = nanobind;
 
 namespace M::Graph::Python {
+
+void registerTypeID(mlir::TypeID, const std::type_info *);
+const std::type_info *lookupTypeID(mlir::TypeID);
+
+/// Get the currently active MLIR context from Python
+mlir::MLIRContext *current_context();
+
+/// Wrap a `getChecked` call with a diagnostic handler which will raise a
+/// python TypeError with the emitted error message.
+template <typename T, typename... Args>
+auto checked(Args... args) {
+  auto ctx = current_context();
+  std::string err;
+  auto handler = mlir::ScopedDiagnosticHandler(
+      ctx, [&](mlir::Diagnostic &diag) { err = diag.str(); });
+  // Can't use `T` here, some KGEN types fold on creation
+  auto concrete = T::getChecked(mlir::detail::getDefaultDiagnosticEmitFn(ctx),
+                                std::forward<Args>(args)...);
+  if (!concrete) {
+    PyTypeObject *type = (PyTypeObject *)nanobind::type<T>().ptr();
+    PyErr_Format(PyExc_TypeError, "%s: %s", type->tp_name, err.c_str());
+    throw nanobind::python_error();
+  }
+  return concrete;
+}
+
+/// Decorator to infer the MLIRContext as the currently active Python MLIR
+/// context. Returns a function which doesn't accept a context.
+template <typename Return, typename... Args>
+auto infer_context(Return (*func)(mlir::MLIRContext *, Args...)) {
+  return [=](Args... args) {
+    return func(current_context(), std::forward<Args>(args)...);
+  };
+}
+
+/// Wrap an OpBuilder->create call.
+/// - We can't bind templatized functions on OpBuilder
+/// - Instead, each Op has their own constructors that take a builder
+/// - Internally, these constructors use `create_op` to delegate to the builder
+template <typename Op, typename... Args>
+auto create_op(nanobind::handle_t<mlir::OpBuilder> builder, Args... args) {
+  return nanobind::cast<mlir::OpBuilder *>(builder)->create<Op>(
+      std::forward<Args>(args)...);
+}
+
 template <typename T>
 class NanobindWrapper {
   // This exists because of typeinfo madness.
@@ -37,6 +84,93 @@ public:
   NanobindWrapper(T &&value) : value(value) {}
   operator T() { return value; }
 };
+
+//===----------------------------------------------------------------------===//
+// overload_cast
+//===----------------------------------------------------------------------===//
+
+/// Trait for selecting a specific overload of a function pointer
+template <typename... Args>
+struct overload_cast_impl {
+  template <typename Return>
+  constexpr auto
+  operator()(Return (*pf)(Args...)) const noexcept -> decltype(pf) {
+    return pf;
+  }
+
+  template <typename Return, typename Class>
+  constexpr auto
+  operator()(Return (Class::*pmf)(Args...)) const noexcept -> decltype(pmf) {
+    return pmf;
+  }
+
+  template <typename Return, typename Class>
+  constexpr auto operator()(Return (Class::*pmf)(Args...)
+                                const) const noexcept -> decltype(pmf) {
+    return pmf;
+  }
+};
+
+/// Decorator to select a specific overload of a function pointer
+template <typename... Args>
+static constexpr overload_cast_impl<Args...> overload_cast = {};
+
+//===----------------------------------------------------------------------===//
+// optional_pimpl
+//===----------------------------------------------------------------------===//
+///
+/// Decorator around a function which may return a nullable PImpl type, such as
+/// mlir::Attribute or mlir::Type.
+/// - For an optional PImpl type, wrap the type as `std::optional<T>` and return
+///     an empty optional. Nanobind will know to return a `None` in this case.
+/// - For any other type, no-op.
+/// Overload for function pointers
+template <typename Return, typename... Args>
+auto optional_pimpl(Return (*func)(Args...)) {
+  if constexpr (std::is_base_of_v<mlir::Attribute, Return> ||
+                std::is_base_of_v<mlir::Type, Return>) {
+    return [=](Args... args) {
+      if (auto ret = std::invoke(func, std::forward<Args>(args)...)) {
+        return std::optional<Return>{std::move(ret)};
+      }
+      return std::optional<Return>{};
+    };
+  } else {
+    return func;
+  }
+}
+
+/// Overload for const pointer to member functions
+template <typename Class, typename Return, typename... Args>
+auto optional_pimpl(Return (Class::*func)(Args...) const) {
+  if constexpr (std::is_base_of_v<mlir::Attribute, Return> ||
+                std::is_base_of_v<mlir::Type, Return>) {
+    return [=](Class *obj, Args... args) {
+      if (auto ret = std::invoke(func, obj, std::forward<Args>(args)...)) {
+        return std::optional<Return>{std::move(ret)};
+      }
+      return std::optional<Return>{};
+    };
+  } else {
+    return func;
+  }
+}
+
+/// Overload for non-const pointer to member functions
+template <typename Class, typename Return, typename... Args>
+auto optional_pimpl(Return (Class::*func)(Args...)) {
+  if constexpr (std::is_base_of_v<mlir::Attribute, Return> ||
+                std::is_base_of_v<mlir::Type, Return>) {
+    return [=](Class *obj, Args... args) {
+      if (auto ret = std::invoke(func, obj, std::forward<Args>(args)...)) {
+        return std::optional<Return>{std::move(ret)};
+      }
+      return std::optional<Return>{};
+    };
+  } else {
+    return func;
+  }
+}
 } // namespace M::Graph::Python
 
 namespace NB_NAMESPACE {
@@ -53,12 +187,18 @@ struct StringLiteral {
   }
 };
 
+/// Create a nb::const_name from `llvm::getTypeName<T>`
 template <typename T>
 constexpr auto type_name() {
   constexpr auto name = llvm::getTypeName<T>();
   return nb::detail::const_name(StringLiteral<name.size()>(name).data);
 }
 
+//===----------------------------------------------------------------------===//
+// is_attribute_interface
+//===----------------------------------------------------------------------===//
+
+/// Trait for detecting subclasses of `mlir::AttributeBase
 template <typename T>
 struct is_attribute_interface_base {
 private:
@@ -74,13 +214,20 @@ public:
   static constexpr bool value = type::value;
 };
 
+/// Trait function for detecting subclasses of `mlir::AttributeBase
 template <typename T>
 constexpr bool is_attribute_interface() {
   return is_attribute_interface_base<T>::value;
 }
 } // namespace
 
+//===----------------------------------------------------------------------===//
+// TypeCasters for LLVM and MLIR types
+//===----------------------------------------------------------------------===//
+
 /// Casts object <-> MLIRContext.
+/// Only passes by pointer; we never want to take or store an MLIRContext by
+/// value, which will deep copy all of the storage data.
 template <>
 struct type_caster<::mlir::MLIRContext> {
 protected:
@@ -93,7 +240,6 @@ public:
   using Cast = ::mlir::MLIRContext *;
 
   operator ::mlir::MLIRContext *() { return value; }
-  operator ::mlir::MLIRContext *&() { return value; }
 
   bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
     nb::object capsule;
@@ -108,6 +254,7 @@ public:
 };
 
 /// Casts MlirLocation <-> mlir::Location.
+/// Delegate to the `MlirLocation` upstream type caster.
 template <>
 struct type_caster<::mlir::Location> {
   static constexpr auto Name = const_name("Location");
@@ -116,6 +263,8 @@ struct type_caster<::mlir::Location> {
   using Caster = make_caster<MlirLocation>;
   Caster caster;
 
+  /// Since `mlir::Location` doesn't have a default constructor, store the value
+  /// as an `optional` until it is successfully cast.
   std::optional<::mlir::Location> value;
 
   explicit operator ::mlir::Location *() { return &*value; }
@@ -142,6 +291,7 @@ struct type_caster<::mlir::Location> {
 };
 
 /// Casts str <-> llvm::StringRef.
+/// Delegate implementation to the `std::string_view` caster.
 template <>
 struct type_caster<::llvm::StringRef> {
   NB_TYPE_CASTER(::llvm::StringRef, const_name("str"))
@@ -160,6 +310,75 @@ struct type_caster<::llvm::StringRef> {
   static handle from_cpp(::llvm::StringRef t, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
     return Caster::from_cpp(t, policy, cleanup);
+  }
+};
+
+/// Casts int <-> llvm::APInt.
+/// There's likely a _much_ better way to do this by directly passing
+/// the int bytes between bignum implementations. For now stringifying and
+/// parsing.
+template <>
+struct type_caster<::llvm::APInt> {
+  NB_TYPE_CASTER(::llvm::APInt, const_name("int"))
+
+  bool from_python(handle_t<nb::int_> src, uint8_t flags,
+                   cleanup_list *cleanup) noexcept {
+    // auto base10 = nb::cast<std::string>(nb::str(src));
+    // llvm::StringRef(base10).getAsInteger(10, value);
+    // return true;
+    return false;
+  }
+
+  static handle from_cpp(::llvm::APInt t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    std::string base10;
+    llvm::raw_string_ostream(base10) << t;
+    // _Very_ important to release here.
+    // - In most of our type casters we defer to another caster, or explicitly
+    // pass ownership of a C++ type via a `unique_ptr`
+    // - Here we are returning an `nb::object` directly. `release` gives
+    // ownership to python.
+    // - Otherwise, you can end up double-freeing memory from Python's interned
+    // longs, which is a spooky and very hard to track down memory safety bug.
+    return nb::int_(make_caster<std::string>::from_cpp(base10, policy, cleanup))
+        .release();
+  }
+};
+
+/// Casts str <-> llvm::Twine.
+/// Twines are meant to be temporary values, so we treat them
+/// more like values than stringrefs. We don't support taking pointers to them.
+/// - Strings passed from Python -> C++ as a Twine will not copy since we can
+/// expose a single stringref as a Twine
+/// - Twines passed from C++ -> Python copy into a contiguous string and are
+/// passed to Python.
+template <>
+struct type_caster<::llvm::Twine> {
+protected:
+  std::string_view value;
+
+public:
+  static constexpr auto Name = const_name("str");
+
+  template <typename T>
+  using Cast = ::llvm::Twine;
+
+  operator ::llvm::Twine() { return value; }
+  using Caster = make_caster<std::string_view>;
+  Caster caster;
+
+  bool from_python(handle_t<nb::str> src, uint8_t flags,
+                   cleanup_list *cleanup) noexcept {
+    if (!caster.from_python(src, flags, cleanup)) {
+      return false;
+    }
+    value = caster.value;
+    return true;
+  }
+
+  static handle from_cpp(::llvm::Twine t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return make_caster<std::string>::from_cpp(t.str(), policy, cleanup);
   }
 };
 
@@ -185,6 +404,10 @@ struct type_caster<::M::DType> {
 };
 
 /// Casts AttributeInterface <-> python.
+/// - General type caster for any attribute interfaces
+/// - Allows any type implementing the interface to be passed Python -> C++
+/// - Downcasts to the concrete attribute implementation type when passed C++ ->
+/// Python
 template <typename AttributeInterface>
 struct type_caster<
     AttributeInterface,
@@ -193,17 +416,16 @@ struct type_caster<
                                          type_name<AttributeInterface>() +
                                          const_name("\""))
 
-  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
-    ::mlir::Attribute attr;
-    try {
-      attr = nb::cast<::mlir::Attribute>(src);
-    } catch (nb::cast_error) {
+  using Caster = make_caster<mlir::Attribute>;
+  Caster caster;
+
+  bool from_python(handle_t<::mlir::Attribute> src, uint8_t flags,
+                   cleanup_list *cleanup) noexcept {
+    if (!caster.from_python(src, flags, cleanup))
       return false;
-    }
-    if (!::mlir::isa<AttributeInterface>(attr))
-      return false;
-    value = ::mlir::dyn_cast<AttributeInterface>(attr);
-    return true;
+    value =
+        ::mlir::dyn_cast_or_null<AttributeInterface>(mlir::Attribute(caster));
+    return bool(value);
   }
 
   static handle from_cpp(AttributeInterface ar, rv_policy policy,
@@ -213,10 +435,12 @@ struct type_caster<
   }
 };
 
+/// Downcast known Attributes to their bound type object.
+/// If we don't know it, return the base Attribute.
 template <>
 struct type_hook<::mlir::Attribute> {
   static const std::type_info *get(::mlir::Attribute *attr) {
-    if (attr) {
+    if (attr && *attr) {
       if (auto info = M::Graph::Python::lookupTypeID(attr->getTypeID()))
         return info;
     }
@@ -224,11 +448,13 @@ struct type_hook<::mlir::Attribute> {
   }
 };
 
+/// Downcast known Types to their bound type object.
+/// If we don't know it, return the base Type.
 template <>
 struct type_hook<::mlir::Type> {
-  static const std::type_info *get(::mlir::Type *attr) {
-    if (attr) {
-      if (auto info = M::Graph::Python::lookupTypeID(attr->getTypeID()))
+  static const std::type_info *get(::mlir::Type *type) {
+    if (type && *type) {
+      if (auto info = M::Graph::Python::lookupTypeID(type->getTypeID()))
         return info;
     }
     return &typeid(::mlir::Type);
@@ -236,6 +462,12 @@ struct type_hook<::mlir::Type> {
 };
 
 /// Casts sequence <-> ArrayRef.
+/// This currently copies in each direction.
+/// - For Python -> C++ it's unlikely we could improve this, except in the case
+/// where the Python value already represents a contiguous C++ array.
+/// - For C++ -> Python, we can eventually return a special type which wraps the
+/// ArrayRef as a Sequence type, and could be passed back to C++ as an ArrayRef.
+/// Care needs to be taken with the lifetime of this reference.
 template <typename Entry>
 struct type_caster<::llvm::ArrayRef<Entry>> {
   using Caster = make_caster<Entry>;
@@ -309,6 +541,7 @@ struct type_caster<::llvm::ArrayRef<bool>> {
 };
 
 /// Casts object <-> mlir::TypeRange.
+/// This makes a copy of the type pointers passing either direction.
 template <>
 struct type_caster<::mlir::TypeRange> {
   using Caster = make_caster<llvm::ArrayRef<mlir::Type>>;
@@ -325,6 +558,49 @@ struct type_caster<::mlir::TypeRange> {
   static handle from_cpp(::mlir::TypeRange t, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
     return Caster::VecCaster::from_cpp(t, policy, cleanup);
+  }
+};
+
+/// Casts object <-> mlir::ValueRange.
+/// This makes a copy of the value pointers passing either direction.
+template <>
+struct type_caster<::mlir::ValueRange> {
+  using Caster = make_caster<llvm::ArrayRef<mlir::Value>>;
+  NB_TYPE_CASTER(::mlir::ValueRange, Caster::Name)
+  Caster caster;
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    if (caster.from_python(src, flags, cleanup)) {
+      value = mlir::ValueRange(caster.value);
+      return true;
+    }
+    return false;
+  }
+  static handle from_cpp(::mlir::ValueRange t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return Caster::VecCaster::from_cpp(t, policy, cleanup);
+  }
+};
+
+/// Casts object <-> M::KGEN::FnEffects.
+/// - C++ has M::KGEN::impl::FnEffects and M::KGEN::FnEffects
+/// - We just use one for simplicity, and standardize on the generated one.
+template <>
+struct type_caster<M::KGEN::FnEffects> {
+  using Caster = make_caster<M::KGEN::impl::FnEffects>;
+  NB_TYPE_CASTER(M::KGEN::FnEffects, Caster::Name)
+  Caster caster;
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    if (caster.from_python(src, flags, cleanup)) {
+      value = caster.value;
+      return true;
+    }
+    return false;
+  }
+  static handle from_cpp(M::KGEN::FnEffects t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    return Caster::from_cpp(t.getImpl(), policy, cleanup);
   }
 };
 
