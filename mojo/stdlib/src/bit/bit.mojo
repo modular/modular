@@ -262,7 +262,7 @@ fn pop_count[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@always_inline("nodebug")
 fn bit_not[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -291,7 +291,7 @@ fn bit_not[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@always_inline("nodebug")
 fn bit_width(val: Int) -> Int:
     """Computes the minimum number of bits required to represent the integer.
 
@@ -305,12 +305,11 @@ fn bit_width(val: Int) -> Int:
     return bitwidth - count_leading_zeros(select(val < 0, ~val, val))
 
 
-@always_inline
+@always_inline("nodebug")
 fn bit_width[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    """Computes the minimum number of bits required to represent the SIMD vector
-    of integer values.
+    """Computes the minimum number of bits required to represent each element of a SIMD vector of integer values.
 
     Parameters:
         dtype: `dtype` used for the computation.
@@ -323,23 +322,18 @@ fn bit_width[
         val: The input value.
 
     Returns:
-        A SIMD value where the element at position `i` equals to the number of
-        bits required to represent the integer at position `i` of the input
-        value.
+        A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
-
     constrained[dtype.is_integral(), "must be integral"]()
-
     alias bitwidth = bitwidthof[dtype]()
 
     @parameter
     if dtype.is_unsigned():
         return bitwidth - count_leading_zeros(val)
     else:
-        var leading_zero_pos = count_leading_zeros(val)
-        var leading_zero_neg = count_leading_zeros(bit_not(val))
-        var leading_zero = (val < 0).select(leading_zero_neg, leading_zero_pos)
-        return bitwidth - leading_zero
+        # For signed integers, handle positive and negative separately
+        var abs_val = (val < 0).select(bit_not(val), val)
+        return bitwidth - count_leading_zeros(abs_val)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -510,32 +504,28 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
         )
 
 
+@always_inline("nodebug")
 fn rotate_bits_left[
     dtype: DType,
     width: Int, //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    """Shifts bits to the left by `shift` positions (with wrap-around) for each
-    element of a SIMD vector.
+    """Shifts bits to the left by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
     Constraints:
         `0 <= shift < size`
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
-              Constraints: must be integral and unsigned.
-        width: The width of the input and output SIMD vector.
-        shift: The number of positions by which to shift left the bits for each
-               element of a SIMD vector to the left (with wrap-around).
+        dtype: The `dtype` of the input and output SIMD vector. Must be integral and unsigned.
+        width: The width of the SIMD vector.
+        shift: The number of positions to rotate left.
 
     Args:
-        x: SIMD vector to perform the operation on.
+        x: SIMD vector input.
 
     Returns:
-        The SIMD vector with each element's bits shifted to the left by `shift`
-        bits (with wrap-around).
+        SIMD vector with each element rotated left by `shift` bits.
     """
-
     constrained[dtype.is_unsigned(), "Only unsigned types can be rotated."]()
 
     @parameter
@@ -588,32 +578,28 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
         )
 
 
+@always_inline("nodebug")
 fn rotate_bits_right[
     dtype: DType,
     width: Int, //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    """Shifts bits to the right by `shift` positions (with wrap-around) for each
-    element of a SIMD vector.
+    """Shifts bits to the right by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
     Constraints:
         `0 <= shift < size`
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
-              Constraints: must be integral and unsigned.
-        width: The width of the input and output SIMD vector.
-        shift: The number of positions by which to shift right the bits for each
-               element of a SIMD vector to the left (with wrap-around).
+        dtype: The `dtype` of the input and output SIMD vector. Must be integral and unsigned.
+        width: The width of the SIMD vector.
+        shift: The number of positions to rotate right.
 
     Args:
-        x: SIMD vector to perform the operation on.
+        x: SIMD vector input.
 
     Returns:
-        The SIMD vector with each element's bits shifted to the right by `shift`
-        bits (with wrap-around).
+        SIMD vector with each element rotated right by `shift` bits.
     """
-
     constrained[dtype.is_unsigned(), "Only unsigned types can be rotated."]()
 
     @parameter
