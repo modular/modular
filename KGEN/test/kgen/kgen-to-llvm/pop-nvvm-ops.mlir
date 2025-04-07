@@ -63,10 +63,10 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
     %1 = pop.cast_to_builtin %arg1 : !pop.scalar<si64> to i64
     // CHECK-DAG: %[[ARR:.*]] = llvm.mlir.undef : !llvm.array<4 x f32>
     // CHECK-DAG: %[[C1:.*]] = llvm.mlir.constant(1 : i32) : i32
-    // CHECK-DAG: %2 = llvm.extractvalue %arg2[0] : !llvm.array<4 x f32> 
-    // CHECK-DAG: %3 = llvm.extractvalue %arg2[1] : !llvm.array<4 x f32> 
-    // CHECK-DAG: %4 = llvm.extractvalue %arg2[2] : !llvm.array<4 x f32> 
-    // CHECK-DAG: %5 = llvm.extractvalue %arg2[3] : !llvm.array<4 x f32> 
+    // CHECK-DAG: %2 = llvm.extractvalue %arg2[0] : !llvm.array<4 x f32>
+    // CHECK-DAG: %3 = llvm.extractvalue %arg2[1] : !llvm.array<4 x f32>
+    // CHECK-DAG: %4 = llvm.extractvalue %arg2[2] : !llvm.array<4 x f32>
+    // CHECK-DAG: %5 = llvm.extractvalue %arg2[3] : !llvm.array<4 x f32>
     // CHECK: %[[SVAL:.*]] = llvm.inline_asm has_side_effects
     // CHECK-SAME: wgmma.mma_async.sync.aligned.m64n8k8.f32.tf32.tf32
     // CHECK: %[[SE_0:.+]] = llvm.extractvalue %[[SVAL]][0] : !llvm.struct<(f32, f32, f32, f32)>
@@ -83,11 +83,11 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
   }
 
   // CHECK-LABEL: llvm.func @kgen_fp8_param_constant
-  kgen.func export @kgen_fp8_param_constant() -> (f8E4M3, f8E5M2) {
+  kgen.func export @kgen_fp8_param_constant() -> (f8E4M3FN, f8E5M2) {
     // CHECK: llvm.mlir.constant(56 : i8) : i8
-    %0 = kgen.param.constant: f8E4M3 = <1.>
+    %0 = kgen.param.constant: f8E4M3FN = <1.>
     // CHECK: llvm.mlir.constant(60 : i8) : i8
     %1 = kgen.param.constant: f8E5M2 = <1.>
-    kgen.return %0, %1 : f8E4M3, f8E5M2
+    kgen.return %0, %1 : f8E4M3FN, f8E5M2
   }
 }

@@ -59,11 +59,11 @@ static DIType buildTargetSpecificDebugTypeFromDType(MLIRContext *ctx,
     // special names. e.g.
     // https://docs.nvidia.com/cuda/cuda-math-api/struct____nv__bfloat16.html
     if (llvm::is_contained(
-            {DType::f8e5m2, DType::f8e4m3, DType::bf16, DType::f16}, dtype)) {
+            {DType::f8e5m2, DType::f8e4m3fn, DType::bf16, DType::f16}, dtype)) {
       StringRef name;
       if (dtype == DType::f8e5m2)
         name = "__nv_fp8_e5m2";
-      else if (dtype == DType::f8e4m3)
+      else if (dtype == DType::f8e4m3fn)
         name = "__nv_fp8_e4m3";
       else if (dtype == DType::bf16)
         name = "__nv_bfloat16";

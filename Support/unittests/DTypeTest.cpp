@@ -31,7 +31,7 @@ static std::vector<DType> getAllKnownDTypes() {
       DType(DType::ui128),
       DType(DType::f8e5m2),
       DType(DType::f8e5m2fnuz),
-      DType(DType::f8e4m3),
+      DType(DType::f8e4m3fn),
       DType(DType::f8e4m3fnuz),
       DType(DType::f8e3m4),
       DType(DType::f16),
@@ -52,7 +52,7 @@ static std::vector<DType> getAllKnownDTypes() {
       DType::getComplex(DType::ui128),
       DType::getComplex(DType::f8e5m2),
       DType::getComplex(DType::f8e5m2fnuz),
-      DType::getComplex(DType::f8e4m3),
+      DType::getComplex(DType::f8e4m3fn),
       DType::getComplex(DType::f8e4m3fnuz),
       DType::getComplex(DType::f8e3m4),
       DType::getComplex(DType::f16),
@@ -84,7 +84,7 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(128, DType(DType::ui128).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e5m2).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e5m2fnuz).getWidthInBits());
-  EXPECT_EQ(8, DType(DType::f8e4m3).getWidthInBits());
+  EXPECT_EQ(8, DType(DType::f8e4m3fn).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e4m3fnuz).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e3m4).getWidthInBits());
   EXPECT_EQ(16, DType(DType::f16).getWidthInBits());
@@ -105,7 +105,7 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(256, DType::getComplex(DType::si128).getWidthInBits());
   EXPECT_EQ(256, DType::getComplex(DType::ui128).getWidthInBits());
   EXPECT_EQ(16, DType::getComplex(DType::f8e5m2).getWidthInBits());
-  EXPECT_EQ(16, DType::getComplex(DType::f8e4m3).getWidthInBits());
+  EXPECT_EQ(16, DType::getComplex(DType::f8e4m3fn).getWidthInBits());
   EXPECT_EQ(16, DType::getComplex(DType::f8e3m4).getWidthInBits());
   EXPECT_EQ(32, DType::getComplex(DType::f16).getWidthInBits());
   EXPECT_EQ(64, DType::getComplex(DType::f32).getWidthInBits());
@@ -159,7 +159,7 @@ TEST(DType, getAsString) {
   EXPECT_EQ("ui128", DType(DType::ui128).getAsString());
   EXPECT_EQ("f8e5m2", DType(DType::f8e5m2).getAsString());
   EXPECT_EQ("f8e5m2fnuz", DType(DType::f8e5m2fnuz).getAsString());
-  EXPECT_EQ("f8e4m3", DType(DType::f8e4m3).getAsString());
+  EXPECT_EQ("f8e4m3fn", DType(DType::f8e4m3fn).getAsString());
   EXPECT_EQ("f8e4m3fnuz", DType(DType::f8e4m3fnuz).getAsString());
   EXPECT_EQ("f8e3m4", DType(DType::f8e3m4).getAsString());
   EXPECT_EQ("f16", DType(DType::f16).getAsString());
@@ -181,7 +181,8 @@ TEST(DType, getAsString) {
   EXPECT_EQ("complex<f8e5m2>", DType::getComplex(DType::f8e5m2).getAsString());
   EXPECT_EQ("complex<f8e5m2fnuz>",
             DType::getComplex(DType::f8e5m2fnuz).getAsString());
-  EXPECT_EQ("complex<f8e4m3>", DType::getComplex(DType::f8e4m3).getAsString());
+  EXPECT_EQ("complex<f8e4m3fn>",
+            DType::getComplex(DType::f8e4m3fn).getAsString());
   EXPECT_EQ("complex<f8e4m3fnuz>",
             DType::getComplex(DType::f8e4m3fnuz).getAsString());
   EXPECT_EQ("complex<f8e3m4>", DType::getComplex(DType::f8e3m4).getAsString());
@@ -213,7 +214,7 @@ TEST(DType, getFromString) {
   EXPECT_EQ(DType(DType::ui128), DType::getFromString("ui128"));
   EXPECT_EQ(DType(DType::f8e5m2), DType::getFromString("f8e5m2"));
   EXPECT_EQ(DType(DType::f8e5m2fnuz), DType::getFromString("f8e5m2fnuz"));
-  EXPECT_EQ(DType(DType::f8e4m3), DType::getFromString("f8e4m3"));
+  EXPECT_EQ(DType(DType::f8e4m3fn), DType::getFromString("f8e4m3fn"));
   EXPECT_EQ(DType(DType::f8e4m3fnuz), DType::getFromString("f8e4m3fnuz"));
   EXPECT_EQ(DType(DType::f8e3m4), DType::getFromString("f8e3m4"));
   EXPECT_EQ(DType(DType::f16), DType::getFromString("f16"));
@@ -246,8 +247,8 @@ TEST(DType, getFromString) {
             DType::getFromString("complex<f8e5m2>"));
   EXPECT_EQ(DType::getComplex(DType::f8e5m2fnuz),
             DType::getFromString("complex<f8e5m2fnuz>"));
-  EXPECT_EQ(DType::getComplex(DType::f8e4m3),
-            DType::getFromString("complex<f8e4m3>"));
+  EXPECT_EQ(DType::getComplex(DType::f8e4m3fn),
+            DType::getFromString("complex<f8e4m3fn>"));
   EXPECT_EQ(DType::getComplex(DType::f8e4m3fnuz),
             DType::getFromString("complex<f8e4m3fnuz>"));
   EXPECT_EQ(DType::getComplex(DType::f8e3m4),

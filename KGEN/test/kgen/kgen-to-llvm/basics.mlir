@@ -273,7 +273,7 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
 // CHECK-LABEL: llvm.func @kgen_fp8_param_constant
 kgen.func export @kgen_fp8_param_constant() {
   // CHECK: llvm.mlir.constant(56 : i8) : i8
-  %0 = kgen.param.constant: f8E4M3 = <1.>
+  %0 = kgen.param.constant: f8E4M3FN = <1.>
 
   // CHECK: llvm.mlir.constant(60 : i8) : i8
   %1 = kgen.param.constant: f8E5M2 = <1.>

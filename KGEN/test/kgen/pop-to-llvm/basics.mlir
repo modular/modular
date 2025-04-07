@@ -952,8 +952,8 @@ kgen.func @test_stack_alloc_forward(%arg0: i8) -> i8 {
 
 // CHECK-LABEL: kgen.func @kgen_fp8_param_constant
 kgen.func @kgen_fp8_param_constant() {
-  // CHECK: kgen.param.constant: f8E4M3 = <1.000000e+00>
-  %0 = kgen.param.constant: f8E4M3 = <1.>
+  // CHECK: kgen.param.constant: f8E4M3FN = <1.000000e+00>
+  %0 = kgen.param.constant: f8E4M3FN = <1.>
   // CHECK: kgen.param.constant: f8E5M2 = <1.000000e+00>
   %1 = kgen.param.constant: f8E5M2 = <1.>
   kgen.return
