@@ -89,6 +89,13 @@ private:
             allCallsToSelf = false;
             break;
           }
+          if (op->getOperand(idx) != arg) {
+            // If argument is passed to a different argument then the argument
+            // cannot be removed.
+            // TODO: Properly resolve this case.
+            allCallsToSelf = false;
+            break;
+          }
         }
 
         if (allCallsToSelf)
@@ -216,8 +223,10 @@ private:
     }
 
     for (auto [idx, operand] : llvm::enumerate(oldCall.getOperands())) {
-      if (!unusedArgs[idx])
+      if (!unusedArgs[idx]) {
+        assert(operand && "Operand cannot be nullptr");
         newOperands.push_back(operand);
+      }
     }
     auto symbol = SymbolConstantAttr::get(
         flatSym,
