@@ -20,13 +20,6 @@ DECLARE_FLOAT(f8e3m4,                   // SHORT_NAME
               M::Float8::float8_e3m4_t, // CXX_TYPE
               APFloat::Float8E3M4)      // APFLOAT_SEMANTICS
 
-DECLARE_FLOAT(f8e4m3,                   // SHORT_NAME
-              float8_e4m3,              // LONG_NAME
-              M_FLOAT8_E4M3,            // M_TYPE
-              mlir::Float8E4M3Type,     // MLIR_TYPE
-              M::Float8::float8_e4m3_t, // CXX_TYPE
-              APFloat::Float8E4M3)      // APFLOAT_SEMANTICS
-
 DECLARE_FLOAT(f8e4m3fn,                   // SHORT_NAME
               float8_e4m3fn,              // LONG_NAME
               M_FLOAT8_E4M3FN,            // M_TYPE

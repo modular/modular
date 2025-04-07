@@ -126,8 +126,8 @@ ArrayAttr KGEN::attachTargetPassthroughAttrs(OpBuilder &b,
 //===----------------------------------------------------------------------===//
 
 static bool isFP8(Type fpType) {
-  return isa<Float8E5M2Type, Float8E5M2FNUZType, Float8E4M3Type,
-             Float8E4M3FNType, Float8E4M3FNUZType>(fpType);
+  return isa<Float8E5M2Type, Float8E5M2FNUZType, Float8E4M3FNType,
+             Float8E4M3FNUZType>(fpType);
 }
 
 std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
