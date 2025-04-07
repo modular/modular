@@ -246,6 +246,11 @@ struct NullMask(MHAMask):
         return TileMaskStatus(0)
 
 
+# ===-----------------------------------------------------------------------===#
+# MaterializedMask
+# ===-----------------------------------------------------------------------===#
+
+
 @value
 @register_passable("trivial")
 struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](MHAMask):
