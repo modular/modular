@@ -4897,8 +4897,8 @@ struct Split:
     fn execute[
         type: DType,
         rank: Int,
+        _synchronous: Bool,
         target: StringLiteral,
-        _trace_name: StringLiteral,
     ](
         output: OutputVariadicTensors[type, rank, *_],
         input: InputTensor[type=type, rank=rank],
@@ -4915,11 +4915,8 @@ struct Split:
         for i in range(output.size):
             output_bufs[i] = managed_tensor_slice_to_ndbuffer(output[i])
 
-        split[type, rank, target=target, trace_description=_trace_name](
-            input_buf,
-            normalize_neg_index(Int(axis), rank),
-            output_bufs,
-            ctx.get_device_context(),
+        split[type, rank](
+            input_buf, normalize_neg_index(Int(axis), rank), output_bufs
         )
 
 
