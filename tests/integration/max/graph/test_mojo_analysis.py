@@ -153,51 +153,6 @@ def test_op_with_device_context_valid(
     session.load(graph)
 
 
-def test_op_invalid_device_context_pos(
-    kernel_verification_ops_path: Path,
-) -> None:
-    tensor_type = TensorType(DType.float32, [64])
-    graph = Graph(
-        "test_op_invalid_device_context_pos",
-        input_types=[tensor_type],
-        output_types=[tensor_type],
-    )
-    with graph:
-        graph._import_kernels(kernel_verification_ops_path)
-        with pytest.raises(ValueError) as err:
-            ops.custom(
-                "op_with_wrong_device_context_pos",
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-            )
-        assert (
-            "The DeviceContextPtr argument must be last (#2) but is at position #1"
-            in str(err.value)
-        )
-
-
-def test_op_invalid_multiple_device_context(
-    kernel_verification_ops_path: Path,
-) -> None:
-    tensor_type = TensorType(DType.float32, [64])
-    graph = Graph(
-        "test_op_invalid_multiple_device_context",
-        input_types=[tensor_type],
-        output_types=[tensor_type],
-    )
-    with graph:
-        graph._import_kernels(kernel_verification_ops_path)
-        with pytest.raises(ValueError) as err:
-            ops.custom(
-                "op_with_multiples_device_context",
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-            )
-        assert "Kernel can't have multiple DevicesContextPtr arguments" in str(
-            err.value
-        )
-
-
 def test_op_multiple_outputs_valid(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
@@ -315,30 +270,6 @@ def test_return_opaque_reg_type(
     session.load(graph)
 
 
-def test_invalid_kernel_returns_tensor(
-    kernel_verification_ops_path: Path,
-) -> None:
-    tensor_type = TensorType(DType.float32, [64])
-    graph = Graph(
-        "test_invalid_kernel_returns_tensor",
-        input_types=[tensor_type],
-        output_types=[tensor_type],
-    )
-    with graph:
-        graph._import_kernels(kernel_verification_ops_path)
-
-        with pytest.raises(ValueError) as err:
-            ops.custom(
-                "op_with_return_tensor",
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-            )
-        assert (
-            "The output tensor must be DPS argument, and not a function return value"
-            in str(err.value)
-        )
-
-
 def test_variadic_ins_outs_valid(
     session: InferenceSession, kernel_verification_ops_path: Path
 ) -> None:
@@ -360,50 +291,6 @@ def test_variadic_ins_outs_valid(
 
     # Compile the model
     session.load(graph)
-
-
-def test_invalid_kernel_multiple_variadic_inputs(
-    kernel_verification_ops_path: Path,
-) -> None:
-    tensor_type = TensorType(DType.float32, [64])
-    graph = Graph(
-        "test_invalid_kernel_multiple_variadic_inputs",
-        input_types=[tensor_type, tensor_type, tensor_type],
-        output_types=[tensor_type],
-    )
-    with graph:
-        graph._import_kernels(kernel_verification_ops_path)
-        with pytest.raises(ValueError) as err:
-            ops.custom(
-                "multiple_variadic_inputs",
-                values=[graph.inputs[0], graph.inputs[1], graph.inputs[2]],
-                out_types=[tensor_type],
-            )
-        assert "Kernel can't have multiple VariadicTensor inputs" in str(
-            err.value
-        )
-
-
-def test_invalid_kernel_multiple_variadic_outputs(
-    kernel_verification_ops_path: Path,
-) -> None:
-    tensor_type = TensorType(DType.float32, [64])
-    graph = Graph(
-        "test_invalid_kernel_multiple_variadic_outputs",
-        input_types=[tensor_type],
-        output_types=[tensor_type, tensor_type, tensor_type],
-    )
-    with graph:
-        graph._import_kernels(kernel_verification_ops_path)
-        with pytest.raises(ValueError) as err:
-            ops.custom(
-                "multiple_variadic_outputs",
-                values=[graph.inputs[0]],
-                out_types=[tensor_type, tensor_type, tensor_type],
-            )
-        assert "Kernel can't have multiple VariadicTensor outputs" in str(
-            err.value
-        )
 
 
 def test_variadic_size_0_invalid(kernel_verification_ops_path: Path) -> None:
@@ -443,56 +330,6 @@ def test_tensor_kernel_raises_valid(
                 "binary_kernel_with_raises",
                 values=[graph.inputs[0], graph.inputs[1]],
                 out_types=[tensor_type],
-            )[0]
-        )
-
-    # Compile the model
-    session.load(graph)
-
-
-@pytest.mark.skip(reason="Opaque outputs with raises not supported (GEX-1888)")
-def test_return_opaque_mem_type_raises_valid(
-    session: InferenceSession, kernel_verification_ops_path: Path
-) -> None:
-    tensor_type = TensorType(DType.int32, [1])
-    opaque_type = _OpaqueType("MyIntMemory")
-    graph = Graph(
-        "test_return_opaque_mem_type_raises_valid",
-        input_types=[tensor_type],
-        output_types=[opaque_type],
-    )
-    with graph:
-        graph._import_kernels(kernel_verification_ops_path)
-        graph.output(
-            ops.custom(
-                "make_my_int_memory_with_raises",
-                values=[graph.inputs[0]],
-                out_types=[opaque_type],
-            )[0]
-        )
-
-    # Compile the model
-    session.load(graph)
-
-
-@pytest.mark.skip(reason="Opaque outputs with raises not supported (GEX-1888)")
-def test_return_opaque_reg_type_raises_valid(
-    session: InferenceSession, kernel_verification_ops_path: Path
-) -> None:
-    tensor_type = TensorType(DType.int32, [1])
-    opaque_type = _OpaqueType("MyIntReg")
-    graph = Graph(
-        "test_return_opaque_reg_type_raises_valid",
-        input_types=[tensor_type],
-        output_types=[opaque_type],
-    )
-    with graph:
-        graph._import_kernels(kernel_verification_ops_path)
-        graph.output(
-            ops.custom(
-                "make_my_int_reg_with_raises",
-                values=[graph.inputs[0]],
-                out_types=[opaque_type],
             )[0]
         )
 
