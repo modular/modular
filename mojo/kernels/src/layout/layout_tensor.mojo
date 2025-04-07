@@ -5844,7 +5844,12 @@ fn copy_local_to_dram[
 fn copy_dram_to_local[
     src_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src: LayoutTensor, src_base: LayoutTensor):
+](
+    dst: LayoutTensor,
+    src: LayoutTensor,
+    src_base: LayoutTensor,
+    offset: OptionalReg[UInt] = None,
+):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
 
     This function implements an optimized memory transfer operation specifically for AMD GPU
@@ -5866,6 +5871,7 @@ fn copy_dram_to_local[
         src_base: The original global memory tensor from which src is derived.
                  This is used to construct the buffer descriptor required by AMD's
                  buffer_load intrinsic.
+        offset: The offset in the global memory.
 
     Constraints:
 
@@ -5886,13 +5892,7 @@ fn copy_dram_to_local[
 
     var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
-    # the offset calculation using pointer leads to loss of ~7-8 TFlops vs
-    # calculating offset and passing it as an argument, using this for now
-    # but we may want to revisit this
-    var offset = (Int(src.ptr) - Int(src_base.ptr)) // sizeof[src.dtype]()
     var descriptor = get_amd_buffer_descriptor(src_base)
-    var src_frag_offset = src_fragments.distance(src.ptr) + offset
-    alias num_stores_per_thread = src_fragments.layout.size()
 
     alias M = src_fragments.shape[0]()
     alias N = src_fragments.shape[1]()
@@ -5907,21 +5907,31 @@ fn copy_dram_to_local[
         "src_fragments must have known layout.",
     ]()
 
-    # These loads need to be row-major for L1 cache performance
+    @always_inline
     @parameter
-    for i in range(M):
+    fn offset_helper(offset_val: UInt):
+        var src_frag_offset = src_fragments.distance(src.ptr) + offset_val
 
+        # These loads need to be row-major for L1 cache performance
         @parameter
-        for j in range(N):
-            alias dst_idx = Layout.col_major(M, N)(IntTuple(i, j))
-            alias src_static_idx = src_fragments.layout(IntTuple(i, j))
-            var src_idx = Int32(src_frag_offset) + src_static_idx
-            dst[dst_idx] = rebind[dst.element_type](
-                buffer_load[src.dtype, simd_width](
-                    descriptor,
-                    src_idx,
+        for i in range(M):
+
+            @parameter
+            for j in range(N):
+                alias dst_idx = Layout.col_major(M, N)(IntTuple(i, j))
+                alias src_static_idx = src_fragments.layout(IntTuple(i, j))
+                var src_idx = Int32(src_frag_offset) + src_static_idx
+                dst[dst_idx] = rebind[dst.element_type](
+                    buffer_load[src.dtype, simd_width](
+                        descriptor,
+                        src_idx,
+                    )
                 )
-            )
+
+    if offset:
+        offset_helper(offset.value())
+    else:
+        offset_helper((Int(src.ptr) - Int(src_base.ptr)) // sizeof[src.dtype]())
 
 
 @always_inline("nodebug")
