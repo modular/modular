@@ -38,6 +38,9 @@ class Llama4ConfigBase(MAXModelConfigBase):
     """
 
     # Llama 4 specific parameters (extracted from hf_config.text_config).
+    hidden_size: int
+    """Dimensionality of the embedding and attention layers."""
+
     intermediate_size: int
     """Dimensionality of the intermediate layer in feed-forward blocks."""
 
@@ -100,6 +103,24 @@ class Llama4ConfigBase(MAXModelConfigBase):
 
     vocab_size: int
     """Size of the vocabulary."""
+
+    return_n_logits: int
+    """Number of logits to return when running the model."""
+
+    max_seq_len: int
+    """Maximum length of sequence."""
+
+    num_hidden_layers: int
+    """Number of decoder layers in the model."""
+
+    kv_params: KVCacheParams
+    """KV cache parameters."""
+
+    dtype: DType
+    """DType of the model weights and input."""
+
+    devices: list[DeviceRef]
+    """Devices to run the model with."""
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -238,6 +259,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
         )
 
         return Llama4Config(
+            hidden_size=text_config.hidden_size,
             intermediate_size=text_config.intermediate_size,
             intermediate_size_mlp=text_config.intermediate_size_mlp,
             num_attention_heads=text_config.num_attention_heads,
@@ -257,12 +279,29 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             interleave_moe_layer_step=text_config.interleave_moe_layer_step,
             use_qk_norm=text_config.use_qk_norm,
             no_rope_layers=text_config.no_rope_layers,
-            no_rope_layer_interval=text_config.no_rope_layer_interval,
+            no_rope_layer_interval=getattr(
+                text_config, "no_rope_layer_interval", 4
+            ),
             attention_chunk_size=text_config.attention_chunk_size,
-            attn_temperature_tuning=text_config.attn_temperature_tuning,
-            floor_scale=text_config.floor_scale,
-            attn_scale=text_config.attn_scale,
+            attn_temperature_tuning=getattr(
+                text_config, "attn_temperature_tuning", 4
+            ),
+            floor_scale=getattr(text_config, "floor_scale", 8192),
+            attn_scale=getattr(text_config, "attn_scale", 0.1),
             rms_norm_eps=text_config.rms_norm_eps,
             tie_word_embeddings=tie_word_embeddings,
             vocab_size=text_config.vocab_size,
+            return_n_logits=return_n_logits,
+            max_seq_len=Llama4Config.calculate_max_seq_len(
+                pipeline_config, huggingface_config
+            ),
+            num_hidden_layers=1,  # text_config.num_hidden_layers,
+            kv_params=Llama4Config.get_kv_params(
+                huggingface_config=huggingface_config,
+                n_devices=n_devices,
+                kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
+            ),
+            dtype=dtype,
+            devices=device_refs,
         )

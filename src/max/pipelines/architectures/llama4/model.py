@@ -13,13 +13,26 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Sequence
+from typing import cast
 
+import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.nn import Signals
+from max.pipelines import (
+    KVCacheConfig,
+    ModelInputs,
+    ModelOutputs,
+    PipelineConfig,
+    PipelineModel,
+    SupportedEncoding,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import (
     KVCacheInputs,
@@ -28,16 +41,57 @@ from max.pipelines.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.max_config import KVCacheConfig
-from max.pipelines.pipeline import (
-    KVCacheMixin,
-    ModelInputs,
-    ModelOutputs,
-    PipelineModel,
-)
+from max.pipelines.pipeline import KVCacheMixin
 from transformers import AutoConfig
 
+from .llama4 import Llama4
 from .model_config import Llama4Config
+
+logger = logging.getLogger("max.pipelines")
+
+
+class Llama4Inputs(ModelInputs):
+    """A class representing inputs for the Llama4 model.
+
+    This class encapsulates the input tensors required for the Llama4 model
+    execution.
+    """
+
+    tokens: np.ndarray | Tensor
+    """Tensor containing the input token IDs."""
+
+    input_row_offsets_or_attn_mask: np.ndarray | Tensor
+    """Tensor containing the offsets for each row in the ragged input sequence,
+    or the attention mask for the padded input sequence."""
+
+    signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
+
+    def __init__(
+        self,
+        tokens: np.ndarray | Tensor,
+        input_row_offsets_or_attn_mask: np.ndarray | Tensor,
+        signal_buffers: list[Tensor],
+        kv_cache_inputs: KVCacheInputs | None = None,
+    ) -> None:
+        """
+        Args:
+            tokens: Input token IDs.
+            input_row_offsets_or_attn_mask: Input row offsets (ragged tensors)
+                or attention mask (padded tensors).
+            signal_buffers: Device buffers used for synchronization in
+                communication collectives.
+        """
+        self.tokens = tokens
+        self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
+        self.signal_buffers = signal_buffers
+        self.kv_cache_inputs = kv_cache_inputs
+
+    @property
+    def input_row_offsets(self) -> np.ndarray | Tensor:
+        """Gets the row offsets of the ragged input sequence."""
+        # TODO(bduke): this should implement a ragged tensor interface.
+        return self.input_row_offsets_or_attn_mask
 
 
 class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
@@ -94,6 +148,21 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         )
 
         self.model = self.load_model(session)
+
+        self.signal_buffers = (
+            [
+                Tensor.zeros(
+                    shape=(Signals.NUM_BYTES,),
+                    dtype=DType.uint8,
+                    device=dev,
+                )
+                for dev in self.devices
+            ]
+            if len(self.devices) > 1
+            # Skip creating buffers for single-device, where communication
+            # collectives shouldn't be called.
+            else []
+        )
 
     @staticmethod
     def calculate_max_seq_len(
@@ -226,10 +295,120 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             The loaded MAX Engine model object.
         """
-        # TODO(bduke): implement `load_model`.
-        # Returning a dummy Model object for now to satisfy MyPy.
-        # This needs to be replaced with actual model loading.
-        return Model()
+        assert self.pipeline_config.max_batch_size, (
+            "Expected max_batch_size to be set"
+        )
+        self._input_row_offsets_prealloc = Tensor.from_numpy(
+            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+        ).to(self.devices[0])
+
+        logger.info("Building and compiling model...")
+        before = time.perf_counter()
+        graph = self._build_graph()
+        model = session.load(graph, weights_registry=self.state_dict)
+        after = time.perf_counter()
+        logger.info(
+            f"Building and compiling model took {after - before:.6f} seconds"
+        )
+        return model
+
+    def _build_graph(self):
+        device0 = self.devices[0]
+        device_ref = DeviceRef(device0.label, device0.id)
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        # NOTE: input_row_offsets_len should be batch_size + 1.
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+
+        huggingface_config = self.huggingface_config
+        if self.adapter:
+            state_dict = self.adapter(
+                dict(self.weights.items()),
+                huggingface_config=huggingface_config,
+                pipeline_config=self.pipeline_config,
+            )
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
+        model_config = Llama4Config.generate(
+            pipeline_config=self.pipeline_config,
+            huggingface_config=huggingface_config,
+            state_dict=state_dict,
+            dtype=self.dtype,
+            n_devices=len(self.devices),
+            logits_postprocessor=None,
+            attention_bias=huggingface_config.text_config.attention_bias,
+            cache_dtype=self.encoding.cache_dtype,
+            kv_cache_config=self.kv_cache_config,
+            return_n_logits=self.return_n_logits,
+        )
+        nn_model = Llama4(model_config)
+        nn_model.load_state_dict(state_dict, weight_alignment=1)
+        self.state_dict = nn_model.state_dict()
+
+        signals = Signals(
+            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        )
+        kv_cache_args = self.kv_manager.input_symbols()
+        flattened_kv_types = [
+            kv_type for sublist in kv_cache_args for kv_type in sublist
+        ]
+        with Graph(
+            getattr(self.huggingface_config, "model_type", "Llama4"),
+            input_types=[
+                tokens_type,
+                input_row_offsets_type,
+                *signals.input_types(),
+                *flattened_kv_types,
+            ],
+        ) as graph:
+            tokens, input_row_offsets, *variadic_args = graph.inputs
+
+            # Multi-GPU passes a signal buffer per device: unmarshal those.
+            signal_buffers = [
+                v.buffer for v in variadic_args[: len(self.devices)]
+            ]
+
+            # Unmarshal the remaining arguments, which are for KV cache.
+            kv_cache = [v.tensor for v in variadic_args[len(self.devices) :]]
+
+            kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
+
+            outputs = nn_model(
+                tokens.tensor,
+                signal_buffers,
+                kv_caches_per_dev,
+                input_row_offsets=input_row_offsets,
+            )
+            graph.output(*outputs)
+        return graph
+
+    def _unflatten_kv_inputs(
+        self, kv_inputs_flat: Sequence[TensorValue]
+    ) -> list[tuple[TensorValue, ...]]:
+        kv_params = Llama4Config.get_kv_params(
+            huggingface_config=self.huggingface_config,
+            n_devices=len(self.devices),
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.encoding.cache_dtype,
+        )
+        n_devices = kv_params.n_devices
+        fetch_types = self.kv_manager.input_symbols()[0]
+        len_of_kv_tuple_per_dev = len(list(fetch_types))
+        kv_caches_per_dev = [
+            tuple(
+                kv_inputs_flat[
+                    i * len_of_kv_tuple_per_dev : (i + 1)
+                    * len_of_kv_tuple_per_dev
+                ]
+            )
+            for i in range(n_devices)
+        ]
+        return kv_caches_per_dev
 
     @staticmethod
     def infer_optimal_batch_size(
@@ -277,11 +456,28 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             An object containing the output logits from the model execution.
         """
-        # TODO(bduke): implement `execute`.
-        dummy_logits = Tensor.zeros(
-            (1,), dtype=self.dtype, device=self.devices[0]
+        model_inputs = cast(Llama4Inputs, model_inputs)
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        model_outputs = self.model.execute(
+            model_inputs.tokens,
+            model_inputs.input_row_offsets_or_attn_mask,
+            *model_inputs.signal_buffers,
+            *curr_kv_cache_inputs,
+            copy_inputs_to_device=(
+                not self.kv_cache_config.cache_strategy.uses_opaque()
+            ),
         )
-        return ModelOutputs(logits=dummy_logits)
+        if len(model_outputs) == 3:
+            return ModelOutputs(
+                logits=cast(Tensor, model_outputs[1]),
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logit_offsets=cast(Tensor, model_outputs[2]),
+            )
+        else:
+            return ModelOutputs(
+                logits=cast(Tensor, model_outputs[0]),
+                next_token_logits=cast(Tensor, model_outputs[0]),
+            )
 
     def prepare_initial_token_inputs(
         self,
@@ -305,9 +501,24 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             The prepared :obj:`ModelInputs` object for the initial execution step.
         """
         # This needs to be replaced with actual input preparation
-        inputs = ModelInputs()
-        inputs.kv_cache_inputs = kv_cache_inputs
-        return inputs
+        # Get input_row_offsets: start and end position of each batch in the
+        # combined total_seq_len dimension.
+        input_row_offsets = np.cumsum(
+            [0] + [ctx.active_length for ctx in context_batch],
+            dtype=np.uint32,
+        )
+
+        # Create a ragged token vector of length: sum(len(t) for t in tokens).
+        tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
+
+        return Llama4Inputs(
+            tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
+            input_row_offsets_or_attn_mask=Tensor.from_numpy(
+                input_row_offsets
+            ).to(self.devices[0]),
+            signal_buffers=self.signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+        )
 
     def prepare_next_token_inputs(
         self, next_tokens: Tensor, prev_model_inputs: ModelInputs
@@ -326,9 +537,18 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             The prepared :obj:`ModelInputs` object for the next execution step.
         """
-        # This needs to be replaced with actual input preparation for next step
-        # For now, just return the previous inputs (potentially modified)
-        return prev_model_inputs
+        prev_model_inputs = cast(Llama4Inputs, prev_model_inputs)
+        row_offsets_size = (
+            prev_model_inputs.input_row_offsets_or_attn_mask.shape[0]
+        )
+        next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
+
+        return Llama4Inputs(
+            tokens=next_tokens,
+            input_row_offsets_or_attn_mask=next_row_offsets,
+            signal_buffers=self.signal_buffers,
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
+        )
 
     def load_kv_manager(
         self, session: InferenceSession, available_cache_memory: int | None

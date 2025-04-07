@@ -19,6 +19,7 @@ from max.pipelines.kv_cache import KVCacheStrategy
 from max.pipelines.registry import SupportedArchitecture
 from max.pipelines.tokenizer import TextTokenizer
 
+from . import weight_adapters
 from .model import Llama4Model
 
 llama4_arch = SupportedArchitecture(
@@ -40,6 +41,7 @@ llama4_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     # NOTE: Llama 4 interleaves RoPE and NoPE (no positional encodings).
     rope_type=RopeType.normal,
-    # TODO(bduke): add weight adapter.
-    weight_adapters=None,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
 )

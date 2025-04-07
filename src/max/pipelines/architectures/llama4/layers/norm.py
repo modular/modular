@@ -11,7 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Llama4 normalization."""
 
-from .arch import llama4_arch
+from __future__ import annotations
 
-__all__ = ["llama4_arch"]
+from max.dtype import DType
+from max.graph import TensorType, TensorValue, ops
+
+
+def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
+    weight = ops.constant(1, DType.float32).broadcast_to([x.shape[0]])
+    if x.device:
+        weight = weight.to(x.device)
+    return ops.custom(
+        "rms_norm",
+        [x, weight, ops.constant(eps, x.dtype)],
+        [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
+    )[0].tensor

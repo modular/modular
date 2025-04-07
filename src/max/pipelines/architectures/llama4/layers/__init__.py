@@ -11,7 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
-from .arch import llama4_arch
-
-__all__ = ["llama4_arch"]
+"""Llama4 layers."""
