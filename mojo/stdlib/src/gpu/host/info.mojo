@@ -1276,7 +1276,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
             StaticString("100a"),
             StaticString("120"),
             StaticString("120a"),
-            StaticString("amdgpu:94"),
+            StaticString("94"),
             StaticString("mi300x"),
             StaticString("gfx942"),
             StaticString(""),
