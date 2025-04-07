@@ -33,7 +33,7 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 
 @always_inline
-fn _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
@@ -60,11 +60,21 @@ fn _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.dtype is DType.float32
         and c.size == 4
     ):
-        alias zero: UInt32 = 0
-        var r = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[c.dtype, c.size]
-        ](a, b, c, zero, zero, zero)
-        d = rebind[__type_of(d)](r)
+
+        @parameter
+        if block_size == 16:
+            alias zero: UInt32 = 0
+            # Note: 4x4x4_16B (i.e., 16 blocks).
+            var r = llvm_intrinsic[
+                "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[c.dtype, c.size]
+            ](a, b, c, zero, zero, zero)
+            d = rebind[__type_of(d)](r)
+        else:
+            alias zero: UInt32 = 0
+            var r = llvm_intrinsic[
+                "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[c.dtype, c.size]
+            ](a, b, c, zero, zero, zero)
+            d = rebind[__type_of(d)](r)
     elif (
         d.dtype is DType.float32
         and d.size == 16
@@ -94,18 +104,35 @@ fn _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.dtype is DType.float32
         and c.size == 4
     ):
-        alias zero: UInt32 = 0
-        var r = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[c.dtype, c.size]
-        ](
-            bitcast[DType.int16, 4](a),
-            bitcast[DType.int16, 4](b),
-            c,
-            zero,
-            zero,
-            zero,
-        )
-        d = rebind[__type_of(d)](r)
+
+        @parameter
+        if block_size == 16:
+            alias zero: UInt32 = 0
+            # Note: 4x4x4_16B (i.e., 16 blocks)
+            var r = llvm_intrinsic[
+                "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[c.dtype, c.size]
+            ](
+                bitcast[DType.int16, 4](a),
+                bitcast[DType.int16, 4](b),
+                c,
+                zero,
+                zero,
+                zero,
+            )
+            d = rebind[__type_of(d)](r)
+        else:
+            alias zero: UInt32 = 0
+            var r = llvm_intrinsic[
+                "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[c.dtype, c.size]
+            ](
+                bitcast[DType.int16, 4](a),
+                bitcast[DType.int16, 4](b),
+                c,
+                zero,
+                zero,
+                zero,
+            )
+            d = rebind[__type_of(d)](r)
     elif (
         d.dtype is DType.float32
         and d.size == 16
@@ -438,12 +465,15 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 
 @always_inline
-fn mma(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """Performs warp sync Tensor Core based Matrix-multiply and accumulate (MMA) operation.
 
     This function executes a matrix multiply-accumulate operation using GPU Tensor Cores,
     synchronizing across the warp. It dispatches to architecture-specific implementations
     for NVIDIA and AMD GPUs.
+
+    Parameters:
+        block_size: The size of the block of the MMA operation (e.g., 4x4x4_16B). Applies to AMD GPUs only.
 
     Args:
         d: Output SIMD vector to store the result.
@@ -467,7 +497,7 @@ fn mma(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     if is_nvidia_gpu():
         _mma_nvidia(d, a, b, c)
     else:
-        _mma_amd(d, a, b, c)
+        _mma_amd[block_size](d, a, b, c)
 
 
 # ===------------------------------------------------------------------===#

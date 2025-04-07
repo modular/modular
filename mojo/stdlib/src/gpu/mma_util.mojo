@@ -234,7 +234,7 @@ fn load_matrix_a_amd[
 
 @always_inline
 fn load_matrix_a_amd[
-    m: Int, n: Int, k: Int
+    m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     a_ptr: UnsafePointer[Float16],
     tile_row: Int,
@@ -247,6 +247,7 @@ fn load_matrix_a_amd[
         m: Number of rows in the output matrix tile.
         n: Number of columns in the output matrix tile.
         k: Inner dimension for matrix multiplication.
+        n_blocks: Number of blocks.
 
     Args:
         a_ptr: Pointer to matrix A data in memory.
@@ -258,26 +259,50 @@ fn load_matrix_a_amd[
         SIMD vector containing 4 FP16 values loaded from matrix A.
 
     Constraints:
-        The tile dimensions must be m=16, n=16, k=16.
+        The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
     """
 
-    constrained[m == 16 and n == 16 and k == 16]()
-    var lane = lane_id()
-    var thread_x = lane & 15
-    var thread_y = lane >> 4
-    var a = SIMD[DType.float16, 4]()
-
     @parameter
-    for i in range(4):
-        var a_idx = ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
-        a[i] = a_ptr[a_idx]
+    if m == 16 and n == 16 and k == 16 and n_blocks == 1:
+        constrained[m == 16 and n == 16 and k == 16]()
+        var lane = lane_id()
+        var thread_x = lane & 15
+        var thread_y = lane >> 4
+        var a = SIMD[DType.float16, 4]()
 
-    return a
+        @parameter
+        for i in range(4):
+            var a_idx = ldm * (
+                tile_row + thread_x
+            ) + tile_col + i + 4 * thread_y
+            a[i] = a_ptr[a_idx]
+
+        return a
+    else:
+        constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
+        var lane = lane_id()
+        # Implies 4, 16 block.
+        var thread_x = lane & 3
+        var thread_y = lane >> 2
+        var batchStrideA = grid_dim.x * m * ldm
+        var a = SIMD[DType.float16, 4]()
+
+        @parameter
+        for i in range(4):
+            # consecutive threads cover 16 consecutive rows
+            # consecutive registers take consecutive columns
+            # groups of 16 lanes cover each matrix in batch
+            var a_idx = ldm * (tile_row + thread_x) + (
+                tile_col + i
+            ) + thread_y * batchStrideA
+            a[i] = a_ptr[a_idx]
+
+        return a
 
 
 @always_inline
 fn load_matrix_a_amd[
-    m: Int, n: Int, k: Int
+    m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     a_ptr: UnsafePointer[BFloat16],
     tile_row: Int,
@@ -290,6 +315,7 @@ fn load_matrix_a_amd[
         m: Number of rows in the output matrix tile.
         n: Number of columns in the output matrix tile.
         k: Inner dimension for matrix multiplication.
+        n_blocks: Number of blocks.
 
     Args:
         a_ptr: Pointer to matrix A data in memory.
@@ -301,21 +327,44 @@ fn load_matrix_a_amd[
         SIMD vector containing 4 BF16 values loaded from matrix A.
 
     Constraints:
-        The tile dimensions must be m=16, n=16, k=16.
+        The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
     """
 
-    constrained[m == 16 and n == 16 and k == 16]()
-    var lane = lane_id()
-    var thread_x = lane & 15
-    var thread_y = lane >> 4
-    var a = SIMD[DType.bfloat16, 4]()
-
     @parameter
-    for i in range(4):
-        var a_idx = ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
-        a[i] = a_ptr[a_idx]
+    if m == 16 and n == 16 and k == 16 and n_blocks == 1:
+        var lane = lane_id()
+        var thread_x = lane & 15
+        var thread_y = lane >> 4
+        var a = SIMD[DType.bfloat16, 4]()
 
-    return a
+        @parameter
+        for i in range(4):
+            var a_idx = ldm * (
+                tile_row + thread_x
+            ) + tile_col + i + 4 * thread_y
+            a[i] = a_ptr[a_idx]
+
+        return a
+    else:
+        constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
+        var lane = lane_id()
+        # Implies 4, 16 block.
+        var thread_x = lane & 3
+        var thread_y = lane >> 2
+        var batchStrideA = grid_dim.x * m * ldm
+        var a = SIMD[DType.bfloat16, 4]()
+
+        @parameter
+        for i in range(4):
+            # consecutive threads cover 16 consecutive rows
+            # consecutive registers take consecutive columns
+            # groups of 16 lanes cover each matrix in batch
+            var a_idx = ldm * (tile_row + thread_x) + (
+                tile_col + i
+            ) + thread_y * batchStrideA
+            a[i] = a_ptr[a_idx]
+
+        return a
 
 
 @always_inline
@@ -499,12 +548,13 @@ fn load_matrix_b_amd[
 
 @always_inline
 fn load_matrix_b_amd[
-    m: Int, n: Int, k: Int
+    m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     b_ptr: UnsafePointer[Float16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
+    tile_loops: Int = 1,
 ) -> SIMD[DType.float16, 4]:
     """Loads a tile of matrix B from memory to registers for AMD FP16 tensor core operations.
 
@@ -516,12 +566,14 @@ fn load_matrix_b_amd[
         m: Number of rows in the output matrix tile.
         n: Number of columns in the output matrix tile.
         k: Inner dimension for matrix multiplication.
+        n_blocks: Number of blocks.
 
     Args:
         b_ptr: Pointer to matrix B data in memory (FP16 format).
         tile_row: Starting row index of the tile.
         tile_col: Starting column index of the tile.
         ldm: Leading dimension of matrix B (stride between rows).
+        tile_loops: Number of tile loops across matrix B's row dimension.
 
     Returns:
         SIMD vector containing 4 FP16 values loaded from matrix B.
@@ -532,28 +584,51 @@ fn load_matrix_b_amd[
         - Uses thread ID to determine which elements to load.
         - Loads 4 consecutive elements per thread for efficient vectorization.
     """
-    var lane = lane_id()
-    var thread_x = lane & 15
-    var thread_y = lane >> 4
-
-    var b = SIMD[DType.float16, 4]()
 
     @parameter
-    for i in range(4):
-        var b_idx = ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
-        b[i] = b_ptr[b_idx]
+    if m == 16 and n == 16 and k == 16 and n_blocks == 1:
+        var lane = lane_id()
+        var thread_x = lane & 15
+        var thread_y = lane >> 4
 
-    return b
+        var b = SIMD[DType.float16, 4]()
+
+        @parameter
+        for i in range(4):
+            var b_idx = ldm * (
+                tile_row + 4 * thread_y + i
+            ) + tile_col + thread_x
+            b[i] = b_ptr[b_idx]
+
+        return b
+    else:
+        constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
+        var lane = lane_id()
+        # Implies 4, 16 block.
+        var thread_x = lane & 3
+        var thread_y = lane >> 2
+        var batchStrideB = tile_loops * k * ldm
+        var b = SIMD[DType.float16, 4]()
+
+        @parameter
+        for i in range(4):
+            var b_idx = tile_col + thread_x + (
+                tile_row + i
+            ) * ldm + thread_y * batchStrideB
+            b[i] = b_ptr[b_idx]
+
+        return b
 
 
 @always_inline
 fn load_matrix_b_amd[
-    m: Int, n: Int, k: Int
+    m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     b_ptr: UnsafePointer[BFloat16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
+    tile_loops: Int = 1,
 ) -> SIMD[DType.bfloat16, 4]:
     """Loads a tile of matrix B from memory to registers for AMD BF16 tensor core operations.
 
@@ -565,12 +640,14 @@ fn load_matrix_b_amd[
         m: Number of rows in the output matrix tile.
         n: Number of columns in the output matrix tile.
         k: Inner dimension for matrix multiplication.
+        n_blocks: Number of blocks.
 
     Args:
         b_ptr: Pointer to matrix B data in memory (BF16 format).
         tile_row: Starting row index of the tile.
         tile_col: Starting column index of the tile.
         ldm: Leading dimension of matrix B (stride between rows).
+        tile_loops: Number of tile loops across matrix B's row dimension.
 
     Returns:
         SIMD vector containing 4 BF16 values loaded from matrix B.
@@ -581,18 +658,40 @@ fn load_matrix_b_amd[
         - Uses thread ID to determine which elements to load.
         - Loads 4 consecutive elements per thread for efficient vectorization.
     """
-    var lane = lane_id()
-    var thread_x = lane & 15
-    var thread_y = lane >> 4
-
-    var b = SIMD[DType.bfloat16, 4]()
 
     @parameter
-    for i in range(4):
-        var b_idx = ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
-        b[i] = b_ptr[b_idx]
+    if m == 16 and n == 16 and k == 16 and n_blocks == 1:
+        var lane = lane_id()
+        var thread_x = lane & 15
+        var thread_y = lane >> 4
 
-    return b
+        var b = SIMD[DType.bfloat16, 4]()
+
+        @parameter
+        for i in range(4):
+            var b_idx = ldm * (
+                tile_row + 4 * thread_y + i
+            ) + tile_col + thread_x
+            b[i] = b_ptr[b_idx]
+
+        return b
+    else:
+        constrained[m == 4 and n == 4 and k == 4 and n_blocks == 16]()
+        var lane = lane_id()
+        # Implies 4, 16 block.
+        var thread_x = lane & 3
+        var thread_y = lane >> 2
+        var batchStrideB = tile_loops * k * ldm
+        var b = SIMD[DType.bfloat16, 4]()
+
+        @parameter
+        for i in range(4):
+            var b_idx = tile_col + thread_x + (
+                tile_row + i
+            ) * ldm + thread_y * batchStrideB
+            b[i] = b_ptr[b_idx]
+
+        return b
 
 
 @always_inline
@@ -648,7 +747,7 @@ fn _store_matrix_d_nvidia[
 
 @always_inline
 fn _store_matrix_d_amd[
-    dtype: DType, //, m: Int, n: Int, k: Int
+    dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     d_ptr: UnsafePointer[Scalar[dtype]],
     d: SIMD[dtype, 4],
@@ -667,6 +766,7 @@ fn _store_matrix_d_amd[
         m: Number of rows in matrix D.
         n: Number of columns in matrix D.
         k: Inner dimension for matrix multiply.
+        n_blocks: Number of blocks.
 
     Args:
         d_ptr: Pointer to destination memory for matrix D.
@@ -680,18 +780,41 @@ fn _store_matrix_d_amd[
         - Each thread stores 4 elements in consecutive positions.
     """
 
-    var lane = lane_id()
-    var thread_x = lane & 15
-    var thread_y = lane >> 4
-
     @parameter
-    for i in range(4):
-        d_ptr[ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x] = d[i]
+    if m == 4 and n == 4 and k == 4 and n_blocks == 16:
+        var lane = lane_id()
+        # Implies 4, 16 block.
+        var thread_x = lane & 3
+        var thread_y = lane >> 2
+        var batchStrideD = grid_dim.x * m * ldm
+
+        @parameter
+        for i in range(4):
+            # consecutive threads cover 4 consecutive columns
+            # consecutive registers take consecutive rows
+            # groups of 4 lanes cover each matrix in batch
+            var d_idx = tile_col + thread_x + (
+                tile_row + i
+            ) * ldm + thread_y * batchStrideD
+            d_ptr[d_idx] = d[i]
+
+    else:
+        # TODO: Do we need to add constraints here?
+        var lane = lane_id()
+        var thread_x = lane & 15
+        var thread_y = lane >> 4
+
+        @parameter
+        for i in range(4):
+            var d_idx = ldm * (
+                tile_row + 4 * thread_y + i
+            ) + tile_col + thread_x
+            d_ptr[d_idx] = d[i]
 
 
 @always_inline
 fn store_matrix_d[
-    dtype: DType, //, m: Int, n: Int, k: Int
+    dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
     d_ptr: UnsafePointer[Scalar[dtype]],
     d: SIMD[dtype, 4],
@@ -710,6 +833,7 @@ fn store_matrix_d[
         m: Number of rows in matrix D.
         n: Number of columns in matrix D.
         k: Inner dimension for matrix multiply.
+        n_blocks: Number of blocks.
 
     Args:
         d_ptr: Pointer to destination memory for matrix D.
@@ -728,4 +852,6 @@ fn store_matrix_d[
     if is_nvidia_gpu():
         _store_matrix_d_nvidia[m, n, k](d_ptr, d, tile_row, tile_col, ldm)
     else:
-        _store_matrix_d_amd[m, n, k](d_ptr, d, tile_row, tile_col, ldm)
+        _store_matrix_d_amd[m, n, k, n_blocks](
+            d_ptr, d, tile_row, tile_col, ldm
+        )
