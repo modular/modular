@@ -86,6 +86,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         self,
         context_batch: Sequence[InputContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> DummyModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
 

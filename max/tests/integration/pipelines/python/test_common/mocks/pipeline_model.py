@@ -33,10 +33,12 @@ class MockModelInputs(ModelInputs):
         active_batch_size: int,
         eos_prob: float,
         kv_cache_inputs: Optional[KVCacheInputs] = None,
+        return_n_logits: int = 1,
     ) -> None:
         self.active_batch_size = active_batch_size
         self.eos_prob = eos_prob
         self.kv_cache_inputs = kv_cache_inputs
+        self.return_n_logits = return_n_logits
 
 
 class MockPipelineModel(PipelineModel):
@@ -152,11 +154,13 @@ class MockPipelineModel(PipelineModel):
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: Optional[KVCacheInputs] = None,
+        return_n_logits: int = 1,
     ) -> ModelInputs:
         return MockModelInputs(
             active_batch_size=len(context_batch),
             eos_prob=self.eos_prob,
             kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
         )
 
     def prepare_next_token_inputs(
@@ -169,4 +173,5 @@ class MockPipelineModel(PipelineModel):
             active_batch_size=prev_model_inputs.active_batch_size,
             eos_prob=self.eos_prob,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
+            return_n_logits=prev_model_inputs.return_n_logits,
         )
