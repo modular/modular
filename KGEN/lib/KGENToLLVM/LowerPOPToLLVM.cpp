@@ -376,7 +376,7 @@ private:
                            Value value, APFloat::Semantics fromFloatSemantics,
                            APFloat::Semantics toFloatSemantics) const {
     assert(getTypeConverter()->getTarget().getTriple().isAMDGPU() &&
-           "fast lowering of f32 to bf16 only supported on AMDGPU");
+           "fast lowering of f32 to bf16 is only supported on AMDGPU");
     assert(cast.getFastAttr() &&
            "`fast` attribute must be set on a `pop.cast`");
 
@@ -440,7 +440,7 @@ private:
                         Value value, APFloat::Semantics fromFloatSemantics,
                         APFloat::Semantics toFloatSemantics) const {
     assert(isNVPTX_HopperAndAbove(getTypeConverter()->getTarget()) &&
-           "fast lowering of f32 to fp8 only supported on NVIDIA Hopper "
+           "lowering of f32 to f8 is only supported on NVIDIA Hopper "
            "architectures or above");
     Location loc = op.getLoc();
     auto simd = cast<SIMDType>(op.getInput().getType());
@@ -479,6 +479,95 @@ private:
 
     rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(
         op, VectorType::get(size, f8Type), res);
+    return success();
+  }
+
+  /// Helper function to convert vector of F8 (F8E4M3FN or F8E5M2) to F16 on
+  /// NVPTX without replacing the operation
+  Value convertF8ToF16OnNVPTXHelper(ConversionPatternRewriter &rewriter,
+                                    CastOp op, Value value,
+                                    APFloat::Semantics fromFloatSemantics,
+                                    APFloat::Semantics toFloatSemantics) const {
+    assert(isNVPTX_HopperAndAbove(getTypeConverter()->getTarget()) &&
+           "lowering of f8 to f16 or f32 is only supported on NVIDIA Hopper "
+           "architectures or above");
+    Location loc = op.getLoc();
+    auto simd = cast<SIMDType>(op.getInput().getType());
+    const uint64_t size = *simd.getResolvedSize();
+
+    Type f16Type = Float16Type::get(rewriter.getContext());
+
+    StringRef asmStr =
+        fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN
+            ? "cvt.rn.f16x2.e4m3x2"
+            : "cvt.rn.f16x2.e5m2x2";
+
+    Type ui16Type = rewriter.getIntegerType(16);
+    assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
+    if (size > 1) {
+      // Bitcast the value to a vector of i16 as NVPTX instruction expects
+      // packed f8 as i16.
+      value = rewriter.create<LLVM::BitcastOp>(
+          loc, VectorType::get(size / 2, ui16Type), value);
+
+      auto extractElement = [&](unsigned index) {
+        return rewriter.create<LLVM::ExtractElementOp>(
+            loc, ui16Type, value,
+            createConstant<uint32_t>(rewriter, loc, index));
+      };
+      // Create a vector of I32 to hold the result of the conversion. At the end
+      // it will be bitcasted to f16
+      Value res = rewriter.create<LLVM::UndefOp>(
+          op.getLoc(), VectorType::get(size / 2, rewriter.getIntegerType(32)));
+      for (uint64_t i = 0, e = size / 2; i < e; ++i) {
+        Value converted =
+            createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1;", "=r,h",
+                            rewriter.getIntegerType(32), {extractElement(i)})
+                .getResult(0);
+        res = rewriter.create<LLVM::InsertElementOp>(
+            loc, res, converted, createConstant<uint32_t>(rewriter, loc, i));
+      }
+      return rewriter.create<LLVM::BitcastOp>(
+          loc, VectorType::get(size, f16Type), res);
+    } else {
+      Type ui8Type = rewriter.getIntegerType(8);
+      Value ui16 = rewriter.create<LLVM::ZExtOp>(
+          loc, ui16Type, rewriter.create<LLVM::BitcastOp>(loc, ui8Type, value));
+      Value converted =
+          createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1;", "=r,h",
+                          rewriter.getIntegerType(32), {ui16})
+              .getResult(0);
+      // At this point result contains two elements, while we're only interested
+      // in lower one.
+      converted = rewriter.create<LLVM::TruncOp>(loc, ui16Type, converted);
+      return rewriter.create<LLVM::BitcastOp>(loc, f16Type, converted);
+    }
+  }
+
+  /// Convert vector of FP8 (F8E4M3FN or F8E5M2) to a vector of F16 on NVPTX
+  /// The conversion relies on NVPTX-specific instructions to perform the
+  /// conversion, therefore no need to rely on `fast` attribute on a `pop.cast`.
+  LogicalResult
+  convertF8ToF16OnNVPTX(ConversionPatternRewriter &rewriter, CastOp op,
+                        Value value, APFloat::Semantics fromFloatSemantics,
+                        APFloat::Semantics toFloatSemantics) const {
+    rewriter.replaceOp(op, convertF8ToF16OnNVPTXHelper(rewriter, op, value,
+                                                       fromFloatSemantics,
+                                                       toFloatSemantics));
+    return success();
+  }
+
+  /// Convert vector of FP8 (F8E4M3FN or F8E5M2) to a vector of F32 on NVPTX
+  /// The conversion relies on NVPTX-specific instructions to perform the
+  /// conversion, therefore no need to rely on `fast` attribute on a `pop.cast`.
+  LogicalResult
+  convertF8ToF32OnNVPTX(ConversionPatternRewriter &rewriter, CastOp op,
+                        Value value, APFloat::Semantics fromFloatSemantics,
+                        APFloat::Semantics toFloatSemantics) const {
+    Value res = convertF8ToF16OnNVPTXHelper(
+        rewriter, op, value, fromFloatSemantics, toFloatSemantics);
+    rewriter.replaceOpWithNewOp<LLVM::FPExtOp>(op, convertType(op.getType()),
+                                               res);
     return success();
   }
 
@@ -526,6 +615,35 @@ private:
       // least that version.
       if (simd && isNVPTX_HopperAndAbove(target)) {
         return convertF32ToF8OnNVPTX(rewriter, cast, value, fromFloatSemantics,
+                                     toFloatSemantics);
+      }
+      return failure();
+    }
+    // Convert F8 (either e4m3fn or e5m2) to F16
+    if ((fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
+         fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2) &&
+        toFloatSemantics == llvm::APFloat::Semantics::S_IEEEhalf) {
+      // This might not be ideal to check the targeted GPU by the name, but it's
+      // what stdlib does for now. Might be better to use approach similar to
+      // NVPTX backend of getting SM version and expecting targeted GPU has at
+      // least that version.
+      if (simd && isNVPTX_HopperAndAbove(target)) {
+        return convertF8ToF16OnNVPTX(rewriter, cast, value, fromFloatSemantics,
+                                     toFloatSemantics);
+      }
+      return failure();
+    }
+
+    // Convert F8 (either e4m3fn or e5m2) to F32
+    if ((fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
+         fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2) &&
+        toFloatSemantics == llvm::APFloat::Semantics::S_IEEEsingle) {
+      // This might not be ideal to check the targeted GPU by the name, but it's
+      // what stdlib does for now. Might be better to use approach similar to
+      // NVPTX backend of getting SM version and expecting targeted GPU has at
+      // least that version.
+      if (simd && isNVPTX_HopperAndAbove(target)) {
+        return convertF8ToF32OnNVPTX(rewriter, cast, value, fromFloatSemantics,
                                      toFloatSemantics);
       }
       return failure();
