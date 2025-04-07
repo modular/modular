@@ -37,7 +37,6 @@ alias dtypes = (
     DType.float8_e5m2fnuz,
     DType.float8_e4m3fn,
     DType.float8_e4m3fnuz,
-    DType.float8_e4m3,
     DType.bfloat16,
     DType.float16,
     DType.float32,

@@ -81,7 +81,7 @@ struct FPUtils[
         """
 
         @parameter
-        if dtype in (DType.float8_e4m3, DType.float8_e4m3fnuz):
+        if dtype is DType.float8_e4m3fnuz:
             return 7
         elif dtype is DType.float8_e4m3fn:
             return 8
@@ -104,7 +104,6 @@ struct FPUtils[
 
         @parameter
         if dtype in (
-            DType.float8_e4m3,
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
         ):
@@ -681,7 +680,7 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
         )
     elif dtype is DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3>`,
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fn>`,
         )
     elif dtype is DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
