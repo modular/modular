@@ -21,7 +21,7 @@ from os import setenv
 
 
 from sys import external_call, os_is_linux, os_is_macos, os_is_windows
-from sys.ffi import c_int
+from sys.ffi import c_int, c_char
 
 from memory import UnsafePointer
 
@@ -49,8 +49,8 @@ fn setenv(
         return False
 
     var status = external_call["setenv", Int32](
-        name.unsafe_ptr().bitcast[c_int](),
-        value.unsafe_ptr().bitcast[c_int](),
+        name.unsafe_ptr().bitcast[c_char](),
+        value.unsafe_ptr().bitcast[c_char](),
         Int32(1 if overwrite else 0),
     )
     return status == 0
@@ -70,7 +70,7 @@ fn unsetenv(name: StringSlice) -> Bool:
     ]()
 
     return (
-        external_call["unsetenv", c_int](name.unsafe_ptr().bitcast[c_int]())
+        external_call["unsetenv", c_int](name.unsafe_ptr().bitcast[c_char]())
         == 0
     )
 
@@ -104,7 +104,7 @@ fn getenv[
         return String(default)
 
     var ptr = external_call["getenv", UnsafePointer[UInt8]](
-        name.unsafe_ptr().bitcast[c_int]()
+        name.unsafe_ptr().bitcast[c_char]()
     )
     if not ptr:
         return String(default)
