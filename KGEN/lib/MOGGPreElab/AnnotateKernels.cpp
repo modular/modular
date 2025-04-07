@@ -307,10 +307,8 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
                              litTypeToSourceName(resultType));
   }
 
-  if (!typeNames.empty()) {
-    func->setDiscardableAttr(MOGG_ARG_TYPE_NAMES,
-                             builder.getArrayAttr(typeNames));
-  }
+  func->setDiscardableAttr(MOGG_ARG_TYPE_NAMES,
+                           builder.getArrayAttr(typeNames));
 
   if (!sourceName.empty()) {
     func->setDiscardableAttr(MOGG_ARG_SRC_NAMES,
