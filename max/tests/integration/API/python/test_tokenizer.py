@@ -3,8 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
+
 import asyncio
 
+import numpy as np
 import pytest
 import requests
 from max.pipelines import (
@@ -152,3 +155,32 @@ def test_tokenizer__truncates_to_max_length():
     )
     with pytest.raises(ValueError, match="max length"):
         _ = asyncio.run(tokenizer.new_context(long_request))
+
+
+def test_tokenizer_regression_MODELS_467() -> None:
+    """Regression test for
+    https://linear.app/modularml/issue/MODELS-467/[bug]-no-text-response-mistralaimistral-7b-instruct-v03
+    """
+    tokenizer = TextTokenizer(
+        "mistralai/Mistral-7B-Instruct-v0.3",
+        revision="e0bc86c23ce5aae1db576c8cca6f06f1f73af2db",
+        enable_llama_whitespace_fix=True,
+    )
+
+    def rank1(items: list[int]) -> np.ndarray:
+        return np.array(items, dtype=np.uint32)
+
+    def rank0(item: int) -> np.ndarray:
+        return rank1([item])[0]
+
+    def decode(tokens: np.ndarray) -> str:
+        context = TextContext("Irrelevant", None, rank1([]))
+        return asyncio.run(tokenizer.decode(context, tokens))
+
+    # Single token here needs preceding space, including rank-0.
+    assert decode(rank1([23325])) == " Hello"
+    assert decode(rank0(23325)) == " Hello"
+    assert decode(rank1([23325, 2294])) == "Hello world"
+    # But not all single tokens should have a preceding space, including rank-0.
+    assert decode(rank1([1056])) == "ing"
+    assert decode(rank0(1056)) == "ing"
