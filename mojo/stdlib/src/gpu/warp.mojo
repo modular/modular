@@ -850,6 +850,68 @@ fn sum[
 
 
 # ===-----------------------------------------------------------------------===#
+# Warp Prefix Sum
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn prefix_sum[
+    type: DType, //,
+    intermediate_type: DType = type,
+    *,
+    output_type: DType = type,
+    exclusive: Bool = False,
+](x: SIMD[type, _]) -> Scalar[output_type]:
+    """Computes a warp-level prefix sum (scan) operation.
+
+    Performs an inclusive or exclusive prefix sum across threads in a warp using
+    a parallel scan algorithm with warp shuffle operations. This implements an
+    efficient parallel scan with logarithmic complexity.
+
+    For example, if we have a warp with the following elements:
+    $$$
+    [x_0, x_1, x_2, x_3, x_4]
+    $$$
+
+    The prefix sum is:
+    $$$
+    [x_0, x_0 + x_1, x_0 + x_1 + x_2, x_0 + x_1 + x_2 + x_3, x_0 + x_1 + x_2 + x_3 + x_4]
+    $$$
+
+    Parameters:
+        type: The data type of the input SIMD elements.
+        intermediate_type: Type used for intermediate calculations (defaults to
+                          input type).
+        output_type: The desired output data type (defaults to input type).
+        exclusive: If True, performs exclusive scan where each thread receives
+                   the sum of all previous threads. If False (default), performs
+                   inclusive scan where each thread receives the sum including
+                   its own value.
+
+    Args:
+        x: The SIMD value to include in the prefix sum.
+
+    Returns:
+        A scalar containing the prefix sum at the current thread's position in
+        the warp, cast to the specified output type.
+    """
+    var res = x.cast[intermediate_type]().reduce_add()
+
+    @parameter
+    for i in range(1, log2_floor(WARP_SIZE)):
+        alias offset = 1 << i
+        var n = shuffle_up(res, offset)
+        if thread_idx.x % WARP_SIZE >= offset:
+            res += n
+
+    @parameter
+    if exclusive:
+        res = shuffle_up(res, 1)
+
+    return res.cast[output_type]()
+
+
+# ===-----------------------------------------------------------------------===#
 # Warp Max
 # ===-----------------------------------------------------------------------===#
 
