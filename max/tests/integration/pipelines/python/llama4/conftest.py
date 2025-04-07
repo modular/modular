@@ -80,7 +80,7 @@ def shared_expert_weights(config: Llama4TextConfig) -> dict[str, torch.Tensor]:
             dtype=torch.bfloat16,
         ),
         "gate_proj.weight": torch.randn(
-            8912,
+            8192,
             5120,
             dtype=torch.bfloat16,
         ),
@@ -108,7 +108,7 @@ def expert_weights(config: Llama4TextConfig) -> dict[str, torch.Tensor]:
         "gate_up_proj": torch.randn(
             16,
             5120,
-            8192,
+            16384,
             dtype=torch.bfloat16,
         ),
     }
