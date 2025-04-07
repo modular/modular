@@ -245,11 +245,6 @@ fn DTypeFloat8E3M4TypeDef(ty: DType.type) -> DType.type:
     return DType.float8_e3m4.value
 
 
-@register_internal("float8_e4m3")
-fn DTypeFloat8E4M3TypeDef(ty: DType.type) -> DType.type:
-    return DType.float8_e4m3.value
-
-
 @register_internal("float8_e4m3fn")
 fn DTypeFloat8E4M3FnTypeDef(ty: DType.type) -> DType.type:
     return DType.float8_e4m3fn.value
