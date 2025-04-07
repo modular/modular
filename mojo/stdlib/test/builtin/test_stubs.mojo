@@ -16,6 +16,20 @@ from testing import assert_equal, assert_true, assert_false
 from sys.intrinsics import _type_is_eq
 
 
+def test_uint_for():
+    for i in range(UInt(5)):
+        assert_false(_type_is_eq[__type_of(i), Int]())
+        assert_true(_type_is_eq[__type_of(i), UInt]())
+
+    for i in range(UInt(1), UInt(5)):
+        assert_false(_type_is_eq[__type_of(i), Int]())
+        assert_true(_type_is_eq[__type_of(i), UInt]())
+
+    for i in range(UInt(1), UInt(5), UInt(2)):
+        assert_false(_type_is_eq[__type_of(i), Int]())
+        assert_true(_type_is_eq[__type_of(i), UInt]())
+
+
 def test_uint_parameter_for():
     @parameter
     for i in range(UInt(5)):
@@ -34,4 +48,5 @@ def test_uint_parameter_for():
 
 
 def main():
+    test_uint_for()
     test_uint_parameter_for()
