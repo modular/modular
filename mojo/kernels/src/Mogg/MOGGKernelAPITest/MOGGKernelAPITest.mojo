@@ -862,15 +862,6 @@ struct TestCustomOp:
         return input.shape()
 
 
-@compiler.register("invalid_kernel_owned_arg")
-struct InvalidOwnedArgConvention:
-    @staticmethod
-    fn execute[
-        target: StringLiteral, type: DType, rank: Int
-    ](owned input: MyCustomScalarSI32) -> MyCustomScalarSI32:
-        return MyCustomScalarSI32(input.val)
-
-
 @compiler.register("single_device_context")
 struct SingleDeviceContext:
     @staticmethod
