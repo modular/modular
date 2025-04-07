@@ -461,9 +461,9 @@ fn _get_rtx5090_target() -> __mlir_type.`!kgen.target`:
 
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
-        `arch = "sm_120", `,
-        `features = "+ptx85,+sm_120", `,
-        `tune_cpu = "sm_120", `,
+        `arch = "sm_120a", `,
+        `features = "+ptx85,+sm_120a", `,
+        `tune_cpu = "sm_120a", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
         `simd_bit_width = 128`,
