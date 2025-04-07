@@ -80,13 +80,6 @@ except ImportError:
 
 logger = logging.getLogger("max.pipelines")
 
-ARCH_SAFE_VRAM_USAGE_LIMIT = {
-    "DeepseekCoder": 0.96,
-    "ExaoneForCausalLM": 0.96,
-    "LlamaForCausalLM": 0.96,
-    "MistralForCausalLM": 0.96,
-}
-
 
 def upper_bounded_default(upper_bound: int, default: int | None) -> int:
     """
