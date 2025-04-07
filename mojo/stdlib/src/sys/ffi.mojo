@@ -106,7 +106,7 @@ fn _c_long_long_dtype() -> DType:
 @always_inline
 fn c_str_ptr(
     item: StringLiteral,
-) -> UnsafePointer[c_char, mut=False, origin=StaticConstantOrigin]:
+) -> __type_of(item.unsafe_ptr().bitcast[c_char]()):
     """Get the `c_char` pointer.
 
     Args:
@@ -119,9 +119,7 @@ fn c_str_ptr(
 
 
 @always_inline
-fn c_str_ptr(
-    item: Error,
-) -> UnsafePointer[c_char, mut=False, origin=ImmutableAnyOrigin]:
+fn c_str_ptr(item: Error) -> __type_of(item.unsafe_ptr().bitcast[c_char]()):
     """Get the `c_char` pointer.
 
     Args:
@@ -136,58 +134,8 @@ fn c_str_ptr(
 @always_inline
 fn c_str_ptr(
     ref item: String,
-) -> UnsafePointer[
-    c_char,
-    mut = Origin(__origin_of(item)).is_mutable,
-    origin = __origin_of(item),
-]:
+) -> __type_of(item.unsafe_ptr().bitcast[c_char]()):
     """Get the `c_char` pointer.
-
-    Args:
-        item: The item.
-
-    Returns:
-        The pointer.
-    """
-    return item.unsafe_ptr().bitcast[c_char]()
-
-
-@always_inline
-fn c_str_ptr[
-    T: CollectionElement
-](item: List[T]) -> UnsafePointer[
-    c_char,
-    mut = Origin(__origin_of(item)).is_mutable,
-    origin = __origin_of(item),
-]:
-    """Get the `c_char` pointer.
-
-    Parameters:
-        T: The type.
-
-    Args:
-        item: The item.
-
-    Returns:
-        The pointer.
-    """
-    return item.unsafe_ptr().bitcast[c_char]()
-
-
-@always_inline
-fn c_str_ptr[
-    T: CollectionElement
-](item: Span[T]) -> UnsafePointer[
-    c_char,
-    mut = __type_of(item).mut,
-    origin = __type_of(item).origin,
-    address_space = __type_of(item).address_space,
-    alignment = __type_of(item).alignment,
-]:
-    """Get the `c_char` pointer.
-
-    Parameters:
-        T: The type.
 
     Args:
         item: The item.
