@@ -142,3 +142,26 @@ kgen.generator export @with_cycle<T: dtype>(%arg0: index, %arg1: !kgen.pointer<i
 
 // CHECK-LABEL: kgen.generator  @with_cycle_1_REMOVED_ARG(%arg0: index) -> index {
 // CHECK-NEXT: kgen.call @with_cycle_2(%arg0) : (index) -> index
+
+// -----
+
+kgen.generator @hanoi<T: dtype>(%arg0: !pop.scalar<si8>, %arg1: !pop.scalar<si16>, %arg2: !pop.scalar<si32>) -> (!pop.scalar<si8>, !pop.scalar<si32>) {
+  %si8 = pop.cast %arg2 : !pop.scalar<si32> to !pop.scalar<si8>
+  %si32 = pop.cast %arg0 : !pop.scalar<si8> to !pop.scalar<si32>
+  %0:2 = kgen.call @hanoi<:dtype T>(%si8, %arg1, %si32) : (!pop.scalar<si8>, !pop.scalar<si16>, !pop.scalar<si32>) -> (!pop.scalar<si8>, !pop.scalar<si32>)
+  kgen.return %0, %si32 : !pop.scalar<si8>, !pop.scalar<si32>
+}
+
+kgen.generator export @hanoi_entry<T: dtype>(%arg0: !pop.scalar<si8>, %arg1: !pop.scalar<si16>, %arg2: !pop.scalar<si32>){
+  %0:2 = kgen.call @hanoi<:dtype T>(%arg0, %arg1, %arg2) : (!pop.scalar<si8>, !pop.scalar<si16>, !pop.scalar<si32>) -> (!pop.scalar<si8>, !pop.scalar<si32>)
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.generator export @hanoi_entry<T: dtype>(%arg0: !pop.scalar<si8>, %arg1: !pop.scalar<si16>, %arg2: !pop.scalar<si32>)
+// CHECK-NEXT: kgen.call @hanoi_REMOVED_ARG(%arg0, %arg2)
+
+// CHECK-LABEL: kgen.generator @hanoi_REMOVED_ARG(%arg0: !pop.scalar<si8>, %arg1: !pop.scalar<si32>)
+// CHECK-NEXT:  %[[NEW_OP0:.*]] = pop.cast %arg1
+// CHECK-NEXT:  %[[NEW_OP1:.*]] = pop.cast %arg0
+// CHECK-NEXT:  %2:2 = kgen.call @hanoi_REMOVED_ARG(%[[NEW_OP0]], %[[NEW_OP1]])
+
