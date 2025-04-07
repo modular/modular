@@ -1891,7 +1891,8 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
       return failure();
 
     // Reject inheriting from types we don't support yet.
-    if (!isa<TraitType>(type)) {
+    auto traitType = dyn_cast<TraitType>(type);
+    if (!traitType) {
       if (isa<LIT::StructType>(type)) {
         p.emitError(loc) << "inheriting from structs is not allowed";
       } else if (isa<ParamType>(type)) {
@@ -1904,12 +1905,15 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
       return success();
     }
 
-    for (SymbolRefAttr symbol : cast<TraitType>(type).getSymbols()) {
+    auto symbols = traitType.getSymbols();
+
+    // If the user explicitly inherited a trait that is already provided
+    // elsewhere, provide a warning.
+    if (symbols.size() == 1) {
+      auto symbol = symbols.front();
       auto [it, inserted] =
           inheritedFrom->try_emplace(symbol, std::make_pair(symbol, loc));
       if (!inserted) {
-        // If the user explicitly inherited a trait that is already provided
-        // elsewhere, provide a warning.
         auto [cur, curLoc] = it->second;
         InflightDiag diag = shared.emitWarning(loc, "'")
                             << declName << "' already inherits from "
@@ -1925,7 +1929,7 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
     // Successively flatten the parent list so we always have all the parents
     // available to check.
     // TODO: Encode an "inherited from" here, to make diagnostics nice.
-    for (SymbolRefAttr symbol : cast<TraitType>(type).getSymbols()) {
+    for (SymbolRefAttr symbol : symbols) {
       ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
       TraitType canonicalParent =
           cast<TraitDeclOp>(traitDecl).getCanonicalTrait();
