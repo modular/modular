@@ -13,14 +13,13 @@
 
 
 from max.graph.weights import WeightsFormat
-
-# TODO(bduke): Replace with actual Llama4 model once implemented.
-from max.pipelines.architectures.llama3.model import Llama3Model
 from max.pipelines.config_enums import RopeType, SupportedEncoding
 from max.pipelines.interfaces import PipelineTask
 from max.pipelines.kv_cache import KVCacheStrategy
 from max.pipelines.registry import SupportedArchitecture
 from max.pipelines.tokenizer import TextTokenizer
+
+from .model import Llama4Model
 
 llama4_arch = SupportedArchitecture(
     name="Llama4ForConditionalGeneration",
@@ -34,8 +33,7 @@ llama4_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
-    # TODO(bduke): replace with the actual Llama4ForCausalLM model.
-    pipeline_model=Llama3Model,
+    pipeline_model=Llama4Model,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
