@@ -363,18 +363,38 @@ fn _matmul_gpu[
 
             @parameter
             if has_amd_gpu_accelerator():
-                alias amd_config = kernels.mi300x_128x128_1 if transpose_b else kernels.mi300x_128x128_2
-                multistage_gemm[
-                    transpose_b=transpose_b,
-                    config=amd_config,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    amd_config,
-                    ctx,
-                )
+                alias static_N = c_shape.get[1]()
+                alias static_K = a_shape.get[1]()
+
+                @always_inline
+                @parameter
+                fn kernel_helper[
+                    amd_config: MatmulConfig[
+                        a_type, b_type, c_type, transpose_b
+                    ]
+                ]() raises:
+                    multistage_gemm[
+                        transpose_b=transpose_b,
+                        config=amd_config,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                        amd_config,
+                        ctx,
+                    )
+
+                @parameter
+                if not transpose_b:
+                    kernel_helper[kernels.mi300x_128x128_2]()
+                elif static_N >= 4096 and static_K >= 4096:
+                    if m >= 4096:
+                        kernel_helper[kernels.mi300x_256x256_1]()
+                    else:
+                        kernel_helper[kernels.mi300x_128x128_1]()
+                else:
+                    kernel_helper[kernels.mi300x_128x128_1]()
                 return
 
             @parameter
