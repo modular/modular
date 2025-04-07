@@ -52,7 +52,6 @@ def constant(
         # Generate in f32 and cast to bf16.
         return constant(value, DType.float32).cast(DType.bfloat16)
     elif dtype in (
-        DType.float8_e4m3,
         DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
         DType.float8_e5m2,
@@ -95,7 +94,7 @@ _DTYPE_MIN_AND_MAX = {
     DType.uint64: (0, 2**64 - 1),
     DType.float8_e5m2: (float("-inf"), float("inf")),
     DType.float8_e5m2fnuz: (-57344, 57344),
-    DType.float8_e4m3: (float("-inf"), float("inf")),
+    DType.float8_e4m3fn: (-448, 448),
     DType.float8_e4m3fnuz: (-240, 240),
     DType.bfloat16: (float("-inf"), float("inf")),
     DType.float16: (float("-inf"), float("inf")),

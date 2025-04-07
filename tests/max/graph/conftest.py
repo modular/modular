@@ -46,7 +46,7 @@ settings.load_profile("graph_tests")
 MAX_INT32 = np.iinfo(np.int32).max
 MAX_INT64 = np.iinfo(np.int64).max
 
-# TODO(MSDK-1234): add f8e5m2 and f8e4m3 to test date types
+# TODO(MSDK-1234): add f8e5m2 and f8e4m3fn to test date types
 dtypes = st.sampled_from(
     [
         d
@@ -56,7 +56,6 @@ dtypes = st.sampled_from(
             DType._unknown,
             DType.float8_e5m2,
             DType.float8_e5m2fnuz,
-            DType.float8_e4m3,
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
         )

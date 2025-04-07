@@ -56,7 +56,7 @@ def assert_matmul_properties(
         assert dtype._mlir in str(graph._mlir_op)
 
 
-# TODO(MSDK-1234): add f8e5m2 and f8e4m3 to test date types
+# TODO(MSDK-1234): add f8e5m2 and f8e4m3fn to test date types
 @pytest.mark.parametrize(
     "dtype",
     [
@@ -65,7 +65,6 @@ def assert_matmul_properties(
         if d
         not in [
             DType._unknown,
-            DType.float8_e4m3,
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
             DType.float8_e5m2,
