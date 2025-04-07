@@ -52,9 +52,19 @@ def OutlineKernels : Pass<"mogg-outline-kernels", "ModuleOp"> {
 def AnnotateKernels : Pass<"mogg-annotate-kernels", "ModuleOp"> {
   let summary = "Strips MOGG decorators and replaces them with attributes";
   let description = [{
-    A mogg domain specific pass which will annotate each kernel at the lit
+    A MOGG domain specific pass which will annotate each kernel at the lit
     level allowing subsequent passes to use the information parsed in a
     sanitized way.
+  }];
+}
+
+def VerifyKernels : Pass<"mogg-verify-kernels", "ModuleOp"> {
+  let summary = "Verifies that kernels are well constructed";
+  let description = [{
+    This pass ensures that the kernels present in the module are well
+    constructed. Among other things, it checks that shape functions match
+    execute functions and that inputs appear after outputs in the function's
+    signature.
   }];
 }
 

@@ -32,6 +32,7 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
   pm.addPass(createCheckLifetimes());
 
   pm.addPass(MOGGPreElab::createAnnotateKernels());
+  pm.addPass(MOGGPreElab::createVerifyKernels());
 }
 
 /// This populates the early pipeline passes of the KGEN compiler that lowers
