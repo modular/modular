@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements a foreign functions interface (FFI)."""
 
-from collections.string.string_slice import (
-    StringSlice,
-    StaticString,
-    _get_kgen_string,
-    get_static_string,
-)
+from collections.string.string_slice import _get_kgen_string, get_static_string
 from os import abort
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 

@@ -18,11 +18,7 @@ Documentation for these functions can be found online at:
 """
 
 from collections import InlineArray, Optional
-from collections.string.string_slice import (
-    StringSlice,
-    StaticString,
-    get_static_string,
-)
+from collections.string.string_slice import get_static_string
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path

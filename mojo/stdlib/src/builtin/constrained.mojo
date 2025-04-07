@@ -14,7 +14,7 @@
 
 These are Mojo built-ins, so you don't need to import them.
 """
-from collections.string.string_slice import StaticString, _get_kgen_string
+from collections.string.string_slice import _get_kgen_string
 
 
 @always_inline("nodebug")

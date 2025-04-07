@@ -24,7 +24,7 @@ from sys.info import is_gpu, _is_sm_9x_or_newer
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
-from collections.string.string_slice import StaticString, _get_kgen_string
+from collections.string.string_slice import _get_kgen_string
 
 from ._assembly import inlined_assembly
 from .info import is_amd_gpu, is_nvidia_gpu, sizeof

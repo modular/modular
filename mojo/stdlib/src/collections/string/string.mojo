@@ -58,8 +58,6 @@ from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
-    StaticString,
-    StringSlice,
     CodepointSliceIter,
     _to_string_list,
     _utf8_byte_type,

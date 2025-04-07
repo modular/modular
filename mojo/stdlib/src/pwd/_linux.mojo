@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections.string import StringSlice
+
 from sys.ffi import c_char, external_call
 
 from memory import UnsafePointer

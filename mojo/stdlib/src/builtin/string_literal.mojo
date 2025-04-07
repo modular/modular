@@ -17,11 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from collections import List
 from collections.string.format import _CurlyEntryFormattable
-from collections.string.string_slice import (
-    StaticString,
-    StringSlice,
-    CodepointSliceIter,
-)
+from collections.string.string_slice import CodepointSliceIter
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_char
 

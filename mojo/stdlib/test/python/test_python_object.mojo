@@ -17,7 +17,6 @@ from collections import Dict
 
 from python import Python, PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
-from utils import StaticString
 
 
 def test_dunder_methods(mut python: Python):

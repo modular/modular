@@ -19,7 +19,7 @@ from os import setenv
 ```
 """
 
-from collections.string import StringSlice
+
 from sys import external_call, os_is_linux, os_is_macos, os_is_windows
 from sys.ffi import c_int
 

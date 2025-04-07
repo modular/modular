@@ -20,7 +20,7 @@ from base64 import b64encode
 """
 
 from collections import List
-from collections.string import StringSlice, StaticString
+
 from memory import Span
 from sys import simdwidthof
 

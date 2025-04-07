@@ -13,7 +13,6 @@
 # RUN: %mojo %s
 
 
-from collections.string import StringSlice
 from hashlib._ahash import AHasher
 from hashlib._hasher import _hash_with_hasher, _HashableWithHasher, _Hasher
 from pathlib import Path

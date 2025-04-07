@@ -15,7 +15,6 @@ to data elements in arrays."""
 
 from sys.intrinsics import _type_is_eq
 from sys import sizeof
-from collections.string import StaticString
 
 
 @always_inline

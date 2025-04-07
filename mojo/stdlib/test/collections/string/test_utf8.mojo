@@ -16,7 +16,7 @@ from collections.string._utf8 import (
     _is_valid_utf8,
     _count_utf8_continuation_bytes,
 )
-from collections.string.string_slice import StringSlice
+
 from sys.info import alignof, sizeof
 
 from memory import Span, UnsafePointer

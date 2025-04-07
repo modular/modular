@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes the inlined_assembly function."""
 
-from collections.string.string_slice import StaticString, _get_kgen_string
+from collections.string.string_slice import _get_kgen_string
 
 from .intrinsics import _mlirtype_is_eq
 

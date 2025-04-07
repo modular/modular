@@ -22,7 +22,7 @@ from tempfile import gettempdir
 import os
 import sys
 from collections import List, Optional
-from collections.string import StringSlice
+
 from pathlib import Path
 
 from memory import Span

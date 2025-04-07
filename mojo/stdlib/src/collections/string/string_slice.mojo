@@ -31,7 +31,7 @@ The `StringSlice` type is particularly useful for:
 
 Example:
     ```mojo
-    from collections.string import StringSlice
+    
 
     # Create a string slice
     var text = StringSlice("Hello, 世界")
@@ -182,7 +182,7 @@ struct CodepointSliceIter[
         return the same value:
 
         ```mojo
-        from collections.string import StringSlice, Codepoint
+        from collections.string import Codepoint
         from testing import assert_equal
 
         var input = StringSlice("123")
@@ -226,7 +226,7 @@ struct CodepointSliceIter[
         return the same value:
 
         ```mojo
-        from collections.string import StringSlice, Codepoint
+        from collections.string import Codepoint
         from testing import assert_equal
 
         var input = StringSlice("123")
@@ -393,7 +393,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]]:
         return the same value:
 
         ```mojo
-        from collections.string import StringSlice, Codepoint
+        from collections.string import Codepoint
         from testing import assert_equal
 
         var input = StringSlice("123")
@@ -713,7 +713,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Query the length of a string, in bytes and Unicode codepoints:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("ನಮಸ್ಕಾರ")
@@ -726,7 +726,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Unicode codepoint length:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("abc")
@@ -1414,7 +1414,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Print the characters in a string:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("abc")
@@ -1429,7 +1429,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         codepoints:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         # A visual character composed of a combining sequence of 2 codepoints.
@@ -1500,7 +1500,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Query the length of a string, in bytes and Unicode codepoints:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("ನಮಸ್ಕಾರ")
@@ -1513,7 +1513,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Unicode codepoint length:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("abc")
@@ -1526,7 +1526,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         the length in Unicode codepoints, not grapheme clusters:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal
 
         var s = StringSlice("á")
@@ -1570,7 +1570,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Check if particular byte positions are codepoint boundaries:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_equal, assert_true
         var abc = StringSlice("abc")
         assert_equal(len(abc), 3)
@@ -1616,7 +1616,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         The following program verifies the above diagram:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_true, assert_false
 
         var text = StringSlice("a©➇𝄞")
@@ -1863,7 +1863,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Check if a string contains only whitespace:
 
         ```mojo
-        from collections.string import StringSlice
+
         from testing import assert_true, assert_false
 
         # An empty string is not considered to contain only whitespace chars:

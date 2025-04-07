@@ -13,8 +13,6 @@
 """Implements utilities to capture and represent source code location.
 """
 
-from collections.string import StaticString
-
 
 @value
 @register_passable("trivial")

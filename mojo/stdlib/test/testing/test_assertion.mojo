@@ -25,7 +25,6 @@ from testing import (
     assert_true,
 )
 
-from utils import StringSlice, StaticString
 from utils.numerics import inf, nan
 
 

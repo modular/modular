@@ -15,7 +15,6 @@
 from os import PathLike, remove, unlink
 from os.path import exists
 from pathlib import Path
-from utils import StaticString
 
 from testing import assert_false, assert_raises, assert_true
 

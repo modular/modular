@@ -33,8 +33,6 @@ Core Features:
 
 Example:
 ```mojo
-    from collections.string import String, StringSlice
-
     # Basic string creation and manipulation
     var s = String("Hello, 世界")
     var slice = s[0:5] # "Hello"
