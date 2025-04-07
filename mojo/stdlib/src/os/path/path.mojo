@@ -49,7 +49,7 @@ fn _constrain_unix():
 
 
 @always_inline
-fn _get_stat_st_mode(path: String) raises -> Int:
+fn _get_stat_st_mode(path: StringSlice) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_stat_macos(path).st_mode)
@@ -60,7 +60,7 @@ fn _get_stat_st_mode(path: String) raises -> Int:
 
 
 @always_inline
-fn _get_lstat_st_mode(path: String) raises -> Int:
+fn _get_lstat_st_mode(path: StringSlice) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_lstat_macos(path).st_mode)
