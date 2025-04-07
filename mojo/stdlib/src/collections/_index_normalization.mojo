@@ -44,6 +44,8 @@ fn normalize_index[
         or _type_is_eq[I, UInt16]()
         or _type_is_eq[I, UInt32]()
         or _type_is_eq[I, UInt64]()
+        or _type_is_eq[I, UInt128]()
+        or _type_is_eq[I, UInt256]()
     ):
         var i = UInt(index(idx))
         # TODO: Consider a way to construct the error message after the assert has failed
