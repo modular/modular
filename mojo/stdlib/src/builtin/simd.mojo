@@ -1728,15 +1728,28 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
             constrained[
-                target in (DType.float32, DType.float16, DType.bfloat16),
+                target
+                in (
+                    DType.float64,
+                    DType.float32,
+                    DType.float16,
+                    DType.bfloat16,
+                ),
                 (
-                    "Only FP8->F32, FP8->F16, and FP8->BF16 castings are"
-                    " implemented."
+                    String(
+                        (
+                            "Only FP8->F64, FP8->F32, FP8->F16, and FP8->BF16"
+                            " castings are implemented. "
+                        ),
+                        dtype,
+                        "->",
+                        target,
+                    )
                 ),
             ]()
 
             @parameter
-            if target is DType.float32:
+            if target in (DType.float32, DType.float64):
                 return _convert_float8_to_f32(
                     rebind[SIMD[dtype, size]](self)
                 ).cast[target]()
