@@ -308,10 +308,9 @@ class MAXModelConfig(MAXModelConfigBase):
         This method attempts to find the weights locally first to avoid network
         calls, checking in the following order:
 
-        1. If the path in `weight_path` exists directly as a local file path.
-        2. If `repo_type` is :obj:`RepoType.local`, it checks if the path exists
-           relative to the local repository directory specified by `repo_id`.
-        3. If `repo_type` is :obj:`RepoType.online`, it first checks the local
+        1. If `repo_type` is :obj:`RepoType.local`, it checks if the path
+           in `weight_path` exists directly as a local file path.
+        2. Otherwise, if `repo_type` is :obj:`RepoType.online`, it first checks the local
            Hugging Face cache using :obj:`huggingface_hub.try_to_load_from_cache()`.
            If not found in the cache, it falls back to querying the Hugging Face
            Hub API via :obj:`HuggingFaceRepo.size_of()`.
@@ -667,13 +666,11 @@ class MAXModelConfig(MAXModelConfigBase):
         """Checks common local locations for a weight file and returns its
         absolute path if found.
 
-        Checks in the following order:
-        1. Directly using the provided `relative_path` (e.g., if it's already
-           absolute or relative to current working directory).
-        2. If the repo is local (`RepoType.local`), checks relative to
-           `repo.repo_id`.
-        3. If the repo is online (`RepoType.online`), checks the Hugging Face
-           cache via `try_to_load_from_cache()`.
+        Checks locations based on the repository type:
+        - If `RepoType.local`, try directly using `relative_path` (absolute or
+          CWD-relative).
+        - If `RepoType.online`, checks the Hugging Face cache via
+          `try_to_load_from_cache()`.
 
         Args:
             relative_path: The Path object representing the weight file,
@@ -682,33 +679,28 @@ class MAXModelConfig(MAXModelConfigBase):
         Returns:
             The absolute path (as a string) to the local file if found, otherwise None.
         """
-        # 1. Check direct path
-        if relative_path.exists() and relative_path.is_file():
-            return str(relative_path.resolve())
-
         repo = self.huggingface_weights_repo
 
-        # 2. Handle local repository paths.
+        # 1. Handle local repository paths.
         if repo.repo_type == RepoType.local:
-            full_local_path = Path(repo.repo_id) / relative_path
-            if full_local_path.exists() and full_local_path.is_file():
-                return str(full_local_path.resolve())
-            else:
-                # Not found in the specified local repo directory
-                return None
+            # Check direct path first (absolute or relative to CWD).
+            if relative_path.exists() and relative_path.is_file():
+                return str(relative_path.resolve())
 
-        # 3. Handle online repositories: try cache first.
+            # Not found locally.
+            return None
+
+        # 2. Handle online repositories: try cache only.
         elif repo.repo_type == RepoType.online:
-            # `try_to_load_from_cache` checks the snapshot
-            # `HF_HUB_CACHE / "snapshots"` and hence doesn't touch an HF API.
+            # `try_to_load_from_cache` checks the HF cache.
             # Returns absolute path string if found in cache, otherwise None.
             return try_to_load_from_cache(
                 repo_id=repo.repo_id,
                 filename=str(relative_path),
                 revision=repo.revision,
             )
+        # 3. Handle unexpected repo type.
         else:
-            # Should not happen due to validation, but return None defensively.
             logger.warning(
                 f"Unexpected repository type encountered: {repo.repo_type}"
             )

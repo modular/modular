@@ -26,8 +26,26 @@ from max.graph.quantization import QuantizationEncoding
 
 
 class RepoType(str, Enum):
+    """Specifies the source location type of a model repository.
+
+    This determines how model configuration and weight files are located and loaded.
+    """
+
     online = "online"
+    """Indicates an online repository, typically hosted on HuggingFace Hub.
+
+    Paths for weights within an online repository are resolved primarily
+    through the local HuggingFace cache, but fall back to downloading through
+    the HF API if the local cache isn't populated.
+    """
+
     local = "local"
+    """Indicates a repository stored on the local filesystem.
+
+    Paths for weights within a local repository are resolved first directly
+    (as absolute paths or relative to the current working directory), and
+    then relative to the repository's root directory.
+    """
 
 
 # Reference: https://github.com/ggerganov/llama.cpp/blob/eb5c3dc64bd967f2e23c87d9dec195f45468de60/src/llama.cpp#L20778
