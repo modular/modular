@@ -51,7 +51,7 @@ fn setenv(
     var status = external_call["setenv", Int32](
         name.unsafe_ptr().bitcast[c_char](),
         value.unsafe_ptr().bitcast[c_char](),
-        Int32(1 if overwrite else 0),
+        Int32(overwrite),
     )
     return status == 0
 
