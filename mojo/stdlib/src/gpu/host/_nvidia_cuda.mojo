@@ -101,12 +101,15 @@ struct TensorMapDataType:
     @staticmethod
     fn from_dtype[dtype: DType]() -> Self:
         constrained[
-            dtype in (DType.float32, DType.bfloat16), "Unsupported dtype"
+            dtype in (DType.float32, DType.bfloat16, DType.float8_e4m3fn),
+            "Unsupported dtype",
         ]()
 
         @parameter
         if dtype is DType.float32:
             return Self.FLOAT32
+        elif dtype is DType.float8_e4m3fn:
+            return Self.UINT8
         else:
             return Self.BFLOAT16
 
