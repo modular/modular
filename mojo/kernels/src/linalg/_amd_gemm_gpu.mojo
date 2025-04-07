@@ -54,6 +54,7 @@ struct MMATileBuffers[
     thread_layout: Layout,
     swizzle: Swizzle,
     num_k_tiles: Int,
+    block_dim: Int,
     block_k_dim: Int,
     warp_tile_size: Int,
     warp_tile_mmas: Int,
@@ -114,17 +115,23 @@ struct MMATileBuffers[
         Self.RegisterTileType.stack_allocation().split[2]()
     )
 
+    var global_offset: UInt
+
     @always_inline
     fn __init__(
         out self,
         warp_id: Int,
         warp_idx: Int,
+        block_idx: Int,
+        k_dim: Int,
     ):
         """Initialize memory regions for a matrix based on warp coordinates.
 
         Args:
             warp_id: The global warp ID (used for warp tiling).
             warp_idx: The warp index within the computation grid (used for MMA operations).
+            block_idx: The block index within the computation grid (used for warp tiling).
+            k_dim: The K dimension of the matrix (used for global memory offset calculation).
         """
         self.shared_mem_tile = Self.SharedMemTileType.stack_allocation()
         self.warp_tile = self.shared_mem_tile.tile[warp_tile_size, block_k_dim](
@@ -137,6 +144,11 @@ struct MMATileBuffers[
         self.register_buffer = Self.RegisterTileType.stack_allocation().split[
             2
         ]()
+        self.global_offset = k_dim * (
+            block_dim * block_idx + warp_tile_size * warp_id
+        )
+
+        # var offset_a = k_dim *(block_m * block_idx.y + warp_id * warp_tile_m()
 
     @always_inline
     fn copy_to_shared(self):
@@ -156,8 +168,8 @@ struct MMATileBuffers[
 
     @always_inline
     fn load_from_dram(
-        self, gmem_iter: LayoutTensor, source_tensor: LayoutTensor
-    ):
+        mut self, gmem_iter: LayoutTensor, source_tensor: LayoutTensor
+    ) -> None:
         """Load data from global memory (DRAM) to thread-local memory.
 
         Args:
@@ -171,7 +183,9 @@ struct MMATileBuffers[
             self.load_tile.vectorize[1, Self.simd_width](),
             gmem_iter.vectorize[1, Self.simd_width](),
             source_tensor,
+            self.global_offset,
         )
+        self.global_offset += block_k_dim
 
     @always_inline
     fn get_register_tile[
@@ -423,12 +437,13 @@ fn gemm_kernel[
         thread_layout=thread_layout,
         swizzle=swizzle,
         num_k_tiles=k_tiles_count,
+        block_dim=block_m,
         block_k_dim=block_k,
         warp_tile_size=warp_tile_m,
         warp_tile_mmas=warp_tile_m_mmas,
         mma_warp_dim=warp_m,
         num_mmas=mmas_per_warp_m,
-    ](warp_id, warp_id // warps_n)
+    ](warp_id, warp_id // warps_n, block_idx.y, k_dim)
 
     # Global memory iterator for matrix A
     var a_gmem_iter = a.tile[block_m, k_dim](block_idx.y, 0).tiled_iterator[
@@ -443,12 +458,13 @@ fn gemm_kernel[
         thread_layout=thread_layout,
         swizzle=swizzle,
         num_k_tiles=k_tiles_count,
+        block_dim=block_n,
         block_k_dim=block_k,
         warp_tile_size=warp_tile_n,
         warp_tile_mmas=warp_tile_n_mmas,
         mma_warp_dim = block_n // warps_n,
         num_mmas=mmas_per_warp_n,
-    ](warp_id, warp_id % warps_n)
+    ](warp_id, warp_id % warps_n, block_idx.x, k_dim)
 
     # Global memory iterator for matrix B
     var b_gmem_iter = b.tile[block_n, k_dim](block_idx.x, 0).tiled_iterator[
@@ -559,7 +575,7 @@ fn gemm_kernel[
     amd_schedule_barrier()
 
     # Stage 3: Main computation loop - Pipelined execution with double buffering
-    for _ in range(0, k_dim - 2 * block_k, block_k):
+    for _ in range(2, k_dim // block_k):
 
         @parameter
         for k_group in range(1, k_tiles_count):
