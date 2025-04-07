@@ -255,7 +255,7 @@ class SymbolicDim(Dim):
 
     .. code-block:: python
 
-        tensor_type = TensorType(DType.bool, (SymbolicDim("batch"), Dim.dynamic(), 10))
+        tensor_type = TensorType(DType.bool, (SymbolicDim("batch"), SymbolicDim("x"), 10))
     """
 
     name: str
