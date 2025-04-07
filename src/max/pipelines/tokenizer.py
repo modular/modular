@@ -350,6 +350,11 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
     def _decode_with_llama_whitespace_fix(
         self, encoded: np.ndarray, **kwargs
     ) -> str:
+        if encoded.shape == ():
+            # The np.insert below will replace the token instead of prepend it
+            # if the array is actually a scalar.  Reshape to a 1-length rank-1
+            # array in this case.  See MODELS-467 for symptom.
+            encoded = encoded.reshape((1,))
         decoded = self.delegate.decode(
             np.insert(encoded, 0, self._llama_whitespace_fix_dummy_token_id),
             **kwargs,
