@@ -39,8 +39,6 @@ class DType(enum.Enum):
 
     bfloat16 = 71
 
-    float8_e4m3 = 65
-
     float8_e4m3fn = 66
 
     float8_e4m3fnuz = 67
