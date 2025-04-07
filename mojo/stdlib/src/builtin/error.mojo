@@ -229,16 +229,16 @@ struct Error(
 
     @always_inline("nodebug")
     fn unsafe_ptr(
-        ref self,
-    ) -> UnsafePointer[
-        Byte,
-        mut = Origin(__origin_of(self)).is_mutable,
-        origin = __origin_of(self),
-    ]:
+        self,
+    ) -> UnsafePointer[Byte, mut=False, origin=ImmutableAnyOrigin]:
         """Get raw pointer to the underlying data.
 
         Returns:
             The raw pointer to the data.
+
+        Notes:
+            Since the Error owns the error string dynamically, the resulting
+            `UnsafePointer` has an `ImmutableAnyOrigin`.
         """
         return self.data
 

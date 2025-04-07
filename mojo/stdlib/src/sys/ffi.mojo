@@ -120,12 +120,8 @@ fn c_str_ptr(
 
 @always_inline
 fn c_str_ptr(
-    ref item: Error,
-) -> UnsafePointer[
-    c_char,
-    mut = Origin(__origin_of(item)).is_mutable,
-    origin = __origin_of(item),
-]:
+    item: Error,
+) -> UnsafePointer[c_char, mut=False, origin=ImmutableAnyOrigin]:
     """Get the `c_char` pointer.
 
     Args:
@@ -144,23 +140,6 @@ fn c_str_ptr(
     c_char,
     mut = Origin(__origin_of(item)).is_mutable,
     origin = __origin_of(item),
-]:
-    """Get the `c_char` pointer.
-
-    Args:
-        item: The item.
-
-    Returns:
-        The pointer.
-    """
-    return item.unsafe_ptr().bitcast[c_char]()
-
-
-@always_inline
-fn c_str_ptr(
-    item: StringSlice,
-) -> UnsafePointer[
-    c_char, mut = __type_of(item).mut, origin = __type_of(item).origin
 ]:
     """Get the `c_char` pointer.
 
@@ -423,9 +402,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         """
         # Force unique the func_name so we know that it is nul-terminated.
         alias func_name_literal = get_static_string[func_name]()
-        return self._get_function[result_type](
-            c_str_ptr(func_name_literal)
-        )
+        return self._get_function[result_type](c_str_ptr(func_name_literal))
 
     fn get_symbol[
         result_type: AnyType,
