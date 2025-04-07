@@ -424,7 +424,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         # Force unique the func_name so we know that it is nul-terminated.
         alias func_name_literal = get_static_string[func_name]()
         return self._get_function[result_type](
-            func_name_literal.unsafe_ptr().bitcast[c_char](),
+            c_str_ptr(func_name_literal)
         )
 
     fn get_symbol[

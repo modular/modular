@@ -1095,9 +1095,7 @@ struct CPython:
         """[Reference](
         https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule).
         """
-        return self.lib.call["PyImport_AddModule", PyObjectPtr](
-            name.unsafe_ptr().bitcast[c_char]()
-        )
+        return self.lib.call["PyImport_AddModule", PyObjectPtr](c_str_ptr(name))
 
     fn PyModule_Create(
         mut self,
