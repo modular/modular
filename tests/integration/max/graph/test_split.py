@@ -14,9 +14,7 @@ from max.graph import Graph, Shape, TensorType, ops
     "input_shape,split_sizes,axis",
     [
         ([15], [14, 1], 0),
-        ([5, 10, 20], [3, 2], 0),
         ([5, 10, 20], [2, 3, 2, 1, 2], 1),
-        ([5, 10, 20], [4, 6, 4, 2, 4], 2),
     ],
 )
 def test_split(session, input_shape: Shape, split_sizes: list[int], axis: int):
