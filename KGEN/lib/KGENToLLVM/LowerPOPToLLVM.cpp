@@ -449,7 +449,8 @@ private:
     Type f32Type =
         *getMLIRTypeForDType(rewriter.getContext(), *simd.getResolvedDType(),
                              getTypeConverter()->getIndexTypeBitwidth());
-    Type f8Type = cast<VectorType>(convertType(op.getType())).getElementType();
+    Type f8Type = convertType(op.getType());
+
     StringRef asmStr =
         toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN
             ? "cvt.rn.satfinite.e4m3x2.f32"
@@ -459,26 +460,32 @@ private:
       return rewriter.create<LLVM::ExtractElementOp>(
           loc, f32Type, value, createConstant<uint32_t>(rewriter, loc, index));
     };
-    // FIXME(MOCO-1794): Handle size == 1 case
-    assert(size != 1 && llvm::isPowerOf2_64(size) &&
-           "SIMD size must be a power of 2 and not 1");
-    Value res = rewriter.create<LLVM::UndefOp>(
-        op.getLoc(), VectorType::get(size / 2, rewriter.getIntegerType(16)));
-    for (uint64_t i = 0; i < size; i += 2) {
-      Value firstFp = size > 1 ? extractElement(i + 1)
-                               : createConstant(rewriter, loc, APFloat(0.0f));
-      Value secondFp = extractElement(i);
+    assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
+    if (size > 1) {
+      Value res = rewriter.create<LLVM::UndefOp>(
+          op.getLoc(), VectorType::get(size / 2, rewriter.getIntegerType(16)));
+      for (uint64_t i = 0; i < size; i += 2) {
+        Value firstFp = extractElement(i + 1);
+        Value secondFp = extractElement(i);
+        Value converted =
+            createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
+                            "=h,f,f", rewriter.getIntegerType(16),
+                            {firstFp, secondFp})
+                .getResult(0);
+        res = rewriter.create<LLVM::InsertElementOp>(
+            loc, res, converted,
+            createConstant<uint32_t>(rewriter, loc, i / 2));
+      }
+
+      rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, f8Type, res);
+    } else {
       Value converted =
           createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
                           "=h,f,f", rewriter.getIntegerType(16),
-                          {firstFp, secondFp})
+                          {createConstant(rewriter, loc, APFloat(0.0f)), value})
               .getResult(0);
-      res = rewriter.create<LLVM::InsertElementOp>(
-          loc, res, converted, createConstant<uint32_t>(rewriter, loc, i / 2));
+      rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, f8Type, converted);
     }
-
-    rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(
-        op, VectorType::get(size, f8Type), res);
     return success();
   }
 
