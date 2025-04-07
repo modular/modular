@@ -71,11 +71,14 @@ class Llama3Inputs(ModelInputs):
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
 
+    return_n_logits: Tensor
+
     def __init__(
         self,
         tokens: np.ndarray | Tensor,
         input_row_offsets_or_attn_mask: np.ndarray | Tensor,
         signal_buffers: list[Tensor],
+        return_n_logits: Tensor,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         """
@@ -90,6 +93,7 @@ class Llama3Inputs(ModelInputs):
         self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
         self.signal_buffers = signal_buffers
         self.kv_cache_inputs = kv_cache_inputs
+        self.return_n_logits = return_n_logits
 
     @property
     def input_row_offsets(self) -> np.ndarray | Tensor:
@@ -195,6 +199,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets_or_attn_mask,
+            model_inputs.return_n_logits,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
             copy_inputs_to_device=(
@@ -218,6 +223,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> Llama3Inputs:
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
@@ -236,12 +242,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
             ).to(self.devices[0]),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=Tensor.from_numpy(np.array([return_n_logits])).to(
+                self.devices[0]
+            ),
         )
 
     def _prepare_padded_initial_token_inputs(
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> Llama3Inputs:
         # Get tokens and seq_ids
         tokens = [ctx.next_tokens for ctx in context_batch]
@@ -260,12 +270,16 @@ class LlamaModelBase(PipelineModel[TextContext]):
             input_row_offsets_or_attn_mask=attn_mask,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=Tensor.from_numpy(np.array([return_n_logits])).to(
+                self.devices[0]
+            ),
         )
 
     def prepare_initial_token_inputs(
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> Llama3Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
         if self.kv_cache_config.cache_strategy.uses_opaque():
@@ -292,6 +306,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             input_row_offsets_or_attn_mask=next_row_offsets,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
+            return_n_logits=prev_model_inputs.return_n_logits,
         )
 
     def prepare_next_token_inputs(
@@ -434,6 +449,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
         input_row_offsets_type = TensorType(
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"]
+        )
 
         huggingface_config = self.huggingface_config
         if adapter:
@@ -484,11 +502,14 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 input_types=[
                     tokens_type,
                     input_row_offsets_type,
+                    return_n_logits_type,
                     *signals.input_types(),
                     *flattened_kv_types,
                 ],
             ) as graph:
-                tokens, input_row_offsets, *variadic_args = graph.inputs
+                tokens, input_row_offsets, return_n_logits, *variadic_args = (
+                    graph.inputs
+                )
 
                 # Multi-GPU passes a signal buffer per device: unmarshal those.
                 signal_buffers = [
@@ -507,6 +528,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                     signal_buffers,
                     kv_caches_per_dev,
                     input_row_offsets=input_row_offsets,
+                    return_n_logits=return_n_logits.tensor,
                 )
                 graph.output(*outputs)
                 return graph
@@ -526,14 +548,18 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 input_types=[
                     tokens_type,
                     input_row_offsets_type,
+                    return_n_logits_type,
                     *self.kv_manager.input_symbols()[0],
                 ],
             ) as graph:
-                tokens, input_row_offsets, *kv_cache_inputs = graph.inputs
+                tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
+                    graph.inputs
+                )
                 outputs = nn_model(
                     tokens.tensor,
                     [inp.tensor for inp in kv_cache_inputs],
                     input_row_offsets=input_row_offsets,
+                    return_n_logits=return_n_logits.tensor,
                 )
                 graph.output(*outputs)
                 return graph
@@ -547,6 +573,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
         tokens_type = TensorType(DType.int64, shape=["batch_size", "seq_len"])
         attn_mask_type = TensorType(
             DType.float32, shape=["batch_size", "seq_len", "post_seq_len"]
+        )
+
+        return_n_logits_type = TensorType(
+            DType.int32, shape=["return_n_logits"]
         )
 
         if len(self.devices) > 1:
@@ -591,12 +621,19 @@ class LlamaModelBase(PipelineModel[TextContext]):
             input_types=[
                 tokens_type,
                 attn_mask_type,
+                return_n_logits_type,
                 *kv_inputs,
             ],
         ) as graph:
-            tokens, attention_mask, k_cache, v_cache, start_pos, _ = (
-                graph.inputs
-            )
+            (
+                tokens,
+                attention_mask,
+                return_n_logits,
+                k_cache,
+                v_cache,
+                start_pos,
+                _,
+            ) = graph.inputs
             mask_dtype = (
                 self.dtype
                 if self.pipeline_config.model_config.quantization_encoding
@@ -616,6 +653,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 k_cache.buffer,
                 v_cache.buffer,
                 start_pos.tensor,
+                return_n_logits.tensor,
             )[0]
 
             graph.output(logits)

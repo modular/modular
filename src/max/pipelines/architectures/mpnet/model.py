@@ -150,6 +150,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> MPNetInputs:
         # Get tokens and seq_ids.
         tokens = [ctx.next_tokens for ctx in context_batch]

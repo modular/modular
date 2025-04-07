@@ -926,6 +926,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self,
         context_batch: Sequence[TextAndVisionContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
         if self.kv_cache_config.cache_strategy != KVCacheStrategy.CONTINUOUS:

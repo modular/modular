@@ -117,6 +117,7 @@ class NaiveTransformer(Module):
         k_cache: TensorValueLike,
         v_cache: TensorValueLike,
         start_pos: TensorValueLike,
+        return_n_logits: TensorValueLike,
     ) -> tuple[TensorValue]:
         h = self.embed_tokens(tokens)
 

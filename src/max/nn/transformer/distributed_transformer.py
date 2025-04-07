@@ -118,6 +118,7 @@ class DistributedTransformer(Module):
         tokens: TensorValueLike,
         signal_buffers: list[BufferValue],
         kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
+        return_n_logits: TensorValue,
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
@@ -157,7 +158,7 @@ class DistributedTransformer(Module):
 
         if self.return_n_logits > 1:
             return_n_logits_range = ops.range(
-                ops.constant(self.return_n_logits, DType.int64),
+                return_n_logits[0],
                 ops.constant(0, DType.int64),
                 ops.constant(-1, DType.int64),
                 out_dim="return_n_logits_range",
@@ -173,8 +174,8 @@ class DistributedTransformer(Module):
             )
             offsets = ops.range(
                 ops.constant(0, DType.int64),
-                last_indices.shape[0] + self.return_n_logits,
-                ops.constant(self.return_n_logits, DType.int64),
+                last_indices.shape[0] + return_n_logits[0],
+                return_n_logits[0],
                 out_dim="logit_offsets",
             )
         elif self.return_n_logits == -1:

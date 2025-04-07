@@ -329,6 +329,7 @@ class PipelineModel(ABC, Generic[T]):
         self,
         context_batch: Sequence[T],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
 

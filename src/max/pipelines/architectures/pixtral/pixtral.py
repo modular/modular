@@ -169,6 +169,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         self,
         context_batch: Sequence[TextAndVisionContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> PixtralInputs:
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_row_offsets = Tensor.from_numpy(

@@ -56,19 +56,23 @@ class MistralInputs(ModelInputs):
     This class encapsulates the input tensors required for the Mistral model execution:
     - input_tokens: A tensor containing the input token IDs
     - input_row_offsets: A tensor containing the offsets for each row in the ragged input sequence
+    - return_n_logits: A tensor containing the number of expected token logits.
     """
 
     input_tokens: Tensor
     input_row_offsets: Tensor
+    return_n_logits: Tensor
 
     def __init__(
         self,
         input_tokens: Tensor,
         input_row_offsets: Tensor,
+        return_n_logits: Tensor,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.input_tokens = input_tokens
         self.input_row_offsets = input_row_offsets
+        self.return_n_logits = return_n_logits
         self.kv_cache_inputs = kv_cache_inputs
 
 
@@ -107,6 +111,7 @@ class MistralModel(PipelineModel[TextContext]):
         model_outputs = self.model.execute(
             model_inputs.input_tokens,
             model_inputs.input_row_offsets,
+            model_inputs.return_n_logits,
             *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=False,
         )
@@ -126,6 +131,7 @@ class MistralModel(PipelineModel[TextContext]):
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> MistralInputs:
         # Get tokens and seq ids
         tokens = [ctx.next_tokens for ctx in context_batch]
@@ -148,6 +154,9 @@ class MistralModel(PipelineModel[TextContext]):
         return MistralInputs(
             input_tokens=next_tokens_batch,
             input_row_offsets=input_row_offsets,
+            return_n_logits=Tensor.from_numpy(np.array([return_n_logits])).to(
+                self.devices[0]
+            ),
             kv_cache_inputs=kv_cache_inputs,
         )
 
@@ -162,6 +171,7 @@ class MistralModel(PipelineModel[TextContext]):
         return MistralInputs(
             input_tokens=next_tokens,
             input_row_offsets=next_row_offsets,
+            return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 
@@ -329,6 +339,9 @@ class MistralModel(PipelineModel[TextContext]):
         input_row_offsets_type = TensorType(
             DType.uint32, shape=["input_row_offsets_len"]
         )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"]
+        )
 
         kv_cache_types = self.kv_manager.input_symbols()[0]
         with Graph(
@@ -336,15 +349,19 @@ class MistralModel(PipelineModel[TextContext]):
             input_types=[
                 tokens_type,
                 input_row_offsets_type,
+                return_n_logits_type,
                 *kv_cache_types,
             ],
         ) as graph:
-            tokens, input_row_offsets, *kv_cache_inputs = graph.inputs
+            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
+                graph.inputs
+            )
             # This is just needed for type checking.
             kv_cache_tensors = [v.tensor for v in kv_cache_inputs]
             outputs = nn_model(
                 tokens=tokens.tensor,
                 input_row_offsets=input_row_offsets,
+                return_n_logits=return_n_logits.tensor,
                 kv_cache_inputs=kv_cache_tensors,
             )
             graph.output(*outputs)

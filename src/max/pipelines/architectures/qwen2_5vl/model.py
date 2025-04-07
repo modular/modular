@@ -269,6 +269,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
         self,
         context_batch: Sequence[TextAndVisionContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         if self.kv_cache_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
             msg = "Llama Vision only supports continuous batching"

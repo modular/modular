@@ -131,6 +131,7 @@ class Transformer(Module):
         self,
         tokens: TensorValueLike,
         kv_cache_inputs: Sequence[TensorValue],
+        return_n_logits: TensorValue,
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens)
@@ -165,7 +166,7 @@ class Transformer(Module):
 
         if self.return_n_logits > 1:
             return_n_logits_range = ops.range(
-                ops.constant(self.return_n_logits, DType.int64),
+                return_n_logits[0],
                 ops.constant(0, DType.int64),
                 ops.constant(-1, DType.int64),
                 out_dim="return_n_logits_range",
@@ -180,8 +181,8 @@ class Transformer(Module):
             )
             offsets = ops.range(
                 ops.constant(0, DType.int64),
-                last_indices.shape[0] + self.return_n_logits,
-                ops.constant(self.return_n_logits, DType.int64),
+                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                return_n_logits[0],
                 out_dim="logit_offsets",
             )
         elif self.return_n_logits == -1:

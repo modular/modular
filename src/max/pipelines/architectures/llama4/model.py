@@ -287,6 +287,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the Llama 4 model.
 
