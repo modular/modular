@@ -44,8 +44,9 @@ fn setenv(
     Constraints:
         The function only works on macOS or Linux and returns False otherwise.
     """
-    alias os_is_supported = os_is_linux() or os_is_macos()
-    if not os_is_supported:
+
+    @parameter
+    if not (os_is_linux() or os_is_macos()):
         return False
 
     var status = external_call["setenv", Int32](
@@ -98,9 +99,9 @@ fn getenv[
         The function only works on macOS or Linux and returns an empty string
         otherwise.
     """
-    alias os_is_supported = os_is_linux() or os_is_macos()
 
-    if not os_is_supported:
+    @parameter
+    if not (os_is_linux() or os_is_macos()):
         return String(default)
 
     var ptr = external_call["getenv", UnsafePointer[UInt8]](
