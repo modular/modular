@@ -56,41 +56,6 @@ struct OpWidthDeviceContext:
         raise "NotImplemented"
 
 
-@compiler.register("op_with_wrong_device_context_pos")
-struct OpWithWrongDeviceContextPos:
-    @staticmethod
-    fn execute(
-        out: OutputTensor,
-        ctx: DeviceContextPtr,
-        x: InputTensor[type = out.type, rank = out.rank],
-    ):
-        out[0] = x[0]
-
-    @staticmethod
-    fn shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
-
-
-@compiler.register("op_with_multiples_device_context")
-struct OpWithMultiplesDeviceContext:
-    @staticmethod
-    fn execute(
-        out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
-        ctx: DeviceContextPtr,
-        ctx1: DeviceContextPtr,
-    ):
-        out[0] = x[0]
-
-    @staticmethod
-    fn shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
-
-
 @compiler.register("op_with_multiple_outputs")
 struct OpWithMultipleOutputs:
     @staticmethod
@@ -154,23 +119,6 @@ struct MakeMyIntReg:
         return MyIntReg(Int(x[0]))
 
 
-@compiler.register("op_with_return_tensor")
-struct OpWithReturnTensor:
-    @staticmethod
-    fn execute(
-        x: InputTensor,
-    ) -> DynamicTensor[x.type, 1].Type:
-        var res = DynamicTensor[x.type, 1].Type(x._ptr, IndexList[1](1))
-        res[0] = x[0]
-        return res
-
-    @staticmethod
-    fn shape(
-        x: InputTensor,
-    ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
-
-
 @compiler.register("variadic_input_to_output")
 struct VariadicInputToOutput:
     @staticmethod
@@ -187,52 +135,6 @@ struct VariadicInputToOutput:
             for j in range(input[i].size()):
                 output[i][j] = input[i][j]
             output[i][0] += bias[0]
-
-
-@compiler.register("multiple_variadic_inputs")
-struct MultipleVariadicInputs:
-    @staticmethod
-    fn execute[
-        type: DType,
-        size: Int,
-        size1: Int,
-    ](
-        out: OutputTensor[type=type, rank=1],
-        input0: InputVariadicTensors[type=type, rank=1, size=size],
-        input1: InputVariadicTensors[type=type, rank=1, size=size1],
-    ):
-        @parameter
-        for i in range(size):
-            for j in range(out.size()):
-                out[j] += input0[i][j]
-
-        @parameter
-        for i in range(size1):
-            for j in range(out.size()):
-                out[j] += input1[i][j]
-
-
-@compiler.register("multiple_variadic_outputs")
-struct MultipleVariadicOutputs:
-    @staticmethod
-    fn execute[
-        type: DType,
-        size: Int,
-        size1: Int,
-    ](
-        out0: OutputVariadicTensors[type=type, rank=1, size=size],
-        out1: OutputVariadicTensors[type=type, rank=1, size=size1],
-        x: InputTensor[type=type, rank=1],
-    ):
-        @parameter
-        for i in range(size):
-            for j in range(x.size()):
-                out0[i][j] = x[j] * i
-
-        @parameter
-        for i in range(size1):
-            for j in range(x.size()):
-                out1[i][j] = -x[j] * i
 
 
 @compiler.register("variadic_add")
@@ -270,22 +172,6 @@ struct BinaryKernelWithRaises:
         y: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise "NotImplemented"
-
-
-@compiler.register("make_my_int_memory_with_raises")
-struct MakeMyIntMemoryWithRaises:
-    @staticmethod
-    fn execute(
-        x: InputTensor[type = DType.int32, rank=1]
-    ) raises -> MyIntMemory:
-        return MyIntMemory(Int(x[0]))
-
-
-@compiler.register("make_my_int_reg_with_raises")
-struct MakeMyIntRegWithRaises:
-    @staticmethod
-    fn execute(x: InputTensor[type = DType.int32, rank=1]) raises -> MyIntReg:
-        return MyIntReg(Int(x[0]))
 
 
 @compiler.register("mutable_input_tensor")
