@@ -233,7 +233,7 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     var i = fspath.rfind(os.sep) + 1
     var head = fspath[:i]
     if head and head != os.sep * len(head):
-        return String(head.rstrip(String(os.sep)))
+        return String(head.rstrip(os.sep))
     return head
 
 
@@ -392,7 +392,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     var i = fspath.rfind(os.sep) + 1
     var head = fspath[i:]
     if head and head != os.sep * len(head):
-        return String(head.rstrip(String(os.sep)))
+        return String(head.rstrip(os.sep))
     return head
 
 
