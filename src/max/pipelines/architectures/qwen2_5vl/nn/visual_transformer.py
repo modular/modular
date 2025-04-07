@@ -20,7 +20,7 @@ from typing import Optional
 
 from max.dtype import DType
 from max.graph import Dim, TensorValue, TensorValueLike, dtype_promotion, ops
-from max.nn import MLP, Conv3D, Linear, RMSNorm
+from max.nn import MLP, Conv3D, Linear, RMSNorm, Sequential
 from max.nn.layer import Module
 
 
@@ -304,29 +304,52 @@ class VisionBlock(Module):
 
 
 @dataclass
+class PatchMerger(Module):
+    """Group spatially adjacent sets of four patch features then concatenate and
+    pass through a two-layer multi-layer perceptron (MLP) to project them into a
+    dimension that aligns with the text embeddings used in the LLM.
+    """
+
+    norm: RMSNorm
+    mlp: Sequential
+    dim: int
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        return self.mlp(self.norm(x).reshape((-1, self.dim)))
+
+
+@dataclass
 class VisionTransformer(Module):
     """The bare Qwen2.5VL Vision Transformer (a redesigned Vision Transformer (ViT))
     outputting raw hidden-states without any specific head on top.
 
-    Its a native dynamic-resolution Vision Transformer that incorporates Window Attention.
-    It reduces computational overhead while maintaining native resolution. It incorporates
-    2D-RoPE and window attention to support native input resolutions while accelerating
-    the computation of the entire visual encoder.
+    Its incorporates Window Attention to address the quadratic computational complexity
+    associated with processing images of varying sizes at native resolution. This module
+    uses only 4 full attention layers and the rest are windowed to reduces computational
+    overhead while maintaining native resolution. Window Attention cost ensures scales
+    linearly with the number of patches rather than quadratically.
 
-    The height and width of the input images are resized to multiples of 28 before being fed into the ViT.
+    For positional encoding, it adopts 2D Rotary Positional Embedding (RoPE). For videos,
+    MRoPE aligns time IDs with absolute time along the temporal dimension to capture the
+    pace of events and precise moment localization. Two consecutive frames are grouped
+    together, significantly reducing the number of tokens.
+
+    This is difference between this module and the original ViT proposed with Llava is:
+    - FFN
+    - SwiGLU activation
+    - RMSNorm for normalization
+    - window-based attention
 
     This module processes images by splitting them into patches with a stride of 14,
     generating a set of image features (embeddings).
 
-    Then, it groups spatially adjacent sets of four patch features, then concatenate
-    and pass through a two-layer (MLP) instead of directly using the raw patch embeds.
-    The output of ViT is passed through a spatial merging operation that reduces the
-    spatial dimensions of the output, controlled by the spatial_merge_size parameter.
-    After that, A linear layer projects the merged features into a space compatible with
-    the language model's embeddings.
-
-    Qwen2.5 ViT efficiently process visual information and seamlessly integrate it with
-    language models, enabling a wide range of multimodal tasks.
+    To address the efficiency challenges posed by long sequences of image features,
+    it groups spatially adjacent sets of four patch features, then concatenate them
+    and pass through a two-layer (MLP) that projects the merged features into a space
+    compatible with the language model's embeddings. This is instead of directly using
+    the raw patch embeds.
+    This spatial merging operation reduces the spatial dimensions of the output,
+    and is controlled by the spatial_merge_size parameter.
     """
 
     patch_embed: VisionPatchEmbed
@@ -334,6 +357,7 @@ class VisionTransformer(Module):
     blocks: list[VisionBlock]
     fullatt_block_indexes: list[int]
     spatial_merge_unit: int
+    merger: PatchMerger
 
     def __post_init__(self):
         super().__init__()
@@ -404,5 +428,13 @@ class VisionTransformer(Module):
                 position_embeddings=position_embeddings,
                 attention_mask=attention_mask,
             )
+
+        # The merged features are projected via a linear layer to align with the language model's embedding space.
+        h = self.merger(h)
+
+        # Re-order path embeddings (hidden_states) back to its original order before windowing.
+        # TODO(GEX-1863): Implement ops.argsort
+        reverse_indices = ops.argsort(window_index)
+        h = ops.gather(h, reverse_indices, axis=0)
 
         return h
