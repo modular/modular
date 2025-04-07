@@ -24,7 +24,6 @@ int_dtype = st.sampled_from(
 
 float_dtype = st.sampled_from(
     [
-        DType.float8_e4m3,
         DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
         DType.float8_e5m2,
@@ -41,7 +40,6 @@ float_dtype = st.sampled_from(
 def test_numpy_roundtrip(dtype: DType):
     # There is no float8 / bf16 in numpy, so we cannot roundtrip float8 / bf16
     if dtype in [
-        DType.float8_e4m3,
         DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
         DType.float8_e5m2,
