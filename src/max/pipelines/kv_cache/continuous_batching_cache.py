@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, List, cast
+from typing import Any, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -32,6 +32,7 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
+from max.pipelines.context import InputContext
 
 from ._utils import build_max_lengths_tensor
 from .cache_params import KVCacheParams
@@ -82,7 +83,7 @@ class ContinuousBatchingKVCacheCollection(_OpaqueValue):
 
 
 class FetchContinuousBatchingKVCacheCollection:
-    def __init__(self, kv_params: KVCacheParams) -> None:
+    def __init__(self, kv_params: KVCacheParams, **kwargs: Any) -> None:
         if kv_params.enable_prefix_caching:
             raise ValueError(
                 "Prefix caching is not supported for continuous batching cache."
@@ -151,7 +152,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         max_batch_size: int,
         max_seq_len: int,
         num_layers: int,
-        devices: List[Device],
+        devices: list[Device],
         session: InferenceSession,
     ) -> None:
         super().__init__(
@@ -165,7 +166,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         )
 
         # Allocate memory for the KV cache blocks.
-        self.blocks: List[Tensor] = []
+        self.blocks: list[Tensor] = []
         for i in range(len(self.devices)):
             self.blocks.append(
                 Tensor.zeros(
@@ -183,7 +184,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         cache_size = (
@@ -207,7 +208,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         max_seq_len: int,
         num_layers: int,
         available_cache_memory: int,
-        devices: List[Device],
+        devices: list[Device],
         **kwargs: Any,
     ) -> int:
         cache_size_per_sequence = (
@@ -219,11 +220,11 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         )
         return int(available_cache_memory // cache_size_per_sequence)
 
-    def _fetch(
+    def fetch(
         self,
-        seq_ids_and_prompts: dict[int, np.ndarray],
+        batch: list[InputContext],
         num_steps: int = 1,
-    ) -> List[KVCacheInputs]:
+    ) -> list[KVCacheInputs]:
         """Fetches the KV cache state for the given sequence IDs.
 
         This method retrieves the current cache state for a batch of sequences, including their
@@ -231,9 +232,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         previously cached key/value pairs.
 
         Args:
-            seq_ids_and_prompts: Dictionary of sequence IDs to fetch cache state for and the
-                new prompt we plan to add to the cache. Each ID must be within
-                the max_batch_size and must exist in the current cache.
+            batch: List of InputContext for which to fetch cache state for.
             num_steps: Number of steps to run for multi-step scheduling.
 
         Returns:
@@ -246,18 +245,20 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         Raises:
             ValueError: If any seq_id exceeds max_batch_size or doesn't exist in cache
         """
-        active_batch_size = len(seq_ids_and_prompts)
+        active_batch_size = len(batch)
 
         # Lookup table and seq_ids are redundant identical tensors.
         lookup_table_tensor = Tensor.from_numpy(
-            np.array(list(seq_ids_and_prompts.keys()), np.uint32)
+            np.array([ctx.cache_seq_id for ctx in batch], np.uint32)
         )
         cache_lengths_np = np.zeros(active_batch_size, np.uint32)
 
         max_seq_length = 0
-        max_cache_length = 0
+        max_context_length = 0
 
-        for i, (seq_id, prompt) in enumerate(seq_ids_and_prompts.items()):
+        for i, ctx in enumerate(batch):
+            seq_id = ctx.cache_seq_id
+            prompt = ctx.next_tokens
             if seq_id > self.max_batch_size:
                 msg = (
                     f"seq_id: {seq_id}, beyond max_batch_size, you may"
@@ -265,10 +266,10 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
                     " config."
                 )
                 raise ValueError(msg)
-            elif seq_id not in self.cache_lengths:
+            elif seq_id not in self.active:
                 raise ValueError(f"seq_id: {seq_id} not currently in cache.")
 
-            cache_len = self.cache_lengths[seq_id]
+            cache_len = ctx.start_idx
 
             assert (
                 cache_len + len(prompt) + num_steps - 1 <= self.max_seq_len
@@ -281,7 +282,9 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
 
             # Update the maximum lengths seen so far.
             max_seq_length = max(max_seq_length, len(prompt))
-            max_cache_length = max(max_cache_length, cache_len)
+            max_context_length = max(
+                max_context_length, cache_len + len(prompt)
+            )
 
         cache_lengths = [
             Tensor.from_numpy(cache_lengths_np).to(d) for d in self.devices
@@ -294,7 +297,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row.
         max_lengths_host = build_max_lengths_tensor(
-            num_steps, max_seq_length, max_cache_length
+            num_steps, max_seq_length, max_context_length
         )
 
         result = [
@@ -306,7 +309,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
             )
             for i in range(len(self.devices))
         ]
-        return cast(List[KVCacheInputs], result)
+        return cast(list[KVCacheInputs], result)
 
     def block_shape(self, n_sequences: int) -> list[int]:
         """Returns the shape of the KV cache blocks for the given number of sequences.
@@ -348,7 +351,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
 
     def input_symbols(
         self,
-    ) -> List[ContinuousBatchingKVCacheInputSymbols]:
+    ) -> list[ContinuousBatchingKVCacheInputSymbols]:
         """Returns the expected input tensor types for `fetch` on each device.
 
         Defines the tensor specifications needed by the cache implementation,
@@ -391,14 +394,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
                 max_lengths=TensorType(
                     DType.uint32,
                     shape=["steps_remaining", 2],
-                    # TODO: This is a hack introduced to remediate a negative side effect
-                    # of the graph compiler changes introduced in #52793.
-                    # We are tricking the compiler into thinking that the max_lengths
-                    # tensor is on the device, even though it is on the host.
-                    # With #52793 graph compiler changes, the compiler would
-                    # insert erroneous device transfers that lead to CUDA_ILLEGAL_ADDRESS
-                    # errors if we don't do this forceful device specification.
-                    device=DeviceRef(self.devices[i].label, self.devices[i].id),
+                    device=DeviceRef.CPU(),
                 ),
             )
             for i in range(len(self.devices))

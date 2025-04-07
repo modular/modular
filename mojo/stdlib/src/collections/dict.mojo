@@ -38,7 +38,6 @@ See the `Dict` docs for more details.
 """
 from sys.ffi import OpaquePointer
 
-from bit import is_power_of_two
 from memory import UnsafePointer, bitcast, memcpy
 
 from .optional import Optional
@@ -83,11 +82,11 @@ struct _DictEntryIter[
     var src: Pointer[Dict[K, V], dict_origin]
 
     fn __init__(
-        mut self, index: Int, seen: Int, ref [dict_origin]dict: Dict[K, V]
+        out self, index: Int, seen: Int, ref [dict_origin]dict: Dict[K, V]
     ):
         self.index = index
         self.seen = seen
-        self.src = Pointer.address_of(dict)
+        self.src = Pointer(to=dict)
 
     fn __iter__(self) -> Self:
         return self
@@ -97,9 +96,7 @@ struct _DictEntryIter[
         mut self,
     ) -> Pointer[DictEntry[K, V], __origin_of(self.src[]._entries[0].value())]:
         while True:
-            var opt_entry_ref = Pointer.address_of(
-                self.src[]._entries[self.index]
-            )
+            var opt_entry_ref = Pointer(to=self.src[]._entries[self.index])
 
             @parameter
             if forward:
@@ -109,7 +106,7 @@ struct _DictEntryIter[
 
             if opt_entry_ref[]:
                 self.seen += 1
-                return Pointer.address_of(opt_entry_ref[].value())
+                return Pointer(to=opt_entry_ref[].value())
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -147,7 +144,7 @@ struct _DictKeyIter[
     fn __next__(
         mut self,
     ) -> Pointer[K, __origin_of(self.iter.__next__()[].key)]:
-        return Pointer.address_of(self.iter.__next__()[].key)
+        return Pointer(to=self.iter.__next__()[].key)
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -195,8 +192,8 @@ struct _DictValueIter[
         var entry_ref = self.iter.__next__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
-        return Self.ref_type.address_of(
-            UnsafePointer.address_of(entry_ref[].value).origin_cast[
+        return Self.ref_type(
+            to=UnsafePointer.address_of(entry_ref[].value).origin_cast[
                 origin=dict_origin
             ]()[]
         )
@@ -515,7 +512,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
 
         """
         debug_assert(
-            bit.is_power_of_two(power_of_two_initial_capacity)
+            power_of_two_initial_capacity.is_power_of_two()
             and power_of_two_initial_capacity >= 8,
             "power_of_two_initial_capacity need to be >=8 and a power of two",
         )
@@ -806,10 +803,10 @@ struct Dict[K: KeyElement, V: CollectionElement](
         var index: Int
         found, slot, index = self._find_index(hash, key)
         if found:
-            var entry = Pointer.address_of(self._entries[index])
+            var entry = Pointer(to=self._entries[index])
             debug_assert(entry[].__bool__(), "entry in index must be full")
             # SAFETY: We just checked that `entry` is present.
-            return Pointer.address_of(entry[].unsafe_value().value)
+            return Pointer(to=entry[].unsafe_value().value)
 
         return None
 
@@ -874,7 +871,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         found, slot, index = self._find_index(hash, key)
         if found:
             self._set_index(slot, Self.REMOVED)
-            var entry = Pointer.address_of(self._entries[index])
+            var entry = Pointer(to=self._entries[index])
             debug_assert(entry[].__bool__(), "entry in index must be full")
             var entry_value = entry[].unsafe_take()
             entry[] = None

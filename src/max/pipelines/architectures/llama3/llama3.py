@@ -15,184 +15,184 @@
 from __future__ import annotations
 
 import functools
-from typing import Callable, Literal, Optional
+from typing import Callable
 
-import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
-from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    FetchPagedKVCacheCollection,
-    KVCacheParams,
-    KVCacheStrategy,
-)
-from max.pipelines.nn import (
+from max.graph.quantization import QuantizationEncoding
+from max.nn import (
+    MLPV2,
     AttentionWithRopeV2,
     EmbeddingV2,
+    GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
     GPTQLinearV2,
-    LayerV2,
     LinearV2,
-    OptimizedRotaryEmbedding,
+    Llama3RotaryEmbedding,
+    Module,
     RMSNormV2,
     Transformer,
     TransformerBlock,
 )
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
+    FetchPagedKVCacheCollectionFA3Fallback,
+    KVCacheStrategy,
+)
 
-from .naive_llama3 import ConstantLayerNorm, Llama3MLP, StackedMLP
+from .model_config import Llama3Config
+from .naive_llama3 import ConstantLayerNorm, StackedMLP
 
 
 class Llama3(Transformer):
-    def __init__(
-        self,
-        *,
-        hidden_size: int,
-        num_attention_heads: int,
-        num_key_value_heads: int,
-        num_hidden_layers: int,
-        rope_theta: float,
-        max_seq_len: int,
-        intermediate_size: int,
-        interleaved_rope_weights: bool,
-        rope_scaling: Optional[np.ndarray],
-        vocab_size: int,
-        dtype: DType,
-        quantization_encoding: Optional[QuantizationEncoding],
-        quantization_config: Optional[QuantizationConfig],
-        kv_params: KVCacheParams,
-        all_logits: bool,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"],
-        rms_norm_eps: Optional[float],
-        tie_word_embeddings: bool,
-        stacked_mlp: bool,
-        stacked_qkv: bool,
-        logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
-        attention_multiplier: float,
-        embedding_multiplier: float,
-        residual_multiplier: float,
-        devices: list[DeviceRef],
-        clip_qkv: Optional[float],
-    ):
-        rope = OptimizedRotaryEmbedding(
-            dim=hidden_size,
-            n_heads=num_attention_heads,
-            theta=rope_theta,
-            max_seq_len=max_seq_len,
-            rope_scaling=rope_scaling,
-            interleaved=interleaved_rope_weights,
+    def __init__(self, config: Llama3Config):
+        assert len(config.devices) == 1
+        rope = Llama3RotaryEmbedding(
+            dim=config.hidden_size,
+            n_heads=config.num_attention_heads,
+            theta=config.rope_theta,
+            max_seq_len=config.max_seq_len,
+            interleaved=config.interleaved_rope_weights,
+            scaling_params=config.rope_scaling_params,
         )
-        create_norm: Callable[..., LayerV2]
-        if norm_method == "rms_norm":
-            if rms_norm_eps is None:
+
+        # Select norm layer class.
+        create_norm: Callable[..., Module]
+        if config.norm_method == "rms_norm":
+            if config.rms_norm_eps is None:
                 raise ValueError(
                     "rms_norm_eps cannot be None for model that uses RMSNorm."
                 )
             create_norm = functools.partial(
-                RMSNormV2, hidden_size, rms_norm_eps
+                RMSNormV2, config.hidden_size, config.rms_norm_eps
             )
         else:
-            create_norm = functools.partial(ConstantLayerNorm, hidden_size)
+            create_norm = functools.partial(
+                ConstantLayerNorm, config.hidden_size
+            )
 
+        # Select linear layer class.
         linear_cls: Callable[..., LinearV2]
-        if quantization_config:
+        if config.quantization_config:
             linear_cls = functools.partial(
-                GPTQLinearV2, quantization_config=quantization_config
+                GPTQLinearV2, quantization_config=config.quantization_config
             )
         else:
             linear_cls = LinearV2
-        mlp_cls = StackedMLP if stacked_mlp else Llama3MLP
+        mlp_cls = StackedMLP if config.stacked_mlp else MLPV2
         attention_cls: Callable[..., AttentionWithRopeV2]
-        if quantization_config:
+        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
+            assert config.quantization_config is not None
+            assert not config.attention_bias, (
+                "Attention bias is not supported for GPTQAttentionWithRope."
+            )
             attention_cls = functools.partial(
                 GPTQAttentionWithRope,
-                quantization_config=quantization_config,
-                scale=attention_multiplier,
+                quantization_config=config.quantization_config,
+                scale=config.attention_multiplier,
+            )
+        elif config.model_quantization_encoding is not None:
+            assert not config.attention_bias, (
+                "Attention bias is not supported for GGUFQAttentionWithRope."
+            )
+            attention_cls = functools.partial(
+                GGUFQAttentionWithRope,
+                quantization_encoding=config.model_quantization_encoding,
+                scale=config.attention_multiplier,
             )
         else:
             attention_cls = functools.partial(
                 AttentionWithRopeV2,
-                stacked_qkv=stacked_qkv,
-                scale=attention_multiplier,
-                clip_qkv=clip_qkv,
+                stacked_qkv=config.stacked_qkv,
+                scale=config.attention_multiplier,
+                clip_qkv=config.clip_qkv,
+                has_bias=config.attention_bias,
             )
 
         layers = [
             TransformerBlock(
                 attention=attention_cls(
-                    num_attention_heads=num_attention_heads,
-                    num_key_value_heads=num_key_value_heads,
-                    hidden_size=hidden_size,
-                    kv_params=kv_params,
+                    num_attention_heads=config.num_attention_heads,
+                    num_key_value_heads=config.num_key_value_heads,
+                    hidden_size=config.hidden_size,
+                    kv_params=config.kv_params,
                     layer_idx=i,
-                    dtype=dtype,
+                    dtype=config.dtype,
                     rope=rope,
                     linear_cls=linear_cls,
-                    device=devices[0],
+                    devices=config.devices,
                 ),
                 mlp=mlp_cls(
-                    dtype,
-                    quantization_encoding,
-                    hidden_size,
-                    intermediate_size,
+                    config.dtype,
+                    config.model_quantization_encoding,
+                    config.hidden_size,
+                    config.intermediate_size,
                     linear_cls,
-                    # devices=devices,  # TODO(kathywu): setting devices causes issues
+                    devices=config.devices,
                 ),
                 attention_norm=create_norm(),
                 mlp_norm=create_norm(),
-                residual_multiplier=residual_multiplier,
+                residual_multiplier=config.residual_multiplier,
             )
-            for i in range(num_hidden_layers)
+            for i in range(config.num_hidden_layers)
         ]
 
         # Create Embedding and output layers.
-        embedding_output_dtype = dtype
-        embedding_output_quantization = quantization_encoding
-        if quantization_encoding == QuantizationEncoding.GPTQ:
+        embedding_output_dtype = config.dtype
+        embedding_output_quantization = config.model_quantization_encoding
+        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
-
         embedding_layer = EmbeddingV2(
-            vocab_size,
-            hidden_size,
+            config.vocab_size,
+            config.hidden_size,
             embedding_output_dtype,
-            None,  # TODO(kathywu): setting devices causes issues
+            config.devices[0],
             quantization_encoding=embedding_output_quantization,
         )
         output = LinearV2(
-            hidden_size,
-            vocab_size,
+            config.hidden_size,
+            config.vocab_size,
             embedding_output_dtype,
-            None,  # TODO(kathywu): setting devices causes issues
+            config.devices[0],
             quantization_encoding=embedding_output_quantization,
         )
 
-        if tie_word_embeddings:
+        if config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
 
         kv_collection_cls: (
             type[FetchContinuousBatchingKVCacheCollection]
             | type[FetchPagedKVCacheCollection]
+            | type[FetchPagedKVCacheCollectionFA3Fallback]
         )
-        if kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
+        if config.kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
             kv_collection_cls = FetchContinuousBatchingKVCacheCollection
-        elif kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        elif config.kv_params.cache_strategy == KVCacheStrategy.PAGED:
             kv_collection_cls = FetchPagedKVCacheCollection
+        elif (
+            config.kv_params.cache_strategy
+            == KVCacheStrategy.PAGED_FA3_FALLBACK
+        ):
+            kv_collection_cls = FetchPagedKVCacheCollectionFA3Fallback
         else:
             raise ValueError(
-                "Unsupported caching strategy " + str(kv_params.cache_strategy)
+                "Unsupported caching strategy "
+                + str(config.kv_params.cache_strategy)
             )
 
         super().__init__(
-            dim=hidden_size,
-            n_heads=num_attention_heads,
+            dim=config.hidden_size,
+            n_heads=config.num_attention_heads,
             layers=layers,
             norm=create_norm(),
             output=output,
             embedding=embedding_layer,
-            kv_params=kv_params,
-            kv_collection_constructor=kv_collection_cls(kv_params),
-            all_logits=all_logits,
-            embedding_multiplier=embedding_multiplier,
-            logits_postprocessor=logits_postprocessor,
+            kv_params=config.kv_params,
+            kv_collection_constructor=kv_collection_cls(
+                config.kv_params, num_layers=config.num_hidden_layers
+            ),
+            return_n_logits=config.return_n_logits,
+            embedding_multiplier=config.embedding_multiplier,
+            logits_postprocessor=config.logits_postprocessor,
         )

@@ -18,9 +18,10 @@ from __future__ import annotations
 import asyncio
 import queue
 import threading
+from collections.abc import Sequence
 from queue import Queue
 from threading import Thread
-from typing import Optional, Sequence
+from typing import Optional
 
 import tqdm
 from max.pipelines.config import PipelineConfig
@@ -115,7 +116,7 @@ async def _async_worker(
         pipeline_config
     )
     batch_config = batch_config_from_pipeline_config(pipeline_config)
-    model_name = pipeline_config.model_path
+    model_name = pipeline_config.model_config.model_path
 
     async with start_telemetry_consumer(settings) as metric_client:
         async with start_model_worker(

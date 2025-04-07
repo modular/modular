@@ -15,12 +15,14 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string import StringSlice
+
 from sys import alignof, sizeof
 from sys.ffi import c_char, c_str_ptr
 
 from memory import UnsafePointer, memcpy
 from memory.memory import _free
+
+from collections.string.format import _CurlyEntryFormattable
 
 from utils.write import write_buffered
 
@@ -37,6 +39,7 @@ struct Error(
     Writable,
     CollectionElement,
     CollectionElementNew,
+    _CurlyEntryFormattable,
 ):
     """This type represents an Error."""
 
@@ -115,7 +118,7 @@ struct Error(
     @no_inline
     fn __init__[
         *Ts: Writable
-    ](out self, *args: *Ts, sep: StringLiteral = "", end: StringLiteral = ""):
+    ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
         """
         Construct an Error by concatenating a sequence of Writable arguments.
 

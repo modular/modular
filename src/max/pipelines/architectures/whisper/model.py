@@ -15,14 +15,19 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Optional
 
-from max.driver import Tensor
+from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
+from max.graph.weights import Weights, WeightsAdapter
 from max.pipelines import (
+    KVCacheConfig,
     ModelInputs,
     PipelineConfig,
     PipelineModel,
+    SupportedEncoding,
 )
+from transformers import AutoConfig
 
 from .graph import build_graph
 
@@ -50,9 +55,28 @@ class WhisperInputs(ModelInputs):
 
 class Whisper(PipelineModel):
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
-        super().__init__(pipeline_config, session)
+        super().__init__(
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_n_logits,
+        )
         self.model = self.load_model(session)
 
     def load_model(
@@ -62,13 +86,12 @@ class Whisper(PipelineModel):
         """
         Load the Whisper speech recognition model.
         """
-        self.weights = self.pipeline_config.load_weights()
-
         logger.info("Building and compiling Whisper encoder-decoder model...")
         before = time.perf_counter()
         graph = build_graph(
             self.pipeline_config,
             self.weights,  # type: ignore
+            self.huggingface_config,
         )
         model = session.load(
             graph, weights_registry=self.weights.allocated_weights

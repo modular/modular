@@ -17,23 +17,26 @@ from __future__ import annotations
 
 import functools
 import logging
-import os
 from io import StringIO
-from typing import Callable, Optional, Type, Union, cast
+from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 
 import torch
-from max.graph.weights import WeightsAdapter
+from max.driver import Device, load_devices
+from max.dtype import DType
+from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.support.human_readable_formatter import to_human_readable_bytes
+from transformers import AutoConfig
 
-from .config import (
-    PipelineConfig,
+if TYPE_CHECKING:
+    from .config import PipelineConfig
+from .config_enums import (
     PipelineEngine,
     RopeType,
     SupportedEncoding,
-    WeightsFormat,
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
+from .hf_utils import get_architectures_from_huggingface_repo
 from .interfaces import (
     EmbeddingsGenerator,
     PipelineTask,
@@ -41,19 +44,12 @@ from .interfaces import (
     TokenGenerator,
 )
 from .kv_cache import KVCacheStrategy
+from .max_config import HuggingFaceRepo, KVCacheConfig, MAXModelConfig
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
-
-# Store a map of checkpoint encodings that can be cast to another dtype while
-# keeping similar results. Maps the requested encoding to an acceptable
-# alternate checkpoint encoding.
-_ALTERNATE_ENCODINGS = {
-    SupportedEncoding.float32: SupportedEncoding.bfloat16,
-    SupportedEncoding.bfloat16: SupportedEncoding.float32,
-}
 
 
 def get_pipeline_for_task(
@@ -90,23 +86,24 @@ class SupportedArchitecture:
         example_repo_ids: list[str],
         default_encoding: SupportedEncoding,
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
-        pipeline_model: Type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         task: PipelineTask,
-        tokenizer: Type[Union[TextTokenizer, TextAndVisionTokenizer]],
+        tokenizer: type[Union[TextTokenizer, TextAndVisionTokenizer]],
         default_weights_format: WeightsFormat,
+        multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
     ):
         """Initializes a model architecture supported by MAX pipelines.
 
-        New architectures should be registered into the `PipelineRegistry`.
+        New architectures should be registered into the :obj:`PipelineRegistry`.
 
         args:
             name: Architecture name.
-            example_repo_ids: HuggingFace repo_id which runs this architecture.
+            example_repo_ids: Hugging Face `repo_id` which runs this architecture.
             default_encoding: Default encoding for the model.
             supported_encodings: Alternate encodings supported.
-            pipeline_model: PipelineModel class that defines the model graph
+            pipeline_model: :obj:`PipelineModel` class that defines the model graph
                 and execution.
             task: Which pipeline task should the model run with.
             tokenizer: Tokenizer used to preprocess model inputs.
@@ -121,14 +118,40 @@ class SupportedArchitecture:
         self.pipeline_model = pipeline_model
         self.tokenizer = tokenizer
         self.default_weights_format = default_weights_format
+        self.multi_gpu_supported = multi_gpu_supported
         self.rope_type = rope_type
         self.weight_adapters = weight_adapters or {}
         self.task = task
+
+    def __eq__(self, other) -> bool:
+        if other.__class__ == self.__class__:
+            for field in [
+                "name",
+                "example_repo_ids",
+                "default_encoding",
+                "supported_encodings",
+                "pipeline_model",
+                "tokenizer",
+                "default_weights_format",
+                "rope_type",
+                "weight_adapters",
+                "task",
+            ]:
+                if not (hasattr(other, field) and hasattr(self, field)):
+                    return False
+
+                if getattr(other, field) != getattr(self, field):
+                    return False
+
+            return True
+
+        return False
 
 
 class PipelineRegistry:
     def __init__(self, architectures: list[SupportedArchitecture]):
         self.architectures = {arch.name: arch for arch in architectures}
+        self._cached_huggingface_configs: dict[HuggingFaceRepo, AutoConfig] = {}
 
     def register(self, architecture: SupportedArchitecture):
         """Add new architecture to registry."""
@@ -138,284 +161,78 @@ class PipelineRegistry:
 
         self.architectures[architecture.name] = architecture
 
-    def architecture_details(
-        self, pipeline_config: PipelineConfig
+    def retrieve_architecture(
+        self, model_path: str, trust_remote_code: bool = False
     ) -> Optional[SupportedArchitecture]:
-        """Return architecture details for pipeline_config if available, None if not found."""
-
-        # If no architecture is provided in the pipeline_config, we have nothing to retrieve.
-        if not pipeline_config.architecture:
-            return None
-
-        # If the engine is not provided or MAX, we should retrieve the architecture and validate it.
-        if (
-            not pipeline_config.engine
-            or pipeline_config.engine == PipelineEngine.MAX
-        ):
-            if pipeline_config.architecture in self.architectures:
-                return self.architectures[pipeline_config.architecture]
-            else:
-                return None
-        else:
-            return None
-
-    def _validate_pipeline_config_for_speculative_decoding(
-        self, pipeline_config: PipelineConfig
-    ) -> None:
-        # When `draft_model` is not provided, speculative decoding is disabled.
-        if not pipeline_config.draft_model:
-            return None
-
-        # Assume `draft_model` is provided, and thus speculative decoding is enabled.
-        # We don't support running speculative decoding with the HuggingFace backend.
-        if pipeline_config.engine == PipelineEngine.HUGGINGFACE:
-            msg = (
-                "Speculative Decoding not supported with the HuggingFace Engine"
-            )
-            raise ValueError(msg)
-
-    def validate_pipeline_config(
-        self, pipeline_config: PipelineConfig
-    ) -> PipelineConfig:
-        # Run Baseline Validation
-        pipeline_config = self._validate_pipeline_config(pipeline_config)
-
-        # Run Additional Checks for Speculative Decoding
-        self._validate_pipeline_config_for_speculative_decoding(pipeline_config)
-
-        return pipeline_config
-
-    def _validate_pipeline_config(
-        self, pipeline_config: PipelineConfig
-    ) -> PipelineConfig:
-        """Update pipeline config with appropriate values if not provided.
-        If invalid config is provided, error out with detailed reason."""
-
-        # This will update the architecture, and engine if no architecture is available.
-        pipeline_config.update_architecture()
-
-        # This will retrieve the architecture, if we support it.
-        arch = self.architecture_details(pipeline_config)
-
-        # If nothing is provided, we should not update any more params.
-        # Instead, fall back to the HuggingFace engine.
-        if not arch and pipeline_config.engine == PipelineEngine.MAX:
-            msg = (
-                "optimized architecture not available for"
-                f" '{pipeline_config.architecture}', failing as engine is provided as 'MAX'"
-            )
-            raise ValueError(msg)
-
-        elif not arch:
-            msg = (
-                "optimized architecture not available for"
-                f" '{pipeline_config.architecture}' falling back to"
-                " HuggingFace."
-            )
-            logger.warning(msg)
-            pipeline_config.engine = PipelineEngine.HUGGINGFACE
-            return pipeline_config
-
-        # The remainder of this function, assumes we have both a valid model_path,
-        # and a SupportedArchitecture. We should then validate the details of the existing architecture
-        # and fallback to HuggingFace if needed.
-
-        # If weight_path and quantization_encoding are provided, verify that they are consistent.
-        huggingface_weights_repo = pipeline_config.huggingface_weights_repo()
-        if (
-            pipeline_config.weight_path
-            and pipeline_config.quantization_encoding
-            # Cannot validate quantization_encoding for pytorch.
-            and pipeline_config.weights_format != WeightsFormat.pytorch
-        ):
-            # Get the encoding of the first weight path file.
-            if os.path.exists(pipeline_config.weight_path[0]):
-                file_encoding = SupportedEncoding.parse_from_file_name(
-                    str(pipeline_config.weight_path[0])
-                )
-            else:
-                file_encoding = huggingface_weights_repo.encoding_for_file(
-                    pipeline_config.weight_path[0]
-                )
-
-            if file_encoding:
-                if file_encoding != pipeline_config.quantization_encoding:
-                    msg = f"weight_path provided '{pipeline_config.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{pipeline_config.quantization_encoding}'. Please update one."
-                    raise ValueError(msg)
-        # If weight path is not None, infer the quantization_encoding from the weight_path.
-        elif (
-            pipeline_config.weight_path
-            and not pipeline_config.quantization_encoding
-            and pipeline_config.weights_format != WeightsFormat.pytorch
-        ):
-            if os.path.exists(pipeline_config.weight_path[0]):
-                # Not currently supported. Infer encoding from local path.
-                if pipeline_config.weight_path[0].suffix == ".safetensors":
-                    msg = "If a local safetensors file is provided, please provide a quantization_encoding."
-                    raise ValueError(msg)
-
-                if encoding := SupportedEncoding.parse_from_file_name(
-                    str(pipeline_config.weight_path[0])
-                ):
-                    msg = f"encoding inferred from weights file: {encoding}"
-                    logger.debug(msg)
-                    pipeline_config.quantization_encoding = encoding
-
-            else:
-                if encoding := huggingface_weights_repo.encoding_for_file(
-                    pipeline_config.weight_path[0]
-                ):
-                    msg = f"encoding inferred from weights file: {encoding}"
-                    logger.debug(msg)
-                    pipeline_config.quantization_encoding = encoding
-                else:
-                    msg = f"encoding cannot be inferred from weights file: {pipeline_config.weight_path[0]}, please pass a quantization_encoding explictly."
-                    raise ValueError(msg)
-        elif not pipeline_config.quantization_encoding:
-            # Check if the repo only has one quantization_encoding.
-            supported_encodings = huggingface_weights_repo.supported_encodings
-            if len(supported_encodings) == 1:
-                msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
-                logger.debug(msg)
-                pipeline_config.quantization_encoding = supported_encodings[0]
-            elif (
-                not pipeline_config.devices[0].is_host
-            ) and SupportedEncoding.bfloat16 in arch.supported_encodings:
-                # TODO(AITLIB-137): replace this with more full featured logic.
-                # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
-                pipeline_config.quantization_encoding = (
-                    SupportedEncoding.bfloat16
-                )
-            else:
-                msg = f"encoding not provided, using default encoding of {arch.default_encoding}"
-                logger.debug(msg)
-                pipeline_config.quantization_encoding = arch.default_encoding
-        # by this point, the quantization_encoding must be provided. verify it is supported.
-        if (
-            pipeline_config.quantization_encoding
-            not in arch.supported_encodings
-        ):
-            if pipeline_config.engine == PipelineEngine.MAX:
-                msg = f"quantization_encoding of '{pipeline_config.quantization_encoding}' not supported by MAX engine, unable to run with engine = 'max'."
-                raise ValueError(msg)
-
-            else:
-                msg = f"quantization_encoding of '{pipeline_config.quantization_encoding}' not supported by MAX engine, falling back to HuggingFace."
-                logger.warning(msg)
-                pipeline_config.engine = PipelineEngine.HUGGINGFACE
-                return pipeline_config
-
-        # Check that the quantization encoding is supported on the specified
-        # devices.
-        for device_spec in pipeline_config.device_specs:
-            if not pipeline_config.quantization_encoding.supported_on(
-                device_spec
-            ):
-                raise ValueError(
-                    f"{pipeline_config.quantization_encoding} is not supported on {device_spec.device_type}. "
-                    "Please use the flag --devices=cpu or --devices=gpu to configure the device."
-                )
-
-        pipeline_config.finalize_encoding_config()
-
-        # Pass weight adapters to the PipelineConfig.
-        pipeline_config._weight_adapters = arch.weight_adapters
-
-        # We should now have a valid quantization_encoding, and possibly a weight_path.
-        # If no weight_path is provided, we should grab the default.
-        if not pipeline_config.weight_path:
-            # Retrieve the default files for each weights format.
-
-            # Get alternate encoding (e.g. if float32 is requested and there are
-            # only bfloat16 weights, allow retrieving the bfloat16 weights
-            # because they can be cast to float32).
-            alternate_encoding = _ALTERNATE_ENCODINGS.get(
-                pipeline_config.quantization_encoding
-            )
-
-            weight_files = huggingface_weights_repo.files_for_encoding(
-                encoding=pipeline_config.quantization_encoding,
-                alternate_encoding=alternate_encoding,
-            )
-
-            if default_weight_files := weight_files.get(
-                arch.default_weights_format, []
-            ):
-                pipeline_config.weight_path = default_weight_files
-            elif weight_files:
-                # Load any available weight file.
-                pipeline_config.weight_path = next(iter(weight_files.values()))
-
-        if not pipeline_config.weight_path:
-            if pipeline_config.quantization_encoding not in [
-                SupportedEncoding.bfloat16,
-                SupportedEncoding.float32,
-            ]:
-                msg = f"compatible weights cannot be found for '{pipeline_config.quantization_encoding}' in 'gguf' format, in the provided repo: '{huggingface_weights_repo.repo_id}'"
-                raise ValueError(msg)
-            else:
-                msg = f"compatible weights cannot be found for '{pipeline_config.quantization_encoding}'"
-                raise ValueError(msg)
-
-        # Check supported_cache_strategy
-        supported_cache_strategies = arch.supported_encodings.get(
-            pipeline_config.quantization_encoding, []
+        # Retrieve model architecture names
+        architecture_names = get_architectures_from_huggingface_repo(
+            model_path, trust_remote_code
         )
+
+        if not architecture_names:
+            logger.debug(
+                "architectures not listed in HuggingFace config, cannot be matched against MAX Registry"
+            )
+            return None
+
+        for architecture_name in architecture_names:
+            if architecture_name in self.architectures:
+                return self.architectures[architecture_name]
+
+        logger.debug(
+            f"optimized architecture not available for {model_path} in MAX REGISTRY"
+        )
+
+        return None
+
+    def _get_active_huggingface_config(
+        self, model_config: MAXModelConfig
+    ) -> AutoConfig:
+        """Retrieves or creates a cached HuggingFace AutoConfig for the given
+        model configuration.
+
+        This method maintains a cache of HuggingFace configurations to avoid
+        reloading them unnecessarily which incurs a huggingface hub API call.
+        If a config for the given model hasn't been loaded before, it will
+        create a new one using AutoConfig.from_pretrained() with the model's
+        settings.
+
+        Args:
+            model_config: The MAX model configuration containing model path and
+            loading settings.
+
+        Returns:
+            AutoConfig: The HuggingFace configuration object for the model.
+        """
         if (
-            pipeline_config.cache_strategy == KVCacheStrategy.MODEL_DEFAULT
-            and supported_cache_strategies
+            model_config.huggingface_weights_repo
+            not in self._cached_huggingface_configs
         ):
-            default_strategy = supported_cache_strategies[0]
-            msg = f"default cache_strategy of '{default_strategy}' enabled"
-            logger.debug(msg)
+            self._cached_huggingface_configs[
+                model_config.huggingface_weights_repo
+            ] = AutoConfig.from_pretrained(
+                model_config.model_path,
+                trust_remote_code=model_config.trust_remote_code,
+                revision=model_config.huggingface_revision,
+            )
 
-            pipeline_config.cache_strategy = default_strategy
-        elif (
-            supported_cache_strategies
-            and pipeline_config.cache_strategy not in supported_cache_strategies
-        ):
-            supported_strategy = supported_cache_strategies[0]
-
-            msg = f"cache_strategy = '{pipeline_config.cache_strategy}' not supported for '{pipeline_config.quantization_encoding}', using '{supported_strategy}' cache strategy."
-            logger.warning(msg)
-
-            pipeline_config.cache_strategy = supported_strategy
-
-        # Assume at this point, an architecture,
-        # a model_path and weight_paths are available.
-        assert pipeline_config.weight_path, "weight_path must be provided."
-        for path in pipeline_config.weight_path:
-            # Check if file exists locally.
-            if not os.path.exists(path):
-                # If does not exist locally, verify that it exists on Huggingface.
-                if not huggingface_weights_repo.file_exists(str(path)):
-                    msg = (
-                        f"weight_path: '{path}' does not exist locally, and"
-                        f" '{pipeline_config.model_path}/{path}' does"
-                        " not exist on HuggingFace."
-                    )
-                    raise ValueError(msg)
-
-        if pipeline_config.rope_type is None:
-            pipeline_config.rope_type = arch.rope_type
-
-        self._estimate_memory_footprint(pipeline_config, arch)
-
-        # If we pass validation ensure, the engine is set as MAX.
-        pipeline_config.engine = PipelineEngine.MAX
-        return pipeline_config
+        return self._cached_huggingface_configs[
+            model_config.huggingface_weights_repo
+        ]
 
     def _estimate_memory_footprint(
         self,
         pipeline_config: PipelineConfig,
         arch: SupportedArchitecture,
+        devices: list[Device],
     ):
         model_cls = arch.pipeline_model
+        model_config = pipeline_config.model_config
+
+        huggingface_config = self._get_active_huggingface_config(model_config)
 
         try:
-            free_memory = int(
-                sum(d.stats["free_memory"] for d in pipeline_config.devices)
-            )
+            free_memory = int(sum(d.stats["free_memory"] for d in devices))
         except Exception as e:
             logger.warning(
                 "Unable to estimate memory footprint of model, can't query device stats: "
@@ -425,18 +242,25 @@ class PipelineRegistry:
                 pipeline_config.max_batch_size = 1
             if not pipeline_config.max_length:
                 pipeline_config.max_length = model_cls.calculate_max_seq_len(
-                    pipeline_config
+                    pipeline_config,
+                    huggingface_config=huggingface_config,
                 )
             return
 
         model_weights_size = model_cls.estimate_weights_size(pipeline_config)
 
+        if model_weights_size > free_memory:
+            raise RuntimeError(
+                f"Model size exceeds available memory ({to_human_readable_bytes(model_weights_size)} > {to_human_readable_bytes(free_memory)}). "
+                "Try running a smaller model, using a smaller precision, or using a device with more memory."
+            )
+
         total_size = model_weights_size
-        available_kv_cache_memory = max(0, free_memory - model_weights_size)
         available_kv_cache_memory = int(
-            available_kv_cache_memory
-            * pipeline_config.device_memory_utilization
+            free_memory * model_config.kv_cache_config.device_memory_utilization
+            - model_weights_size
         )
+        available_kv_cache_memory = max(0, available_kv_cache_memory)
 
         user_provided_max_length = pipeline_config.max_length is not None
         user_provided_max_batch_size = (
@@ -444,24 +268,40 @@ class PipelineRegistry:
         )
         if not user_provided_max_length:
             pipeline_config.max_length = model_cls.calculate_max_seq_len(
-                pipeline_config
+                pipeline_config,
+                huggingface_config=huggingface_config,
             )
+
+        if not model_config.quantization_encoding:
+            msg = "quantization_encoding must be provided in pipeline_config"
+            raise ValueError(msg)
 
         if not user_provided_max_batch_size:
             pipeline_config.max_batch_size = self._infer_optimal_batch_size(
-                pipeline_config, model_cls, available_kv_cache_memory
+                pipeline_config,
+                model_cls,
+                available_kv_cache_memory,
+                huggingface_config=huggingface_config,
+                devices=devices,
+                kv_cache_config=model_config.kv_cache_config,
+                cache_dtype=model_config.quantization_encoding.cache_dtype,
             )
 
         actual_kv_cache_size = self._calculate_kv_cache_size(
             model_cls,
             pipeline_config,
             available_kv_cache_memory,
+            huggingface_config,
+            devices=devices,
+            kv_cache_config=model_config.kv_cache_config,
+            cache_dtype=model_config.quantization_encoding.cache_dtype,
         )
 
-        pipeline_config._available_cache_memory = actual_kv_cache_size
+        model_config.kv_cache_config._available_cache_memory = (
+            actual_kv_cache_size
+        )
 
         total_size += actual_kv_cache_size
-
         # If the model is too large to fit in memory, and the user did not
         # specify a max_length, try to infer a value that would fit.
         if total_size > free_memory and not user_provided_max_length:
@@ -475,6 +315,8 @@ class PipelineRegistry:
                 model_cls,
                 available_kv_cache_memory,
                 user_provided_max_batch_size,
+                huggingface_config=huggingface_config,
+                devices=devices,
             )
 
             if found_valid_max_length:
@@ -482,12 +324,19 @@ class PipelineRegistry:
                     f"Truncated model's default max_length from {original_max_length} to {inferred_max_length} to fit in memory."
                 )
                 pipeline_config.max_length = inferred_max_length
-                actual_kv_cache_size = self._calculate_kv_cache_size(
-                    model_cls,
-                    pipeline_config,
-                    available_kv_cache_memory,
-                )
-                total_size = model_weights_size + actual_kv_cache_size
+            else:
+                pipeline_config.max_length = 1
+
+            actual_kv_cache_size = self._calculate_kv_cache_size(
+                model_cls,
+                pipeline_config,
+                available_kv_cache_memory,
+                huggingface_config,
+                devices=devices,
+                kv_cache_config=model_config.kv_cache_config,
+                cache_dtype=model_config.quantization_encoding.cache_dtype,
+            )
+            total_size = model_weights_size + actual_kv_cache_size
 
         if free_memory:
             free_memory_str = f" / {to_human_readable_bytes(free_memory)} free"
@@ -533,6 +382,8 @@ class PipelineRegistry:
                     free_memory,
                     available_kv_cache_memory,
                     model_weights_size,
+                    huggingface_config,
+                    devices=devices,
                 )
 
             elif total_size > vram_usage_limit_scale * free_memory:
@@ -545,11 +396,13 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         user_provided_max_length: bool,
         user_provided_max_batch_size: bool,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         total_size: int,
         original_free_memory: int,
         available_kv_cache_memory: int,
         weights_size: int,
+        huggingface_config: AutoConfig,
+        devices: list[Device],
     ) -> None:
         """If we've determined the current configuration won't fit in device memory,
         this method provides a friendly error message suggesting a viable configuration.
@@ -568,11 +421,6 @@ class PipelineRegistry:
                         | set to default ║ Recommend max_length | Recommend both           |
                         +----------------+----------------------+--------------------------+
         """
-        if weights_size > original_free_memory:
-            raise RuntimeError(
-                "Weights size exceeds available memory. Try running a smaller model, using a smaller precision, or using a device with more memory."
-            )
-
         original_max_length = cast(int, pipeline_config.max_length)
         original_max_batch_size = cast(int, pipeline_config.max_batch_size)
 
@@ -586,6 +434,8 @@ class PipelineRegistry:
             model_cls,
             available_kv_cache_memory,
             user_provided_max_batch_size,
+            huggingface_config,
+            devices=devices,
         )
 
         pipeline_config.max_batch_size = original_max_batch_size
@@ -597,6 +447,8 @@ class PipelineRegistry:
                 available_kv_cache_memory,
                 original_max_length,
                 user_provided_max_batch_size,
+                huggingface_config,
+                devices=devices,
             )
         )
 
@@ -619,9 +471,11 @@ class PipelineRegistry:
     def _find_valid_max_length(
         self,
         pipeline_config: PipelineConfig,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         available_kv_cache_memory: int,
         user_provided_max_batch_size: bool,
+        huggingface_config: AutoConfig,
+        devices: list[Device],
     ) -> tuple[bool, int, int]:
         """Binary search to find a valid max_length configuration.
 
@@ -639,17 +493,34 @@ class PipelineRegistry:
         upper = pipeline_config.max_length
         inferred_max_length = upper
 
+        model_config = pipeline_config.model_config
+        if not model_config.quantization_encoding:
+            msg = "quantization_encoding must be provided in pipeline_config"
+            raise ValueError(msg)
+
         while not found_valid_max_length:
             inferred_max_length = (lower + upper) // 2
             pipeline_config.max_length = inferred_max_length
 
             if not user_provided_max_batch_size:
                 pipeline_config.max_batch_size = self._infer_optimal_batch_size(
-                    pipeline_config, model_cls, available_kv_cache_memory
+                    pipeline_config,
+                    model_cls,
+                    available_kv_cache_memory,
+                    huggingface_config,
+                    devices=devices,
+                    kv_cache_config=model_config.kv_cache_config,
+                    cache_dtype=model_config.quantization_encoding.cache_dtype,
                 )
 
             kv_cache_size = self._calculate_kv_cache_size(
-                model_cls, pipeline_config, available_kv_cache_memory
+                model_cls,
+                pipeline_config,
+                available_kv_cache_memory,
+                huggingface_config,
+                devices=devices,
+                kv_cache_config=model_config.kv_cache_config,
+                cache_dtype=model_config.quantization_encoding.cache_dtype,
             )
 
             if lower > upper:
@@ -672,10 +543,12 @@ class PipelineRegistry:
     def _find_valid_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         available_kv_cache_memory: int,
         original_max_length: int,
         user_provided_max_batch_size: bool,
+        huggingface_config: AutoConfig,
+        devices: list[Device],
     ) -> tuple[bool, int]:
         """Binary search to find a valid batch size configuration.
 
@@ -693,13 +566,26 @@ class PipelineRegistry:
         inferred_max_batch_size = cast(int, pipeline_config.max_batch_size)
         lower = 1
         upper = cast(int, pipeline_config.max_batch_size)
+        model_config = pipeline_config.model_config
 
         while not found_valid_max_batch_size:
             inferred_max_batch_size = (lower + upper) // 2
             pipeline_config.max_batch_size = inferred_max_batch_size
 
+            if not model_config.quantization_encoding:
+                msg = (
+                    "quantization_encoding must be provided in pipeline_config"
+                )
+                raise ValueError(msg)
+
             kv_cache_size = self._calculate_kv_cache_size(
-                model_cls, pipeline_config, available_kv_cache_memory
+                model_cls,
+                pipeline_config,
+                available_kv_cache_memory,
+                huggingface_config,
+                devices=devices,
+                kv_cache_config=model_config.kv_cache_config,
+                cache_dtype=model_config.quantization_encoding.cache_dtype,
             )
 
             if lower > upper:
@@ -718,16 +604,23 @@ class PipelineRegistry:
 
     def _calculate_kv_cache_size(
         self,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         pipeline_config: PipelineConfig,
         available_kv_cache_memory: int,
+        huggingface_config: AutoConfig,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Calculate the KV cache size for the current configuration."""
         if issubclass(model_cls, KVCacheMixin):
             return model_cls.estimate_kv_cache_size(
                 pipeline_config=pipeline_config,
                 available_cache_memory=available_kv_cache_memory,
-                devices=pipeline_config.devices,
+                devices=devices,
+                huggingface_config=huggingface_config,
+                kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
             )
         return 0
 
@@ -886,49 +779,57 @@ class PipelineRegistry:
     def _infer_optimal_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        model_cls: Type[PipelineModel],
+        model_cls: type[PipelineModel],
         available_kv_cache_memory: int,
+        huggingface_config: AutoConfig,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         return model_cls.infer_optimal_batch_size(
             pipeline_config,
             available_kv_cache_memory,
+            huggingface_config=huggingface_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     def _load_logging_message(
         self,
         pipeline_config: PipelineConfig,
-        tokenizer_type: Type[PipelineTokenizer],
+        tokenizer_type: type[PipelineTokenizer],
         pipeline_name: str,
         pipeline_model: str,
         factory: bool,
+        devices: list[Device],
+        architecture_id: Optional[str] = None,
     ):
         weight_path = ",\n        ".join(
             [
                 f"                               {path}"
-                for path in pipeline_config.weight_path
+                for path in pipeline_config.model_config.weight_path
             ]
         )
         factory_str = "factory" if factory else ""
 
         weights_repo_str = (
-            f"\n            weights_repo_id:        {pipeline_config._weights_repo_id}"
-            if pipeline_config._weights_repo_id
+            f"\n            weights_repo_id:        {pipeline_config.model_config._weights_repo_id}"
+            if pipeline_config.model_config._weights_repo_id
             else ""
         )
 
-        devices_str = ", ".join(
-            f"{d.label}[{d.id}]" for d in pipeline_config.devices
-        )
+        devices_str = ", ".join(f"{d.label}[{d.id}]" for d in devices)
         message = f"""
 
         Loading {tokenizer_type.__name__} and {pipeline_name}({pipeline_model}) {factory_str} for:
             engine:                 {pipeline_config.engine}
-            architecture:           {pipeline_config.architecture}
+            architecture:           {architecture_id if architecture_id else "UNKNOWN"}
             devices:                {devices_str}
-            model_path:             {pipeline_config.model_path}{weights_repo_str}
-            huggingface_revision:   {pipeline_config.huggingface_revision}
-            quantization_encoding:  {pipeline_config.quantization_encoding}
-            cache_strategy:         {pipeline_config.cache_strategy}
+            model_path:             {pipeline_config.model_config.model_path}{weights_repo_str}
+            huggingface_revision:   {pipeline_config.model_config.huggingface_revision}
+            quantization_encoding:  {pipeline_config.model_config.quantization_encoding}
+            cache_strategy:         {pipeline_config.model_config.kv_cache_config.cache_strategy}
             weight_path:            [
         {weight_path}
                                     ]
@@ -942,7 +843,9 @@ class PipelineRegistry:
         if pipeline_config.max_batch_size is None:
             pipeline_config.max_batch_size = 1
         # HF pipelines always use custom continuous cache
-        pipeline_config.cache_strategy = KVCacheStrategy.CONTINUOUS
+        pipeline_config.model_config.kv_cache_config.cache_strategy = (
+            KVCacheStrategy.CONTINUOUS
+        )
         return pipeline_config
 
     def retrieve_factory(
@@ -956,28 +859,38 @@ class PipelineRegistry:
         tokenizer: PipelineTokenizer
         pipeline_factory: Callable[[], TokenGenerator | EmbeddingsGenerator]
 
-        # Validate pipeline_config, and update missing values.
-        pipeline_config = self.validate_pipeline_config(pipeline_config)
         if pipeline_config.engine == PipelineEngine.MAX:
-            # Keep MyPy happy.
-            assert pipeline_config.architecture is not None
-
             pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
             # MAX pipeline
-            arch = self.architectures[pipeline_config.architecture]
+            arch = self.retrieve_architecture(
+                pipeline_config.model_config.model_path,
+                pipeline_config.model_config.trust_remote_code,
+            )
+
+            # Load HuggingFace Config
+            huggingface_config = self._get_active_huggingface_config(
+                pipeline_config.model_config
+            )
+
+            # Architecture should not be None here, as the engine is MAX.
+            assert arch is not None
+            devices = load_devices(pipeline_config.model_config.device_specs)
             logger.info(
                 self._load_logging_message(
                     pipeline_config=pipeline_config,
                     tokenizer_type=arch.tokenizer,
                     pipeline_model=arch.pipeline_model.__name__,
                     pipeline_name=pipeline_class.__name__,
+                    architecture_id=arch.name,
                     factory=True,
+                    devices=devices,
                 )
             )
 
             max_length = arch.pipeline_model.calculate_max_seq_len(
-                pipeline_config
+                pipeline_config,
+                huggingface_config=huggingface_config,
             )
 
             # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
@@ -992,22 +905,22 @@ class PipelineRegistry:
                 arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
                 and arch.tokenizer is TextTokenizer
             ):
-                text_tokenizer = cast(Type[TextTokenizer], arch.tokenizer)
+                text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
                 tokenizer = text_tokenizer(
-                    pipeline_config.model_path,
-                    revision=pipeline_config.huggingface_revision,
+                    pipeline_config.model_config.model_path,
+                    revision=pipeline_config.model_config.huggingface_revision,
                     max_length=max_length,
                     max_new_tokens=pipeline_config.max_new_tokens,
-                    trust_remote_code=pipeline_config.trust_remote_code,
+                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
                     enable_llama_whitespace_fix=True,
                 )
             else:
                 tokenizer = arch.tokenizer(
-                    pipeline_config.model_path,
-                    revision=pipeline_config.huggingface_revision,
+                    pipeline_config.model_config.model_path,
+                    revision=pipeline_config.model_config.huggingface_revision,
                     max_length=max_length,
                     max_new_tokens=pipeline_config.max_new_tokens,
-                    trust_remote_code=pipeline_config.trust_remote_code,
+                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 )
 
             pipeline_factory = functools.partial(
@@ -1015,23 +928,29 @@ class PipelineRegistry:
                 pipeline_config=pipeline_config,
                 pipeline_model=arch.pipeline_model,
                 eos_token_id=tokenizer.eos,
+                weight_adapters=arch.weight_adapters,
             )
         else:
             pipeline_config = self._set_hf_pipeline_defaults(pipeline_config)
             hf_pipeline_class = _HF_PIPELINE_TASK_MAP[task]
 
-            torch_device_type = str(pipeline_config.device_specs[0].device_type)
-            if pipeline_config.device_specs[0].device_type == "gpu":
+            torch_device_type = str(
+                pipeline_config.model_config.device_specs[0].device_type
+            )
+            if (
+                pipeline_config.model_config.device_specs[0].device_type
+                == "gpu"
+            ):
                 torch_device_type = "cuda"
                 torch.multiprocessing.set_start_method("spawn", force=True)
 
             # Generalized pipeline
             tokenizer = TextTokenizer(
-                pipeline_config.model_path,
-                revision=pipeline_config.huggingface_revision,
+                pipeline_config.model_config.model_path,
+                revision=pipeline_config.model_config.huggingface_revision,
                 max_length=pipeline_config.max_length,
                 max_new_tokens=pipeline_config.max_new_tokens,
-                trust_remote_code=pipeline_config.trust_remote_code,
+                trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 enable_llama_whitespace_fix=True,
             )
             logger.info(
@@ -1041,6 +960,9 @@ class PipelineRegistry:
                     pipeline_model="",
                     pipeline_name=hf_pipeline_class.__name__,
                     factory=True,
+                    devices=load_devices(
+                        pipeline_config.model_config.device_specs
+                    ),
                 )
             )
             pipeline_factory = functools.partial(

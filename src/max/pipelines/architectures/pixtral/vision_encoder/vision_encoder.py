@@ -14,13 +14,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 from max.dtype import DType
 from max.graph import TensorValueLike, ops
-from max.pipelines.nn import Conv2D
-from max.pipelines.nn.layer import Layer
-from max.pipelines.nn.norm import RMSNorm
+from max.nn import Conv2D
+from max.nn.layer import Layer
+from max.nn.norm import RMSNorm
 
 from .rotary_embedding_2d import RotaryEmbedding2D, patch_position_ids
 from .transformer import Transformer
@@ -44,7 +43,7 @@ class VisionEncoder(Layer):
     max_image_size: int = 1024
 
     def __call__(
-        self, imgs: List[TensorValueLike], attention_mask: TensorValueLike
+        self, imgs: list[TensorValueLike], attention_mask: TensorValueLike
     ):
         """
         imgs: list of images of shape = (height, width, num_channels)

@@ -20,235 +20,162 @@ what we publish.
 
 ### Language changes
 
-- The Mojo comptime interpreter can now handle many more LLVM intrinsics,
-  including ones that return floating point values.  This allows functions
-  like `round` to be constant folded when used in a comptime context.
+- The Mojo compiler now warns about obsolete use of `mut self` in initializers,
+  please switch over to `fn __init__(out self)` instead.
+
+- The syntax for adding attributes to an `__mlir_op` is now limited to inherent
+  attributes (those defined by the op definition). Most users will not need to
+  attach other kinds of attributes, and this helps guard against typos and mojo
+  code getting outdated when the dialect changes.
+
+- `def` functions now require type annotations on arguments, and treat a missing
+  return type as returning `None`. Previously these defaulted to the `object`
+  type which led to a variety of problems.  Support for `object` is being
+  removed until we have time to investigate a proper replacement.
 
 ### Standard library changes
 
-- The `Buffer` struct has been removed in favor of `Span` and `NDBuffer`.
+- `Pointer` now has `get_immutable()` to return a new `Pointer`
+  with the same underlying data but an `ImmutableOrigin`.
 
-- A new `IntervalTree` data structure has been added to the standard library.
-  This is a tree data structure that allows for efficient range queries.
+- You can now forward a `VariadicPack` that is `Writable` to a writer using
+`WritableVariadicPack`:
 
-- The `Char` type has been renamed to `Codepoint`, to better capture its
-  intended purpose of storing a single Unicode codepoint. Additionally, related
-  method and type names have been updated as well, including:
+```mojo
+from utils.write import WritableVariadicPack
 
-  - `StringSlice.chars()` to `.codepoints()` (ditto for `String`)
-  - `StringSlice.char_slices()` to `.codepoint_slices()` (ditto for `String`)
-  - `CharsIter` to `CodepointsIter`
-  - `unsafe_decode_utf8_char()` to `unsafe_decode_utf8_codepoint()`
+fn print_message[*Ts: Writable](*messages: *Ts):
+    print("message:", WritableVariadicPack(messages), "[end]")
 
-  - Make the iterator type returned by the string `codepoint_slices()` methods
-    public as `CodepointSliceIter`.
+x = 42
+print_message("'x = ", x, "'")
+```
 
-- `StringSlice` now supports several additional methods moved from `String`.
-  The existing `String` methods have been updated to instead call the
-  corresponding new `StringSlice` methods:
+```text
+message: 'x = 42' [end]
+```
 
-  - `split()`
-  - `lower()`
-  - `upper()`
-  - `is_ascii_digit()`
-  - `isupper()`
-  - `islower()`
-  - `is_ascii_printable()`
-  - `rjust()`
-  - `ljust()`
-  - `center()`
+In this example the variadic pack is buffered to the stack in the `print` call
+along with the extra arguments, before doing a single syscall to write to
+stdout.
 
-- Added a `StringSlice.is_codepoint_boundary()` method for querying if a given
-  byte index is a boundary between encoded UTF-8 codepoints.
+- Removed `unroll` utility. Now simply use `@parameter` on for-loops.
 
-- `StringSlice.__getitem__(Slice)` will now raise an error if the provided slice
-  start and end positions do not fall on a valid codepoint boundary. This
-  prevents construction of malformed `StringSlice` values, which could lead to
-  memory unsafety or undefined behavior. For example, given a string containing
-  multi-byte encoded data, like:
+```mojo
+from utils.loop import unroll
 
-  ```mojo
-  var str_slice = "Hi👋!"
-  ```
+# Before
+@always_inline
+@parameter
+fn foo[i: Int]():
+    body_logic[i]()
+unroll[foo, iteration_range]()
 
-  and whose in-memory and decoded data looks like:
+# After
+@parameter
+for i in range(iteration_range):
+    body_logic[i]()
+```
 
-  ```text
-  ┏━━━━━━━━━━━━━━━━━━━━━━━━━┓
-  ┃          Hi👋!          ┃ String
-  ┣━━┳━━━┳━━━━━━━━━━━━━━━┳━━┫
-  ┃H ┃ i ┃       👋      ┃! ┃ Codepoint Characters
-  ┣━━╋━━━╋━━━━━━━━━━━━━━━╋━━┫
-  ┃72┃105┃    128075     ┃33┃ Codepoints
-  ┣━━╋━━━╋━━━┳━━━┳━━━┳━━━╋━━┫
-  ┃72┃105┃240┃159┃145┃139┃33┃ Bytes
-  ┗━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━┛
-   0   1   2   3   4   5   6
-  ```
+- The `is_power_of_two(x)` function in the `bit` package is now a method on
+  `Int`, `UInt` and `SIMD`.
 
-  attempting to slice bytes `[3-5)` with `str_slice[3:5]` would previously
-  erroenously produce a malformed `StringSlice` as output that did not correctly
-  decode to anything:
-
-  ```text
-  ┏━━━━━━━┓
-  ┃  ???  ┃
-  ┣━━━━━━━┫
-  ┃  ???  ┃
-  ┣━━━━━━━┫
-  ┃  ???  ┃
-  ┣━━━┳━━━┫
-  ┃159┃145┃
-  ┗━━━┻━━━┛
-  ```
-
-  The same statement will now raise an error informing the user their indices
-  are invalid.
-
-- Added an iterator to `LinkedList` ([PR #4005](https://github.com/modular/max/pull/4005))
-  - `LinkedList.__iter__()` to create a forward iterator.
-  - `LinkedList.__reversed__()` for a backward iterator.
-
-  ```mojo
-  var ll = LinkedList[Int](1, 2, 3)
-  for element in ll:
-    print(element[])
-  ```
-
-- The `round` function is now fixed to perform "round half to even" (also known
-  as "bankers' rounding") instead of "round half away from zero".
-
-- The `SIMD.roundeven()` method has been removed from the standard library.
-  This functionality is now handled by the `round()` function.
-
-- The `UnsafePointer.alloc()` method has changed to produce pointers with an
-  empty `Origin` parameter, instead of with `MutableAnyOrigin`. This mitigates
-  an issue with the any origin parameter extending the lifetime of unrelated
-  local variables for this common method.
+- The types `StringSlice` and `StaticString` are now part of the prelude, there
+  is no need to import them anymore.
+  
+- The `constrained[cond, string]()` function now accepts multiple strings that
+  are printed concatenated on failure, so you can use:
+  `constrained[cond, "hello: ", String(n), ": world"]()` which is more comptime
+  efficient and somewhat more ergonomic than using string concatenation.
 
 ### GPU changes
 
-- You can now skip compiling a GPU kernel first and then enqueueing it:
-
-```mojo
-  from gpu import thread_idx
-  from gpu.host import DeviceContext
-
-  fn func():
-      print("Hello from GPU thread:", thread_idx.x)
-
-  with DeviceContext() as ctx:
-      var compiled_func = ctx.compile_function[func]()
-      ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=4)
-```
-
-- You can now skip compiling a GPU kernel first before enqueueing it, and pass
-a function directly to `ctx.enqueue_function[func](...)`:
+- `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the
+thread information and variadic args passed after the condition:
 
 ```mojo
 from gpu.host import DeviceContext
 
-fn func():
-    print("Hello from GPU")
+fn kernel():
+    var x = 1
+    debug_assert(x == 2, "x should be 2 but is: ", x)
 
-with DeviceContext() as ctx:
-    ctx.enqueue_function[func](grid_dim=1, block_dim=1)
+def main():
+    with DeviceContext() as ctx:
+        ctx.enqueue_function[kernel](grid_dim=2, block_dim=2)
 ```
 
-However, if you're reusing the same function and parameters multiple times, this
-incurs some overhead of around 50-500 nanoseconds per enqueue. So you can still
-compile the function first and pass it to ctx.enqueue_function in this scenario:
+Running `mojo run -D ASSERT=all [filename]` will output:
 
-```mojo
-var compiled_func = ctx.compile_function[func]()
-# Multiple kernel launches with the same function/parameters
-ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+```text
+At /tmp/test.mojo:5:17: block: [0,0,0] thread: [0,0,0] Assert Error: x should be 2 but is: 1
+At /tmp/test.mojo:5:17: block: [0,0,0] thread: [1,0,0] Assert Error: x should be 2 but is: 1
+At /tmp/test.mojo:5:17: block: [1,0,0] thread: [0,0,0] Assert Error: x should be 2 but is: 1
+At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be 2 but is: 1
 ```
 
-- The methods on `DeviceContext`:
+- Removed deprecated `DeviceContext` methods `copy_sync` and `memset_sync`.
 
-  - enqueue_copy_to_device
-  - enqueue_copy_from_device
-  - enqueue_copy_device_to_device
-
-  Have been combined to single overloaded `enqueue_copy` method, and:
-
-  - copy_to_device_sync
-  - copy_from_device_sync
-  - copy_device_to_device_sync
-
-  Have been combined into an overloaded `copy` method, so you don't have
-  to figure out which method to call based on the arguments you're passing.
-
-- The `shuffle` module has been rename to `warp` to better
-  reflect its purpose. To uses now you will have to do
+- Add `Variant.is_type_supported` method. ([PR #4057](https://github.com/modular/max/pull/4057))
+  Example:
 
   ```mojo
-  import gpu.warp as warp
-
-  var val0 = warp.shuffle_down(x, offset)
-  var val1 = warp.broadcast(x)
+    def takes_variant(mut arg: Variant):
+        if arg.is_type_supported[Float64]():
+            arg = Float64(1.5)
+    def main():
+        var x = Variant[Int, Float64](1)
+        takes_variant(x)
+        if x.isa[Float64]():
+            print(x[Float64]) # 1.5
   ```
 
-- `List.bytecount()` has been renamed to `List.byte_length()` for consistency
-  with the String-like APIs.
+- The `type` parameter of `SIMD` has been renamed to `dtype`.
+
+- The `Pointer.address_of(...)` function has been deprecated.  Please use the
+  `Pointer(to=...)` constructor instead.  Conceptually, this is saying "please
+  initialize a `Pointer` (a reference, if you will) to *some other address in
+  memory*.  In the future, `Pointer.address_of(...)` function will be removed.
+
+- The `logger` package is now open sourced (along with its commit history)!
+  This helps continue our commitment to progressively open sourcing more
+  of the standard library.
 
 ### Tooling changes
 
-#### Mojo Compiler
+### Mojo Compiler
 
-- Mojo compiler now warns about parameter for with large loop unrolling factor
-  (>1024 by default) which can lead to long compilation time and large generated
-  code size. Set `--loop-unrolling-warn-threshold` to change default value to
-  a different threshold or to `0` to disable the warning.
+- The Mojo compiler is now able to interpret all arithmetic operations from
+the `index` dialect that are used in methods of `Int` and `UInt` types.
+That allows users to finally compute constants at compile time:
 
-- The Mojo compiler now only has one comptime interpreter.  It had two
-  previously: one to handle a few cases that were important for dependent types
-  (but which also had many limitations) in the parser, and the primary one that
-  ran at "instantiation" time which is fully general. This was confusing and
-  caused a wide range of bugs.  We've now removed the special case parse-time
-  interpreter, replacing it with a more general solution for dependent types.
-  This change should be invisible to most users, but should resolve a number of
-  long-standing bugs and significantly simplifies the compiler implementation,
-  allowing us to move faster.
+```mojo
+alias a: Int = 1000000000
+alias b: Int = (5 * a) // 2
+```
+
+previously compiler would throw error "cannot fold operation".
 
 ### ❌ Removed
 
-- Direct access to `List.size` has been removed. Use the public API instead.
+- The `SIMD.roundeven()` method has been removed from the standard library.
+  This functionality is now handled by the `round()` function.
 
-  Examples:
+- Error messages about the obsolete `borrowed` and `inout` keywords, as well as
+  the obsolete `-> Int as name` syntax has been removed.
 
-  Extending a List:
+- The `StringableCollectionElement` trait has been removed in favor of
+  `WritableCollectionElement`.
 
-  ```mojo
-  base_data = List[Byte](1, 2, 3)
-
-  data_list = List[Byte](4, 5, 6)
-  ext_data_list = base_data.copy()
-  ext_data_list.extend(data_list) # [1, 2, 3, 4, 5, 6]
-
-  data_span = Span(List[Byte](4, 5, 6))
-  ext_data_span = base_data.copy()
-  ext_data_span.extend(data_span) # [1, 2, 3, 4, 5, 6]
-
-  data_vec = SIMD[DType.uint8, 4](4, 5, 6, 7)
-  ext_data_vec_full = base_data.copy()
-  ext_data_vec_full.extend(data_vec) # [1, 2, 3, 4, 5, 6, 7]
-
-  ext_data_vec_partial = base_data.copy()
-  ext_data_vec_partial.extend(data_vec, count=3) # [1, 2, 3, 4, 5, 6]
-  ```
-
-  Slicing and extending a list efficiently:
-
-  ```mojo
-  base_data = List[Byte](1, 2, 3, 4, 5, 6)
-  n4_n5 = Span(base_data)[3:5]
-  extra_data = Span(List[Byte](8, 10))
-  end_result = List[Byte](capacity=len(n4_n5) + len(extra_data))
-  end_result.extend(n4_n5)
-  end_result.extend(extra_data) # [4, 5, 8, 10]
-  ```
+- The `object` type has been removed.
 
 ### 🛠️ Fixed
+
+- [#3510](https://github.com/modular/max/issues/3510) - `PythonObject` doesn't
+  handle large `UInt64` correctly.
+
+- [#3847](https://github.com/modular/max/issues/3847) - Count leading zeros
+  can't be used on SIMD at compile time.
+
+- [#4198](https://github.com/modular/max/issues/4198) - Apple M4
+  is not properly detected with `sys.is_apple_silicon()`.

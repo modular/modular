@@ -10,15 +10,54 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements basic object methods for working with strings."""
+"""The core `String` type implementation for Mojo.
+
+This module provides the primary `String` type and its fundamental operations. The `String` type
+is designed to handle UTF-8 encoded text efficiently while providing a safe and ergonomic
+interface for string manipulation.
+
+Key Features:
+- UTF-8 encoded string storage
+- Memory-safe string operations
+- Efficient string concatenation and slicing
+- String-to-number conversions (atof, atol)
+- ASCII string utilities
+- Character code conversions (chr, ord)
+
+The `String` type is the main interface for text manipulation in Mojo, providing:
+- Mutable string data
+- Efficient string operations optimized for common cases
+- Unicode support through UTF-8 encoding. A handful of operations are known to
+  not be Unicode / UTF-8 compliant yet, but will be fixed as time permits.
+- Safe memory management and bounds checking
+
+Example:
+    ```mojo
+    from collections.string import String
+
+    # String creation and basic operations
+    var s1 = String("Hello")
+    var s2 = String("World")
+    var combined = s1 + " " + s2  # "Hello World"
+
+    # String-to-number conversion
+    var num = atof("3.14")
+    var int_val = atol("42")
+
+    # Character operations
+    var char = chr(65)  # "A"
+    var code = ord("A")  # 65
+
+    # ASCII utilities
+    var ascii_str = ascii("Hello")  # ASCII-only string
+    ```
+"""
 
 from collections import KeyElement, List, Optional
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string.string_slice import (
-    StaticString,
-    StringSlice,
     CodepointSliceIter,
     _to_string_list,
     _utf8_byte_type,
@@ -37,6 +76,7 @@ from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy
+from os import PathLike
 from python import PythonObject
 
 from utils import IndexList, Variant, Writable, Writer, write_args
@@ -540,6 +580,9 @@ struct String(
     CollectionElementNew,
     FloatableRaising,
     _HashableWithHasher,
+    WritableCollectionElement,
+    PathLike,
+    _CurlyEntryFormattable,
 ):
     """Represents a mutable string."""
 
@@ -548,7 +591,7 @@ struct String(
     var _buffer: Self._buffer_type
     """The underlying storage for the string."""
 
-    """ Useful string aliases. """
+    # Useful string aliases.
     alias ASCII_LOWERCASE = "abcdefghijklmnopqrstuvwxyz"
     alias ASCII_UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     alias ASCII_LETTERS = Self.ASCII_LOWERCASE + Self.ASCII_UPPERCASE
@@ -623,6 +666,8 @@ struct String(
         self = String()
         write_buffered(self, args, sep=sep, end=end)
 
+    # TODO(MOCO-1791): Default arguments and param inference aren't powerful
+    # to declare sep/end as StringSlice.
     @staticmethod
     @no_inline
     fn __init__[
@@ -661,15 +706,6 @@ struct String(
         """
         self = String()
         write_buffered(self, args, sep=sep, end=end)
-
-    @no_inline
-    fn __init__(out self, value: None):
-        """Initialize a `None` type as "None".
-
-        Args:
-            value: The object to get the string representation of.
-        """
-        self = "None"
 
     @always_inline
     fn __init__(out self, *, capacity: Int):
@@ -712,6 +748,8 @@ struct String(
         """
         return self  # Just use the implicit copyinit.
 
+    # This constructor is needed so that StringLiteral *implicitly* converts to
+    # String, rather than the Stringable ctor which is explicit.
     @always_inline
     @implicit
     fn __init__(out self, literal: StringLiteral):
@@ -1499,51 +1537,7 @@ struct String(
         Returns:
             The string where all occurrences of `old` are replaced with `new`.
         """
-        if not old:
-            return self._interleave(new)
-
-        var occurrences = self.count(old)
-        if occurrences == -1:
-            return self
-
-        var self_start = self.unsafe_ptr()
-        var self_ptr = self.unsafe_ptr()
-        var new_ptr = new.unsafe_ptr()
-
-        var self_len = self.byte_length()
-        var old_len = old.byte_length()
-        var new_len = new.byte_length()
-
-        var res = Self._buffer_type()
-        res.reserve(self_len + (old_len - new_len) * occurrences + 1)
-
-        for _ in range(occurrences):
-            var curr_offset = Int(self_ptr) - Int(self_start)
-
-            var idx = self.find(old, curr_offset)
-
-            debug_assert(idx >= 0, "expected to find occurrence during find")
-
-            # Copy preceding unchanged chars
-            for _ in range(curr_offset, idx):
-                res.append(self_ptr[])
-                self_ptr += 1
-
-            # Insert a copy of the new replacement string
-            for i in range(new_len):
-                res.append(new_ptr[i])
-
-            self_ptr += old_len
-
-        while True:
-            var val = self_ptr[]
-            if val == 0:
-                break
-            res.append(self_ptr[])
-            self_ptr += 1
-
-        res.append(0)
-        return String(res^)
+        return StringSlice(self).replace(old, new)
 
     fn strip(self, chars: StringSlice) -> StringSlice[__origin_of(self)]:
         """Return a copy of the string with leading and trailing characters
@@ -1632,18 +1626,6 @@ struct String(
             hasher: The hasher instance.
         """
         hasher._update_with_bytes(self.unsafe_ptr(), self.byte_length())
-
-    fn _interleave(self, val: StringSlice) -> String:
-        var res = Self._buffer_type()
-        var val_ptr = val.unsafe_ptr()
-        var self_ptr = self.unsafe_ptr()
-        res.reserve(val.byte_length() * self.byte_length() + 1)
-        for i in range(self.byte_length()):
-            for j in range(val.byte_length()):
-                res.append(val_ptr[j])
-            res.append(self_ptr[i])
-        res.append(0)
-        return String(res^)
 
     fn lower(self) -> String:
         """Returns a copy of the string with all cased characters
@@ -1841,7 +1823,7 @@ struct String(
         """
         return self.as_string_slice().is_ascii_printable()
 
-    fn rjust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 
         Args:
@@ -1853,7 +1835,7 @@ struct String(
         """
         return self.as_string_slice().rjust(width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
 
         Args:
@@ -1865,7 +1847,7 @@ struct String(
         """
         return self.as_string_slice().ljust(width, fillchar)
 
-    fn center(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
 
         Args:
@@ -1977,15 +1959,15 @@ fn _calc_initial_buffer_size(n: Float64) -> Int:
     return 128 + 1  # Add 1 for the terminator
 
 
-fn _calc_initial_buffer_size[type: DType](n0: Scalar[type]) -> Int:
+fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
     @parameter
-    if type.is_integral():
+    if dtype.is_integral():
         var n = abs(n0)
         var sign = 0 if n0 > 0 else 1
         alias is_32bit_system = bitwidthof[DType.index]() == 32
 
         @parameter
-        if is_32bit_system or bitwidthof[type]() <= 32:
+        if is_32bit_system or bitwidthof[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (
@@ -1997,17 +1979,16 @@ fn _calc_initial_buffer_size[type: DType](n0: Scalar[type]) -> Int:
     return 128 + 1  # Add 1 for the terminator
 
 
-fn _calc_format_buffer_size[type: DType]() -> Int:
-    """
-    Returns a buffer size in bytes that is large enough to store a formatted
-    number of the specified type.
+fn _calc_format_buffer_size[dtype: DType]() -> Int:
+    """Returns a buffer size in bytes that is large enough to store a formatted
+    number of the specified dtype.
     """
 
     # TODO:
     #   Use a smaller size based on the `dtype`, e.g. we don't need as much
     #   space to store a formatted int8 as a float64.
     @parameter
-    if type.is_integral():
+    if dtype.is_integral():
         return 64 + 1
     else:
         return 128 + 1  # Add 1 for the terminator

@@ -21,7 +21,6 @@ from bit import (
     byte_swap,
     count_leading_zeros,
     count_trailing_zeros,
-    is_power_of_two,
     log2_floor,
     next_power_of_two,
     pop_count,
@@ -278,58 +277,6 @@ def test_bit_not_simd():
     )
 
 
-def test_is_power_of_two():
-    assert_equal(is_power_of_two(Int.MIN), False)
-    assert_equal(is_power_of_two(-(2**59)), False)
-    assert_equal(is_power_of_two(-1), False)
-    assert_equal(is_power_of_two(0), False)
-    assert_equal(is_power_of_two(1), True)
-    assert_equal(is_power_of_two(2), True)
-    assert_equal(is_power_of_two(3), False)
-    assert_equal(is_power_of_two(4), True)
-    assert_equal(is_power_of_two(5), False)
-    assert_equal(is_power_of_two(2**59), True)
-    assert_equal(is_power_of_two(Int.MAX), False)
-
-
-def test_is_power_of_two_simd():
-    alias simd_width = 4
-    alias int8_t = DType.int8
-    alias int16_t = DType.int16
-    alias int32_t = DType.int32
-    alias int64_t = DType.int64
-
-    alias var1 = SIMD[int8_t, simd_width](-114, 0, 100, 2**6)
-    assert_equal(
-        is_power_of_two(var1),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    alias var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, 2**13)
-    assert_equal(
-        is_power_of_two(var2),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    alias var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, 2**29)
-    assert_equal(
-        is_power_of_two(var3),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    # TODO: use this line after #2882 is fixed
-    # alias var4 = SIMD[int64_t, simd_width](-111444444, 0, 3000000, 2**59)
-    alias var4 = SIMD[int64_t, simd_width](
-        -111444444, 0, 3000000, 576460752303423488
-    )
-    assert_equal(
-        is_power_of_two(var4),
-        SIMD[DType.bool, simd_width](False, False, False, True),
-    )
-
-    assert_equal(is_power_of_two(Int64.MIN), False)
-
-
 def test_bit_width():
     assert_equal(bit_width(-(2**59)), 59)
     assert_equal(bit_width(-2), 1)
@@ -472,38 +419,38 @@ def test_rotate_bits_int():
 
 def test_rotate_bits_simd():
     alias simd_width = 1
-    alias type = DType.uint8
+    alias dtype = DType.uint8
 
     assert_equal(rotate_bits_left[0](UInt64(104)), 104)
-    assert_equal(rotate_bits_left[0](SIMD[type, simd_width](104)), 104)
+    assert_equal(rotate_bits_left[0](SIMD[dtype, simd_width](104)), 104)
     assert_equal(
-        rotate_bits_left[2](SIMD[type, 2](104)), SIMD[type, 2](161, 161)
+        rotate_bits_left[2](SIMD[dtype, 2](104)), SIMD[dtype, 2](161, 161)
     )
 
-    assert_equal(rotate_bits_left[2](Scalar[type](104)), 161)
-    assert_equal(rotate_bits_left[11](Scalar[type](15)), 120)
-    assert_equal(rotate_bits_left[0](Scalar[type](96)), 96)
-    assert_equal(rotate_bits_left[1](Scalar[type](96)), 192)
-    assert_equal(rotate_bits_left[2](Scalar[type](96)), 129)
-    assert_equal(rotate_bits_left[3](Scalar[type](96)), 3)
-    assert_equal(rotate_bits_left[4](Scalar[type](96)), 6)
-    assert_equal(rotate_bits_left[5](Scalar[type](96)), 12)
+    assert_equal(rotate_bits_left[2](Scalar[dtype](104)), 161)
+    assert_equal(rotate_bits_left[11](Scalar[dtype](15)), 120)
+    assert_equal(rotate_bits_left[0](Scalar[dtype](96)), 96)
+    assert_equal(rotate_bits_left[1](Scalar[dtype](96)), 192)
+    assert_equal(rotate_bits_left[2](Scalar[dtype](96)), 129)
+    assert_equal(rotate_bits_left[3](Scalar[dtype](96)), 3)
+    assert_equal(rotate_bits_left[4](Scalar[dtype](96)), 6)
+    assert_equal(rotate_bits_left[5](Scalar[dtype](96)), 12)
 
     assert_equal(rotate_bits_right[0](UInt64(104)), 104)
-    assert_equal(rotate_bits_right[0](SIMD[type, simd_width](104)), 104)
+    assert_equal(rotate_bits_right[0](SIMD[dtype, simd_width](104)), 104)
     assert_equal(
-        rotate_bits_right[2](SIMD[type, 2](104)), SIMD[type, 2](26, 26)
+        rotate_bits_right[2](SIMD[dtype, 2](104)), SIMD[dtype, 2](26, 26)
     )
 
-    assert_equal(rotate_bits_right[2](Scalar[type](104)), 26)
-    assert_equal(rotate_bits_right[11](Scalar[type](15)), 225)
-    assert_equal(rotate_bits_right[0](Scalar[type](96)), 96)
-    assert_equal(rotate_bits_right[1](Scalar[type](96)), 48)
-    assert_equal(rotate_bits_right[2](Scalar[type](96)), 24)
-    assert_equal(rotate_bits_right[3](Scalar[type](96)), 12)
-    assert_equal(rotate_bits_right[4](Scalar[type](96)), 6)
-    assert_equal(rotate_bits_right[5](Scalar[type](96)), 3)
-    assert_equal(rotate_bits_right[6](Scalar[type](96)), 129)
+    assert_equal(rotate_bits_right[2](Scalar[dtype](104)), 26)
+    assert_equal(rotate_bits_right[11](Scalar[dtype](15)), 225)
+    assert_equal(rotate_bits_right[0](Scalar[dtype](96)), 96)
+    assert_equal(rotate_bits_right[1](Scalar[dtype](96)), 48)
+    assert_equal(rotate_bits_right[2](Scalar[dtype](96)), 24)
+    assert_equal(rotate_bits_right[3](Scalar[dtype](96)), 12)
+    assert_equal(rotate_bits_right[4](Scalar[dtype](96)), 6)
+    assert_equal(rotate_bits_right[5](Scalar[dtype](96)), 3)
+    assert_equal(rotate_bits_right[6](Scalar[dtype](96)), 129)
 
 
 fn _log2_floor(n: Int) -> Int:
@@ -539,8 +486,6 @@ def main():
     test_prev_power_of_two_simd()
     test_bit_width()
     test_bit_width_simd()
-    test_is_power_of_two()
-    test_is_power_of_two_simd()
     test_count_leading_zeros()
     test_count_leading_zeros_simd()
     test_count_trailing_zeros()

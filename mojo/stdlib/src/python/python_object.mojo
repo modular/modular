@@ -20,7 +20,7 @@ from python import PythonObject
 """
 
 from collections import Dict
-from collections.string import StringSlice
+
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_ssize_t
 from sys.intrinsics import _type_is_eq
@@ -372,27 +372,30 @@ struct PythonObject(
         self.py_object = cpython.PyLong_FromSsize_t(integer)
 
     @implicit
-    fn __init__[dt: DType](mut self, value: SIMD[dt, 1]):
+    fn __init__[dtype: DType](out self, value: SIMD[dtype, 1]):
         """Initialize the object with a generic scalar value. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
         converted to the appropriate integer or floating point type.
 
         Parameters:
-            dt: The scalar value type.
+            dtype: The scalar value type.
 
         Args:
             value: The scalar value.
         """
-        cpython = _get_global_python_itf().cpython()
+        var cpython = _get_global_python_itf().cpython()
 
         @parameter
-        if dt is DType.bool:
+        if dtype is DType.bool:
             self.py_object = cpython.PyBool_FromLong(Int(value))
-        elif dt.is_integral():
-            int_val = value.cast[DType.index]().value
+        elif dtype.is_unsigned():
+            var uint_val = value.cast[DType.index]().value
+            self.py_object = cpython.PyLong_FromSize_t(uint_val)
+        elif dtype.is_integral():
+            var int_val = value.cast[DType.index]().value
             self.py_object = cpython.PyLong_FromSsize_t(int_val)
         else:
-            fp_val = value.cast[DType.float64]()
+            var fp_val = value.cast[DType.float64]()
             self.py_object = cpython.PyFloat_FromDouble(fp_val)
 
     @implicit
@@ -424,7 +427,7 @@ struct PythonObject(
         self.py_object = cpython.PyUnicode_DecodeUTF8(string)
 
     @implicit
-    fn __init__[*Ts: CollectionElement](mut self, value: ListLiteral[*Ts]):
+    fn __init__[*Ts: CollectionElement](out self, value: ListLiteral[*Ts]):
         """Initialize the object from a list literal.
 
         Parameters:
@@ -465,7 +468,7 @@ struct PythonObject(
             _ = cpython.PyList_SetItem(self.py_object, i, obj.py_object)
 
     @implicit
-    fn __init__[*Ts: CollectionElement](mut self, value: Tuple[*Ts]):
+    fn __init__[*Ts: CollectionElement](out self, value: Tuple[*Ts]):
         """Initialize the object from a tuple literal.
 
         Parameters:
@@ -573,7 +576,7 @@ struct PythonObject(
         Python.throw_python_exception_if_error_state(cpython)
         return _PyIter(PythonObject(iter))
 
-    fn __getattr__(self, name: StringLiteral) raises -> PythonObject:
+    fn __getattr__(self, name: StringSlice) raises -> PythonObject:
         """Return the value of the object attribute with the given name.
 
         Args:
@@ -589,7 +592,7 @@ struct PythonObject(
             raise Error("Attribute is not found.")
         return PythonObject(result)
 
-    fn __setattr__(self, name: StringLiteral, new_value: PythonObject) raises:
+    fn __setattr__(self, name: StringSlice, new_value: PythonObject) raises:
         """Set the given value for the object attribute with the given name.
 
         Args:
@@ -598,7 +601,7 @@ struct PythonObject(
         """
         return self._setattr(name, new_value.py_object)
 
-    fn _setattr(self, name: StringLiteral, new_value: PyObjectPtr) raises:
+    fn _setattr(self, name: StringSlice, new_value: PyObjectPtr) raises:
         var cpython = _get_global_python_itf().cpython()
         var result = cpython.PyObject_SetAttrString(
             self.py_object, name, new_value
@@ -1456,7 +1459,8 @@ struct PythonObject(
             An integral value that represents this object.
         """
         cpython = _get_global_python_itf().cpython()
-        return cpython.PyLong_AsSsize_t(self.py_object)
+        var py_long = cpython.PyNumber_Long(self.py_object)
+        return cpython.PyLong_AsSsize_t(py_long)
 
     fn __as_int__(self) -> Int:
         """Implicitly convert to an Int.
@@ -1543,7 +1547,9 @@ struct PythonObject(
 
         return ptr
 
-    fn unsafe_get_as_pointer[type: DType](self) -> UnsafePointer[Scalar[type]]:
+    fn unsafe_get_as_pointer[
+        dtype: DType
+    ](self) -> UnsafePointer[Scalar[dtype]]:
         """Convert a Python-owned and managed pointer into a Mojo pointer.
 
         Warning: converting from an integer to a pointer is unsafe! The
@@ -1551,14 +1557,14 @@ struct PythonObject(
         pointer. This is OK because the pointer originates from Python.
 
         Parameters:
-            type: The desired DType of the pointer.
+            dtype: The desired DType of the pointer.
 
         Returns:
             An `UnsafePointer` for the underlying Python data.
         """
         var tmp = Int(self)
         var result = UnsafePointer.address_of(tmp).bitcast[
-            UnsafePointer[Scalar[type]]
+            UnsafePointer[Scalar[dtype]]
         ]()[]
         _ = tmp
         return result

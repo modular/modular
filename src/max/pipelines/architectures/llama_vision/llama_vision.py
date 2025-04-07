@@ -15,25 +15,29 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Iterable, Optional, cast, final
+from typing import Any, Optional, cast, final
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
-from max.graph.weights import Weights
+from max.graph.weights import Weights, WeightsAdapter
+from max.nn import Linear
+from max.nn.layer import Layer
 from max.pipelines import (
+    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    TextAndVisionContext,
+    SupportedEncoding,
     upper_bounded_default,
 )
+from max.pipelines.context import InputContext, TextAndVisionContext
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     KVCacheInputs,
@@ -48,10 +52,10 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from max.pipelines.kv_cache._utils import build_max_lengths_tensor
-from max.pipelines.nn import Linear
-from max.pipelines.nn.layer import Layer
+from transformers import AutoConfig
 
 from .language_model import CausalLanguageModel, instantiate_language_model
+from .model_config import LlamaVisionConfig
 from .vision_model import instantiate_vision_model
 
 logger = logging.getLogger("max.pipelines")
@@ -169,15 +173,17 @@ class MultimodalKVCacheManager(KVCacheManager):
         )
 
         remaining_memory = available_cache_memory - vision_kv_cache_size
-        if remaining_memory > 0:
-            text_kv_cache_size = estimate_kv_cache_size(
-                params,
-                max_batch_size,
-                max_seq_len,
-                num_layers,
-                remaining_memory,
-                devices,
-            )
+        if remaining_memory <= 0:
+            return vision_kv_cache_size
+
+        text_kv_cache_size = estimate_kv_cache_size(
+            params,
+            max_batch_size,
+            max_seq_len,
+            num_layers,
+            remaining_memory,
+            devices,
+        )
         return vision_kv_cache_size + text_kv_cache_size
 
     @classmethod
@@ -228,23 +234,21 @@ class MultimodalKVCacheManager(KVCacheManager):
         return min(text_batch_size, vision_batch_size)
 
     @final
-    def _fetch(
-        self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
+    def fetch(
+        self, batch: list[InputContext], num_steps: int = 1
     ) -> list[KVCacheInputs]:
         """Returns KV cache inputs for both modalities' KV managers."""
         # Here we call into the text KV manager's fetch method to update
         # its fetch metadata.
-        text_fetch_results = self.text_kv_manager.fetch(
-            seq_ids_and_prompts, num_steps
-        )[0]
+        text_fetch_results = self.text_kv_manager.fetch(batch, num_steps)[0]
 
         # For the vision KV manager, fetch metadata isn't applicable since
         # autoregressive generation is text only.
-        active_batch_size = len(seq_ids_and_prompts)
+        active_batch_size = len(batch)
 
         # Lookup table and seq_ids are redundant identical tensors.
         lookup_table_tensor = Tensor.from_numpy(
-            np.array(list(seq_ids_and_prompts.keys()), np.uint32)
+            np.array([ctx.cache_seq_id for ctx in batch], np.uint32)
         )
         cache_lengths_np = np.zeros(active_batch_size, np.uint32)
 
@@ -252,14 +256,15 @@ class MultimodalKVCacheManager(KVCacheManager):
         max_cache_length = 0
 
         device = self.vision_kv_manager.devices[0]
-        for i, seq_id in enumerate(seq_ids_and_prompts):
-            # Assumption: all seq_ids with
-            # `vision_kv_manager.cache_lengths[seq_id] == 0`
-            # are context encoding steps and have the max image sequence length.
+        for i, ctx in enumerate(batch):
+            # Assumption: If start_idx is greater than 0, then it has encoded its
+            # vision input and has the max image sequence length.
             # TODO(bduke): pass the vision sequence lengths in from next_token.
 
             # Omit validity checks on seq ids, which are done in the text fetch.
-            cache_len = self.vision_kv_manager.cache_lengths[seq_id]
+            cache_len = (
+                self.vision_kv_manager.max_seq_len if ctx.start_idx > 0 else 0
+            )
             if cache_len == 0:
                 max_seq_length = self.vision_kv_manager.max_seq_len
 
@@ -331,23 +336,20 @@ class MultimodalKVCacheManager(KVCacheManager):
             )
         ]
 
-    def step(self, seq_ids_and_new_tokens: dict[int, np.ndarray]) -> None:
+    def step(self, batch: list[InputContext]) -> None:
         """Steps both text and vision modalities' KV managers."""
         # Step the text KV manager as usual for autoregressive text generation.
-        self.text_kv_manager.step(seq_ids_and_new_tokens)
+        self.text_kv_manager.step(batch)
 
         # Keep the base class's state in sync with the text KV manager's.
-        super().step(seq_ids_and_new_tokens)
+        super().step(batch)
 
-        # Increment cache lengths for the vision KV manager iff this is a
-        # context encoding (CE) step with an image input.
-        # It's a CE step if the existing cache_lengths[seq_id] is 0.
-        for seq_id in seq_ids_and_new_tokens:
-            self.vision_kv_manager.cache_lengths[seq_id] += (
-                self.vision_kv_manager.max_seq_len
-                if self.vision_kv_manager.cache_lengths[seq_id] == 0
-                else 0
-            )
+    def rollback(self, batch: list[InputContext]) -> None:
+        """Rollback the text KV manager."""
+        self.text_kv_manager.rollback(batch)
+
+        # Keep the base class's state in sync with the text KV manager's.
+        super().rollback(batch)
 
     def external_claim(self, seq_ids: list[int]) -> None:
         """Reserves the same sequence ids for both modalities' KV caches."""
@@ -511,14 +513,18 @@ class LlamaVisionModel(Layer):
     """The Llama 3.2 vision model."""
 
     def __init__(
-        self, pipeline_config: PipelineConfig, weights: Weights
+        self,
+        pipeline_config: PipelineConfig,
+        weights: Weights,
+        huggingface_config: AutoConfig,
+        dtype: DType,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
-        self.vision_config = pipeline_config.huggingface_config.vision_config
-        self.text_config = pipeline_config.huggingface_config.text_config
+        self.vision_config = huggingface_config.vision_config
+        self.text_config = huggingface_config.text_config
 
         self.vision_model = instantiate_vision_model(
-            dtype=pipeline_config.dtype,
+            dtype=dtype,
             image_size=self.vision_config.image_size,
             patch_size=self.vision_config.patch_size,
             supported_aspect_ratios=self.vision_config.supported_aspect_ratios,
@@ -536,14 +542,14 @@ class LlamaVisionModel(Layer):
 
         self.multi_modal_projector = Linear(
             weights.multi_modal_projector.weight.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [
                     self.text_config.hidden_size,
                     self.vision_config.vision_output_dim,
                 ],
             ),
             weights.multi_modal_projector.bias.allocate(
-                pipeline_config.dtype,
+                dtype,
                 [self.text_config.hidden_size],
             ),
         )
@@ -595,11 +601,13 @@ class LlamaVisionLanguageModel(Layer):
         kv_params: KVCacheParams,
         max_seq_len: int,
         num_text_kv_cache_inputs: int,
+        huggingface_config: AutoConfig,
+        dtype: DType,
     ) -> None:
-        text_config = pipeline_config.huggingface_config.text_config
+        text_config = huggingface_config.text_config
 
         self.language_model = instantiate_language_model(
-            dtype=pipeline_config.dtype,
+            dtype=dtype,
             hidden_size=text_config.hidden_size,
             n_heads=text_config.num_attention_heads,
             rope_theta=text_config.rope_theta,
@@ -668,17 +676,36 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
     """
 
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
-        self.vision_config = pipeline_config.huggingface_config.vision_config
-        self.text_config = pipeline_config.huggingface_config.text_config
+        self.vision_config = huggingface_config.vision_config
+        self.text_config = huggingface_config.text_config
 
         # These need to be set at graph instantiation time.
         self.vision_graph_input_size = -1
         self.language_graph_input_size = -1
 
-        super().__init__(pipeline_config, session)
+        super().__init__(
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_n_logits,
+        )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
         # pipeline. Unfortunately, self.model is still being used (and exposed)
@@ -723,16 +750,21 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         return Graph(
             "llama3-vision-vision-model-graph",
             forward=LlamaVisionModel(
-                pipeline_config=self.pipeline_config, weights=self.weights
+                pipeline_config=self.pipeline_config,
+                weights=self.weights,
+                huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
             ),
             input_types=input_types,
         )
 
     @classmethod
-    def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
+    def calculate_max_seq_len(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
         try:
             return upper_bounded_default(
-                upper_bound=pipeline_config.huggingface_config.text_config.max_position_embeddings,
+                upper_bound=huggingface_config.text_config.max_position_embeddings,
                 default=pipeline_config.max_length,
             )
         except ValueError as e:
@@ -740,7 +772,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 "Unable to infer max_length for Llama Vision, the provided "
                 f"max_length ({pipeline_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
-                f"({pipeline_config.huggingface_config.text_config.max_position_embeddings})."
+                f"({huggingface_config.text_config.max_position_embeddings})."
             )
             raise ValueError(msg) from e
 
@@ -752,13 +784,13 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         )
         self._input_row_offsets_prealloc = Tensor.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         input_ids_type = TensorType(DType.int64, shape=["total_seq_len"])
         # image_size = self.vision_config.image_size
         # patch_size = self.vision_config.patch_size
         cross_attention_states_type = TensorType(
-            self.pipeline_config.dtype,
+            self.dtype,
             shape=[
                 # TODO(bduke): fix algebraic dim creation outside of graph
                 # contexts.
@@ -798,9 +830,19 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             forward=LlamaVisionLanguageModel(
                 pipeline_config=self.pipeline_config,
                 weights=self.weights,
-                kv_params=self.get_kv_params(self.pipeline_config),
-                max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
+                kv_params=self.get_kv_params(
+                    huggingface_config=self.huggingface_config,
+                    n_devices=len(self.devices),
+                    kv_cache_config=self.kv_cache_config,
+                    cache_dtype=self.encoding.cache_dtype,
+                ),
+                max_seq_len=self.calculate_max_seq_len(
+                    self.pipeline_config,
+                    huggingface_config=self.huggingface_config,
+                ),
                 num_text_kv_cache_inputs=len(list(text_kv_input_symbols)),
+                huggingface_config=self.huggingface_config,
+                dtype=self.dtype,
             ),
             input_types=input_types,
         )
@@ -808,25 +850,25 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
     @property
     def vision_max_seq_len(self) -> int:
         """Returns the maximum number of vision tokens."""
-        return self._calculate_vision_max_seq_len(self.pipeline_config)
+        return self._calculate_vision_max_seq_len(self.huggingface_config)
 
     @classmethod
-    def _calculate_vision_max_seq_len(cls, config: PipelineConfig) -> int:
+    def _calculate_vision_max_seq_len(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
         """Returns the maximum number of vision tokens."""
         # Marshal out hyperparameters.
-        height = config.huggingface_config.vision_config.image_size
-        width = config.huggingface_config.vision_config.image_size
-        max_num_tiles = config.huggingface_config.vision_config.max_num_tiles
-        patch_size = config.huggingface_config.vision_config.patch_size
+        height = huggingface_config.vision_config.image_size
+        width = huggingface_config.vision_config.image_size
+        max_num_tiles = huggingface_config.vision_config.max_num_tiles
+        patch_size = huggingface_config.vision_config.patch_size
         # TODO(bduke): account for the actual instead of max number of tiles.
         # num_tiles * (image_dim**2 // patch_dim**2 + 1 (cls token))
         return max_num_tiles * ((height * width) // patch_size**2 + 1)
 
     @classmethod
-    def get_num_layers(cls, pipeline_config: PipelineConfig) -> int:
-        return (
-            pipeline_config.huggingface_config.vision_config.num_hidden_layers
-        )
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        return LlamaVisionConfig.get_num_layers(huggingface_config)
 
     def _prepare_vision_inputs(
         self,
@@ -864,20 +906,18 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # (batch_size, 1, max_num_tiles, H, W, C).
         final_images = np.concatenate(images, axis=0)
 
-        pixel_values = Tensor.from_numpy(final_images).to(
-            self.pipeline_config.devices[0]
-        )
+        pixel_values = Tensor.from_numpy(final_images).to(self.devices[0])
 
         final_aspect_ratio_ids = np.concatenate(aspect_ratio_ids_list, axis=0)
 
         aspect_ratio_ids = Tensor.from_numpy(final_aspect_ratio_ids).to(
-            self.pipeline_config.devices[0]
+            self.devices[0]
         )
 
         final_aspect_ratio_mask = np.concatenate(aspect_ratio_mask_list, axis=0)
 
         aspect_ratio_mask = Tensor.from_numpy(final_aspect_ratio_mask).to(
-            self.pipeline_config.devices[0]
+            self.devices[0]
         )
 
         return pixel_values, aspect_ratio_ids, aspect_ratio_mask
@@ -888,11 +928,11 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
-        if self.pipeline_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
+        if self.kv_cache_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
             msg = "Llama Vision only supports continuous batching"
             raise ValueError(msg)
 
-        def has_image(pixel_values: np.ndarray | list[np.ndarray]) -> bool:
+        def has_image(pixel_values: Sequence[np.ndarray]) -> bool:
             return pixel_values is not None and len(pixel_values) > 0
 
         has_images = any(has_image(ctx.pixel_values) for ctx in context_batch)
@@ -926,7 +966,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 [0] + [ctx.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         pixel_row_offsets = Tensor.from_numpy(
             np.cumsum(
@@ -940,14 +980,12 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 ],
                 dtype=np.uint32,
             )
-        ).to(self.pipeline_config.devices[0])
+        ).to(self.devices[0])
 
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
-        input_id_values = Tensor.from_numpy(tokens).to(
-            self.pipeline_config.devices[0]
-        )
+        input_id_values = Tensor.from_numpy(tokens).to(self.devices[0])
         # This lives on host / in the CPU kernel, but is later casted to a scalar on
         # device kernel side. No need for explicit .to(pipeline_config.device) call here.
         input_id_max_seq_len = Tensor.from_numpy(
@@ -1003,8 +1041,8 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # are set to 0 here to imitate a dummy tensor (used in text-only mode).
         cross_attention_states = Tensor.zeros(
             shape=[0, self.text_config.hidden_size],
-            dtype=self.pipeline_config.dtype,
-        ).to(self.pipeline_config.devices[0])
+            dtype=self.dtype,
+        ).to(self.devices[0])
 
         model_inputs = cast(LlamaVisionInputs, model_inputs)
         if model_inputs.has_vision_inputs:
@@ -1042,22 +1080,31 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             *all_kv_cache_inputs,
             copy_inputs_to_device=False,
         )
-        assert not self.pipeline_config.enable_echo
-        assert isinstance(model_outputs[0], Tensor)
-        return ModelOutputs(next_token_logits=model_outputs[0])
+        if len(model_outputs) == 3:
+            return ModelOutputs(
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Tensor, model_outputs[1]),
+                logit_offsets=cast(Tensor, model_outputs[2]),
+            )
+        else:
+            return ModelOutputs(
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Tensor, model_outputs[0]),
+            )
 
     @classmethod
-    def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
-        return KVCacheParams(
-            dtype=pipeline_config.cache_dtype,
-            n_kv_heads=pipeline_config.huggingface_config.text_config.num_key_value_heads,
-            head_dim=(
-                pipeline_config.huggingface_config.text_config.hidden_size
-                // pipeline_config.huggingface_config.text_config.num_attention_heads
-            ),
-            page_size=pipeline_config.kv_cache_page_size,
-            cache_strategy=pipeline_config.cache_strategy,
-            enable_prefix_caching=pipeline_config.enable_prefix_caching,
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        n_devices: int,
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        return LlamaVisionConfig.get_kv_params(
+            huggingface_config=huggingface_config,
+            n_devices=n_devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
         )
 
     def load_kv_manager(
@@ -1077,17 +1124,24 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         """
         num_cross_attn_layers = len(self.text_config.cross_attention_layers)
         return MultimodalKVCacheManager(
-            params=self.get_kv_params(self.pipeline_config),
+            params=self.get_kv_params(
+                huggingface_config=self.huggingface_config,
+                n_devices=len(self.devices),
+                kv_cache_config=self.kv_cache_config,
+                cache_dtype=self.encoding.cache_dtype,
+            ),
             max_batch_size=self.pipeline_config.max_batch_size,
-            text_max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
+            text_max_seq_len=self.calculate_max_seq_len(
+                self.pipeline_config, huggingface_config=self.huggingface_config
+            ),
             vision_max_seq_len=self.vision_max_seq_len,
             text_num_layers=self.text_config.num_hidden_layers
             - num_cross_attn_layers,
             vision_num_layers=num_cross_attn_layers,
-            devices=self.pipeline_config.devices,
+            devices=self.devices,
             session=session,
             available_cache_memory=available_cache_memory,
-            page_size=self.pipeline_config.kv_cache_page_size,
+            page_size=self.kv_cache_config.kv_cache_page_size,
         )
 
     @classmethod
@@ -1096,23 +1150,33 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
         devices: list[Device],
+        huggingface_config: AutoConfig,
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
         """Estimates the size of the kv cache in bytes."""
         assert pipeline_config.max_batch_size is not None
 
         num_cross_attn_layers = len(
-            pipeline_config.huggingface_config.text_config.cross_attention_layers
+            huggingface_config.text_config.cross_attention_layers
         )
         return MultimodalKVCacheManager.estimated_memory_size(
-            params=cls.get_kv_params(pipeline_config),
+            params=cls.get_kv_params(
+                huggingface_config=huggingface_config,
+                n_devices=len(devices),
+                kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
+            ),
             max_batch_size=pipeline_config.max_batch_size,
-            max_seq_len=cls.calculate_max_seq_len(pipeline_config),
-            num_layers=pipeline_config.huggingface_config.text_config.num_hidden_layers
+            max_seq_len=cls.calculate_max_seq_len(
+                pipeline_config, huggingface_config=huggingface_config
+            ),
+            num_layers=huggingface_config.text_config.num_hidden_layers
             - num_cross_attn_layers,
             available_cache_memory=available_cache_memory,
             devices=devices,
             max_vision_seq_len=cls._calculate_vision_max_seq_len(
-                pipeline_config
+                huggingface_config
             ),
             num_vision_layers=num_cross_attn_layers,
         )
@@ -1122,20 +1186,28 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         cls,
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
+        huggingface_config: AutoConfig,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
     ) -> int:
-        if (
-            len(pipeline_config.devices) == 1
-            and pipeline_config.devices[0].is_host
-        ):
+        if len(devices) == 1 and devices[0].is_host:
             return 1
 
         num_cross_attn_layers = len(
-            pipeline_config.huggingface_config.text_config.cross_attention_layers
+            huggingface_config.text_config.cross_attention_layers
         )
         optimal_batch_size = MultimodalKVCacheManager.infer_optimal_batch_size(
-            params=cls.get_kv_params(pipeline_config),
-            max_seq_len=cls.calculate_max_seq_len(pipeline_config),
-            num_layers=pipeline_config.huggingface_config.text_config.num_hidden_layers
+            params=cls.get_kv_params(
+                huggingface_config=huggingface_config,
+                n_devices=len(devices),
+                kv_cache_config=kv_cache_config,
+                cache_dtype=cache_dtype,
+            ),
+            max_seq_len=cls.calculate_max_seq_len(
+                pipeline_config, huggingface_config=huggingface_config
+            ),
+            num_layers=huggingface_config.text_config.num_hidden_layers
             - num_cross_attn_layers,
             # TODO(GEX-1843): we underestimate the memory usage of the
             # vision model due to multiple activations in flight while executing the
@@ -1144,9 +1216,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             # should more accurately measure a model's memory consumption via
             # an interface in the graph compiler.
             available_cache_memory=int(available_cache_memory * 0.8),
-            devices=pipeline_config.devices,
+            devices=devices,
             max_vision_seq_len=cls._calculate_vision_max_seq_len(
-                pipeline_config
+                huggingface_config
             ),
             num_vision_layers=num_cross_attn_layers,
         )
@@ -1163,7 +1235,6 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         Load the Llama vision multimodal model. Since this is a multimodal model,
         we have vision and language models (graph) loaded.
         """
-        self.weights = self.pipeline_config.load_weights()
 
         def build_vision_model():
             logger.info("Building and compiling vision model...")

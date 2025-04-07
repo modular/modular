@@ -20,11 +20,11 @@ from base64 import b64encode
 """
 
 from collections import List
-from collections.string import StringSlice
+
+from memory import Span
 from sys import simdwidthof
 
 import bit
-from memory import Span
 
 from ._b64encode import b64encode_with_buffers as _b64encode_with_buffers
 
@@ -41,7 +41,8 @@ fn _ascii_to_value[validate: Bool = False](char: StringSlice) raises -> Int:
         char: A single character string.
 
     Returns:
-        The integer value of the character for base64 decoding, or -1 if invalid.
+        The integer value of the character for base64 decoding, or -1 if
+        invalid.
     """
     var char_val = ord(char)
 
@@ -62,7 +63,9 @@ fn _ascii_to_value[validate: Bool = False](char: StringSlice) raises -> Int:
         @parameter
         if validate:
             raise Error(
-                'ValueError: Unexpected character "{}" encountered'.format(char)
+                StaticString(
+                    'ValueError: Unexpected character "{}" encountered'
+                ).format(char)
             )
         return -1
 
@@ -76,9 +79,15 @@ fn b64encode(input_bytes: Span[Byte, _], mut result: List[Byte, _]):
     """Performs base64 encoding on the input string.
 
     Args:
-        input_bytes: The input string buffer. Assumed to be null-terminated.
+        input_bytes: The input string buffer.
         result: The buffer in which to store the values.
+
+    Notes:
+        This method reserves the necessary buffer capacity. `result` can be a 0
+        capacity buffer.
     """
+    # 4 character bytes for each 3 bytes (or less) block + null terminator
+    result.reserve(Int(4 * ((len(input_bytes) + 3 - 1) / 3)) + 1)
     _b64encode_with_buffers(input_bytes, result)
 
 
@@ -87,7 +96,7 @@ fn b64encode(input_string: StringSlice) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
-        input_string: The input string buffer. Assumed to be null-terminated.
+        input_string: The input string buffer.
 
     Returns:
         The ASCII base64 encoded string.
@@ -99,17 +108,15 @@ fn b64encode(input_bytes: Span[Byte, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
-        input_bytes: The input string buffer. Assumed to be null-terminated.
+        input_bytes: The input string buffer.
 
     Returns:
         The ASCII base64 encoded string.
     """
-    # +1 for the null terminator and +1 to be sure
-    var result = List[UInt8, True](capacity=Int(len(input_bytes) * (4 / 3)) + 2)
+    var result = List[UInt8, True]()
     b64encode(input_bytes, result)
-    # null-terminate the result
-    result.append(0)
-    return String(result^)
+    result.append(0)  # null-terminate the result
+    return String(buffer=result^)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -136,7 +143,9 @@ fn b64decode[validate: Bool = False](str: StringSlice) raises -> String:
     if validate:
         if n % 4 != 0:
             raise Error(
-                "ValueError: Input length {} must be divisible by 4".format(n)
+                StaticString(
+                    "ValueError: Input length {} must be divisible by 4"
+                ).format(n)
             )
 
     var p = String._buffer_type(capacity=n + 1)
@@ -159,9 +168,8 @@ fn b64decode[validate: Bool = False](str: StringSlice) raises -> String:
 
         p.append(((c & 0x03) << 6) | d)
 
-    p.append(0)
-
-    return String(p^)
+    p.append(0)  # null-terminate the result
+    return String(buffer=p^)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -196,8 +204,7 @@ fn b16encode(str: StringSlice) -> String:
         out.append(b16chars[Int(hi)])
         out.append(b16chars[Int(lo)])
 
-    out.append(0)
-
+    out.append(0)  # null-terminate the result
     return String(buffer=out^)
 
 
@@ -242,5 +249,5 @@ fn b16decode(str: StringSlice) -> String:
         var lo = str[i + 1]
         p.append(decode(hi) << 4 | decode(lo))
 
-    p.append(0)
+    p.append(0)  # null-terminate the result
     return String(buffer=p^)

@@ -16,7 +16,6 @@ import threading
 import time
 from functools import wraps
 from pathlib import Path
-from typing import List
 
 import chromadb
 import streamlit as st
@@ -154,7 +153,7 @@ def patch_tqdm():
 
 
 @st.cache_resource(show_spinner=False)
-def load_embed_docs(docs_filenames: List[str]):
+def load_embed_docs(docs_filenames: list[str]):
     """Loads documents from `./ragdir` and embeds them to chromadb
     using a text embedding model.
     """

@@ -20,7 +20,7 @@ from python import Python
 """
 
 from collections import Dict
-from collections.string import StringSlice
+
 from os import abort, getenv
 from sys import external_call, sizeof
 from sys.ffi import _Global, c_str_ptr
@@ -43,14 +43,14 @@ fn _init_python_global() -> _PythonGlobal:
     return _PythonGlobal()
 
 
-struct _PythonGlobal:
+struct _PythonGlobal(Movable):
     var cpython: CPython
 
-    fn __moveinit__(mut self, owned other: Self):
-        self.cpython = other.cpython^
-
-    fn __init__(mut self):
+    fn __init__(out self):
         self.cpython = CPython()
+
+    fn __moveinit__(out self, owned other: Self):
+        self.cpython = other.cpython^
 
     fn __del__(owned self):
         CPython.destroy(self.cpython)
@@ -317,7 +317,7 @@ struct Python:
     @staticmethod
     fn add_object(
         mut module: TypedPythonObject["Module"],
-        name: StringLiteral,
+        name: String,
         value: PythonObject,
     ) raises:
         """Add a new object to `module` with the given name and value.

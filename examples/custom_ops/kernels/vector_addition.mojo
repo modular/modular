@@ -16,13 +16,13 @@ from math import ceildiv
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
-from tensor import ManagedTensorSlice, foreach
+from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 
 from utils.index import IndexList
 
 
 fn _vector_addition_cpu(
-    out: ManagedTensorSlice,
+    out: ManagedTensorSlice[mut=True],
     lhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     rhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     ctx: DeviceContextPtr,
@@ -38,7 +38,7 @@ fn _vector_addition_cpu(
 
 
 fn _vector_addition_gpu(
-    out: ManagedTensorSlice,
+    out: ManagedTensorSlice[mut=True],
     lhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     rhs: ManagedTensorSlice[type = out.type, rank = out.rank],
     ctx: DeviceContextPtr,
@@ -70,18 +70,16 @@ fn _vector_addition_gpu(
     )
 
 
-@compiler.register("vector_addition", num_dps_outputs=1)
+@compiler.register("vector_addition")
 struct VectorAddition:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StringLiteral,
     ](
-        # as num_dps_outputs=1, the first argument is the "output"
-        out: ManagedTensorSlice[rank=1],
-        # starting here are the list of inputs
-        lhs: ManagedTensorSlice[type = out.type, rank = out.rank],
-        rhs: ManagedTensorSlice[type = out.type, rank = out.rank],
+        out: OutputTensor[rank=1],
+        lhs: InputTensor[type = out.type, rank = out.rank],
+        rhs: InputTensor[type = out.type, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:

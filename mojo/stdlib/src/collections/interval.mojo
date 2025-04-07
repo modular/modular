@@ -52,6 +52,7 @@ from memory import UnsafePointer
 from .deque import Deque
 from builtin.math import _CopyableGreaterThanComparable
 from collections import Optional
+from builtin.string_literal import StaticString
 
 
 trait IntervalPayload(CollectionElement, Stringable, Comparable):
@@ -85,7 +86,7 @@ trait IntervalElement(
         ...
 
 
-struct Interval[T: IntervalElement](CollectionElement):
+struct Interval[T: IntervalElement](CollectionElement, Boolable, Writable):
     """A half-open interval [start, end) that represents a range of values.
 
     The interval includes the start value but excludes the end value.
@@ -335,7 +336,9 @@ struct Interval[T: IntervalElement](CollectionElement):
         return "Interval" + String.write(self) + ""
 
 
-struct _IntervalNode[T: IntervalElement, U: IntervalPayload](CollectionElement):
+struct _IntervalNode[T: IntervalElement, U: IntervalPayload](
+    CollectionElement, Stringable, Writable
+):
     """A node containing an interval and associated data.
 
     Parameters:
@@ -524,7 +527,7 @@ struct _IntervalNode[T: IntervalElement, U: IntervalPayload](CollectionElement):
         return self.interval > other.interval
 
 
-struct IntervalTree[T: IntervalElement, U: IntervalPayload]:
+struct IntervalTree[T: IntervalElement, U: IntervalPayload](Writable):
     """An interval tree data structure for efficient range queries.
 
     Parameters:
@@ -732,8 +735,6 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload]:
     fn _insert_fixup(
         mut self, current_node0: UnsafePointer[_IntervalNode[T, U]]
     ):
-        var current_node = current_node0
-
         """Fixes up the red-black tree properties after an insertion.
 
         This method restores the red-black tree properties that may have been violated
@@ -741,9 +742,10 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload]:
         maintain the balance and color properties of the red-black tree.
 
         Args:
-            current_node: A pointer to the newly inserted node that may violate red-black
+            current_node0: A pointer to the newly inserted node that may violate red-black
                 properties.
         """
+        var current_node = current_node0
 
         # While the parent of the current node is red, we need to fix violations
         while current_node != self._root and current_node[].parent[]._is_red:
@@ -977,7 +979,7 @@ struct IntervalTree[T: IntervalElement, U: IntervalPayload]:
 
         # Output the completed grid row by row
         for row in grid:
-            var row_str = String("".join(row[]).rstrip())
+            var row_str = String(StaticString("").join(row[]).rstrip())
             if row_str:
                 writer.write(row_str, "\n")
 

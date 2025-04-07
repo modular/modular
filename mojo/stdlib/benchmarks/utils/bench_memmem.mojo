@@ -14,7 +14,8 @@
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
-from collections.string.string_slice import _align_down, _memchr, _memmem
+from math import align_down
+from collections.string.string_slice import _memchr, _memmem
 from sys import simdwidthof
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, Unit, keep, run
@@ -147,23 +148,23 @@ var needle = "school"  # a word intentionally not in the test data
 # ===-----------------------------------------------------------------------===#
 @always_inline
 fn _memmem_baseline[
-    type: DType
+    dtype: DType
 ](
-    haystack: UnsafePointer[Scalar[type]],
+    haystack: UnsafePointer[Scalar[dtype]],
     haystack_len: Int,
-    needle: UnsafePointer[Scalar[type]],
+    needle: UnsafePointer[Scalar[dtype]],
     needle_len: Int,
-) -> UnsafePointer[Scalar[type]]:
+) -> UnsafePointer[Scalar[dtype]]:
     if not needle_len:
         return haystack
     if needle_len > haystack_len:
-        return UnsafePointer[Scalar[type]]()
+        return UnsafePointer[Scalar[dtype]]()
     if needle_len == 1:
-        return _memchr[type](haystack, needle[0], haystack_len)
+        return _memchr(haystack, needle[0], haystack_len)
 
     alias bool_mask_width = simdwidthof[DType.bool]()
-    var first_needle = SIMD[type, bool_mask_width](needle[0])
-    var vectorized_end = _align_down(
+    var first_needle = SIMD[dtype, bool_mask_width](needle[0])
+    var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
     )
     for i in range(0, vectorized_end, bool_mask_width):
@@ -181,7 +182,7 @@ fn _memmem_baseline[
 
         if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
             return haystack + i
-    return UnsafePointer[Scalar[type]]()
+    return UnsafePointer[Scalar[dtype]]()
 
 
 # ===-----------------------------------------------------------------------===#

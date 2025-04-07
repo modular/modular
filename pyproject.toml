@@ -11,4 +11,4 @@ reportMissingImports = false
 [project]
 requires-python = ">=3.8"
 name = "max-repo"
-
+version = "0.0.0"

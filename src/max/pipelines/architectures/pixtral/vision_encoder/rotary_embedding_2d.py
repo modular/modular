@@ -14,12 +14,10 @@
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import List, Optional
 
-import numpy as np
 from max.dtype import DType
 from max.graph import Dim, DimLike, TensorValue, TensorValueLike, ops
-from max.pipelines.nn.layer import Layer
+from max.nn.layer import Layer
 
 
 def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
@@ -28,13 +26,13 @@ def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
     width = Dim(width)
     row_indices = ops.range(
         ops.constant(0, DType.int64),
-        TensorValue.from_dim(height),
+        TensorValue(height),
         ops.constant(1, DType.int64),
         out_dim=height,
     )
     col_indices = ops.range(
         ops.constant(0, DType.int64),
-        TensorValue.from_dim(width),
+        TensorValue(width),
         ops.constant(1, DType.int64),
         out_dim=width,
     )
@@ -51,7 +49,7 @@ def meshgrid(height: DimLike, width: DimLike, indexing="ij") -> TensorValue:
 
 
 def patch_position_ids(
-    patch_embeds: List[TensorValue], max_width: int
+    patch_embeds: list[TensorValue], max_width: int
 ) -> TensorValue:
     """
     Takes a list of patches, calculates the positional indices for each patch by
@@ -90,8 +88,6 @@ class RotaryEmbedding2D(Layer):
     """Hyperparameter used to control the frequency scaling of the sinusoidal components of the embeddings."""
     max_patches_per_side: int
     """The maximum number of patches per side for model's input (images)."""
-    rope_scaling: Optional[np.ndarray] = None
-    """Scaling factor for the positional frequencies."""
 
     def freqs_cis_base(self) -> TensorValue:
         """
@@ -118,8 +114,6 @@ class RotaryEmbedding2D(Layer):
             ops.constant(2, DType.float64),
             out_dim=head_dim // 2,
         )
-        if self.rope_scaling is not None:
-            iota = iota * self.rope_scaling
         # 1D tensor of length head_dim // 2 = 32
         freqs = ops.cast(1.0 / (self.theta ** (iota / head_dim)), DType.float32)
 

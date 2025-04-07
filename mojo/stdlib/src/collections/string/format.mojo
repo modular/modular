@@ -10,7 +10,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements Formatting utilities."""
+"""String formatting utilities for Mojo.
+
+This module provides string formatting functionality similar to Python's `str.format()` method.
+It implements curly brace `{}` based string formatting with support for positional arguments,
+named arguments, format specifiers and conversion flags.
+
+Key Features:
+- Curly brace `{}` based string formatting
+- Support for positional and named arguments
+- Format specifiers for controlling output format
+- Conversion flags for `str()` and `repr()` conversions
+- Automatic and manual argument indexing
+- Fill, align, sign and other formatting options
+
+Example:
+```mojo
+from collections.string import String
+
+# Basic formatting
+var s1 = "Hello {0}!".format("World")  # Hello World!
+
+# Multiple arguments
+var s2 = "{0} plus {1} equals {2}".format(1, 2, 3)  # 1 plus 2 equals 3
+
+# Format specifiers
+var s3 = "{:>10}".format("test")  # '      test'
+
+# Conversion flags
+var s4 = "{!r}".format("test")  # "'test'"
+```
+
+Note:
+
+This is an internal implementation module. Users should use the `format()` methods
+provided by the `String` and `StringSlice` types rather than using these utilities directly.
+"""
 
 from collections import Optional
 
@@ -72,7 +107,7 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         return self
 
     fn __init__(
-        mut self,
+        out self,
         first_curly: Int,
         last_curly: Int,
         field: Self._FieldVariantType,
@@ -428,7 +463,7 @@ trait _CurlyEntryFormattable(Stringable, Representable):
 
 @value
 @register_passable("trivial")
-struct _FormatSpec:
+struct _FormatSpec(CollectionElement):
     """Store every field of the format specifier in a byte (e.g., ord("+") for
     sign). It is stored in a byte because every [format specifier](
     https://docs.python.org/3/library/string.html#formatspec) is an ASCII
@@ -592,7 +627,7 @@ struct _FormatSpec:
     """
 
     fn __init__(
-        mut self,
+        out self,
         fill: UInt8 = ord(" "),
         align: UInt8 = 0,
         sign: UInt8 = ord("-"),

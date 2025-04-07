@@ -15,7 +15,7 @@ name: MAX feature request
 description: Suggest an enhancement for MAX
 title: "[Feature Request]"
 labels:
-  - "enhancement,max"
+  - "enhancement,max,max-repo"
 body:
   - type: markdown
     attributes:

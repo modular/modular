@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import seed
+from random import seed, randn
 
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
@@ -39,12 +39,14 @@ def main():
     # 3. Execute the graph with inputs
     # generate random inputs
     seed(42)
-    input0 = Tensor[DType.float32].randn((2, 2))
+    input0 = Tensor[DType.float32](TensorShape(2, 2))
+    randn(input0.unsafe_ptr(), input0.num_elements())
     print("random 2x2 input0:", input0)
     ret = model.execute("input0", input0^)
     print("matmul 2x2 result:", ret.get[DType.float32]("output0"))
     # with 3 x 2 matrix input
-    input0 = Tensor[DType.float32].randn((3, 2))
+    input0 = Tensor[DType.float32](TensorShape(3, 2))
+    randn(input0.unsafe_ptr(), input0.num_elements())
     print("random 3x2 input0:", input0)
     ret = model.execute("input0", input0^)
     print("matmul 3x2 result:", ret.get[DType.float32]("output0"))

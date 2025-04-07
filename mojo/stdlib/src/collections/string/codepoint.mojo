@@ -10,11 +10,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the `Codepoint` type for representing single Unicode scalar
-values."""
+"""Unicode codepoint handling.
+
+This module provides the `Codepoint` type for representing single Unicode scalar values.
+A codepoint represents a single Unicode character, restricted to valid Unicode scalar
+values in the ranges 0 to 0xD7FF and 0xE000 to 0x10FFFF inclusive.
+
+The `Codepoint` type provides functionality for:
+- Converting between codepoints and UTF-8 encoded bytes
+- Testing character properties like ASCII, digits, whitespace etc.
+- Converting between codepoints and strings
+- Safe construction from integers with validation
+
+Example:
+```mojo
+    from collections.string import Codepoint
+    from testing import assert_true
+
+    # Create a codepoint from a character
+    var c = Codepoint.ord('A')
+
+    # Check properties
+    assert_true(c.is_ascii())
+    assert_true(c.is_ascii_upper())
+
+    # Convert to string
+    var s = String(c)  # "A"
+```
+"""
 
 from collections import Optional
-from collections.string import StringSlice
+
 
 from bit import count_leading_zeros
 from memory import UnsafePointer
@@ -37,7 +63,13 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
 
 
 @value
-struct Codepoint(CollectionElement, EqualityComparable, Intable, Stringable):
+struct Codepoint(
+    CollectionElement,
+    EqualityComparable,
+    Intable,
+    Stringable,
+    EqualityComparableCollectionElement,
+):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 

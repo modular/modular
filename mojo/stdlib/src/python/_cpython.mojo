@@ -18,7 +18,7 @@ Documentation for these functions can be found online at:
 """
 
 from collections import InlineArray, Optional
-from collections.string import StringSlice
+from collections.string.string_slice import get_static_string
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path
@@ -123,7 +123,7 @@ struct PyKeysValuePair:
 
 @value
 @register_passable("trivial")
-struct PyObjectPtr:
+struct PyObjectPtr(CollectionElement):
     """Equivalent to `PyObject*` in C.
 
     It is crucial that this type has the same size and alignment as `PyObject*`
@@ -197,7 +197,7 @@ struct PyObjectPtr:
     ](
         owned self,
         # TODO: Make this part of the trait bound
-        expected_type_name: StringLiteral,
+        expected_type_name: StringSlice,
     ) -> Optional[UnsafePointer[T]]:
         var cpython = _get_global_python_itf().cpython()
         var type = cpython.Py_TYPE(self)
@@ -300,7 +300,7 @@ fn _py_finalize(lib: DLHandle):
 
 
 @value
-struct PyMethodDef:
+struct PyMethodDef(CollectionElement):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -357,8 +357,8 @@ struct PyMethodDef:
     @staticmethod
     fn function[
         func: fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
-        func_name: StringLiteral,
-        docstring: StringLiteral = "",
+        func_name: StaticString,
+        docstring: String = "",
     ]() -> Self:
         """Create a PyMethodDef for a function.
 
@@ -371,8 +371,13 @@ struct PyMethodDef:
         #   Support a way to get the name of the function from its parameter
         #   type, similar to `get_linkage_name()`?
 
+        # FIXME: PyMethodDef is capturing the pointer without an origin.
+
+        # Immortalize the string so we know it is permanent, and force it to be
+        # nul terminated.
+        alias func_name_str = get_static_string[func_name]()
         return PyMethodDef(
-            c_str_ptr(func_name), func, METH_VARARGS, c_str_ptr(docstring)
+            c_str_ptr(func_name_str), func, METH_VARARGS, c_str_ptr(docstring)
         )
 
 
@@ -413,7 +418,7 @@ struct PyType_Spec:
 
 @value
 @register_passable("trivial")
-struct PyType_Slot:
+struct PyType_Slot(CollectionElement):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
@@ -609,7 +614,7 @@ struct PyModuleDef_Slot:
     var value: OpaquePointer
 
 
-struct PyModuleDef(Stringable, Representable, Writable):
+struct PyModuleDef(Stringable, Representable, Writable, Movable):
     """The Python module definition structs that holds all of the information
     needed to create a module.
 
@@ -1684,6 +1689,12 @@ struct CPython:
         """
         return self.lib.call["PyLong_AsSsize_t", c_ssize_t](py_object)
 
+    fn PyNumber_Long(mut self, py_object: PyObjectPtr) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/number.html#c.PyNumber_Long).
+        """
+        return self.lib.call["PyNumber_Long", PyObjectPtr](py_object)
+
     # ===-------------------------------------------------------------------===#
     # Floating-Point Objects
     # ===-------------------------------------------------------------------===#
@@ -1842,7 +1853,7 @@ struct CPython:
 
     fn get_error_global(
         mut self,
-        global_name: StringLiteral,
+        global_name: StringSlice,
     ) -> PyObjectPtr:
         """Get a Python read-only reference to the specified global exception
         object.
@@ -1855,7 +1866,7 @@ struct CPython:
         if not ptr:
             abort(
                 "error: unable to get pointer to CPython `"
-                + global_name
+                + String(global_name)
                 + "` global"
             )
 

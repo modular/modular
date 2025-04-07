@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements os methods.
+"""Provides functions to access operating-system dependent functionality, including
+file system operations.
 
 You can import a method from the `os` package. For example:
 
@@ -20,7 +21,7 @@ from os import listdir
 """
 
 from collections import InlineArray, List
-from collections.string import StringSlice
+
 from sys import external_call, is_gpu, os_is_linux, os_is_windows
 from sys.ffi import OpaquePointer, c_char, c_str_ptr
 
@@ -266,7 +267,7 @@ fn abort[
 
     @parameter
     if not is_gpu():
-        print(String(messages), flush=True)
+        print("ABORT:", String(messages), flush=True)
 
     return abort[result]()
 
@@ -276,6 +277,7 @@ fn abort[
 # ===----------------------------------------------------------------------=== #
 fn remove[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified file.
+
     If the path is a directory or it can not be deleted, an error is raised.
     Absolute and relative paths are allowed, relative paths are resolved from cwd.
 
@@ -299,6 +301,7 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
 
 fn unlink[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified file.
+
     If the path is a directory or it can not be deleted, an error is raised.
     Absolute and relative paths are allowed, relative paths are resolved from cwd.
 
@@ -319,6 +322,7 @@ fn unlink[PathLike: os.PathLike](path: PathLike) raises:
 
 fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
     """Creates a directory at the specified path.
+
     If the directory can not be created an error is raised.
     Absolute and relative paths are allowed, relative paths are resolved from cwd.
 
@@ -376,6 +380,7 @@ def makedirs[
 
 fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified directory.
+
     If the path is not a directory or it can not be deleted, an error is raised.
     Absolute and relative paths are allowed, relative paths are resolved from cwd.
 
@@ -392,10 +397,11 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
 
 
 def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
-    """Remove a leaf directory and all empty intermediate ones. Directories
-    corresponding to rightmost path segments will be pruned away until either
-    the whole path is consumed or an error occurs.  Errors during this latter
-    phase are ignored, which occur when a directory was not empty.
+    """Removes a leaf directory and all empty intermediate ones.
+
+    Directories corresponding to rightmost path segments will be pruned away
+    until either the whole path is consumed or an error occurs. Errors during
+    this latter phase are ignored, which occur when a directory was not empty.
 
     Parameters:
       PathLike: The a type conforming to the os.PathLike trait.

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from my_complex import Complex
+from collections.string import StaticString
 from testing import *
 
 
@@ -32,7 +33,7 @@ def test_init():
 def test_str():
     re1 = 3.3
     im1 = 5.1
-    str1 = "({} + {}i)".format(re1, im1)
+    str1 = StaticString("({} + {}i)").format(re1, im1)
     out_str1 = String()
     c1 = Complex(re1, im1)
     assert_equal(str1, String(c1))
@@ -42,7 +43,7 @@ def test_str():
 
     re2 = -1.2
     im2 = -3.4
-    str2 = "({} - {}i)".format(re2, abs(im2))
+    str2 = StaticString("({} - {}i)").format(re2, abs(im2))
     out_str2 = String()
     c2 = Complex(re2, im2)
     assert_equal(str2, String(c2))

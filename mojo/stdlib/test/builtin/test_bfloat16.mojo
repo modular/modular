@@ -55,13 +55,12 @@ def test_bf_primitives():
 
 
 def check_float64_values():
+    # These ugly things are required because SIMD rejects construction of
+    # BFloat16 values on ARM systems.
     assert_equal(
         Float64(
             __mlir_op.`pop.cast`[_type = __mlir_type[`!pop.scalar<f64>`]](
-                __mlir_op.`kgen.param.constant`[
-                    _type = __mlir_type[`!pop.scalar<bf16>`],
-                    value = __mlir_attr[`#pop.simd<"33"> : !pop.scalar<bf16>`],
-                ]()
+                __mlir_attr.`#pop.simd<"33"> : !pop.scalar<bf16>`,
             )
         ),
         Float64(33.0),
@@ -71,12 +70,7 @@ def check_float64_values():
         String(
             Float64(
                 __mlir_op.`pop.cast`[_type = __mlir_type[`!pop.scalar<f64>`]](
-                    __mlir_op.`kgen.param.constant`[
-                        _type = __mlir_type[`!pop.scalar<bf16>`],
-                        value = __mlir_attr[
-                            `#pop.simd<"nan"> : !pop.scalar<bf16>`
-                        ],
-                    ]()
+                    __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
                 )
             )
         ),

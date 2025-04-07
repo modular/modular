@@ -14,10 +14,11 @@
 
 These are Mojo built-ins, so you don't need to import them.
 """
+from collections.string.string_slice import _get_kgen_string
 
 
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: StringLiteral = "param assertion failed"]():
+fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     """Compile time checks that the condition is true.
 
     The `constrained` is similar to `static_assert` in C++ and is used to
@@ -28,6 +29,7 @@ fn constrained[cond: Bool, msg: StringLiteral = "param assertion failed"]():
     Parameters:
         cond: The bool value to assert.
         msg: The message to display on failure.
+        extra: Additional messages to concatenate to msg.
 
     Example:
 
@@ -47,27 +49,24 @@ fn constrained[cond: Bool, msg: StringLiteral = "param assertion failed"]():
             cores >= 2,
             "at least two cores are required"
         ]()
-
     ```
-
     """
     __mlir_op.`kgen.param.assert`[
-        cond = cond.__mlir_i1__(), message = msg.value
+        cond = cond.__mlir_i1__(),
+        message = _get_kgen_string[msg, extra](),
     ]()
 
 
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: String]():
+fn constrained[cond: Bool]():
     """Compile time checks that the condition is true.
 
     The `constrained` is similar to `static_assert` in C++ and is used to
     introduce constraints on the enclosing function. In Mojo, the assert places
-    a constraint on the function. The message is displayed when the assertion
-    fails, and takes a generalized string.
+    a constraint on the function.
 
     Parameters:
         cond: The bool value to assert.
-        msg: The message to display on failure.
 
     Example:
 
@@ -79,13 +78,8 @@ fn constrained[cond: Bool, msg: String]():
         multicore_check[cores_to_use]()
 
     def multicore_check[cores: Int]():
-        constrained[
-            cores <= num_physical_cores(),
-            "build failed: not enough cores"
-        ]()
-        constrained[
-            cores >= 2,
-            "at least two cores are required"
-        ]()
+        constrained[cores <= num_physical_cores()]()
+        constrained[cores >= 2]()
+    ```
     """
-    constrained[cond, StringLiteral.get[msg]()]()
+    constrained[cond, "param assertion failed"]()

@@ -19,7 +19,7 @@ from utils.numerics import FPUtils
 ```
 """
 
-from sys import bitwidthof, has_neon, has_sse4, llvm_intrinsic
+from sys import bitwidthof, has_neon, llvm_intrinsic, CompilationTarget
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 
@@ -32,30 +32,30 @@ from memory import UnsafePointer, bitcast
 # ===----------------------------------------------------------------------=== #
 
 
-fn _constrain_fp_type[type: DType]():
+fn _constrain_fp_type[dtype: DType]():
     constrained[
-        type.is_floating_point(), "dtype must be a floating point type"
+        dtype.is_floating_point(), "dtype must be a floating point type"
     ]()
 
 
 struct FPUtils[
-    type: DType, *, _constraint: NoneType = _constrain_fp_type[type]()
+    dtype: DType, *, _constraint: NoneType = _constrain_fp_type[dtype]()
 ]:
     """Collection of utility functions for working with FP values.
 
     Constraints:
-        The type is floating point.
+        The dtype is floating point.
 
     Parameters:
-        type: The concrete FP dtype (FP32/FP64/etc).
+        dtype: The concrete FP dtype (FP32/FP64/etc).
         _constraint: Implements the constraint. Do not pass explicitly.
     """
 
-    alias integral_type = _integral_type_of[type]()
-    """The equivalent integer type of the float type."""
+    alias integral_type = _integral_type_of[dtype]()
+    """The equivalent integer dtype of the float type."""
 
-    alias uint_type = _uint_type_of[type]()
-    """The equivalent uint type of the float type."""
+    alias uint_type = _uint_type_of[dtype]()
+    """The equivalent uint dtype of the float type."""
 
     @staticmethod
     @always_inline("nodebug")
@@ -66,25 +66,12 @@ struct FPUtils[
             The mantissa width.
         """
 
-        @parameter
-        if type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-            return 3
-        elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz):
-            return 2
-        elif type is DType.float16:
-            return 10
-        elif type is DType.bfloat16:
-            return 7
-        elif type is DType.float32:
-            return 23
-        else:
-            constrained[type is DType.float64, "unsupported float type"]()
-            return 52
+        return bitwidthof[dtype]() - Self.exponent_width() - 1
 
     @staticmethod
     @always_inline("nodebug")
     fn max_exponent() -> Int:
-        """Returns the max exponent of a floating point type without accounting
+        """Returns the max exponent of a floating point dtype without accounting
         for inf representations. This is not
         the maximum representable exponent, which is generally equal to
         the exponent_bias.
@@ -94,14 +81,16 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if dtype is DType.float8_e4m3fnuz:
+            return 7
+        elif dtype is DType.float8_e4m3fn:
             return 8
-        elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
+        elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 16
-        elif type in (DType.bfloat16, DType.float32):
+        elif dtype in (DType.bfloat16, DType.float32):
             return 128
         else:
-            constrained[type is DType.float64, "unsupported float type"]()
+            constrained[dtype is DType.float64, "unsupported float type"]()
             return 1024
 
     @staticmethod
@@ -114,14 +103,17 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        if dtype in (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+        ):
             return 4
-        elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
+        elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
             return 5
-        elif type in (DType.float32, DType.bfloat16):
+        elif dtype in (DType.float32, DType.bfloat16):
             return 8
         else:
-            constrained[type is DType.float64, "unsupported float type"]()
+            constrained[dtype is DType.float64, "unsupported float type"]()
             return 11
 
     @staticmethod
@@ -144,7 +136,7 @@ struct FPUtils[
         """
 
         @parameter
-        if type in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+        if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
             return Self.max_exponent()
         else:
             return Self.max_exponent() - 1
@@ -207,7 +199,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_to_integer(value: Scalar[type]) -> Int:
+    fn bitcast_to_integer(value: Scalar[dtype]) -> Int:
         """Bitcasts the floating-point value to an integer.
 
         Args:
@@ -220,7 +212,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_to_uint(value: Scalar[type]) -> Scalar[Self.uint_type]:
+    fn bitcast_to_uint(value: Scalar[dtype]) -> Scalar[Self.uint_type]:
         """Bitcasts the floating-point value to an integer.
 
         Args:
@@ -233,7 +225,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_from_integer(value: Int) -> Scalar[type]:
+    fn bitcast_from_integer(value: Int) -> Scalar[dtype]:
         """Bitcasts the floating-point value from an integer.
 
         Args:
@@ -242,11 +234,11 @@ struct FPUtils[
         Returns:
             An floating-point representation of the Int.
         """
-        return bitcast[type, 1](SIMD[Self.integral_type, 1](value))
+        return bitcast[dtype, 1](SIMD[Self.integral_type, 1](value))
 
     @staticmethod
     @always_inline
-    fn get_sign(value: Scalar[type]) -> Bool:
+    fn get_sign(value: Scalar[dtype]) -> Bool:
         """Returns the sign of the floating point value.
 
         Args:
@@ -259,7 +251,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_sign(value: Scalar[type], sign: Bool) -> Scalar[type]:
+    fn set_sign(value: Scalar[dtype], sign: Bool) -> Scalar[dtype]:
         """Sets the sign of the floating point value.
 
         Args:
@@ -278,7 +270,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_exponent(value: Scalar[type]) -> Int:
+    fn get_exponent(value: Scalar[dtype]) -> Int:
         """Returns the exponent bits of the floating-point value.
 
         Args:
@@ -293,7 +285,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_exponent_biased(value: Scalar[type]) -> Int:
+    fn get_exponent_biased(value: Scalar[dtype]) -> Int:
         """Returns the biased exponent of the floating-point value as an Int,
         this is how the value is stored before subtracting the exponent bias.
 
@@ -310,7 +302,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_exponent(value: Scalar[type], exponent: Int) -> Scalar[type]:
+    fn set_exponent(value: Scalar[dtype], exponent: Int) -> Scalar[dtype]:
         """Sets the exponent bits of the floating-point value.
 
         Args:
@@ -327,7 +319,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_mantissa(value: Scalar[type]) -> Int:
+    fn get_mantissa(value: Scalar[dtype]) -> Int:
         """Gets the mantissa bits of the floating-point value.
 
         Args:
@@ -340,7 +332,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_mantissa_uint(value: Scalar[type]) -> Scalar[Self.uint_type]:
+    fn get_mantissa_uint(value: Scalar[dtype]) -> Scalar[Self.uint_type]:
         """Gets the mantissa bits of the floating-point value.
 
         Args:
@@ -353,7 +345,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_mantissa(value: Scalar[type], mantissa: Int) -> Scalar[type]:
+    fn set_mantissa(value: Scalar[dtype], mantissa: Int) -> Scalar[dtype]:
         """Sets the mantissa bits of the floating-point value.
 
         Args:
@@ -370,7 +362,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn pack(sign: Bool, exponent: Int, mantissa: Int) -> Scalar[type]:
+    fn pack(sign: Bool, exponent: Int, mantissa: Int) -> Scalar[dtype]:
         """Construct a floating-point value from its constituent sign, exponent,
         and mantissa.
 
@@ -382,7 +374,7 @@ struct FPUtils[
         Returns:
             Returns the floating-point value.
         """
-        var res: Scalar[type] = 0
+        var res: Scalar[dtype] = 0
         res = Self.set_sign(res, sign)
         res = Self.set_exponent(res, exponent)
         res = Self.set_mantissa(res, mantissa)
@@ -419,7 +411,9 @@ struct FlushDenormals:
     @always_inline
     fn _set_flush(self, enable: Bool, force: Bool = False):
         @parameter
-        if not has_sse4() and not has_neon():  # not supported, so skip
+        if (
+            not CompilationTarget.has_sse4() and not has_neon()
+        ):  # not supported, so skip
             return
         # Unless we forced to restore the prior state, we check if the flag
         # has already been enabled to avoid calling the intrinsic which can
@@ -432,7 +426,7 @@ struct FlushDenormals:
         # the prior value.
 
         @parameter
-        if has_sse4():
+        if CompilationTarget.has_sse4():
             var mxcsr = self.state
             if enable:
                 mxcsr |= 0x8000  # flush to zero
@@ -458,7 +452,7 @@ struct FlushDenormals:
     @always_inline
     fn _is_set(self, state: Int32) -> Bool:
         @parameter
-        if has_sse4():
+        if CompilationTarget.has_sse4():
             return (state & 0x8000) != 0 and (state & 0x40) != 0
 
         alias ARM_FPCR_FZ = Int32(1) << 24
@@ -470,11 +464,13 @@ struct FlushDenormals:
         """Gets the current denormal state."""
 
         @parameter
-        if not has_sse4() and not has_neon():  # not supported, so skip
+        if (
+            not CompilationTarget.has_sse4() and not has_neon()
+        ):  # not supported, so skip
             return 0
 
         @parameter
-        if has_sse4():
+        if CompilationTarget.has_sse4():
             var mxcsr = Int32()
             llvm_intrinsic["llvm.x86.sse.stmxcsr", NoneType](
                 UnsafePointer[Int32].address_of(mxcsr)
@@ -497,79 +493,51 @@ struct FlushDenormals:
 
 
 @always_inline("nodebug")
-fn nan[type: DType]() -> Scalar[type]:
+fn nan[dtype: DType]() -> Scalar[dtype]:
     """Gets a NaN value for the given dtype.
 
     Constraints:
         Can only be used for FP dtypes.
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
 
     Returns:
         The NaN value of the given dtype.
     """
 
     @parameter
-    if type is DType.float8_e5m2:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f8e5m2>`],
-            ]()
+    if dtype is DType.float8_e5m2:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2>`,
         )
-    elif type is DType.float8_e5m2fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`
-                ],
-            ]()
+    elif dtype is DType.float8_e5m2fnuz:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`,
         )
-    elif type is DType.float8_e4m3fn:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f8e4m3>`],
-            ]()
+    elif dtype is DType.float8_e4m3fn:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fn>`,
         )
-    elif type is DType.float8_e4m3fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"nan"> : !pop.scalar<f8e4m3fnuz>`
-                ],
-            ]()
+    elif dtype is DType.float8_e4m3fnuz:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fnuz>`,
         )
-    elif type is DType.float16:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f16>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f16>`],
-            ]()
+    elif dtype is DType.float16:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f16>`,
         )
-    elif type is DType.bfloat16:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<bf16>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<bf16>`],
-            ]()
+    elif dtype is DType.bfloat16:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
         )
-    elif type is DType.float32:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f32>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f32>`],
-            ]()
+    elif dtype is DType.float32:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f32>`,
         )
-    elif type is DType.float64:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f64>`],
-                value = __mlir_attr[`#pop.simd<"nan"> : !pop.scalar<f64>`],
-            ]()
+    elif dtype is DType.float64:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f64>`,
         )
     else:
         constrained[False, "nan only support on floating point types"]()
@@ -583,12 +551,12 @@ fn nan[type: DType]() -> Scalar[type]:
 
 @always_inline("nodebug")
 fn isnan[
-    type: DType, simd_width: Int
-](val: SIMD[type, simd_width]) -> SIMD[DType.bool, simd_width]:
+    dtype: DType, simd_width: Int
+](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Checks if the value is Not a Number (NaN).
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
         simd_width: The width of the SIMD vector.
 
     Args:
@@ -599,25 +567,25 @@ fn isnan[
     """
 
     @parameter
-    if not type.is_floating_point() or type in (
+    if not dtype.is_floating_point() or dtype in (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     ):
         return False
 
-    alias int_dtype = _integral_type_of[type]()
+    alias int_dtype = _integral_type_of[dtype]()
 
     @parameter
-    if type is DType.float8_e4m3fn:
+    if dtype is DType.float8_e4m3fn:
         return (bitcast[int_dtype, simd_width](val) & 0x7F) == 0x7F
-    elif type is DType.float8_e5m2:
-        # For the float8_e5m2 type NaN is limited to 0x7F and 0xFF values.
+    elif dtype is DType.float8_e5m2:
+        # For the float8_e5m2 dtype NaN is limited to 0x7F and 0xFF values.
         # 7D, 7E, 7F are positive NaNs; FD, FE, FF are negative NaNs.
         return (bitcast[int_dtype, simd_width](val) & 0x7F) > 0x7C
-    elif type is DType.float16:
+    elif dtype is DType.float16:
         var ival = bitcast[int_dtype, simd_width](val)
         return (ival & 0x7C00) == 0x7C00 and (ival & 0x03FF) != 0
-    elif type is DType.bfloat16:
+    elif dtype is DType.bfloat16:
         alias x7FFF = SIMD[int_dtype, simd_width](0x7FFF)
         alias x7F80 = SIMD[int_dtype, simd_width](0x7F80)
         return bitcast[int_dtype, simd_width](val) & x7FFF > x7F80
@@ -635,82 +603,50 @@ fn isnan[
 
 
 @always_inline("nodebug")
-fn inf[type: DType]() -> Scalar[type]:
+fn inf[dtype: DType]() -> Scalar[dtype]:
     """Gets a +inf value for the given dtype.
 
     Constraints:
         Can only be used for FP dtypes.
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
 
     Returns:
         The +inf value of the given dtype.
     """
 
     @parameter
-    if type is DType.float8_e5m2:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f8e5m2>`],
-            ]()
+    if dtype is DType.float8_e5m2:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2>`,
         )
-    elif type is DType.float8_e5m2fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"inf"> : !pop.scalar<f8e5m2fnuz>`
-                ],
-            ]()
+    elif dtype is DType.float8_e5m2fnuz:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2fnuz>`,
         )
-    elif type is DType.float8_e4m3fn:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f8e4m3>`],
-            ]()
+    elif dtype is DType.float8_e4m3fnuz:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`,
         )
-    elif type is DType.float8_e4m3fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`
-                ],
-            ]()
+    elif dtype is DType.float16:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f16>`,
         )
-    elif type is DType.float16:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f16>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f16>`],
-            ]()
+    elif dtype is DType.bfloat16:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<bf16>`,
         )
-    elif type is DType.bfloat16:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<bf16>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<bf16>`],
-            ]()
+    elif dtype is DType.float32:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f32>`,
         )
-    elif type is DType.float32:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f32>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f32>`],
-            ]()
-        )
-    elif type is DType.float64:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f64>`],
-                value = __mlir_attr[`#pop.simd<"inf"> : !pop.scalar<f64>`],
-            ]()
+    elif dtype is DType.float64:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f64>`,
         )
     else:
-        constrained[False, "+inf only support on floating point types"]()
+        constrained[False, "+inf only support on floating point dtypes"]()
         return 0
 
 
@@ -720,79 +656,51 @@ fn inf[type: DType]() -> Scalar[type]:
 
 
 @always_inline("nodebug")
-fn neg_inf[type: DType]() -> Scalar[type]:
+fn neg_inf[dtype: DType]() -> Scalar[dtype]:
     """Gets a -inf value for the given dtype.
 
     Constraints:
         Can only be used for FP dtypes.
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
 
     Returns:
         The -inf value of the given dtype.
     """
 
     @parameter
-    if type is DType.float8_e5m2:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f8e5m2>`],
-            ]()
+    if dtype is DType.float8_e5m2:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2>`,
         )
-    elif type is DType.float8_e5m2fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e5m2fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"-inf"> : !pop.scalar<f8e5m2fnuz>`
-                ],
-            ]()
+    elif dtype is DType.float8_e5m2fnuz:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2fnuz>`,
         )
-    elif type is DType.float8_e4m3fn:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f8e4m3>`],
-            ]()
+    elif dtype is DType.float8_e4m3fn:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fn>`,
         )
-    elif type is DType.float8_e4m3fnuz:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f8e4m3fnuz>`],
-                value = __mlir_attr[
-                    `#pop.simd<"-inf"> : !pop.scalar<f8e4m3fnuz>`
-                ],
-            ]()
+    elif dtype is DType.float8_e4m3fnuz:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fnuz>`,
         )
-    elif type is DType.float16:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f16>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f16>`],
-            ]()
+    elif dtype is DType.float16:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f16>`,
         )
-    elif type is DType.bfloat16:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<bf16>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<bf16>`],
-            ]()
+    elif dtype is DType.bfloat16:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<bf16>`,
         )
-    elif type is DType.float32:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f32>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f32>`],
-            ]()
+    elif dtype is DType.float32:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f32>`,
         )
-    elif type is DType.float64:
-        return rebind[__mlir_type[`!pop.scalar<`, type.value, `>`]](
-            __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[`!pop.scalar<f64>`],
-                value = __mlir_attr[`#pop.simd<"-inf"> : !pop.scalar<f64>`],
-            ]()
+    elif dtype is DType.float64:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f64>`,
         )
     else:
         constrained[False, "+inf only support on floating point types"]()
@@ -805,11 +713,11 @@ fn neg_inf[type: DType]() -> Scalar[type]:
 
 
 @always_inline
-fn max_finite[type: DType]() -> Scalar[type]:
+fn max_finite[dtype: DType]() -> Scalar[dtype]:
     """Returns the maximum finite value of type.
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
 
     Returns:
         The maximum representable value of the type. Does not include infinity
@@ -817,42 +725,42 @@ fn max_finite[type: DType]() -> Scalar[type]:
     """
 
     @parameter
-    if type is DType.int8:
+    if dtype is DType.int8:
         return 127
-    elif type is DType.uint8:
+    elif dtype is DType.uint8:
         return 255
-    elif type is DType.int16:
+    elif dtype is DType.int16:
         return 32767
-    elif type is DType.uint16:
+    elif dtype is DType.uint16:
         return 65535
-    elif type is DType.int32 or (
-        type is DType.index and bitwidthof[DType.index]() == 32
+    elif dtype is DType.int32 or (
+        dtype is DType.index and bitwidthof[DType.index]() == 32
     ):
         return 2147483647
-    elif type is DType.uint32:
+    elif dtype is DType.uint32:
         return 4294967295
-    elif type is DType.int64 or (
-        type is DType.index and bitwidthof[DType.index]() == 64
+    elif dtype is DType.int64 or (
+        dtype is DType.index and bitwidthof[DType.index]() == 64
     ):
         return 9223372036854775807
-    elif type is DType.uint64:
+    elif dtype is DType.uint64:
         return 18446744073709551615
-    elif type is DType.float8_e4m3fn:
+    elif dtype is DType.float8_e4m3fn:
         return 448
-    elif type is DType.float8_e4m3fnuz:
+    elif dtype is DType.float8_e4m3fnuz:
         return 240
-    elif type in (DType.float8_e5m2, DType.float8_e5m2fnuz):
+    elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz):
         return 57344
-    elif type is DType.float16:
+    elif dtype is DType.float16:
         return 65504
-    elif type is DType.bfloat16:
+    elif dtype is DType.bfloat16:
         return 3.38953139e38
-    elif type is DType.float32:
+    elif dtype is DType.float32:
         return 3.40282346638528859812e38
-    elif type is DType.float64:
+    elif dtype is DType.float64:
         return 1.79769313486231570815e308
-    elif type is DType.bool:
-        return rebind[Scalar[type]](Scalar(True))
+    elif dtype is DType.bool:
+        return rebind[Scalar[dtype]](Scalar(True))
     else:
         constrained[False, "max_finite() called on unsupported type"]()
         return 0
@@ -864,11 +772,11 @@ fn max_finite[type: DType]() -> Scalar[type]:
 
 
 @always_inline
-fn min_finite[type: DType]() -> Scalar[type]:
+fn min_finite[dtype: DType]() -> Scalar[dtype]:
     """Returns the minimum (lowest) finite value of type.
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
 
     Returns:
         The minimum representable value of the type. Does not include negative
@@ -876,24 +784,24 @@ fn min_finite[type: DType]() -> Scalar[type]:
     """
 
     @parameter
-    if type.is_unsigned():
+    if dtype.is_unsigned():
         return 0
-    elif type is DType.int8:
+    elif dtype is DType.int8:
         return -128
-    elif type is DType.int16:
+    elif dtype is DType.int16:
         return -32768
-    elif type is DType.int32 or (
-        type is DType.index and bitwidthof[DType.index]() == 32
+    elif dtype is DType.int32 or (
+        dtype is DType.index and bitwidthof[DType.index]() == 32
     ):
         return -2147483648
-    elif type is DType.int64 or (
-        type is DType.index and bitwidthof[DType.index]() == 64
+    elif dtype is DType.int64 or (
+        dtype is DType.index and bitwidthof[DType.index]() == 64
     ):
         return -9223372036854775808
-    elif type.is_floating_point():
-        return -max_finite[type]()
-    elif type is DType.bool:
-        return rebind[Scalar[type]](Scalar(False))
+    elif dtype.is_floating_point():
+        return -max_finite[dtype]()
+    elif dtype is DType.bool:
+        return rebind[Scalar[dtype]](Scalar(False))
     else:
         constrained[False, "min_finite() called on unsupported type"]()
         return 0
@@ -905,11 +813,11 @@ fn min_finite[type: DType]() -> Scalar[type]:
 
 
 @always_inline("nodebug")
-fn max_or_inf[type: DType]() -> Scalar[type]:
+fn max_or_inf[dtype: DType]() -> Scalar[dtype]:
     """Returns the maximum (potentially infinite) value of type.
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
 
     Returns:
         The maximum representable value of the type. Can include infinity for
@@ -917,10 +825,10 @@ fn max_or_inf[type: DType]() -> Scalar[type]:
     """
 
     @parameter
-    if type.is_floating_point():
-        return inf[type]()
+    if dtype.is_floating_point():
+        return inf[dtype]()
     else:
-        return max_finite[type]()
+        return max_finite[dtype]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -929,11 +837,11 @@ fn max_or_inf[type: DType]() -> Scalar[type]:
 
 
 @always_inline("nodebug")
-fn min_or_neg_inf[type: DType]() -> Scalar[type]:
+fn min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
     """Returns the minimum (potentially negative infinite) value of type.
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
 
     Returns:
         The minimum representable value of the type. Can include negative
@@ -941,10 +849,10 @@ fn min_or_neg_inf[type: DType]() -> Scalar[type]:
     """
 
     @parameter
-    if type.is_floating_point():
-        return neg_inf[type]()
+    if dtype.is_floating_point():
+        return neg_inf[dtype]()
     else:
-        return min_finite[type]()
+        return min_finite[dtype]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -954,14 +862,14 @@ fn min_or_neg_inf[type: DType]() -> Scalar[type]:
 
 @always_inline("nodebug")
 fn isinf[
-    type: DType, simd_width: Int
-](val: SIMD[type, simd_width]) -> SIMD[DType.bool, simd_width]:
+    dtype: DType, simd_width: Int
+](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Checks if the value is infinite.
 
     This is always False for non-FP data types.
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
         simd_width: The width of the SIMD vector.
 
     Args:
@@ -972,14 +880,14 @@ fn isinf[
     """
 
     @parameter
-    if not type.is_floating_point() or type in (
+    if not dtype.is_floating_point() or dtype in (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     ):
         return False
-    elif type is DType.float8_e5m2:
+    elif dtype is DType.float8_e5m2:
         # For the float8_e5m2 both 7C and FC are infinity.
-        alias int_dtype = _integral_type_of[type]()
+        alias int_dtype = _integral_type_of[dtype]()
         return (bitcast[int_dtype, simd_width](val) & 0x7F) == 0x7C
 
     alias negative_infinity_test: UInt32 = 0x0004
@@ -996,14 +904,14 @@ fn isinf[
 
 @always_inline("nodebug")
 fn isfinite[
-    type: DType, simd_width: Int
-](val: SIMD[type, simd_width]) -> SIMD[DType.bool, simd_width]:
+    dtype: DType, simd_width: Int
+](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Checks if the value is not infinite.
 
     This is always True for non-FP data types.
 
     Parameters:
-        type: The value dtype.
+        dtype: The value dtype.
         simd_width: The width of the SIMD vector.
 
     Args:
@@ -1014,7 +922,7 @@ fn isfinite[
     """
 
     @parameter
-    if not type.is_floating_point():
+    if not dtype.is_floating_point():
         return True
 
     return llvm_intrinsic["llvm.is.fpclass", SIMD[DType.bool, simd_width]](
@@ -1029,39 +937,40 @@ fn isfinite[
 
 @always_inline
 fn get_accum_type[
-    type: DType, *, preferred_accum_type: DType = DType.float32
+    dtype: DType, *, preferred_accum_type: DType = DType.float32
 ]() -> DType:
-    """Returns the recommended type for accumulation operations.
+    """Returns the recommended dtype for accumulation operations.
 
-    Half precision and float8 types can introduce numerical error if they are used
-    in reduction/accumulation operations. This method returns a higher precision
-    type to use for accumulation if a half precision types is provided,
-    otherwise it returns the original type.
+    Half precision and float8 types can introduce numerical error if they are
+    used in reduction/accumulation operations. This method returns a higher
+    precision dtype to use for accumulation if a half precision types is
+    provided, otherwise it returns the original dtype.
 
     The rules are as follows:
-        - If the type is a float8 type, return a float16 type.
-        - If the type is a bfloat16 precision type, return a float32 type.
-        - If the type is a float16 precision type, return a float32 type if the
-          preferred_accum_type is float32, otherwise return a float16 type.
+        - If the dtype is a float8 type, return a float16 type.
+        - If the dtype is a bfloat16 precision type, return a float32 type.
+        - If the dtype is a float16 precision type, return a float32 dtype if
+            the preferred_accum_type is float32, otherwise return a float16
+            type.
         - Otherwise, return the original type.
 
     Parameters:
-        type: The type of some accumulation operation.
-        preferred_accum_type: The preferred type for accumulation.
+        dtype: The dtype of some accumulation operation.
+        preferred_accum_type: The preferred dtype for accumulation.
 
     Returns:
-        DType.float32 if type is a half-precision float, type otherwise.
+        DType.float32 if dtype is a half-precision float, dtype otherwise.
     """
 
     @parameter
-    if type.is_float8():
+    if dtype.is_float8():
         if preferred_accum_type is DType.float32:
             return preferred_accum_type
         else:
             return DType.float16
-    elif type is DType.bfloat16:
+    elif dtype is DType.bfloat16:
         return DType.float32
-    elif type is DType.float16:
+    elif dtype is DType.float16:
         # fp16 accumulation can be done in fp16 or fp32. Use fp16 by default for better
         # performance and use fp32 only when it's specified via preferred type.
         @parameter
@@ -1070,7 +979,7 @@ fn get_accum_type[
         else:
             return DType.float16
     else:
-        return type
+        return dtype
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1079,17 +988,17 @@ fn get_accum_type[
 
 
 fn nextafter[
-    type: DType, simd_width: Int
-](arg0: SIMD[type, simd_width], arg1: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int
+](arg0: SIMD[dtype, simd_width], arg1: SIMD[dtype, simd_width]) -> SIMD[
+    dtype, simd_width
 ]:
     """Computes next representable value of `arg0` in the direction of `arg1`.
 
     Constraints:
-        The element type of the input must be a floating-point type.
+        The element dtype of the input must be a floating-point type.
 
     Parameters:
-        type: The `dtype` of the input and output SIMD vector.
+        dtype: The `dtype` of the input and output SIMD vector.
         simd_width: The width of the input and output SIMD vector.
 
     Args:
@@ -1118,12 +1027,14 @@ fn nextafter[
             arg0, arg1
         )
 
-    constrained[type.is_floating_point(), "input type must be floating point"]()
+    constrained[
+        dtype.is_floating_point(), "input dtype must be floating point"
+    ]()
 
     @parameter
-    if type is DType.float64:
-        return _simd_apply[_float64_dispatch, type, simd_width](arg0, arg1)
-    return _simd_apply[_float32_dispatch, type, simd_width](arg0, arg1)
+    if dtype is DType.float64:
+        return _simd_apply[_float64_dispatch, dtype, simd_width](arg0, arg1)
+    return _simd_apply[_float32_dispatch, dtype, simd_width](arg0, arg1)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1133,16 +1044,16 @@ fn nextafter[
 
 @always_inline("nodebug")
 fn ulp[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Computes the ULP (units of last place) or (units of least precision) of
     the number.
 
     Constraints:
-        The element type of the inpiut must be a floating-point type.
+        The element dtype of the inpiut must be a floating-point type.
 
     Parameters:
-        type: The `dtype` of the input and output SIMD vector.
+        dtype: The `dtype` of the input and output SIMD vector.
         simd_width: The width of the input and output SIMD vector.
 
     Args:
@@ -1152,9 +1063,9 @@ fn ulp[
         The ULP of x.
     """
 
-    constrained[type.is_floating_point(), "the type must be floating point"]()
+    constrained[dtype.is_floating_point(), "the dtype must be floating point"]()
 
-    alias inf_val = SIMD[type, simd_width](inf[type]())
+    alias inf_val = SIMD[dtype, simd_width](inf[dtype]())
 
     var nan_mask = isnan(x)
     var xabs = abs(x)

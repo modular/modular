@@ -16,8 +16,8 @@ import math
 from dataclasses import dataclass
 
 from max.graph import TensorValue, ops
-from max.pipelines.nn import Linear
-from max.pipelines.nn.layer import Layer
+from max.nn import Linear
+from max.nn.layer import Layer
 
 
 @dataclass

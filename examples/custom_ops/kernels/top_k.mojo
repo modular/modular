@@ -16,10 +16,11 @@ from sys import alignof, sizeof, num_physical_cores
 from algorithm import parallelize_over_rows
 from bit import log2_floor
 from compiler import register
-from gpu import WARP_SIZE, barrier, warp
+from gpu import WARP_SIZE, barrier, block_idx, block_dim, thread_idx, warp
 from gpu.memory import AddressSpace, external_memory
-from max.tensor import ManagedTensorSlice
+from max.tensor import OutputTensor, InputTensor
 from memory import Span
+from runtime.asyncrt import DeviceContextPtr
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 
@@ -36,7 +37,7 @@ struct TopKElement[T: DType]:
         return self.val > rhs.val
 
 
-@register("top_k_custom", num_dps_outputs=2)
+@register("top_k_custom")
 struct TopK:
     """Registers the `top_k_custom` op, allowing python to use it from the `max`
     package. This is a simplified version without bottom_k and sorting options,
@@ -47,15 +48,15 @@ struct TopK:
 
     @staticmethod
     fn execute[
-        type: DType,
+        dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
         K: Int,
         target: StringLiteral,
     ](
-        out_vals: ManagedTensorSlice[type=type, rank=rank],
-        out_idxs: ManagedTensorSlice[type = DType.int32, rank=rank],
-        in_vals: ManagedTensorSlice[type=type, rank=rank],
+        out_vals: OutputTensor[type=dtype, rank=rank],
+        out_idxs: OutputTensor[type = DType.int32, rank=rank],
+        in_vals: InputTensor[type=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[rank == 2, "rank must be 2"]()
@@ -81,9 +82,9 @@ struct TopK:
 
             # Get a pointer to shared memory for the indices and values
             var top_k_sram = external_memory[
-                TopKElement[type],
+                TopKElement[dtype],
                 address_space = AddressSpace.SHARED,
-                alignment = alignof[TopKElement[type]](),
+                alignment = alignof[TopKElement[dtype]](),
             ]()
 
             # Threads put their corresponding index and value into shared memory
@@ -120,7 +121,7 @@ struct TopK:
 
                     # Remove found maximum from consideration in the next iter
                     var index = reduced.idx % block_dim.x
-                    top_k_sram[index].val = min_or_neg_inf[type]()
+                    top_k_sram[index].val = min_or_neg_inf[dtype]()
 
         @parameter
         if target == "gpu":
@@ -130,7 +131,7 @@ struct TopK:
                 in_vals,
                 grid_dim=batch_size,  # One block per batch
                 block_dim=K,  # One thread per K
-                shared_mem_bytes=K * sizeof[TopKElement[type]](),
+                shared_mem_bytes=K * sizeof[TopKElement[dtype]](),
             )
         else:
 

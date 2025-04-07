@@ -19,7 +19,7 @@ from sys import sizeof
 
 @always_inline
 fn normalize_index[
-    I: Indexer, //, container_name: StringLiteral
+    I: Indexer, //, container_name: StaticString
 ](idx: I, length: UInt) -> UInt:
     """Normalize the given index value to a valid index value for the given container length.
 
@@ -44,6 +44,8 @@ fn normalize_index[
         or _type_is_eq[I, UInt16]()
         or _type_is_eq[I, UInt32]()
         or _type_is_eq[I, UInt64]()
+        or _type_is_eq[I, UInt128]()
+        or _type_is_eq[I, UInt256]()
     ):
         var i = UInt(index(idx))
         # TODO: Consider a way to construct the error message after the assert has failed
@@ -92,7 +94,7 @@ fn normalize_index[
 
 @always_inline
 fn normalize_index[
-    I: Indexer, //, container_name: StringLiteral
+    I: Indexer, //, container_name: StaticString
 ](idx: I, length: Int) -> Int:
     """Normalize the given index value to a valid index value for the given container length.
 

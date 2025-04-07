@@ -13,9 +13,14 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
+from max.driver import Device
 from max.engine import InferenceSession
 from max.graph import ops
-from max.pipelines import PipelineConfig
+from max.graph.weights import Weights, WeightsAdapter
+from max.pipelines import KVCacheConfig, PipelineConfig, SupportedEncoding
+from transformers import AutoConfig
 
 from ..llama3.model import Llama3Model
 
@@ -24,13 +29,30 @@ class GraniteModel(Llama3Model):
     """Granite pipeline model implementation."""
 
     def __init__(
-        self, pipeline_config: PipelineConfig, session: InferenceSession
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        huggingface_config: AutoConfig,
+        encoding: SupportedEncoding,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: Optional[WeightsAdapter] = None,
+        return_n_logits: int = 1,
     ) -> None:
-        super().__init__(pipeline_config, session)
-
-        logits_scaling = getattr(
-            self.pipeline_config.huggingface_config, "logits_scaling", 1.0
+        super().__init__(
+            pipeline_config,
+            session,
+            huggingface_config,
+            encoding,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_n_logits,
         )
+
+        logits_scaling = getattr(huggingface_config, "logits_scaling", 1.0)
 
         if logits_scaling != 1.0:
             self.logits_processor = lambda logits: logits / ops.constant(

@@ -10,13 +10,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements a string optimized for storing small strings.
 
-"""Implements a string that has a small-string optimization which
-   avoids heap allocations for short strings.
+The main type is `InlineString` which implements small-string optimization to avoid
+heap allocations for short strings. For strings shorter than `SMALL_CAP` (24 bytes),
+the data is stored inline in the struct's memory layout. For longer strings, it
+falls back to heap allocation.
+
+Key Features:
+- Small-string optimization avoiding heap allocations for short strings
+- Efficient concatenation and mutation operations
+- UTF-8 encoding support
+- Memory safety through bounds checking
+
+The module also provides `_FixedString`, an internal type used by `InlineString` for
+the small string optimization case. `_FixedString` provides a fixed-capacity string
+implementation with inline storage.
+
+Example:
+```mojo
+    from collections.string.inline_string import InlineString
+
+    var s = InlineString("Hello")  # Stored inline, no heap allocation
+    s += " World"                  # Still inline
+    s += " with a much longer string"  # Now uses heap allocation
+```
 """
 
 from collections import InlineArray, Optional
-from collections.string import StringSlice
+
 from os import abort
 from sys import sizeof
 
@@ -288,7 +310,7 @@ struct _FixedString[CAP: Int](
 
     fn __init__(out self):
         """Constructs a new empty string."""
-        self.buffer = InlineArray[UInt8, CAP](unsafe_uninitialized=True)
+        self.buffer = InlineArray[UInt8, CAP](uninitialized=True)
         self.size = 0
 
     fn copy(self) -> Self:

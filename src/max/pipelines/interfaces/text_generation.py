@@ -13,15 +13,14 @@
 
 """Interfaces for text generation pipeline behaviors."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
     Any,
     Generic,
-    List,
     Literal,
     Optional,
     Protocol,
-    Sequence,
     TypedDict,
     TypeVar,
     Union,
@@ -162,9 +161,14 @@ class TokenGeneratorRequest:
     generated output. This can be useful for debugging or when you want to see how
     the input relates to the output.
     """
-    stop: Optional[Union[str, List[str]]] = None
+    stop: Optional[Union[str, list[str]]] = None
     """
     Optional list of stop expressions (see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
+    """
+    ignore_eos: bool = False
+    """
+    If set to True, the response will ignore the EOS token, and continue to generate until the Max tokens or a
+    stop string is hit.
     """
 
     def __str__(self) -> str:
@@ -193,16 +197,29 @@ class PipelineTokenizer(
 
     @property
     def expects_content_wrapping(self) -> bool:
-        """If true, this tokenizer expects messages to have a 'content' property.
-        Text messages are formatted as
-        { "type" : "text", "content" : "text content"}
-        instead of, the OpenAI spec.
-        { "type" : "text", "text": "text content" }.
-        NOTE: Multimodal messages omit the content property.
-        Both "image_urls" and "image" content parts are converted to simply
-        { "type" : "image" }
-        Their content is provided as byte arrays and by the top level property on
-        the request object, i.e. "TokenGeneratorRequest.images".
+        """If true, this tokenizer expects messages to have a `content` property.
+
+        Text messages are formatted as:
+
+        .. code-block:: json
+
+            { "type": "text", "content": "text content" }
+
+        instead of the OpenAI spec:
+
+        .. code-block:: json
+
+            { "type": "text", "text": "text content" }
+
+        NOTE: Multimodal messages omit the `content` property.
+        Both :obj:`image_urls` and :obj:`image` content parts are converted to:
+
+        .. code-block:: json
+
+            { "type": "image" }
+
+        Their content is provided as byte arrays through the top-level property
+        on the request object, i.e., :obj:`TokenGeneratorRequest.images`.
         """
         ...
 
@@ -220,7 +237,11 @@ class PipelineTokenizer(
         """
         ...
 
-    async def encode(self, prompt: str) -> TokenizerEncoded:
+    async def encode(
+        self,
+        prompt: str,
+        add_special_tokens: bool,
+    ) -> TokenizerEncoded:
         """Encodes text prompts as tokens.
 
         Args:
@@ -228,9 +249,6 @@ class PipelineTokenizer(
 
         Raises:
             ValueError: If the prompt exceeds the configured maximum length.
-
-        Returns:
-            TokenizerEncoded: Encoded prompt tokens.
         """
         ...
 

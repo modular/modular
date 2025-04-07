@@ -30,7 +30,7 @@ def main():
 ```
 """
 
-from collections.string import StringSlice
+
 from sys import external_call
 
 from memory import UnsafePointer
@@ -47,7 +47,5 @@ fn argv() -> VariadicList[StringSlice[StaticConstantOrigin]]:
     #   It is valid to use `StringSlice` here because `StringSlice` is
     #   guaranteed to be ABI compatible with llvm::StringRef.
     var result = VariadicList[StringSlice[StaticConstantOrigin]]("")
-    external_call["KGEN_CompilerRT_GetArgV", NoneType](
-        Pointer.address_of(result)
-    )
+    external_call["KGEN_CompilerRT_GetArgV", NoneType](Pointer(to=result))
     return result

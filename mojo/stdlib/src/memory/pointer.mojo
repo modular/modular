@@ -45,7 +45,6 @@ struct _GPUAddressSpace(EqualityComparable):
     """Local address space."""
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -160,7 +159,13 @@ struct _GPUAddressSpace(EqualityComparable):
 
 @value
 @register_passable("trivial")
-struct AddressSpace(EqualityComparable, Stringable, Writable):
+struct AddressSpace(
+    EqualityComparable,
+    Stringable,
+    Writable,
+    CollectionElement,
+    EqualityComparableCollectionElement,
+):
     """Address space of the pointer."""
 
     var _value: Int
@@ -169,7 +174,6 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
     """Generic address space."""
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: Int):
         """Initializes the address space from the underlying integral value.
 
@@ -179,7 +183,6 @@ struct AddressSpace(EqualityComparable, Stringable, Writable):
         self._value = value
 
     @always_inline("builtin")
-    @implicit
     fn __init__(out self, value: _GPUAddressSpace):
         """Initializes the address space from the underlying integral value.
 
@@ -301,7 +304,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](CollectionElementNew, Stringable):
+](CollectionElementNew, Stringable, CollectionElement):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -341,8 +344,18 @@ struct Pointer[
         """
         self._value = _mlir_value
 
+    @always_inline("nodebug")
+    fn __init__(out self, *, ref [origin, address_space._value.value]to: type):
+        """Constructs a Pointer from a reference to a value.
+
+        Args:
+            to: The value to construct a pointer to.
+        """
+        self = Self(_mlir_value=__get_mvalue_as_litref(to))
+
     @staticmethod
     @always_inline("nodebug")
+    @deprecated("Use Pointer(to=...) constructor instead.")
     fn address_of(ref [origin, address_space]value: type) -> Self:
         """Constructs a Pointer from a reference to a value.
 
@@ -363,6 +376,25 @@ struct Pointer[
             A copy of the value.
         """
         return Self(_mlir_value=self._value)
+
+    @always_inline
+    fn get_immutable(
+        self,
+        out result: Pointer[
+            type,
+            ImmutableOrigin.cast_from[origin].result,
+            address_space=address_space,
+        ],
+    ):
+        """Constructs a new Pointer with the same underlying target
+        and an ImmutableOrigin.
+
+        Note that this does **not** copy the underlying data.
+
+        Returns:
+            A new Pointer with the same target as self and an ImmutableOrigin.
+        """
+        return __type_of(result)(_mlir_value=self._value)
 
     # ===------------------------------------------------------------------===#
     # Operator dunders

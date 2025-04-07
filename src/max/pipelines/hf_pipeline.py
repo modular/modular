@@ -17,19 +17,21 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Optional, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 import numpy as np
 import torch
 from max.driver import Tensor
 from transformers import (
+    AutoConfig,
     AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
     BatchEncoding,
 )
 
-from .config import PipelineConfig
+if TYPE_CHECKING:
+    from .config import PipelineConfig
 from .context import TextContext
 from .interfaces import (
     EmbeddingsGenerator,
@@ -56,10 +58,15 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
     ):
         self._pipeline_config = pipeline_config
         self._torch_device = torch.device(torch_device_type)
+        self._huggingface_config = AutoConfig.from_pretrained(
+            pipeline_config.model_config.model_path,
+            trust_remote_code=pipeline_config.model_config.trust_remote_code,
+            revision=pipeline_config.model_config.huggingface_revision,
+        )
 
         self._model = AutoModelForCausalLM.from_pretrained(
-            pipeline_config.model_path,
-            trust_remote_code=pipeline_config.trust_remote_code,
+            pipeline_config.model_config.model_path,
+            trust_remote_code=pipeline_config.model_config.trust_remote_code,
         ).to(self._torch_device)
         self._dtype = self._model.dtype
 
@@ -69,14 +76,14 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
             )
 
         self._tokenizer = AutoTokenizer.from_pretrained(
-            pipeline_config.model_path
+            pipeline_config.model_config.model_path
         )
 
         eos_token_id = self._tokenizer.eos_token_id
 
         # Expand eos tokens if more are provided in pipeline_config
-        if "eos_token_id" in pipeline_config.huggingface_config:
-            eos_tokens = pipeline_config.huggingface_config.eos_token_id
+        if "eos_token_id" in self._huggingface_config:
+            eos_tokens = self._huggingface_config.eos_token_id
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
                     msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
@@ -114,7 +121,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         )
 
         # TODO(deep): Implement sampling and remove this warning
-        if self._pipeline_config.top_k > 1:
+        if self._pipeline_config.sampling_config.top_k > 1:
             warnings.warn(
                 "Only argmax sampling is currently implemented, and the top_k config will be ignored",
             )
@@ -330,11 +337,11 @@ class HFEmbeddingsPipeline(EmbeddingsGenerator[TextContext]):
         self._pipeline_config = pipeline_config
         self._torch_device = torch.device(torch_device_type)
         self._model = AutoModel.from_pretrained(
-            pipeline_config.model_path,
-            trust_remote_code=pipeline_config.trust_remote_code,
+            pipeline_config.model_config.model_path,
+            trust_remote_code=pipeline_config.model_config.trust_remote_code,
         ).to(self._torch_device)
         self._tokenizer = AutoTokenizer.from_pretrained(
-            pipeline_config.model_path
+            pipeline_config.model_config.model_path
         )
 
     def prepare_initial_token_inputs(

@@ -16,12 +16,12 @@
 
 @value
 @register_passable("trivial")
-struct _SourceLocation(Writable, Stringable):
+struct _SourceLocation(Writable, Stringable, CollectionElement):
     """Type to carry file name, line, and column information."""
 
     var line: Int
     var col: Int
-    var file_name: StringLiteral
+    var file_name: StaticString
 
     fn __init__(out self, *, other: Self):
         self = other

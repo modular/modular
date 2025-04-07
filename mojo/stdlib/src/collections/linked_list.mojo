@@ -114,7 +114,7 @@ struct _LinkedListIter[
         return self
 
     fn __next__(mut self, out p: Pointer[ElementType, origin]):
-        p = Pointer[ElementType, origin].address_of(self.curr[].value)
+        p = Pointer[ElementType, origin](to=self.curr[].value)
 
         @parameter
         if forward:
@@ -132,7 +132,7 @@ struct _LinkedListIter[
 
 struct LinkedList[
     ElementType: CollectionElement,
-]:
+](Sized):
     """A doubly-linked list implementation.
 
     A doubly-linked list is a data structure where each element points to both
@@ -163,7 +163,7 @@ struct LinkedList[
         self._tail = Self._NodePointer()
         self._size = 0
 
-    fn __init__(mut self, owned *elements: ElementType):
+    fn __init__(out self, owned *elements: ElementType):
         """Initialize a linked list with the given elements.
 
         Time Complexity: O(n) in len(elements)
@@ -208,7 +208,7 @@ struct LinkedList[
 
         self._size = length
 
-    fn __copyinit__(mut self, read other: Self):
+    fn __copyinit__(out self, read other: Self):
         """Initialize this list as a copy of another list.
 
         Time Complexity: O(n) in len(elements)
@@ -218,7 +218,7 @@ struct LinkedList[
         """
         self = other.copy()
 
-    fn __moveinit__(mut self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         """Initialize this list by moving elements from another list.
 
         Time Complexity: O(1)
@@ -746,7 +746,7 @@ struct LinkedList[
         Returns:
             An iterator of immutable references to the list elements.
         """
-        return _LinkedListIter(Pointer.address_of(self))
+        return _LinkedListIter(Pointer(to=self))
 
     fn __reversed__(
         self,
@@ -761,7 +761,7 @@ struct LinkedList[
             A reversed iterator of immutable references to the list elements.
         """
         return _LinkedListIter[ElementType, __origin_of(self), forward=False](
-            Pointer.address_of(self)
+            Pointer(to=self)
         )
 
     fn __bool__(self) -> Bool:

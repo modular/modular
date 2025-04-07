@@ -101,7 +101,7 @@ from memory import Pointer
 
 def use_pointer():
     a = 10
-    ptr = Pointer.address_of(a)
+    ptr = Pointer(to=a)
 ```
 
 A final type of origin value is an `OriginSet`. As the name suggests, an
@@ -113,7 +113,7 @@ Most origin values are created by the compiler. As a developer, there are a
 few ways to specify origin values:
 
 * Static origin. The `StaticConstantOrigin` alias is an origin value
-  representing immutable values that that last for the duration of the program.
+  representing immutable values that last for the duration of the program.
   String literal values have a `StaticConstantOrigin`.
 * Derived origin. The `__origin_of()` magic function returns the origin
   associated with the value (or values) passed in.
@@ -129,10 +129,11 @@ value that exists for the entire duration of the program.
 
 For example, the `StringLiteral` method
 [`as_string_slice()`](/mojo/stdlib/builtin/string_literal/StringLiteral#as_string_slice)
-returns a [`StringSlice`](/mojo/stdlib/utils/string_slice/StringSlice) pointing
-to the original string literal. String literals are static—they're allocated at
-compile time and never destroyed—so the slice is created with an immutable,
-static origin.
+returns a
+[`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice)
+pointing to the original string literal. String literals are static—they're
+allocated at compile time and never destroyed—so the slice is created with an
+immutable, static origin.
 
 #### Derived origins
 
@@ -172,7 +173,7 @@ struct BoxedString:
         self.o_ptr = OwnedPointer(value)
 
     fn as_ptr(mut self) -> Pointer[String, __origin_of(self.o_ptr)]:
-        return Pointer.address_of(self.o_ptr[])
+        return Pointer(to=self.o_ptr[])
 ```
 
 Note that the `as_ptr()` method takes its `self` argument as `mut self`. If it
@@ -397,7 +398,7 @@ You can assign a `Pointer` to a variable, but you need to use the dereference
 operator (`[]`) to access the underlying value.
 
 ```mojo
-name_ptr = Pointer.address_of(list[2])
+name_ptr = Pointer(to=list[2])
 name_ptr[] += "?"
 ```
 

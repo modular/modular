@@ -15,16 +15,23 @@
 
 from __future__ import annotations
 
-from typing import Any, Type, TypeVar
+import logging
+from typing import TYPE_CHECKING, Any, TypeVar
 
+from max.driver import load_devices
 from max.engine import InferenceSession
+from max.graph.weights import load_weights
 from max.profiler import Tracer, traced
+from transformers import AutoConfig
 
-from .config import PipelineConfig
+if TYPE_CHECKING:
+    from .config import PipelineConfig
 from .context import InputContext
+from .hf_utils import download_weight_files
 from .interfaces import EmbeddingsGenerator, EmbeddingsResponse
 from .pipeline import PipelineModel
 
+logger = logging.getLogger("max.pipelines")
 T = TypeVar("T", bound=InputContext)
 
 
@@ -34,16 +41,53 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: Type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         **unused_kwargs,
     ) -> None:
         self._pipeline_config = pipeline_config
         # Initialize Session.
-        session = InferenceSession(devices=self._pipeline_config.devices)
+        devices = load_devices(self._pipeline_config.model_config.device_specs)
+        session = InferenceSession(devices=devices)
 
         # Load model.
+        huggingface_config = AutoConfig.from_pretrained(
+            self._pipeline_config.model_config.model_path,
+            trust_remote_code=self._pipeline_config.model_config.trust_remote_code,
+            revision=self._pipeline_config.model_config.huggingface_revision,
+        )
+
+        if not self._pipeline_config.model_config.quantization_encoding:
+            raise ValueError("quantization_encoding must not be None")
+
+        # Download weight files if not existent
+        weight_model_id = (
+            self._pipeline_config.model_config._weights_repo_id
+            if self._pipeline_config.model_config._weights_repo_id
+            else self._pipeline_config.model_config.model_path
+        )
+
+        # Download weight files.
+        weight_paths = download_weight_files(
+            huggingface_model_id=weight_model_id,
+            filenames=[
+                str(x) for x in self._pipeline_config.model_config.weight_path
+            ],
+            revision=self._pipeline_config.model_config.huggingface_revision,
+            force_download=self._pipeline_config.model_config.force_download,
+        )
+
+        # Load weights
+        weights = load_weights(weight_paths)
         self._pipeline_model = pipeline_model(
-            pipeline_config=self._pipeline_config, session=session
+            pipeline_config=self._pipeline_config,
+            session=session,
+            huggingface_config=huggingface_config,
+            encoding=self._pipeline_config.model_config.quantization_encoding,
+            devices=devices,
+            kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
+            weights=weights,
+            adapter=None,
+            return_n_logits=-1,
         )
 
     @traced

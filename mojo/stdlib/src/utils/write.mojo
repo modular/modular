@@ -17,7 +17,6 @@ from sys.info import is_amd_gpu, is_gpu, is_nvidia_gpu
 
 from memory import Span, UnsafePointer, memcpy
 
-from utils import StaticString
 
 # ===-----------------------------------------------------------------------===#
 
@@ -63,7 +62,7 @@ trait Writer:
         var x: Int
         var y: Int
 
-        # Pass multiple args to the Writer. The Int and StringLiteral types
+        # Pass multiple args to the Writer. The Int and StaticString types
         # call `writer.write_bytes` in their own `write_to` implementations.
         fn write_to[W: Writer](self, mut writer: W):
             writer.write("Point(", self.x, ", ", self.y, ")")
@@ -190,7 +189,7 @@ fn write_args[
     from utils import write_args
 
     fn variadic_pack_function[*Ts: Writable](
-        *args: *Ts, sep: StringLiteral, end: StringLiteral
+        *args: *Ts, sep: StaticString, end: StaticString
     ):
         var stdout = sys.stdout
         write_args(stdout, args, sep=sep, end=end)
@@ -299,9 +298,9 @@ struct _WriteBufferStack[
 
     @implicit
     fn __init__(out self, ref [origin]writer: W):
-        self.data = InlineArray[UInt8, capacity](unsafe_uninitialized=True)
+        self.data = InlineArray[UInt8, capacity](uninitialized=True)
         self.pos = 0
-        self.writer = Pointer.address_of(writer)
+        self.writer = Pointer(to=writer)
 
     fn write_list[
         T: WritableCollectionElement
@@ -386,7 +385,7 @@ fn write_buffered[
     from utils import write_buffered
 
     fn print_err_buffered[*Ts: Writable](
-        *args: *Ts, sep: StringLiteral, end: StringLiteral
+        *args: *Ts, sep: StaticString, end: StaticString
     ):
         var stderr = sys.stderr
         write_buffered(stdout, args, sep=sep, end=end)
@@ -466,3 +465,66 @@ fn write_buffered[
     var buffer = _WriteBufferStack(writer)
     buffer.write_list(values, sep=sep)
     buffer.flush()
+
+
+@value
+@register_passable
+struct WritableVariadicPack[
+    mut: Bool, //,
+    origin: Origin[mut],
+    pack_origin: Origin[mut],
+    *Ts: Writable,
+](Writable):
+    """Wraps a `VariadicPack`, enabling it to be passed to a writer along with
+    extra arguments.
+
+    Parameters:
+        mut: Whether the origin is mutable.
+        origin: The origin of the reference to the `VariadicPack`.
+        pack_origin: The origin of the `VariadicPack`.
+        Ts: The types of the variadic arguments conforming to `Writable`.
+
+    Example:
+
+    ```mojo
+    from utils.write import WritableVariadicPack
+
+    fn foo[*Ts: Writable](*messages: *Ts):
+        print("message:", WritableVariadicPack(messages), "[end]")
+
+    x = 42
+    foo("'x = ", x, "'")
+    ```
+
+    Output:
+
+    ```text
+    message: 'x = 42' [end]
+    ```
+    """
+
+    var value: Pointer[VariadicPack[pack_origin, Writable, *Ts], origin]
+    """Reference to a `VariadicPack` that comforms to `Writable`."""
+
+    fn __init__(
+        out self, ref [origin]value: VariadicPack[pack_origin, Writable, *Ts]
+    ):
+        """Initialize using a reference to the `VariadicPack`.
+
+        Args:
+            value: The `VariadicPack` to take a reference to.
+        """
+        self.value = Pointer(to=value)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        """
+        Formats the string representation of all the arguments in the
+        `VariadicPack` to the provided `Writer`.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The type conforming to `Writable`.
+        """
+        write_args(writer, self.value[])

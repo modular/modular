@@ -195,7 +195,7 @@ def test_fill():
 def test_ref():
     var l = InlineArray[Int, 3](1, 2, 3)
     var s = Span[Int](array=l)
-    assert_true(s.as_ref() == Pointer.address_of(l.unsafe_ptr()[]))
+    assert_true(s.as_ref() == Pointer(to=l.unsafe_ptr()[]))
 
 
 def test_reversed():
@@ -219,6 +219,15 @@ def test_span_coerce():
 
     takes_span(l)
     takes_span(a)
+
+
+# We don't actually need to call this test
+# but we want to make sure it compiles
+def test_conditional_conformance():
+    var l = List[Int](1, 2, 3)
+    var s = Span[Int, alignment=2](l)
+    s.fill(0)
+    _ = s == s
 
 
 def main():

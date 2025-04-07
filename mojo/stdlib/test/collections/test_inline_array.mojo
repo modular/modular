@@ -18,6 +18,7 @@ from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import DelRecorder
 from testing import assert_equal, assert_false, assert_true
+from sys.info import sizeof
 
 
 def test_array_unsafe_get():
@@ -82,8 +83,37 @@ def test_array_int():
     var arr3 = InlineArray[Int, 1](5)
     assert_equal(arr3[0], 5)
 
-    var arr4 = InlineArray[UInt8, 1](42)
-    assert_equal(arr4[0], 42)
+    def test_init_fill[size: Int, batch_size: Int, dt: DType](arg: Scalar[dt]):
+        var arr = InlineArray[Scalar[dt], size].__init__[batch_size=batch_size](
+            fill=arg
+        )
+        for i in range(size):
+            assert_equal(arr[i], arg)
+
+    def test_init_fill_scalars[
+        *dts: DType, sizes: List[Int], batch_sizes: List[Int]
+    ]():
+        @parameter
+        for current_batch_size in range(len(batch_sizes)):
+
+            @parameter
+            for current_size in range(len(sizes)):
+
+                @parameter
+                for current_type in range(len(VariadicList(dts))):
+                    test_init_fill[
+                        sizes[current_size], batch_sizes[current_batch_size]
+                    ](Scalar[dts[current_type]].MAX)
+
+    test_init_fill_scalars[
+        Int64.dtype,
+        Int8.dtype,
+        sizes = List(1, 32, 64, 129, 256, 512, 768, 1000),
+        batch_sizes = List(1, 8, 32, 64, 128),
+    ]()
+
+    test_init_fill[2048, 512](Int64.MAX)
+    test_init_fill[2048, 1](Int64.MAX)
 
 
 def test_array_str():
@@ -154,7 +184,7 @@ def test_array_int_pointer():
 def test_array_unsafe_assume_initialized_constructor_string():
     var maybe_uninitialized_arr = InlineArray[
         UnsafeMaybeUninitialized[String], 3
-    ](unsafe_uninitialized=True)
+    ](uninitialized=True)
     maybe_uninitialized_arr[0].write("hello")
     maybe_uninitialized_arr[1].write("mojo")
     maybe_uninitialized_arr[2].write("world")
@@ -225,6 +255,20 @@ fn test_unsafe_ptr() raises:
         assert_equal(arr[i], ptr[i])
 
 
+def test_sizeof_array[current_type: CollectionElement, capacity: Int]():
+    """Testing if `sizeof` the array equals capacity * `sizeof` current_type.
+
+    Parameters:
+        current_type: The type of the elements of the `InlineList`.
+        capacity: The capacity of the `InlineList`.
+    """
+    alias size_of_current_type = sizeof[current_type]()
+    assert_equal(
+        sizeof[InlineArray[current_type, capacity]](),
+        capacity * size_of_current_type,
+    )
+
+
 def main():
     test_array_unsafe_get()
     test_array_int()
@@ -234,3 +278,4 @@ def main():
     test_array_contains()
     test_inline_array_runs_destructors()
     test_unsafe_ptr()
+    test_sizeof_array[Int, capacity=32]()
