@@ -12,7 +12,7 @@
 from math import exp2, iota, isclose, isqrt
 
 from algorithm import max as tensor_max
-from bit import next_power_of_two
+from bit import prev_power_of_two
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
@@ -50,17 +50,17 @@ fn generate_alibi_bias[
     if num_heads.is_power_of_two():
         scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
     else:
-        alias closest_power_of_2 = next_power_of_two(num_heads)
-        if head_idx < closest_power_of_2:
+        alias floor_power_of_2 = prev_power_of_two(num_heads)
+        if head_idx < floor_power_of_2:
             scale = exp2(
-                -((head_idx + 1).cast[type]() * 8.0 / closest_power_of_2)
+                -((head_idx + 1).cast[type]() * 8.0 / floor_power_of_2)
             )
         else:
             scale = exp2(
                 -(
-                    ((head_idx - closest_power_of_2) * 2 + 1).cast[type]()
+                    ((head_idx - floor_power_of_2) * 2 + 1).cast[type]()
                     * 8.0
-                    / (closest_power_of_2 * 2)
+                    / (floor_power_of_2 * 2)
                 )
             )
     var bias = -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[
