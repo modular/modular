@@ -1299,7 +1299,14 @@ def create_tma_tile[
             desc_bytes_size % 128 == 0,
             (
                 "desc layout byte size has to be  align to 128 bytes for"
-                " multiple TMA copies"
+                " multiple TMA copies. desc_layout: "
+                + String(__desc_layout.shape[0].value())
+                + " "
+                + String(__desc_layout.shape[1].value())
+                + " tile_layout: "
+                + String(__tile_layout.shape[0].value())
+                + " "
+                + String(__tile_layout.shape[1].value())
             ),
         ]()
 
