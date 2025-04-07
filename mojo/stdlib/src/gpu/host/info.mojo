@@ -447,6 +447,63 @@ alias H100 = Info(
 
 
 # ===-----------------------------------------------------------------------===#
+# B100
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_b100_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for NVIDIA B100 GPU.
+
+    Returns:
+        MLIR target configuration for B100.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_100a", `,
+        `features = "+ptx85,+sm_100a", `,
+        `tune_cpu = "sm_100a", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+# https://resources.nvidia.com/en-us-blackwell-architecture
+# TODO: Update once we have B100 access.
+alias B100 = Info(
+    name="B100",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="blackwell",
+    compile_options="nvptx-short-ptr=true",
+    compute=10.0,
+    version="sm_100a",
+    sm_count=132,
+    warp_size=32,
+    threads_per_sm=-1,
+    threads_per_warp=32,
+    warps_per_multiprocessor=64,
+    threads_per_multiprocessor=1536,
+    thread_blocks_per_multiprocessor=32,
+    shared_memory_per_multiprocessor=58 * _KB,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=32,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
+# TODO: Update once we have B200 access.
+alias B200 = B100
+
+# ===-----------------------------------------------------------------------===#
 # RTX5090
 # ===-----------------------------------------------------------------------===#
 
@@ -656,6 +713,8 @@ struct Info(Writable):
             return _get_l4_target()
         if self.name == "H100":
             return _get_h100_target()
+        if self.name == "B100" or self.name == "B200":
+            return _get_b100_target()
         if self.name == "RTX5090":
             return _get_rtx5090_target()
         if self.name == "MI300X":
@@ -1125,7 +1184,7 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
         Info instance for the specified compute capability.
     """
     constrained[
-        compute_capability in (0, 80, 86, 87, 89, 90, 94),
+        compute_capability in (0, 80, 86, 87, 89, 90, 94, 100, 120),
         "invalid compute capability",
     ]()
 
@@ -1142,6 +1201,10 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
         return L4
     elif compute_capability == 90:
         return H100
+    elif compute_capability == 100:
+        return B100
+    elif compute_capability == 120:
+        return RTX5090
     elif compute_capability == 94:
         return MI300X
     return abort[Info]("invalid compute capability")
@@ -1175,7 +1238,10 @@ fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
         return _get_info_from_compute_capability[90]()
     if compute_capability == 94:
         return _get_info_from_compute_capability[94]()
-
+    if compute_capability == 100:
+        return _get_info_from_compute_capability[100]()
+    if compute_capability == 120:
+        return _get_info_from_compute_capability[120]()
     raise "invalid compute capability"
 
 
@@ -1192,7 +1258,9 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
     Returns:
         Info instance for the specified target architecture.
     """
-    alias target_arch = target_arch0.replace("sm_", "").replace("nvidia:", "")
+    alias target_arch = target_arch0.replace("sm_", "").replace(
+        "nvidia:", ""
+    ).replace("amdgpu:", "")
 
     constrained[
         StaticString(target_arch)
@@ -1204,6 +1272,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
             StaticString("89"),
             StaticString("90"),
             StaticString("90a"),
+            StaticString("100"),
+            StaticString("100a"),
             StaticString("120"),
             StaticString("120a"),
             StaticString("amdgpu:94"),
@@ -1227,12 +1297,14 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
         return L4
     elif target_arch == "90" or target_arch == "90a":
         return H100
+    elif target_arch == "100" or target_arch == "100a":
+        return B100
     elif target_arch == "120" or target_arch == "120a":
         return RTX5090
     elif (
         target_arch == "gfx942"
         or target_arch == "mi300x"
-        or target_arch == "amdgpu:94"
+        or target_arch == "94"
     ):
         return MI300X
     elif DEFAULT_GPU_ARCH == "":
