@@ -395,7 +395,7 @@ struct _UIntZeroStartingRange(UIntSized):
     @always_inline
     @implicit
     fn __init__(out self, end: UInt):
-        self.curr = max(0, end)
+        self.curr = end
         self.end = self.curr
 
     @always_inline

@@ -82,6 +82,17 @@ struct _ParamForIterator[IteratorT: Copyable]:
         self.stop = stop
 
 
+struct _UIntParamForIterator[IteratorT: Copyable]:
+    var next_it: IteratorT
+    var value: UInt
+    var stop: Bool
+
+    fn __init__(out self, next_it: IteratorT, value: UInt, stop: Bool):
+        self.next_it = next_it
+        self.value = value
+        self.stop = stop
+
+
 fn declval[T: AnyType]() -> T:
     constrained[False, "should only be used inside __type_of"]()
     while True:
@@ -96,7 +107,7 @@ fn parameter_for_generator[
 
 fn parameter_for_generator[
     T: _UIntIterable,
-](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
+](range: T) -> _UIntParamForIterator[__type_of(declval[T]().__iter__())]:
     return _generator(range.__iter__())
 
 
@@ -108,7 +119,7 @@ fn parameter_for_generator[
 
 fn parameter_for_generator[
     T: _UIntStridedIterable,
-](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
+](range: T) -> _UIntParamForIterator[__type_of(declval[T]().__iter__())]:
     return _generator(range.__iter__())
 
 
@@ -117,8 +128,7 @@ fn _generator[
 ](it: IteratorT) -> _ParamForIterator[IteratorT]:
     if it.__len__() != 0:
         var next_it = it
-        var value = next_it.__next__()
-        return _ParamForIterator(next_it, value, False)
+        return _ParamForIterator(next_it, next_it.__next__(), False)
 
     var value: IteratorT
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(value))
@@ -127,12 +137,11 @@ fn _generator[
 
 fn _generator[
     IteratorT: _UIntIter
-](it: IteratorT) -> _ParamForIterator[IteratorT]:
+](it: IteratorT) -> _UIntParamForIterator[IteratorT]:
     if it.__len__() != 0:
         var next_it = it
-        var value = next_it.__next__()
-        return _ParamForIterator(next_it, value, False)
+        return _UIntParamForIterator(next_it, next_it.__next__(), False)
 
     var value: IteratorT
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(value))
-    return _ParamForIterator(value^, 0, True)
+    return _UIntParamForIterator(value^, 0, True)

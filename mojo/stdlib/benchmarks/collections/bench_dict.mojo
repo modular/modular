@@ -84,7 +84,7 @@ fn bench_dict_lookup[size: Int](mut b: Bencher) raises:
         @parameter
         if size < 100:
             for _ in range(closest_divisor):
-                for key in range(Int(100 // closest_divisor)):
+                for key in range(100 // closest_divisor):
                     var res = items[key]
                     keep(res)
         else:
