@@ -313,8 +313,10 @@ FunctionIRBytecode::~FunctionIRBytecode() {
 ErrorTreeOr<FunctionIRBytecode>
 FunctionIRBytecode::compile(Region &entry, TargetInfoAttr target) {
   BytecodeBuilder builder(target);
-  if (auto err = builder.writeRegion(entry))
+  if (auto err = builder.writeRegion(entry)) {
+    (void)std::move(builder).take();
     return err.takeError();
+  }
 
   auto [numValues, data, cfgIndices] = std::move(builder).take();
   return FunctionIRBytecode(numValues, data, std::move(cfgIndices));
