@@ -3586,7 +3586,7 @@ struct DeviceContext(CollectionElement):
         type: DType
     ](self, dst: HostBuffer[type, **_], val: Scalar[type]) raises:
         """Enqueues an async memset operation, setting all of the elements in
-        the destination device buffer to the specified value.
+        the destination host buffer to the specified value.
 
         Parameters:
             type: Type of the data stored in the buffer.
@@ -3628,21 +3628,6 @@ struct DeviceContext(CollectionElement):
                 sizeof[type](),
             )
         )
-
-    fn memset[
-        type: DType
-    ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
-        """Enqueues an async memset operation, setting all of the elements in
-        the destination device buffer to the specified value.
-
-        Parameters:
-            type: Type of the data stored in the buffer.
-
-        Args:
-            dst: Destination buffer.
-            val: Value to set all elements of `dst` to.
-        """
-        self.enqueue_memset[type](dst, val)
 
     @doc_private
     @always_inline
