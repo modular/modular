@@ -61,6 +61,19 @@ fn use123[T: Traits123](x: T):
     use23(x)
 
 
+# conditional method
+@value
+struct Wrapper[T: AnyType]:
+    fn cond1[T: Trait1](self: Wrapper[T], other: Wrapper[T]):
+        print("cond")
+
+
+fn useCond1[
+    ElementType: Traits12
+](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
+    p1.cond1(p2)
+
+
 fn main():
     s123 = Struct123()
 
@@ -79,3 +92,6 @@ fn main():
     # CHECK: f2
     # CHECK: f3
     use123(s123)
+
+    # CHECK: cond
+    useCond1(Wrapper[Struct123](), Wrapper[Struct123]())

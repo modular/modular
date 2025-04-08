@@ -973,10 +973,11 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 ///    !lit.generator<[1]>("self":
 ///        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
-static FnTypeGeneratorType createRequirementSignature(
-    FnOp traitFn, ASTType newSelfType, ParameterEvaluator &traitAliasReplacer,
-    const DenseMap<StringAttr, TypedAttr> &aliasValues,
-    DeclResolver &declResolver, ASTType expectedSelfType) {
+static FnTypeGeneratorType
+createRequirementSignature(FnOp traitFn, ASTType newSelfType,
+                           ParameterEvaluator &traitAliasReplacer,
+                           const DenseMap<StringAttr, TypedAttr> &aliasValues,
+                           DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
   // value below.
   TypedAttr newSelfValue = PValue(newSelfType).get();
@@ -993,13 +994,6 @@ static FnTypeGeneratorType createRequirementSignature(
     newSelfValue =
         UpcastAttr::get(simpleTraitType, PValue(newSelfType),
                         VTableAttr::get(simpleTraitType.getContext(), {}));
-  }
-
-  if (expectedSelfType) {
-    // If the trait is a trait union (synthetic ASTDecl), upcast the input
-    // type.
-    newSelfValue = UpcastAttr::get(expectedSelfType.getMetaType(), newSelfValue,
-                                   VTableAttr::get(traitFn->getContext(), {}));
   }
 
   // The requirement will have a Self parameter whose type will be of the
@@ -1240,23 +1234,31 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // replacer.
       // TODO(MOCO-1789): This complicated logic will be removed once we have
       // symbolized witness tables.
-      ASTType expectedSelfType;
-      if (isa<TraitType>(type.getDecl(shared)->getIfTypeValue()))
-        expectedSelfType = expected->getParentDecl()->getTypeDeclSelf();
       FnTypeGeneratorType requirementSig = createRequirementSignature(
-          traitFn, type, traitAliasReplacer, aliasValues, getDeclResolver(),
-          expectedSelfType);
+          traitFn, type, traitAliasReplacer, aliasValues, getDeclResolver());
 
       // Form a set of bindings to plow into the impl signature by binding Self
       // to the appropriate Struct or derived Trait type.
-      auto implBindings = ParamBindings::getForDeclaredType(
-          getDeclScope(), type, value.expr, expectedSelfType);
+      auto implBindings =
+          ParamBindings::getForDeclaredType(getDeclScope(), type, value.expr);
       // Leave the rest of the the parameters Unbound.
       ParameterEvaluator evaluator;
       for (Type type : requirementSig.getInputParamTypes()) {
         auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
         evaluator.addInputValue(unbound);
         implBindings.addPrechecked(value.expr, unbound);
+      }
+
+      // If the input type is a trait, no need to look through its methods since
+      // trait inheritance is always explicit.
+      if (isa<TraitType>(type.getDecl(shared)->getIfTypeValue())) {
+        TypedAttr result = ParamOperatorAttr::get(
+            POC::GetVTableEntry,
+            {PValue(type),
+             StringAttr::get(name.getValue(), StringType::get(getContext()))},
+            requirementSig);
+        vtable.push_back(VTableEntryAttr::get(name, result));
+        continue;
       }
 
       // Grab the matching function.  If the input type is a StructType, this
