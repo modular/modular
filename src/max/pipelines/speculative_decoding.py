@@ -94,23 +94,22 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         draft_devices = load_devices(scan_available_devices()[:1])
         draft_session = InferenceSession(devices=draft_devices)
 
-        # TODO: Allow user to set trust_remote_code and revision for draft_model
         draft_config = AutoConfig.from_pretrained(
-            self.pipeline_config.draft_model,
-            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
-            revision=None,
+            self.pipeline_config.draft_model_config.model_path,
+            trust_remote_code=self.pipeline_config.draft_model_config.trust_remote_code,
+            revision=self.pipeline_config.draft_model_config.huggingface_revision,
         )
 
         # Retrieve Encoding, and Files for Draft Model
-        if not self.pipeline_config.draft_model:
+        if self.pipeline_config.draft_model_config is None:
             raise ValueError(
                 "draft_model must be provided for speculative decoding"
             )
 
         draft_hf_repo = HuggingFaceRepo(
-            repo_id=self.pipeline_config.draft_model,
-            revision=self.pipeline_config.model_config.huggingface_revision,
-            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
+            repo_id=self.pipeline_config.draft_model_config.model_path,
+            revision=self.pipeline_config.draft_model_config.huggingface_revision,
+            trust_remote_code=self.pipeline_config.draft_model_config.trust_remote_code,
             repo_type=RepoType.online,
         )
         encodings = draft_hf_repo.supported_encodings
@@ -134,7 +133,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         _draft_weights_format = list(weight_files.keys())[0]
         _draft_weight_paths = download_weight_files(
-            huggingface_model_id=self.pipeline_config.draft_model,
+            huggingface_model_id=self.pipeline_config.draft_model_config.model_path,
             filenames=[str(x) for x in weight_files[_draft_weights_format]],
             revision=None,
             max_workers=8,
@@ -147,7 +146,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             huggingface_config=draft_config,
             encoding=encodings[0],
             devices=draft_devices,
-            kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
+            kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
             weights=draft_weights,
             adapter=weight_adapters.get(_draft_weights_format, None),
             return_n_logits=1,

@@ -103,6 +103,8 @@ class PipelineConfig(MAXConfig):
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
 
+    # TODO(E2EOPT-108): Remove this once we have fully migrated draft model
+    # to MAXModelConfig.
     draft_model: Optional[str] = None
     """Draft model for use during Speculative Decoding."""
 
@@ -111,6 +113,9 @@ class PipelineConfig(MAXConfig):
 
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
+
+    _draft_model_config: Optional[MAXModelConfig] = None
+    """The draft model config."""
 
     _sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
     """The sampling config."""
@@ -187,6 +192,21 @@ class PipelineConfig(MAXConfig):
                     for key in kv_cache_kwargs:
                         del unmatched_kwargs[key]
 
+        # TODO(E2EOPT-108): Clean this up once we have fully migrated draft model
+        # to MAXModelConfig. For now, we copy all of the model_config fields
+        # except the model_path / repo_id to the draft_model_config.
+        if self.draft_model is not None:
+            self._draft_model_config = self._model_config
+            self._draft_model_config.model_path = self.draft_model
+
+        # TODO(E2EOPT-108): Remove this once we have fully migrated draft model
+        # to MAXModelConfig.
+        # NOTE: Do not use this directly after instantiating PipelineConfig. We
+        # only keep this here to support backward compatibility of the draft_model
+        # field entrypoint. This will be removed entirely soon. I purposefully
+        # set this to an empty string than None, to ensure that we catch any
+        # inadvertent use of draft_model.
+        self.draft_model = ""
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
 
@@ -200,6 +220,9 @@ class PipelineConfig(MAXConfig):
         config fields have been initialized to a valid state.
         """
         self.model_config.resolve()
+
+        if self.draft_model_config is not None:
+            self.draft_model_config.resolve()
 
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
@@ -239,10 +262,10 @@ class PipelineConfig(MAXConfig):
         """
         Validate the pipeline configs when used in speculative decoding mode.
         """
-        if self.draft_model is None:
+        if self.draft_model_config is None:
             return
 
-        if not repo_exists_with_retry(self.draft_model):
+        if not repo_exists_with_retry(self.draft_model_config.model_path):
             raise ValueError(
                 "draft_model provided does not exist on HuggingFace."
                 "Only public HuggingFace draft models currently supported."
@@ -259,7 +282,7 @@ class PipelineConfig(MAXConfig):
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            model_path=self.draft_model,
+            model_path=self.draft_model_config.model_path,
             trust_remote_code=self.model_config.trust_remote_code,
             huggingface_revision=self.model_config.huggingface_revision,
         )
@@ -284,7 +307,7 @@ class PipelineConfig(MAXConfig):
         # TODO: Cache these tokenizers HF calls too.
         # Validate that their tokenizers are identical.
         draft_tokenizer = AutoTokenizer.from_pretrained(
-            self.draft_model,
+            self.draft_model_config.model_path,
             trust_remote_code=self.model_config.trust_remote_code,
             revision=self.model_config.huggingface_revision,
         )
@@ -296,12 +319,12 @@ class PipelineConfig(MAXConfig):
 
         # Compare Vocabularies
         if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
-            msg = f"tokenizer for draft_model ({self.draft_model}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+            msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
             raise ValueError(msg)
 
         # Compare Tokenizer Configuration
         if draft_tokenizer.__dict__ == target_tokenizer.__dict__:
-            msg = f"tokenizer for draft_model ({self.draft_model}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+            msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
             raise ValueError(msg)
 
         if self.enable_echo:
@@ -432,6 +455,10 @@ class PipelineConfig(MAXConfig):
     @property
     def model_config(self) -> MAXModelConfig:
         return self._model_config
+
+    @property
+    def draft_model_config(self) -> Optional[MAXModelConfig]:
+        return self._draft_model_config
 
     @property
     def sampling_config(self) -> SamplingConfig:

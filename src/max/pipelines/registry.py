@@ -60,7 +60,7 @@ def get_pipeline_for_task(
     | type[SpeculativeDecodingTextGenerationPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
-        if pipeline_config.draft_model is not None:
+        if pipeline_config.draft_model_config is not None:
             return SpeculativeDecodingTextGenerationPipeline
         else:
             return TextGenerationPipeline
