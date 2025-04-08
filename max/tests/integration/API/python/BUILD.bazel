@@ -56,6 +56,7 @@ modular_py_test(
     env = {"MODULAR_PATH": "."},
     env_inherit = ["HF_TOKEN"],
     tags = [
+        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],
@@ -140,6 +141,7 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
+        "manual",  # TODO(AITLIB-293)
         "no-mypy",  # TODO: fix and remove
         "requires-network",
     ],
@@ -208,6 +210,7 @@ modular_run_binary_test(
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
+        "manual",  # TODO(AITLIB-293)
         "multi-gpu",
         "no-sandbox",
         "requires-network",
