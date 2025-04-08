@@ -321,3 +321,53 @@ def test_rms_norm_new_key_cache(
                 gamma,
                 rtol=1e-05,
             ).all()
+
+
+@pytest.mark.parametrize(
+    "kv_dtype, gamma_dtype",
+    [
+        (DType.float32, DType.float16),
+        (DType.bfloat16, DType.float32),
+    ],
+)
+def test_rms_norm_key_cache_dtype_mismatch(
+    session: InferenceSession, kv_dtype: DType, gamma_dtype: DType
+) -> None:
+    """Tests that a TypeError is raised when gamma dtype mismatches kv dtype."""
+    seq_lens = [10]
+    batch_size = 1
+    max_seq_len = 16
+    kv_params = KVCacheParams(
+        dtype=kv_dtype,
+        n_kv_heads=8,
+        head_dim=128,
+        cache_strategy=KVCacheStrategy.CONTINUOUS,
+    )
+    kv_manager = ContinuousBatchingKVCacheManager(
+        kv_params,
+        max_batch_size=batch_size,
+        max_seq_len=max_seq_len,
+        num_layers=1,
+        devices=[CPU()],
+        session=session,
+    )
+    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+
+    # Stage the fetch op + custom matmul KV cache ragged op graph.
+    gamma_type = TensorType(gamma_dtype, shape=[kv_params.head_dim])
+    input_row_offsets_type = TensorType(DType.uint32, ["batch_size_plus_1"])
+    expected_msg = (
+        f"expected gamma dtype {gamma_dtype} to match KV dtype {kv_dtype}"
+    )
+    with pytest.raises(TypeError, match=expected_msg):
+        graph = Graph(
+            "matmul_kv_cache_ragged",
+            forward=RMSNormKeyCacheModel(
+                fetch_layer, kv_params, layer_idx=0, total_seq_len=sum(seq_lens)
+            ),
+            input_types=[
+                gamma_type,
+                input_row_offsets_type,
+                *kv_manager.input_symbols()[0],
+            ],
+        )
