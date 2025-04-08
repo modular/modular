@@ -1045,6 +1045,79 @@ def flare_mla_decode_ragged(
     )[0].tensor
 
 
+def flare_mla_prefill_plan(
+    kv_params: KVCacheParams,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    buffer_size: int,
+    max_chunks: int = 16,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """This kernel plans how to process a batch of sequences with
+    varying lengths using a fixed-size buffer.
+
+    Each sequence in the batch has some existing cached tokens and new input
+    tokens. The kernel divides the total tokens into chunks of buffer_size.
+
+    For each chunk (iteration), it calculates:
+        1. Buffer offsets for each sequence in each chunk
+        2. Cache offsets for each sequence in each chunk
+        3. Total buffer lengths for each processing iteration
+    """
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected uint32 layer_idx but got {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for flare_mla_prefill_plan: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "type": kv_params.dtype,
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+
+    buffer_size_tensor = ops.constant(buffer_size, DType.uint32)
+
+    results = ops.inplace_custom(
+        "mo.mla.prefill.ragged.plan",
+        values=[
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            buffer_size_tensor,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.uint32,
+                shape=[max_chunks, input_row_offsets.shape[0]],
+                device=input_row_offsets.device,
+            ),  # buffer_row_offsets
+            TensorType(
+                dtype=DType.uint32,
+                shape=[max_chunks, input_row_offsets.shape[0] - 1],
+                device=input_row_offsets.device,
+            ),  # cache_offsets
+            TensorType(
+                dtype=DType.int32,
+                shape=[max_chunks],
+                device=input_row_offsets.device,
+            ),  # buffer_lengths
+        ],
+        parameters=parameters,
+    )
+
+    return results[0].tensor, results[1].tensor, results[2].tensor
+
+
 def cross_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
