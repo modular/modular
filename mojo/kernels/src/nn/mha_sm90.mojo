@@ -1298,6 +1298,7 @@ fn _mha_single_batch_sm90_fa3[
             if mask_status != TileMaskStatus.FULL_MASK:
                 break
             kv_tile_start_row += BN
+            mask_warp_col += BN
 
         @parameter
         if num_heads_per_block > 1:
@@ -1357,6 +1358,7 @@ fn _mha_single_batch_sm90_fa3[
                 Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
             )
             if mask_status == TileMaskStatus.FULL_MASK:
+                mask_warp_col += BN
                 continue
             # new pipeline states
             read_pipeline_states.step()
@@ -1853,6 +1855,7 @@ fn _mha_single_batch_sm90_fa2[
             Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
         )
         if mask_status == TileMaskStatus.FULL_MASK:
+            mask_warp_col += BN
             return
 
         alias kv_gmem_layout = Layout(

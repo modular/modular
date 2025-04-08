@@ -849,6 +849,7 @@ fn mha_single_batch[
         @parameter
         if not token_gen:
             if mask_status == TileMaskStatus.FULL_MASK:
+                mask_warp_col += BN
                 return
 
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
@@ -1283,6 +1284,7 @@ fn mha_decoding_single_batch[
         @parameter
         if not token_gen:
             if mask_status == TileMaskStatus.FULL_MASK:
+                mask_warp_col += BN
                 return
 
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)

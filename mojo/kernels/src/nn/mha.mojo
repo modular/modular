@@ -581,7 +581,6 @@ fn flash_attention_dispatch[
                 ](
                     batch_size, max_cache_valid_length, ctx
                 )
-
             if num_partitions_value == 1:
                 ctx.enqueue_function[kernel](
                     q.data,
@@ -1253,6 +1252,7 @@ fn mha_single_batch[
             )
             == TileMaskStatus.FULL_MASK
         ):
+            mask_warp_col += BN
             return
 
         alias kv_gmem_layout = Layout(
@@ -1871,6 +1871,7 @@ fn mha_single_batch_pipelined[
     alias kv_num_heads = num_heads // group
 
     alias num_pipeline_stages = config.num_pipeline_stages
+    var is_first_iter = True
 
     # Iterate over KV, equivalent to the following with if hoisted out.
     #   ```
@@ -1895,6 +1896,7 @@ fn mha_single_batch_pipelined[
             )
             == TileMaskStatus.FULL_MASK
         ):
+            mask_warp_col += BN
             return
 
         alias kv_gmem_layout = Layout(
@@ -1945,7 +1947,7 @@ fn mha_single_batch_pipelined[
         )
 
         # First iteration load q from global memory to shared memory.
-        if kv_tile_start_row == 0:
+        if is_first_iter:
             multistage_mma[
                 BM,
                 BN,
@@ -1970,6 +1972,7 @@ fn mha_single_batch_pipelined[
                 next_op_b_iter=v_gmem_iter.bitcast[k_type](),
                 num_b_rows=num_b_rows,
             )
+            is_first_iter = False
         # Subsequent iterations just use q in share memory.
         # TODO: Figure out a better function interface instead of passing in
         # shared memory iterator twice.
