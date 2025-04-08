@@ -25,7 +25,6 @@ from typing import (
     Optional,
     Protocol,
     TypeVar,
-    cast,
     runtime_checkable,
 )
 
@@ -639,7 +638,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # `fetch` may shorten the input context by bumping the start_idx.
         tracer.next("fetch_kv_cache")
         kv_cache_inputs = self._pipeline_model.kv_manager.fetch(
-            cast(list[InputContext], batch), num_steps
+            batch, num_steps
         )
 
         return (
@@ -851,9 +850,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
         tracer.next("kv_manager.step")  # pops prepare_response
-        self._pipeline_model.kv_manager.step(
-            cast(list[InputContext], context_batch)
-        )
+        self._pipeline_model.kv_manager.step(context_batch)
         tracer.pop()  # pops kv_manager.step
 
         return res

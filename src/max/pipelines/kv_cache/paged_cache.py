@@ -20,7 +20,7 @@ import math
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -35,7 +35,6 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
-from max.pipelines.core import InputContext
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -47,6 +46,7 @@ from ._utils import build_max_lengths_tensor
 from .block_manager import BlockManager
 from .block_utils import BlockCopyOp, BlockCopyType
 from .cache_params import KVCacheParams
+from .context import KVCacheAwareContext
 from .manager import (
     KVCacheInputs,
     KVCacheInputSymbols,
@@ -55,6 +55,8 @@ from .manager import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+T = TypeVar("T", bound=KVCacheAwareContext)
 
 
 @dataclass
@@ -553,7 +555,7 @@ class PagedKVCacheManager(KVCacheManager):
         ]
 
     @traced
-    def reuse_blocks_from_prefix_cache(self, data: InputContext) -> None:
+    def reuse_blocks_from_prefix_cache(self, data: T) -> None:
         """Reuse blocks from the prefix cache for a given sequence.
 
         This must be followed by a call to `allocate_new_blocks`. Doing so will
@@ -580,9 +582,7 @@ class PagedKVCacheManager(KVCacheManager):
         self.block_manager.reset_req_copy_ops(seq_id)
 
     @traced
-    def allocate_new_blocks(
-        self, data: InputContext, num_steps: int = 1
-    ) -> bool:
+    def allocate_new_blocks(self, data: T, num_steps: int = 1) -> bool:
         """Allocate new blocks for a given sequence.
 
         This must be preceded by a call to `reuse_blocks_from_prefix_cache`.
@@ -606,9 +606,7 @@ class PagedKVCacheManager(KVCacheManager):
         return True
 
     @traced
-    def fetch(
-        self, batch: list[InputContext], num_steps: int = 1
-    ) -> list[KVCacheInputs]:
+    def fetch(self, batch: list[T], num_steps: int = 1) -> list[KVCacheInputs]:
         """Reuses blocks from prefix cache and allocates new blocks for requests in batch.
 
         On cache hits, the input context may have their start_idx bumped upwards in order
@@ -753,7 +751,7 @@ class PagedKVCacheManager(KVCacheManager):
     @traced
     def step(
         self,
-        batch: list[InputContext],
+        batch: list[T],
     ) -> None:
         """Commit new tokens into the prefix cache.
 
@@ -764,7 +762,7 @@ class PagedKVCacheManager(KVCacheManager):
             self.block_manager.step(ctx)
 
     @traced
-    def rollback(self, batch: list[InputContext]) -> None:
+    def rollback(self, batch: list[T]) -> None:
         """Rollback the KVCache for speculative decoding by discarding all data
         after ctx.start_idx.
         """

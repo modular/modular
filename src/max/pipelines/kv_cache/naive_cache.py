@@ -16,21 +16,23 @@
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, TensorType
-from max.pipelines.core import InputContext
 
 from .cache_params import KVCacheParams
+from .context import KVCacheAwareContext
 from .manager import (
     KVCacheInputs,
     KVCacheInputSymbols,
     KVCacheManager,
     PaddedKVCacheInputs,
 )
+
+T = TypeVar("T", bound=KVCacheAwareContext)
 
 
 @dataclass
@@ -147,7 +149,7 @@ class NaiveKVCacheManager(KVCacheManager):
 
     def fetch(
         self,
-        batch: list[InputContext],
+        batch: list[T],
         num_steps: int = 1,
     ) -> list[KVCacheInputs]:
         existing_keys = list(self.active)

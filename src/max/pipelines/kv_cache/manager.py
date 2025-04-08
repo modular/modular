@@ -18,16 +18,16 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, TypeVar, cast, overload
+from typing import Any, Generic, TypeVar, cast, overload
 
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.pipelines.core import InputContext
 from typing_extensions import TypeGuard
 
 from .cache_params import KVCacheParams
+from .context import KVCacheAwareContext
 
 _T = TypeVar("_T")
 
@@ -154,7 +154,10 @@ class KVCacheInputSymbols:
         return list(self)[index]
 
 
-class KVCacheManager(ABC):
+T = TypeVar("T", bound=KVCacheAwareContext)
+
+
+class KVCacheManager(ABC, Generic[T]):
     def __init__(
         self,
         params: KVCacheParams,
@@ -216,7 +219,7 @@ class KVCacheManager(ABC):
     @abstractmethod
     def fetch(
         self,
-        batch: list[InputContext],
+        batch: list[T],
         num_steps: int = 1,
     ) -> list[KVCacheInputs]:
         """Returns blocks and other inputs to kv cache kernel for given
@@ -259,13 +262,13 @@ class KVCacheManager(ABC):
             self.available.remove(seq_id)
             self.active.add(seq_id)
 
-    def step(self, batch: list[InputContext]) -> None:
+    def step(self, batch: list[T]) -> None:
         """Commit the new tokens into the prefix cache.
 
         This is a no-op if prefix caching is disabled."""
         ...
 
-    def rollback(self, batch: list[InputContext]) -> None:
+    def rollback(self, batch: list[T]) -> None:
         """Rollback the KVCache for speculative decoding by discarding all data
         after ctx.start_idx. This should be called after stepping normally.
 

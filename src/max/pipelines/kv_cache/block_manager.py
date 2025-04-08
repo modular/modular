@@ -26,9 +26,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
+from typing import Generic, TypeVar
 
 import numpy as np
-from max.pipelines.core import InputContext
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -45,9 +45,12 @@ from .block_utils import (
     hash_block_tokens,
     hash_request_tokens,
 )
+from .context import KVCacheAwareContext
+
+T = TypeVar("T", bound=KVCacheAwareContext)
 
 
-class BlockManager:
+class BlockManager(Generic[T]):
     @traced
     def __init__(
         self,
@@ -107,7 +110,7 @@ class BlockManager:
         self.enable_runtime_checks = enable_runtime_checks
 
     @traced
-    def step(self, ctx: InputContext) -> None:
+    def step(self, ctx: T) -> None:
         """Step the block manager by committing blocks into prefix cache."""
         self.assert_runtime_invariants(ctx)
 
@@ -124,7 +127,7 @@ class BlockManager:
         self.assert_runtime_invariants(ctx)
 
     @traced
-    def rollback(self, ctx: InputContext) -> None:
+    def rollback(self, ctx: T) -> None:
         """Rollback the block manager by discarding all blocks after ctx.start_idx.
 
         This may delete block hashes and blocks assigned to a request."""
@@ -162,7 +165,7 @@ class BlockManager:
     @traced
     def compute_hashes_for_request(
         self,
-        ctx: InputContext,
+        ctx: T,
     ):
         """Compute the block hashes for the request."""
 
@@ -188,7 +191,7 @@ class BlockManager:
         hashes.extend(new_hashes)
 
     @traced
-    def reuse_blocks_from_prefix_cache(self, ctx: InputContext) -> None:
+    def reuse_blocks_from_prefix_cache(self, ctx: T) -> None:
         """Reuse blocks from prefix cache.
 
         Full blocks are directly reused and appended to the request's blocks.
@@ -281,7 +284,7 @@ class BlockManager:
     @traced
     def get_full_blocks_from_prefix_cache(
         self,
-        ctx: InputContext,
+        ctx: T,
     ) -> list[KVCacheBlock]:
         """Get the computed (cached) blocks for the request.
         Note that the computed blocks must be full.
@@ -344,7 +347,7 @@ class BlockManager:
     @traced
     def get_partial_block_from_prefix_cache(
         self,
-        ctx: InputContext,
+        ctx: T,
     ) -> tuple[KVCacheBlock | None, int]:
         """Get the computed (cached) blocks for the request."""
         assert self.enable_prefix_caching
@@ -395,7 +398,7 @@ class BlockManager:
     @traced
     def commit_to_prefix_cache(
         self,
-        ctx: InputContext,
+        ctx: T,
     ) -> None:
         """Commits all blocks whose hashes are known for prefix caching.
 
@@ -450,9 +453,7 @@ class BlockManager:
         self.req_to_hashes[seq_id] = []
 
     @traced
-    def allocate_new_blocks(
-        self, ctx: InputContext, num_steps: int = 1
-    ) -> None:
+    def allocate_new_blocks(self, ctx: T, num_steps: int = 1) -> None:
         # Determine number of new blocks to allocate.
         seq_id = ctx.cache_seq_id
         req_blocks = self.req_to_blocks[seq_id]
@@ -519,7 +520,7 @@ class BlockManager:
             return 0
         return self.cached_prompt_tokens / self.prompt_tokens
 
-    def release_uncommitted_blocks(self, ctx: InputContext) -> None:
+    def release_uncommitted_blocks(self, ctx: T) -> None:
         """Release the uncommitted blocks for the request."""
         seq_id = ctx.cache_seq_id
         req_blocks = self.req_to_blocks[seq_id]
@@ -551,7 +552,7 @@ class BlockManager:
         return self.req_to_copy_ops[seq_id]
 
     @traced
-    def assert_runtime_invariants(self, ctx: InputContext) -> None:
+    def assert_runtime_invariants(self, ctx: T) -> None:
         """If runtime checks are enabled, assert that the runtime checks are
         correct.
         """
