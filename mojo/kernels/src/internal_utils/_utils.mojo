@@ -6,9 +6,12 @@
 
 from collections import InlineArray
 from random import rand
-from sys import argv, env_get_string, is_defined
+from os import abort
+from sys import argv, env_get_string, is_defined, bitwidthof
 from sys.info import alignof
 from collections.string import StaticString
+from builtin.dtype import _integral_type_of
+
 from random import random_float64
 from benchmark import (
     Bench,
@@ -27,6 +30,7 @@ from memory import UnsafePointer
 from stdlib.builtin.io import _snprintf
 from tensor_internal import DynamicTensor, ManagedTensorSlice
 from testing import assert_almost_equal, assert_equal, assert_true
+from memory.unsafe import bitcast
 
 from utils import Index, IndexList
 from utils.index import product
@@ -575,6 +579,19 @@ struct Mode:
         if mode._value == self._value == Self.NONE._value:
             return True
         return True if self._value & mode._value else False
+
+
+fn ulp_distance[type: DType](a: Scalar[type], b: Scalar[type]) -> Int:
+    alias bitwidth = bitwidthof[type]()
+    alias T = _integral_type_of[type]()
+    # widen to Int first to avoid overflow
+    var a_int = Int(bitcast[T](a))
+    var b_int = Int(bitcast[T](b))
+    # to twos complement
+    alias two_complement_const = Int(1 << (bitwidth - 1))
+    a_int = two_complement_const - a_int if a_int < 0 else a_int
+    b_int = two_complement_const - b_int if b_int < 0 else b_int
+    return abs(a_int - b_int)
 
 
 fn random_float8[
