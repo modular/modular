@@ -18,9 +18,7 @@ import glob
 import json
 import logging
 import os
-import random
 import struct
-import time
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -30,7 +28,6 @@ from typing import Optional, Union, cast
 import huggingface_hub
 import torch
 from huggingface_hub import constants as hf_hub_constants
-from huggingface_hub import errors as hf_hub_errors
 from huggingface_hub import try_to_load_from_cache
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.dtype import DType
@@ -42,8 +39,8 @@ from max.pipelines.config_enums import (
     RepoType,
     SupportedEncoding,
 )
+from max.pipelines.hf_utils import repo_exists_with_retry
 from max.pipelines.kv_cache import KVCacheStrategy
-from requests.exceptions import ConnectionError as RequestsConnectionError
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -790,56 +787,6 @@ class ProfilingConfig(MAXConfig):
         }
 
 
-def repo_exists_with_retry(repo_id: str) -> bool:
-    """
-    Wrapper around huggingface_hub.repo_exists with retry logic.
-    Uses exponential backoff with 25% jitter, starting at 1s and doubling each retry.
-
-    See huggingface_hub.repo_exists for details
-    """
-    max_attempts = 5
-    base_delays = [2**i for i in range(max_attempts)]
-    retry_delays_in_seconds = [
-        d * (1 + random.uniform(-0.25, 0.25)) for d in base_delays
-    ]
-
-    for attempt, delay_in_seconds in enumerate(retry_delays_in_seconds):
-        try:
-            return huggingface_hub.repo_exists(repo_id)
-        except (
-            hf_hub_errors.RepositoryNotFoundError,
-            hf_hub_errors.GatedRepoError,
-            hf_hub_errors.RevisionNotFoundError,
-            hf_hub_errors.EntryNotFoundError,
-        ) as e:
-            # Forward these specific errors to the user
-            logger.error(f"Hugging Face repository error: {str(e)}")
-            raise
-        except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
-            # Do not retry if Too Many Requests error received
-            if e.response.status_code == 429:
-                logger.error(e)
-                raise
-
-            if attempt == max_attempts - 1:
-                logger.error(
-                    f"Failed to connect to Hugging Face Hub after {max_attempts} attempts: {str(e)}"
-                )
-                raise
-
-            logger.warning(
-                f"Transient Hugging Face Hub connection error (attempt {attempt + 1}/{max_attempts}): {str(e)}"
-            )
-            logger.warning(
-                f"Retrying Hugging Face connection in {delay_in_seconds} seconds..."
-            )
-            time.sleep(delay_in_seconds)
-
-    assert False, (
-        "This should never be reached due to the raise in the last attempt"
-    )
-
-
 @dataclass(frozen=True)
 class HuggingFaceRepo:
     repo_id: str
@@ -1022,7 +969,9 @@ class HuggingFaceRepo:
         # Get torch dtype for pytorch files.
         if WeightsFormat.pytorch in self.formats_available:
             cfg = AutoConfig.from_pretrained(
-                self.repo_id, trust_remote_code=self.trust_remote_code
+                self.repo_id,
+                trust_remote_code=self.trust_remote_code,
+                revision=self.revision,
             )
 
             if torch_dtype := getattr(cfg, "torch_dtype", None):

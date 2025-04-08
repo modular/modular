@@ -19,10 +19,14 @@ import contextlib
 import datetime
 import logging
 import os
+import random
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import huggingface_hub
+from huggingface_hub import errors as hf_hub_errors
 from huggingface_hub import (
     file_exists,
     get_hf_file_metadata,
@@ -30,6 +34,7 @@ from huggingface_hub import (
     hf_hub_url,
 )
 from huggingface_hub.utils import tqdm as hf_tqdm
+from requests.exceptions import ConnectionError as RequestsConnectionError
 from tqdm.contrib.concurrent import thread_map
 from tqdm.std import TqdmDefaultWriteLock
 from transformers import AutoConfig
@@ -180,3 +185,53 @@ def download_weight_files(
     )
 
     return weight_paths
+
+
+def repo_exists_with_retry(repo_id: str) -> bool:
+    """
+    Wrapper around huggingface_hub.repo_exists with retry logic.
+    Uses exponential backoff with 25% jitter, starting at 1s and doubling each retry.
+
+    See huggingface_hub.repo_exists for details
+    """
+    max_attempts = 5
+    base_delays = [2**i for i in range(max_attempts)]
+    retry_delays_in_seconds = [
+        d * (1 + random.uniform(-0.25, 0.25)) for d in base_delays
+    ]
+
+    for attempt, delay_in_seconds in enumerate(retry_delays_in_seconds):
+        try:
+            return huggingface_hub.repo_exists(repo_id)
+        except (
+            hf_hub_errors.RepositoryNotFoundError,
+            hf_hub_errors.GatedRepoError,
+            hf_hub_errors.RevisionNotFoundError,
+            hf_hub_errors.EntryNotFoundError,
+        ) as e:
+            # Forward these specific errors to the user
+            logger.error(f"Hugging Face repository error: {str(e)}")
+            raise
+        except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
+            # Do not retry if Too Many Requests error received
+            if e.response.status_code == 429:
+                logger.error(e)
+                raise
+
+            if attempt == max_attempts - 1:
+                logger.error(
+                    f"Failed to connect to Hugging Face Hub after {max_attempts} attempts: {str(e)}"
+                )
+                raise
+
+            logger.warning(
+                f"Transient Hugging Face Hub connection error (attempt {attempt + 1}/{max_attempts}): {str(e)}"
+            )
+            logger.warning(
+                f"Retrying Hugging Face connection in {delay_in_seconds} seconds..."
+            )
+            time.sleep(delay_in_seconds)
+
+    assert False, (
+        "This should never be reached due to the raise in the last attempt"
+    )

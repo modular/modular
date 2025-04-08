@@ -35,7 +35,11 @@ from max.pipelines.core import (
 from .config import PipelineConfig
 from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceFile, download_weight_files
+from .hf_utils import (
+    HuggingFaceFile,
+    download_weight_files,
+    repo_exists_with_retry,
+)
 from .log_probabilities import compute_log_probabilities
 from .max_config import (
     KVCacheConfig,
@@ -102,4 +106,5 @@ __all__ = [
     "compute_log_probabilities",
     "upper_bounded_default",
     "download_weight_files",
+    "repo_exists_with_retry",
 ]
