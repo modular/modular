@@ -11,7 +11,6 @@ modular_py_test(
         "//Support/tools/system-info",
     ],
     tags = [
-        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],

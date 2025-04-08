@@ -58,7 +58,6 @@ modular_py_binary(
         },
         imports = ["."],
         tags = [
-            "manual",  # TODO(AITLIB-293)
             "no-sandbox",
             "requires-network",
         ] if src == "test_pipeline_batching.py" else [],
@@ -122,7 +121,6 @@ modular_py_test(
     tags = [
         "A100",
         "gpu",
-        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],

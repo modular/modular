@@ -12,7 +12,6 @@ modular_py_test(
     srcs = glob(["**/test_*.py"]),
     data = ["//ModularFramework/tools/mof"],
     tags = [
-        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],

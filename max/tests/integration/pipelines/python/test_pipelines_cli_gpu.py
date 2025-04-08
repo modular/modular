@@ -7,7 +7,6 @@
 import hf_repo_lock
 import pytest
 from max.entrypoints import pipelines
-from max.pipelines import PIPELINE_REGISTRY
 
 
 def test_pipelines_cli__smollm_bfloat16(capsys):
@@ -34,7 +33,6 @@ def test_pipelines_cli__smollm_bfloat16(capsys):
 
 
 def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(capsys):
-    PIPELINE_REGISTRY.reset()
     with pytest.raises(SystemExit):
         pipelines.main(
             [
