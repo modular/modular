@@ -191,7 +191,7 @@ struct MojoKernelFunctionAdaptor {
     bool isThrow = funcTypeGenerator.isThrows();
     uint64_t numberOfArgumentsRelatedToByrefResult =
         isThrow ? 2 : resultAsArgument;
-    uint64_t endOfInputArguments =
+    int64_t endOfInputArguments =
         argumentTypesNames.size() - numberOfArgumentsRelatedToByrefResult;
 
     for (size_t i = begOfInputArguments; i < endOfInputArguments; ++i) {
@@ -203,7 +203,9 @@ struct MojoKernelFunctionAdaptor {
 
     for (size_t i = 0; i < begOfInputArguments; ++i) {
       auto argTypeName = cast<StringAttr>(argumentTypesNames[i]).strref();
-      outputArguments.emplace_back(i, argTypeName, positionOfMutableTensors,
+      // Providing no mutable tensor positions because outputs can't be mutable
+      // inputs.
+      outputArguments.emplace_back(i, argTypeName, nullptr,
                                    positionOfFusedTensors, argumentSourceNames);
     }
 
@@ -212,12 +214,15 @@ struct MojoKernelFunctionAdaptor {
           argumentTypesNames[endOfInputArguments +
                              numberOfArgumentsRelatedToByrefResult - 1]);
       if (argTypeName) {
+        // Providing no mutable or fused tensor positions because they don't
+        // make sense for output results.
         outputResult = MojoKernelOperandAdaptor(
             endOfInputArguments + numberOfArgumentsRelatedToByrefResult - 1,
-            argTypeName.strref(), positionOfMutableTensors,
-            positionOfFusedTensors, argumentSourceNames);
+            argTypeName.strref(), nullptr, nullptr, argumentSourceNames);
       }
     } else if (resultTypeName) {
+      // Providing no mutable or fused tensor positions because they don't make
+      // sense for output results.
       outputResult = MojoKernelOperandAdaptor(
           {}, resultTypeName.strref(), nullptr, nullptr, argumentSourceNames);
     }
@@ -257,15 +262,22 @@ struct MojoKernelAdaptor {
   std::optional<MojoKernelFunctionAdaptor<FuncOpType>> shapeFunction;
 
   MojoKernelAdaptor(StringRef structName, FuncOpType execute, FuncOpType shape)
-      : originalStructName(structName),
-        registeredOpName(execute
+      : originalStructName(structName) {
+    if (execute) {
+      executeFunction.emplace(execute);
+      registeredOpName = execute
                              ->template getAttrOfType<StringAttr>(
                                  KGEN::MOGGPreElab::kMOGGExecuteFunctionLabel)
-                             .strref()) {
-    if (execute)
-      executeFunction.emplace(execute);
-    if (shape)
+                             .strref();
+    }
+
+    if (shape) {
       shapeFunction.emplace(shape);
+      registeredOpName = shape
+                             ->template getAttrOfType<StringAttr>(
+                                 KGEN::MOGGPreElab::kMOGGShapeFunctionLabel)
+                             .strref();
+    }
   }
 
   /// TODO: (GEX-1994) Remove this.
