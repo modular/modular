@@ -19,7 +19,14 @@ from dataclasses import dataclass
 from typing import Callable, Optional, Union
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    TensorType,
+    TensorValue,
+    Weight,
+    ops,
+)
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
@@ -32,10 +39,14 @@ from ..comm import Allreduce
 from ..kernels import (
     MHAMaskVariant,
     flare_mla_decode_ragged,
+    flare_mla_decompress_k_cache,
+    flare_mla_prefill_plan,
+    flare_mla_prefill_ragged,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     fused_qkv_ragged_matmul_quantized,
+    kv_cache_get_max_seq_len,
     matmul_k_cache_ragged,
     rms_norm_key_cache,
     unfused_qkv_ragged_matmul_gguf_quantized,
@@ -420,6 +431,8 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
         self.v_head_dim = v_head_dim
         self.cache_head_dim = kv_lora_rank + qk_rope_head_dim
 
+        self.BUFFER_TOK_SIZE = 16 * 1024
+
         self.scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
         self.devices = devices
 
@@ -502,6 +515,118 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
             "wqkv_bias is not implemented for LatentAttentionWithRope"
         )
 
+    def _mla_impl(
+        self,
+        xq_nope: TensorValue,
+        xq_rope: TensorValue,
+        kv_collection: PagedKVCacheCollection,
+        layer_idx: int,
+        input_row_offsets: TensorValue,
+    ) -> TensorValue:
+        def _mla_prefill() -> TensorValue:
+            # TODO (E2EOPT-170): currently we only support prefill the first chunk
+            # we won't get correct results if the total cache lengths of this batch
+            # is larger than BUFFER_TOK_SIZE
+
+            xq = ops.concat([xq_nope, xq_rope], axis=2)
+
+            (buffer_row_offsets, cache_offsets, buffer_lengths) = (
+                flare_mla_prefill_plan(
+                    self.kv_params,
+                    input_row_offsets,
+                    kv_collection,
+                    ops.constant(layer_idx, DType.uint32),
+                    self.BUFFER_TOK_SIZE,
+                )
+            )
+            buffer_lengths_host = buffer_lengths.to(DeviceRef.CPU())
+
+            kv_buffer = flare_mla_decompress_k_cache(
+                self.kv_params,
+                buffer_row_offsets[0, :],  # Process first chunk only
+                cache_offsets[0, :],
+                buffer_lengths_host[0],
+                self.kv_b_proj,
+                kv_collection,
+                ops.constant(layer_idx, DType.uint32),
+                self.BUFFER_TOK_SIZE,
+            )
+
+            kv_buffer = kv_buffer.reshape(
+                (-1, self.n_heads, self.qk_nope_head_dim + self.v_head_dim)
+            )
+            k_nope, v = ops.split(
+                kv_buffer, [self.qk_nope_head_dim, self.v_head_dim], axis=2
+            )
+
+            return flare_mla_prefill_ragged(
+                self.kv_params,
+                xq,
+                k_nope,
+                v,
+                input_row_offsets,
+                buffer_row_offsets[0, :],  # Process first chunk only
+                cache_offsets[0, :],
+                kv_collection,
+                ops.constant(layer_idx, DType.uint32),
+                MHAMaskVariant.CAUSAL_MASK,
+                self.scale,
+                self.qk_rope_head_dim,
+            )
+
+        def _mla_decode() -> TensorValue:
+            w_uk, w_uv = self.w_uk_uv
+            # from [B, H, D] to [H, B, D]
+            xq_nope_t = xq_nope.transpose(0, 1)
+
+            # batched matmul
+            xq_nope_proj = xq_nope_t @ w_uk
+            xq_nope_proj = xq_nope_proj.transpose(0, 1)
+            xq = ops.concat([xq_nope_proj, xq_rope], axis=2)
+
+            # Calculate Flash Attention.
+            attn_out = flare_mla_decode_ragged(
+                self.kv_params,
+                input=xq,
+                kv_collection=kv_collection,
+                layer_idx=ops.constant(layer_idx, DType.uint32),
+                input_row_offsets=input_row_offsets,
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=self.scale,
+            )
+
+            # from [B, H, D] to [H, B, D]
+            attn_out_latent = attn_out.transpose(0, 1)
+
+            # batched matmul
+            attn_out = attn_out_latent @ w_uv
+            return attn_out.transpose(0, 1)
+
+        # TODO: use max_lengths[0, 0] cause a CUDA_INVALID_MEMORY_ACCESS error,
+        # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
+        max_seq_len = kv_cache_get_max_seq_len(kv_collection)
+
+        result = ops.cond(
+            max_seq_len > 1,
+            [
+                TensorType(
+                    dtype=xq_nope.dtype,
+                    shape=[
+                        xq_nope.shape[0],
+                        self.n_heads,
+                        self.v_head_dim,
+                    ],
+                    device=xq_nope.device,
+                )
+            ],
+            _mla_prefill,
+            _mla_decode,
+        )[0].tensor
+
+        result = ops.reshape(result, shape=[result.shape[0], -1])
+
+        return result
+
     def __call__(
         self,
         x: TensorValue,
@@ -521,8 +646,6 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
             xq = self.q_a_layernorm(x @ self.q_a_proj.T) @ self.q_b_proj.T
         else:
             xq = x @ self.q_proj.T
-
-        w_uk, w_uv = self.w_uk_uv
 
         matmul_k_cache_ragged(
             self.kv_params,
@@ -566,36 +689,13 @@ class LatentAttentionWithRope(AttentionWithRopeV2):
             interleaved=True,
         )
 
-        # from [B, H, D] to [H, B, D]
-        xq_nope = xq_nope.transpose(0, 1)
-
-        # batched matmul
-        xq_nope_proj = xq_nope @ w_uk
-
-        xq_nope_proj = xq_nope_proj.transpose(0, 1)
-
-        xq = ops.concat([xq_nope_proj, xq_rope], axis=2)
-
-        # Calculate Flash Attention.
-        attn_out = flare_mla_decode_ragged(
-            self.kv_params,
-            input=xq,
-            kv_collection=kv_collection,
-            layer_idx=ops.constant(layer_idx, DType.uint32),
-            input_row_offsets=kwargs["input_row_offsets"],
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            scale=self.scale,
+        attn_out = self._mla_impl(
+            xq_nope,
+            xq_rope,
+            kv_collection,
+            layer_idx,
+            kwargs["input_row_offsets"],
         )
-
-        # from [B, H, D] to [H, B, D]
-        attn_out = attn_out.transpose(0, 1)
-
-        # batched matmul
-        attn_out_proj = attn_out @ w_uv
-
-        attn_out_proj = attn_out_proj.transpose(0, 1)
-
-        attn_out = ops.reshape(attn_out_proj, shape=[total_seq_len, -1])
 
         return self.o_proj(attn_out)
 

@@ -20,7 +20,14 @@ from typing import Optional, cast
 
 import numpy as np
 from max.dtype import DType
-from max.graph import Dim, TensorType, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    Dim,
+    TensorType,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.pipelines.kv_cache import (
@@ -1264,6 +1271,23 @@ def flare_mla_decompress_k_cache(
     )
 
     return results[1].tensor
+
+
+def kv_cache_get_max_seq_len(
+    kv_collection: PagedKVCacheCollection,
+) -> TensorValue:
+    """This kernel returns the maximum sequence length."""
+    return ops.inplace_custom(
+        "mo.kv_cache.get_max_seq_len.paged",
+        values=[kv_collection],
+        out_types=[
+            TensorType(
+                dtype=DType.uint32,
+                shape=[1],
+                device=DeviceRef.CPU(),
+            )
+        ],
+    )[0].tensor[0]
 
 
 def cross_attention_ragged(
