@@ -122,6 +122,8 @@ public:
   // - ...
   bool enableLLVMPerFunctionSplitting = false;
   bool enableParallelLLC = true;
+
+  std::string emissionOptions = "";
 };
 
 bool isGPUTriple(const llvm::Triple &triple);

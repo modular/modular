@@ -17,6 +17,7 @@
 #include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/NameMangling.h"
+#include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/SlicingUtils.h"
 #include "ObjectCompiler/KGENToLLVMPipeline.h"
@@ -40,6 +41,7 @@
 #include "llvm/Target/TargetMachine.h"
 
 #define DEBUG_TYPE "kgen-compiler"
+#define KGEN_DEBUG_TYPE "kgen-compiler"
 
 using namespace M;
 using namespace KGEN;
@@ -339,162 +341,181 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     const SymbolTable &symtab, CompilationOptions compilationOptions,
     ElaborateGeneratorsOptions elabOptions, mlir::DiagnosticEngine::HandlerID) {
 
-  DenseMap<TargetInfoAttr, DenseMap<uint64_t, OffloadCompilationResult>> result;
+  DenseMap<TargetInfoAttr,
+           DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
+      result;
 
   // Compiling offload for different targets.
   // This loop cannot be parallelized since different targets may need
   // different llvm options that are global states.
-  for (auto [target, offloadInfo] : targetOffloadInfos) {
+  for (auto [target, info] : targetOffloadInfos) {
 
-    DenseMap<uint64_t, OffloadCompilationResult> &targetResult = result[target];
+    DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>
+        &targetEmissionResult = result[target];
 
-    IRMapping mapping;
+    for (auto [emissionOptionsStr, offloadInfo] : info.groups) {
 
-    // Configure the compilation options given the new target.
-    compilationOptions.targetTriple = target.getTripleStr();
-    compilationOptions.targetCpu = target.getArch();
-    compilationOptions.targetFeatures = target.getFeatures();
-    if (compilationOptions.targetAccelerator.empty()) {
-      compilationOptions.targetAccelerator =
-          AsyncRT::Device::getAcceleratorArchOrEmpty();
-    }
-    compilationOptions.relocModel = target.getRelocationModel();
-    StringRef targetDataLayout = target.getDataLayout().toString();
-    if (!targetDataLayout.empty())
-      compilationOptions.targetDataLayout = targetDataLayout;
+      DenseMap<uint64_t, OffloadCompilationResult> &targetResult =
+          targetEmissionResult[emissionOptionsStr];
 
-    OwningOpRef<ModuleOp> module = produceStandaloneModule(
-        symtab, offloadInfo.exportedSymbols, mapping,
-        /*overrideExported*/ isGPUBackend(compilationOptions));
+      IRMapping mapping;
 
-    // Override the target.
-    eraseTargetInfo(*module);
-    setTargetInfo(*module, target);
-    SymbolTable slicedSymtab(*module);
-    for (auto [op, symbolInfo] : offloadInfo.symbols) {
-      // If there are input parameters, we have to go generate a stub to root
-      // instantiation of the generator. Go find the cloned generator.
-      auto func = cast<GeneratorOp>(op);
-      for (auto [symbol, kernelInfo] : symbolInfo) {
-        if (!symbol.getParamValues().empty()) {
-          generateInstantiateStub(func, symbol, kernelInfo.name, mapping,
-                                  &slicedSymtab, kernelInfo.kernelId);
-        } else {
-          // Set kernelId
-          GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
-          ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
-          SmallVector<Attribute> metadataArray =
-              llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
-          metadataArray.push_back(
-              StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"));
-          metadataArray.push_back(b.getIndexAttr(kernelInfo.kernelId));
-          sliced.setLLVMMetadataArrayAttr(
-              ArrayAttr::get(sliced.getContext(), metadataArray));
+      // Configure the compilation options given the new target.
+      compilationOptions.targetTriple = target.getTripleStr();
+      compilationOptions.targetCpu = target.getArch();
+      compilationOptions.targetFeatures = target.getFeatures();
+      if (compilationOptions.targetAccelerator.empty()) {
+        compilationOptions.targetAccelerator =
+            AsyncRT::Device::getAcceleratorArchOrEmpty();
+      }
+      compilationOptions.relocModel = target.getRelocationModel();
+      StringRef targetDataLayout = target.getDataLayout().toString();
+      if (!targetDataLayout.empty())
+        compilationOptions.targetDataLayout = targetDataLayout;
+      compilationOptions.emissionOptions = emissionOptionsStr;
+
+      OwningOpRef<ModuleOp> module = produceStandaloneModule(
+          symtab, offloadInfo.exportedSymbols, mapping,
+          /*overrideExported*/ isGPUBackend(compilationOptions));
+
+      // Override the target.
+      eraseTargetInfo(*module);
+      setTargetInfo(*module, target);
+      SymbolTable slicedSymtab(*module);
+      for (auto [op, symbolInfo] : offloadInfo.symbols) {
+        // If there are input parameters, we have to go generate a stub to root
+        // instantiation of the generator. Go find the cloned generator.
+        auto func = cast<GeneratorOp>(op);
+        for (auto [symbol, kernelInfo] : symbolInfo) {
+          if (!symbol.getParamValues().empty()) {
+            generateInstantiateStub(func, symbol, kernelInfo.name, mapping,
+                                    &slicedSymtab, kernelInfo.kernelId);
+          } else {
+            // Set kernelId
+            GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
+            ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
+            SmallVector<Attribute> metadataArray =
+                llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
+            metadataArray.push_back(
+                StringAttr::get(sliced->getContext(), "kgen.offload.kernelid"));
+            metadataArray.push_back(b.getIndexAttr(kernelInfo.kernelId));
+            sliced.setLLVMMetadataArrayAttr(
+                ArrayAttr::get(sliced.getContext(), metadataArray));
+          }
         }
       }
-    }
 
-    // Initialize the object compiler.
-    ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
-        ObjectCompiler::create(".mojo_cache", compilationOptions, /*isJIT=*/
-                               false, *target.getContext());
+      // Initialize the object compiler.
+      ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
+          ObjectCompiler::create(".mojo_cache", compilationOptions, /*isJIT=*/
+                                 false, *target.getContext());
 
-    if (compilerOr.isError())
-      return compilerOr.takeError();
+      if (compilerOr.isError())
+        return compilerOr.takeError();
 
-    std::unique_ptr<ObjectCompiler> compiler = compilerOr.takeValue();
+      std::unique_ptr<ObjectCompiler> compiler = compilerOr.takeValue();
 
-    // Initialize the target machine.
-    auto tmOr = createTargetMachine(compilationOptions, /*isJIT=*/false);
-    if (tmOr.isError())
-      return tmOr.takeError();
-    std::unique_ptr<llvm::TargetMachine> tm = tmOr.takeValue();
+      // Initialize the target machine.
+      auto tmOr = createTargetMachine(compilationOptions, /*isJIT=*/false);
+      if (tmOr.isError())
+        return tmOr.takeError();
+      std::unique_ptr<llvm::TargetMachine> tm = tmOr.takeValue();
 
-    // Run elaboration through to the end of the optimization pipeline.
-    mlir::PassManager pm(target.getContext());
-    if constexpr (KGEN::kIsTracingEnabled)
-      pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
-    configurePassManager(pm);
+      // Run elaboration through to the end of the optimization pipeline.
+      mlir::PassManager pm(target.getContext());
+      if constexpr (KGEN::kIsTracingEnabled)
+        pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
+      configurePassManager(pm);
 
-    pm.addPass(
-        createElaborateGenerators(target, elabOptions, compilationOptions,
-                                  compileElaboratorAsm, compileOffloads));
+      pm.addPass(
+          createElaborateGenerators(target, elabOptions, compilationOptions,
+                                    compileElaboratorAsm, compileOffloads));
 
-    buildPostElaborationPipeline(pm, compilationOptions);
+      buildPostElaborationPipeline(pm, compilationOptions);
 
-    if (failed(pm.run(*module)))
-      return Error("failed to run the pass manager for offload functions");
+      if (failed(pm.run(*module)))
+        return Error("failed to run the pass manager for offload functions");
 
-    llvm::MapVector<uint64_t, std::pair<OwningOpRef<FuncOp>, unsigned>>
-        captures;
+      llvm::MapVector<uint64_t, std::pair<OwningOpRef<FuncOp>, unsigned>>
+          captures;
 
-    llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds;
+      llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds;
 
-    for (auto [op, symbols] : offloadInfo.symbols) {
-      for (auto [symbol, kernel] : symbols) {
+      for (auto [op, symbols] : offloadInfo.symbols) {
+        for (auto [symbol, kernel] : symbols) {
 
-        auto [capturesFunc, numCaptures] =
-            writeCaptureArgs(*module, kernel.name);
+          auto [capturesFunc, numCaptures] =
+              writeCaptureArgs(*module, kernel.name);
 
-        captures.insert({kernel.kernelId,
-                         std::make_pair(std::move(capturesFunc), numCaptures)});
-        kernelEmissionKinds.insert({kernel.kernelId, kernel.emissionKinds});
-      }
-    }
-
-    // Handle the emission options.
-    // These are the global llvm options needed to compile this target.
-    // These options can't be kernel specific since they are global llvm states,
-    // they are shared for parallel kernel compilation.
-    // However, offloads for different targets won't have to share since
-    // we compile them in order and we can reset these options for each targets.
-    ErrorOrSuccess parseResult =
-        parseEmissionOptions(offloadInfo.emissionOptions);
-    if (parseResult.isError()) {
-      return parseResult.takeError();
-    }
-
-    ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>> compiledKernelsOr =
-        compiler->emitGPUKernels(std::move(module), kernelEmissionKinds);
-
-    if (compiledKernelsOr.isError())
-      return compiledKernelsOr.takeError();
-
-    OpBuilder b(theModule);
-    for (auto idAndKernels : *compiledKernelsOr) {
-      uint64_t kernelID = idAndKernels.first;
-      DenseMap<EmitAs, BufferRef> &bufs = idAndKernels.second;
-
-      auto iter = captures.find(kernelID);
-      if (iter == captures.end())
-        return Error("Can't find offload capture.");
-
-      OwningOpRef<FuncOp> func = std::move(iter->second.first);
-      unsigned numCaptures = iter->second.second;
-
-      auto populate = cast<FuncOp>(func.get());
-      auto populateFnRef = SymbolConstantAttr::get(populate);
-      DenseMap<EmitAs, StringAttr> contents;
-
-      for (auto kindAndContent : bufs) {
-        EmitAs kind = kindAndContent.first;
-        contents.insert(
-            {kind, StringAttr::get(kindAndContent.second->getBuffer(),
-                                   StringType::get(theModule->getContext()))});
+          captures.insert(
+              {kernel.kernelId,
+               std::make_pair(std::move(capturesFunc), numCaptures)});
+          kernelEmissionKinds.insert({kernel.kernelId, kernel.emissionKinds});
+        }
       }
 
-      targetResult.insert(
-          {kernelID, OffloadCompilationResult{{std::move(func)},
-                                              b.getIndexAttr(numCaptures),
-                                              populateFnRef,
-                                              std::move(contents)}});
-    }
+      // Handle the emission options.
+      // These are the global llvm options needed to compile this target.
+      // These options can't be kernel specific since they are global llvm
+      // states, they are shared for parallel kernel compilation. However,
+      // offloads for different targets won't have to share since we compile
+      // them in order and we can reset these options for each targets.
+      SmallVector<StringRef> emissionOptions;
+      emissionOptionsStr.split(emissionOptions, /*Separator=*/",",
+                               /*MaxSplit=*/-1, /*KeepEmpty=*/false);
 
-    // Reset the global llvm options once compiling this target is done.
-    ErrorOrSuccess resetResult =
-        resetEmissionOptions(offloadInfo.emissionOptions);
-    if (resetResult.isError()) {
-      return resetResult.takeError();
+      KGEN_DEBUG(0, {
+        llvm::dbgs() << "Emit offloads with options: " << emissionOptionsStr
+                     << "\n";
+      });
+      ErrorOrSuccess parseResult = parseEmissionOptions(emissionOptions);
+      if (parseResult.isError()) {
+        return parseResult.takeError();
+      }
+
+      ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>
+          compiledKernelsOr =
+              compiler->emitGPUKernels(std::move(module), kernelEmissionKinds);
+
+      if (compiledKernelsOr.isError())
+        return compiledKernelsOr.takeError();
+
+      OpBuilder b(theModule);
+      for (auto idAndKernels : *compiledKernelsOr) {
+        uint64_t kernelID = idAndKernels.first;
+        DenseMap<EmitAs, BufferRef> &bufs = idAndKernels.second;
+
+        auto iter = captures.find(kernelID);
+        if (iter == captures.end())
+          return Error("Can't find offload capture.");
+
+        OwningOpRef<FuncOp> func = std::move(iter->second.first);
+        unsigned numCaptures = iter->second.second;
+
+        auto populate = cast<FuncOp>(func.get());
+        auto populateFnRef = SymbolConstantAttr::get(populate);
+        DenseMap<EmitAs, StringAttr> contents;
+
+        for (auto kindAndContent : bufs) {
+          EmitAs kind = kindAndContent.first;
+          contents.insert(
+              {kind,
+               StringAttr::get(kindAndContent.second->getBuffer(),
+                               StringType::get(theModule->getContext()))});
+        }
+
+        targetResult.insert(
+            {kernelID, OffloadCompilationResult{{std::move(func)},
+                                                b.getIndexAttr(numCaptures),
+                                                populateFnRef,
+                                                std::move(contents)}});
+      }
+
+      // Reset the global llvm options once compiling this target is done.
+      ErrorOrSuccess resetResult = resetEmissionOptions(emissionOptions);
+      if (resetResult.isError()) {
+        return resetResult.takeError();
+      }
     }
   }
 
@@ -759,7 +780,8 @@ setEmissionOptions(llvm::StringMap<llvm::cl::Option *> &options,
     else
       intVal->addOccurrence(0, key, value);
   } else {
-    return Error("invalid emission option (only boolean and integer values "
+    return Error("invalid emission option \"" + emissionOpt +
+                 "\" (only boolean and integer values "
                  "are currently supported)");
   }
   return success();
@@ -779,23 +801,7 @@ ErrorOrSuccess KGEN::parseEmissionOptions(EmissionOptions emissionOptions) {
   return success();
 }
 
-ErrorOrSuccess
-KGEN::parseEmissionOptions(llvm::SmallSet<StringRef, 4> &emissionOptions) {
-  // Handle the emission options.
-  // Parse the emission options from a comma separated list of values.
-  llvm::StringMap<llvm::cl::Option *> options =
-      llvm::cl::getRegisteredOptions();
-
-  for (StringRef elem : emissionOptions) {
-    ErrorOrSuccess setOr = setEmissionOptions(options, elem, false);
-    if (setOr.isError())
-      return setOr.takeError();
-  }
-  return success();
-}
-
-ErrorOrSuccess
-KGEN::resetEmissionOptions(llvm::SmallSet<StringRef, 4> &emissionOptions) {
+ErrorOrSuccess KGEN::resetEmissionOptions(EmissionOptions emissionOptions) {
   // Handle the emission options.
   // Parse the emission options from a comma separated list of values.
   llvm::StringMap<llvm::cl::Option *> options =

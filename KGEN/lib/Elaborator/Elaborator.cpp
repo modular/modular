@@ -1691,13 +1691,11 @@ ElaborationState Elaborator::bundleOffloadModules(ImplNode *parent,
   // primary generator, and the functor will return an error.
 
   targetOffloadInfos.modify([&](auto &info) {
-    OffloadInfo &offloadInfo = info[target];
-
-    for (StringRef emissionOpt : emissionOptions)
-      offloadInfo.emissionOptions.insert(emissionOpt);
+    OffloadInfo::Group &offloadInfo = info[target].groups[emissionOptionsStr];
 
     auto iter =
-        offloadInfo.symbols.insert({func, OffloadInfo::SymbolInfo{}}).first;
+        offloadInfo.symbols.insert({func, OffloadInfo::Group::SymbolInfo{}})
+            .first;
 
     auto pair = iter->second.insert(
         {symbol, OffloadInfo::KernelInfo{
@@ -1984,7 +1982,8 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 
 static WalkResult rewriteCompileOffloadOp(
     CompileOffloadOp op, Location loc,
-    DenseMap<TargetInfoAttr, DenseMap<uint64_t, OffloadCompilationResult>>
+    DenseMap<TargetInfoAttr,
+             DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
         &compiledOffload,
     bool &failed) {
   // Plug offload compilation results as strings back to the elaborated IR.
@@ -1992,6 +1991,8 @@ static WalkResult rewriteCompileOffloadOp(
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
   TargetInfoAttr target =
       cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
+  StringRef emissionOptionsStr =
+      cast<StringAttr>(op.getEmissionOptionAttr()).getValue();
 
   auto targetIter = compiledOffload.find(target);
   if (targetIter == compiledOffload.end()) {
@@ -2003,8 +2004,20 @@ static WalkResult rewriteCompileOffloadOp(
     return WalkResult::interrupt();
   }
 
-  auto iter = targetIter->second.find(kernelId);
-  if (iter == targetIter->second.end()) {
+  auto iter0 = targetIter->second.find(emissionOptionsStr);
+  if (iter0 == targetIter->second.end()) {
+    ErrorTree compileOffloadError(
+        loc, "compile offload result missing emissionOptions \"" +
+                 emissionOptionsStr + "\"");
+    std::move(compileOffloadError)
+        .emit([](Location loc) { return mlir::emitError(loc); },
+              "Compile offload failed.");
+    failed = true;
+    return WalkResult::interrupt();
+  }
+
+  auto iter = iter0->second.find(kernelId);
+  if (iter == iter0->second.end()) {
     ErrorTree compileOffloadError(loc,
                                   "compile offload result missing kernelId " +
                                       std::to_string(kernelId));
@@ -2134,20 +2147,23 @@ Elaborator::run(ModuleOp theModule,
 
   handler.release();
 
-  DenseMap<TargetInfoAttr, DenseMap<uint64_t, OffloadCompilationResult>>
+  DenseMap<TargetInfoAttr,
+           DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>
       compiledOffload = compiledOffloadOr.takeValue();
 
   for (auto &[target, result] : compiledOffload) {
-    for (auto &[_, kernel] : result) {
-      auto populate = cast<FuncOp>(kernel.func.get());
-      auto symbol = SymbolConstantAttr::get(populate);
+    for (auto &[_, group] : result) {
+      for (auto &[_, kernel] : group) {
+        auto populate = cast<FuncOp>(kernel.func.get());
+        auto symbol = SymbolConstantAttr::get(populate);
 
-      FuncOp func = *getConcreteFunction(nullptr, populate.getLoc(), symbol);
-      if (func) {
-        // Now filling in the actual body of the populate closure which is
-        // generated while compiling all the offload functions.
-        func.getBodyRegion().takeBody(
-            cast<FuncOp>(*kernel.func).getBodyRegion());
+        FuncOp func = *getConcreteFunction(nullptr, populate.getLoc(), symbol);
+        if (func) {
+          // Now filling in the actual body of the populate closure which is
+          // generated while compiling all the offload functions.
+          func.getBodyRegion().takeBody(
+              cast<FuncOp>(*kernel.func).getBodyRegion());
+        }
       }
     }
   }

@@ -1611,6 +1611,9 @@ lowerLLVMModuleToObject(llvm::Module &inputModule, Location loc,
   *keyBuf << ")";
   *keyBuf << " emitAs = " << emissionKind;
   *keyBuf << " isJIT = " << isJIT;
+  if (!options.emissionOptions.empty())
+    *keyBuf << " emissionOptions = " << options.emissionOptions;
+
   size_t nonBitcodeKeySize = keyBuf->getBufferSize();
 
   llvm::WriteBitcodeToFile(inputModule, *keyBuf);
