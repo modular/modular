@@ -162,11 +162,16 @@ class PipelineRegistry:
         self.architectures[architecture.name] = architecture
 
     def retrieve_architecture(
-        self, model_path: str, trust_remote_code: bool = False
+        self,
+        model_path: str,
+        trust_remote_code: bool,
+        huggingface_revision: str,
     ) -> Optional[SupportedArchitecture]:
         # Retrieve model architecture names
         architecture_names = get_architectures_from_huggingface_repo(
-            model_path, trust_remote_code
+            model_path=model_path,
+            trust_remote_code=trust_remote_code,
+            huggingface_revision=huggingface_revision,
         )
 
         if not architecture_names:
@@ -864,8 +869,9 @@ class PipelineRegistry:
 
             # MAX pipeline
             arch = self.retrieve_architecture(
-                pipeline_config.model_config.model_path,
-                pipeline_config.model_config.trust_remote_code,
+                model_path=pipeline_config.model_config.model_path,
+                trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                huggingface_revision=pipeline_config.model_config.huggingface_revision,
             )
 
             # Load HuggingFace Config

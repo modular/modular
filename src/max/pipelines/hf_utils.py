@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 import huggingface_hub
+from huggingface_hub import constants as hf_hub_constants
 from huggingface_hub import errors as hf_hub_errors
 from huggingface_hub import (
     file_exists,
@@ -43,12 +44,15 @@ logger = logging.getLogger("max.pipelines")
 
 
 def get_architectures_from_huggingface_repo(
-    model_path: str, trust_remote_code: bool = False
+    model_path: str,
+    trust_remote_code: bool = False,
+    huggingface_revision: str = hf_hub_constants.DEFAULT_REVISION,
 ) -> list[str]:
     # Retrieve architecture from model config.
     config = AutoConfig.from_pretrained(
         model_path,
         trust_remote_code=trust_remote_code,
+        revision=huggingface_revision,
     )
 
     return getattr(config, "architectures", [])

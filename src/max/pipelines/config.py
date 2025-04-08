@@ -259,8 +259,9 @@ class PipelineConfig(MAXConfig):
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            self.draft_model,
+            model_path=self.draft_model,
             trust_remote_code=self.model_config.trust_remote_code,
+            huggingface_revision=self.model_config.huggingface_revision,
         )
 
         if not draft_arch:
@@ -268,8 +269,9 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            self.model_config.model_path,
+            model_path=self.model_config.model_path,
             trust_remote_code=self.model_config.trust_remote_code,
+            huggingface_revision=self.model_config.huggingface_revision,
         )
         if not target_arch:
             msg = "MAX-Optimized architecture not found for target model (`model_path`)"
@@ -279,14 +281,17 @@ class PipelineConfig(MAXConfig):
             msg = f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
             raise ValueError(msg)
 
+        # TODO: Cache these tokenizers HF calls too.
         # Validate that their tokenizers are identical.
         draft_tokenizer = AutoTokenizer.from_pretrained(
             self.draft_model,
             trust_remote_code=self.model_config.trust_remote_code,
+            revision=self.model_config.huggingface_revision,
         )
         target_tokenizer = AutoTokenizer.from_pretrained(
             self.model_config.model_path,
             trust_remote_code=self.model_config.trust_remote_code,
+            revision=self.model_config.huggingface_revision,
         )
 
         # Compare Vocabularies
@@ -315,6 +320,7 @@ class PipelineConfig(MAXConfig):
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             model_path=self.model_config.model_path,
             trust_remote_code=self.model_config.trust_remote_code,
+            huggingface_revision=self.model_config.huggingface_revision,
         )
 
         # If nothing is provided, we should not update any more params.
