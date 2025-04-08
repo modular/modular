@@ -34,6 +34,7 @@ constexpr StringLiteral MOGG_ARG_PARAMS = "mogg.arg_params";
 constexpr StringLiteral MOGG_RESULT_PARAMS = "mogg.result_params";
 constexpr StringLiteral MOGG_ARG_TYPE_NAMES = "mogg.arg_type_names";
 constexpr StringLiteral MOGG_RESULT_TYPE_NAME = "mogg.result_type_name";
+constexpr StringLiteral MOGG_INPUT_PARAM_TYPES = "mogg.input_param_types";
 
 // The names as they appear in the lit source.
 constexpr StringLiteral MOGG_ARG_SRC_NAMES = "mogg.arg_src_names";
@@ -215,6 +216,9 @@ constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
 constexpr StringLiteral
     MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_LIST_TYPE_NAME =
         "runtime::DeviceContextPtrList";
+
+constexpr StringLiteral MOJO_INTERNAL_STATIC_STRING_TYPE_NAME =
+    "stdlib::StringSlice";
 
 //===----------------------------------------------------------------------===//
 // Parameter Inference
