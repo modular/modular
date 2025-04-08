@@ -27,4 +27,5 @@ from ._utils import (
     random,
     zero,
     Mode,
+    random_float8,
 )

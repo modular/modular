@@ -9,7 +9,7 @@ from random import rand
 from sys import argv, env_get_string, is_defined
 from sys.info import alignof
 from collections.string import StaticString
-
+from random import random_float64
 from benchmark import (
     Bench,
     Bencher,
@@ -575,3 +575,13 @@ struct Mode:
         if mode._value == self._value == Self.NONE._value:
             return True
         return True if self._value & mode._value else False
+
+
+fn random_float8[
+    dtype: DType
+](buffer: NDBuffer[mut=True, dtype, **_],):
+    constrained[dtype == DType.float8_e4m3fn, "Only support float8_e4m3fn"]()
+    var size = buffer.num_elements()
+    for i in range(size):
+        var rnd = (random_float64(0, 1.0) - 0.5) * 2.0
+        buffer.data[i] = rnd.cast[dtype]()
