@@ -46,6 +46,7 @@ def generate_max_outputs(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
+    use_prefill: bool = True,
 ) -> torch.Tensor:
     device0 = Accelerator(0)
     devices = [device0]
@@ -130,7 +131,8 @@ def generate_max_outputs(
     compiled = session.load(g, weights_registry=latent_attention.state_dict())
 
     batch_size = 1
-    prompt_lens = [1]
+    total_tokens = input_tensor.shape[1]
+    prompt_lens = [total_tokens] if use_prefill else [1]
 
     # Claim seq_ids in cache.
     seq_ids = []
@@ -151,17 +153,43 @@ def generate_max_outputs(
         for i, s in enumerate(seq_ids)
     ]
 
-    all_outputs = []
+    if not use_prefill:
+        # for MLA, we actually run different graphs for max_seq_len = 1 and
+        # max_seq_len > 1, In this case, we loop through the tokens to run
+        # the decode graph.
+        all_outputs = []
+        for tok_idx in range(total_tokens):
+            # prepare current token's inputs
+            fetch_args = kv_manager.fetch(batch)[0]
+            input_tensor_device = (
+                Tensor.from_numpy(
+                    input_tensor[:, tok_idx, :].view(torch.float16).numpy()
+                )
+                .view(DType.bfloat16)
+                .to(device0)
+            )
 
-    # current implementation of latent attention only supports seq_len = 1
-    # so we need to loop through the tokens
-    for tok_idx in range(input_tensor.shape[1]):
-        # prepare current token's inputs
+            max_output = compiled.execute(
+                input_tensor_device,
+                input_row_offsets.to(device0),
+                *fetch_args,
+                copy_inputs_to_device=False,
+            )
+
+            for ctx in batch:
+                # update the context a dummy token
+                ctx.update(42)
+
+            kv_manager.step(batch)
+            torch_output = from_dlpack(max_output[0]).to(torch.bfloat16)
+            all_outputs.append(torch_output[:, None, :].to("cpu"))
+
+        return torch.concat(all_outputs, dim=1)
+
+    else:
         fetch_args = kv_manager.fetch(batch)[0]
         input_tensor_device = (
-            Tensor.from_numpy(
-                input_tensor[:, tok_idx, :].view(torch.float16).numpy()
-            )
+            Tensor.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
             .view(DType.bfloat16)
             .to(device0)
         )
@@ -173,20 +201,15 @@ def generate_max_outputs(
             copy_inputs_to_device=False,
         )
 
-        for ctx in batch:
-            ctx.update(42)
+        torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
 
-        kv_manager.step(batch)
-        torch_output = from_dlpack(max_output[0]).to(torch.bfloat16)
-        all_outputs.append(torch_output[:, None, :].to("cpu"))
-
-    return torch.concat(all_outputs, dim=1)
+        return torch_output[None, :, :]
 
 
 @pytest.mark.skipif(
     accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
 )
-def test_latent_attention(
+def test_latent_attention_prefill(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
     attention_mask: torch.Tensor,
@@ -195,11 +218,37 @@ def test_latent_attention(
     torch_output = generate_torch_outputs(
         config, input_tensor, attention_mask, attention_weights
     )
-    max_output = generate_max_outputs(config, input_tensor, attention_weights)
+    max_output = generate_max_outputs(
+        config, input_tensor, attention_weights, use_prefill=True
+    )
 
     torch.testing.assert_close(
         torch_output,
         max_output,
-        rtol=2e-2,
-        atol=2e-2,
+        rtol=1e-2,
+        atol=1e-2,
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
+)
+def test_latent_attention_decode(
+    config: DeepseekV2Config,
+    input_tensor: torch.Tensor,
+    attention_mask: torch.Tensor,
+    attention_weights: dict[str, torch.Tensor],
+) -> None:
+    torch_output = generate_torch_outputs(
+        config, input_tensor, attention_mask, attention_weights
+    )
+    max_output = generate_max_outputs(
+        config, input_tensor, attention_weights, use_prefill=False
+    )
+
+    torch.testing.assert_close(
+        torch_output,
+        max_output,
+        rtol=1e-2,
+        atol=1e-2,
     )
