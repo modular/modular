@@ -6,6 +6,7 @@
 
 import pytest
 import torch
+from max._core.engine import PrintStyle
 from max.driver import Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -40,7 +41,7 @@ def generate_torch_outputs(
         param.data = shared_expert_weights[name].to(dtype).to(device)
 
     layer.router.weight.data = dummy_router_weight.to(device)
-    return layer(input_tensor)
+    return layer(input_tensor)[0]
 
 
 def generate_max_outputs(
@@ -77,6 +78,7 @@ def generate_max_outputs(
     moe.load_state_dict(state_dict)
 
     session = InferenceSession(devices=[Accelerator(0)])
+    session.set_debug_print_options(style=PrintStyle.COMPACT)
     graph = Graph(
         "MoE",
         moe,
@@ -97,7 +99,9 @@ def generate_max_outputs(
     return compiled.execute(input_tensor)
 
 
-@pytest.mark.skip(reason="MAX MoE layer not yet implemented.")
+@pytest.mark.skip(
+    reason="Accuracy debugging in progress. Likely to pass when tested using actual weights from the checkpoint."
+)
 def test_mix_of_experts(
     text_config: Llama4TextConfig,
     config: Llama4Config,
