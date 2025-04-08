@@ -338,8 +338,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 total_weights_size += os.path.getsize(local_file_location)
                 continue
 
-            # 2. File not found locally.
-            # If it was a local repo, the helper returning None means error.
+            # 2. File not found locally or non-existence is cached.
             if repo.repo_type == RepoType.local:
                 raise FileNotFoundError(
                     f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
@@ -681,12 +680,15 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         repo = self.huggingface_weights_repo
 
+        # Check direct path first (absolute or relative to CWD).
+        # NOTE(bduke): do this even for online repositories, because upstream
+        # code originating from `huggingface_hub.hf_hub_download` returns
+        # absolute paths for cached files.
+        if relative_path.exists() and relative_path.is_file():
+            return str(relative_path.resolve())
+
         # 1. Handle local repository paths.
         if repo.repo_type == RepoType.local:
-            # Check direct path first (absolute or relative to CWD).
-            if relative_path.exists() and relative_path.is_file():
-                return str(relative_path.resolve())
-
             # Not found locally.
             return None
 
@@ -694,11 +696,20 @@ class MAXModelConfig(MAXModelConfigBase):
         elif repo.repo_type == RepoType.online:
             # `try_to_load_from_cache` checks the HF cache.
             # Returns absolute path string if found in cache, otherwise None.
-            return try_to_load_from_cache(
+            cached_result = try_to_load_from_cache(
                 repo_id=repo.repo_id,
                 filename=str(relative_path),
                 revision=repo.revision,
             )
+            if cached_result and not isinstance(
+                cached_result, (str, os.PathLike)
+            ):
+                # Handle cached non-existent result, which is a special sentinel value.
+                raise FileNotFoundError(
+                    f"cached non-existent weight file at {relative_path} on Hugging Face"
+                )
+
+            return str(cached_result)
         # 3. Handle unexpected repo type.
         else:
             logger.warning(
