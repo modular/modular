@@ -738,7 +738,7 @@ fn _cublasLt_matmul(
     # 8) intptr_t(B) % 16 == 0
     # 9) intptr_t(C) % 16 == 0
 
-    # set the transforms for A and B
+    # TN format required for FP8
     var transa = cublasOperation_t.CUBLAS_OP_T
     var transb = cublasOperation_t.CUBLAS_OP_N
 
@@ -746,10 +746,10 @@ fn _cublasLt_matmul(
     var beta = Float32(0.0)
 
     # create operation desciriptor; see cublasLtMatmulDescAttributes_t for details about defaults;
-    var operationDesc = cublasLtMatmulDesc_t()
+    var compute_desc = cublasLtMatmulDesc_t()
     check_cublas_error(
         cublasLtMatmulDescCreate(
-            UnsafePointer.address_of(operationDesc),
+            UnsafePointer.address_of(compute_desc),
             ComputeType.COMPUTE_32F,
             DataType.R_32F,
         )
@@ -757,7 +757,7 @@ fn _cublasLt_matmul(
 
     check_cublas_error(
         cublasLtMatmulDescSetAttribute(
-            operationDesc,
+            compute_desc,
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSA,
             UnsafePointer.address_of(transa).bitcast[NoneType](),
             sizeof[cublasOperation_t](),
@@ -765,7 +765,7 @@ fn _cublasLt_matmul(
     )
     check_cublas_error(
         cublasLtMatmulDescSetAttribute(
-            operationDesc,
+            compute_desc,
             cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_TRANSB,
             UnsafePointer.address_of(transb).bitcast[NoneType](),
             sizeof[cublasOperation_t](),
@@ -823,36 +823,39 @@ fn _cublasLt_matmul(
         cublasLtMatmulPreferenceCreate(UnsafePointer.address_of(preference))
     )
 
-    var workspaceSize = 0
-    # var workspaceSize = 32 * 1024 * 1024
-    # check_cublas_error(
-    #     cublasLtMatmulPreferenceSetAttribute(
-    #         preference,
-    #         Preference.MAX_WORKSPACE_BYTES,
-    #         UnsafePointer.address_of(workspaceSize).bitcast[NoneType](),
-    #         sizeof[Int]()
-    #     )
-    # )
+    var workspace_size = 32 * 1024 * 1024
+    check_cublas_error(
+        cublasLtMatmulPreferenceSetAttribute(
+            preference,
+            Preference.MAX_WORKSPACE_BYTES,
+            UnsafePointer.address_of(workspace_size).bitcast[NoneType](),
+            sizeof[Int64](),
+        )
+    )
 
-    var heuristicResult = cublasLtMatmulHeuristicResult_t()
-    var returnedResults = 0
+    var heuristic_result = cublasLtMatmulHeuristicResult_t()
+    var returned_results = 0
     check_cublas_error(
         cublasLtMatmulAlgoGetHeuristic(
             handle,
-            operationDesc,
+            compute_desc,
             _adesc,
             _bdesc,
             _cdesc,
             _ddesc,
             preference,
             1,
-            UnsafePointer.address_of(heuristicResult),
-            UnsafePointer.address_of(returnedResults),
+            UnsafePointer.address_of(heuristic_result),
+            UnsafePointer.address_of(returned_results),
         )
     )
 
-    if returnedResults == 0:
+    if returned_results == 0:
         raise Error("No algorithm was found!")
+
+    var matmul_workspace_ptr = ctx.enqueue_create_buffer[DType.uint8](
+        workspace_size
+    ).unsafe_ptr()
 
     var cuda_stream = CUDA(ctx.stream())
 
@@ -860,7 +863,7 @@ fn _cublasLt_matmul(
         check_cublas_error(
             cublasLtMatmul(
                 handle,  # light_handle
-                operationDesc,  # compute_desc
+                compute_desc,  # compute_desc
                 UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
                 UnsafePointer(b.data.bitcast[NoneType]()),  # _a
                 _adesc,  # _adesc
@@ -871,9 +874,11 @@ fn _cublasLt_matmul(
                 _cdesc,  # _cdesc
                 UnsafePointer(d.data.bitcast[NoneType]()),  # _d
                 _ddesc,  # _ddesc
-                UnsafePointer.address_of(heuristicResult.algo),  # algo
-                UnsafePointer[NoneType](),  # workspace
-                workspaceSize,  # workspace_size_in_bytes
+                UnsafePointer.address_of(heuristic_result.algo),  # algo
+                UnsafePointer(
+                    matmul_workspace_ptr.bitcast[NoneType]()
+                ),  # workspace
+                workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
             )
         )
@@ -881,7 +886,7 @@ fn _cublasLt_matmul(
         check_cublas_error(
             cublasLtMatmul(
                 handle,  # light_handle
-                operationDesc,  # compute_desc
+                compute_desc,  # compute_desc
                 UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
                 UnsafePointer(a.data.bitcast[NoneType]()),  # _a
                 _adesc,  # _adesc
@@ -892,16 +897,18 @@ fn _cublasLt_matmul(
                 _cdesc,  # _cdesc
                 UnsafePointer(d.data.bitcast[NoneType]()),  # _d
                 _ddesc,  # _ddesc
-                UnsafePointer.address_of(heuristicResult.algo),  # algo
-                UnsafePointer[NoneType](),  # workspace
-                workspaceSize,  # workspace_size_in_bytes
+                UnsafePointer.address_of(heuristic_result.algo),  # algo
+                UnsafePointer(
+                    matmul_workspace_ptr.bitcast[NoneType]()
+                ),  # workspace
+                workspace_size,  # workspace_size_in_bytes
                 cuda_stream[],  # stream
             )
         )
 
     ctx.synchronize()
 
-    check_cublas_error(cublasLtMatmulDescDestroy(operationDesc))
+    check_cublas_error(cublasLtMatmulDescDestroy(compute_desc))
     check_cublas_error(cublasLtMatrixLayoutDestroy(_adesc))
     check_cublas_error(cublasLtMatrixLayoutDestroy(_bdesc))
     check_cublas_error(cublasLtMatrixLayoutDestroy(_cdesc))
