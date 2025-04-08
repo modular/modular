@@ -43,6 +43,8 @@ def distribute_value(v, devices: list[DeviceRef]):
 
 
 class Llama4DecoderLayer(Module):
+    """Llama4 decoder attention block."""
+
     def __init__(
         self,
         rope: OptimizedRotaryEmbedding,
@@ -51,6 +53,10 @@ class Llama4DecoderLayer(Module):
         devices: list[DeviceRef],
     ):
         super().__init__()
+        if config.no_rope_layers:
+            use_rope = layer_idx in config.no_rope_layers
+        else:
+            use_rope = (layer_idx + 1) % config.no_rope_layer_interval == 0
         self.self_attn = Llama4TextAttention(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
@@ -63,6 +69,8 @@ class Llama4DecoderLayer(Module):
             floor_scale=config.floor_scale,
             attn_scale=config.attn_scale,
             devices=config.devices,
+            use_rope=use_rope,
+            use_qk_norm=config.use_qk_norm,
         )
         self.is_moe_layer = layer_idx in config.moe_layers
         self.feed_forward: Module
@@ -94,6 +102,7 @@ class Llama4DecoderLayer(Module):
     def __call__(
         self,
         xs: list[TensorValue],
+        distributed_cache_positions: list[TensorValue],
         signal_buffers: list[BufferValue],
         kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
@@ -102,6 +111,7 @@ class Llama4DecoderLayer(Module):
     ) -> list[TensorValue]:
         attn_outs = self.self_attn(
             self.input_layernorm(xs),
+            distributed_cache_positions,
             kv_collections,
             signal_buffers=signal_buffers,
             **kwargs,
@@ -113,14 +123,19 @@ class Llama4DecoderLayer(Module):
             signal_buffers=signal_buffers,
         )
         if len(mlp_outs) == 1:
-            mlp_outs = distribute_value(mlp_outs[0], self.devices)
-        hidden_states = [
-            h + mlp_out for h, mlp_out in zip(hidden_states, mlp_outs)
-        ]
+            hidden_states = distribute_value(
+                mlp_outs[0] + hidden_states[0], self.devices
+            )
+        else:
+            hidden_states = [
+                h + mlp_out for h, mlp_out in zip(hidden_states, mlp_outs)
+            ]
         return hidden_states
 
 
 class Llama4TextModel(Module):
+    """The Llama4 text transformer model."""
+
     def __init__(self, config: Llama4Config):
         super().__init__()
         self.rope = OptimizedRotaryEmbedding(
@@ -167,6 +182,7 @@ class Llama4TextModel(Module):
     def __call__(
         self,
         tokens: TensorValueLike,
+        cache_positions: TensorValueLike,
         signal_buffers: list[BufferValue],
         kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
         **kwargs,
@@ -186,9 +202,13 @@ class Llama4TextModel(Module):
         )
         context_lengths = valid_lengths + root_cache_lengths
         context_lengths = context_lengths.cast(DType.int32)
+        distributed_cache_positions = distribute_value(
+            cache_positions, self.devices
+        )
         for _, layer in enumerate(self.layers):
             h = layer(
                 h,
+                distributed_cache_positions,
                 signal_buffers,
                 kv_collections,
                 context_lengths=context_lengths,
@@ -243,16 +263,23 @@ class Llama4TextModel(Module):
 
 
 class Llama4(Module):
+    """The Llama4 model (currently text-only)."""
+
     def __init__(self, config: Llama4Config):
         self.language_model = Llama4TextModel(config)
 
     def __call__(
         self,
         tokens: TensorValueLike,
+        cache_positions: TensorValueLike,
         signal_buffers: list[BufferValue],
         kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         return self.language_model(
-            tokens, signal_buffers, kv_cache_inputs_per_dev, **kwargs
+            tokens,
+            cache_positions,
+            signal_buffers,
+            kv_cache_inputs_per_dev,
+            **kwargs,
         )

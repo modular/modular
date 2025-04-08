@@ -36,8 +36,10 @@ from max.pipelines import (
 from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import (
     KVCacheInputs,
+    KVCacheInputsSequence,
     KVCacheManager,
     KVCacheParams,
+    RaggedKVCacheInputs,
     estimate_kv_cache_size,
     load_kv_manager,
 )
@@ -64,6 +66,9 @@ class Llama4Inputs(ModelInputs):
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence."""
 
+    cache_positions: np.ndarray | Tensor
+    """Positions in the cache of each input token."""
+
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
 
@@ -71,6 +76,7 @@ class Llama4Inputs(ModelInputs):
         self,
         tokens: np.ndarray | Tensor,
         input_row_offsets_or_attn_mask: np.ndarray | Tensor,
+        cache_positions: np.ndarray | Tensor,
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
@@ -79,11 +85,13 @@ class Llama4Inputs(ModelInputs):
             tokens: Input token IDs.
             input_row_offsets_or_attn_mask: Input row offsets (ragged tensors)
                 or attention mask (padded tensors).
+            cache_positions: Positions in the cache of each input token.
             signal_buffers: Device buffers used for synchronization in
                 communication collectives.
         """
         self.tokens = tokens
         self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
+        self.cache_positions = cache_positions
         self.signal_buffers = signal_buffers
         self.kv_cache_inputs = kv_cache_inputs
 
@@ -322,6 +330,9 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         input_row_offsets_type = TensorType(
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
+        cache_positions_type = TensorType(
+            DType.uint32, shape=["total_seq_len"], device=device_ref
+        )
 
         huggingface_config = self.huggingface_config
         if self.adapter:
@@ -362,11 +373,14 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             input_types=[
                 tokens_type,
                 input_row_offsets_type,
+                cache_positions_type,
                 *signals.input_types(),
                 *flattened_kv_types,
             ],
         ) as graph:
-            tokens, input_row_offsets, *variadic_args = graph.inputs
+            tokens, input_row_offsets, cache_positions, *variadic_args = (
+                graph.inputs
+            )
 
             # Multi-GPU passes a signal buffer per device: unmarshal those.
             signal_buffers = [
@@ -380,6 +394,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
 
             outputs = nn_model(
                 tokens.tensor,
+                cache_positions.tensor,
                 signal_buffers,
                 kv_caches_per_dev,
                 input_row_offsets=input_row_offsets,
@@ -461,6 +476,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets_or_attn_mask,
+            model_inputs.cache_positions,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
             copy_inputs_to_device=(
@@ -500,6 +516,9 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             The prepared :obj:`ModelInputs` object for the initial execution step.
         """
+        assert kv_cache_inputs is not None
+        kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
+
         # This needs to be replaced with actual input preparation
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
@@ -511,10 +530,28 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.next_tokens for ctx in context_batch])
 
+        # Create cache positions for each token.
+        cache_positions = []
+        ragged_kv_cache_inputs = cast(
+            RaggedKVCacheInputs, kv_cache_inputs.kv_cache_inputs[0]
+        )
+        for n, ctx in enumerate(context_batch):
+            cache_length = ragged_kv_cache_inputs.cache_lengths[n].to_numpy()
+            cache_positions.append(
+                np.arange(
+                    cache_length,
+                    cache_length + len(ctx.next_tokens),
+                    dtype=np.uint32,
+                )
+            )
+
         return Llama4Inputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets_or_attn_mask=Tensor.from_numpy(
                 input_row_offsets
+            ).to(self.devices[0]),
+            cache_positions=Tensor.from_numpy(
+                np.concatenate(cache_positions)
             ).to(self.devices[0]),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
@@ -543,9 +580,17 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         )
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
 
+        # Create cache positions for each token.
+        kv_cache_inputs = cast(
+            KVCacheInputsSequence, prev_model_inputs.kv_cache_inputs
+        )
+        ragged_kv_cache_inputs = cast(
+            RaggedKVCacheInputs, kv_cache_inputs.kv_cache_inputs[0]
+        )
         return Llama4Inputs(
             tokens=next_tokens,
             input_row_offsets_or_attn_mask=next_row_offsets,
+            cache_positions=ragged_kv_cache_inputs.cache_lengths,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )

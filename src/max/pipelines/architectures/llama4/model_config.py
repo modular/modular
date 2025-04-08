@@ -86,8 +86,9 @@ class Llama4ConfigBase(MAXModelConfigBase):
     attention_chunk_size: int
     """Chunk size for attention computation."""
 
-    attn_temperature_tuning: int
-    """Temperature tuning factor for attention in NoRoPE layers."""
+    attn_temperature_tuning: bool
+    """Whether to enable infernece-time temperature tuning attention in NoRoPE
+    layers. This is useful for very long contexts."""
 
     floor_scale: int
     """Scaling factor used in attention temperature tuning calculation."""
@@ -284,7 +285,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             ),
             attention_chunk_size=text_config.attention_chunk_size,
             attn_temperature_tuning=getattr(
-                text_config, "attn_temperature_tuning", 4
+                text_config, "attn_temperature_tuning", True
             ),
             floor_scale=getattr(text_config, "floor_scale", 8192),
             attn_scale=getattr(text_config, "attn_scale", 0.1),
@@ -295,7 +296,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             max_seq_len=Llama4Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config
             ),
-            num_hidden_layers=1,  # text_config.num_hidden_layers,
+            num_hidden_layers=2,  # text_config.num_hidden_layers,
             kv_params=Llama4Config.get_kv_params(
                 huggingface_config=huggingface_config,
                 n_devices=n_devices,

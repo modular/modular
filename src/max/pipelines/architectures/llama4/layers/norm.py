@@ -20,11 +20,14 @@ from max.graph import TensorType, TensorValue, ops
 
 
 def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
-    weight = ops.constant(1, DType.float32).broadcast_to([x.shape[0]])
+    """Computes the L2 norm of the input."""
+    weight = ops.constant(1, DType.float32).broadcast_to([x.shape[-1]])
     if x.device:
         weight = weight.to(x.device)
+    original_dtype = x.dtype
+    x = x.cast(DType.float32)
     return ops.custom(
         "rms_norm",
         [x, weight, ops.constant(eps, x.dtype)],
-        [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
-    )[0].tensor
+        [TensorType(dtype=DType.float32, shape=x.shape, device=x.device)],
+    )[0].tensor.cast(original_dtype)

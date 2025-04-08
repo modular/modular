@@ -70,6 +70,7 @@ class _Llama4TextAttention(Module):
         linear_cls: Callable[..., LinearV2] = LinearV2,
         scale: float | None = None,
         has_bias: bool = False,
+        use_rope: bool = True,
         use_qk_norm: bool = False,
     ):
         """Initializes the attention layer.
@@ -92,8 +93,9 @@ class _Llama4TextAttention(Module):
                 attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             scale: Value used to scale the results of the attention output.
-            has_bias: Whether to use an attention bias.
-            use_qk_norm: Whether to normalize the qk values.
+            has_bias: Whether to use an attention bias. Defaults to False.
+            use_rope: Whether to use rope in this layer. Defaults to True.
+            use_qk_norm: Whether to normalize the qk values. Defaults to False.
         """
 
         super().__init__()
@@ -107,7 +109,7 @@ class _Llama4TextAttention(Module):
             scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         # rope unused for dense layers
-        self.use_rope = int((layer_idx + 1) % 4 != 0)
+        self.use_rope = use_rope
         self.use_qk_norm = self.use_rope and use_qk_norm
         self.attn_scale = attn_scale
         self.floor_scale = floor_scale
@@ -153,7 +155,7 @@ class _Llama4TextAttention(Module):
             in_dim=self.q_weight_dim,
             out_dim=hidden_size,
             dtype=dtype,
-            device=devices[0] if devices else None,
+            device=devices[0],
         )
 
     @property
@@ -162,7 +164,7 @@ class _Llama4TextAttention(Module):
         wq: TensorValue = self.q_proj
         wk: TensorValue = self.k_proj
         wv: TensorValue = self.v_proj
-        return ops.concat((wq, wk, wv))
+        return ops.concat((wq, wk, wv)).to(self.devices[0])
 
     @property
     def wqkv_bias(self) -> TensorValue | None:
@@ -175,14 +177,15 @@ class _Llama4TextAttention(Module):
     def __call__(
         self,
         xs: list[TensorValue],
-        kv_collections: list[
-            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-        ],
+        cache_positions_list: list[TensorValue],
+        kv_collections: list[ContinuousBatchingKVCacheCollection]
+        | list[PagedKVCacheCollection],
         **kwargs,
     ) -> list[TensorValue]:
         assert len(xs) == 1 and len(kv_collections) == 1
         x = xs[0]
         kv_collection = kv_collections[0]
+        cache_positions = cache_positions_list[0]
 
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -224,9 +227,9 @@ class _Llama4TextAttention(Module):
             rms_norm_key_cache(
                 self.kv_params,
                 kv_collection=kv_collection,
-                gamma=ops.constant(1, DType.float32).broadcast_to(
-                    [self.kv_weight_dim]
-                ),
+                gamma=ops.constant(1, self.kv_params.dtype)
+                .broadcast_to([self.kv_params.head_dim])
+                .to(self.devices[0]),
                 epsilon=1e-6,
                 layer_idx=self.layer_idx,
                 total_seq_len=total_seq_len,
@@ -234,10 +237,22 @@ class _Llama4TextAttention(Module):
             )
 
         if self.attn_temperature_tuning and not self.use_rope:
-            raise NotImplementedError
+            attn_scales = (
+                ops.log(
+                    ops.floor(
+                        (ops.cast(cache_positions, DType.float32) + 1.0)
+                        / self.floor_scale
+                    )
+                    + 1.0
+                )
+                * self.attn_scale
+                + 1.0
+            ).to(self.devices[0])
+            attn_scales = ops.reshape(attn_scales, [-1, 1, 1])
+            xq = (xq.cast(DType.float32) * attn_scales).cast(xq.dtype)
 
-        context_lengths = kwargs.get("context_lengths")
         # Calculate Flash Attention.
+        context_lengths = kwargs.get("context_lengths")
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
@@ -248,18 +263,19 @@ class _Llama4TextAttention(Module):
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )
-
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
-
-        return [self.o_proj(attn_out)]
+        ret = self.o_proj(attn_out)
+        return [ret]
 
 
 class _DistributedLlama4TextAttention(_Llama4TextAttention):
+    """Distributed implementation of the Llama4 text attention layer."""
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if not self.devices or len(self.devices) < 2:
             raise ValueError(
-                f"Must provide at least 2 devices to `DistributedAttentionWithRope`, got {self.devices}"
+                f"Must provide at least 2 devices to `_DistributedLlama4TextAttention`, got {self.devices}"
             )
         # Shard weights into separate AttentionWithRope layers.
         n_devices = len(self.devices)
@@ -290,12 +306,12 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
             layer.o_proj.weight = self.o_proj.weight.shard(n, device)
             self.list_of_attentions.append(layer)
 
-    def __call__(  # type: ignore[override]
+    def __call__(
         self,
-        x: list[TensorValue],
-        kv_collections: list[
-            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-        ],
+        xs: list[TensorValue],
+        cache_positions_list: list[TensorValue],
+        kv_collections: list[ContinuousBatchingKVCacheCollection]
+        | list[PagedKVCacheCollection],
         **kwargs,
     ) -> list[TensorValue]:
         input_row_offsets = kwargs["input_row_offsets"]
@@ -314,8 +330,9 @@ class _DistributedLlama4TextAttention(_Llama4TextAttention):
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](
-                    [x[i]],
-                    [kv_collections[i]],
+                    [xs[i]],
+                    [cache_positions_list[i]],
+                    [kv_collections[i]],  # type: ignore
                     input_row_offsets=input_row_offsets_[i],
                     context_lengths=context_lengths[i]
                     if context_lengths
