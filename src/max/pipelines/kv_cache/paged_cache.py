@@ -89,6 +89,20 @@ class PagedKVCacheCollectionType(_OpaqueType):
         super().__init__("PagedKVCacheCollection")
 
 
+class PagedKVCacheCollectionFA3FallbackType(_OpaqueType):
+    """The graph type for a "view" of the cache for the given sequences in the
+    batch.
+
+    This object does not own the underlying buffers in k_cache and v_cache,
+    it's borrowing them from the BlockWrappers in our ContinuousKVCacheManager.
+    It does own the Pointer[NDBuffer[type, 3]] and valid_lengths buffer
+    """
+
+    def __init__(self) -> None:
+        """Creates an opaque type containing a paged KV cache collection."""
+        super().__init__("PagedKVCacheCollectionFA3Fallback")
+
+
 class PagedKVCache(_OpaqueValue):
     """PagedAttention Mojo KV cache graph value."""
 
@@ -182,7 +196,7 @@ class FetchPagedKVCacheCollectionFA3Fallback:
                     lookup_table_cast,
                     is_cache_empty,
                 ],
-                out_types=[PagedKVCacheCollectionType()],
+                out_types=[PagedKVCacheCollectionFA3FallbackType()],
                 parameters={
                     "num_heads": self.kv_params.n_kv_heads_per_device,
                     "head_dim": self.kv_params.head_dim,
