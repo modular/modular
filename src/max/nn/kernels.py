@@ -1045,6 +1045,84 @@ def flare_mla_decode_ragged(
     )[0].tensor
 
 
+def flare_mla_prefill_ragged(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    input_row_offsets: TensorValue,
+    buffer_row_offsets: TensorValue,
+    cache_offsets: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    qk_rope_dim: int = 64,
+) -> TensorValue:
+    """Performs MLA prefill."""
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        msg = (
+            f"expected input of rank {input_rank_expected} but got {input.rank}"
+        )
+        raise ValueError(msg)
+
+    if input.dtype != kv_params.dtype:
+        msg = (
+            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected uint32 layer_idx but got {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for flare_mla_prefill_ragged: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    op_name = f"mo.mla.prefill.ragged.paged.{str(mha_mask_config.attention_mask_variant.value)}.{str(mha_mask_config.positional_encoding_variant.value)}"
+
+    return ops.inplace_custom(
+        op_name,
+        values=[
+            input,
+            k,
+            v,
+            buffer_row_offsets,
+            cache_offsets,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            ops.constant(scale, dtype=DType.float32),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[
+                    input.shape[0],
+                    input.shape[1],
+                    input.shape[2] - qk_rope_dim,
+                ],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def flare_mla_prefill_plan(
     kv_params: KVCacheParams,
     input_row_offsets: TensorValue,
