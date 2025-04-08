@@ -32,7 +32,7 @@ from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask, MHAMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
-from nn.mla import flare_mla_decoding, mla_prefill_plan
+from nn.mla import flare_mla_decoding, mla_prefill_plan, _k_cache_to_buffer
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -2164,6 +2164,64 @@ fn generic_flare_mla_prefill_ragged_paged_plan[
             buffer_token_size,
             cuda_ctx,
         )
+
+
+@always_inline
+fn generic_flare_mla_decompress_k_cache_ragged_paged[
+    target: StaticString, type: DType
+](
+    buffer_row_offsets_1d: NDBuffer[DType.uint32, 1, *_],
+    cache_offsets_1d: NDBuffer[DType.uint32, 1, *_],
+    buffer_length: Int32,
+    weight: NDBuffer[type, 2, *_],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    k_latent_buffer: NDBuffer[mut=True, type, 2, *_],
+    k_buffer: NDBuffer[mut=True, type, 2, *_],
+    context: DeviceContextPtr,
+) raises:
+    constrained[is_gpu[target](), "MLA is only supported on GPU"]()
+    var cuda_ctx = context.get_device_context()
+
+    var buffer_length_int = Int(buffer_length)
+    var layer_idx_cast = Int(layer_idx)
+    var k = kv_collection.get_key_cache(layer_idx_cast)
+
+    _k_cache_to_buffer(
+        buffer_row_offsets_1d,
+        cache_offsets_1d,
+        k,
+        buffer_length_int,
+        k_latent_buffer,
+        cuda_ctx,
+    )
+
+    # rebind k_latent_buffer with dynamic dim
+    alias latent_last_dim = k_latent_buffer.shape.get[1]()
+    alias k_latent_shape = DimList(
+        VariadicList[Dim](Dim(), Dim(latent_last_dim))
+    )
+    var k_latent_dynamic_shape = IndexList[2](
+        buffer_length_int, latent_last_dim
+    )
+
+    var k_latent_buffer_dynamic = NDBuffer[
+        type, 2, k_latent_buffer.origin, k_latent_shape, k_latent_buffer.strides
+    ](k_latent_buffer.data, k_latent_dynamic_shape)
+
+    # rebind k_buffer with dynamic dim
+    alias k_last_dim = k_buffer.shape.get[1]()
+    alias k_shape = DimList(VariadicList[Dim](Dim(), Dim(k_last_dim)))
+    var k_dynamic_shape = IndexList[2](buffer_length_int, k_last_dim)
+
+    var k_buffer_dynamic = NDBuffer[
+        type, 2, k_buffer.origin, k_shape, k_buffer.strides
+    ](k_buffer.data, k_dynamic_shape)
+
+    matmul[
+        target=target,
+        transpose_b=True,
+    ](k_buffer_dynamic, k_latent_buffer_dynamic, weight, Optional(cuda_ctx))
 
 
 # ===-----------------------------------------------------------------------===#

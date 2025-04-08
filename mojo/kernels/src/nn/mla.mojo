@@ -15,7 +15,12 @@ from sys import (
     sizeof,
 )
 
-from algorithm.functional import tile_and_unswitch, unswitch, vectorize
+from algorithm.functional import (
+    _elementwise_impl_gpu,
+    tile_and_unswitch,
+    unswitch,
+    vectorize,
+)
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
@@ -29,6 +34,7 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute, Dim as LaunchDim
+from gpu.host._compile import _get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import (
     AddressSpace,
@@ -57,6 +63,7 @@ from linalg.transpose import transpose
 from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
+from nn._ragged_utils import get_batch_from_row_offsets
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
@@ -2312,3 +2319,62 @@ fn mla_prefill_plan_kernel[
                 buffer_lengths[chunk_idx] = seq_end_pos % buffer_size
             else:
                 buffer_lengths[chunk_idx] = -1
+
+
+# ===-----------------------------------------------------------------------===#
+# Helper fucntion that copies K cache to a contiguous buffer
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _k_cache_to_buffer[
+    type: DType,
+    cache_t: KVCacheT,
+](
+    buffer_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    cache_offsets: NDBuffer[DType.uint32, 1, *_],
+    k_cache: cache_t,
+    length: Int32,
+    buffer: NDBuffer[mut=True, type, 2, *_],
+    context: DeviceContext,
+) raises:
+    alias num_heads = cache_t.kv_params.num_heads
+    constrained[num_heads == 1, "num_heads should be equal to 1"]()
+
+    @always_inline
+    @parameter
+    @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
+    fn copy_fn[width: Int, rank: Int](idx_arg: IndexList[rank]):
+        constrained[rank == 2, "rank should be equal to 2"]()
+
+        var idx = rebind[IndexList[2]](idx_arg)
+        var global_token_idx = idx[0]
+
+        var batch_idx: Int = get_batch_from_row_offsets(
+            buffer_row_offsets, global_token_idx
+        )
+
+        var token_idx = Int(
+            global_token_idx
+            - buffer_row_offsets[batch_idx]
+            + cache_offsets[batch_idx]
+        )
+
+        var head_dim_idx = idx[1]
+
+        var cache_val = rebind[SIMD[type, width]](
+            k_cache.load[width=width](batch_idx, 0, token_idx, head_dim_idx)
+        )
+
+        buffer.store(idx, cache_val)
+
+    var launch_shape = IndexList[2](
+        Int(length),
+        buffer.dim[1](),
+    )
+    alias compile_target = _get_gpu_target()
+    alias target_simd_width = simdwidthof[type, target=compile_target]()
+
+    _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
+        launch_shape, context
+    )
