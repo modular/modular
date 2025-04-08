@@ -13,8 +13,10 @@
 
 """Mixture of Experts Layer."""
 
+from __future__ import annotations
+
 from max.dtype import DType
-from max.graph import TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn.layer import Module
 from max.nn.linear import LinearV2
 
@@ -46,6 +48,7 @@ class MoE(Module):
         intermediate_size: int = 8192,
         intermediate_size_mlp: int = 16384,
         dtype: DType = DType.bfloat16,
+        device: DeviceRef | None = None,
     ):
         """
         Args:
@@ -55,14 +58,18 @@ class MoE(Module):
             intermediate_size: Hidden dimension size for MoE intermediate layer.
             intermediate_size_mlp: Hidden dimension size for MoE MLP layer.
             dtype: Data type for weights.
+            device: The device to use to run this layer.
         """
         super().__init__()
+        if not device:
+            raise ValueError("Device must be provided.")
 
         self.top_k = top_k
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
         self.intermediate_size = intermediate_size
         self.intermediate_size_mlp = intermediate_size_mlp
+        self.device = device
 
         if self.top_k > 1:
             raise NotImplementedError(
@@ -80,6 +87,7 @@ class MoE(Module):
                 self.hidden_dim,
             ),
             dtype=dtype,
+            device=DeviceRef.CPU(),
         )
 
         self.gate_up_proj = Weight(
@@ -90,6 +98,7 @@ class MoE(Module):
                 self.intermediate_size_mlp,
             ),
             dtype=dtype,
+            device=DeviceRef.CPU(),
         )
 
         # Shared experts weights
@@ -97,22 +106,26 @@ class MoE(Module):
             in_dim=self.hidden_dim,
             out_dim=self.intermediate_size,
             dtype=dtype,
+            device=device,
         )
         self.shared_expert_down_proj = LinearV2(
             in_dim=self.intermediate_size,
             out_dim=self.hidden_dim,
             dtype=dtype,
+            device=device,
         )
         self.shared_expert_gate_proj = LinearV2(
             in_dim=self.hidden_dim,
             out_dim=self.intermediate_size,
             dtype=dtype,
+            device=device,
         )
 
         self.router = LinearV2(
             in_dim=self.hidden_dim,
             out_dim=self.num_experts,
             dtype=dtype,
+            device=device,
         )
 
     def __call__(
@@ -121,6 +134,7 @@ class MoE(Module):
         **unused_kwargs,
     ) -> list[TensorValue]:
         hidden_states = hidden_states[0]
+        assert hidden_states.device == self.device
         hidden_states = ops.reshape(hidden_states, (-1, self.hidden_dim))
         router_logits = self.router(hidden_states)
         # (batch * seq_len, num_experts)
@@ -129,8 +143,10 @@ class MoE(Module):
         router_probs = ops.sigmoid(ops.max(router_logits, axis=-1))
         # (batch * seq_len, 1)
 
-        top_down_proj = ops.gather(self.down_proj, top_idx, axis=0)
-        top_gate_up_proj = ops.gather(self.gate_up_proj, top_idx, axis=0)
+        down_proj = self.down_proj.to(self.device)
+        top_down_proj = ops.gather(down_proj, top_idx, axis=0)
+        gate_up_proj = self.gate_up_proj.to(self.device)
+        top_gate_up_proj = ops.gather(gate_up_proj, top_idx, axis=0)
         # (batch * seq_len, h, w)
 
         gate_up_projs = ops.unsqueeze(hidden_states, axis=1) @ top_gate_up_proj

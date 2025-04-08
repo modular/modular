@@ -296,7 +296,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             max_seq_len=Llama4Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config
             ),
-            num_hidden_layers=2,  # text_config.num_hidden_layers,
+            num_hidden_layers=text_config.num_hidden_layers,
             kv_params=Llama4Config.get_kv_params(
                 huggingface_config=huggingface_config,
                 n_devices=n_devices,
