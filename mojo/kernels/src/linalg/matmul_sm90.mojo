@@ -10,11 +10,6 @@ import linalg.vendor_blas
 from buffer.dimlist import Dim, DimList, _make_tuple
 from collections import OptionalReg
 from gpu import WARP_SIZE, barrier, MAX_THREADS_PER_BLOCK_METADATA
-from gpu.grid_controls import (
-    pdl_launch_attributes,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
-)
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
@@ -525,8 +520,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
 
-    wait_on_dependent_grids()
-
     var lane_predicate = elect_one_sync()
     if thread_idx.x == 0:
         a_tma_op.prefetch_descriptor()
@@ -725,8 +718,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             block_idx_swizzle[0],
         )
 
-    launch_dependent_grids()
-
     # TO ensure SEMEM destruction doesn't happen
     @parameter
     if cluster_size[cluster_shape]() > 1:
@@ -894,8 +885,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
-
-    wait_on_dependent_grids()
 
     var lane_predicate = elect_one_sync()
     if thread_idx.x == 0:
@@ -1106,8 +1095,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 block_x,
             )
             work_info = scheduler.fetch_next_work()
-
-    launch_dependent_grids()
 
     # TO ensure SEMEM destruction doesn't happen
     @parameter
@@ -1569,7 +1556,6 @@ fn warp_specialize_gemm_with_multicasting[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_size
             ),
-            attributes=pdl_launch_attributes(),
         )
     else:
         alias kernel = tma_wgmma_warp_specialized_gemm_kernel[
@@ -1608,5 +1594,4 @@ fn warp_specialize_gemm_with_multicasting[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_size
             ),
-            attributes=pdl_launch_attributes(),
         )
