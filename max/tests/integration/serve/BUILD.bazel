@@ -46,7 +46,6 @@ modular_py_test(
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
     },
     tags = [
-        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
     ],

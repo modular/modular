@@ -53,7 +53,7 @@ async def test_metrics_e2e_v1(app):
         assert response.status_code == 200
 
         # There shouldn't be any maxserve_ metrics at this point except for the model load since the server is just started up.
-        assert "maxserve_pipeline_load_total" in response.text
+        assert "maxserve_model_load_time_milliseconds_bucket" in response.text
         assert "maxserve_request_time_milliseconds_bucket" not in response.text
 
         # Make a request
