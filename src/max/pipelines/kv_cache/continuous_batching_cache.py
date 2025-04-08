@@ -32,7 +32,7 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
-from max.pipelines.context import InputContext
+from max.pipelines.core import InputContext
 
 from ._utils import build_max_lengths_tensor
 from .cache_params import KVCacheParams

@@ -37,9 +37,10 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
-from .context import TextAndVisionContext, TextContext
-from .interfaces import (
+from .core import (
     PipelineTokenizer,
+    TextAndVisionContext,
+    TextContext,
     TokenGeneratorContext,
     TokenGeneratorRequest,
     TokenGeneratorRequestMessage,

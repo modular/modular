@@ -26,7 +26,7 @@ from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
 )
-from max.pipelines.interfaces import (
+from max.pipelines.core import (
     PipelineTokenizer,
     TokenGenerator,
     TokenGeneratorRequest,

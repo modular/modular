@@ -16,11 +16,7 @@
 from typing import Callable as _Callable
 from typing import Union as _Union
 
-from .config import PipelineConfig
-from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
-from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceFile, download_weight_files
-from .interfaces import (
+from max.pipelines.core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
     LogProbabilities,
@@ -35,6 +31,11 @@ from .interfaces import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
+
+from .config import PipelineConfig
+from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
+from .embeddings_pipeline import EmbeddingsPipeline
+from .hf_utils import HuggingFaceFile, download_weight_files
 from .log_probabilities import compute_log_probabilities
 from .max_config import (
     KVCacheConfig,

@@ -14,7 +14,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.config_enums import RopeType, SupportedEncoding
-from max.pipelines.interfaces import PipelineTask
+from max.pipelines.core import PipelineTask
 from max.pipelines.kv_cache import KVCacheStrategy
 from max.pipelines.registry import SupportedArchitecture
 from max.pipelines.tokenizer import TextTokenizer

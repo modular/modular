@@ -26,9 +26,8 @@ from max.graph.weights import (
 from transformers import AutoConfig
 
 from .config_enums import RepoType
-from .context import InputContext
+from .core import InputContext, TextGenerationResponse, TokenGenerator
 from .hf_utils import download_weight_files
-from .interfaces import TextGenerationResponse, TokenGenerator
 from .max_config import HuggingFaceRepo
 from .pipeline import PipelineModel
 

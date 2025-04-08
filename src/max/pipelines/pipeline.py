@@ -52,15 +52,15 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .config_enums import SupportedEncoding
-from .context import InputContext
-from .hf_utils import download_weight_files
-from .interfaces import (
+from .core import (
+    InputContext,
     LogProbabilities,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
     TokenGenerator,
 )
+from .hf_utils import download_weight_files
 from .kv_cache import KVCacheManager, KVCacheParams
 from .max_config import KVCacheConfig
 from .sampling import token_sampler

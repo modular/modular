@@ -34,7 +34,7 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.context import TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,

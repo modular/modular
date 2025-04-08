@@ -26,9 +26,8 @@ from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-from .context import InputContext
+from .core import EmbeddingsGenerator, EmbeddingsResponse, InputContext
 from .hf_utils import download_weight_files
-from .interfaces import EmbeddingsGenerator, EmbeddingsResponse
 from .pipeline import PipelineModel
 
 logger = logging.getLogger("max.pipelines")

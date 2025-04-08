@@ -34,15 +34,15 @@ from .config_enums import (
     RopeType,
     SupportedEncoding,
 )
-from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
-from .hf_utils import get_architectures_from_huggingface_repo
-from .interfaces import (
+from .core import (
     EmbeddingsGenerator,
     PipelineTask,
     PipelineTokenizer,
     TokenGenerator,
 )
+from .embeddings_pipeline import EmbeddingsPipeline
+from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
+from .hf_utils import get_architectures_from_huggingface_repo
 from .kv_cache import KVCacheStrategy
 from .max_config import HuggingFaceRepo, KVCacheConfig, MAXModelConfig
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline

@@ -24,7 +24,7 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.pipelines.context import InputContext
+from max.pipelines.core import InputContext
 from typing_extensions import TypeGuard
 
 from .cache_params import KVCacheParams

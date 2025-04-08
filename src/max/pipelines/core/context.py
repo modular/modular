@@ -19,7 +19,8 @@ from collections.abc import Sequence
 from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
-from max.pipelines.interfaces import LogProbabilities
+
+from .interfaces import LogProbabilities
 
 CHUNK_SIZE = 128
 

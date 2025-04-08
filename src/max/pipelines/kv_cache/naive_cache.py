@@ -22,7 +22,7 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, TensorType
-from max.pipelines.context import InputContext
+from max.pipelines.core import InputContext
 
 from .cache_params import KVCacheParams
 from .manager import (

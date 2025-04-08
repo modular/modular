@@ -32,10 +32,10 @@ from transformers import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-from .context import TextContext
-from .interfaces import (
+from .core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
+    TextContext,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,

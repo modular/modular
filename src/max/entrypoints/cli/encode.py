@@ -25,7 +25,7 @@ from max.pipelines import (
     EmbeddingsResponse,
     PipelineConfig,
 )
-from max.pipelines.interfaces import (
+from max.pipelines.core import (
     PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,

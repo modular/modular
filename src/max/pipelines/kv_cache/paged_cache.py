@@ -35,7 +35,7 @@ from max.graph import (
     _OpaqueValue,
     ops,
 )
-from max.pipelines.context import InputContext
+from max.pipelines.core import InputContext
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
