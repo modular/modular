@@ -174,6 +174,10 @@ fn _supported_mma_shape[
         return (
             mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
         )
+    elif mma_shape[0] == 64 and mma_shape[2] == 32:
+        return (
+            mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
+        )
     else:
         return False
 
