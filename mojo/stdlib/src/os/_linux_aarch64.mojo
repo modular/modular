@@ -30,23 +30,40 @@ alias blksize_t = Int32
 
 @value
 struct _c_stat(Stringable, Writable):
-    var st_dev: dev_t  #  ID of device containing file
-    var st_ino: Int64  # File serial number
-    var st_mode: mode_t  # Mode of file
-    var st_nlink: nlink_t  # Number of hard links
-    var st_uid: uid_t  # User ID of the file
-    var st_gid: gid_t  # Group ID of the file
-    var st_rdev: dev_t  # Device ID
-    var __pad0: dev_t  # Padding
-    var st_size: off_t  # file size, in bytes
-    var st_blksize: blksize_t  # optimal blocksize for I/O
-    var __pad1: Int32  # Padding
-    var st_blocks: blkcnt_t  #  blocks allocated for file
-    var st_atimespec: _CTimeSpec  # time of last access
-    var st_mtimespec: _CTimeSpec  # time of last data modification
-    var st_ctimespec: _CTimeSpec  # time of last status change
-    var st_birthtimespec: _CTimeSpec  # time of file creation(birth)
-    var unused: InlineArray[Int64, 2]  # RESERVED: DO NOT USE!
+    var st_dev: dev_t
+    """ID of device containing file."""
+    var st_ino: Int64
+    """File serial number."""
+    var st_mode: mode_t
+    """Mode of file."""
+    var st_nlink: nlink_t
+    """Number of hard links."""
+    var st_uid: uid_t
+    """User ID of the file."""
+    var st_gid: gid_t
+    """Group ID of the file."""
+    var st_rdev: dev_t
+    """Device ID."""
+    var __pad0: dev_t
+    """Padding."""
+    var st_size: off_t
+    """File size, in bytes."""
+    var st_blksize: blksize_t
+    """Optimal blocksize for I/O."""
+    var __pad1: Int32
+    """Padding."""
+    var st_blocks: blkcnt_t
+    """Blocks allocated for file."""
+    var st_atimespec: _CTimeSpec
+    """Time of last access."""
+    var st_mtimespec: _CTimeSpec
+    """Time of last data modification."""
+    var st_ctimespec: _CTimeSpec
+    """Time of last status change."""
+    var st_birthtimespec: _CTimeSpec
+    """Time of file creation(birth)."""
+    var unused: InlineArray[Int64, 2]
+    """RESERVED: DO NOT USE!."""
 
     fn __init__(out self):
         self.st_dev = 0
