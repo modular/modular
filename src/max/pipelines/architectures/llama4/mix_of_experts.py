@@ -64,6 +64,13 @@ class MoE(Module):
         self.intermediate_size = intermediate_size
         self.intermediate_size_mlp = intermediate_size_mlp
 
+        if self.top_k > 1:
+            raise NotImplementedError(
+                "Multiple expert routing (top-k > 1) is not yet implemented. "
+                "This layer currently only supports single expert routing (top-k = 1) "
+                "as used in the Llama-4-Scout-17B-16E-Instruct model."
+            )
+
         # Routed experts weights
         self.down_proj = Weight(
             name="experts.down_proj",
