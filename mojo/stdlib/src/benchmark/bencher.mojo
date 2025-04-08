@@ -378,7 +378,7 @@ struct BenchConfig(CollectionElement):
                 elif args[i] == "--format":
                     if i + 1 >= len(args):
                         raise Error("Missing value for --format option")
-                    self.format = Format(String(args[i + 1]).as_string_slice())
+                    self.format = Format(args[i + 1])
                     i += 2
                 elif args[i] == "--no-progress":
                     self.show_progress = False
