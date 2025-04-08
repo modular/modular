@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from max.pipelines import EmbeddingsPipeline
-from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
+from max.pipelines.core import PipelineTokenizer, TokenGeneratorRequest
 
 
 def encode(

@@ -32,9 +32,9 @@ import transformers
 # MAX
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
-from max.pipelines import interfaces
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.llama3.config import get_llama_huggingface_file
+from max.pipelines.core import interfaces
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common import (
     evaluate,

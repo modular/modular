@@ -16,7 +16,7 @@ from max.pipelines import (
     TextTokenizer,
 )
 from max.pipelines.architectures import register_all_models
-from max.pipelines.interfaces import TokenGeneratorRequest
+from max.pipelines.core import TokenGeneratorRequest
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
 

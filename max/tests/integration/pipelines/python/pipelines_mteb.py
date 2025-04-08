@@ -41,7 +41,7 @@ from max.pipelines import (
     PipelineEngine,
 )
 from max.pipelines.architectures import register_all_models
-from max.pipelines.interfaces import (
+from max.pipelines.core import (
     PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,

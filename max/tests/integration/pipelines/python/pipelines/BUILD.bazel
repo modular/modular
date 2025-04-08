@@ -18,7 +18,7 @@ modular_py_test(
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/context",
+        "//SDK/lib/API/python/max/pipelines/core",
         requirement("numpy"),
     ],
 )

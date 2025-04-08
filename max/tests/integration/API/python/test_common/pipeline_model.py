@@ -28,7 +28,7 @@ from max.pipelines import (
     TextTokenizer,
     upper_bounded_default,
 )
-from max.pipelines.context import InputContext
+from max.pipelines.core import InputContext
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,

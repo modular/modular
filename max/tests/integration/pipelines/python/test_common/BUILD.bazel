@@ -95,7 +95,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("numpy"),
-        "//SDK/lib/API/python/max/pipelines/context",
+        "//SDK/lib/API/python/max/pipelines/core",
     ],
 )
 

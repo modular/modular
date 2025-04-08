@@ -17,7 +17,7 @@ from max.pipelines import (
     TokenGeneratorRequestMessage,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.context import TextContext
+from max.pipelines.core import TextContext
 
 pytest_plugins = "test_common.registry"
 

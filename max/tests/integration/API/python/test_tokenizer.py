@@ -18,7 +18,7 @@ from max.pipelines import (
     TokenGeneratorRequestMessage,
     TokenGeneratorRequestTool,
 )
-from max.pipelines.context import TextAndVisionContext, TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 
 
 def convert_image_url_to_base64(image_url):

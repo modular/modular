@@ -20,7 +20,7 @@ from max.pipelines import (
     SupportedEncoding,
     TextGenerationPipeline,
 )
-from max.pipelines.context import TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import KVCacheStrategy
 
 from .pipeline_model import MockPipelineModel

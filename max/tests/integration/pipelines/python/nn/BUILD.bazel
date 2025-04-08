@@ -21,7 +21,7 @@ modular_py_test(
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/context",
+        "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/pipelines/dataprocessing",
         "//SDK/lib/API/python/max/pipelines/kv_cache",
         "//SDK/lib/API/python/max/serve",

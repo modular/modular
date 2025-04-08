@@ -13,7 +13,7 @@ from typing import TypeVar, Union
 
 import numpy as np
 from max.pipelines import PipelineTokenizer, TokenGeneratorRequest
-from max.pipelines.context import InputContext, TextContext
+from max.pipelines.core import InputContext, TextContext
 
 T = TypeVar("T", bound=InputContext)
 

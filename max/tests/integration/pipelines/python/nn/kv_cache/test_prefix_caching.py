@@ -16,7 +16,7 @@ from context_utils import create_text_context
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.pipelines.context import InputContext
+from max.pipelines.core import InputContext
 from max.pipelines.kv_cache import (
     BlockCopyOp,
     BlockCopyType,
