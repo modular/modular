@@ -141,6 +141,7 @@ def serve(
             arch = PIPELINE_REGISTRY.retrieve_architecture(
                 model_name,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                huggingface_revision=pipeline_config.model_config.huggingface_revision,
             )
             if not arch:
                 # TODO arekay - better error handling
