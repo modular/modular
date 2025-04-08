@@ -32,7 +32,12 @@ from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask, MHAMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
-from nn.mla import flare_mla_decoding, mla_prefill_plan, _k_cache_to_buffer
+from nn.mla import (
+    flare_mla_decoding,
+    flare_mla_prefill,
+    mla_prefill_plan,
+    _k_cache_to_buffer,
+)
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -2126,6 +2131,123 @@ fn _flare_mla_decode_kv_cache_ragged[
         mask,
         IdentityScoreMod(),
         input_row_offsets,
+        scale,
+        cuda_ctx,
+    )
+
+
+@always_inline
+fn generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged[
+    target: StaticString, type: DType
+](
+    q: NDBuffer[type, 3, *_],
+    k: NDBuffer[type, 3, *_],
+    v: NDBuffer[type, 3, *_],
+    buffer_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    cache_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[mut=True, type, 3, *_],
+    context: DeviceContextPtr,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("q", q),
+            trace_arg("k", k),
+            trace_arg("v", v),
+            trace_arg("buffer_row_offsets", buffer_row_offsets),
+            trace_arg("cache_offsets", cache_offsets),
+            trace_arg("input_row_offsets", input_row_offsets),
+            "scale=" + String(scale),
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.mla.prefill.ragged.paged.causal_mask.no_pos.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _flare_mla_prefill_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](
+            q,
+            k,
+            v,
+            buffer_row_offsets,
+            cache_offsets,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            CausalMask(),
+            scale,
+            output,
+            context,
+        )
+
+
+@always_inline
+fn _flare_mla_prefill_kv_cache_ragged[
+    type: DType,
+    collection_t: KVCollectionT,
+    mask_t: MHAMask, //,
+    cache_t: KVCacheT,
+    target: StaticString,
+](
+    q: NDBuffer[type, 3, *_],
+    k: NDBuffer[type, 3, *_],
+    v: NDBuffer[type, 3, *_],
+    buffer_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    cache_offsets: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    mask: mask_t,
+    scale: Float32,
+    output: NDBuffer[mut=True, type, 3, *_],
+    context: DeviceContextPtr,
+) raises:
+    """Performs MLA prefill.
+
+    Args:
+        q: NDBuffer with shape (total_seq_len, num_heads, q_head_size).
+        k: NDBuffer with shape (total_seq_len, num_heads, kv_head_size).
+        v: NDBuffer with shape (total_seq_len, num_heads, kv_head_size).
+        buffer_row_offsets: The start and end position of each K entry in the ragged K/V tensor.
+        cache_offsets: The start position of each K entry in the PagedKVCacheCollection.
+        input_row_offsets: The start and end position of each Q entry in the batch.
+        kv_collection: The Collection object storing out KVCache entries for this layer
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        mask: Mask functor that computes a masked score vector and tile status from coords.
+        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        output: The Pre-allocated output buffer to write results to. Has shape:
+            (total_seq_len, num_heads, kv_head_size).
+        context: Pointer containing the runtime context for the target device.
+    """
+    constrained[is_gpu[target](), "MLA is only supported on GPU"]()
+
+    var cuda_ctx = context.get_device_context()
+
+    var layer_idx_cast = Int(layer_idx)
+    var k_rope = kv_collection.get_key_cache(layer_idx_cast)
+
+    flare_mla_prefill(
+        output,
+        q,
+        k,
+        v,
+        k_rope,
+        mask,
+        IdentityScoreMod(),
+        input_row_offsets,
+        buffer_row_offsets,
         scale,
         cuda_ctx,
     )

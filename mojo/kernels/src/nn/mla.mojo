@@ -1436,9 +1436,9 @@ fn mla_prefill[
         return
 
     num_keys = k.cache_length(batch_idx)
+    start_pos = num_keys - seq_len
 
     q_batch_offset = start_of_seq * q_depth * config.num_heads
-
     o_batch_offset = start_of_seq * depth * config.num_heads
 
     mla_prefill_single_batch[
