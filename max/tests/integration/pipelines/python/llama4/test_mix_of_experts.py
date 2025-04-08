@@ -53,6 +53,7 @@ def generate_max_outputs(
     device: Device,
 ) -> torch.Tensor:
     is_gpu = isinstance(device, Accelerator)
+    device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
     # TODO: .cpu()s added as workaround for GEX-1967
@@ -71,7 +72,7 @@ def generate_max_outputs(
         "up_proj.weight"
     ].cpu()
 
-    moe = MoE(dtype=dtype)
+    moe = MoE(dtype=dtype, device=device_ref)
     moe.load_state_dict(state_dict)
 
     session = InferenceSession(devices=[Accelerator(0)])
@@ -87,7 +88,7 @@ def generate_max_outputs(
                     input_tensor.shape[1],
                     text_config.hidden_size,
                 ),
-                device=DeviceRef.GPU() if is_gpu else DeviceRef.CPU(),
+                device=device_ref,
             ),
         ),
     )
