@@ -60,6 +60,9 @@ from .vision_model import instantiate_vision_model
 
 logger = logging.getLogger("max.pipelines")
 
+# TODO(GEX-2071): Re-enable when parallel compilation works.
+_DO_PARALLEL_COMPILATION = False
+
 
 @dataclass
 class MultimodalKVCacheInputSymbols(KVCacheInputSymbols):
@@ -1265,10 +1268,14 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             )
             return language_model
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            vision_model_future = executor.submit(build_vision_model)
-            language_model_future = executor.submit(build_language_model)
-            vision_model = vision_model_future.result()
-            language_model = language_model_future.result()
+        if _DO_PARALLEL_COMPILATION:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                vision_model_future = executor.submit(build_vision_model)
+                language_model_future = executor.submit(build_language_model)
+                vision_model = vision_model_future.result()
+                language_model = language_model_future.result()
+        else:
+            vision_model = build_vision_model()
+            language_model = build_language_model()
 
         return (vision_model, language_model)

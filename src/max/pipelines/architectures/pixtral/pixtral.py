@@ -49,6 +49,9 @@ from .vision_encoder.attention_utils import causal_attention_mask_2d_from_imgs
 
 logger = logging.getLogger("max.pipelines")
 
+# TODO(GEX-2071): Re-enable when parallel compilation works.
+_DO_PARALLEL_COMPILATION = False
+
 
 class PixtralInputs(ModelInputs):
     """Holds inputs for the Pixtral model."""
@@ -368,21 +371,16 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             )
             return model
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        def build_vision_model():
             build = lambda: _build_vision_graph(
                 pipeline_config=self.pipeline_config,
                 weights=self.weights,
                 huggingface_config=self.huggingface_config,
                 dtype=self.dtype,
             )
-            vision_model_future = executor.submit(
-                build_and_compile_model, build, "vision"
-            )
+            return build_and_compile_model(build, "vision")
 
-            assert isinstance(self.weights, SafetensorWeights), (
-                "weights provided must be SafetensorWeights"
-            )
-
+        def build_text_model():
             build = lambda: _build_text_graph(
                 pipeline_config=self.pipeline_config,
                 weights=self.weights,
@@ -400,11 +398,20 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
                 huggingface_config=self.huggingface_config,
                 dtype=self.dtype,
             )
-            text_model_future = executor.submit(
-                build_and_compile_model, build, "text"
-            )
+            return build_and_compile_model(build, "text")
 
-            vision_model = vision_model_future.result()
-            text_model = text_model_future.result()
+        assert isinstance(self.weights, SafetensorWeights), (
+            "weights provided must be SafetensorWeights"
+        )
+
+        if _DO_PARALLEL_COMPILATION:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                vision_model_future = executor.submit(build_vision_model)
+                text_model_future = executor.submit(build_text_model)
+                vision_model = vision_model_future.result()
+                text_model = text_model_future.result()
+        else:
+            vision_model = build_vision_model()
+            text_model = build_text_model()
 
         return vision_model, text_model
