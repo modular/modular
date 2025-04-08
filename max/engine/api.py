@@ -33,6 +33,10 @@ from max._core_types.driver import DLPackArray
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.profiler import Tracer, traced
+from max.support.paths import (
+    _build_mojo_source_package,
+    is_mojo_source_package_path,
+)
 
 # Manually define dlpack compatible types since MyPy isn't aware that ndarray
 # implements the protocol.
@@ -356,6 +360,11 @@ def _process_custom_extensions_object(
     custom_extension: CustomExtensionType,
 ) -> CustomExtensionType:
     if isinstance(custom_extension, Path) or isinstance(custom_extension, str):
+        if is_mojo_source_package_path(Path(custom_extension)):
+            # Builds the source directory into a .mojopkg file.
+            return _build_mojo_source_package(Path(custom_extension))
+
+        # Pass the path through as is.
         return custom_extension
     if _is_torch_metadata_module(custom_extension):
         return custom_extension._get_jit_functions()._c
