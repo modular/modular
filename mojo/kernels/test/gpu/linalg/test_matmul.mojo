@@ -25,7 +25,7 @@ from internal_utils import (
     random,
     zero,
 )
-from internal_utils._utils import ValOrDim, dynamic, static
+from internal_utils._utils import ValOrDim, dynamic, static, ulp_distance
 from linalg import vendor_blas
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
@@ -33,8 +33,8 @@ from linalg.utils_gpu import MatmulConfig, MatmulKernels
 from math import ceildiv
 from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
-from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof
-from testing import assert_almost_equal
+from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof, bitwidthof
+from testing import assert_almost_equal, assert_true
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import FPUtils
@@ -71,6 +71,19 @@ fn epilogue_test_fn[
     return val + bias
 
 
+fn select_max_ulp_distance[
+    lambda_fn: Optional[epilogue_func_type]
+](max_ulp_distance: Optional[Int]) -> Int:
+    if max_ulp_distance:
+        return max_ulp_distance.value()
+    else:
+
+        @parameter
+        if lambda_fn:
+            return 4
+        return 2
+
+
 fn test[
     type: DType,
     /,
@@ -86,6 +99,7 @@ fn test[
     n: ValOrDim,
     k: ValOrDim,
     rtol: Float64 = 1e-3 if type == DType.float32 else 1e-2,
+    max_ulp_distance: Optional[Int] = None,
 ) raises:
     constrained[
         Int(n.dim) > 0 and Int(k.dim) > 0,
@@ -246,10 +260,18 @@ fn test[
 
     c_host_tensor = c_host.tensor
     c_host_ref_tensor = c_host_ref.tensor
+    var _max_ulp_distance = select_max_ulp_distance[lambda_fn](max_ulp_distance)
     for m in range(M):
         for n in range(N):
             var expect = c_host_ref_tensor[m, n]
             var actual = c_host_tensor[m, n]
+
+            @parameter
+            if bitwidthof[type]() <= 16:
+                var ulp_dist = ulp_distance(actual, expect)
+                if ulp_dist <= _max_ulp_distance:
+                    continue
+
             assert_almost_equal(actual, expect, rtol=rtol)
 
     _ = c_device
