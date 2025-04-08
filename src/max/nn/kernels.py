@@ -1236,6 +1236,10 @@ def rms_norm_key_cache(
             msg = f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
             raise ValueError(msg)
 
+    if gamma.dtype != kv_params.dtype:
+        msg = f"expected gamma dtype {gamma.dtype} to match KV dtype {kv_params.dtype}"
+        raise TypeError(msg)
+
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
