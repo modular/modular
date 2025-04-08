@@ -120,12 +120,16 @@ struct OffloadInfo {
     llvm::SmallSet<EmitAs, 4> emissionKinds;
   };
 
-  using SymbolInfo = llvm::MapVector<SymbolConstantAttr, KernelInfo>;
+  struct Group {
+    using SymbolInfo = llvm::MapVector<SymbolConstantAttr, KernelInfo>;
 
-  uint64_t numKernels = 0;
-  ExportMap exportedSymbols;
-  llvm::MapVector<Operation *, SymbolInfo> symbols;
-  llvm::SmallSet<StringRef, 4> emissionOptions;
+    uint64_t numKernels = 0;
+    ExportMap exportedSymbols;
+    llvm::MapVector<Operation *, SymbolInfo> symbols;
+  };
+
+  using EmissionOptionsGroup = llvm::MapVector<StringRef, Group>;
+  EmissionOptionsGroup groups;
 };
 
 struct OffloadCompilationResult {
@@ -151,8 +155,9 @@ using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
 /// The expected mangled name of the generate is passed to be used
 /// as the entry point.
 
-using ElaboratorCompileOffloadRetType = ErrorOr<
-    DenseMap<TargetInfoAttr, DenseMap<uint64_t, OffloadCompilationResult>>>;
+using ElaboratorCompileOffloadRetType = ErrorOr<DenseMap<
+    TargetInfoAttr,
+    DenseMap<StringRef, DenseMap<uint64_t, OffloadCompilationResult>>>>;
 
 using ElaboratorCompileOffloadFn = ElaboratorCompileOffloadRetType (*)(
     ModuleOp module,
@@ -244,11 +249,7 @@ void registerLowerToLLVMPipeline();
 
 ///
 ErrorOrSuccess parseEmissionOptions(EmissionOptions emissionOptions);
-ErrorOrSuccess
-parseEmissionOptions(llvm::SmallSet<StringRef, 4> &emissionOptions);
-
-ErrorOrSuccess
-resetEmissionOptions(llvm::SmallSet<StringRef, 4> &emissionOptions);
+ErrorOrSuccess resetEmissionOptions(EmissionOptions emissionOptions);
 
 } // namespace KGEN
 } // namespace M
