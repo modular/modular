@@ -104,7 +104,7 @@ struct test_matmul[
 
         ctx.enqueue_copy(self.a_device_buffer, self.a_host.tensor.data)
         ctx.enqueue_copy(self.b_device_buffer, self.b_host.tensor.data)
-        ctx.memset(self.c_device_buffer_ref, 0)
+        ctx.enqueue_memset(self.c_device_buffer_ref, 0)
 
         run_cublas[dtype, enable_tc](
             m,
@@ -123,7 +123,7 @@ struct test_matmul[
         print("=== test_matmul")
 
         var ctx = self.ctx
-        ctx.memset(self.c_device_buffer_ref, 0)
+        ctx.enqueue_memset(self.c_device_buffer_ref, 0)
 
         fn create_tensor[
             layout: Layout
