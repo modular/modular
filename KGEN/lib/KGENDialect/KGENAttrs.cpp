@@ -2075,9 +2075,12 @@ static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
     return IntegerAttr::get(rhs.getType(), 0);
 
   // Implement support for identities like `x%1 = 0`
-  if (auto rhs = dyn_cast<IntegerAttr>(operands[1]))
+  if (auto rhs = dyn_cast<IntegerAttr>(operands[1])) {
     if (rhs.getValue().isOne())
       return IntegerAttr::get(rhs.getType(), 0);
+    if (rhs.getValue().isZero())
+      return {};
+  }
 
   return foldBinaryOp(
       operands, [](auto a, auto b) { return a.urem(b); },

@@ -448,6 +448,8 @@ kgen.generator @param_canonicalize<p1, p2>() {
   kgen.param.constant = <shr(p1, 0)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <div(p1, 1)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <mod(p1, 1)>  // CHECK: kgen.param.constant = <0>
+  kgen.param.constant = <mod(p1, 0)>  // CHECK: kgen.param.constant = <mod(p1, 0)>
+  kgen.param.constant = <mod(1, 0)>  // CHECK: kgen.param.constant = <mod(1, 0)>
   kgen.param.constant = <mod(p1, p1)>  // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <mod(mul(p1, 2), p1)>  // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <mod(mul_nuw(p1, 2), p1)>  // CHECK: kgen.param.constant = <0>
