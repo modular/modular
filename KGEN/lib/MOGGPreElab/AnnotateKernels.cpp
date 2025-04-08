@@ -315,6 +315,15 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
                              builder.getArrayAttr(sourceName));
   }
 
+  SmallVector<Attribute> types;
+  for (auto inputParameter : func.getInputParams())
+    types.push_back(litTypeToSourceName(inputParameter.getType()));
+
+  if (!types.empty()) {
+    func->setDiscardableAttr(MOGG_INPUT_PARAM_TYPES,
+                             builder.getArrayAttr(types));
+  }
+
   return success();
 }
 
