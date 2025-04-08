@@ -7181,6 +7181,22 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         )
 
 
+@compiler.register("mo.kv_cache.get_max_seq_len.paged")
+struct Struct_kv_cache_get_max_seq_len_paged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        target: StringLiteral,
+    ](
+        max_seq_len: OutputTensor[type = DType.uint32, rank=1],
+        kv_collection: PagedKVCacheCollection,
+        context: DeviceContextPtr,
+    ) raises:
+        # TODO: use max_lengths[0, 0] in the graphcause a CUDA_INVALID_MEMORY_ACCESS error,
+        # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
+        max_seq_len[0] = kv_collection.max_seq_length
+
+
 # ===-----------------------------------------------------------------------===#
 # Cross attention
 #
