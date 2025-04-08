@@ -22,6 +22,11 @@ from max._core import graph as _graph
 # TODO(GEX-1846): Get rid of this include.
 from max.engine import InferenceSession  # type: ignore
 from max.mlir.dialects import mo
+from max.support.paths import (
+    _build_mojo_source_package,
+    is_mojo_binary_package_path,
+    is_mojo_source_package_path,
+)
 
 from .type import (
     BufferType,
@@ -219,8 +224,17 @@ class Graph:
         # Initialize the kernel library and load custom extensions paths.
         self._kernel_library = KernelLibrary(self._context)
         with self._context:
-            for kernels_path in custom_extensions:
-                self._import_kernels(kernels_path)
+            for ext_path in custom_extensions:
+                if is_mojo_binary_package_path(ext_path):
+                    self._import_kernels(ext_path)
+                elif is_mojo_source_package_path(ext_path):
+                    # Builds the source directory into a .mojopkg file.
+                    self._import_kernels(_build_mojo_source_package(ext_path))
+                else:
+                    raise ValueError(
+                        "Path provided as custom extension to Graph must be a "
+                        + f"Mojo source or binary package: {ext_path}"
+                    )
 
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
