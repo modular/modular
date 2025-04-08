@@ -11,8 +11,8 @@ import { requirementsNoGPU } from '@site/docs/max/requirements';
 
 :::tip
 
-Want to write a GPU function with Mojo? See how to [build a custom op
-with MAX](/max/tutorials/build-custom-ops).
+Want to write a GPU function with Mojo? See how to [get started with GPU
+programming with Mojo](/mojo/manual/gpu/intro-tutorial).
 
 :::
 
@@ -1231,8 +1231,29 @@ way, you got a taste of:
 
 ## Next steps
 
-For more detail about all of Mojo's features, explore the other sections of the
-[Mojo manual](/mojo/manual/).
+Now that you've seen a bit of what Mojo can do, here are some suggested next
+steps:
 
-If you want to write a GPU function with Mojo, see how to [build a custom op
-with MAX](/max/tutorials/build-custom-ops).
+- Read through the [Mojo manual](/mojo/manual/) for more detail about all of
+  Mojo's features.
+
+- Check out [Get started with GPU programming with Mojo and the MAX
+  Driver](/mojo/manual/gpu/intro-tutorial) for an example of how to write GPU
+  functions with Mojo.
+
+- Explore more Mojo
+  [examples](https://github.com/modular/max/tree/main/examples/mojo) in the
+  public [MAX GitHub repository](https://github.com/modular/max).
+
+import TutorialStack from '@site/src/components/TutorialStack';
+
+export const maxTutorials = [
+  'magic',
+];
+
+export const mojoTutorials = [
+  'gpu/intro-tutorial',
+];
+
+<TutorialStack maxTutorials={maxTutorials} mojoTutorials={mojoTutorials}
+  analyticsName="Get started with Mojo: Next steps" />
