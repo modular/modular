@@ -19,14 +19,11 @@ numpy = "<2.0"
 [target.linux-64.dependencies]
 pytorch = {version = "==2.5.1", channel = "pytorch"}
 diffusers = "==0.27.2"
-accelerate = ">=1.5.2"
 [target.osx-arm64.dependencies]
 pytorch = {version = "==2.5.1", channel = "pytorch"}
 diffusers = "==0.27.2"
-accelerate = ">=1.5.2"
 [target.linux-aarch64.pypi-dependencies]
 torch = ">=2.5.0,<=2.6.0"
 diffusers = "==0.27.2"
-accelerate = ">=1.5.2"
 [pypi-options]
 extra-index-urls = ["https://download.pytorch.org/whl/cpu"]

@@ -16,12 +16,9 @@ numpy = "<2.0"
 # The linux ARM package doesn't exist there, so prefer PyPi instead. 
 [target.linux-64.dependencies]
 pytorch = {version = "==2.5.1", channel = "pytorch"}
-accelerate = ">=1.5.2"
 [target.osx-arm64.dependencies]
 pytorch = {version = "==2.5.1", channel = "pytorch"}
-accelerate = ">=1.5.2"
 [target.linux-aarch64.pypi-dependencies]
 torch = ">=2.5.0,<=2.6.0"
-accelerate = ">=1.5.2"
 [pypi-options]
 extra-index-urls = ["https://download.pytorch.org/whl/cpu"]
