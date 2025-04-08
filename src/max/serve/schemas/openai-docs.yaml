@@ -1,0 +1,757 @@
+openapi: 3.1.0
+info:
+  title: MAX Serve API reference
+  description: |
+    MAX Serve is a high-performance, Python-based inference server for deploying large language models (LLMs) locally or in the cloud. It provides efficient request handling through advanced batching and scheduling.
+
+    **OpenAI API compatibility**
+
+    A key feature of MAX Serve is its compatibility with a subset of the [OpenAI REST API](https://platform.openai.com/docs/api-reference/introduction). This allows you to use many existing OpenAI client applications with MAX Serve endpoints, often with minimal code changes.
+
+    * **Supported endpoints:** Currently, MAX Serve supports:
+
+        * [Chat completions](#operation/createChatCompletion) (`/v1/chat/completions`)
+        * [Completions](#operation/createCompletion) (`/v1/completions`)
+        * [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
+        * [List models](#operation/listModels) (`/v1/models`)
+
+    * **Parameter handling:** While aiming for high compatibility, not all OpenAI body parameters are implemented. Some may be accepted as no-ops (ignored but won't cause errors) to maintain client compatibility. The specific endpoint documentation below details only the parameters that actively affect behavior in MAX Serve.
+paths:  
+  /v1/chat/completions:
+    post:
+      operationId: createChatCompletion
+      summary: Create chat completion
+      description: |
+        Creates a completion for the chat message. MAX Serve supports a subset of
+        OpenAI's chat completion parameters.
+        Streaming is supported, but
+        [chat-object](https://platform.openai.com/docs/api-reference/chat-streaming/streaming)
+        and
+        [chat-streaming](https://platform.openai.com/docs/api-reference/chat-streaming)
+        response formats have limitations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChatCompletionRequest'
+            examples:
+              basic:
+                summary: Basic chat completion
+                value:
+                  model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                  messages:
+                    - role: "system"
+                      content: "You are a helpful assistant."
+                    - role: "user"
+                      content: "Hello, how are you?"
+                  max_tokens: 100
+              streaming:
+                summary: Streaming chat completion
+                value:
+                  model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                  messages:
+                    - role: "system"
+                      content: "You are a helpful assistant."
+                    - role: "user"
+                      content: "Write a short poem about AI."
+                  stream: true
+                  max_tokens: 100
+              withTools:
+                summary: Chat completion with tools
+                value:
+                  model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                  messages:
+                    - role: "system"
+                      content: "You are a helpful assistant."
+                    - role: "user"
+                      content: "What's the weather in San Francisco?"
+                  tools:
+                    - type: "function"
+                      function:
+                        name: "get_weather"
+                        description: "Get the current weather in a given location"
+                        parameters:
+                          type: "object"
+                          properties:
+                            location:
+                              type: "string"
+                          required: ["location"]
+                  tool_choice: "auto"
+                  max_tokens: 100
+              jsonResponse:
+                summary: Chat completion with JSON response format
+                value:
+                  model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                  messages:
+                    - role: "system"
+                      content: "You are a helpful assistant."
+                    - role: "user"
+                      content: "Generate a JSON object with name, age, and occupation fields"
+                  response_format:
+                    type: "json_object"
+                  max_tokens: 100
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateChatCompletionResponse'
+              examples:
+                basic:
+                  summary: Basic chat completion response
+                  value:
+                    id: "bb41aa81eac24f4b9ed7ecd0ea593815"
+                    object: "chat.completion"
+                    created: 1743183374
+                    model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                    choices:
+                      - index: 0
+                        message:
+                          role: "assistant"
+                          content: " I'm doing well, thank you for asking. How can I assist you today?"
+                          refusal: ""
+                          tool_calls: null
+                          function_call: null
+                        finish_reason: "stop"
+                        logprobs: { "content": [], "refusal": [] }
+                    service_tier: null
+                    system_fingerprint: null
+                    usage:
+                      completion_tokens: 17
+                      prompt_tokens: null
+                      total_tokens: 17
+                withTools:
+                  summary: Chat completion response with tool calls
+                  value:
+                    id: "chatcmpl-123456789"
+                    object: "chat.completion"
+                    created: 1677858242
+                    model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                    choices:
+                      - index: 0
+                        message:
+                          role: "assistant"
+                          content: null
+                          tool_calls:
+                            - id: "call_abc123"
+                              type: "function"
+                              function:
+                                name: "get_weather"
+                                arguments: "{\"location\":\"San Francisco, CA\"}"
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/completions:
+    post:
+      operationId: createCompletion
+      summary: Create completion
+      description: |
+        Creates a completion for the provided prompt.
+        MAX Serve supports a subset of OpenAI's completion parameters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCompletionRequest'
+            examples:
+              basic:
+                summary: Basic completion
+                value:
+                  model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                  prompt: "Once upon a time"
+                  max_tokens: 50
+              withEcho:
+                summary: Completion with echo
+                value:
+                  model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                  prompt: "Complete this sentence: The quick brown fox"
+                  max_tokens: 20
+                  echo: true
+              withLogprobs:
+                summary: Completion with logprobs
+                value:
+                  model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                  prompt: "The capital of France is"
+                  max_tokens: 5
+                  logprobs: 5
+              streaming:
+                summary: Streaming completion
+                value:
+                  model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                  prompt: "Write a short story about"
+                  max_tokens: 100
+                  stream: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCompletionResponse'
+              examples:
+                basic:
+                  summary: Basic completion response
+                  value:
+                    id: "2dd7bad9bd1b4caea0114cb292f5b23a"
+                    object: "text_completion"
+                    created: 1743183506
+                    model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                    choices:
+                      - index: 0
+                        text: " The story of a young girl who was born with a rare condition that made her skin extremely sensitive to the sun. She had to stay indoors during the day and only go out at night. She was a bit of an outcast among her peers,"
+                        finish_reason: "stop"
+                        logprobs:
+                          text_offset: null
+                          token_logprobs: []
+                          tokens: null
+                          top_logprobs: []
+                    system_fingerprint: null
+                    usage: null
+                withLogprobs:
+                  summary: Completion response with logprobs
+                  value:
+                    id: "cmpl-123456789"
+                    object: "text_completion"
+                    created: 1677858242
+                    model: "modularai/Llama-3.1-8B-Instruct-GGUF"
+                    choices:
+                      - index: 0
+                        text: " Paris"
+                        logprobs:
+                          tokens: [" Paris"]
+                          token_logprobs: [-0.34]
+                          top_logprobs: [
+                            {" Paris": -0.34, " London": -2.1, " New": -2.5}
+                          ]
+                          text_offset: [24]
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/embeddings:
+    post:
+      operationId: createEmbedding
+      summary: Create embeddings
+      description: |
+        Creates an embedding vector representing the input text. MAX Serve
+        supports
+        [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2)
+        model. Only string and list of strings are supported for the
+        input parameter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEmbeddingRequest'
+            examples:
+              singleString:
+                summary: Single string embedding
+                value:
+                  model: "sentence-transformers/all-mpnet-base-v2"
+                  input: "The food was delicious and the service was excellent."
+              multipleStrings:
+                summary: Multiple strings embedding
+                value:
+                  model: "sentence-transformers/all-mpnet-base-v2"
+                  input: [
+                    "The food was delicious and the service was excellent.",
+                    "The restaurant was very expensive and the food was mediocre."
+                  ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateEmbeddingResponse'
+              examples:
+                singleString:
+                  summary: Single string embedding response
+                  value:
+                    object: "list"
+                    data: [
+                      {
+                        object: "embedding",
+                        embedding: [0.0023064255, -0.009327292, 0.01842359, -0.0028842522, 0.0044457657],
+                        index: 0
+                      }
+                    ]
+                    model: "sentence-transformers/all-mpnet-base-v2"
+                multipleStrings:
+                  summary: Multiple strings embedding response
+                  value:
+                    object: "list"
+                    data: [
+                      {
+                        object: "embedding",
+                        embedding: [0.0023064255, -0.009327292, 0.01842359, -0.0028842522, 0.0044457657],
+                        index: 0
+                      },
+                      {
+                        object: "embedding",
+                        embedding: [0.0018843175, -0.007852346, 0.02157294, -0.0031256843, 0.0051234568],
+                        index: 1
+                      }
+                    ]
+                    model: "sentence-transformers/all-mpnet-base-v2"
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/models:
+    get:
+      operationId: listModels
+      summary: List models
+      description: |
+        Lists the currently available models.
+        MAX Serve only returns the one model that it is currently serving.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListModelsResponse'
+              examples:
+                models:
+                  summary: Models list response
+                  value:
+                    object: "list"
+                    data: [
+                      {
+                        id: "modularai/Llama-3.1-8B-Instruct-GGUF",
+                        object: "model",
+                        created: null,
+                        owned_by: ""
+                      }
+                    ]
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    CreateChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          description: |
+            ID of the model to use. 
+            Supported by MAX Serve but handled by frontend load balancer to route traffic to nodes.
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionMessage'
+          description: |
+            A list of messages comprising the conversation so far.
+            MAX Serve supports content and role parameters.
+        max_tokens:
+          type: integer
+          minimum: 1
+          description: |
+            The maximum number of tokens to generate in the chat completion.
+        logprobs:
+          type: boolean
+          description: |
+            Whether to return log probabilities of the output tokens or not.
+        response_format:
+          type: object
+          description: |
+            An object specifying the format that the model must output.
+          properties:
+            type:
+              type: string
+              enum: [text, json_object]
+              description: The format type
+        stream:
+          type: boolean
+          default: false
+          description: |
+            If set, partial message deltas will be sent.
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionTool'
+          description: |
+            A list of tools the model may call.
+        tool_choice:
+          oneOf:
+            - type: string
+              enum: [none, auto, required]
+            - type: object
+              required:
+                - type
+                - function
+              properties:
+                type:
+                  type: string
+                  enum: [function]
+                function:
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+          description: |
+            Controls which (if any) tool is called by the model.
+            
+    ChatCompletionMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant, function]
+          description: |
+            The role of the message author.
+            
+        content:
+          type: string
+          description: |
+            The content of the message.
+            
+        name:
+          type: string
+          description: |
+            The name of the author of this message.
+            
+    ChatCompletionTool:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [function]
+          description: The type of the tool
+        function:
+          $ref: '#/components/schemas/FunctionObject'
+    FunctionObject:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: The name of the function to be called
+        description:
+          type: string
+          description: A description of what the function does
+        parameters:
+          type: object
+          description: The parameters the function accepts, described as a JSON Schema object
+    CreateChatCompletionResponse:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - model
+        - choices
+      properties:
+        id:
+          type: string
+          description: A unique identifier for the chat completion
+        object:
+          type: string
+          enum: [chat.completion]
+          description: The object type, which is always `chat.completion`
+        created:
+          type: integer
+          description: The Unix timestamp (in seconds) of when the chat completion was created
+        model:
+          type: string
+          description: The model used for the chat completion
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionChoice'
+          description: |
+            A list of chat completion choices.
+            MAX Serve does not support `finish_reason` and `logprobs` in choices.
+        usage:
+          $ref: '#/components/schemas/Usage'
+          description: |
+            Usage statistics for the completion request.
+    ChatCompletionChoice:
+      type: object
+      required:
+        - index
+        - message
+      properties:
+        index:
+          type: integer
+          description: The index of the choice in the list of choices
+        message:
+          $ref: '#/components/schemas/ChatCompletionMessage'
+          description: The chat completion message
+    CreateCompletionRequest:
+      type: object
+      required:
+        - model
+        - prompt
+      properties:
+        model:
+          type: string
+          description: |
+            ID of the model to use.
+            
+        prompt:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          description: |
+            The prompt to generate completions for.
+            
+        echo:
+          type: boolean
+          default: false
+          description: |
+            Echo back the prompt in addition to the completion.
+            
+        max_tokens:
+          type: integer
+          minimum: 1
+          description: |
+            The maximum number of tokens to generate in the completion.
+            
+        stream:
+          type: boolean
+          default: false
+          description: |
+            Whether to stream back partial progress.
+            
+        logprobs:
+          type: integer
+          minimum: 0
+          description: |
+            Include the log probabilities on the logprobs most likely tokens.
+            
+    CreateCompletionResponse:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - model
+        - choices
+      properties:
+        id:
+          type: string
+          description: A unique identifier for the completion
+        object:
+          type: string
+          enum: [text_completion]
+          description: The object type, which is always `text_completion`
+        created:
+          type: integer
+          description: The Unix timestamp (in seconds) of when the completion was created
+        model:
+          type: string
+          description: The model used for the completion
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompletionChoice'
+          description: A list of completion choices
+        usage:
+          $ref: '#/components/schemas/Usage'
+          description: |
+            Usage statistics for the completion request.
+    CompletionChoice:
+      type: object
+      required:
+        - index
+        - text
+      properties:
+        index:
+          type: integer
+          description: The index of the choice in the list of choices
+        text:
+          type: string
+          description: The generated text
+        finish_reason:
+          type: string
+          enum: [stop, length, content_filter, null]
+          description: The reason the completion finished
+    CreateEmbeddingRequest:
+      type: object
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+          description: |
+            ID of the model to use. MAX Serve supports
+            [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2).
+        input:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          description: |
+            The text to embed.
+            MAX Serve supports strings and list of strings.
+        encoding_format:
+          type: string
+          enum: [float, base64]
+          default: float
+          description: |
+            The format to return the embeddings in.
+            
+        dimensions:
+          type: integer
+          description: |
+            The number of dimensions the resulting output embeddings should have.
+            
+        user:
+          type: string
+          description: |
+            A unique identifier representing your end-user.
+            
+    CreateEmbeddingResponse:
+      type: object
+      required:
+        - object
+        - data
+        - model
+      properties:
+        object:
+          type: string
+          enum: [list]
+          description: The object type, which is always list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Embedding'
+          description: A list of embeddings
+        model:
+          type: string
+          description: The model used for the embeddings
+        usage:
+          $ref: '#/components/schemas/Usage'
+          description: Usage statistics for the embedding request
+    Embedding:
+      type: object
+      required:
+        - object
+        - embedding
+        - index
+      properties:
+        object:
+          type: string
+          enum: [embedding]
+          description: The object type, which is always embedding
+        embedding:
+          type: array
+          items:
+            type: number
+            format: float
+          description: The embedding vector
+        index:
+          type: integer
+          description: The index of the embedding in the list of embeddings
+    ListModelsResponse:
+      type: object
+      required:
+        - object
+        - data
+      properties:
+        object:
+          type: string
+          enum: [list]
+          description: The object type, which is always list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Model'
+          description: A list of model objects. MAX Serve only returns one model.
+    Model:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - owned_by
+      properties:
+        id:
+          type: string
+          description: The model identifier
+        object:
+          type: string
+          enum: [model]
+          description: The object type, which is always model
+        created:
+          type: integer
+          description: The Unix timestamp (in seconds) of when the model was created
+        owned_by:
+          type: string
+          description: The organization that owns the model
+    Usage:
+      type: object
+      required:
+        - prompt_tokens
+        - completion_tokens
+        - total_tokens
+      properties:
+        prompt_tokens:
+          type: integer
+          description: Number of tokens in the prompt
+        completion_tokens:
+          type: integer
+          description: Number of tokens in the generated completion
+        total_tokens:
+          type: integer
+          description: Total number of tokens used in the request (prompt + completion)
+    ErrorResponse:
+      type: object
+      description: |
+        An error response from the MAX Serve API.
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          description: |
+            The error object.
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+              description: A human-readable error message
+            type:
+              type: string
+              description: The type of error
+            code:
+              type: string
+              description: A machine-readable error code
+            param:
+              type: string
+              description: The parameter that caused the error
