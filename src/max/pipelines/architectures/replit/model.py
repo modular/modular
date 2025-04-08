@@ -161,9 +161,9 @@ class ReplitModel(PipelineModel[TextContext]):
                 self.devices[0]
             ),
             kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Tensor.from_numpy(np.array([return_n_logits])).to(
-                self.devices[0]
-            ),
+            return_n_logits=Tensor.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ).to(self.devices[0]),
         )
 
     def prepare_next_token_inputs(

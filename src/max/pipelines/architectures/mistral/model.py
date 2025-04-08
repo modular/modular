@@ -154,9 +154,9 @@ class MistralModel(PipelineModel[TextContext]):
         return MistralInputs(
             input_tokens=next_tokens_batch,
             input_row_offsets=input_row_offsets,
-            return_n_logits=Tensor.from_numpy(np.array([return_n_logits])).to(
-                self.devices[0]
-            ),
+            return_n_logits=Tensor.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ).to(self.devices[0]),
             kv_cache_inputs=kv_cache_inputs,
         )
 

@@ -241,9 +241,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
             ).to(self.devices[0]),
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Tensor.from_numpy(np.array([return_n_logits])).to(
-                self.devices[0]
-            ),
+            return_n_logits=Tensor.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ).to(self.devices[0]),
         )
 
     def _prepare_padded_initial_token_inputs(
@@ -269,9 +269,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
             input_row_offsets_or_attn_mask=attn_mask,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=Tensor.from_numpy(np.array([return_n_logits])).to(
-                self.devices[0]
-            ),
+            return_n_logits=Tensor.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ).to(self.devices[0]),
         )
 
     def prepare_initial_token_inputs(
@@ -575,7 +575,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
         return_n_logits_type = TensorType(
-            DType.int32, shape=["return_n_logits"]
+            DType.int64, shape=["return_n_logits"]
         )
 
         if len(self.devices) > 1:
