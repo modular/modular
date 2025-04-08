@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Union, cast
 
 import numpy as np
-from max.pipelines.interfaces import (
+from max.pipelines.core import (
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,

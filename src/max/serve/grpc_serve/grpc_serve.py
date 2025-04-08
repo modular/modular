@@ -17,7 +17,7 @@ import max.serve.grpc_serve.grpc_predict_v2_pb2 as pb2
 from grpc_reflection.v1alpha import reflection
 from max.entrypoints.cli import TextGenerationMetrics
 from max.pipelines import PipelineConfig, PipelineTokenizer, TextTokenizer
-from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.pipelines.core import TokenGenerator, TokenGeneratorRequest
 from max.serve.grpc_serve.grpc_predict_v2_pb2_grpc import (
     GRPCInferenceServiceServicer,
     add_GRPCInferenceServiceServicer_to_server,

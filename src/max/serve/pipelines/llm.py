@@ -17,7 +17,7 @@ from typing import Callable, Generic, Optional, TypeVar
 
 import numpy as np
 from max.pipelines import PipelineConfig, PipelineTask
-from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
+from max.pipelines.core import PipelineTokenizer, TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.pipelines.stop_detection import StopDetector
 from max.serve.scheduler.queues import (

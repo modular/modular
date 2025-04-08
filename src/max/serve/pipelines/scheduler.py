@@ -15,9 +15,9 @@ from enum import Enum
 from typing import Any, Optional, cast
 
 from max.pipelines import TokenGenerator
-from max.pipelines.context import InputContext
-from max.pipelines.interfaces import (
+from max.pipelines.core import (
     EmbeddingsGenerator,
+    InputContext,
     TextGenerationResponse,
     TextResponse,
 )
