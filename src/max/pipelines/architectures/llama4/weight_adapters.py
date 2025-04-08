@@ -18,6 +18,7 @@ from max.graph.weights import WeightData, Weights
 # Maps from Safetensor to MAX weight names.
 LLAMA4_SAFETENSOR_MAP = {
     ".model.": ".",  # Removes the "model" key in the weight names.
+    "shared_expert.": "shared_expert_",
 }
 
 

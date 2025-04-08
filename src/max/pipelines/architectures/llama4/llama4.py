@@ -34,17 +34,12 @@ from max.pipelines.kv_cache import (
 )
 
 from .layers.attention import Llama4TextAttention
+from .mix_of_experts import MoE
 from .model_config import Llama4Config
 
 
 def distribute_value(v, devices: list[DeviceRef]):
     return [v.to(device) for device in devices]
-
-
-# TODO: Temporarily used to replace MOE layer.
-class Noop(Module):
-    def __call__(self, x, *args, **kwargs):
-        return x
 
 
 class Llama4DecoderLayer(Module):
@@ -53,6 +48,7 @@ class Llama4DecoderLayer(Module):
         rope: OptimizedRotaryEmbedding,
         config: Llama4Config,
         layer_idx: int,
+        devices: list[DeviceRef],
     ):
         super().__init__()
         self.self_attn = Llama4TextAttention(
@@ -71,8 +67,14 @@ class Llama4DecoderLayer(Module):
         self.is_moe_layer = layer_idx in config.moe_layers
         self.feed_forward: Module
         if self.is_moe_layer:
-            # TODO: Replace with actual MOE Layer.
-            self.feed_forward = Noop()
+            self.feed_forward = MoE(
+                hidden_dim=config.hidden_size,
+                top_k=config.num_experts_per_tok,
+                num_experts=config.num_local_experts,
+                intermediate_size=config.intermediate_size,
+                intermediate_size_mlp=config.intermediate_size_mlp,
+                dtype=config.dtype,
+            )
         else:
             self.feed_forward = DistributedMLP(
                 config.dtype,
@@ -87,6 +89,7 @@ class Llama4DecoderLayer(Module):
         self.post_attention_layernorm = DistributedRMSNorm(
             config.hidden_size, eps=config.rms_norm_eps, devices=config.devices
         )
+        self.devices = devices
 
     def __call__(
         self,
@@ -106,8 +109,11 @@ class Llama4DecoderLayer(Module):
 
         hidden_states = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
         mlp_outs = self.feed_forward(
-            self.post_attention_layernorm(hidden_states), signal_buffers
+            self.post_attention_layernorm(hidden_states),
+            signal_buffers=signal_buffers,
         )
+        if len(mlp_outs) == 1:
+            mlp_outs = distribute_value(mlp_outs[0], self.devices)
         hidden_states = [
             h + mlp_out for h, mlp_out in zip(hidden_states, mlp_outs)
         ]
@@ -127,7 +133,7 @@ class Llama4TextModel(Module):
         self.n_heads = config.num_attention_heads
         self.layers = LayerList(
             [
-                Llama4DecoderLayer(self.rope, config, layer_idx)
+                Llama4DecoderLayer(self.rope, config, layer_idx, config.devices)
                 for layer_idx in range(config.num_hidden_layers)
             ]
         )

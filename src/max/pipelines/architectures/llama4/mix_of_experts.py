@@ -66,7 +66,7 @@ class MoE(Module):
 
         # Routed experts weights
         self.down_proj = Weight(
-            name="experts.down_proj.weight",
+            name="experts.down_proj",
             shape=(
                 self.num_experts,
                 self.intermediate_size,
@@ -76,7 +76,7 @@ class MoE(Module):
         )
 
         self.gate_up_proj = Weight(
-            name="experts.gate_up_proj.weight",
+            name="experts.gate_up_proj",
             shape=(
                 self.num_experts,
                 self.hidden_dim,
@@ -108,7 +108,12 @@ class MoE(Module):
             dtype=dtype,
         )
 
-    def __call__(self, hidden_states: TensorValue):
+    def __call__(
+        self,
+        hidden_states: TensorValue,
+        **unused_kwargs,
+    ) -> list[TensorValue]:
+        hidden_states = hidden_states[0]
         hidden_states = ops.reshape(hidden_states, (-1, self.hidden_dim))
         router_logits = self.router(hidden_states)
         # (batch * seq_len, num_experts)
@@ -142,4 +147,4 @@ class MoE(Module):
             ).cast(DType.bfloat16)
             * self.shared_expert_up_proj(hidden_states)
         )
-        return router_probs * down_projs + shared_expert_out
+        return [router_probs * down_projs + shared_expert_out]
