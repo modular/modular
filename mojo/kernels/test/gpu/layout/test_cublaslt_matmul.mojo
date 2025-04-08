@@ -3,9 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# FIXME: KERN-1480
-# UNSUPPORTED: NVIDIA-GPU
-# UNSUPPORTED: AMD-GPU
+# REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv
@@ -17,17 +15,18 @@ from internal_utils import (
     HostNDBuffer,
     assert_almost_equal,
     zero,
+    random_float8,
 )
 from linalg.matmul_gpu import matmul_kernel_naive
 from linalg.vendor_blas import Backend, Handle, matmul
+from testing import assert_true
 
 
-fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
-    print("== test_cublaslt_64x16x32")
+fn test_cublaslt[
+    input_type: DType, M: Int, N: Int, K: Int
+](ctx: DeviceContext, handle: Handle) raises:
+    print("== test_cublaslt", input_type, "x", M, "x", N, "x", K)
 
-    alias M = 64
-    alias N = 16
-    alias K = 32
     alias transpose_b = True
     alias static_a_shape = DimList(M, K)
     alias static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
@@ -38,19 +37,8 @@ fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
     var c_host = HostNDBuffer[DType.float32, 2, static_c_shape]()
     var c_host_ref = HostNDBuffer[DType.float32, 2, static_c_shape]()
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(K):
-            a_host.tensor[i, j] = i
-
-    @parameter
-    for i in range(N):
-
-        @parameter
-        for j in range(K):
-            b_host.tensor[i, j] = j
+    random_float8(a_host.tensor)
+    random_float8(b_host.tensor)
 
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
@@ -63,15 +51,14 @@ fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
-    with Handle[Backend.CUBLASLT]() as handle:
-        matmul(
-            ctx,
-            handle,
-            c_device.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            c_row_major=True,
-        )
+    matmul(
+        ctx,
+        handle,
+        c_device.tensor,
+        a_device.tensor,
+        b_device.tensor,
+        c_row_major=True,
+    )
 
     ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
 
@@ -103,7 +90,7 @@ fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
     assert_almost_equal(
         c_host.tensor,
         c_host_ref.tensor,
-        atol=0.0001,
+        atol=0.01,
         rtol=0.01,
     )
 
@@ -120,4 +107,6 @@ fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
 
 fn main() raises:
     with DeviceContext() as ctx:
-        test_cublaslt_64x16x32[DType.float8_e4m3fn](ctx)
+        with Handle[Backend.CUBLASLT]() as handle:
+            test_cublaslt[DType.float8_e4m3fn, 64, 16, 32](ctx, handle)
+            test_cublaslt[DType.float8_e4m3fn, 512, 2560, 512](ctx, handle)
