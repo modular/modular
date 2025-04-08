@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
 import torch
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Device
@@ -59,10 +58,8 @@ def generate_max_outputs(
     # TODO: .cpu()s added as workaround for GEX-1967
     state_dict = {"router.weight": dummy_router_weight.cpu()}
 
-    state_dict["experts.gate_up_proj.weight"] = expert_weights[
-        "gate_up_proj"
-    ].cpu()
-    state_dict["experts.down_proj.weight"] = expert_weights["down_proj"].cpu()
+    state_dict["experts.gate_up_proj"] = expert_weights["gate_up_proj"].cpu()
+    state_dict["experts.down_proj"] = expert_weights["down_proj"].cpu()
 
     state_dict["shared_expert_gate_proj.weight"] = shared_expert_weights[
         "gate_proj.weight"
@@ -99,9 +96,6 @@ def generate_max_outputs(
     return compiled.execute(input_tensor)
 
 
-@pytest.mark.skip(
-    reason="Accuracy debugging in progress. Likely to pass when tested using actual weights from the checkpoint."
-)
 def test_mix_of_experts(
     text_config: Llama4TextConfig,
     config: Llama4Config,

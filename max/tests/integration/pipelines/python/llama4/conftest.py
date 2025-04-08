@@ -64,7 +64,7 @@ def dummy_router_weight(
     """
     torch.manual_seed(seed)  # Set fixed seed for reproducibility
     # TODO: Use parameters from config to define shape of tensors. Hardcoding for now.
-    return torch.randn((16, 5120), dtype=torch.bfloat16)
+    return torch.randn((16, 5120), dtype=torch.bfloat16) * 0.001
 
 
 @pytest.fixture
@@ -78,17 +78,20 @@ def shared_expert_weights(config: Llama4TextConfig) -> dict[str, torch.Tensor]:
             5120,
             8192,
             dtype=torch.bfloat16,
-        ),
+        )
+        * 0.001,
         "gate_proj.weight": torch.randn(
             8192,
             5120,
             dtype=torch.bfloat16,
-        ),
+        )
+        * 0.001,
         "up_proj.weight": torch.randn(
             8192,
             5120,
             dtype=torch.bfloat16,
-        ),
+        )
+        * 0.001,
     }
     return expert
 
@@ -104,12 +107,14 @@ def expert_weights(config: Llama4TextConfig) -> dict[str, torch.Tensor]:
             8192,
             5120,
             dtype=torch.bfloat16,
-        ),
+        )
+        * 0.001,
         "gate_up_proj": torch.randn(
             16,
             5120,
             16384,
             dtype=torch.bfloat16,
-        ),
+        )
+        * 0.001,
     }
     return expert
