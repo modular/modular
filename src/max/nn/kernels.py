@@ -1118,6 +1118,76 @@ def flare_mla_prefill_plan(
     return results[0].tensor, results[1].tensor, results[2].tensor
 
 
+def flare_mla_decompress_k_cache(
+    kv_params: KVCacheParams,
+    buffer_row_offsets_1d: TensorValue,
+    cache_offsets_1d: TensorValue,
+    buffer_length: TensorValue,
+    weight: TensorValue,
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    buffer_size: int,
+) -> TensorValue:
+    """This kernel decompresses the key cache by up-projecting latent representations
+    into the KV space using a weight matrix.
+
+    The process involves:
+        1. Copying buffer_length latent vectors from the key cache into a contiguous
+           buffer (k_latent)
+        2. Computing k = k_latent @ weight.T to obtain the decompressed keys
+
+    Returns:
+        A tensor of shape [buffer_size, weight.shape[0]] containing the decompressed
+        keys. Note that only the first buffer_length tokens are valid.
+    """
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected uint32 layer_idx but got {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if cache_offsets_1d.dtype != DType.uint32:
+        msg = f"expected uint32 cache_offsets but got {cache_offsets_1d.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        msg = f"unsupported cache strategy for flare_mla_decompress_k_cache: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+
+    results = ops.inplace_custom(
+        "mo.mla.decompress.k.cache.ragged.paged",
+        values=[
+            buffer_row_offsets_1d,
+            cache_offsets_1d,
+            buffer_length,
+            weight,
+            kv_collection,
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=kv_params.dtype,
+                shape=[buffer_size, weight.shape[1]],
+                device=buffer_row_offsets_1d.device,
+            ),  # k_latent_buffer, only stores intermediate values
+            TensorType(
+                dtype=kv_params.dtype,
+                shape=[buffer_size, weight.shape[0]],
+                device=buffer_row_offsets_1d.device,
+            ),  # k_buffer
+        ],
+        parameters=parameters,
+    )
+
+    return results[1].tensor
+
+
 def cross_attention_ragged(
     kv_params: KVCacheParams,
     input: TensorValue,
