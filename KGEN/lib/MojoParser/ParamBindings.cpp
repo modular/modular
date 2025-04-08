@@ -136,8 +136,7 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
                           VTableAttr::get(simpleTraitType.getContext(), {}));
     }
     paramBindings.addPrechecked(expr, typeAttr);
-  } else if (isa<TraitType>(decl->getIfTypeValue())) {
-    assert(expectedSelfType && "expected self type for trait union");
+  } else if (isa<TraitType>(decl->getIfTypeValue()) && expectedSelfType) {
     // If the trait is a trait union (synthetic ASTDecl), upcast the input type.
     TypedAttr typeAttr =
         UpcastAttr::get(expectedSelfType.getMetaType(), PValue(type),

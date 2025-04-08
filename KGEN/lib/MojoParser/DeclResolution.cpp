@@ -2891,14 +2891,7 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
   // all mergeable types in the list. They will each be checked during
   // conformance checking.
   DenseMap<StringAttr, Type> existingAliases;
-  // Cannot deduplicate function declarations since we need the full
-  // list of provided functions from each member trait during
-  // emitMetaTypeToTraitConversion.
-  // This is because the self type of each member function needs to be
-  // matched against the target trait type. This should be avoidable
-  // once we get rid of in-line vtables. At that point,
-  // emitMetaTypeToTraitConversion should just verify conformance and
-  // return an UpcastAttr.
+  // Functions are deduplicated by filtering out all inherited functions.
 
   for (SymbolRefAttr symbol : traitType.getSymbols()) {
     ASTDecl &parentDecl = getDeclForTypeSymbol(symbol);
@@ -2911,7 +2904,10 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
         if (failed(resolveFully(*decl, traitDecl.getLoc())))
           return failure();
 
-        if (auto alias = dyn_cast<AliasDeclOp>(decl)) {
+        if (auto fn = dyn_cast<FnOp>(decl)) {
+          if (fn.getIsInherited())
+            continue;
+        } else if (auto alias = dyn_cast<AliasDeclOp>(decl)) {
           // Check if the type is mergeable with the existing alias type.
           if (auto it = existingAliases.find(name);
               it != existingAliases.end()) {
@@ -2932,7 +2928,7 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
           } else {
             existingAliases[name] = alias.getType();
           }
-        } else if (!isa<FnOp>(decl)) {
+        } else {
           // If the decl is not a function or alias, it is an error.
           return emitError(traitDecl.getLoc(),
                            "unexpected decl in trait composition")

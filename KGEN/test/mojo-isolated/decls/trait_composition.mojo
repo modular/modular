@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
+# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values -split-input-file | FileCheck %s
 
 # LIT dialect asm aliases for trait composition.
 # CHECK-DAG: !Trait1 = !lit.trait<@trait_composition::@Trait1>
@@ -88,15 +88,15 @@ fn use2[T: Trait2](x: T):
 fn use12[T: Traits12](x: T):
     # CHECK: lit.call @trait_composition::@"use1
     # CHECK-SAME: "self": !lit.ref<:!Trait1_Trait2 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait1 upcast(:!Trait1_Trait2 T), "f1")
+    # CHECK-SAME: get_vtable_entry(:!Trait1_Trait2 T, "f1")
     # CHECK-SAME: "self": !lit.ref<:!Trait1_Trait2 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait1 upcast(:!Trait1_Trait2 T), "__del__")
+    # CHECK-SAME: get_vtable_entry(:!Trait1_Trait2 T, "__del__")
     use1[T](x)
     # CHECK: lit.call @trait_composition::@"use2
     # CHECK-SAME: "self": !lit.ref<:!Trait1_Trait2 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait2 upcast(:!Trait1_Trait2 T), "f2")
+    # CHECK-SAME: get_vtable_entry(:!Trait1_Trait2 T, "f2")
     # CHECK-SAME: "self": !lit.ref<:!Trait1_Trait2 T,
-    # CHECK-SAME: get_vtable_entry(:!Trait2 upcast(:!Trait1_Trait2 T), "__del__")
+    # CHECK-SAME: get_vtable_entry(:!Trait1_Trait2 T, "__del__")
     use2[T](x)
 
 
@@ -152,3 +152,45 @@ fn main_use():
     # CHECK: lit.call @trait_composition::@"use12
     # CHECK-SAME: <:!Trait1_Trait2 {{.*}}"__del__"{{.*}}"f1"{{.*}}"f2"
     use12[Struct12Alias](s12alias)
+
+
+# // -----
+
+# Test conditional method that refines the self type to a different trait.
+
+trait Trait1:
+    fn f1(self):
+        ...
+
+trait Trait2:
+    fn f2(self):
+        ...
+
+alias Traits12 = Trait1 & Trait2
+
+
+@value
+struct Struct12(Traits12):
+    fn f1(self):
+        pass
+
+    fn f2(self):
+        pass
+
+
+# conditional method
+@value
+struct Wrapper[T: AnyType]:
+    fn cond1[T: Trait1](self: Wrapper[T], other: Wrapper[T]):
+        pass
+
+
+# CHECK: lit.fn @"useCond1
+fn useCond1[ElementType: Traits12](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
+    # CHECK: lit.call {{.*}}@Wrapper::@"cond1
+    # CHECK-SAME: <:!AnyType [!kgen.param<:!Trait1_Trait2 ElementType>,
+    # CHECK-SAME:    {"__del__" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "__del__")}],
+    # CHECK-SAME:  :!Trait1 [!kgen.param<:!Trait1_Trait2 ElementType>,
+    # CHECK-SAME:    {"f1" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType,{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "f1")
+    # CHECK-SAME:    {"__del__" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "__del__")
+    p1.cond1(p2)

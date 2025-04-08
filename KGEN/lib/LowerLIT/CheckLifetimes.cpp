@@ -266,11 +266,19 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
         if (dtorSig) {
           // Bind the *(0,0) parameter to a concrete type we're using in this
           // context.
-          auto specSig = dtorSig.getSpecializedGenerator({generic.getParam()});
+          TypedAttr selfParam = generic.getParam();
+          if (trait.getSymbols().size() > 1) {
+            // For trait compositions, upcast the self parameter to the dtor
+            // expected type.
+            auto expectedSelfType = TraitType::get(symbol);
+            selfParam = UpcastAttr::get(expectedSelfType, selfParam,
+                                        VTableAttr::get(type.getContext(), {}));
+          }
+          auto specSig = dtorSig.getSpecializedGenerator({selfParam});
           auto delStr =
               StringAttr::get("__del__", StringType::get(type.getContext()));
           return ParamOperatorAttr::get(POC::GetVTableEntry,
-                                        {generic.getParam(), delStr}, specSig);
+                                        {selfParam, delStr}, specSig);
         }
       }
     }
