@@ -192,19 +192,20 @@ def _slice_and_output_tensors(
     if not x.shape:
         raise ValueError("Slicing does not support scalar inputs")
 
-    # Replace ellipsis by trivial indices.
-    ellipsis_count = indices.count(Ellipsis)
-    if ellipsis_count > 1:
+    # The indicies where Ellipsis appears in the indicies list
+    ellipsis_indices = [
+        i for i, index in enumerate(indices) if index is Ellipsis
+    ]
+
+    if len(ellipsis_indices) > 1:
         raise ValueError("Slicing index can contain at most one ellipsis")
 
-    if len(x.shape) < len(indices) - ellipsis_count:
+    if len(x.shape) < len(indices) - len(ellipsis_indices):
         raise ValueError(
             f"Too many indices supplied to slice for shape {x.shape}"
         )
 
-    ellipsis_index = (
-        indices.index(Ellipsis) if Ellipsis in indices else len(indices)
-    )
+    ellipsis_index = ellipsis_indices[0] if ellipsis_indices else len(indices)
     before = indices[:ellipsis_index]
     after = indices[ellipsis_index + 1 :]
     assert _has_no_ellipsis(before)

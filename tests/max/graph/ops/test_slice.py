@@ -119,6 +119,26 @@ def test_slice_valid_ints(tensor_type: TensorType, index):
         graph.output(out)
 
 
+@given(
+    tensor_type=tensor_types(shapes=shared_shapes),
+    index=shared_shapes.flatmap(shape_indexes),
+)
+def test_slice_valid_tensorvalues(tensor_type: TensorType, index):
+    assume(tensor_type.shape)
+    assume(0 not in tensor_type.shape)
+
+    with Graph("slice", input_types=[tensor_type]) as graph:
+        out = ops.slice_tensor(
+            graph.inputs[0].tensor,
+            [
+                ops.constant(i, DType.int64) if isinstance(i, int) else i
+                for i in list(index)
+            ],
+        )
+        assert out.shape == expected_slice_shape(tensor_type.shape, index)
+        graph.output(out)
+
+
 def gen_slice(n: int, rand: random.Random) -> slice:
     # Assign random start and step with 50% probability else None.
     start = rand.randint(-n, n - 1) if rand.randint(0, 1) else None
