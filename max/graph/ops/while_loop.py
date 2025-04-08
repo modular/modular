@@ -28,51 +28,66 @@ def while_loop(
 
     Both the predicate and body functions must take in as arguments the same
     number and types of values as specified in the init_args. The predication
-    function must return only a boolean scalar tensor of type :obj:`DType.bool`.
+    function must return only a boolean scalar tensor of type :class:`DType.bool`.
     The body function must return a list of values matching the types of init_args.
 
-    Examples:
+    The following example demonstrates a basic while loop with a single argument:
 
-    1. Basic while loop:
+    .. code-block:: python
 
-        .. code-block:: python
+        from max.graph import Graph, ops
+        from max.dtype import DType
+
+        with Graph("while_loop_example") as g:
+            x = ops.constant(0, dtype=DType.int32)
 
             def pred(x):
                 return x < 10
+
             def body(x):
                 return x + 1
 
             result = ops.while_loop(x, pred, body)
+            print(result)
 
-    2. While loop with multiple arguments:
+    The following example shows a while loop with multiple arguments:
 
-        .. code-block:: python
+    .. code-block:: python
+
+        from max.graph import Graph, ops
+        from max.dtype import DType
+
+        with Graph("while_loop_example") as g:
+            x = ops.constant(0, dtype=DType.int32)
+            y = ops.constant(5, dtype=DType.int32)
 
             def pred(x, y):
-                return x < 10 and y < 10
+                return ops.logical_and(x < 10, y < 15)
+
             def body(x, y):
                 return [x + 1, y + 1]
 
             results = ops.while_loop((x, y), pred, body)
+            print(results)
 
     Args:
         initial_values:
-            Initial values for loop arguments. Must be non-empty
+            Initial values for loop arguments. Must be non-empty.
 
         predicate:
             Callable that takes loop arguments and returns a boolean scalar tensor
-            of type :obj:`DType.bool` determining loop continuation
+            of type :class:`DType.bool` determining loop continuation.
 
         body:
             Callable that takes loop arguments and returns updated values matching
-            the types of init_args
+            the types of init_args.
 
     Returns:
-        List of output values from the final loop iteration
+        List of output values from the final loop iteration.
 
     Raises:
-        ValueError: If init_args is empty
-        NotImplementedError: If any init_arg is a BufferValue
+        ValueError: If init_args is empty.
+        NotImplementedError: If any init_arg is a :class:`BufferValue`.
 
     Note:
         Buffer operations are currently not supported.
@@ -118,19 +133,19 @@ def while_loop(
 
         Args:
             user_func: The user's predicate or body function that operates on
-                     loop variables only
+                     loop variables only.
             block_args: The block arguments from the while loop operation, which
                       include both loop variables and the execution chain as
-                      the last element
+                      the last element.
 
         Returns:
             A function that properly manages the execution chain state before
-            invoking the user's function with just the loop variables
+            invoking the user's function with just the loop variables.
 
-        Note:
+        .. note::
             The execution chain is tracked differently in while loops vs conds:
-            - While loops are re-entrant and must pass the chain through iterations
-            - Cond blocks create new chain SSAs from the parent scope
+            - While loops are re-entrant and must pass the chain through iterations.
+            - Cond blocks create new chain SSAs from the parent scope.
             This chain management ensures proper ordering of side-effecting ops
             across loop iterations.
         """
