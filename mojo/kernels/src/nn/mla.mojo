@@ -24,6 +24,7 @@ from gpu import (
     barrier,
     block_dim,
     block_idx,
+    global_idx,
     lane_id,
     thread_idx,
 )
@@ -2185,3 +2186,129 @@ fn mla_prefill_single_batch[
             output_gmem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
+
+
+# ===-----------------------------------------------------------------------===#
+# Helper function that creates cache_row_offsets for the MLA prefill kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn mla_prefill_plan[
+    cache_t: KVCacheT,
+](
+    buffer_row_offsets: NDBuffer[mut=True, DType.uint32, 2, *_],
+    cache_offsets: NDBuffer[mut=True, DType.uint32, 2, *_],
+    buffer_lengths: NDBuffer[mut=True, DType.int32, 1, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    k_cache: cache_t,
+    buffer_token_size: UInt32,
+    ctx: DeviceContext,
+) raises:
+    """
+    This calls a GPU kernel that plans how to process a batch of sequences with
+    varying lengths using a fixed-size buffer.
+
+    Each sequence in the batch has some existing cached tokens and new input
+    tokens. The kernel divides the total tokens into chunks of buffer_token_size.
+
+    For each chunk (iteration), it calculates:
+        1. Buffer offsets for each sequence in each chunk
+        2. Cache offsets for each sequence in each chunk
+        3. Total buffer lengths for each processing iteration
+    """
+    var batch_size: Int = input_row_offsets.dim[0]() - 1
+
+    alias kernel = mla_prefill_plan_kernel[
+        buffer_lengths.shape,
+        cache_t,
+    ]
+
+    ctx.enqueue_function[kernel](
+        buffer_row_offsets,
+        cache_offsets,
+        buffer_lengths,
+        input_row_offsets,
+        k_cache,
+        buffer_token_size,
+        grid_dim=(Int(ceildiv(batch_size, 128)), 1, 1),
+        block_dim=(128, 1, 1),
+    )
+
+
+@__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
+fn mla_prefill_plan_kernel[
+    buffer_lengths_shape: DimList,
+    cache_t: KVCacheT,
+](
+    buffer_row_offsets: NDBuffer[mut=True, DType.uint32, 2, MutableAnyOrigin],
+    cache_offsets: NDBuffer[mut=True, DType.uint32, 2, MutableAnyOrigin],
+    buffer_lengths: NDBuffer[
+        mut=True, DType.int32, 1, MutableAnyOrigin, buffer_lengths_shape
+    ],
+    input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    k_cache: cache_t,
+    buffer_token_size: UInt32,
+):
+    var seq_idx = global_idx.x
+    var seq_start_pos = 0
+    var seq_end_pos = 0
+    var batch_size: Int = input_row_offsets.dim[0]() - 1
+    var buffer_size: Int = Int(buffer_token_size)
+
+    alias MAX_CHUNKS = buffer_lengths.shape.get[0]()
+
+    if seq_idx >= batch_size:
+        return
+
+    # Calculate starting position for this sequence
+    for i in range(seq_idx):
+        seq_start_pos += k_cache.cache_length(i)
+    seq_start_pos += Int(input_row_offsets[seq_idx])
+
+    # which chunk this sequence starts in
+    var start_chunk = seq_start_pos // buffer_size
+
+    var processed_seq_len = UInt32(0)
+    var curr_seq_len = k_cache.cache_length(seq_idx) + Int(
+        input_row_offsets[seq_idx + 1] - input_row_offsets[seq_idx]
+    )
+    var seq_len_left = curr_seq_len
+
+    # Fill buffer offsets for this sequence
+    @parameter
+    for chunk_idx in range(MAX_CHUNKS):
+        if chunk_idx < start_chunk:
+            buffer_row_offsets[chunk_idx, seq_idx] = buffer_size
+        elif chunk_idx == start_chunk:
+            buffer_row_offsets[chunk_idx, seq_idx] = seq_start_pos % buffer_size
+        else:
+            buffer_row_offsets[chunk_idx, seq_idx] = 0
+
+        cache_offsets[chunk_idx, seq_idx] = processed_seq_len
+
+        var chunk_len = min(
+            seq_len_left,
+            buffer_size - Int(buffer_row_offsets[chunk_idx, seq_idx]),
+        )
+        processed_seq_len += chunk_len
+        seq_len_left -= chunk_len
+
+    # If this is the last sequence in the batch
+    if seq_idx == batch_size - 1:
+        seq_end_pos = seq_start_pos + curr_seq_len
+        var end_chunk = seq_end_pos // buffer_size
+
+        # Set buffer lengths for all chunks
+        @parameter
+        for chunk_idx in range(MAX_CHUNKS):
+            if chunk_idx < end_chunk:
+                buffer_row_offsets[chunk_idx, seq_idx + 1] = buffer_size
+                buffer_lengths[chunk_idx] = buffer_size
+            elif chunk_idx == end_chunk:
+                buffer_row_offsets[chunk_idx, seq_idx + 1] = (
+                    seq_end_pos % buffer_size
+                )
+                buffer_lengths[chunk_idx] = seq_end_pos % buffer_size
+            else:
+                buffer_lengths[chunk_idx] = -1

@@ -32,7 +32,7 @@ from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask, MHAMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
-from nn.mla import flare_mla_decoding
+from nn.mla import flare_mla_decoding, mla_prefill_plan
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -2129,6 +2129,41 @@ fn _flare_mla_decode_kv_cache_ragged[
         scale,
         cuda_ctx,
     )
+
+
+@always_inline
+fn generic_flare_mla_prefill_ragged_paged_plan[
+    target: StaticString
+](
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    buffer_token_size: UInt32,
+    buffer_row_offsets: NDBuffer[mut=True, DType.uint32, 2, *_],
+    cache_offsets: NDBuffer[mut=True, DType.uint32, 2, *_],
+    buffer_lengths: NDBuffer[mut=True, DType.int32, 1, *_],
+    context: DeviceContextPtr,
+) raises:
+    constrained[is_gpu[target](), "Planning MLA is only supported on GPU"]()
+
+    var cuda_ctx = context.get_device_context()
+
+    var layer_idx_cast = Int(layer_idx)
+
+    var k = kv_collection.get_key_cache(layer_idx_cast)
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.mla.prefill.ragged.paged.plan"
+    ):
+        mla_prefill_plan(
+            buffer_row_offsets,
+            cache_offsets,
+            buffer_lengths,
+            input_row_offsets,
+            k,
+            buffer_token_size,
+            cuda_ctx,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
