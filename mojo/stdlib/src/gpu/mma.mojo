@@ -1016,6 +1016,22 @@ fn wgmma_async[
         ](desc_a_value, desc_b_value, c_reg.array)
 
         return rebind[StaticTuple[Scalar[c_dtype], width]](res)
+
+    elif a_type == b_type == DType.float8_e4m3fn and c_dtype == DType.float32:
+        return __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
+            shape_m = m.value,
+            shape_n = n.value,
+            shape_k = k.value,
+            type_a = __mlir_attr.`f8E4M3`,
+            type_b = __mlir_attr.`f8E4M3`,
+            type_c = __mlir_attr.`f32`,
+            layout_a=layout_a_value,
+            layout_b=layout_b_value,
+            scale_d = scale_d.value,
+            scale_a = scale_a.value,
+            scale_b = scale_b.value,
+            _type = c_reg.type,
+        ](desc_a_value, desc_b_value, c_reg.array)
     else:
         constrained[
             False,
