@@ -709,7 +709,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     f"cached non-existent weight file at {relative_path} on Hugging Face"
                 )
 
-            return str(cached_result)
+            return str(cached_result) if cached_result else None
         # 3. Handle unexpected repo type.
         else:
             logger.warning(
