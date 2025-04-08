@@ -17,16 +17,22 @@ from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight, ops
 from max.nn import Linear, RMSNorm
 from max.nn.attention import Attention
-from max.nn.kernels import flash_attention_ragged_paged_fa3_fallback
+from max.nn.kernels import (
+    MHAMaskVariant,
+    flare_mla_prefill_ragged,
+    flash_attention_ragged_paged_fa3_fallback,
+)
 from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,
 )
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     FetchPagedKVCacheCollectionFA3Fallback,
     KVCacheParams,
     KVCacheStrategy,
+    PagedKVCacheManager,
     PagedKVCacheManagerFA3Fallback,
     load_kv_manager,
 )
@@ -642,6 +648,157 @@ def test_kv_cache_paged_fa3_fallback():
     result = model.execute(
         input_tensor.to(cuda),
         input_row_offsets.to(cuda),
+        blocks.to(cuda),
+        cache_lengths.to(cuda),
+        lookup_table_tensor.to(cuda),
+        is_cache_empty_buf,
+        copy_inputs_to_device=False,
+    )[0]
+    assert isinstance(result, Tensor)
+
+    host = CPU(0)
+    assert np.all(result.to(host).to_numpy() != np.inf)
+    assert np.all(result.to(host).to_numpy() != np.nan)
+
+
+@pytest.mark.skipif(
+    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
+)
+def test_kv_cache_paged_mla_prefill():
+    cuda = Accelerator()
+    session = InferenceSession(devices=[cuda])
+    num_q_heads = 32
+    q_head_dim = 192
+    k_head_dim = 128
+    kv_params = KVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=1,
+        head_dim=576,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+    )
+    num_layers = 1
+    prompt_lens = [10, 30]
+    batch_size = len(prompt_lens)
+    total_seq_len = sum(prompt_lens)
+    input_type = TensorType(
+        DType.bfloat16, ["total_seq_len", num_q_heads, q_head_dim]
+    )
+    k_buffer_type = TensorType(
+        DType.bfloat16, ["total_seq_len", num_q_heads, k_head_dim]
+    )
+    v_buffer_type = TensorType(
+        DType.bfloat16, ["total_seq_len", num_q_heads, k_head_dim]
+    )
+    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    kv_manager = PagedKVCacheManager(
+        kv_params,
+        cache_memory=1024 * 1024 * 32,
+        page_size=128,
+        max_batch_size=2,
+        max_seq_len=100,
+        num_layers=num_layers,
+        devices=[cuda],
+        session=session,
+    )
+    fetch_op = FetchPagedKVCacheCollection(kv_params)
+
+    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
+        kv_manager.input_symbols()[0]
+    )
+
+    def construct() -> Graph:
+        with Graph(
+            "call_mla_prefill",
+            input_types=[
+                input_type,
+                input_row_offsets_type,
+                k_buffer_type,
+                v_buffer_type,
+                blocks_type,
+                cache_lengths_type,
+                lookup_table_type,
+                is_cache_empty_type,
+            ],
+        ) as g:
+            assert are_all_tensor_values(g.inputs)
+            (
+                input,
+                input_row_offsets,
+                k_buffer,
+                v_buffer,
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+            ) = g.inputs
+
+            layer_idx = ops.constant(
+                0,
+                DType.uint32,
+            )
+
+            kv_collection = fetch_op(
+                blocks, cache_lengths, lookup_table, is_cache_empty
+            )
+            result = flare_mla_prefill_ragged(
+                kv_params,
+                input,
+                k_buffer,
+                v_buffer,
+                input_row_offsets,
+                input_row_offsets,  # actually buffer_row_offsets
+                cache_lengths,
+                kv_collection,
+                layer_idx,
+                MHAMaskVariant.CAUSAL_MASK,
+                1,  # scale
+            )
+            g.output(result.cast(DType.float32))
+        return g
+
+    g = construct()
+    # Claim seq_ids in cache
+    seq_ids = []
+    for _ in range(batch_size):
+        seq_id = kv_manager.claim(1)
+        seq_ids.append(seq_id[0])
+
+    input_row_offsets = Tensor(
+        DType.uint32,
+        [batch_size + 1],
+    )
+    running_sum = 0
+    for i in range(batch_size):
+        input_row_offsets[i] = running_sum
+        running_sum += prompt_lens[i]
+    input_row_offsets[batch_size] = running_sum
+    input_row_offsets = input_row_offsets.to(cuda)
+
+    batch = [
+        create_text_context(s, np.empty(prompt_lens[i]))
+        for i, s in enumerate(seq_ids)
+    ]
+    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
+        kv_manager.fetch(batch)[0]
+    )
+    model = session.load(g)
+
+    input_tensor = Tensor.zeros(
+        (total_seq_len, num_q_heads, q_head_dim), dtype=DType.bfloat16
+    )
+    k_buffer_tensor = Tensor.zeros(
+        (total_seq_len, num_q_heads, k_head_dim), dtype=DType.bfloat16
+    )
+    v_buffer_tensor = Tensor.zeros(
+        (total_seq_len, num_q_heads, k_head_dim), dtype=DType.bfloat16
+    )
+
+    result = model.execute(
+        input_tensor.to(cuda),
+        input_row_offsets.to(cuda),
+        k_buffer_tensor.to(cuda),
+        v_buffer_tensor.to(cuda),
         blocks.to(cuda),
         cache_lengths.to(cuda),
         lookup_table_tensor.to(cuda),
