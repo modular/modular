@@ -38,6 +38,7 @@ from tensor_internal.managed_tensor_slice import (
 
 from utils import IndexList, StaticTuple
 from collections import Optional
+from collections.string import StaticString
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
@@ -1047,3 +1048,11 @@ struct CustomOpWithCustomParameterShapeFunc:
         test_flag: Int
     ](input_tensor: InputTensor,) -> IndexList[input_tensor.rank]:
         return input_tensor.shape()
+
+
+@compiler.register("custom_op_with_static_string_params")
+struct CustomOpWithStaticStringParams:
+    @staticmethod
+    fn execute[target: StaticString, foo: StaticString]():
+        print(target)
+        print(foo)
