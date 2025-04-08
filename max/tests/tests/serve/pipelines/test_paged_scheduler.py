@@ -17,8 +17,9 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines import TokenGenerator
-from max.pipelines.context import InputContext, TextContext
-from max.pipelines.interfaces import (
+from max.pipelines.core import (
+    InputContext,
+    TextContext,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,

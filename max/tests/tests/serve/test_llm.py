@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
-from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.pipelines.core import TokenGenerator, TokenGeneratorRequest
 from max.pipelines.tokenizer import IdentityPipelineTokenizer
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings

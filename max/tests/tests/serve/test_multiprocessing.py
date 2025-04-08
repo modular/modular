@@ -8,7 +8,7 @@
 from multiprocessing.reduction import ForkingPickler
 
 import numpy
-from max.pipelines.interfaces import TokenGeneratorRequest
+from max.pipelines.core import TokenGeneratorRequest
 
 
 def test_reductions():

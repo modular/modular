@@ -8,7 +8,7 @@
 import time
 
 import pytest
-from max.pipelines.interfaces import TokenGenerator
+from max.pipelines.core import TokenGenerator
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
