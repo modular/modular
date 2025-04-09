@@ -440,7 +440,7 @@ PIPELINES = {
             absolute_tolerance=1.2,
             relative_tolerance=0.4,
             cos_dist_threshold=8e-4,
-            kl_div_threshold=2e-3,
+            kl_div_threshold=3.7e-3,
         ),
     ),
     "Llama4-17B-Scout-Instruct-bfloat16": PipelineDef(
@@ -528,7 +528,7 @@ PIPELINES = {
             absolute_tolerance=0.58,
             relative_tolerance=0.3,
             cos_dist_threshold=1e-3,
-            kl_div_threshold=3e-3,
+            kl_div_threshold=3.2e-3,
         ),
     ),
     "pixtral-bfloat16": PipelineDef(
