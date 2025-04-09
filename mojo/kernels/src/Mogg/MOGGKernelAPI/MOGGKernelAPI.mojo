@@ -150,6 +150,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged,
 )
 from nn.mha import flash_attention
+from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm, rms_norm
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
@@ -7394,6 +7395,37 @@ struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos:
             kv_collection,
             layer_idx,
             scale,
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Mixture of Experts
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.moe.create.indices")
+struct Struct_moe_create_indices:
+    @always_inline
+    @staticmethod
+    fn execute[
+        target: StringLiteral,
+    ](
+        token_expert_order: OutputTensor[type = DType.uint32, rank=1],
+        expert_start_indices: OutputTensor[type = DType.uint32, rank=1],
+        restore_token_order: OutputTensor[type = DType.uint32, rank=1],
+        expert_ids: OutputTensor[type = DType.uint32, rank=1],
+        expert_usage_stats: OutputTensor[type = DType.uint32, rank=1],
+        topk_ids: InputTensor[type = DType.uint32, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        moe_create_indices[input_type = DType.uint32, target=target](
+            managed_tensor_slice_to_ndbuffer(token_expert_order),
+            managed_tensor_slice_to_ndbuffer(expert_start_indices),
+            managed_tensor_slice_to_ndbuffer(restore_token_order),
+            managed_tensor_slice_to_ndbuffer(expert_ids),
+            managed_tensor_slice_to_ndbuffer(expert_usage_stats),
+            managed_tensor_slice_to_ndbuffer(topk_ids),
             context,
         )
 
