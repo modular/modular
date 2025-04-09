@@ -768,14 +768,13 @@ async def test_prefix_caching_rollback_prompt_n_num_step_1() -> None:
 
     # Whoops, the correct tokens is [1 2 3 4 5 6 7 8]!
     # Lets reset the ctx.
-    ctx.set_token_indices(start_idx=3, active_idx=4, end_idx=4)
-    assert ctx.next_tokens.tolist() == [4]
+    ctx.rollback(3)
+    assert ctx.next_tokens.tolist() == [4], f"{ctx}"
     ctx.update(5)
-    ctx.update(6)
-    ctx.update(7)
-    ctx.update(8)
-    ctx.set_token_indices(start_idx=4)
-    assert ctx.next_tokens.tolist() == [5, 6, 7, 8]
+    ctx.jump_ahead(6)
+    ctx.jump_ahead(7)
+    ctx.jump_ahead(8)
+    assert ctx.next_tokens.tolist() == [5, 6, 7, 8], f"{ctx}"
 
     # Rollback should evict the stale hashes and blocks
     kv_manager.rollback([ctx])
@@ -817,13 +816,12 @@ async def test_prefix_caching_rollback_prompt_1_num_step_n() -> None:
 
     # Whoops, the correct tokens is [1 2 3 4 5 6 7 8]!
     # Lets reset the ctx.
-    ctx.set_token_indices(start_idx=3, active_idx=4, end_idx=4)
+    ctx.rollback(3)
     assert ctx.next_tokens.tolist() == [4]
     ctx.update(5)
-    ctx.update(6)
-    ctx.update(7)
-    ctx.update(8)
-    ctx.set_token_indices(start_idx=4)
+    ctx.jump_ahead(6)
+    ctx.jump_ahead(7)
+    ctx.jump_ahead(8)
     assert ctx.next_tokens.tolist() == [5, 6, 7, 8]
 
     # Rollback should evict the stale hashes and blocks
