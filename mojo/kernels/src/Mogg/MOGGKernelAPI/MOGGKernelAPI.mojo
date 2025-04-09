@@ -63,6 +63,7 @@ from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.dual_gemm import swishGLU
+from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
@@ -7427,6 +7428,41 @@ struct Struct_moe_create_indices:
             managed_tensor_slice_to_ndbuffer(expert_usage_stats),
             managed_tensor_slice_to_ndbuffer(topk_ids),
             context,
+        )
+
+
+@compiler.register("mo.grouped.matmul.ragged")
+struct Struct_grouped_matmul_ragged:
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType, //,
+        target: StringLiteral,
+    ](
+        c: OutputTensor[type=c_type, rank=2],
+        a: InputTensor[type=a_type, rank=2],
+        b: InputTensor[type=b_type, rank=3],
+        expert_start_indices: InputTensor[type = DType.uint32, rank=1],
+        expert_ids: InputTensor[type = DType.uint32, rank=1],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        constrained[
+            is_gpu[target](), "naive grouped matmul only support GPUs"
+        ]()
+        cuda_ctx = context.get_device_context()
+        naive_grouped_matmul[transpose_b=True](
+            managed_tensor_slice_to_ndbuffer(c),
+            managed_tensor_slice_to_ndbuffer(a),
+            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer(expert_start_indices),
+            managed_tensor_slice_to_ndbuffer(expert_ids),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            cuda_ctx,
         )
 
 
