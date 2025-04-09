@@ -160,35 +160,38 @@ class LinearV2(Module):
 
 
 class ColumnParallelLinear(LinearV2):
-    """A Linear layer where the weight and bias are sharded onto multiple
-    devices.
+    """A Linear layer where the weight and bias are sharded onto multiple devices.
 
     This layer first computes :math:`y = xW_i^T + b_i` for each device `i` in
     `[0,..., num_devices]`:
 
-    +-----+       +-----+ T     +-----+       +-----+
-    |     |       | W_0 |       | b_0 |       | y_0 | GPU0
-    +     +       +-----+       +-----+       +-----+
-    |     |       | W_1 |       | b_1 |       | y_1 | GPU1
-    +  x  +   @   +-----+   +   +-----+   =   +-----+
-    |     |       | W_2 |       | b_2 |       | y_2 | GPU2
-    +     +       +-----+       +-----+       +-----+
-    |     |       | W_3 |       | b_3 |       | y_3 | GPU3
-    +-----+       +-----+       +-----+       +-----+
+    .. code-block::
+
+        +-----+       +-----+ T     +-----+       +-----+
+        |     |       | W_0 |       | b_0 |       | y_0 | GPU0
+        |     |       +-----+       +-----+       +-----+
+        |     |       | W_1 |       | b_1 |       | y_1 | GPU1
+        |  x  |   @   +-----+   +   +-----+   =   +-----+
+        |     |       | W_2 |       | b_2 |       | y_2 | GPU2
+        |     |       +-----+       +-----+       +-----+
+        |     |       | W_3 |       | b_3 |       | y_3 | GPU3
+        +-----+       +-----+       +-----+       +-----+
 
     The values are then collected using an Allgather op, producing the same
-    output tensor :math:`y = xW^T + b` on each device.
+    output tensor :math:`y = xW^T + b` on each device:
 
-    .GPU0  GPU1  GPU2  GPU3                      GPU0  GPU1  GPU2  GPU3
-    +-----+-----+-----+-----+                   +-----+-----+-----+-----+
-    | y_0 |  -  |  -  |  -  |                   | y_0 | y_0 | y_0 | y_0 |
-    +-----+-----+-----+-----+                   +-----+-----+-----+-----+
-    |  -  | y_1 |  -  |  -  |                   | y_1 | y_1 | y_1 | y_1 |
-    +-----+-----+-----+-----+  -- Allgather --> +-----+-----+-----+-----+
-    |  -  |  -  | y_2 |  -  |                   | y_2 | y_2 | y_2 | y_2 |
-    +-----+-----+-----+-----+                   +-----+-----+-----+-----+
-    |  -  |  -  |  -  | y_3 |                   | y_3 | y_3 | y_3 | y_3 |
-    +-----+-----+-----+-----+                   +-----+-----+-----+-----+
+    .. code-block::
+
+        GPU0  GPU1  GPU2  GPU3                      GPU0  GPU1  GPU2  GPU3
+        +-----+-----+-----+-----+                   +-----+-----+-----+-----+
+        | y_0 |  -  |  -  |  -  |                   | y_0 | y_0 | y_0 | y_0 |
+        +-----+-----+-----+-----+                   +-----+-----+-----+-----+
+        |  -  | y_1 |  -  |  -  |                   | y_1 | y_1 | y_1 | y_1 |
+        +-----+-----+-----+-----+  -- Allgather --> +-----+-----+-----+-----+
+        |  -  |  -  | y_2 |  -  |                   | y_2 | y_2 | y_2 | y_2 |
+        +-----+-----+-----+-----+                   +-----+-----+-----+-----+
+        |  -  |  -  |  -  | y_3 |                   | y_3 | y_3 | y_3 | y_3 |
+        +-----+-----+-----+-----+                   +-----+-----+-----+-----+
 
     Example usage:
 
