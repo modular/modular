@@ -23,11 +23,9 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from transformers import AutoConfig
 
-from .config_enums import RepoType
 from .core import InputContext, TextGenerationResponse, TokenGenerator
-from .hf_utils import HuggingFaceRepo, download_weight_files
+from .hf_utils import download_weight_files
 from .pipeline import PipelineModel
 
 T = TypeVar("T", bound=InputContext)
@@ -50,18 +48,14 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             self.pipeline_config.model_config.device_specs
         )
         target_session = InferenceSession(devices=target_devices)
-        target_config = AutoConfig.from_pretrained(
-            self.pipeline_config.model_config.model_path,
-            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
-            revision=self.pipeline_config.model_config.huggingface_revision,
+        target_config = self.pipeline_config.model_config.huggingface_config
+
+        target_hf_repo = (
+            self.pipeline_config.model_config.huggingface_weights_repo
         )
-        target_repo_id = (
-            self.pipeline_config.model_config._weights_repo_id
-            if self.pipeline_config.model_config._weights_repo_id
-            else self.pipeline_config.model_config.model_path
-        )
+
         weight_paths = download_weight_files(
-            huggingface_model_id=target_repo_id,
+            huggingface_model_id=target_hf_repo.repo_id,
             filenames=[
                 str(x) for x in self.pipeline_config.model_config.weight_path
             ],
@@ -93,10 +87,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         draft_devices = load_devices(scan_available_devices()[:1])
         draft_session = InferenceSession(devices=draft_devices)
 
-        draft_config = AutoConfig.from_pretrained(
-            self.pipeline_config.draft_model_config.model_path,
-            trust_remote_code=self.pipeline_config.draft_model_config.trust_remote_code,
-            revision=self.pipeline_config.draft_model_config.huggingface_revision,
+        draft_config = (
+            self.pipeline_config.draft_model_config.huggingface_config
         )
 
         # Retrieve Encoding, and Files for Draft Model
@@ -105,11 +97,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 "draft_model must be provided for speculative decoding"
             )
 
-        draft_hf_repo = HuggingFaceRepo(
-            repo_id=self.pipeline_config.draft_model_config.model_path,
-            revision=self.pipeline_config.draft_model_config.huggingface_revision,
-            trust_remote_code=self.pipeline_config.draft_model_config.trust_remote_code,
-            repo_type=RepoType.online,
+        draft_hf_repo = (
+            self.pipeline_config.draft_model_config.huggingface_weights_repo
         )
         encodings = draft_hf_repo.supported_encodings
         if not encodings:

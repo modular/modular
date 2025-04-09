@@ -167,6 +167,9 @@ class MAXModelConfig(MAXModelConfigBase):
     force_download: bool = False
     """Whether to force download a given file if it's already present in the local cache."""
 
+    _huggingface_config: Optional[AutoConfig] = None
+    """Hugging Face config. This should only be set by internal code."""
+
     _weights_repo_id: Optional[str] = None
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
 
@@ -367,6 +370,14 @@ class MAXModelConfig(MAXModelConfigBase):
             trust_remote_code=self.trust_remote_code,
         )
 
+    @property
+    def huggingface_config(self) -> AutoConfig:
+        if self._huggingface_config is None:
+            raise ValueError(
+                "huggingface_config is not set. MAXModelConfig has not been instantiated and its fields not fully resolved yet."
+            )
+        return self._huggingface_config
+
     def validate_multi_gpu_supported(self, multi_gpu_supported: bool) -> None:
         """Validates that the model architecture supports multi-GPU inference.
 
@@ -476,6 +487,7 @@ class MAXModelConfig(MAXModelConfigBase):
         self._validate_quantization_encoding_device_compatibility(
             supported_encodings_list=list(supported_encodings.keys()),
         )
+        self._huggingface_config = hf_config
         self._finalize_encoding_config(hf_config=hf_config)
         self._resolve_weight_path(default_weights_format=default_weights_format)
         self._resolve_kv_cache_strategy(supported_encodings=supported_encodings)
