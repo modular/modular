@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn register_internal(name: StringLiteral):
+fn register_internal(name: StaticString):
     """
     This decorator registers a given mojo function as being an implementation
     of a mo op or a `mo.custom` op.
@@ -23,7 +23,7 @@ fn register_internal(name: StringLiteral):
     return
 
 
-fn __mogg_intrinsic_attr(intrin: StringLiteral):
+fn __mogg_intrinsic_attr(intrin: StaticString):
     """
     Attaches the given intrinsic annotation onto the function.
     """
