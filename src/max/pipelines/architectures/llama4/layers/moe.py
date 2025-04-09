@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.nn.kernels import grouped_matmul_ragged, moe_create_indices
 from max.nn.layer import Module
 from max.nn.linear import LinearV2
 
@@ -145,26 +146,47 @@ class MoE(Module):
         router_probs = ops.sigmoid(ops.max(router_logits, axis=-1))
         # (batch * seq_len, 1)
 
-        down_proj = self.down_proj.to(self.device)
-        top_down_proj = ops.gather(down_proj, top_idx, axis=0)
-        gate_up_proj = self.gate_up_proj.to(self.device)
-        top_gate_up_proj = ops.gather(gate_up_proj, top_idx, axis=0)
-        # (batch * seq_len, h, w)
+        down_proj_weight = self.down_proj.to(self.device)
+        gate_up_proj_weight = self.gate_up_proj.to(self.device)
 
-        gate_up_projs = ops.unsqueeze(hidden_states, axis=1) @ top_gate_up_proj
-        # (batch * seq_len, 1, hidden_dim) @ (batch*seq_len, hidden_dim, intermediate_size) -> (batch*seq_len, 1, intermediate_size)
+        (
+            token_expert_order,
+            expert_start_indices,
+            restore_token_order,
+            expert_ids,
+            expert_usage_stats,
+        ) = moe_create_indices(
+            ops.cast(top_idx, DType.uint32),
+            self.num_experts,
+        )
+
+        permutated_states = ops.gather(
+            hidden_states, token_expert_order, axis=0
+        )
+        gate_up_projs = grouped_matmul_ragged(
+            permutated_states,
+            ops.transpose(gate_up_proj_weight, 1, 2),
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats.to(DeviceRef.CPU()),
+        )
 
         gate_up_projs = (
             ops.silu(
-                gate_up_projs[:, :, : self.intermediate_size].cast(
-                    DType.float32
-                )
+                gate_up_projs[:, : self.intermediate_size].cast(DType.float32)
             ).cast(DType.bfloat16)
-            * gate_up_projs[:, :, self.intermediate_size :]
+            * gate_up_projs[:, self.intermediate_size :]
         )
 
-        down_projs = ops.squeeze(gate_up_projs @ top_down_proj, axis=1)
-        # (batch * seq_len, 16, 8192) @ (batch*seq_len, intermediate_size, 1) -> (batch * seq_len, hidden_dim)
+        down_projs = grouped_matmul_ragged(
+            gate_up_projs,
+            ops.transpose(down_proj_weight, 1, 2),
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats.to(DeviceRef.CPU()),
+        )
+
+        routed_expert_out = ops.gather(down_projs, restore_token_order, axis=0)
 
         shared_expert_out = self.shared_expert_down_proj(
             ops.silu(
@@ -172,4 +194,4 @@ class MoE(Module):
             ).cast(DType.bfloat16)
             * self.shared_expert_up_proj(hidden_states)
         )
-        return [router_probs * down_projs + shared_expert_out]
+        return [router_probs * routed_expert_out + shared_expert_out]
