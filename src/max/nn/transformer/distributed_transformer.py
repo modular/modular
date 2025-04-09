@@ -111,7 +111,7 @@ class DistributedTransformer(Module):
         self.return_logits = return_logits
         self.devices = devices
 
-        if self.return_logits != ReturnLogits.VARIABLE:
+        if self.return_logits == ReturnLogits.VARIABLE:
             raise ValueError(
                 "DistributedTransformer does not support variable logits."
             )
