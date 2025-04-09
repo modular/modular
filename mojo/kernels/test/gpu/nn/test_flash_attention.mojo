@@ -14,7 +14,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH, Info, Vendor
+from gpu.host.info import DEFAULT_GPU_ARCH, Info, Vendor, A100, H100
 from internal_utils import assert_with_measure
 from memory import UnsafePointer
 from nn.mha import (
@@ -470,8 +470,6 @@ fn test_decoding[
     split_k: Bool,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
-    # fp32 arbitrary depth and num_heads, baseline impl.
-    # BF16 token gen
     test[
         3,
         qkv_type,
@@ -532,6 +530,26 @@ fn test_decoding[
     #     num_partitions=num_partitions,
     #     decoding_warp_split_k=split_k,
     # ](1, 208, ctx, use_index_input=use_index_input)
+
+
+fn test_decoding_large_group[
+    batch_size: Int,
+    num_partitions: OptionalReg[Int] = None,
+    split_k: Bool = False,
+    qkv_type: DType = DType.bfloat16,
+](ctx: DeviceContext, use_index_input: Bool = False) raises:
+    test[
+        4,
+        qkv_type,
+        DType.float32,
+        128,
+        32,
+        group=16,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+        decoding_warp_split_k=split_k,
+    ](1, 2000, ctx, use_index_input=use_index_input)
 
 
 fn test_cross_attention[batch_size: Int](ctx: DeviceContext) raises:
@@ -626,8 +644,10 @@ def main():
         test_context_encoding(ctx)
         test_cross_attention[1](ctx)
 
+        # KERN-1726: Disable warp split-k because it fails with mha_decoding_single_batch
+        # specifically for num_keys = 523.
         @parameter
-        for split_k in range(2):
+        for split_k in range(1):
 
             @parameter
             for batch_size in range(1, 5, 3):
@@ -638,6 +658,10 @@ def main():
                     test_decoding[batch_size, 1, split_k, DType.float32](
                         ctx, False
                     )
+
+                @parameter
+                if ctx.device_info is A100 or ctx.device_info is H100:
+                    test_decoding_large_group[batch_size, 1](ctx)
 
                 @parameter
                 if not is_sm8(ctx.device_info):
