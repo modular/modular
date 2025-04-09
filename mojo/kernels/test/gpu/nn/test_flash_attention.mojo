@@ -384,16 +384,14 @@ fn test_context_encoding(ctx: DeviceContext) raises:
         against_gpu_naive=True,
     ](178, 178, ctx, is_benchmark())
     # bf16 depth == 128, bf16-fp32 mma
-    # FIXME: why is this getting inf? (KERN-1730)
-    if not is_sm8(ctx.device_info) and ctx.device_info.vendor != Vendor.AMD_GPU:
-        test[
-            4,
-            DType.bfloat16,
-            DType.bfloat16,
-            depth=128,
-            num_heads=1,
-            against_gpu_naive=True,
-        ](128, 128, ctx, use_index_input=True)
+    test[
+        4,
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=128,
+        num_heads=1,
+        against_gpu_naive=True,
+    ](128, 128, ctx)
     test[
         4,
         DType.bfloat16,
