@@ -14,7 +14,7 @@ modular_py_test(
         "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
     },
     deps = [
-        "//SDK/lib/API/python/max/pipelines/kv_cache",
+        "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/serve",
         "//SDK/lib/API/python/max/serve/grpc_serve",
         "//SDK/lib/API/python/max/serve/pipelines",

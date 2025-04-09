@@ -16,6 +16,11 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedKVCacheManager,
+)
 from max.pipelines import TokenGenerator
 from max.pipelines.core import (
     InputContext,
@@ -23,11 +28,6 @@ from max.pipelines.core import (
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
-)
-from max.pipelines.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedKVCacheManager,
 )
 from max.serve.pipelines.model_worker import ProcessControl
 from max.serve.pipelines.scheduler import (
