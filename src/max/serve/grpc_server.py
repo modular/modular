@@ -138,18 +138,6 @@ def serve(
                 print(f"ERROR invalid model name {model}")
                 exit(-1)
 
-            arch = PIPELINE_REGISTRY.retrieve_architecture(
-                model_name,
-                trust_remote_code=pipeline_config.model_config.trust_remote_code,
-                huggingface_revision=pipeline_config.model_config.huggingface_revision,
-            )
-            if not arch:
-                # TODO arekay - better error handling
-                print(
-                    f"ERROR architecture for {model_name} not found in registry"
-                )
-                exit(-1)
-
             pipeline_config.max_batch_size = max_batch_size
             _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
                 pipeline_config
