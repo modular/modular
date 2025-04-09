@@ -35,7 +35,6 @@ from max.pipelines.max_config import (
     repo_exists_with_retry,
 )
 from max.pipelines.registry import PIPELINE_REGISTRY
-from transformers import AutoTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -302,15 +301,11 @@ class PipelineConfig(MAXConfig):
 
         # TODO: Cache these tokenizers HF calls too.
         # Validate that their tokenizers are identical.
-        draft_tokenizer = AutoTokenizer.from_pretrained(
-            self.draft_model_config.model_path,
-            trust_remote_code=self.model_config.trust_remote_code,
-            revision=self.model_config.huggingface_revision,
+        draft_tokenizer = PIPELINE_REGISTRY._get_active_tokenizer(
+            self.draft_model_config
         )
-        target_tokenizer = AutoTokenizer.from_pretrained(
-            self.model_config.model_path,
-            trust_remote_code=self.model_config.trust_remote_code,
-            revision=self.model_config.huggingface_revision,
+        target_tokenizer = PIPELINE_REGISTRY._get_active_tokenizer(
+            self.model_config
         )
 
         # Compare Vocabularies

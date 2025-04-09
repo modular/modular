@@ -27,8 +27,7 @@ from transformers import AutoConfig
 
 from .config_enums import RepoType
 from .core import InputContext, TextGenerationResponse, TokenGenerator
-from .hf_utils import download_weight_files
-from .max_config import HuggingFaceRepo
+from .hf_utils import HuggingFaceRepo, download_weight_files
 from .pipeline import PipelineModel
 
 T = TypeVar("T", bound=InputContext)

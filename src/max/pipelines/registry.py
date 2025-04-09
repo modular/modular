@@ -25,7 +25,12 @@ from max.driver import Device, load_devices
 from max.dtype import DType
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.support.human_readable_formatter import to_human_readable_bytes
-from transformers import AutoConfig
+from transformers import (
+    AutoConfig,
+    AutoTokenizer,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+)
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -42,8 +47,9 @@ from .core import (
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
+from .hf_utils import HuggingFaceRepo
 from .kv_cache import KVCacheStrategy
-from .max_config import HuggingFaceRepo, KVCacheConfig, MAXModelConfig
+from .max_config import KVCacheConfig, MAXModelConfig
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer
@@ -151,6 +157,9 @@ class PipelineRegistry:
     def __init__(self, architectures: list[SupportedArchitecture]):
         self.architectures = {arch.name: arch for arch in architectures}
         self._cached_huggingface_configs: dict[HuggingFaceRepo, AutoConfig] = {}
+        self._cached_huggingface_tokenizers: dict[
+            HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
+        ] = {}
 
     def register(self, architecture: SupportedArchitecture):
         """Add new architecture to registry."""
@@ -217,6 +226,41 @@ class PipelineRegistry:
             )
 
         return self._cached_huggingface_configs[
+            model_config.huggingface_weights_repo
+        ]
+
+    def _get_active_tokenizer(
+        self, model_config: MAXModelConfig
+    ) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
+        """Retrieves or creates a cached HuggingFace AutoTokenizer for the given
+        model configuration.
+
+        This method maintains a cache of HuggingFace tokenizers to avoid
+        reloading them unnecessarily which incurs a huggingface hub API call.
+        If a tokenizer for the given model hasn't been loaded before, it will
+        create a new one using AutoTokenizer.from_pretrained() with the model's
+        settings.
+
+        Args:
+            model_config: The MAX model configuration containing model path and
+            loading settings.
+
+        Returns:
+            PreTrainedTokenizer | PreTrainedTokenizerFast: The HuggingFace tokenizer for the model.
+        """
+        if (
+            model_config.huggingface_weights_repo
+            not in self._cached_huggingface_tokenizers
+        ):
+            self._cached_huggingface_tokenizers[
+                model_config.huggingface_weights_repo
+            ] = AutoTokenizer.from_pretrained(
+                model_config.model_path,
+                trust_remote_code=model_config.trust_remote_code,
+                revision=model_config.huggingface_revision,
+            )
+
+        return self._cached_huggingface_tokenizers[
             model_config.huggingface_weights_repo
         ]
 
