@@ -12,6 +12,7 @@ from .driver import (
     Accelerator,
     Device,
     DeviceSpec,
+    DeviceStream,
     accelerator_api,
     accelerator_count,
     devices_exist,

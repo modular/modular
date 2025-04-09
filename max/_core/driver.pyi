@@ -156,6 +156,13 @@ class Device:
         """
 
     @property
+    def default_stream(self) -> DeviceStream:
+        """
+        Returns the default stream for this device. The default stream is
+        initialized when the device object is created.
+        """
+
+    @property
     def is_compatible(self) -> bool:
         """Returns whether this device is compatible with MAX."""
 
@@ -165,6 +172,54 @@ class Device:
     @staticmethod
     def cpu(id: int = -1) -> CPU:
         """Creates a CPU device. The id is ignored currently."""
+
+class DeviceStream:
+    """
+    Provides access to a stream of execution on a device.
+
+    .. code-block:: python
+
+        from max import driver
+        # Create a default accelerator device
+        device = driver.Accelerator()
+        # Get the default stream for the device
+        stream = device.default_stream
+        # Create a new stream of execution on the device
+        new_stream = driver.DeviceStream(device)
+    """
+
+    def __init__(self, device: Device) -> None:
+        """Creates a new stream of execution associated with the device."""
+
+    def synchronize(self) -> None:
+        """
+        Ensures all operation on this stream complete before returning.
+
+        Raises:
+            ValueError: If any enqueue'd opertaions had an internal error.
+        """
+
+    @overload
+    def wait_for(self, stream: DeviceStream) -> None:
+        """
+        Ensures all operations on the other stream complete before future work
+        submitted to this stream is scheduled.
+        """
+
+    @overload
+    def wait_for(self, device: Device) -> None:
+        """
+        Ensures all operations on device's default stream complete before
+        future work submitted to this stream is scheduled.
+        """
+
+    @property
+    def device(self) -> Device:
+        """The device this stream is executing on."""
+
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+    def __eq__(self, arg: object, /) -> bool: ...
 
 class Tensor:
     """
@@ -188,6 +243,13 @@ class Tensor:
     ) -> None: ...
     @overload
     def __init__(
+        self,
+        dtype: max._core.dtype.DType,
+        shape: Sequence[int],
+        stream: DeviceStream,
+    ) -> None: ...
+    @overload
+    def __init__(
         self, shape: Annotated[ArrayLike, dict(writable=False)], device: Device
     ) -> None: ...
     @overload
@@ -201,6 +263,10 @@ class Tensor:
     @property
     def device(self) -> Device:
         """Device on which tensor is resident."""
+
+    @property
+    def stream(self) -> DeviceStream:
+        """Stream to which tensor is bound."""
 
     @property
     def dtype(self) -> max._core.dtype.DType:
@@ -256,6 +322,11 @@ class Tensor:
     def contiguous(self) -> Tensor:
         """Creates a contiguous copy of the tensor."""
 
+    @overload
+    def copy(self, stream: DeviceStream) -> Tensor:
+        """Create a deep copy on the device associated with the stream."""
+
+    @overload
     def copy(self, device: Device | None = None) -> Tensor:
         """
         Create a deep copy on an optionally given device.
@@ -312,11 +383,22 @@ class Tensor:
         If device is None (default), the tensor will be allocated on the CPU.
         """
 
+    @overload
     def to(self, device: Device) -> Tensor:
         """
         Return a tensor that's guaranteed to be on the given device.
 
-        The tensor is only copied if the input device is different from the
+        The tensor is only copied if the requested device is different from the
+        device upon which the tensor is already resident.
+        """
+
+    @overload
+    def to(self, device: DeviceStream) -> Tensor:
+        """
+        Return a tensor that's guaranteed to be on the given device and associated
+        with the given stream.
+
+        The tensor is only copied if the requested device is different from the
         device upon which the tensor is already resident.
         """
 
