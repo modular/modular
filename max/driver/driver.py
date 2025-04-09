@@ -16,6 +16,7 @@ from max._core.driver import (  # noqa: F401
     CPU,
     Accelerator,
     Device,
+    DeviceStream,
     accelerator_count,
 )
 
