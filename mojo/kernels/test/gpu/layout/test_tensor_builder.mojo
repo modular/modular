@@ -9,7 +9,7 @@ from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._fillers import *
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_builder import static
+from layout.tensor_builder import static, dynamic
 from utils.index import Index
 
 
@@ -155,6 +155,48 @@ fn test_row_major():
     arange(t_5d_dynamic)
     print_tensor_info(t_5d_dynamic)
     _ = t_5d_static
+
+    var tensor = tb[DType.bfloat16]().row_major[8, 8]().alloc()
+    _ = tensor.fill(-1)
+    var tile = tensor.tile[4, 4](0, 0).vectorize[1, 2]().fill(1)
+    print_tensor_info(tensor)
+    # CHECK: ---tensor-begin---
+    # CHECK: layout: ((8, 8):(8, 1))
+    # CHECK: address_space: 0
+    # CHECK: values:
+    # CHECK: 1.0 1.0 1.0 1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: 1.0 1.0 1.0 1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: 1.0 1.0 1.0 1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: 1.0 1.0 1.0 1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    _ = tensor
+    _ = tile
+
+    var tensor_dynamic = tb[DType.bfloat16]().row_major(
+        dynamic(8), static[8]()
+    ).view(tensor.ptr)
+    _ = tensor_dynamic.fill(-1)
+    var tile_dynamic = tensor_dynamic.tile[4, 4](0, 0).vectorize[1, 2]().fill(1)
+    print_tensor_info(tensor_dynamic)
+    # CHECK: ---tensor-begin---
+    # CHECK: layout: ((-1, 8):(8, 1))
+    # CHECK: runtime_layout: ((8, 8):(8, 1))
+    # CHECK: address_space: 0
+    # CHECK: values:
+    # CHECK: 1.0 1.0 1.0 1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: 1.0 1.0 1.0 1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: 1.0 1.0 1.0 1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: 1.0 1.0 1.0 1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: ---tensor-end---
+    _ = tensor_dynamic
+    _ = tile_dynamic
 
 
 fn test_col_major():
