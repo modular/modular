@@ -12,13 +12,13 @@ from layout import Layout, IntTuple
 from utils import IndexList, StaticTuple
 
 
-fn __mogg_intrinsic_attr(intrin: StringLiteral):
+fn __mogg_intrinsic_attr(intrin: StaticString):
     return
 
 
 # Register a DPS Kernel
 @__mogg_intrinsic_attr("mogg.intrinsic_register")
-fn register(name: StringLiteral):
+fn register(name: StaticString):
     pass
 
 
