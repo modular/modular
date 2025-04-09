@@ -117,6 +117,8 @@ trait MHAMask:
 # CausalMask
 # ===-----------------------------------------------------------------------===#
 
+alias MASK_VALUE = -10_000
+
 
 @value
 @register_passable("trivial")
@@ -152,7 +154,7 @@ struct CausalMask(MHAMask):
         # TODO(KERN-782): -10000 should be -inf but softmax saturates with NaNs.
         masked_score_vec = (
             q_idx >= (k_idx + iota[index_type, width]())
-        ).select(score_vec, -10000)
+        ).select(score_vec, MASK_VALUE)
 
         return masked_score_vec
 
@@ -244,6 +246,114 @@ struct NullMask(MHAMask):
     ) -> TileMaskStatus:
         # no mask
         return TileMaskStatus(0)
+
+
+# ===-----------------------------------------------------------------------===#
+# ChunkedLocalMask
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct ChunkedMask[local_window_size: Int](MHAMask):
+    """Mask implementing Chunked attention.
+
+    This groups the mask into chunks of size `local_window_size`.
+    Considering the following case:
+    - Q_len = 7
+    - K_len = 10
+    - local_window_size = 4
+
+    The mask will be applied as follows:
+        K > 0 1 2 3 4 5 6 7 8 9
+        Q v x--------------------x
+        0 | 1 1 1 1 0 0 0 0 0 0
+        1 | 0 0 0 0 1 1 1 1 0 0
+        2 | 0 0 0 0 1 1 1 1 0 0
+        3 | 0 0 0 0 1 1 1 1 0 0
+        4 | 0 0 0 0 1 1 1 1 0 0
+        5 | 0 0 0 0 0 0 0 0 1 1
+        6 | 0 0 0 0 0 0 0 0 1 1
+    """
+
+    alias apply_log2e_after_mask: Bool = False
+
+    @always_inline
+    fn mask[
+        type: DType,
+        width: Int, //,
+        *,
+        element_bitwidth: Int = bitwidthof[UInt32](),
+        unsigned: Bool = False,
+    ](
+        self,
+        coord: IndexList[
+            4, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        score_vec: SIMD[type, width],
+    ) -> SIMD[type, width]:
+        constrained[
+            width <= local_window_size,
+            "SIMD width of chunked mask must be <= local window size",
+        ]()
+
+        var k_start_idx = coord.data[3]
+        var k_end_idx = k_start_idx + width - 1
+
+        q_chunk_idx = Int(coord.data[2] // local_window_size)
+        k_start_chunk_idx = Int(k_start_idx) // local_window_size
+        k_end_chunk_idx = Int(k_end_idx) // local_window_size
+
+        if q_chunk_idx == k_start_chunk_idx == k_end_chunk_idx:
+            # fully unmasked, return the value
+            return score_vec
+
+        elif q_chunk_idx == k_start_chunk_idx or q_chunk_idx == k_end_chunk_idx:
+            # partial mask
+            var retval = score_vec
+            var boundary = UInt32(
+                (k_start_idx + local_window_size - 1) // local_window_size
+            ) * local_window_size
+
+            var mask_val = SIMD[DType.bool, width](False)
+            var k_indices = k_start_idx.cast[DType.uint32]() + iota[
+                DType.uint32, width
+            ]()
+            if q_chunk_idx == k_start_chunk_idx:
+                mask_val = k_indices >= boundary
+            elif q_chunk_idx == k_end_chunk_idx:
+                mask_val = k_indices < boundary
+
+            return mask_val.select(MASK_VALUE, retval)
+
+        # fully masked
+        return SIMD[type, width](MASK_VALUE)
+
+    @always_inline
+    fn status[
+        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
+    ](
+        self,
+        tile_offset: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        tile_size: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+    ) -> TileMaskStatus:
+        q_start_window = tile_offset[0] // local_window_size
+        q_end_window = (tile_offset[0] + tile_size[0] - 1) // local_window_size
+        k_start_window = tile_offset[1] // local_window_size
+        k_end_window = (tile_offset[1] + tile_size[1] - 1) // local_window_size
+
+        var overlapping_windows = k_end_window >= q_start_window and q_end_window >= k_start_window
+
+        if q_start_window == k_start_window == k_end_window == q_end_window:
+            return TileMaskStatus.NO_MASK
+        elif overlapping_windows:
+            return TileMaskStatus.PARTIAL_MASK
+        else:
+            return TileMaskStatus.FULL_MASK
 
 
 # ===-----------------------------------------------------------------------===#
@@ -379,7 +489,19 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
         ],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
-        return self.lhs.mask(coord, score_vec) & self.rhs.mask(coord, score_vec)
+        @parameter
+        if type is DType.bool or type.is_integral():
+            return self.lhs.mask(coord, score_vec) & self.rhs.mask(
+                coord, score_vec
+            )
+
+        else:
+            # TODO(austin) hack to support float types.
+            # we assume -inf is our mask value.
+            return min(
+                self.lhs.mask(coord, score_vec),
+                self.rhs.mask(coord, score_vec),
+            )
 
     @always_inline
     fn status[
@@ -425,9 +547,18 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
         ],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
-        return self.lhs.mask(coord, score_vec) | self.rhs.mask(coord, score_vec)
+        @parameter
+        if type is DType.bool or type.is_integral():
+            return self.lhs.mask(coord, score_vec) | self.rhs.mask(
+                coord, score_vec
+            )
+        else:
+            return min(
+                self.lhs.mask(coord, score_vec),
+                self.rhs.mask(coord, score_vec),
+            )
 
-    @always_inline
+    # @always_inline
     fn status[
         *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
     ](
@@ -441,5 +572,35 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
     ) -> TileMaskStatus:
         var lhs_status = self.lhs.status(tile_offset, tile_size)
         var rhs_status = self.rhs.status(tile_offset, tile_size)
-
         return lhs_status | rhs_status
+
+
+# ===-----------------------------------------------------------------------===#
+# ChunkedLocalMask
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn chunked_causal_mask[
+    local_window_size: Int
+](out res: OrMask[CausalMask(), ChunkedMask[local_window_size]()]):
+    """Mask implementing Chunked Causal attention for Llama4 models.
+
+    This groups the mask into chunks of size `local_window_size` and performs causal
+    attention within each local chunk. Considering the following case:
+    - Q_len = 7
+    - K_len = 10
+    - local_window_size = 4
+
+    The mask will be applied as follows:
+        K > 0 1 2 3 4 5 6 7 8 9
+        Q v x--------------------x
+        0 | 1 1 1 1 0 0 0 0 0 0
+        1 | 0 0 0 0 1 0 0 0 0 0
+        2 | 0 0 0 0 1 1 0 0 0 0
+        3 | 0 0 0 0 1 1 1 0 0 0
+        4 | 0 0 0 0 1 1 1 1 0 0
+        5 | 0 0 0 0 0 0 0 0 1 0
+        6 | 0 0 0 0 0 0 0 0 1 1
+    """
+    res = __type_of(res)()
