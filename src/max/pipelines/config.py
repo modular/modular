@@ -300,7 +300,6 @@ class PipelineConfig(MAXConfig):
             msg = f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
             raise ValueError(msg)
 
-        # TODO: Cache these tokenizers HF calls too.
         # Validate that their tokenizers are identical.
         draft_tokenizer = PIPELINE_REGISTRY._get_active_tokenizer(
             self.draft_model_config
