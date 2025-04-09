@@ -1323,7 +1323,13 @@ struct String(
         """
         return self._buffer.unsafe_ptr()
 
-    fn unsafe_cstr_ptr(self) -> UnsafePointer[c_char]:
+    fn unsafe_cstr_ptr(
+        self,
+    ) -> UnsafePointer[
+        c_char,
+        mut = Origin(__origin_of(self)).is_mutable,
+        origin = __origin_of(self),
+    ]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
