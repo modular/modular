@@ -45,6 +45,7 @@ from .max_config import (
     KVCacheConfig,
     MAXModelConfig,
     ProfilingConfig,
+    QuantizationConfig,
     SamplingConfig,
 )
 from .pipeline import (
@@ -73,6 +74,7 @@ __all__ = [
     "ProfilingConfig",
     "KVCacheConfig",
     "MAXModelConfig",
+    "QuantizationConfig",
     "PipelineEngine",
     "PipelineTask",
     "PIPELINE_REGISTRY",

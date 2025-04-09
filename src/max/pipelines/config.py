@@ -382,6 +382,9 @@ class PipelineConfig(MAXConfig):
         self.model_config.validate_and_resolve_with_set_quantization_encoding(
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
+            hf_config=PIPELINE_REGISTRY.get_active_huggingface_config(
+                model_config=self.model_config
+            ),
         )
 
         if self.rope_type is None:

@@ -173,7 +173,7 @@ class PipelineRegistry:
         self, model_config: MAXModelConfig
     ) -> Optional[SupportedArchitecture]:
         # Retrieve model architecture names
-        hf_config = self._get_active_huggingface_config(
+        hf_config = self.get_active_huggingface_config(
             model_config=model_config
         )
         architecture_names = getattr(hf_config, "architectures", [])
@@ -194,7 +194,7 @@ class PipelineRegistry:
 
         return None
 
-    def _get_active_huggingface_config(
+    def get_active_huggingface_config(
         self, model_config: MAXModelConfig
     ) -> AutoConfig:
         """Retrieves or creates a cached HuggingFace AutoConfig for the given
@@ -273,7 +273,7 @@ class PipelineRegistry:
         model_cls = arch.pipeline_model
         model_config = pipeline_config.model_config
 
-        huggingface_config = self._get_active_huggingface_config(model_config)
+        huggingface_config = self.get_active_huggingface_config(model_config)
 
         try:
             free_memory = int(sum(d.stats["free_memory"] for d in devices))
@@ -912,7 +912,7 @@ class PipelineRegistry:
             )
 
             # Load HuggingFace Config
-            huggingface_config = self._get_active_huggingface_config(
+            huggingface_config = self.get_active_huggingface_config(
                 pipeline_config.model_config
             )
 

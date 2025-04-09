@@ -466,6 +466,7 @@ class MAXModelConfig(MAXModelConfigBase):
         self,
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
         default_weights_format: WeightsFormat,
+        hf_config: AutoConfig,
     ) -> None:
         """
         Validates that the model path, and weight path
@@ -475,7 +476,7 @@ class MAXModelConfig(MAXModelConfigBase):
         self._validate_quantization_encoding_device_compatibility(
             supported_encodings_list=list(supported_encodings.keys()),
         )
-        self._finalize_encoding_config()
+        self._finalize_encoding_config(hf_config=hf_config)
         self._resolve_weight_path(default_weights_format=default_weights_format)
         self._resolve_kv_cache_strategy(supported_encodings=supported_encodings)
         self._validate_final_architecture_model_path_weight_path()
@@ -627,7 +628,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     f"unexpected repository type: {repo.repo_type}"
                 )
 
-    def _finalize_encoding_config(self):
+    def _finalize_encoding_config(self, hf_config: AutoConfig):
         """
         Finalizes the encoding config.
 
@@ -635,25 +636,20 @@ class MAXModelConfig(MAXModelConfigBase):
         been set.
         """
         if self.quantization_encoding == SupportedEncoding.gptq:
-            hf_config = AutoConfig.from_pretrained(
-                self.model_path,
-                trust_remote_code=self.trust_remote_code,
-                revision=self.huggingface_revision,
-            )
             hf_quant_config = hf_config.quantization_config
 
             if hf_config.torch_dtype is not torch.float16:
                 raise ValueError(
                     "bfloat16 scales are not supported for GPTQ-quantized models."
                 )
-
-            self._quant_config = QuantizationConfig(
+            default_quantization_config = QuantizationConfig(
                 quant_method=hf_quant_config["quant_method"],
                 bits=hf_quant_config["bits"],
                 group_size=hf_quant_config["group_size"],
                 desc_act=hf_quant_config["desc_act"],
                 sym=hf_quant_config["sym"],
             )
+            self._quant_config = default_quantization_config
 
     def _local_weight_path(self, relative_path: Path) -> str | None:
         """Checks common local locations for a weight file and returns its
