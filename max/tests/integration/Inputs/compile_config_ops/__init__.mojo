@@ -42,7 +42,7 @@ struct UseLogger:
 struct AddOneCustom:
     @staticmethod
     fn execute[
-        target: StaticString
+        target: StringLiteral
     ](
         out: OutputTensor,
         x: InputTensor[type = out.type, rank = out.rank],
