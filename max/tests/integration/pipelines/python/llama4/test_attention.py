@@ -37,7 +37,8 @@ from transformers.models.llama4.modeling_llama4 import (
     Llama4TextModel,
 )
 
-MAX_SEQ_LEN = 100
+# TODO(KERN-1729): this is load bearing and MAX_SEQ_LEN = 100 fails on AMD GPU.
+MAX_SEQ_LEN = 64
 
 
 @torch.no_grad()

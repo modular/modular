@@ -19,10 +19,7 @@ modular_py_test(
             "SDK/integration-test/pipelines/python/llama4/testdata"
         ),
     },
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:nvidia_gpu",
-    ],
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
         "no-sandbox",
