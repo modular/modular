@@ -22,7 +22,6 @@ from max.driver import load_devices
 from max.engine import InferenceSession
 from max.graph.weights import load_weights
 from max.profiler import Tracer, traced
-from transformers import AutoConfig
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
@@ -47,13 +46,6 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         # Initialize Session.
         devices = load_devices(self._pipeline_config.model_config.device_specs)
         session = InferenceSession(devices=devices)
-
-        # Load model.
-        huggingface_config = AutoConfig.from_pretrained(
-            self._pipeline_config.model_config.model_path,
-            trust_remote_code=self._pipeline_config.model_config.trust_remote_code,
-            revision=self._pipeline_config.model_config.huggingface_revision,
-        )
 
         if not self._pipeline_config.model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
@@ -80,7 +72,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=huggingface_config,
+            huggingface_config=self._pipeline_config.model_config.huggingface_config,
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
