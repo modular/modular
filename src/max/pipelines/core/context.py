@@ -134,6 +134,10 @@ class InputContext(Protocol):
         """Set the token indices without manipulating the token array."""
         ...
 
+    def rollback(self, idx: int) -> None:
+        """Rollback and remove the last idx tokens."""
+        ...
+
     @property
     def matcher(self) -> Optional[xgr.GrammarMatcher]:  # type: ignore
         """An optional xgr Grammar Matcher provided when using structured output."""
@@ -257,6 +261,21 @@ class TextContext:
 
     def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
         self.matcher = matcher
+
+    def rollback(self, idx: int) -> None:
+        new_active_idx = self.active_idx - idx
+        new_start_idx = self._start_idx
+
+        if self._start_idx >= new_active_idx:
+            new_start_idx = new_active_idx - 1
+
+        if new_start_idx < 0:
+            raise ValueError("cannot rollback before the start of the array")
+
+        self._start_idx = new_start_idx
+        self._active_idx = new_active_idx
+        self._end_idx = new_active_idx
+        self._completion_end_idx = new_active_idx
 
     @property
     def current_length(self) -> int:
