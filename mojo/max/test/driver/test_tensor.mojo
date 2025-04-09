@@ -20,7 +20,7 @@ from max.driver import (
 )
 from max.tensor import Tensor as OldTensor
 from max.tensor import TensorShape, TensorSpec
-from testing import assert_equal, assert_raises, assert_true
+from testing import assert_equal, assert_not_equal, assert_raises, assert_true
 
 from buffer import Dim, NDBuffer
 from collections import InlineArray
@@ -345,6 +345,51 @@ fn test_construction_from_managed_tensor_slice() raises:
     )
 
 
+def test_tensor_is_equal_to_itself():
+    tensor = Tensor[DType.float32, 2](TensorShape(2, 2))
+    assert_equal(tensor, tensor)
+
+
+def test_tensors_with_different_shapes_are_not_equal():
+    tensor1 = Tensor[DType.float32, 2](TensorShape(2, 2))
+    tensor2 = Tensor[DType.float32, 2](TensorShape(3, 3))
+    assert_not_equal(tensor1, tensor2)
+
+
+def test_tensors_with_same_values_are_equal():
+    tensor1 = Tensor[DType.float32, 2](TensorShape(2, 2))
+    tensor2 = Tensor[DType.float32, 2](TensorShape(2, 2))
+
+    tensor1[0, 0] = 0
+    tensor1[0, 1] = 1
+    tensor1[1, 0] = 2
+    tensor1[1, 1] = 3
+
+    tensor2[0, 0] = 0
+    tensor2[0, 1] = 1
+    tensor2[1, 0] = 2
+    tensor2[1, 1] = 3
+
+    assert_equal(tensor1, tensor2)
+
+
+def test_tensors_with_different_values_are_not_equal():
+    tensor1 = Tensor[DType.float32, 2](TensorShape(2, 2))
+    tensor2 = Tensor[DType.float32, 2](TensorShape(2, 2))
+
+    tensor1[0, 0] = 0
+    tensor1[0, 1] = 1
+    tensor1[1, 0] = 2
+    tensor1[1, 1] = 3
+
+    tensor2[0, 0] = 0
+    tensor2[0, 1] = 1
+    tensor2[1, 0] = 2
+    tensor2[1, 1] = 4
+
+    assert_not_equal(tensor1, tensor2)
+
+
 def main():
     test_tensor()
     test_unsafe_slice()
@@ -358,3 +403,6 @@ def main():
     test_move()
     test_from_max_tensor()
     test_copy_error()
+    test_tensor_is_equal_to_itself()
+    test_tensors_with_different_shapes_are_not_equal()
+    test_tensors_with_same_values_are_equal()

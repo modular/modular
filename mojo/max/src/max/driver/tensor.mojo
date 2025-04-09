@@ -31,11 +31,13 @@ from memory import UnsafePointer
 from utils import IndexList
 from utils._serialize import _serialize
 
+from testing import Testable
+
 from ._utils import _convert_from
 from .device import Device, DeviceMemory, DeviceTensor
 
 
-struct Tensor[type: DType, rank: Int](CollectionElement):
+struct Tensor[type: DType, rank: Int](CollectionElement, Testable):
     """An owned, indexible buffer type."""
 
     var _ptr: UnsafePointer[Scalar[type]]
@@ -317,3 +319,50 @@ struct Tensor[type: DType, rank: Int](CollectionElement):
             Instance of Tensor allocated on given device.
         """
         return self^.to_device_tensor().move_to(device).to_tensor[type, rank]()
+
+    fn __eq__(self, other: Self) -> Bool:
+        """Check if two tensors are equal. Note that only host tensors can be
+        compared. If either tensor is on an accelerator device, the result is False.
+
+        Args:
+            other: The tensor to compare with.
+
+        Returns:
+            True if the tensors have the same shape and all elements are equal, False otherwise.
+        """
+
+        # First, check that both tensors on on the host device. We can't compare
+        # tensors on accelerator devices.
+        if not (
+            "cpu" in String(self._device) and "cpu" in String(other._device)
+        ):
+            return False
+
+        # Next check if they point to the same memory
+        if self._ptr == other._ptr:
+            return True
+
+        # Check if shapes match
+        if self._spec.shape != other._spec.shape:
+            return False
+
+        # Now compare element by element
+        var self_ptr = self.unsafe_ptr()
+        var other_ptr = other.unsafe_ptr()
+        var size = self._spec.shape[0] * self._spec.shape[1]
+        for i in range(size):
+            if self_ptr[i] != other_ptr[i]:
+                return False
+        return True
+
+    fn __ne__(self, other: Self) -> Bool:
+        """Check if two tensors are not equal. Note that only host tensors can be
+        compared. If either tensor is on an accelerator device, the result is True.
+
+        Args:
+            other: The tensor to compare with.
+
+        Returns:
+            True if the tensors are not equal, False otherwise.
+        """
+        return not self == other
