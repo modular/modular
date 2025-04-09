@@ -24,7 +24,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import Signals
+from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -123,7 +123,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: WeightsAdapter | None = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         """
         Args:
@@ -140,7 +140,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             weights: The model weights (:obj:`max.graph.weights.Weights`).
             adapter: An optional adapter to modify weights before loading
                 (:obj:`max.graph.weights.WeightsAdapter`).
-            return_n_logits: The number of top logits to return from the model
+            return_logits: The number of top logits to return from the model
                 execution.
         """
         super().__init__(
@@ -152,7 +152,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
 
         self.model = self.load_model(session)
@@ -355,7 +355,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             attention_bias=huggingface_config.text_config.attention_bias,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
-            return_n_logits=self.return_n_logits,
+            return_logits=self.return_logits,
         )
         nn_model = Llama4(model_config)
         nn_model.load_state_dict(state_dict, weight_alignment=1)

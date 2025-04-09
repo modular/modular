@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from max.driver import load_devices
 from max.engine import InferenceSession
 from max.graph.weights import load_weights
+from max.nn import ReturnLogits
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
@@ -78,7 +79,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
             weights=weights,
             adapter=None,
-            return_n_logits=-1,
+            return_logits=ReturnLogits.ALL,
         )
 
     @traced

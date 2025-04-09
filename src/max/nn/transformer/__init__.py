@@ -17,7 +17,7 @@ from .distributed_transformer import (
     DistributedTransformerBlock,
 )
 from .naive_transformer import NaiveTransformer, NaiveTransformerBlock
-from .transformer import Transformer, TransformerBlock
+from .transformer import ReturnLogits, Transformer, TransformerBlock
 
 __all__ = [
     "DistributedTransformer",
@@ -26,4 +26,5 @@ __all__ = [
     "NaiveTransformerBlock",
     "Transformer",
     "TransformerBlock",
+    "ReturnLogits",
 ]

@@ -27,6 +27,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import GGUFWeights, Weights, WeightsAdapter
+from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -88,7 +89,7 @@ class ReplitModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         if pipeline_config.model_config.device_specs[0] == DeviceSpec.cpu():
             msg = "Replit currently only supported on gpu."
@@ -103,7 +104,7 @@ class ReplitModel(PipelineModel[TextContext]):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
         self.model = self.load_model(session)
 
@@ -321,7 +322,7 @@ class ReplitModel(PipelineModel[TextContext]):
             vocab_size=huggingface_config.vocab_size,
             dtype=self.dtype,
             kv_params=kv_params,
-            return_n_logits=-1 if pipeline_config.enable_echo else 1,
+            return_logits=self.return_logits,
             attention_multiplier=math.sqrt(1 / kv_params.head_dim),
             devices=device_refs,
         )

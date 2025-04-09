@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from enum import Enum
 from typing import Callable, cast
 
 from max.dtype import DType
@@ -79,6 +80,12 @@ class TransformerBlock(Module):
         return h + mlp
 
 
+class ReturnLogits(str, Enum):
+    LAST_TOKEN = "last_token"
+    VARIABLE = "variable"
+    ALL = "all"
+
+
 class Transformer(Module):
     """Transformer model consisting for TransformerBlock layers."""
 
@@ -96,7 +103,7 @@ class Transformer(Module):
             | FetchPagedKVCacheCollection
             | FetchPagedKVCacheCollectionFA3Fallback
         ),
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
         | None = None,
@@ -112,13 +119,7 @@ class Transformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.embedding_multiplier = embedding_multiplier
         self.logits_postprocessor = logits_postprocessor
-        self.return_n_logits = return_n_logits
-
-        if return_n_logits == 0 or return_n_logits < -1:
-            raise ValueError(
-                "return_n_logits must be greater than or equal to -1"
-                "and cannot be 0."
-            )
+        self.return_logits = return_logits
 
     def _apply_logits_postprocessor(
         self, output: tuple[TensorValue, ...]
@@ -164,7 +165,7 @@ class Transformer(Module):
         logits = None
         offsets = None
 
-        if self.return_n_logits > 1:
+        if self.return_logits == ReturnLogits.VARIABLE:
             return_n_logits_range = ops.range(
                 return_n_logits[0],
                 ops.constant(0, DType.int64),
@@ -185,13 +186,9 @@ class Transformer(Module):
                 return_n_logits[0],
                 out_dim="logit_offsets",
             )
-        elif self.return_n_logits == -1:
+        elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
             offsets = cast(TensorValue, kwargs["input_row_offsets"])
-        elif self.return_n_logits == 0 or self.return_n_logits < -1:
-            raise ValueError(
-                f"return_n_logits provided ({self.return_n_logits}), must be greater than -1, and cannot be 0"
-            )
 
         if logits:
             last_logits, logits = self._apply_logits_postprocessor(

@@ -22,6 +22,7 @@ from ..attention import NaiveAttentionWithRope
 from ..embedding import Embedding, EmbeddingV2
 from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV2
+from .transformer import ReturnLogits
 
 
 class NaiveTransformerBlock(Module):
@@ -88,7 +89,7 @@ class NaiveTransformer(Module):
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
         | None = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ):
         super().__init__()
         self.dim = dim
@@ -101,7 +102,14 @@ class NaiveTransformer(Module):
         self.output_type = output_type
         self.embedding_multiplier = embedding_multiplier
         self.logits_postprocessor = logits_postprocessor
-        self.return_n_logits = return_n_logits
+        self.return_logits = return_logits
+
+        if self.return_logits != ReturnLogits.LAST_TOKEN:
+            msg = (
+                "return_logits must be 'last_token', variable token lengths "
+                "variable token lengths not supported with NaiveTransformer."
+            )
+            raise ValueError(msg)
 
     def _apply_logits_postprocessor(
         self, output: tuple[TensorValue]
@@ -135,12 +143,6 @@ class NaiveTransformer(Module):
             )
 
         logits = self.lm_head(self.norm(h[:, -1]))
-
-        if self.return_n_logits != 1:
-            raise ValueError(
-                f"return_n_logits provided ({self.return_n_logits}), must be 1"
-                "variable token lengths not supported with NaiveTransformer."
-            )
 
         if self.output_type is not None:
             casted_logits = ops.cast(logits, self.output_type)

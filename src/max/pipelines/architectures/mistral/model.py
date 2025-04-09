@@ -25,6 +25,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
+from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -87,7 +88,7 @@ class MistralModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -98,7 +99,7 @@ class MistralModel(PipelineModel[TextContext]):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
         self.model = self.load_model(session)
 
@@ -320,7 +321,7 @@ class MistralModel(PipelineModel[TextContext]):
             vocab_size=huggingface_config.vocab_size,
             dtype=self.dtype,
             kv_params=kv_params,
-            return_n_logits=-1 if pipeline_config.enable_echo else 1,
+            return_logits=self.return_logits,
             attention_multiplier=math.sqrt(1 / kv_params.head_dim),
             head_dim=huggingface_config.head_dim,
             rope_theta=huggingface_config.rope_theta,

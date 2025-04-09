@@ -192,7 +192,7 @@ class Llama3(Transformer):
             kv_collection_constructor=kv_collection_cls(
                 config.kv_params, num_layers=config.num_hidden_layers
             ),
-            return_n_logits=config.return_n_logits,
+            return_logits=config.return_logits,
             embedding_multiplier=config.embedding_multiplier,
             logits_postprocessor=config.logits_postprocessor,
         )

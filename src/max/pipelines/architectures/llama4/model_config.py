@@ -19,6 +19,7 @@ from typing import Any, Callable, Literal
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.weights import WeightData, weights_format
+from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.config import PipelineConfig
 from max.pipelines.max_config import (
@@ -105,8 +106,8 @@ class Llama4ConfigBase(MAXModelConfigBase):
     vocab_size: int
     """Size of the vocabulary."""
 
-    return_n_logits: int
-    """Number of logits to return when running the model."""
+    return_logits: ReturnLogits
+    """Whether to return the last token, all logits, or a variable number of logits."""
 
     max_seq_len: int
     """Maximum length of sequence."""
@@ -215,7 +216,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
         logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
-        return_n_logits: int,
+        return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] = "rms_norm",
         attention_bias: bool = False,  # Llama4 attention bias is False in HF.
     ) -> Llama4Config:
@@ -234,7 +235,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             logits_postprocessor: An optional callable to post-process model logits (:obj:`max.graph.TensorValue`).
             cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
             kv_cache_config: Configuration settings for the KV cache (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            return_n_logits: The number of top logits to return during inference.
+            return_logits: Whether to return the last token, all tokens or a variable number of logits.
             norm_method: The normalization method to use (currently only "rms_norm").
             attention_bias: Whether to include bias in attention projections. Defaults
               to `False` based on Llama 4 HuggingFace implementation.
@@ -292,7 +293,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             rms_norm_eps=text_config.rms_norm_eps,
             tie_word_embeddings=tie_word_embeddings,
             vocab_size=text_config.vocab_size,
-            return_n_logits=return_n_logits,
+            return_logits=return_logits,
             max_seq_len=Llama4Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config
             ),

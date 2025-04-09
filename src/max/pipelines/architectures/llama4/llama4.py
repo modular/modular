@@ -24,6 +24,7 @@ from max.nn import (
     DistributedRMSNorm,
     Module,
     OptimizedRotaryEmbedding,
+    ReturnLogits,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
@@ -181,11 +182,13 @@ class Llama4TextModel(Module):
         self.kv_collection_constructor = FetchPagedKVCacheCollection(
             config.kv_params, num_layers=config.num_hidden_layers
         )
-        self.return_n_logits = config.return_n_logits
+        self.return_logits = config.return_logits
         self.devices = config.devices
 
-        if config.return_n_logits not in (1, -1):
-            raise ValueError("return_n_logits must be either -1 or 1")
+        if config.return_logits == ReturnLogits.VARIABLE:
+            raise ValueError(
+                "llama4 does not currently support variable logits"
+            )
 
     def __call__(
         self,
@@ -234,35 +237,9 @@ class Llama4TextModel(Module):
         logits = None
         offsets = None
 
-        if self.return_n_logits > 1:
-            return_n_logits_range = ops.range(
-                ops.constant(self.return_n_logits, DType.int64),
-                ops.constant(0, DType.int64),
-                ops.constant(-1, DType.int64),
-                out_dim="return_n_logits_range",
-            )
-            offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            logits = ops.gather(
-                ops.cast(self.lm_head(self.norm(h))[0], DType.float32),
-                last_indices,
-                axis=0,
-            )
-            offsets = ops.range(
-                ops.constant(0, DType.int64),
-                last_indices.shape[0] + self.return_n_logits,
-                ops.constant(self.return_n_logits, DType.int64),
-                out_dim="logit_offsets",
-            )
-        elif self.return_n_logits == -1:
+        if self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
             offsets = cast(TensorValue, kwargs["input_row_offsets"])
-        elif self.return_n_logits == 0 or self.return_n_logits < -1:
-            raise ValueError(
-                f"return_n_logits provided ({self.return_n_logits}), must be greater than -1, and cannot be 0"
-            )
 
         if logits is not None and offsets is not None:
             return (last_logits, logits, offsets)

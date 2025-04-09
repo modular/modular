@@ -53,6 +53,7 @@ from .transformer import (
     DistributedTransformerBlock,
     NaiveTransformer,
     NaiveTransformerBlock,
+    ReturnLogits,
     Transformer,
     TransformerBlock,
 )
@@ -98,6 +99,7 @@ __all__ = [
     "RMSNorm",
     "RMSNormV2",
     "RotaryEmbedding",
+    "ReturnLogits",
     "Sequential",
     "Signals",
     "Transformer",

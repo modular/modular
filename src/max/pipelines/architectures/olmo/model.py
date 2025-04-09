@@ -18,6 +18,7 @@ from typing import Literal, Optional
 from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn import ReturnLogits
 from max.pipelines import KVCacheConfig, PipelineConfig, SupportedEncoding
 from transformers import AutoConfig
 
@@ -39,7 +40,7 @@ class OlmoModel(LlamaModelBase):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -50,5 +51,5 @@ class OlmoModel(LlamaModelBase):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )

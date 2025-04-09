@@ -23,6 +23,7 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
+from max.nn import ReturnLogits
 
 from .core import InputContext, TextGenerationResponse, TokenGenerator
 from .hf_utils import download_weight_files
@@ -79,7 +80,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format, None),
-            return_n_logits=self.pipeline_config.max_num_steps,
+            return_logits=ReturnLogits.VARIABLE,
         )
 
         # Load draft model
@@ -137,7 +138,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
             weights=draft_weights,
             adapter=weight_adapters.get(_draft_weights_format, None),
-            return_n_logits=1,
+            return_logits=ReturnLogits.LAST_TOKEN,
         )
 
         # Check that the max length for both models are the same

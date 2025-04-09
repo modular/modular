@@ -31,6 +31,7 @@ from ..kv_cache import (
 from ..layer import LayerList, Module
 from ..linear import ColumnParallelLinear
 from ..norm import DistributedRMSNorm
+from .transformer import ReturnLogits
 
 
 # TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
@@ -96,7 +97,7 @@ class DistributedTransformer(Module):
             | FetchPagedKVCacheCollectionFA3Fallback
         ),
         devices: list[DeviceRef],
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ):
         super().__init__()
         self.dim = dim
@@ -107,11 +108,13 @@ class DistributedTransformer(Module):
         self.embed_tokens = embedding
         self.kv_params = kv_params
         self.kv_collection_constructor = kv_collection_constructor
-        self.return_n_logits = return_n_logits
+        self.return_logits = return_logits
         self.devices = devices
 
-        if not (return_n_logits == -1 or return_n_logits == 1):
-            raise ValueError("return_n_logits must be either -1 or 1")
+        if self.return_logits != ReturnLogits.VARIABLE:
+            raise ValueError(
+                "DistributedTransformer does not support variable logits."
+            )
 
     def __call__(
         self,
@@ -156,7 +159,7 @@ class DistributedTransformer(Module):
         logits = None
         offsets = None
 
-        if self.return_n_logits > 1:
+        if self.return_logits == ReturnLogits.VARIABLE:
             return_n_logits_range = ops.range(
                 return_n_logits[0],
                 ops.constant(0, DType.int64),
@@ -178,13 +181,9 @@ class DistributedTransformer(Module):
                 return_n_logits[0],
                 out_dim="logit_offsets",
             )
-        elif self.return_n_logits == -1:
+        elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
             offsets = cast(TensorValue, kwargs["input_row_offsets"])
-        elif self.return_n_logits == 0 or self.return_n_logits < -1:
-            raise ValueError(
-                f"return_n_logits provided ({self.return_n_logits}), must be greater than -1, and cannot be 0"
-            )
 
         if logits is not None and offsets is not None:
             return (last_logits, logits, offsets)

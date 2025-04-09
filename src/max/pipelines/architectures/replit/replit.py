@@ -104,7 +104,7 @@ class Replit(Transformer):
             kv_collection_constructor=FetchContinuousBatchingKVCacheCollection(
                 config.kv_params
             ),
-            return_n_logits=config.return_n_logits,
+            return_logits=config.return_logits,
         )
 
 

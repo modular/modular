@@ -46,6 +46,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     infer_optimal_batch_size,
 )
+from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 from transformers import AutoConfig, AutoTokenizer
 
@@ -168,7 +169,7 @@ class PipelineModel(ABC, Generic[T]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter],
-        return_n_logits: int,
+        return_logits: ReturnLogits,
     ) -> None:
         self.pipeline_config = pipeline_config
         self.huggingface_config = huggingface_config
@@ -177,7 +178,7 @@ class PipelineModel(ABC, Generic[T]):
         self.kv_cache_config = kv_cache_config
         self.weights = weights
         self.adapter = adapter
-        self.return_n_logits = return_n_logits
+        self.return_logits = return_logits
 
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
@@ -522,7 +523,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
             weights=weights,
             adapter=self._weight_adapters.get(_weight_format, None),
-            return_n_logits=-1 if self._pipeline_config.enable_echo else 1,
+            return_logits=ReturnLogits.ALL
+            if self._pipeline_config.enable_echo
+            else ReturnLogits.LAST_TOKEN,
         )
 
         # Load sampler.
