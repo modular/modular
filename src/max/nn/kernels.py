@@ -1580,3 +1580,60 @@ def moe_create_indices(
         results[3].tensor,
         results[4].tensor,
     )
+
+
+def grouped_matmul_ragged(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+) -> TensorValue:
+    """Grouped matmul used in MoE layer.
+
+    `hidden_states` and `expert_start_indices` are used together to implement
+    the ragged tensor. `expert_start_indices` indicates where each group starts
+    and ends in `hidden_states`
+
+    `expert_ids` is the id of the expert for each group in `hidden_states`
+
+    `expert_usage_stats_host` is the maximum number of tokens assigned to any
+    expert, and the number of active experts.
+
+    """
+
+    if weight.rank != 3:
+        msg = f"expected weight of rank 3 but got {weight.rank}"
+        raise ValueError(msg)
+
+    if hidden_states.rank != 2:
+        msg = f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        raise ValueError(msg)
+
+    if (
+        weight.shape[2] != hidden_states.shape[1]
+        or weight.shape[0] != expert_ids.shape[0]
+    ):
+        msg = f"expected weight is of shape [num_experts, *, {hidden_states.shape[1]}] but got {weight.shape}"
+        raise ValueError(msg)
+
+    output = ops.custom(
+        "mo.grouped.matmul.ragged",
+        values=[
+            hidden_states,
+            weight,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host[0],
+            expert_usage_stats_host[1],
+        ],
+        out_types=[
+            TensorType(
+                dtype=hidden_states.dtype,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+    )[0].tensor
+
+    return output
