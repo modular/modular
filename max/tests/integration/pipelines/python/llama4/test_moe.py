@@ -10,7 +10,7 @@ from max.driver import Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.llama4.mix_of_experts import MoE
+from max.pipelines.architectures.llama4.layers.moe import MoE
 from transformers.models.llama4.configuration_llama4 import (
     Llama4Config,
     Llama4TextConfig,
