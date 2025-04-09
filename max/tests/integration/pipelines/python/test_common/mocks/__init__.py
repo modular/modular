@@ -52,6 +52,8 @@ def retrieve_mock_text_generation_pipeline(
     mock_config.sampling_config = SamplingConfig(
         enable_structured_output=False,
     )
+
+    mock_hf_config = MagicMock()
     mock_config.model_config = MAXModelConfig(
         model_path="HuggingFaceTB/SmolLM-135M-Instruct",
         device_specs=device_specs,
@@ -59,6 +61,7 @@ def retrieve_mock_text_generation_pipeline(
         _kv_cache_config=KVCacheConfig(
             cache_strategy=KVCacheStrategy.MODEL_DEFAULT,
         ),
+        _huggingface_config=mock_hf_config,
     )
 
     mock_config.eos_prob = eos_prob
@@ -72,24 +75,15 @@ def retrieve_mock_text_generation_pipeline(
         vocab_size=vocab_size,
     )
 
-    mock_hf_config = MagicMock()
     try:
-        with patch.object(
-            TextGenerationPipeline,
-            "huggingface_config",
-            new_callable=PropertyMock,
-        ) as mock_property:
-            mock_property.return_value = mock_hf_config
-            pipeline: TextGenerationPipeline[TextContext] = (
-                TextGenerationPipeline(
-                    pipeline_config=mock_config,
-                    pipeline_model=MockPipelineModel,
-                    eos_token_id=eos_token,
-                    weight_adapters={},
-                )
-            )
+        pipeline: TextGenerationPipeline[TextContext] = TextGenerationPipeline(
+            pipeline_config=mock_config,
+            pipeline_model=MockPipelineModel,
+            eos_token_id=eos_token,
+            weight_adapters={},
+        )
 
-            yield tokenizer, pipeline
+        yield tokenizer, pipeline
     finally:
         ...
 

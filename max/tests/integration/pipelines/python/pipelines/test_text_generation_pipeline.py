@@ -52,8 +52,6 @@ def test_text_generation_pipeline(mock_load_weights, weights_format):
             max_length=max_length,
         ) as (tokenizer, pipeline)
     ):
-        pipeline.huggingface_config
-
         prompts = [
             "This is a test prompt",
             "This is a slightly longer test prompt " * 2,
