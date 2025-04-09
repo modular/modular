@@ -4076,15 +4076,34 @@ struct LayoutTensor[
 
         @parameter
         if layout.all_dims_known():
-            alias num_elements = layout.size() * Self.element_size
+            alias num_elements = layout.size()
 
+            # TODO: MSTDL-1352 we can use memory element to fill the tensor.
             @parameter
             for i in range(num_elements):
-                self.ptr[i] = val
+                alias idx = layout(i)
+
+                @parameter
+                for j in range(Self.element_size):
+                    alias element_offset = element_layout(j)
+                    self.ptr[idx + element_offset] = val
         else:
-            var num_elements = self.runtime_layout.size() * Self.element_size
+            var num_elements = self.runtime_layout.size()
+
             for i in range(num_elements):
-                self.ptr[i] = val
+                var idx = self.runtime_layout(i)
+
+                @parameter
+                if element_layout.all_dims_known():
+
+                    @parameter
+                    for j in range(Self.element_size):
+                        alias element_offset = element_layout(j)
+                        self.ptr[idx + element_offset] = val
+                else:
+                    for j in range(self.runtime_element_layout.size()):
+                        var element_offset = self.runtime_element_layout(j)
+                        self.ptr[idx + element_offset] = val
         return self
 
     @no_inline
