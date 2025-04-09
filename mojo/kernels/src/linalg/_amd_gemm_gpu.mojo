@@ -520,10 +520,7 @@ fn gemm_kernel[
 
         @parameter
         for i in range(
-            (
-                warp_tile_m_mmas * k_tiles_count
-                + warp_tile_n_mmas * k_tiles_count
-            )
+            (mmas_per_warp_m * k_tiles_count + mmas_per_warp_n * k_tiles_count)
             // k_tiles_count
         ):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
@@ -544,11 +541,9 @@ fn gemm_kernel[
 
         @parameter
         for i in range(
-            (
-                warp_tile_m_mmas * k_tiles_count
-                + warp_tile_n_mmas * k_tiles_count
-            )
+            (mmas_per_warp_m * k_tiles_count + mmas_per_warp_n * k_tiles_count)
             // k_tiles_count
+            * (k_tiles_count - 1)
         ):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
             schedule_group_barrier(
