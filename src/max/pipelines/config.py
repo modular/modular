@@ -275,7 +275,6 @@ class PipelineConfig(MAXConfig):
         self.draft_model = ""
 
         assert self.draft_model_config is not None  # keep mypy happy
-        self.draft_model_config.resolve()
 
         if not repo_exists_with_retry(self.draft_model_config.model_path):
             raise ValueError(
