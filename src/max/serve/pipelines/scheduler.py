@@ -818,61 +818,17 @@ class TokenGenerationScheduler(Scheduler):
             )
 
     @traced
-    def _schedule_ce(self, sch_output: SchedulerOutput):
-        batch_to_execute = sch_output.batch_inputs
+    def _stream_responses_to_frontend(
+        self, batch_responses: dict[str, TextGenerationResponse]
+    ):
+        if not batch_responses:
+            return
 
-        # we about to execute the batch, reset the CE batch timer
-        self.ce_batch_start_time = None
-
-        # execute the batch
-        batch_responses = self.pipeline.next_token(
-            batch_to_execute,
-            num_steps=sch_output.num_steps,
-        )
-        # put the unfinished request back into the quene, and delete its responses
-        self._handle_chunked_requests(batch_to_execute, batch_responses)
-        # remove terminated requests from the batch
-        self._handle_terminated_responses(batch_to_execute, batch_responses)
-        # add the encoded requests to the continuous batch
-        for req_id in batch_to_execute:
-            self.active_batch[req_id] = batch_to_execute[req_id]
-        # send the responses to the API process
-        if any(batch_responses):
-            # Convert this to list[dict[str, Any]]
-            responses: list[dict[str, TextResponse]] = [{}]
-            for request_id, response in batch_responses.items():
-                # This will just ensure that there is always a response for each token
-                # We add one here, as we need to send a stop sentinel
-                while (
-                    len(response.tokens) + (1 if response.is_done else 0)
-                ) > len(responses):
-                    responses.append({})
-
-                for token_idx, text_response in enumerate(response.tokens):
-                    responses[token_idx][request_id] = text_response
-
-                if response.is_done:
-                    responses[len(response.tokens)][request_id] = cast(
-                        TextResponse, STOP_STREAM
-                    )
-
-            self.response_q.put_nowait(responses)
-
-    @traced
-    def _schedule_tg(self, sch_output: SchedulerOutput):
-        batch_to_execute = sch_output.batch_inputs
-
-        METRICS.batch_size(len(batch_to_execute))
-        # execute the batch
-        batch_responses = self.pipeline.next_token(
-            batch_to_execute,
-            num_steps=sch_output.num_steps,
-        )
-        # remove terminated requests from the batch
-        self._handle_terminated_responses(batch_to_execute, batch_responses)
-        # send the responses to the API process
+        # Convert this to list[dict[str, Any]]
         responses: list[dict[str, TextResponse]] = [{}]
         for request_id, response in batch_responses.items():
+            # This will just ensure that there is always a response for each token
+            # We add one here, as we need to send a stop sentinel
             while (len(response.tokens) + (1 if response.is_done else 0)) > len(
                 responses
             ):
@@ -887,6 +843,45 @@ class TokenGenerationScheduler(Scheduler):
                 )
 
         self.response_q.put_nowait(responses)
+
+    @traced
+    def _schedule_ce(self, sch_output: SchedulerOutput):
+        batch_to_execute = sch_output.batch_inputs
+
+        # we about to execute the batch, reset the CE batch timer
+        self.ce_batch_start_time = None
+
+        # execute the batch
+        batch_responses = self.pipeline.next_token(
+            batch_to_execute,
+            num_steps=sch_output.num_steps,
+        )
+        # put the unfinished request back into the queue, and delete its responses
+        self._handle_chunked_requests(batch_to_execute, batch_responses)
+        # remove terminated requests from the batch
+        self._handle_terminated_responses(batch_to_execute, batch_responses)
+        # add the encoded requests to the continuous batch
+        for req_id in batch_to_execute:
+            self.active_batch[req_id] = batch_to_execute[req_id]
+
+        # send the responses to the API process
+        self._stream_responses_to_frontend(batch_responses)
+
+    @traced
+    def _schedule_tg(self, sch_output: SchedulerOutput):
+        batch_to_execute = sch_output.batch_inputs
+
+        METRICS.batch_size(len(batch_to_execute))
+        # execute the batch
+        batch_responses = self.pipeline.next_token(
+            batch_to_execute,
+            num_steps=sch_output.num_steps,
+        )
+        # remove terminated requests from the batch
+        self._handle_terminated_responses(batch_to_execute, batch_responses)
+
+        # send the responses to the API process
+        self._stream_responses_to_frontend(batch_responses)
 
     def _schedule(self, sch_output: SchedulerOutput):
         assert sch_output.batch_size > 0
