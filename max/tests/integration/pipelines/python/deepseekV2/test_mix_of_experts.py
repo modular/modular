@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
 import torch
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Device
@@ -109,9 +108,6 @@ def generate_max_outputs(
     return compiled.execute(input_tensor)
 
 
-@pytest.mark.skip(
-    reason="Layer passes with golden weights but fails with random weights generated in current test implementation."
-)
 def test_mix_of_experts(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,

@@ -18,6 +18,8 @@ from torch_reference.configuration_deepseek import (
 Fixtures for DeepseekV2 tests, including config, generated input tensors, and dummy weights.
 """
 
+WEIGHT_STDDEV = 0.001
+
 
 @pytest.fixture
 def config() -> DeepseekV2Config:
@@ -89,8 +91,12 @@ def dummy_moe_weight(
     Returns tensors in bfloat16 format.
     """
     torch.manual_seed(seed)  # Set fixed seed for reproducibility
-    return torch.randn(
-        (config.n_routed_experts, config.hidden_size), dtype=torch.float32
+    n_experts = (
+        config.n_routed_experts if config.n_routed_experts is not None else 64
+    )
+    return (
+        torch.randn(n_experts, config.hidden_size, dtype=torch.float32)
+        * WEIGHT_STDDEV
     )
 
 
@@ -108,17 +114,20 @@ def shared_expert_weights(config: DeepseekV2Config) -> dict[str, torch.Tensor]:
             config.hidden_size,
             shared_experts_intermediate_size,
             dtype=torch.bfloat16,
-        ),
+        )
+        * WEIGHT_STDDEV,
         "gate_proj.weight": torch.randn(
             shared_experts_intermediate_size,
             config.hidden_size,
             dtype=torch.bfloat16,
-        ),
+        )
+        * WEIGHT_STDDEV,
         "up_proj.weight": torch.randn(
             shared_experts_intermediate_size,
             config.hidden_size,
             dtype=torch.bfloat16,
-        ),
+        )
+        * WEIGHT_STDDEV,
     }
     return expert
 
@@ -137,17 +146,20 @@ def expert_weights(config: DeepseekV2Config) -> list[dict[str, torch.Tensor]]:
                 config.hidden_size,
                 config.moe_intermediate_size,
                 dtype=torch.bfloat16,
-            ),
+            )
+            * WEIGHT_STDDEV,
             "gate_proj.weight": torch.randn(
                 config.moe_intermediate_size,
                 config.hidden_size,
                 dtype=torch.bfloat16,
-            ),
+            )
+            * WEIGHT_STDDEV,
             "up_proj.weight": torch.randn(
                 config.moe_intermediate_size,
                 config.hidden_size,
                 dtype=torch.bfloat16,
-            ),
+            )
+            * WEIGHT_STDDEV,
         }
         experts.append(expert)
     return experts
