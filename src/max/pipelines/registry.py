@@ -42,7 +42,6 @@ from .core import (
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
-from .hf_utils import get_architectures_from_huggingface_repo
 from .kv_cache import KVCacheStrategy
 from .max_config import HuggingFaceRepo, KVCacheConfig, MAXModelConfig
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline
@@ -162,17 +161,13 @@ class PipelineRegistry:
         self.architectures[architecture.name] = architecture
 
     def retrieve_architecture(
-        self,
-        model_path: str,
-        trust_remote_code: bool,
-        huggingface_revision: str,
+        self, model_config: MAXModelConfig
     ) -> Optional[SupportedArchitecture]:
         # Retrieve model architecture names
-        architecture_names = get_architectures_from_huggingface_repo(
-            model_path=model_path,
-            trust_remote_code=trust_remote_code,
-            huggingface_revision=huggingface_revision,
+        hf_config = self._get_active_huggingface_config(
+            model_config=model_config
         )
+        architecture_names = getattr(hf_config, "architectures", [])
 
         if not architecture_names:
             logger.debug(
@@ -185,7 +180,7 @@ class PipelineRegistry:
                 return self.architectures[architecture_name]
 
         logger.debug(
-            f"optimized architecture not available for {model_path} in MAX REGISTRY"
+            f"optimized architecture not available for {model_config.model_path} in MAX REGISTRY"
         )
 
         return None
@@ -869,9 +864,7 @@ class PipelineRegistry:
 
             # MAX pipeline
             arch = self.retrieve_architecture(
-                model_path=pipeline_config.model_config.model_path,
-                trust_remote_code=pipeline_config.model_config.trust_remote_code,
-                huggingface_revision=pipeline_config.model_config.huggingface_revision,
+                model_config=pipeline_config.model_config,
             )
 
             # Load HuggingFace Config
