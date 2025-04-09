@@ -136,6 +136,8 @@ from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_causal_mask_paged_ragged,
+    generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged,
+    generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
     generic_fused_qk_rope_bshd_paged_ragged,
@@ -6944,6 +6946,134 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
             target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged_kernel_api[
+    type: DType, //,
+    local_window_size: Int,
+    target: StaticString,
+](
+    q: ManagedTensorSlice[type=type, rank=3],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: ManagedTensorSlice[type=type, rank=3],
+    context: DeviceContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged[
+        local_window_size, target
+    ](
+        managed_tensor_slice_to_ndbuffer(q),
+        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        kv_collection,
+        layer_idx,
+        scale,
+        managed_tensor_slice_to_ndbuffer(output),
+        context,
+    )
+
+
+@compiler.register(
+    "mo.mha.ragged.continuous_batching.chunked_causal_mask.no_pos"
+)
+struct Struct_mha_ragged_continuous_batching_chunked_causal_mask_no_pos:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        local_window_size: Int, //,
+        target: StringLiteral,
+    ](
+        output: OutputTensor[type=type, rank=3],
+        q: InputTensor[type=type, rank=3],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+        ],
+        layer_idx: UInt32,
+        scale: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
+            target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged_kernel_api[
+    type: DType, //,
+    local_window_size: Int,
+    target: StaticString,
+](
+    q: ManagedTensorSlice[type=type, rank=3],
+    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    kv_collection: PagedKVCacheCollection[type, *_],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: ManagedTensorSlice[type=type, rank=3],
+    context: DeviceContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged[
+        local_window_size=local_window_size, target=target
+    ](
+        managed_tensor_slice_to_ndbuffer(q),
+        managed_tensor_slice_to_ndbuffer(input_row_offsets),
+        kv_collection,
+        layer_idx,
+        scale,
+        managed_tensor_slice_to_ndbuffer(output),
+        context,
+    )
+
+
+@compiler.register("mo.mha.ragged.paged.chunked_causal_mask.no_pos")
+struct Struct_mha_ragged_paged_chunked_causal_mask_no_pos:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
+        local_window_size: Int,
+        target: StringLiteral,
+    ](
+        output: OutputTensor[type=type, rank=3],
+        q: InputTensor[type=type, rank=3],
+        input_row_offsets: InputTensor[type = DType.uint32, rank=1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
+        layer_idx: UInt32,
+        scale: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged_kernel_api[
+            local_window_size=local_window_size, target=target
         ](
             q,
             input_row_offsets,
