@@ -8,9 +8,9 @@
 
 # COM: Test with mojo build
 # RUN: mkdir -p %t
-# RUN: rm -rf %t/cuda-test-tensor
-# RUN: %mojo-build -D ENABLE_ASSERTIONS %s -o %t/cuda-test-tensor
-# RUN: %t/cuda-test-tensor
+# RUN: rm -rf %t/gpu-test-tensor
+# RUN: %mojo-build -D ENABLE_ASSERTIONS %s -o %t/gpu-test-tensor
+# RUN: %t/gpu-test-tensor
 
 from max.driver import (
     Tensor,

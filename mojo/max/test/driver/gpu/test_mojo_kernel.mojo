@@ -8,9 +8,9 @@
 
 # COM: Test with mojo build
 # RUN: mkdir -p %t
-# RUN: rm -rf %t/cuda-test-mojo-kernel
-# RUN: %mojo-build %s -o %t/cuda-test-mojo-kernel
-# RUN: %t/cuda-test-mojo-kernel %t2
+# RUN: rm -rf %t/gpu-test-mojo-kernel
+# RUN: %mojo-build %s -o %t/gpu-test-mojo-kernel
+# RUN: %t/gpu-test-mojo-kernel %t2
 
 from pathlib import Path
 from sys import stderr

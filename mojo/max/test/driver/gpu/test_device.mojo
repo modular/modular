@@ -8,9 +8,9 @@
 
 # COM: Test with mojo build
 # RUN: mkdir -p %t
-# RUN: rm -rf %t/cuda-test-device
-# RUN: %mojo-build %s -o %t/cuda-test-device
-# RUN: %t/cuda-test-device
+# RUN: rm -rf %t/gpu-test-device
+# RUN: %mojo-build %s -o %t/gpu-test-device
+# RUN: %t/gpu-test-device
 
 from gpu.host import DeviceContext
 from max.driver import AnyTensor, Tensor, accelerator, cpu
