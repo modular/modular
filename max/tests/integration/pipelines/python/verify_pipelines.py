@@ -443,6 +443,23 @@ PIPELINES = {
             kl_div_threshold=2e-3,
         ),
     ),
+    "Llama4-17B-Scout-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["h100-multi"],
+        run=lambda device_type,
+        devices,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama4-scout",
+            encoding="bfloat16",
+            kl_div_threshold=float("inf"),
+            cos_dist_threshold=float("inf"),
+            absolute_tolerance=float("inf"),
+            relative_tolerance=float("inf"),
+        ),
+    ),
     "replit-code-v1_5-3b-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,

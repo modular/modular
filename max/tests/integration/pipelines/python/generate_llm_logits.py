@@ -144,6 +144,11 @@ class PipelineOracle(ABC):
         """
         return evaluate.PROMPTS
 
+    @property
+    def use_cache(self) -> bool:
+        """Whether to use the KV cache, for HF transformers models only."""
+        return True
+
 
 class MultiModalPipelineOracle(PipelineOracle):
     """Knows about a kind of pipeline.
@@ -501,6 +506,93 @@ class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
         return evaluate.PROMPTS
 
 
+class Llama4_17BScoutInstructPipelineOracle(PipelineOracle):
+    """Oracle for the Llama-4-Scout-17B-16E-Instruct model."""
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        """A map from device type to supported encodings."""
+        return {
+            "gpu": ["bfloat16"],
+        }
+
+    def create_max_pipeline(
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+    ) -> MaxPipelineAndTokenizer:
+        """Instantiates the MAX pipeline for Llama-4-Scout-17B-16E-Instruct.
+
+        Args:
+            encoding:
+                The quantization encoding to use.
+            device_specs:
+                The device specifications to run the pipeline on.
+
+        Returns:
+            An object containing the instantiated MAX pipeline and tokenizer.
+        """
+        for device_spec in device_specs:
+            if not self.is_supported(
+                encoding=encoding, device_spec=device_spec
+            ):
+                raise ValueError(f"Unsupported device spec {device_spec}")
+
+        config = pipelines.PipelineConfig(
+            device_specs=device_specs,
+            model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            # TODO(bduke): test chunked attention with >8192 context length cases.
+            max_length=8192,
+        )
+        hf_repo_lock.apply_to_config(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            config, task=self.task
+        )
+
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        """Instantiates the Torch pipeline for Llama-4-Scout-17B-16E-Instruct.
+
+        Args:
+            encoding:
+                The quantization encoding (used to determine Torch dtype).
+            device:
+                The Torch device to load the model onto.
+
+        Returns:
+            An object containing the instantiated Torch model and data processor.
+        """
+        hf_repo_id = "meta-llama/Llama-4-Scout-17B-16E-Instruct"
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            hf_repo_id, revision=revision
+        )
+
+        model = transformers.Llama4ForCausalLM.from_pretrained(
+            hf_repo_id,
+            revision=revision,
+            # Set device map to auto and just hope for enough GPU VRAM.
+            device_map="auto",
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+        )
+
+        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
+
+    @property
+    def use_cache(self) -> bool:
+        """Disables KV cache for Llama 4 due to upstream issue."""
+        # TODO(bduke): remove this once upstream [issue](https://github.com/huggingface/transformers/issues/37380) is fixed.
+        return False
+
+
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
@@ -658,6 +750,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16", "gptq"],
         },
     ),
+    "llama4-scout": Llama4_17BScoutInstructPipelineOracle(),
 }
 
 
@@ -874,6 +967,7 @@ def generate_llm_logits(
                 if isinstance(pipeline_oracle, MultiModalPipelineOracle)
                 else None,
                 print_outputs=True,
+                use_cache=pipeline_oracle.use_cache,
             )
         elif (
             pipeline_oracle.task

@@ -40,6 +40,7 @@ def run_text_generation(
     images: Optional[Iterable[str]] = None,
     num_steps=10,
     print_outputs=False,
+    use_cache=None,
 ):
     saved_logits = []
 
@@ -91,6 +92,7 @@ def run_text_generation(
                 num_return_sequences=1,
                 # Suppress "Setting `pad_token_id` to `eos_token_id`" warnings.
                 pad_token_id=getattr(data_processor, "eos_token_id", None),
+                use_cache=use_cache,
             )
             if print_outputs:
                 print(
