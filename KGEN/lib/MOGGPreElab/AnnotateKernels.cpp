@@ -127,6 +127,14 @@ bool decoratorIsPartOfMAXCompiler(SymbolRefAttr symbol) {
          rootName == COMPILER_PREFIX || rootName == COMPILER_PREFIX_INTERNAL;
 }
 
+StringAttr getStringAttrFromStaticStringDecorator(TypedAttr operand) {
+  return cast<StringAttr>(
+      std::get<1>(cast<LIT::LITStructAttr>(
+                      cast<KGEN::ParamOperatorAttr>(operand).getOperand(1))
+                      .getValues()
+                      .front()));
+}
+
 template <typename StructDeclOrFnTy>
 void replaceMOGGPreElabDecoratorsWithAttributes(StructDeclOrFnTy obj) {
   SmallVector<TypedAttr> decoratorsToCopy;
@@ -151,16 +159,15 @@ void replaceMOGGPreElabDecoratorsWithAttributes(StructDeclOrFnTy obj) {
       continue;
 
     if (decoratorName.starts_with(Decorators::REGISTER_INTERNAL_FUNCTION)) {
-      kernelRegistrations.push_back(apply.getOperand(1));
+      kernelRegistrations.push_back(
+          getStringAttrFromStaticStringDecorator(apply.getOperand(1)));
       kernelRegistrations.push_back(builder.getI64IntegerAttr(-1));
       decoratorsToCopy.pop_back();
       if constexpr (std::is_same_v<StructDeclOrFnTy, LIT::FnOp>)
         obj.setExportKind(ExportKind::Exported);
     } else if (decoratorName.starts_with(Decorators::REGISTER_MOGG_INTRINSIC)) {
-      TypedAttr str = std::get<1>(
-          cast<LIT::LITStructAttr>(apply.getOperand(1)).getValues()[0]);
-      newAttrs.push_back(
-          NamedAttribute{cast<StringAttr>(str), builder.getUnitAttr()});
+      auto str = getStringAttrFromStaticStringDecorator(apply.getOperand(1));
+      newAttrs.push_back(NamedAttribute{str, builder.getUnitAttr()});
       decoratorsToCopy.pop_back();
     }
   }
@@ -172,9 +179,8 @@ void replaceMOGGPreElabDecoratorsWithAttributes(StructDeclOrFnTy obj) {
                        builder.getArrayAttr(kernelRegistrations)});
   }
 
-  for (auto &namedAttr : newAttrs) {
+  for (auto &namedAttr : newAttrs)
     obj->setAttr(namedAttr.getName(), namedAttr.getValue());
-  }
 }
 
 // Check if the decorator correspond to a function call:
@@ -601,14 +607,11 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
     if (!registerOperand.has_value())
       continue;
 
-    auto [_, nameAttr] = cast<LIT::LITStructAttr>(registerOperand.value()[0])
-                             .getValues()
-                             .front();
-    auto name = dyn_cast<StringAttr>(nameAttr);
-    ASSERT_STREAM(name, << "Expected a StringAttr as the registration name");
-    if (registrationInfo.registrationName) {
+    auto name =
+        getStringAttrFromStaticStringDecorator(registerOperand.value().front());
+    if (registrationInfo.registrationName)
       return Error("Only one op can be registered per kernel");
-    }
+
     registrationInfo.registrationName = name;
   }
 
@@ -981,7 +984,7 @@ public:
     OpBuilder builder{moduleOp.getContext()};
 
     // Do a first walk through the IR to strip the decorators and add
-    // attributes. Mostly used for older extensibility API iterations
+    // attributes.
     moduleOp->walk([](Operation *operation) {
       if (auto func = dyn_cast<LIT::FnOp>(operation)) {
         replaceMOGGPreElabDecoratorsWithAttributes(func);

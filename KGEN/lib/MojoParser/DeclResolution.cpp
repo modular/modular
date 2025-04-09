@@ -238,37 +238,14 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "mutable",
   };
 
-  std::function<bool(TypedAttr)> validateOperand = [&](TypedAttr attr) {
-    if (auto var = dyn_cast<VariadicAttr>(attr))
-      return llvm::all_of(var.getValues(), validateOperand);
-    // Handle Int{42} and StringLiteral["foo"] both.
-    if (auto arg = dyn_cast<LITStructAttr>(attr)) {
-      if (arg.getValues().size() == 1)
-        attr = std::get<1>(arg.getValues().front());
-      else
-        return false;
-    } else if (isa<UnknownAttr>(attr) &&
-               ASTType(attr.getType()).getParamBindings().size() == 1) {
-      attr = ASTType(attr.getType()).getParamBindings().front();
-    } else {
-      return false;
-    }
-
-    if (auto str = dyn_cast<StringAttr>(attr))
-      return llvm::Regex("^[a-z0-9A-Z\\._:]*$").match(str.getValue());
-    return isa<IntegerAttr>(attr);
-  };
-
   auto symbolName = extractDecoratorName(attr);
   if (!symbolName)
     return failure();
 
   if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
-    return success(
-        call.getOpcode() == POC::Apply &&
-        llvm::is_contained(plainDre, *symbolName) &&
-        call.getOperands().size() <= 3 &&
-        llvm::all_of(call.getOperands().drop_front(), validateOperand));
+    return success(call.getOpcode() == POC::Apply &&
+                   llvm::is_contained(plainDre, *symbolName) &&
+                   call.getOperands().size() <= 3);
   }
 
   return success(llvm::is_contained(plainDre, *symbolName));
