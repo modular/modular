@@ -15,7 +15,7 @@
 from collections import InlineArray, List
 
 from memory import Span, UnsafePointer
-from testing import assert_equal, assert_true
+from testing import assert_equal, assert_true, assert_raises
 
 
 def test_span_list_int():
@@ -230,6 +230,23 @@ def test_conditional_conformance():
     _ = s == s
 
 
+def test_swap_elements():
+    var l = List[Int](1, 2, 3, 4, 5)
+    var s = Span(l)
+    s.swap_elements(1, 4)
+    assert_equal(l[1], 5)
+    assert_equal(l[4], 2)
+
+    var l2 = List[String]("hi", "hello", "hey")
+    var s2 = Span(l2)
+    s2.swap_elements(0, 2)
+    assert_equal(l2[0], "hey")
+    assert_equal(l2[2], "hi")
+
+    with assert_raises(contains="index out of bounds"):
+        s2.swap_elements(0, 4)
+
+
 def main():
     test_span_list_int()
     test_span_list_str()
@@ -243,3 +260,4 @@ def main():
     test_fill()
     test_ref()
     test_reversed()
+    test_swap_elements()

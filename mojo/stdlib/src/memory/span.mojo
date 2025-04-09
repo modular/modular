@@ -491,3 +491,34 @@ struct Span[
             address_space=address_space,
             alignment=alignment,
         ](ptr=self._data, length=self._len)
+
+    fn swap_elements(
+        self: Span[mut=True, T, alignment=alignment], a: UInt, b: UInt
+    ) raises:
+        """
+        Swap the values at indices `a` and `b`.
+
+        Args:
+            a: The first argument index.
+            b: The second argument index.
+
+        Raises:
+            If a or b are larger than the length of the span.
+        """
+        var length = len(self)
+        if a > length or b > length:
+            raise Error(
+                "index out of bounds (length: ",
+                length,
+                ", a: ",
+                a,
+                ", b: ",
+                b,
+                ")",
+            )
+
+        var ptr = self.unsafe_ptr()
+        var tmp = InlineArray[T, 1](uninitialized=True)
+        ptr.offset(a).move_pointee_into(tmp.unsafe_ptr())
+        ptr.offset(b).move_pointee_into(ptr.offset(a))
+        tmp.unsafe_ptr().move_pointee_into(ptr.offset(b))

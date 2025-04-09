@@ -35,6 +35,9 @@ what we publish.
 
 ### Standard library changes
 
+- `Span` now has a `swap_elements` method which takes two indices and swaps them
+   within the span.
+
 - `Pointer` now has `get_immutable()` to return a new `Pointer`
   with the same underlying data but an `ImmutableOrigin`.
 
@@ -82,7 +85,7 @@ for i in range(iteration_range):
 
 - The types `StringSlice` and `StaticString` are now part of the prelude, there
   is no need to import them anymore.
-  
+
 - The `constrained[cond, string]()` function now accepts multiple strings that
   are printed concatenated on failure, so you can use:
   `constrained[cond, "hello: ", String(n), ": world"]()` which is more comptime
