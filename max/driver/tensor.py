@@ -41,7 +41,7 @@ def _aligned(self, alignment: int | None = None) -> bool:
 
 
 def _repr(self) -> str:
-    return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.device.api}[{self.device.id}])"
+    return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.stream})"
 
 
 def _view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:
