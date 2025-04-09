@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -36,7 +35,7 @@ def matrix_multiplication(
     a_tensor = Tensor.from_numpy(a).to(device)
     b_tensor = Tensor.from_numpy(b).to(device)
 
-    path = Path(__file__).parent / "kernels.mojopkg"
+    mojo_kernels = Path(__file__).parent / "kernels"
 
     # Configure our simple one-operation graph.
     with Graph(
@@ -45,7 +44,7 @@ def matrix_multiplication(
             TensorType(dtype, shape=a_tensor.shape),
             TensorType(dtype, shape=b_tensor.shape),
         ],
-        custom_extensions=[path],
+        custom_extensions=[mojo_kernels],
     ) as graph:
         # Take in the two inputs to the graph.
         a_value, b_value = graph.inputs
@@ -79,10 +78,6 @@ def matrix_multiplication(
 
 
 if __name__ == "__main__":
-    # This is necessary only in specific build environments.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
     M = 256
     K = 256
     N = 256

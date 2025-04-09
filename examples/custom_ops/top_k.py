@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 import argparse
-import os
 from collections import defaultdict
 from pathlib import Path
 
@@ -111,12 +110,8 @@ def main():
     )
     args = parser.parse_args()
 
-    # This is necessary only for Modular internal CI.
-    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
-        os.chdir(directory)
-
-    # Get the path to our compiled custom ops
-    path = Path(__file__).parent / "kernels.mojopkg"
+    # Get the path to our Mojo custom ops
+    mojo_kernels = Path(__file__).parent / "kernels"
 
     # Initialize the next word frequency for each unique word
     frequencies = NextWordFrequency(INPUT_TEXT)
@@ -133,7 +128,7 @@ def main():
         "top_k_sampler",
         # The dtype and shape of the probabilities being passed in
         input_types=[TensorType(DType.float32, shape=[batch_size, K])],
-        custom_extensions=[path],
+        custom_extensions=[mojo_kernels],
     ) as graph:
         # Take the probabilities as a single input to the graph.
         probs, *_ = graph.inputs

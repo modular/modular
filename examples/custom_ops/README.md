@@ -49,10 +49,12 @@ magic run matrix_multiplication
 magic run fused_attention
 ```
 
-The execution has two phases: first a `kernels.mojopkg` is compiled from the
-custom Mojo kernel, and then the graph is constructed and run in Python. The
-inference session is pointed to the `kernels.mojopkg` in order to load the
-custom operations.
+`magic run <example>` runs the associated Python example, taking care
+to ensure the necessary dependencies (i.e. the `max` package) are visible.
+The Python code will construct the graph and related inference session state.
+The Mojo kernels code defining the custom operations will be (re)compiled on the
+fly as needed, ensuring the executing graph is always using the latest version
+of the Mojo code.
 
 You can also run benchmarks to compare the performance of your GPU to your CPU:
 
