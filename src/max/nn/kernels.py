@@ -1515,3 +1515,68 @@ def rms_norm_key_cache(
         ],
         parameters=parameters,
     )
+
+
+def moe_create_indices(
+    topk_ids: TensorValue,
+    num_local_experts: int,
+) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+    """Creates indices for the MoE layer.
+
+    Args:
+        topk_ids: The expert assignments for each token from the router.
+        num_local_experts: The number of experts on this device.
+
+    Returns:
+        A tuple of four tensors:
+        - token_expert_order: The reordered token indices, grouped by assigned expert.
+        - expert_start_indices: The starting index for each expert's token group in
+            the reordered sequence.
+        - restore_token_order: The indices to restore original token ordering after
+            expert computation.
+        - expert_ids: ids of active experts selected for tokens
+        - expert_usage_stats: The maximum number of tokens assigned to any expert,
+            and the number of active experts.
+    """
+
+    results = ops.custom(
+        "mo.moe.create.indices",
+        values=[
+            topk_ids,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.uint32,
+                shape=[topk_ids.shape[0]],
+                device=topk_ids.device,
+            ),  # token_expert_order
+            TensorType(
+                dtype=DType.uint32,
+                shape=[num_local_experts + 1],
+                device=topk_ids.device,
+            ),  # expert_start_indices
+            TensorType(
+                dtype=DType.uint32,
+                shape=[topk_ids.shape[0]],
+                device=topk_ids.device,
+            ),  # restore_token_order
+            TensorType(
+                dtype=DType.uint32,
+                shape=[num_local_experts],
+                device=topk_ids.device,
+            ),  # expert_ids
+            TensorType(
+                dtype=DType.uint32,
+                shape=[2],
+                device=topk_ids.device,
+            ),  # expert_usage_stats
+        ],
+    )
+
+    return (
+        results[0].tensor,
+        results[1].tensor,
+        results[2].tensor,
+        results[3].tensor,
+        results[4].tensor,
+    )
