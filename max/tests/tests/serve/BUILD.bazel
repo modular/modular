@@ -16,7 +16,6 @@ modular_py_test(
     deps = [
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/serve",
-        "//SDK/lib/API/python/max/serve/grpc_serve",
         "//SDK/lib/API/python/max/serve/pipelines",
         "//SDK/lib/API/python/max/serve/router",
         "//SDK/lib/API/python/max/serve/scheduler",
