@@ -315,7 +315,7 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         # Compare Tokenizer Configuration
-        if draft_tokenizer.__dict__ == target_tokenizer.__dict__:
+        if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
             msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
             raise ValueError(msg)
 
