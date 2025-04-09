@@ -17,7 +17,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
 from max.nn import AttentionWithRopeQKV, Linear, OptimizedRotaryEmbedding
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     load_kv_manager,

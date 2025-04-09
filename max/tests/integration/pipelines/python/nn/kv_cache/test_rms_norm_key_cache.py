@@ -15,7 +15,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Dim, Graph, TensorType, TensorValue
 from max.nn.kernels import rms_norm_key_cache
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,

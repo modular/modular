@@ -12,14 +12,12 @@ from unittest.mock import PropertyMock, patch
 
 import pytest
 from max.driver import DeviceSpec
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     PipelineEngine,
     SupportedEncoding,
-)
-from max.pipelines.kv_cache import (
-    KVCacheStrategy,
 )
 from test_common.pipeline_model import (
     DUMMY_ARCH,
@@ -191,7 +189,7 @@ def test_registry__update_weight_paths():
         ("f32", 8, 80),
     ]
     with patch(
-        "max.pipelines.kv_cache.cache_params",
+        "max.nn.kv_cache.cache_params",
         temp_valid_kernels,
     ):
         # This first example, is requesting float32 from a gguf repository.

@@ -10,7 +10,7 @@ import numpy as np
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
     KVCacheParams,

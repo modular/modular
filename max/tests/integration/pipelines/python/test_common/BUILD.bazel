@@ -64,8 +64,8 @@ modular_py_library(
         requirement("numpy"),
         requirement("requests"),
         "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/kv_cache",
     ],
 )
 

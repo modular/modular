@@ -11,8 +11,8 @@ import click
 import pytest
 from click.testing import CliRunner
 from max.entrypoints.cli import pipeline_config_options
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig
-from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.pipeline_cli_utils import CLITestCommand
 from test_common.pipeline_model import mock_estimate_memory_footprint
 

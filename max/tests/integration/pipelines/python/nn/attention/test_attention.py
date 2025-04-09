@@ -17,7 +17,7 @@ from max.graph import Graph, TensorType, ops
 from max.nn import Linear
 from max.nn.attention import Attention
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,

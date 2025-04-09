@@ -21,7 +21,7 @@ from max.nn import (
     RotaryEmbedding,
 )
 from max.nn.kernels import fused_qk_ragged_rope
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,

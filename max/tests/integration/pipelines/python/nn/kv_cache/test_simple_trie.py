@@ -7,7 +7,7 @@
 import random
 
 import pytest
-from max.pipelines.kv_cache.simple_trie import SimpleTrie
+from max.nn.kv_cache.paged_cache.simple_trie import SimpleTrie
 
 
 @pytest.mark.asyncio

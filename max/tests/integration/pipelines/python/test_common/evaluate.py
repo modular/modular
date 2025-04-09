@@ -12,9 +12,9 @@ from typing import Any, Optional
 
 import numpy as np
 import requests
+from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines import PipelineModel
 from max.pipelines.core import PipelineTokenizer, TokenGeneratorRequest
-from max.pipelines.kv_cache import KVCacheInputsSequence
 
 NUM_STEPS = 10
 PROMPTS = (

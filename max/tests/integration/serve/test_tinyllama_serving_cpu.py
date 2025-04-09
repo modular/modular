@@ -11,8 +11,8 @@ import json
 import pytest
 from async_asgi_testclient import TestClient
 from max.driver import DeviceSpec
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig, SupportedEncoding
-from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.schemas.openai import (  # type: ignore
     CreateChatCompletionResponse,
     CreateCompletionResponse,

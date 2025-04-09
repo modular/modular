@@ -15,7 +15,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn import Allreduce, Linear, Signals
 from max.nn.attention import Attention
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheManager,
     KVCacheParams,

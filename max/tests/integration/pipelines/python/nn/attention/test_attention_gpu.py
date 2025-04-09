@@ -22,10 +22,7 @@ from max.nn.kernels import (
     flare_mla_prefill_ragged,
     flash_attention_ragged_paged_fa3_fallback,
 )
-from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
-    CrossSdpaAttention,
-)
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
@@ -35,6 +32,9 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManager,
     PagedKVCacheManagerFA3Fallback,
     load_kv_manager,
+)
+from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
+    CrossSdpaAttention,
 )
 from modular_graph_test import are_all_tensor_values
 from nvitop import Device as NVITOPDevice

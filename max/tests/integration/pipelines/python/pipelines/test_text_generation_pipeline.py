@@ -8,7 +8,7 @@
 import asyncio
 from unittest.mock import patch
 
-from max.pipelines import TokenGeneratorRequest
+from max.pipelines.core import TokenGeneratorRequest
 from test_common.mocks import (
     MockTextTokenizer,
     retrieve_mock_text_generation_pipeline,

@@ -23,13 +23,13 @@ from max.nn import (
     RMSNorm,
     TransformerBlock,
 )
-from max.pipelines.architectures.pixtral.llava.llava_decoder import (
-    Transformer as LLavaTransformer,
-)
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     load_kv_manager,
+)
+from max.pipelines.architectures.pixtral.llava.llava_decoder import (
+    Transformer as LLavaTransformer,
 )
 from transformers import (
     LlavaForConditionalGeneration,

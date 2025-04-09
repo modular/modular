@@ -11,7 +11,7 @@ from context_utils import create_text_context
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheStrategy,

@@ -16,13 +16,13 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight
 from max.nn import Linear, RMSNorm
-from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
-    CrossSdpaAttention,
-)
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     load_kv_manager,
+)
+from max.pipelines.architectures.llama_vision.cross_attention_decoder import (
+    CrossSdpaAttention,
 )
 from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig

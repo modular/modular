@@ -14,13 +14,13 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
 from max.nn.attention.attention_with_rope import LatentAttentionWithRope
-from max.nn.rotary_embedding import OptimizedRotaryEmbedding
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheManager,
 )
+from max.nn.rotary_embedding import OptimizedRotaryEmbedding
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import DeepseekV2Attention

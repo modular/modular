@@ -14,19 +14,19 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.nn import OptimizedRotaryEmbedding
+from max.nn.kv_cache import (
+    FetchPagedKVCacheCollection,
+    KVCacheManager,
+    KVCacheParams,
+    KVCacheStrategy,
+    load_kv_manager,
+)
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.llama4.layers.attention import (
     _Llama4TextAttention,
 )
 from max.pipelines.architectures.llama4.model_config import (
     Llama4Config as MaxLlama4Config,
-)
-from max.pipelines.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheManager,
-    KVCacheParams,
-    KVCacheStrategy,
-    load_kv_manager,
 )
 from test_common.context_utils import create_text_context
 from transformers.models.llama4.configuration_llama4 import (

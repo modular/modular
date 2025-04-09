@@ -23,6 +23,10 @@ from max.nn import (
     RMSNorm,
 )
 from max.nn import TransformerBlock as nnTransformerBlock
+from max.nn.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+)
 from max.pipelines.architectures.pixtral.llava.llava import (
     LlavaConditionalGeneration,
 )
@@ -45,10 +49,6 @@ from max.pipelines.architectures.pixtral.vision_encoder.transformer import (
 )
 from max.pipelines.architectures.pixtral.vision_encoder.vision_encoder import (
     VisionEncoder,
-)
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    KVCacheParams,
 )
 from transformers import (
     AutoProcessor,

@@ -6,8 +6,7 @@
 
 from max.driver import CPU
 from max.dtype import DType
-from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 
 
 def test_paged_kv_cache_memory_estimates_truncated():

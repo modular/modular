@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 from max.driver import DeviceSpec, scan_available_devices
 from max.engine import GPUProfilingMode
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     KVCacheConfig,
     MAXModelConfig,
@@ -21,7 +22,6 @@ from max.pipelines import (
     TextGenerationPipeline,
 )
 from max.pipelines.core import TextContext
-from max.pipelines.kv_cache import KVCacheStrategy
 
 from .pipeline_model import MockPipelineModel
 from .tokenizer import MockTextTokenizer

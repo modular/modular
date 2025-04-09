@@ -13,7 +13,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import flare_mla_decompress_k_cache, flare_mla_prefill_plan
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,

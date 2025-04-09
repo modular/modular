@@ -15,6 +15,14 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
 from max.graph.weights import WeightsFormat
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheManager,
+    KVCacheParams,
+    KVCacheStrategy,
+    estimate_kv_cache_size,
+    load_kv_manager,
+)
 from max.pipelines import (
     MEMORY_ESTIMATOR,
     PIPELINE_REGISTRY,
@@ -30,14 +38,6 @@ from max.pipelines import (
     upper_bounded_default,
 )
 from max.pipelines.core import InputContext
-from max.pipelines.kv_cache import (
-    KVCacheInputs,
-    KVCacheManager,
-    KVCacheParams,
-    KVCacheStrategy,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.pipelines.pipeline import KVCacheMixin
 from transformers import AutoConfig
 
