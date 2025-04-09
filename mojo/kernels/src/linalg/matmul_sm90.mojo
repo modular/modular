@@ -113,7 +113,7 @@ fn warp_specialized_gemm_output[
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c_tma_op: TMATensorTile[c_type, c_smem_layout, c_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin, *_, **_],
     c_smem_tile: LayoutTensor[
         c_type,
         c_smem_layout,
