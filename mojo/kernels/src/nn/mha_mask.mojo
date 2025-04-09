@@ -496,8 +496,6 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
             )
 
         else:
-            # TODO(austin) hack to support float types.
-            # we assume -inf is our mask value.
             return min(
                 self.lhs.mask(coord, score_vec),
                 self.rhs.mask(coord, score_vec),
@@ -558,7 +556,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
                 self.rhs.mask(coord, score_vec),
             )
 
-    # @always_inline
+    @always_inline
     fn status[
         *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
     ](
@@ -590,6 +588,7 @@ fn chunked_causal_mask[
     attention within each local chunk. Considering the following case:
     - Q_len = 7
     - K_len = 10
+    - start_pos = 3
     - local_window_size = 4
 
     The mask will be applied as follows:

@@ -30,7 +30,7 @@ from nn.flash_attention import (
 )
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import CausalMask, MHAMask, NullMask
+from nn.mha_mask import CausalMask, MHAMask, NullMask, chunked_causal_mask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from nn.mla import (
     flare_mla_decoding,
@@ -1610,6 +1610,54 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
 
 
 @always_inline
+fn generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged[
+    target: StaticString, type: DType, local_window_size: Int
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[mut=True, type, 3, *_],
+    context: DeviceContextPtr,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("q", q),
+            "scale=" + String(scale),
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
+            "local_window_size=" + String(local_window_size),
+        )
+
+    alias name = "mo.mha.ragged.paged.chunked_causal_mask.no_pos.nhead_" + String(
+        kv_collection.kv_params.num_heads
+    ) + ".hdim_" + String(
+        kv_collection.kv_params.head_size
+    )
+
+    with Trace[TraceLevel.OP, target=target](
+        name,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _flash_attention_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            chunked_causal_mask[local_window_size](),
+            scale,
+            output,
+            context,
+        )
+
+
+@always_inline
 fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
     target: StaticString, type: DType
 ](
@@ -1694,6 +1742,53 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
             kv_collection,
             layer_idx,
             CausalMask(),
+            scale,
+            output,
+            context,
+        )
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged[
+    type: DType, //,
+    local_window_size: Int,
+    target: StaticString,
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[mut=True, type, 3, *_],
+    context: DeviceContextPtr,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("output", output),
+            trace_arg("q", q),
+            trace_arg("input_row_offsets", input_row_offsets),
+            "layer_idx=" + String(layer_idx),
+            "num_heads=" + String(kv_collection.kv_params.num_heads),
+            "head_size=" + String(kv_collection.kv_params.head_size),
+            "local_window_size=" + String(local_window_size),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.mha.ragged.continuous_batching.chunked_causal_mask.no_pos.nhead_"
+        + String(kv_collection.kv_params.num_heads)
+        + ".hdim_"
+        + String(kv_collection.kv_params.head_size),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _flash_attention_kv_cache_chunked_causal_mask_ragged[
+            local_window_size=local_window_size, target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
             scale,
             output,
             context,
@@ -2035,6 +2130,45 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_gpu[
         input_row_offsets,
         scale,
         context,
+    )
+
+
+@always_inline
+fn _flash_attention_kv_cache_chunked_causal_mask_ragged[
+    type: DType,
+    collection_t: KVCollectionT, //,
+    *,
+    local_window_size: Int,
+    target: StaticString,
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[mut=True, type, 3, *_],
+    context: DeviceContextPtr,
+) raises:
+    # This assumes that, the q tensor is static in the 1 dim.
+    alias num_q_heads = Int(q.shape.at[1]())
+
+    var cuda_ctx: Optional[DeviceContext] = None
+
+    @parameter
+    if is_gpu[target]():
+        cuda_ctx = context.get_device_context()
+
+    _flash_attention_kv_cache_ragged_impl[
+        collection_t.CacheType, target=target
+    ](
+        q,
+        input_row_offsets,
+        kv_collection,
+        layer_idx,
+        chunked_causal_mask[local_window_size](),
+        scale,
+        output,
+        cuda_ctx,
     )
 
 
