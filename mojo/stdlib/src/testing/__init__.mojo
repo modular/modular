@@ -22,4 +22,5 @@ from .testing import (
     assert_not_equal,
     assert_raises,
     assert_true,
+    Testable,
 )
