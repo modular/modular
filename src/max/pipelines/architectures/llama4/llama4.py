@@ -34,7 +34,7 @@ from max.pipelines.kv_cache import (
 )
 
 from .layers.attention import Llama4TextAttention
-from .mix_of_experts import MoE
+from .layers.moe import MoE
 from .model_config import Llama4Config
 
 

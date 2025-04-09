@@ -78,7 +78,9 @@ class MoE(Module):
                 "as used in the Llama-4-Scout-17B-16E-Instruct model."
             )
 
-        # Routed experts weights
+        # Routed experts weights.
+        # These weights are read on CPU and then are explicitly transferred to
+        # GPU.
         self.down_proj = Weight(
             name="experts.down_proj",
             shape=(
