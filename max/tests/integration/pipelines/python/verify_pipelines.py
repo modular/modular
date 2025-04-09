@@ -238,10 +238,10 @@ def run_llm_verification(
     pipeline: str,
     encoding: str,
     pregenerated_torch_goldens_rlocation: Optional[str] = None,
-    kl_div_threshold: Optional[float] = None,
-    cos_dist_threshold: Optional[float] = None,
     absolute_tolerance: Optional[float] = None,
     relative_tolerance: Optional[float] = None,
+    cos_dist_threshold: Optional[float] = None,
+    kl_div_threshold: Optional[float] = None,
 ) -> VerificationVerdict:
     """Run a Llama3 verification with the given model and weights encoding.
 
@@ -454,10 +454,10 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama4-scout",
             encoding="bfloat16",
+            absolute_tolerance=55,
+            relative_tolerance=1.2,
+            cos_dist_threshold=1.6,
             kl_div_threshold=float("inf"),
-            cos_dist_threshold=float("inf"),
-            absolute_tolerance=float("inf"),
-            relative_tolerance=float("inf"),
         ),
     ),
     "replit-code-v1_5-3b-bfloat16": PipelineDef(
