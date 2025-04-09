@@ -163,6 +163,9 @@ class PipelineModel(ABC, Generic[T]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
+        # TODO: This is no longer necessary inside PipelineModel since it can be
+        # inferred directly from model_config, remove it and from
+        # other PipelineModel methods that depend on it.
         huggingface_config: AutoConfig,
         encoding: SupportedEncoding,
         devices: list[Device],
@@ -434,15 +437,17 @@ class TextGenerationPipeline(TokenGenerator[T]):
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
         self._pipeline_config = pipeline_config
-        self._huggingface_config: Optional[AutoConfig] = None
         self._devices = load_devices(pipeline_config.model_config.device_specs)
         self._weight_adapters = weight_adapters
 
         # Expand eos tokens if more are provided in pipeline_config
         if self._pipeline_config.ignore_eos:
             self._eos_token_id = set([])
-        elif "eos_token_id" in self.huggingface_config:
-            eos_tokens = self.huggingface_config.eos_token_id
+        elif (
+            "eos_token_id"
+            in self._pipeline_config.model_config.huggingface_config
+        ):
+            eos_tokens = self._pipeline_config.model_config.huggingface_config.eos_token_id
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
                     msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
@@ -517,7 +522,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self.huggingface_config,
+            huggingface_config=self._pipeline_config.model_config.huggingface_config,
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
@@ -533,16 +538,6 @@ class TextGenerationPipeline(TokenGenerator[T]):
             token_sampler(self._pipeline_config.sampling_config),
         )
 
-    @property
-    def huggingface_config(self) -> AutoConfig:
-        if not self._huggingface_config:
-            self._huggingface_config = AutoConfig.from_pretrained(
-                self._pipeline_config.model_config.model_path,
-                trust_remote_code=self._pipeline_config.model_config.trust_remote_code,
-            )
-
-        return self._huggingface_config
-
     def calculate_num_steps(
         self,
         num_steps: int,
@@ -550,7 +545,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
     ) -> int:
         max_seq_len = self._pipeline_model.calculate_max_seq_len(
             self._pipeline_config,
-            huggingface_config=self.huggingface_config,
+            huggingface_config=self._pipeline_config.model_config.huggingface_config,
         )
         num_available_steps = context.compute_num_available_steps(max_seq_len)
 
@@ -832,7 +827,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 max_length = upper_bounded_default(
                     upper_bound=self._pipeline_model.calculate_max_seq_len(
                         self._pipeline_config,
-                        huggingface_config=self.huggingface_config,
+                        huggingface_config=self._pipeline_config.model_config.huggingface_config,
                     ),
                     default=context.max_length,
                 )
