@@ -1124,12 +1124,17 @@ fn hopper_matmul_tma_wgmma_kernel[
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
 ):
     constrained[transpose_b, "Only support transposed B in layout"]()
-
+    constrained[a_type == b_type, "A and B must have the same data type"]()
     alias K = b_layout.shape[1].value()
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
+
+    constrained[
+        a_type != DType.float8_e4m3fn or BK == 128,
+        "BK must be 128 for fp8 data type for numerical accuracy correctness",
+    ]()
 
     alias num_m_mmas = BM // wgmma_shape[0]
     alias num_n_mmas = BN // wgmma_shape[1]
@@ -1165,7 +1170,18 @@ fn hopper_matmul_tma_wgmma_kernel[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
+    var final_c_reg_tile = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+
     _ = c_reg_tile.fill(0.0)
+
+    @parameter
+    if a_type == DType.float8_e4m3fn:
+        _ = final_c_reg_tile.fill(0.0)
 
     wgmma_op = TensorCoreAsync[
         accum_type, a_type, b_type, wgmma_shape, transpose_b=transpose_b
@@ -1209,11 +1225,29 @@ fn hopper_matmul_tma_wgmma_kernel[
         phase.step()
 
         wgmma_op.arrive()
-        wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
+
+        alias scale_c = 0 if a_type == DType.float8_e4m3fn else 1
+        wgmma_op.wgmma[scale_c=scale_c](a_smem_tile, b_smem_tile, c_reg_tile)
+
         wgmma_op.commit_group()
         wgmma_op.wait_group()
 
         barrier()
+
+        @parameter
+        if a_type == DType.float8_e4m3fn:
+            # CUD Core promotion for fp8 data type increases the precision of the result.
+            # This is a workaround to ensure the result is as precise as possible.
+            @parameter
+            for m_mma in range(num_m_mmas):
+
+                @parameter
+                for n_mma in range(num_n_mmas):
+                    alias mma_id = n_mma * num_m_mmas + m_mma
+
+                    @parameter
+                    for i in range(c_frag_size):
+                        final_c_reg_tile[mma_id, i] += c_reg_tile[mma_id, i]
 
     c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
     warp_id = thread_idx.x // WARP_SIZE
@@ -1233,7 +1267,11 @@ fn hopper_matmul_tma_wgmma_kernel[
 
             # Tile at (mma_id, 0) is a long vector containing all fragments
             # for this warp.
-            c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+            @parameter
+            if a_type == DType.float8_e4m3fn:
+                c_frag = final_c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+            else:
+                c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
 
             # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
             # elementwise. This pattern repeates to fill the warp tile.
@@ -1251,7 +1289,8 @@ fn hopper_matmul_tma_wgmma[
     b_shape: DimList, //,
     *,
     transpose_b: Bool,
-    wgmma_n: Int = 128,
+    wgmma_shape: IndexList[3],
+    block_tile_shape: IndexList[3],
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -1265,8 +1304,16 @@ fn hopper_matmul_tma_wgmma[
     var b = from_ndbuffer_row_major(b_device)
     var c = from_ndbuffer_row_major(c_device)
 
-    alias block_tile_shape = Index(64, wgmma_n, 32)
-    alias wgmma_shape = Index(64, wgmma_n, 16)
+    constrained[
+        transpose_b,
+        "Only support transposeed B",
+    ]()
+
+    constrained[
+        (a_type == b_type == DType.float8_e4m3fn)
+        or (a_type == b_type == DType.bfloat16),
+        "Unsupported input dtype",
+    ]()
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
