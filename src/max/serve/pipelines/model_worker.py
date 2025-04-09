@@ -15,8 +15,12 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import uvloop
-from max.pipelines import EmbeddingsGenerator, PipelinesFactory, TokenGenerator
-from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
+from max.nn.kv_cache import PagedKVCacheManager
+from max.pipelines.core import (
+    EmbeddingsGenerator,
+    PipelinesFactory,
+    TokenGenerator,
+)
 from max.pipelines.pipeline import KVCacheMixin, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings

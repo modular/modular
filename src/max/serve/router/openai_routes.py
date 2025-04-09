@@ -26,7 +26,7 @@ from typing import (
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
-from max.pipelines import (
+from max.pipelines.core import (
     PipelineTokenizer,
     TokenGeneratorRequest,
     TokenGeneratorRequestFunction,

@@ -16,7 +16,7 @@ from functools import partial
 import uvloop
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from max.pipelines import PipelinesFactory, PipelineTokenizer
+from max.pipelines.core import PipelinesFactory, PipelineTokenizer
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,

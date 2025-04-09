@@ -14,14 +14,14 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional, cast
 
-from max.pipelines import TokenGenerator
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     EmbeddingsGenerator,
     InputContext,
     TextGenerationResponse,
     TextResponse,
+    TokenGenerator,
 )
-from max.pipelines.kv_cache.paged_cache import PagedKVCacheManager
 from max.profiler import traced
 from max.serve.scheduler.max_queue import MaxQueue
 from max.serve.scheduler.process_control import ProcessControl
