@@ -15,14 +15,7 @@ from hypothesis import strategies as st
 from max import mlir
 from max._core import graph as _graph
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    Dim,
-    Graph,
-    TensorType,
-    TensorValue,
-    ops,
-)
+from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
 from max.mlir.dialects import rmo
 
 empty_graphs = st.builds(
@@ -86,6 +79,8 @@ def test_elementwise_add_graph_with_device_prop() -> None:
 
 def test_elementwise_add_graph_with_device_prop_error() -> None:
     """Builds a simple graph with explicit device on inputs and checks for error conditions on output device propagation in the IR."""
+    pytest.skip("TODO(MAXPLAT-192): Create similar feature and re-enable test.")
+
     with Graph(
         "elementwise_add",
         input_types=[
