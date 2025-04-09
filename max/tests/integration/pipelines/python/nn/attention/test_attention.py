@@ -241,13 +241,15 @@ def test_attention__valid_logits(session, start_pos, seq_len):
 
 
 @pytest.mark.parametrize(
-    "cache_strategy",
+    "cache_strategy,mask_strategy",
     [
-        KVCacheStrategy.CONTINUOUS,
-        KVCacheStrategy.PAGED,
+        (KVCacheStrategy.CONTINUOUS, MHAMaskVariant.CAUSAL_MASK),
+        (KVCacheStrategy.PAGED, MHAMaskVariant.CAUSAL_MASK),
+        (KVCacheStrategy.CONTINUOUS, MHAMaskVariant.CHUNKED_CAUSAL_MASK),
+        (KVCacheStrategy.PAGED, MHAMaskVariant.CHUNKED_CAUSAL_MASK),
     ],
 )
-def test_kv_cache_ragged_attention(session, cache_strategy):
+def test_kv_cache_ragged_attention(session, cache_strategy, mask_strategy):
     num_q_heads = 32
     kv_params = KVCacheParams(
         dtype=DType.float32,
@@ -326,7 +328,7 @@ def test_kv_cache_ragged_attention(session, cache_strategy):
                 input_row_offsets,
                 kv_collection,
                 layer_idx,
-                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                mask_variant=mask_strategy,
                 scale=math.sqrt(1.0 / kv_params.head_dim),
             )
             g.output(result)
