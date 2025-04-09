@@ -24,7 +24,7 @@ from max.nn import (
     Transformer,
     TransformerBlock,
 )
-from max.pipelines.kv_cache import FetchContinuousBatchingKVCacheCollection
+from max.nn.kv_cache import FetchContinuousBatchingKVCacheCollection
 
 from .model_config import MistralConfig
 

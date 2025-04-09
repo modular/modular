@@ -27,13 +27,13 @@ from max.nn import (
     RMSNorm,
     TransformerBlock,
 )
-from max.pipelines import PipelineConfig
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
 )
+from max.pipelines import PipelineConfig
 from transformers import AutoConfig
 
 from ..llava.llava_decoder import Transformer

@@ -22,12 +22,12 @@ from max.graph import (
     TensorValue,
     TensorValueLike,
 )
-from max.pipelines.kv_cache import (
+
+from ..kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
-
 from ..layer import Layer, Module
 from ..linear import Linear
 

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Optional, cast
 import numpy as np
 import torch
 from max.driver import Tensor
+from max.nn.kv_cache import ContinuousHFStaticCache
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -41,7 +42,6 @@ from .core import (
     TextResponse,
     TokenGenerator,
 )
-from .kv_cache import ContinuousHFStaticCache
 
 logger = logging.getLogger("max.pipelines")
 

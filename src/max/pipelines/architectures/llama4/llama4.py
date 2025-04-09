@@ -26,12 +26,12 @@ from max.nn import (
     OptimizedRotaryEmbedding,
     VocabParallelEmbedding,
 )
-from max.nn.layer import LayerList
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     PagedKVCacheCollection,
 )
+from max.nn.layer import LayerList
 
 from .layers.attention import Llama4TextAttention
 from .layers.moe import MoE

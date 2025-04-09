@@ -18,7 +18,13 @@ from typing import Callable, cast
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.pipelines.kv_cache import (
+
+from ..attention.interfaces import (
+    AttentionImpl,
+    AttentionImplQKV,
+)
+from ..embedding import Embedding, EmbeddingV2
+from ..kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
@@ -26,12 +32,6 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     PagedKVCacheCollection,
 )
-
-from ..attention.interfaces import (
-    AttentionImpl,
-    AttentionImplQKV,
-)
-from ..embedding import Embedding, EmbeddingV2
 from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV2
 

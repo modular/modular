@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-"""Utility functions for KV cache."""
+from __future__ import annotations
 
 import numpy as np
 from max.driver import Tensor

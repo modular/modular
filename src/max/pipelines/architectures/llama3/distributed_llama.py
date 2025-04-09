@@ -35,7 +35,7 @@ from max.nn import (
     Module,
     VocabParallelEmbedding,
 )
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     FetchPagedKVCacheCollectionFA3Fallback,

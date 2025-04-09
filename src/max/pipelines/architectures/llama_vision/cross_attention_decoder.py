@@ -27,12 +27,9 @@ from max.nn.kernels import (
     matmul_kv_cache_ragged,
     rms_norm_key_cache,
 )
+from max.nn.kv_cache import ContinuousBatchingKVCacheCollection, KVCacheParams
 from max.nn.layer import Layer
 from max.nn.linear import Linear
-from max.pipelines.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
-    KVCacheParams,
-)
 
 
 @dataclass

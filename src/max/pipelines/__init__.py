@@ -16,12 +16,19 @@
 from typing import Callable as _Callable
 from typing import Union as _Union
 
-from max.pipelines.core import (
+from .config import PipelineConfig
+from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
+from .core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
+    InputContext,
     LogProbabilities,
+    PipelinesFactory,
     PipelineTask,
-    PipelineTokenizer,
+    TextAndVisionContext,
+    TextContext,
+    TextGenerationResponse,
+    TextGenerationStatus,
     TextResponse,
     TokenGenerator,
     TokenGeneratorContext,
@@ -31,9 +38,6 @@ from max.pipelines.core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-
-from .config import PipelineConfig
-from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import (
     HuggingFaceFile,
@@ -60,13 +64,11 @@ from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
+    PipelineTokenizer,
     PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
 )
-
-PipelinesFactory = _Callable[[], _Union[TokenGenerator, EmbeddingsGenerator]]
-
 
 __all__ = [
     "LogProbabilities",
@@ -111,4 +113,5 @@ __all__ = [
     "upper_bounded_default",
     "download_weight_files",
     "repo_exists_with_retry",
+    "PipelinesFactory",
 ]

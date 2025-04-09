@@ -31,13 +31,13 @@ from max.dtype import DType
 from max.engine import GPUProfilingMode
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.config_enums import (
     _ALTERNATE_ENCODINGS,
     RepoType,
     SupportedEncoding,
 )
 from max.pipelines.hf_utils import HuggingFaceRepo, repo_exists_with_retry
-from max.pipelines.kv_cache import KVCacheStrategy
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")

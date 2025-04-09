@@ -29,14 +29,14 @@ from max.nn.kernels import (
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
-from max.nn.layer import Module
-from max.nn.linear import LinearV2
-from max.nn.rotary_embedding import OptimizedRotaryEmbedding
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     PagedKVCacheCollection,
 )
+from max.nn.layer import Module
+from max.nn.linear import LinearV2
+from max.nn.rotary_embedding import OptimizedRotaryEmbedding
 
 from .norm import l2_norm
 

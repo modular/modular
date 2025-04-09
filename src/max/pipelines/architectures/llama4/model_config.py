@@ -19,8 +19,8 @@ from typing import Any, Callable, Literal
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.weights import WeightData, weights_format
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.config import PipelineConfig
-from max.pipelines.kv_cache import KVCacheParams
 from max.pipelines.max_config import (
     KVCacheConfig,
     MAXModelConfig,

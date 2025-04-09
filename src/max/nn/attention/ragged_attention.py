@@ -20,17 +20,17 @@ from typing import Callable, Union
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.pipelines.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
-    KVCacheParams,
-    PagedKVCacheCollection,
-)
 
 from ..clamp import clamp
 from ..kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
     fused_qkv_ragged_matmul,
+)
+from ..kv_cache import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+    PagedKVCacheCollection,
 )
 from ..layer import Module
 from ..linear import LinearV2

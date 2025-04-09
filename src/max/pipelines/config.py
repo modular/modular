@@ -22,11 +22,14 @@ from typing import Any, Optional, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.config_enums import (
+from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
+from max.pipelines.registry import PIPELINE_REGISTRY
+
+from .config_enums import (
     PipelineEngine,
     RopeType,
 )
-from max.pipelines.max_config import (
+from .max_config import (
     KVCacheConfig,
     MAXConfig,
     MAXModelConfig,
@@ -34,8 +37,6 @@ from max.pipelines.max_config import (
     SamplingConfig,
     repo_exists_with_retry,
 )
-from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
-from max.pipelines.registry import PIPELINE_REGISTRY
 
 logger = logging.getLogger("max.pipelines")
 

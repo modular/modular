@@ -27,6 +27,7 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -38,7 +39,6 @@ from max.pipelines import (
 )
 from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
-from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams
 from transformers import AutoConfig
 
 from .graph import build_graph

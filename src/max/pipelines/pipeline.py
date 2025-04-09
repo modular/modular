@@ -39,9 +39,11 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
+    KVCacheManager,
+    KVCacheParams,
     infer_optimal_batch_size,
 )
 from max.profiler import Tracer, traced
@@ -60,7 +62,6 @@ from .core import (
     TokenGenerator,
 )
 from .hf_utils import download_weight_files
-from .kv_cache import KVCacheManager, KVCacheParams
 from .max_config import KVCacheConfig
 from .sampling import token_sampler
 

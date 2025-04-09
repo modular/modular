@@ -21,6 +21,7 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -36,7 +37,6 @@ from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
 )
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from transformers import AutoConfig
 
 
@@ -78,7 +78,7 @@ class Qwen2_5VLInputs(ModelInputs):
     """ Attention mask for Full Attention layers
     """
     image_attention_mask_full: Tensor | None
-    """ Maximum value of spatial dims in the grid of image patches 
+    """ Maximum value of spatial dims in the grid of image patches
     """
     image_max_grid_size: int
     """ video pixel_values
@@ -96,7 +96,7 @@ class Qwen2_5VLInputs(ModelInputs):
     """ Attention mask for Full Attention layers
     """
     video_attention_mask_full: Tensor | None
-    """ Maximum value of spatial dims in the grid of image patches 
+    """ Maximum value of spatial dims in the grid of image patches
     """
     video_max_grid_size: int
 

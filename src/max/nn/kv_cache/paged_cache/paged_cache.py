@@ -42,17 +42,17 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 
-from ._utils import build_max_lengths_tensor
-from .block_manager import BlockManager
-from .block_utils import BlockCopyOp, BlockCopyType
-from .cache_params import KVCacheParams
-from .context import KVCacheAwareContext
-from .manager import (
+from ..cache_params import KVCacheParams
+from ..context import KVCacheAwareContext
+from ..manager import (
     KVCacheInputs,
     KVCacheInputSymbols,
     KVCacheManager,
     RaggedKVCacheInputs,
 )
+from ..utils import build_max_lengths_tensor
+from .block_manager import BlockManager
+from .block_utils import BlockCopyOp, BlockCopyType
 
 logger = logging.getLogger("max.pipelines")
 

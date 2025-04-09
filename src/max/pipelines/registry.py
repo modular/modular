@@ -31,6 +31,8 @@ from transformers import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
+from max.nn.kv_cache import KVCacheStrategy
+
 from .config_enums import (
     PipelineEngine,
     RopeType,
@@ -44,9 +46,7 @@ from .core import (
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
-from .hf_utils import HuggingFaceRepo
-from .kv_cache import KVCacheStrategy
-from .max_config import MAXModelConfig
+from .max_config import HuggingFaceRepo, MAXModelConfig
 from .pipeline import PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer

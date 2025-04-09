@@ -35,6 +35,7 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 )
 from max.support.math import ceildiv
 
+from ..context import KVCacheAwareContext
 from .block_pool import BlockPool
 from .block_utils import (
     ROOT_BLOCK_HASH,
@@ -45,7 +46,6 @@ from .block_utils import (
     hash_block_tokens,
     hash_request_tokens,
 )
-from .context import KVCacheAwareContext
 
 T = TypeVar("T", bound=KVCacheAwareContext)
 

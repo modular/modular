@@ -33,7 +33,7 @@ from max.nn import (
     Transformer,
     TransformerBlock,
 )
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     FetchPagedKVCacheCollectionFA3Fallback,

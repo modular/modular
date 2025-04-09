@@ -25,6 +25,13 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import Module, Signals
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheManager,
+    KVCacheParams,
+    estimate_kv_cache_size,
+    load_kv_manager,
+)
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -35,13 +42,6 @@ from max.pipelines import (
 )
 from max.pipelines.core import LogProbabilities, TextContext
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
-from max.pipelines.kv_cache import (
-    KVCacheInputs,
-    KVCacheManager,
-    KVCacheParams,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.pipelines.log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 

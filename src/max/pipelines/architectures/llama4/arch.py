@@ -13,9 +13,11 @@
 
 
 from max.graph.weights import WeightsFormat
+from max.nn.kv_cache import KVCacheStrategy
+
+# TODO(bduke): Replace with actual Llama4 model once implemented.
 from max.pipelines.config_enums import RopeType, SupportedEncoding
 from max.pipelines.core import PipelineTask
-from max.pipelines.kv_cache import KVCacheStrategy
 from max.pipelines.registry import SupportedArchitecture
 from max.pipelines.tokenizer import TextTokenizer
 

@@ -28,11 +28,6 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.pipelines.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
-    KVCacheParams,
-    PagedKVCacheCollection,
-)
 
 from ..clamp import clamp
 from ..comm import Allreduce
@@ -50,6 +45,11 @@ from ..kernels import (
     matmul_k_cache_ragged,
     rms_norm_key_cache,
     unfused_qkv_ragged_matmul_gguf_quantized,
+)
+from ..kv_cache import (
+    ContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+    PagedKVCacheCollection,
 )
 from ..layer import Module
 from ..linear import LinearV2

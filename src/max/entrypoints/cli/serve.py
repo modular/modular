@@ -19,8 +19,9 @@ import logging
 from typing import Optional, Union
 
 import uvloop
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, PipelineTask
-from max.pipelines.kv_cache import KVCacheStrategy
+from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.core import PipelineTask
 from max.serve.api_server import (
     ServingTokenGeneratorSettings,
     fastapi_app,

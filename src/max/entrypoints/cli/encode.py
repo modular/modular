@@ -21,11 +21,11 @@ from typing import Optional
 
 from max.pipelines import (
     PIPELINE_REGISTRY,
-    EmbeddingsGenerator,
-    EmbeddingsResponse,
     PipelineConfig,
 )
 from max.pipelines.core import (
+    EmbeddingsGenerator,
+    EmbeddingsResponse,
     PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,

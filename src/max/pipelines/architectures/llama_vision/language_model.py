@@ -30,11 +30,11 @@ from max.nn import (
     RMSNorm,
     TransformerBlock,
 )
-from max.nn.layer import Layer
-from max.pipelines.kv_cache import (
+from max.nn.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
 )
+from max.nn.layer import Layer
 
 from .cross_attention_decoder import (
     CrossAttentionDecoderLayer,

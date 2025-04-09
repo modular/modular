@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
-    PipelineTask,
     RopeType,
     SupportedArchitecture,
     SupportedEncoding,
     TextTokenizer,
 )
-from max.pipelines.kv_cache import KVCacheStrategy
+from max.pipelines.core import PipelineTask
 
 from ..llama3 import weight_adapters
 from ..llama3.model import Llama3Model

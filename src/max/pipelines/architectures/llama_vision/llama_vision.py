@@ -27,6 +27,20 @@ from max.engine import InferenceSession, Model
 from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import Linear
+from max.nn.kv_cache import (
+    ContinuousBatchingKVCacheManager,
+    KVCacheInputs,
+    KVCacheInputSymbols,
+    KVCacheManager,
+    KVCacheParams,
+    KVCacheStrategy,
+    PaddedKVCacheInputs,
+    RaggedKVCacheInputs,
+    build_max_lengths_tensor,
+    estimate_kv_cache_size,
+    infer_optimal_batch_size,
+    load_kv_manager,
+)
 from max.nn.layer import Layer
 from max.pipelines import (
     KVCacheConfig,
@@ -38,20 +52,6 @@ from max.pipelines import (
     upper_bounded_default,
 )
 from max.pipelines.core import InputContext, TextAndVisionContext
-from max.pipelines.kv_cache import (
-    ContinuousBatchingKVCacheManager,
-    KVCacheInputs,
-    KVCacheInputSymbols,
-    KVCacheManager,
-    KVCacheParams,
-    KVCacheStrategy,
-    PaddedKVCacheInputs,
-    RaggedKVCacheInputs,
-    estimate_kv_cache_size,
-    infer_optimal_batch_size,
-    load_kv_manager,
-)
-from max.pipelines.kv_cache._utils import build_max_lengths_tensor
 from transformers import AutoConfig
 
 from .language_model import CausalLanguageModel, instantiate_language_model

@@ -33,7 +33,6 @@ from max.graph import (
     ops,
 )
 
-from ._utils import build_max_lengths_tensor
 from .cache_params import KVCacheParams
 from .context import KVCacheAwareContext
 from .manager import (
@@ -42,6 +41,7 @@ from .manager import (
     KVCacheManager,
     RaggedKVCacheInputs,
 )
+from .utils import build_max_lengths_tensor
 
 T = TypeVar("T", bound=KVCacheAwareContext)
 

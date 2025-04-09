@@ -18,7 +18,9 @@ from typing import cast
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
-from max.pipelines.kv_cache import (
+
+from ..embedding import VocabParallelEmbedding
+from ..kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
@@ -26,8 +28,6 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     PagedKVCacheCollection,
 )
-
-from ..embedding import VocabParallelEmbedding
 from ..layer import LayerList, Module
 from ..linear import ColumnParallelLinear
 from ..norm import DistributedRMSNorm

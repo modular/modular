@@ -35,7 +35,7 @@ from max.nn import (
     RMSNormV2,
     RotaryEmbedding,
 )
-from max.pipelines.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 
 from .model_config import Llama3Config
 

@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from typing import Callable as _Callable
+from typing import Union as _Union
+
 from .context import InputContext, TextAndVisionContext, TextContext
 from .interfaces import (
     EmbeddingsGenerator,
@@ -29,6 +32,8 @@ from .interfaces import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
+
+PipelinesFactory = _Callable[[], _Union[TokenGenerator, EmbeddingsGenerator]]
 
 __all__ = [
     "InputContext",
@@ -49,4 +54,5 @@ __all__ = [
     "TokenGeneratorRequestMessage",
     "TokenGeneratorRequestTool",
     "TokenGeneratorResponseFormat",
+    "PipelinesFactory",
 ]

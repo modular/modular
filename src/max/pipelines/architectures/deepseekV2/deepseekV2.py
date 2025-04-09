@@ -25,8 +25,8 @@ from max.nn import (
     TransformerBlock,
 )
 from max.nn.attention.attention_with_rope import LatentAttentionWithRope
+from max.nn.kv_cache import FetchContinuousBatchingKVCacheCollection
 from max.pipelines.architectures.deepseekV2.layers.mix_of_experts import MoE
-from max.pipelines.kv_cache import FetchContinuousBatchingKVCacheCollection
 
 from .model_config import DeepseekV2Config
 
