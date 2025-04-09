@@ -238,9 +238,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         Returns:
             A copy of the tensor held by the map.
         """
-        var tensor_ptr = self._ptr.get_tensor_by_name(
-            key.unsafe_cstr_ptr(), self._lib
-        )
+        var tensor_ptr = self._ptr.get_tensor_by_name(key, self._lib)
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
         var tensor = mof_tensor.tensor[type]()
         return tensor^
@@ -276,9 +274,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         Returns:
             Buffer of the tensor pointed by the key.
         """
-        var tensor_ptr = self._ptr.get_tensor_by_name(
-            key.unsafe_cstr_ptr(), self._lib
-        )
+        var tensor_ptr = self._ptr.get_tensor_by_name(key, self._lib)
         return EngineTensor(tensor_ptr, self._lib, self._session).buffer[type]()
 
     fn get_spec(self, key: String) raises -> TensorSpec:
@@ -291,10 +287,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             Buffer of the tensor pointed by the key, as a
             [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
         """
-        var tensor_ptr = self._ptr.get_tensor_by_name(
-            key.unsafe_cstr_ptr(),
-            self._lib,
-        )
+        var tensor_ptr = self._ptr.get_tensor_by_name(key, self._lib)
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
         return mof_tensor.spec()
 
@@ -308,9 +301,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             [`Value`](/max/api/mojo/engine/value/Value) pointed by
             the key.
         """
-        var value_ptr = self._ptr.get_value_by_name(
-            key.unsafe_cstr_ptr(), self._lib
-        )
+        var value_ptr = self._ptr.get_value_by_name(key, self._lib)
         return Value(value_ptr, self._lib, self._session)
 
     fn keys(self) -> List[String]:
