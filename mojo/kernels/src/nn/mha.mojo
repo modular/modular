@@ -159,7 +159,7 @@ fn get_mha_decoding_num_partitions[
 ](batch_size: Int, num_keys: Int, ctx: DeviceContext) -> Int:
     var sm_count = ctx.device_info.sm_count
     # TODO: This is dumb, make it more granular as a follow up
-    if num_keys >= 512:
+    if num_keys >= 512 and group <= 8:
         return min(
             next_power_of_two(sm_count // (batch_size * (num_heads // group))),
             4,
@@ -373,8 +373,8 @@ fn flash_attention_dispatch[
     alias depth = config.depth
     alias group = config.num_heads // kv_num_heads
 
-    # K V smem is only seperate for A100
-    alias is_shared_kv = ctx.device_info is not A100
+    # K V smem is only seperate for GPUs with shared memory greater or equal to A100's.
+    alias is_shared_kv = ctx.device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
 
     constrained[depth == q.shape.get[rank - 1]()]()
     constrained[num_heads == q.shape.get[rank - 2]()]()
@@ -2602,8 +2602,11 @@ fn _scale_and_mask_helper_nvidia[
     var batch_cache_valid_length = num_keys - 1
     var warp_offset = warp * WN
 
-    var group_idx = lane // 4
-    var q_head_idx = block_idx.y * group + group_idx
+    # Number of groups updated by each thread. E.g. for group=16 and 16x8x16 mma,
+    # Each thread updates 2 rows in mma output, mapped to 2 groups.
+    # When group % 8 != 0, some work are OOB, e.g. updating 15-th row when there are
+    # only 12 groups. Such results are ignored when output to global memory.
+    alias num_groups_per_thread = ceildiv(group, 8)
 
     @parameter
     for n_mma in range(Int(num_n_mmas)):
@@ -2611,51 +2614,59 @@ fn _scale_and_mask_helper_nvidia[
         var frag_offset = n_mma * MMA_N
         # Current thread's offset mapped in num_keys dim
         var key_offset = warp_offset + frag_offset
-        # Current thread's index in current mma tile, e.g. T1 is 2 in 16x8 mma output.
+        # Current thread's index in current mma tile, e.g. T1 and T5 are 1 in 16x8 mma output.
         var frag_lane_col = Int((lane % 4) * simd_width)
 
         @parameter
-        for i in range(simd_width):
-            var score_row = batch_cache_valid_length
-            var score_col = kv_tile_start_row + key_offset + frag_lane_col + i
-
-            p_reg_tile[n_mma, i] = mask.mask(
-                Index(
-                    Int(block_idx.z),
-                    Int(q_head_idx),
-                    Int(score_row),
-                    Int(score_col),
-                ),
-                p_reg_tile[n_mma, i] * scale.cast[p_type](),
-            )
+        for i_group in range(num_groups_per_thread):
+            group_idx = i_group * 8 + lane // 4
+            q_head_idx = block_idx.y * group + group_idx
 
             @parameter
-            if use_score_mod:
-                p_reg_tile[n_mma, i] = score_mod.score_mod(
+            for i in range(simd_width):
+                var score_row = batch_cache_valid_length
+                var score_col = kv_tile_start_row + key_offset + frag_lane_col + i
+
+                p_reg_tile[n_mma, i + i_group * simd_width] = mask.mask(
                     Index(
                         Int(block_idx.z),
                         Int(q_head_idx),
                         Int(score_row),
                         Int(score_col),
                     ),
-                    p_reg_tile[n_mma, i],
-                    max_seq_len,
+                    p_reg_tile[n_mma, i + i_group * simd_width]
+                    * scale.cast[p_type](),
                 )
 
-            p_reg_tile[n_mma, i] = _kernel_mask(
-                Index(score_row, score_col),
-                Index(
-                    batch_cache_valid_length + 1,
-                    # The following setting ensures that out of bound check happens at
-                    # every function call, also it corrects the bounds to be exact.
-                    # Previous version was using batch_cache_valid_length + 1 which was fine
-                    # with the non-split-k based mha as the ooo would have been triggered only
-                    # for the last iteration of the outer loop. So while the bound was not exact, it
-                    # led to correct output.
-                    kv_tile_start_row + bound,
-                ),
-                p_reg_tile[n_mma, i],
-            )
+                @parameter
+                if use_score_mod:
+                    p_reg_tile[
+                        n_mma, i + i_group * simd_width
+                    ] = score_mod.score_mod(
+                        Index(
+                            Int(block_idx.z),
+                            Int(q_head_idx),
+                            Int(score_row),
+                            Int(score_col),
+                        ),
+                        p_reg_tile[n_mma, i + i_group * simd_width],
+                        max_seq_len,
+                    )
+
+                p_reg_tile[n_mma, i + i_group * simd_width] = _kernel_mask(
+                    Index(score_row, score_col),
+                    Index(
+                        batch_cache_valid_length + 1,
+                        # The following setting ensures that out of bound check happens at
+                        # every function call, also it corrects the bounds to be exact.
+                        # Previous version was using batch_cache_valid_length + 1 which was fine
+                        # with the non-split-k based mha as the ooo would have been triggered only
+                        # for the last iteration of the outer loop. So while the bound was not exact, it
+                        # led to correct output.
+                        kv_tile_start_row + bound,
+                    ),
+                    p_reg_tile[n_mma, i + i_group * simd_width],
+                )
 
 
 @always_inline
@@ -2921,9 +2932,9 @@ fn mha_decoding_single_batch[
     # It's because in online-softmax we only use the top 8x4 sub-matrix
     # in the 16x8 mma output for Nvidia GPU. It shouldn't matter for AMD
     constrained[
-        group <= 8,
+        group <= 16,
         String(
-            "Only support GQA with group <= 8 for Nvidia, but got a group = '",
+            "Only support GQA with group <= 16 for Nvidia, but got a group = '",
             group,
             "'.",
         ),
@@ -3198,29 +3209,51 @@ fn mha_decoding_single_batch[
             max_cache_valid_length,
         )
 
-        # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
-        # G <= 8 typically holds
-        var output_reg_vecs = output_reg_tile.tile[
-            num_output_rows_full, p_frag_size // 2
-        ](0, 0).vectorize[1, p_frag_size // 2]()
-        var p_reg_vecs = p_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
-        ](0, 0).vectorize[1, p_frag_size // 2]()
+        # For 16x8 mma output, group <= 8 only uses the first 8x8 matrix
+        # each thread only has one fragment vector of size 2.
+        @parameter
+        if group <= 8:
+            var output_reg_vecs = output_reg_tile.tile[
+                num_output_rows_full, p_frag_size // 2
+            ](0, 0).vectorize[1, p_frag_simdwidth]()
+            var p_reg_vecs = p_reg_tile.tile[
+                num_m_mmas * num_n_mmas, p_frag_size // 2
+            ](0, 0).vectorize[1, p_frag_simdwidth]()
 
-        # FIXME: pass `warp_split_k` to delay inter-warp communication.
-        _online_softmax_iter_for_mma_output[
-            accum_type,
-            Layout.row_major(num_m_mmas, num_n_mmas),
-            Layout.row_major(num_warps_m, num_warps_n),
-            Layout.row_major(8, 4),
-            warp_split_k=decoding_warp_split_k,
-        ](
-            output_reg_vecs,
-            p_reg_vecs,
-            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
-            rowmax,
-            rowsum,
-        )
+            _online_softmax_iter_for_mma_output[
+                accum_type,
+                Layout.row_major(num_m_mmas, num_n_mmas),
+                Layout.row_major(num_warps_m, num_warps_n),
+                Layout.row_major(8, 4),
+                warp_split_k=decoding_warp_split_k,
+            ](
+                output_reg_vecs,
+                p_reg_vecs,
+                warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+                rowmax,
+                rowsum,
+            )
+        else:
+            var output_reg_vecs = output_reg_tile.reshape[
+                Layout.row_major(2 * num_output_rows_full, p_frag_simdwidth)
+            ]().vectorize[1, p_frag_simdwidth]()
+            var p_reg_vecs = p_reg_tile.reshape[
+                Layout.row_major(2 * num_m_mmas * num_n_mmas, p_frag_simdwidth)
+            ]().vectorize[1, p_frag_simdwidth]()
+
+            _online_softmax_iter_for_mma_output[
+                accum_type,
+                Layout.row_major(2 * num_m_mmas, num_n_mmas),
+                Layout.row_major(num_warps_m, num_warps_n),
+                Layout.row_major(8, 4),
+                warp_split_k=decoding_warp_split_k,
+            ](
+                output_reg_vecs,
+                p_reg_vecs,
+                warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+                rowmax,
+                rowsum,
+            )
 
         var v_ptr = v.block_paged_ptr[BN](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
@@ -3372,12 +3405,25 @@ fn mha_decoding_single_batch[
     # Apply softmax denumerator.
     @parameter
     for m_mma in range(Int(num_m_mmas)):
-        var rowsum_inv0 = 1.0 / rowsum[2 * m_mma]
+        var rowsum_inv = Scalar[accum_type](1.0)
 
         @parameter
-        for n_mma in range(Int(num_n_mmas)):
-            output_reg_tile[n_mma, 0] *= rowsum_inv0
-            output_reg_tile[n_mma, 1] *= rowsum_inv0
+        if m_mma * MMA_M < group:
+            rowsum_inv = recip(rowsum[2 * m_mma])
+
+            @parameter
+            for n_mma in range(Int(num_n_mmas)):
+                output_reg_tile[n_mma * num_m_mmas + m_mma, 0] *= rowsum_inv
+                output_reg_tile[n_mma * num_m_mmas + m_mma, 1] *= rowsum_inv
+
+        @parameter
+        if m_mma * MMA_M + MMA_M // 2 < group:
+            rowsum_inv = recip(rowsum[2 * m_mma + 1])
+
+            @parameter
+            for n_mma in range(Int(num_n_mmas)):
+                output_reg_tile[n_mma * num_m_mmas + m_mma, 2] *= rowsum_inv
+                output_reg_tile[n_mma * num_m_mmas + m_mma, 3] *= rowsum_inv
 
     if num_partitions > 1:
         if thread_idx.x % 4 == 0 and thread_idx.x < 4 * group:
@@ -3833,6 +3879,7 @@ fn mha_decoding_single_batch_pipelined[
             for n_mma in range(Int(num_n_mmas)):
                 output_reg_tile[n_mma, 0] *= rowsum_inv0
                 output_reg_tile[n_mma, 1] *= rowsum_inv0
+
     else:
 
         @parameter
