@@ -48,6 +48,7 @@ from .max_config import (
     QuantizationConfig,
     SamplingConfig,
 )
+from .memory_estimation import MEMORY_ESTIMATOR
 from .pipeline import (
     ModelInputs,
     ModelOutputs,
@@ -79,6 +80,7 @@ __all__ = [
     "PipelineTask",
     "PIPELINE_REGISTRY",
     "SamplingConfig",
+    "MEMORY_ESTIMATOR",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TokenGenerator",

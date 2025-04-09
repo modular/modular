@@ -34,6 +34,7 @@ from max.pipelines.max_config import (
     SamplingConfig,
     repo_exists_with_retry,
 )
+from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
 from max.pipelines.registry import PIPELINE_REGISTRY
 
 logger = logging.getLogger("max.pipelines")
@@ -391,7 +392,7 @@ class PipelineConfig(MAXConfig):
             self.rope_type = arch.rope_type
 
         devices = load_devices(self.model_config.device_specs)
-        PIPELINE_REGISTRY._estimate_memory_footprint(self, arch, devices)
+        MEMORY_ESTIMATOR.estimate_memory_footprint(self, arch, devices)
 
         # If we pass validation ensure and the engine is not set, just set it
         # to MAX.
