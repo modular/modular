@@ -22,11 +22,11 @@ def test_bf16_cpu_input_error(session):
     with Graph("cast", input_types=[input_type]) as graph:
         graph.output(graph.inputs[0].cast(output_type))
 
-    with pytest.raises(ValueError) as exception:
+    with pytest.raises(
+        ValueError,
+        match="The bf16 data type is not supported on device 'cpu:0'.",
+    ):
         session.load(graph)
-    assert "The bf16 data type is not supported on device 'cpu:0'." in str(
-        exception.value
-    )
 
 
 @pytest.mark.skipif(
@@ -44,8 +44,8 @@ def test_bf16_cpu_output_error(session):
     with Graph("cast", input_types=[input_type]) as graph:
         graph.output(graph.inputs[0].cast(output_type))
 
-    with pytest.raises(ValueError) as exception:
+    with pytest.raises(
+        ValueError,
+        match="The bf16 data type is not supported on device 'cpu:0'.",
+    ):
         session.load(graph)
-    assert "The bf16 data type is not supported on device 'cpu:0'." in str(
-        exception.value
-    )
