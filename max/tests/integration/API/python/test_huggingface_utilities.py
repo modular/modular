@@ -10,7 +10,7 @@ import pytest
 from huggingface_hub import snapshot_download
 from max.graph.weights import WeightsFormat
 from max.pipelines.config_enums import SupportedEncoding
-from max.pipelines.max_config import HuggingFaceRepo
+from max.pipelines.hf_utils import HuggingFaceRepo
 
 
 def test_huggingface_repo__formats_available():
