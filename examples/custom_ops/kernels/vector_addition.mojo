@@ -75,7 +75,7 @@ struct VectorAddition:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
-        target: StaticString,
+        target: StringLiteral,
     ](
         out: OutputTensor[rank=1],
         lhs: InputTensor[type = out.type, rank = out.rank],

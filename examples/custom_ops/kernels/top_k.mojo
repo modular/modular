@@ -52,7 +52,7 @@ struct TopK:
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
         K: Int,
-        target: StaticString,
+        target: StringLiteral,
     ](
         out_vals: OutputTensor[type=dtype, rank=rank],
         out_idxs: OutputTensor[type = DType.int32, rank=rank],

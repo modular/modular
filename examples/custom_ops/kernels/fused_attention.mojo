@@ -83,7 +83,7 @@ struct FusedAttention:
         D: Int,  # Head dimension
         BN: Int,  # Dimension of blocks to split Q into
         BD: Int,  # Dimension of blocks to split K, V into
-        target: StaticString,  # "cpu" or "gpu"
+        target: StringLiteral,  # "cpu" or "gpu"
     ](
         output: OutputTensor[type=dtype, rank=rank],
         key: InputTensor[type=dtype, rank=rank],
@@ -210,7 +210,7 @@ fn fused_attention_cpu[
 
 @always_inline
 fn matmul[
-    target: StaticString,
+    target: StringLiteral,
     transpose_b: Bool = False,
 ](
     lhs: LayoutTensor,

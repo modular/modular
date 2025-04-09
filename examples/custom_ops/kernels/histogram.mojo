@@ -99,7 +99,7 @@ fn _histogram_gpu(
 struct Histogram:
     @staticmethod
     fn execute[
-        target: StaticString
+        target: StringLiteral
     ](
         out: OutputTensor[type = DType.int64, rank=1],
         input: InputTensor[type = DType.uint8, rank=1],
