@@ -16,6 +16,7 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.pipelines import (
+    MEMORY_ESTIMATOR,
     PIPELINE_REGISTRY,
     KVCacheConfig,
     ModelInputs,
@@ -362,7 +363,7 @@ def mock_estimate_memory_footprint(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         with patch.object(
-            PIPELINE_REGISTRY, "_estimate_memory_footprint", return_value=0
+            MEMORY_ESTIMATOR, "estimate_memory_footprint", return_value=0
         ):
             return func(*args, **kwargs)
 
