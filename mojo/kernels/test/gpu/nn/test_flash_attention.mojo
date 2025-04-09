@@ -481,17 +481,22 @@ fn test_decoding[
         num_partitions=num_partitions,
         decoding_warp_split_k=split_k,
     ](1, 11, ctx, use_index_input=use_index_input)
-    test[
-        4,
-        qkv_type,
-        DType.bfloat16,
-        128,
-        2,
-        against_gpu_naive=True,
-        batch_size=batch_size,
-        num_partitions=num_partitions,
-        decoding_warp_split_k=split_k,
-    ](1, 523, ctx, use_index_input=use_index_input)
+    if (
+        not is_sm8(ctx.device_info)
+        or num_partitions
+        and num_partitions.value() == 1
+    ):
+        test[
+            4,
+            qkv_type,
+            DType.bfloat16,
+            128,
+            2,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](1, 523, ctx, use_index_input=use_index_input)
     test[
         4,
         qkv_type,
@@ -663,15 +668,13 @@ def main():
                 if ctx.device_info is A100 or ctx.device_info is H100:
                     test_decoding_large_group[batch_size, 1](ctx)
 
-                @parameter
-                if not is_sm8(ctx.device_info):
-                    test_decoding[batch_size, 2, split_k](ctx, False)
-                    test_decoding[batch_size, 4, split_k](ctx, False)
+                test_decoding[batch_size, 2, split_k](ctx, False)
+                test_decoding[batch_size, 4, split_k](ctx, False)
 
-                    @parameter
-                    if not split_k:
-                        test_decoding[batch_size, 4, split_k, DType.float32](
-                            ctx, False
-                        )
-                    test_decoding[batch_size, None, split_k](ctx, False)
-                    test_decoding[batch_size, 32, split_k](ctx, False)
+                @parameter
+                if not split_k:
+                    test_decoding[batch_size, 4, split_k, DType.float32](
+                        ctx, False
+                    )
+                test_decoding[batch_size, None, split_k](ctx, False)
+                test_decoding[batch_size, 32, split_k](ctx, False)
