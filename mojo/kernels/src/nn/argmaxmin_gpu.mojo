@@ -45,7 +45,7 @@ fn argmaxmin_gpu[
         out_vals_shape.flattened_length()
     )
     var out_vals = NDBuffer[type, rank](
-        out_vals_buf.unsafe_ptr(), out_vals_shape
+        out_vals_buf._unsafe_ptr(), out_vals_shape
     )
 
     topk_gpu[sampling=False, largest=largest](

@@ -210,14 +210,14 @@ fn _argsort_gpu[
     )
     var padded_input = NDBuffer[
         mut=True, input.type, input.rank, indices.origin
-    ](padded_input_buffer.unsafe_ptr(), (pow_2_length))
+    ](padded_input_buffer._unsafe_ptr(), (pow_2_length))
 
     var padded_indices_buffer = ctx.enqueue_create_buffer[indices.type](
         pow_2_length
     )
     var padded_indices = NDBuffer[
         mut=True, indices.type, indices.rank, indices.origin
-    ](padded_indices_buffer.unsafe_ptr(), (pow_2_length))
+    ](padded_indices_buffer._unsafe_ptr(), (pow_2_length))
 
     # Initialize indices with sequential values and copy input data to device
     @parameter

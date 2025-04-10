@@ -276,13 +276,13 @@ fn mha_cross_gpu_naive[
     )
 
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-    var p_ptr = p_device.unsafe_ptr()
     var p_buffer = NDBuffer[p_type, 3](
-        p_ptr, Index(batch_size * num_heads, q_max_seq_len, num_keys)
+        p_device._unsafe_ptr(),
+        Index(batch_size * num_heads, q_max_seq_len, num_keys),
     )
 
     ctx.enqueue_function[_bmm0_bs[__type_of(k), mask_t, q_type, p_type]](
-        p_ptr,
+        p_device,
         q.data,
         k,
         q_input_row_offsets,
@@ -317,7 +317,7 @@ fn mha_cross_gpu_naive[
 
     ctx.enqueue_function[_bmm1_bs[__type_of(v), p_type, output.type]](
         output.data,
-        p_ptr,
+        p_device,
         v,
         q_input_row_offsets,
         kv_input_row_offsets,
