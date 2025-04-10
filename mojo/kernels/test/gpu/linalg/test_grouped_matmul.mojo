@@ -25,7 +25,7 @@ from internal_utils import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg import vendor_blas
-from linalg.grouped_matmul import naive_grouped_matmul, grouped_matmul
+from linalg.grouped_matmul import naive_grouped_matmul, grouped_matmul_sm90
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels
 from math import ceildiv
@@ -160,7 +160,7 @@ fn test[
         partitioned_multicast=False,
     )
 
-    grouped_matmul[
+    grouped_matmul_sm90[
         transpose_b=True,
         wgmma_shape = Index(64, 256, 16),
         config=config,
