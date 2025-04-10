@@ -156,6 +156,8 @@ fn multistage_mma[
     b_next_smem_layout: Layout = Layout(),
     next_op_b_iter_masked: Bool = False,
     next_op_b_iter_alignment: Int = alignof[b_type](),
+    next_op_b_layout_int_type: DType = DType.int64,
+    next_op_b_linear_idx_type: DType = DType.int64,
     k_group_size: UInt = 1,
 ](
     c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL, **_],
@@ -176,12 +178,16 @@ fn multistage_mma[
         b_next_gmem_layout,
         MutableAnyOrigin,
         alignment=next_op_b_iter_alignment,
+        layout_int_type=next_op_b_layout_int_type,
+        linear_idx_type=next_op_b_linear_idx_type,
         masked=next_op_b_iter_masked,
     ] = LayoutTensorIter[
         b_type,
         b_next_gmem_layout,
         MutableAnyOrigin,
         alignment=next_op_b_iter_alignment,
+        layout_int_type=next_op_b_layout_int_type,
+        linear_idx_type=next_op_b_linear_idx_type,
         masked=next_op_b_iter_masked,
     ](),
 ):
@@ -231,10 +237,13 @@ fn multistage_mma[
     ):
         return __type_of(tensor)(
             tensor.ptr,
-            RuntimeLayout[linear_idx_type = tensor.index_type](
-                RuntimeTuple[tensor.layout.shape, unsigned=True](
-                    num_rows, tensor.dim(1)
-                ),
+            RuntimeLayout[
+                element_type = tensor.layout_int_type,
+                linear_idx_type = tensor.linear_idx_type,
+            ](
+                RuntimeTuple[
+                    tensor.layout.shape, element_type = tensor.layout_int_type
+                ](num_rows, tensor.dim(1)),
                 tensor.runtime_layout.stride,
             ),
         )
@@ -624,13 +633,37 @@ fn multistage_gemm_kernel[
     b_type: DType,
     b_layout: Layout,
     transpose_b: Bool,
+    c_layout_int_type: DType,
+    a_layout_int_type: DType,
+    b_layout_int_type: DType,
+    c_linear_idx_type: DType,
+    a_linear_idx_type: DType,
+    b_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     serial_reduction: Bool = False,
 ](
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    c: LayoutTensor[
+        c_type,
+        c_layout,
+        MutableAnyOrigin,
+        layout_int_type=c_layout_int_type,
+        linear_idx_type=c_linear_idx_type,
+    ],
+    a: LayoutTensor[
+        a_type,
+        a_layout,
+        MutableAnyOrigin,
+        layout_int_type=a_layout_int_type,
+        linear_idx_type=a_linear_idx_type,
+    ],
+    b: LayoutTensor[
+        b_type,
+        b_layout,
+        MutableAnyOrigin,
+        layout_int_type=b_layout_int_type,
+        linear_idx_type=b_linear_idx_type,
+    ],
     locks: UnsafePointer[Int32],
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
@@ -676,11 +709,9 @@ fn multistage_gemm_kernel[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx_swizzle = block_swizzle(
-        Index[element_bitwidth=32, unsigned=True](block_idx.x, block_idx.y),
-        Index[element_bitwidth=32, unsigned=True](grid_dim.x, grid_dim.y),
-    ) if swizzle_block else Index[element_bitwidth=32, unsigned=True](
-        block_idx.x, block_idx.y
-    )
+        Index[type = DType.uint32](block_idx.x, block_idx.y),
+        Index[type = DType.uint32](grid_dim.x, grid_dim.y),
+    ) if swizzle_block else Index[type = DType.uint32](block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
     warp_y, warp_x = divmod(warp_id, num_warps_n)
@@ -1089,7 +1120,7 @@ fn multistage_gemm_split_k_kernel[
             b_type,
             b_part.layout,
             transpose_b,
-            k_partition_config,
+            config=k_partition_config,
             serial_reduction=serial_reduction,
         ](c, a_part, b_part, locks)
     else:
@@ -1100,8 +1131,14 @@ fn multistage_gemm_split_k_kernel[
         var work_space_part = work_space_tensor_type(
             work_space.data + block_idx.z * M * N,
             RuntimeLayout[
-                c_layout, linear_idx_type = work_space_tensor_type.index_type
-            ].row_major(IndexList[2](M, N)),
+                c_layout,
+                element_type = work_space_tensor_type.layout_int_type,
+                linear_idx_type = work_space_tensor_type.linear_idx_type,
+            ].row_major(
+                IndexList[
+                    2, element_type = work_space_tensor_type.layout_int_type
+                ](M, N)
+            ),
         )
         alias k_partition_config = MatmulConfig[
             a_type,
@@ -1122,6 +1159,6 @@ fn multistage_gemm_split_k_kernel[
             b_type,
             b_part.layout,
             transpose_b,
-            k_partition_config,
+            config=k_partition_config,
             serial_reduction=serial_reduction,
         ](work_space_part, a_part, b_part, locks)

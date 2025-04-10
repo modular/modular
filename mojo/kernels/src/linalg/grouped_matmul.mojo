@@ -431,9 +431,9 @@ fn grouped_matmul_kernel[
     alias use_cluster = cluster_size[cluster_shape]() > 1
 
     var block_idx_swizzle = block_swizzle(
-        Index[element_bitwidth=32, unsigned=True](block_idx.x, block_idx.y),
-        Index[element_bitwidth=32, unsigned=True](grid_dim.x, grid_dim.y),
-    ) if not use_cluster else Index[element_bitwidth=32, unsigned=True](
+        Index[type = DType.uint32](block_idx.x, block_idx.y),
+        Index[type = DType.uint32](grid_dim.x, grid_dim.y),
+    ) if not use_cluster else Index[type = DType.uint32](
         block_idx.x, block_idx.y
     )
 
@@ -667,17 +667,26 @@ fn grouped_matmul_kernel[
 
         # C layout for current expert
         alias c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
-        c_gmem_runtime_layout = RuntimeLayout[c_gmem_layout, bitwidth=32](
-            Index(M, N), Index(N, 1)
-        )
-
-        c_by_expert = LayoutTensor[
+        alias c_gmem_type = LayoutTensor[
             c_type,
             c_gmem_layout,
             MutableAnyOrigin,
+            layout_int_type = DType.int32,
             address_space = AddressSpace.GENERIC,
-            layout_bitwidth=32,
-        ](c.ptr + a_start_row * N, c_gmem_runtime_layout)
+        ]
+
+        c_gmem_runtime_layout = RuntimeLayout[
+            c_gmem_layout,
+            element_type = c_gmem_type.layout_int_type,
+            linear_idx_type = c_gmem_type.linear_idx_type,
+        ](
+            Index[type = c_gmem_type.layout_int_type](M, N),
+            Index[type = c_gmem_type.linear_idx_type](N, 1),
+        )
+
+        var c_by_expert = c_gmem_type(
+            c.ptr + a_start_row * N, c_gmem_runtime_layout
+        )
 
         warp_specialized_gemm_output[
             BM=BM,

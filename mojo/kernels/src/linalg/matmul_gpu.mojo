@@ -2245,6 +2245,12 @@ fn multistage_gemm[
             b_type,
             tensor_b.layout,
             transpose_b,
+            tensor_c.layout_int_type,
+            tensor_a.layout_int_type,
+            tensor_b.layout_int_type,
+            tensor_c.linear_idx_type,
+            tensor_a.linear_idx_type,
+            tensor_b.linear_idx_type,
             config,
             elementwise_lambda_fn,
         ]

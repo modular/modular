@@ -166,10 +166,13 @@ fn multistage_dual_mma[
     ):
         return __type_of(tensor)(
             tensor.ptr,
-            RuntimeLayout[linear_idx_type = tensor.index_type](
-                RuntimeTuple[tensor.layout.shape, unsigned=True](
-                    num_rows, tensor.dim(1)
-                ),
+            RuntimeLayout[
+                element_type = tensor.layout_int_type,
+                linear_idx_type = tensor.linear_idx_type,
+            ](
+                RuntimeTuple[
+                    tensor.layout.shape, element_type = tensor.layout_int_type
+                ](num_rows, tensor.dim(1)),
                 tensor.runtime_layout.stride,
             ),
         )
@@ -482,11 +485,9 @@ fn multistage_dual_gemm_kernel[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        Index[element_bitwidth=32, unsigned=True](block_idx.x, block_idx.y),
-        Index[element_bitwidth=32, unsigned=True](grid_dim.x, grid_dim.y),
-    ) if swizzle_block else Index[element_bitwidth=32, unsigned=True](
-        block_idx.x, block_idx.y
-    )
+        Index[type = DType.uint32](block_idx.x, block_idx.y),
+        Index[type = DType.uint32](grid_dim.x, grid_dim.y),
+    ) if swizzle_block else Index[type = DType.uint32](block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
     warp_y, warp_x = divmod(warp_id, num_warps_n)

@@ -23,8 +23,13 @@ from os import abort
 
 # A is a general matrix, B is a non-unit upper triangular matrix
 fn trmm[
-    dtype: DType
-](A: LayoutTensor[dtype], B: LayoutTensor[dtype], C: LayoutTensor[dtype]):
+    dtype: DType,
+    element_layout: Layout,
+](
+    A: LayoutTensor[dtype, element_layout=element_layout, **_],
+    B: LayoutTensor[dtype, element_layout=element_layout, **_],
+    C: LayoutTensor[dtype, element_layout=element_layout, **_],
+):
     m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     k, n = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
     min_kn = min(k, n)
@@ -41,8 +46,13 @@ fn trmm[
 
 
 fn a_mul_bt[
-    dtype: DType
-](A: LayoutTensor[dtype], B: LayoutTensor[dtype], C: LayoutTensor[dtype]):
+    dtype: DType,
+    element_layout: Layout,
+](
+    A: LayoutTensor[dtype, element_layout=element_layout, **_],
+    B: LayoutTensor[dtype, element_layout=element_layout, **_],
+    C: LayoutTensor[dtype, element_layout=element_layout, **_],
+):
     m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     n, k = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
     if k1 != k:
@@ -58,8 +68,13 @@ fn a_mul_bt[
 
 
 def all_almost_id[
-    dtype: DType
-](A: LayoutTensor[dtype], atol: Float64, rtol: Float64):
+    dtype: DType,
+    element_layout: Layout,
+](
+    A: LayoutTensor[dtype, element_layout=element_layout, **_],
+    atol: Float64,
+    rtol: Float64,
+):
     m, n = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     for i in range(m):
         for j in range(n):
@@ -76,13 +91,11 @@ fn create_vector[
     ptr: UnsafePointer[Scalar[dtype]],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
-    var dynamic_layout = RuntimeLayout[
-        layout, linear_idx_type = result.index_type
-    ](
-        RuntimeTuple[layout.shape, unsigned=True](m),
-        RuntimeTuple[layout.stride, unsigned=True](1),
+    var dynamic_layout = __type_of(result.runtime_layout)(
+        __type_of(result.runtime_layout.shape)(m),
+        __type_of(result.runtime_layout.stride)(1),
     )
-    return LayoutTensor[dtype, layout](ptr, dynamic_layout)
+    return __type_of(result)(ptr, dynamic_layout)
 
 
 fn create_tensor[
@@ -93,13 +106,11 @@ fn create_tensor[
     ptr: UnsafePointer[Scalar[dtype]],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
-    var dynamic_layout = RuntimeLayout[
-        layout, linear_idx_type = result.index_type
-    ](
-        RuntimeTuple[layout.shape, unsigned=True](m, n),
-        RuntimeTuple[layout.stride, unsigned=True](1, m),
+    var dynamic_layout = __type_of(result.runtime_layout)(
+        __type_of(result.runtime_layout.shape)(m, n),
+        __type_of(result.runtime_layout.stride)(1, m),
     )
-    return LayoutTensor[dtype, layout](ptr, dynamic_layout)
+    return __type_of(result)(ptr, dynamic_layout)
 
 
 def main():

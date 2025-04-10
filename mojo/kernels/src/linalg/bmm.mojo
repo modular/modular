@@ -245,9 +245,7 @@ fn _small_batched_matmul[
                         indices[rank - 1] = n
                         var val = c_buf.load[width=width](indices)
                         alias func = elementwise_epilogue_fn.value()
-                        func[c_type, width, rank](
-                            indices.cast[unsigned=False](), val
-                        )
+                        func[c_type, width, rank](indices, val)
 
                     vectorize[apply_epilogue, simd_width](N)
 

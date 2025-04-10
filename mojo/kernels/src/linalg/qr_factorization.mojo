@@ -6,12 +6,17 @@
 
 from math import sqrt, copysign
 from layout.layout_tensor import LayoutTensor
+from layout.layout import Layout
 from os import abort
 
 
 fn qr_factorization[
-    dtype: DType
-](sigma: LayoutTensor[dtype], A: LayoutTensor[dtype]):
+    dtype: DType,
+    element_layout: Layout,
+](
+    sigma: LayoutTensor[dtype, element_layout=element_layout, **_],
+    A: LayoutTensor[dtype, element_layout=element_layout, **_],
+):
     """Performs QR factorization of a matrix `A` using the Householder reflector
     method.
 
@@ -77,8 +82,13 @@ fn qr_factorization[
 
 
 fn apply_q[
-    dtype: DType
-](sigma: LayoutTensor[dtype], A: LayoutTensor[dtype], X: LayoutTensor[dtype]):
+    dtype: DType,
+    element_layout: Layout,
+](
+    sigma: LayoutTensor[dtype, element_layout=element_layout, **_],
+    A: LayoutTensor[dtype, element_layout=element_layout, **_],
+    X: LayoutTensor[dtype, element_layout=element_layout, **_],
+):
     """Applies the implicit Q factor stored in `A` and `sigma` after calling
     `qr_factorization` to the `X` matrix.
 
@@ -103,8 +113,13 @@ fn apply_q[
 
 
 fn form_q[
-    dtype: DType
-](sigma: LayoutTensor[dtype], A: LayoutTensor[dtype], Q: LayoutTensor[dtype]):
+    dtype: DType,
+    element_layout: Layout,
+](
+    sigma: LayoutTensor[dtype, element_layout=element_layout, **_],
+    A: LayoutTensor[dtype, element_layout=element_layout, **_],
+    Q: LayoutTensor[dtype, element_layout=element_layout, **_],
+):
     """Forms the Q factor from the implicit Q factor stored in `A` and `sigma`
     after calling `qr_factorization` and stores the result in `Q`.
     """

@@ -166,8 +166,8 @@ fn warp_specialized_gemm_output[
     if use_stmatrix:
         var st_matrix_rt_layout = RuntimeLayout[
             st_matrix_n_layout[c_type, WG_BN, num_m_mmas, num_consumer](),
+            element_type = DType.int32,
             linear_idx_type = DType.int32,
-            bitwidth=32,
         ]()
         alias st_matrix_swizzle = make_ldmatrix_swizzle[
             c_type, WG_BN, log2_floor(16 // sizeof[c_type]())
@@ -447,9 +447,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias use_cluster = cluster_size[cluster_shape]() > 1
 
     var block_idx_swizzle = block_swizzle(
-        Index[element_bitwidth=32, unsigned=True](block_idx.x, block_idx.y),
-        Index[element_bitwidth=32, unsigned=True](grid_dim.x, grid_dim.y),
-    ) if not use_cluster else Index[element_bitwidth=32, unsigned=True](
+        Index[type = DType.uint32](block_idx.x, block_idx.y),
+        Index[type = DType.uint32](grid_dim.x, grid_dim.y),
+    ) if not use_cluster else Index[type = DType.uint32](
         block_idx.x, block_idx.y
     )
 
