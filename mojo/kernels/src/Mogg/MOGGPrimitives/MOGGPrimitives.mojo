@@ -573,7 +573,7 @@ fn fill_buffer[
 @register_internal("mgp.buffer.set_with_index")
 @no_inline
 fn mgp_buffer_set_with_index[
-    bDevice: StringLiteral
+    bDevice: StaticString
 ](buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin], *vals: Int) raises:
     debug_assert(
         is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
@@ -597,7 +597,7 @@ fn mgp_buffer_set_with_index[
 @register_internal("mgp.buffer.to_bool")
 @no_inline
 fn mgp_buffer_to_bool[
-    bDevice: StringLiteral
+    bDevice: StaticString
 ](buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin]) -> Bool:
     debug_assert(is_cpu[bDevice](), "to_bool can only work on cpu buffers")
     var bufSize = buffer.num_elements()
@@ -635,7 +635,7 @@ fn mgp_buffer_slice(
 @register_internal("mgp.buffer.concat")
 @no_inline
 fn mgp_buffer_concat[
-    bDevice: StringLiteral
+    bDevice: StaticString
 ](
     output: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
     inputs: StaticTuple[NDBuffer[DType.uint8, 1, MutableAnyOrigin], *_],
@@ -654,8 +654,8 @@ fn mgp_buffer_concat[
 @register_internal("mgp.buffer.device_to_host")
 @no_inline
 fn mgp_buffer_device_to_host[
-    cOtherDevice: StringLiteral,
-    dHostDevice: StringLiteral,
+    cOtherDevice: StaticString,
+    dHostDevice: StaticString,
 ](
     dev_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
     host_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
@@ -679,8 +679,8 @@ fn mgp_buffer_device_to_host[
 @register_internal("mgp.buffer.device_to_device")
 @no_inline
 fn mgp_buffer_device_to_device[
-    cSrcDevice: StringLiteral,
-    dDstDevice: StringLiteral,
+    cSrcDevice: StaticString,
+    dDstDevice: StaticString,
 ](
     src_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
     dst_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
@@ -715,8 +715,8 @@ fn mgp_buffer_device_to_device[
 @register_internal("mgp.buffer.host_to_device")
 @no_inline
 fn mgp_buffer_host_to_device[
-    cHostDevice: StringLiteral,
-    dOtherDevice: StringLiteral,
+    cHostDevice: StaticString,
+    dOtherDevice: StaticString,
 ](
     host_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
     dev_buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
@@ -859,10 +859,10 @@ fn mgp_sync(ctx: StateContext, dev_ctx: DeviceContextPtr) raises:
 @register_internal("mgp.debug.print")
 @no_inline
 fn mgp_debug_print[
-    aDebugString: StringLiteral,
-    bLabel: StringLiteral,
+    aDebugString: StaticString,
+    bLabel: StaticString,
 ](ctx: StateContext,) raises:
-    prefix = ""
+    var prefix = String()
     if bLabel:
         prefix = "[" + bLabel + "] "
     print(prefix + aDebugString)
