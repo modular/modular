@@ -565,7 +565,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
         The expanded path.
     """
     var path_str = path.__fspath__()
-    var bytes = path_str.as_bytes().get_immutable()
+    var bytes = path_str.as_bytes()
     var buf = String()
 
     # Byte scanning should be fine, ${} is ASCII.
