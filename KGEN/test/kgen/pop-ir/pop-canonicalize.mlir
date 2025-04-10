@@ -22,6 +22,36 @@ kgen.func @add() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   kgen.return %2, %3 : !pop.scalar<si8>, !pop.scalar<f32>
 }
 
+// CHECK-LABEL: @add_zero
+kgen.func @add_zero(%arg0: !pop.simd<2, si8>,
+                 %arg1: !pop.scalar<f32>) -> (!pop.simd<2, si8>,
+                                              !pop.simd<2, si8>,
+                                              !pop.simd<2, si8>,
+                                              !pop.scalar<f32>) {
+  %0 = kgen.param.constant: simd<2, si8> = <<0, 0>>
+  // CHECK: %[[ZERO_ONE:.*]] = kgen.param.constant: simd<2, si8> = <<0, 1>>
+  %1 = kgen.param.constant: simd<2, si8> = <<0, 1>>
+  // CHECK: %[[FP_ZERO:.*]] = kgen.param.constant: scalar<f32> = <"0">
+  %2 = kgen.param.constant: scalar<f32> = <<"0.0">>
+
+  // x+0 -> x
+  %3 = pop.add %arg0, %0 : !pop.simd<2, si8>
+  // 0+x -> x
+  %4 = pop.add %0, %arg0 : !pop.simd<2, si8>
+
+  // negative case: %1 is not all zeros
+  // CHECK: %[[R1:.*]] = pop.add %arg0, %[[ZERO_ONE]] : !pop.simd<2, si8>
+  %5 = pop.add %arg0, %1 : !pop.simd<2, si8>
+
+  // negative case: non-integer type
+  // CHECK: %[[R2:.*]] = pop.add %arg1, %[[FP_ZERO]] : !pop.scalar<f32>
+  %6 = pop.add %arg1, %2 : !pop.scalar<f32>
+
+  // First two outputs are reduced to %arg0, remaining two are intact
+  // CHECK: return %arg0, %arg0, %[[R1]], %[[R2]]
+  kgen.return %3, %4, %5, %6 : !pop.simd<2, si8>, !pop.simd<2, si8>, !pop.simd<2, si8>, !pop.scalar<f32>
+}
+
 // CHECK-LABEL: @sub
 kgen.func @sub() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   // CHECK-DAG: <-2>
@@ -34,6 +64,40 @@ kgen.func @sub() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
   %5 = pop.sub %2, %3 : !pop.scalar<f32>
   kgen.return %4, %5 : !pop.scalar<si8>, !pop.scalar<f32>
 }
+
+// CHECK-LABEL: @sub_zero
+kgen.func @sub_zero(%arg0: !pop.simd<2, si8>,
+                 %arg1: !pop.scalar<f32>) -> (!pop.simd<2, si8>,
+                                              !pop.simd<2, si8>,
+                                              !pop.simd<2, si8>,
+                                              !pop.scalar<f32>) {
+  // CHECK-DAG: %[[ZERO_ZERO:.*]] = kgen.param.constant: simd<2, si8> = <0>
+  %0 = kgen.param.constant: simd<2, si8> = <<0, 0>>
+  // CHECK-DAG: %[[ZERO_ONE:.*]] = kgen.param.constant: simd<2, si8> = <<0, 1>>
+  %1 = kgen.param.constant: simd<2, si8> = <<0, 1>>
+  // CHECK-DAG: %[[FP_ZERO:.*]] = kgen.param.constant: scalar<f32> = <"0">
+  %2 = kgen.param.constant: scalar<f32> = <<"0.0">>
+
+  // x-0 -> x
+  %3 = pop.sub %arg0, %0 : !pop.simd<2, si8>
+
+  // negative case: 0-x
+  // CHECK: %[[R0:.*]] = pop.sub %[[ZERO_ZERO]], %arg0 : !pop.simd<2, si8>
+  %4 = pop.sub %0, %arg0 : !pop.simd<2, si8>
+
+  // negative case: vector value %1 is not all zeros
+  // CHECK: %[[R1:.*]] = pop.sub %arg0, %[[ZERO_ONE]] : !pop.simd<2, si8>
+  %5 = pop.sub %arg0, %1 : !pop.simd<2, si8>
+
+  // negative case: non-integer type
+  // CHECK: %[[R2:.*]] = pop.sub %arg1, %[[FP_ZERO]] : !pop.scalar<f32>
+  %6 = pop.sub %arg1, %2 : !pop.scalar<f32>
+
+  // First output is reduced to %arg0, remaining ones are intact
+  // CHECK: return %arg0, %[[R0]], %[[R1]], %[[R2]]
+  kgen.return %3, %4, %5, %6 : !pop.simd<2, si8>, !pop.simd<2, si8>, !pop.simd<2, si8>, !pop.scalar<f32>
+}
+
 
 // CHECK-LABEL: @mul
 kgen.func @mul() -> (!pop.scalar<si8>, !pop.scalar<f32>) {
@@ -198,6 +262,20 @@ kgen.func @min() -> (!pop.scalar<ui4>, !pop.scalar<f32>, !pop.scalar<f32>) {
   %6 = pop.min %2, %3 : !pop.scalar<f32>
   %7 = pop.min %2, %4 : !pop.scalar<f32>
   kgen.return %5, %6, %7 : !pop.scalar<ui4>, !pop.scalar<f32>, !pop.scalar<f32>
+}
+
+// CHECK-LABEL: @min_max_identity
+kgen.func @min_max_identity(%arg0 : !pop.scalar<ui4>, %arg1 : !pop.scalar<ui4>) ->
+ (!pop.scalar<ui4>, !pop.scalar<ui4>, !pop.scalar<ui4>, !pop.scalar<ui4>) {
+  // Confirm that folding does not erroneously act on min(x,y) and max(x,y)
+  %0 = pop.min %arg0, %arg1 : !pop.scalar<ui4>
+  %1 = pop.max %arg0, %arg1 : !pop.scalar<ui4>
+  // min(x,x) -> x
+  %2 = pop.min %arg0, %arg0 : !pop.scalar<ui4>
+  // max(x,x) -> x
+  %3 = pop.max %arg0, %arg0 : !pop.scalar<ui4>
+  // CHECK: return %0, %1, %arg0, %arg0
+  kgen.return %0, %1, %2, %3 : !pop.scalar<ui4>, !pop.scalar<ui4>, !pop.scalar<ui4>, !pop.scalar<ui4>
 }
 
 // CHECK-LABEL: @shl
