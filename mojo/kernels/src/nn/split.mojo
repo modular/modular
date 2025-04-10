@@ -30,7 +30,7 @@ fn split[
     type: DType,
     rank: Int,
     num_outputs: Int,
-    target: StringLiteral,
+    target: StaticString,
     trace_description: StaticString,
 ](
     input: NDBuffer[type, rank],

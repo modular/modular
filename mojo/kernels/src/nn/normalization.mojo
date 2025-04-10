@@ -1078,7 +1078,7 @@ fn rms_norm[
         type, width
     ],
     /,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     shape: IndexList[rank],
     gamma: NDBuffer[type, 1],
