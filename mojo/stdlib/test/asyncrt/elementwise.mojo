@@ -42,8 +42,8 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
             in_host[i] = i
             out_host[i] = length + i
 
-    var in_buffer = NDBuffer[type, 2](in0.unsafe_ptr(), Index(dim_x, dim_y))
-    var out_buffer = NDBuffer[type, 2](out.unsafe_ptr(), Index(dim_x, dim_y))
+    var in_buffer = NDBuffer[type, 2](in0._unsafe_ptr(), Index(dim_x, dim_y))
+    var out_buffer = NDBuffer[type, 2](out._unsafe_ptr(), Index(dim_x, dim_y))
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)

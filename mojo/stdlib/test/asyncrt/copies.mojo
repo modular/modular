@@ -113,9 +113,9 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
 
     var out_ptr: UnsafePointer[Int64]
     if use_take_ptr:
-        out_ptr = out_dev.take_ptr()
+        out_ptr = out_dev._take_ptr()
     else:
-        out_ptr = out_dev.unsafe_ptr()
+        out_ptr = out_dev._unsafe_ptr()
 
     var first_out_dev = DeviceBuffer[DType.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
