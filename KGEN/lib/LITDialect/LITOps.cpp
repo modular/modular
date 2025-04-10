@@ -127,9 +127,6 @@ void FileModuleOp::build(OpBuilder &builder, OperationState &state,
 /// Modules don't have input parameters but do define a parameter scope.
 ArrayRef<ParamDeclAttr> FileModuleOp::getInputParams() { return {}; }
 
-/// Modules don't have result parameters.
-ArrayRef<ParamDeclAttr> FileModuleOp::getResultParams() { return {}; }
-
 //===----------------------------------------------------------------------===//
 // PackageOp
 //===----------------------------------------------------------------------===//
@@ -142,9 +139,6 @@ void PackageOp::build(OpBuilder &builder, OperationState &state,
 
 /// Packages don't have input parameters but do define a parameter scope.
 ArrayRef<ParamDeclAttr> PackageOp::getInputParams() { return {}; }
-
-/// Packages don't have result parameters.
-ArrayRef<ParamDeclAttr> PackageOp::getResultParams() { return {}; }
 
 LogicalResult PackageOp::verify() {
   for (Operation &op : *getBody()) {

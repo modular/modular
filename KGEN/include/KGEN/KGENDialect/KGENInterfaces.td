@@ -64,12 +64,23 @@ def DeclInterface : OpInterface<"DeclInterface"> {
     }], "ArrayRef<ParamDeclAttr>", "getInputParams">,
 
     InterfaceMethod<[{
-      Get the result parameters declared at this parameter scope. These
-      parameters are visible to the operations at or below the parameter scope
-      defined by this operation. The `DeclInterface` is allowed to have a
-      circular reference to these parameters only. These parameters must be
-      defined by an operation inside the sopce.
-    }], "ArrayRef<ParamDeclAttr>", "getResultParams">,
+      Get all of the parameters to this parameter scope. These parameters are
+      visible to the operations at or below the parameter scope defined by this
+      operation. The `DeclInterface` is allowed to have a circular reference to
+      these parameters.
+    }], "SmallVector<ParamDeclAttr>", "getAllParams",
+    // (ins) - Specifies input parameters to the method. Empty parentheses
+    // indicate no input parameters. If parameters were needed, they would
+    // be listed like: (ins "Type":$paramName)
+    (ins),
+    // [{}] - Additional properties or constraints for the method. Empty braces
+    // indicate no special properties. Could contain things like verification
+    // requirements or other interface-specific properties.
+    [{}],
+    // This is the default implementation of the method. Individual types
+    // derived from this interface can override this method to provide a
+    // custom implementation.
+    [{ return SmallVector<ParamDeclAttr>($_op.getInputParams()); }]>,
   ];
 }
 

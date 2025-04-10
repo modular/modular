@@ -177,9 +177,7 @@ private:
 
       // Track parameters within lambda blocks ect.
       if (auto definesParam = dyn_cast<KGEN::DeclInterface>(op)) {
-        for (KGEN::ParamDeclAttr decl : definesParam.getInputParams())
-          trackDefinedParams(decl);
-        for (KGEN::ParamDeclAttr decl : definesParam.getResultParams())
+        for (KGEN::ParamDeclAttr decl : definesParam.getAllParams())
           trackDefinedParams(decl);
       }
 
