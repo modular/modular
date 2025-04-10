@@ -304,8 +304,8 @@ fn _allreduce_naive[
 
         # First reduce local buffer.
         curr_ctx.enqueue_function[_naive_reduce_kernel[type]](
-            accum_buffer.unsafe_ptr(),
-            device_buffers[device_idx].unsafe_ptr(),
+            accum_buffer,
+            device_buffers[device_idx],
             num_elements,
             grid_dim=grid_size,
             block_dim=BLOCK_SIZE,
@@ -314,8 +314,8 @@ fn _allreduce_naive[
         # Reduce remote buffers.
         for tmp in tmp_buffers:
             curr_ctx.enqueue_function[_naive_reduce_kernel[type]](
-                accum_buffer.unsafe_ptr(),
-                tmp[].unsafe_ptr(),
+                accum_buffer,
+                tmp[],
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
@@ -333,7 +333,7 @@ fn _allreduce_naive[
             ]
         ](
             list_of_out_bufs[device_idx],
-            accum_buffer.unsafe_ptr(),
+            accum_buffer,
             num_elements,
             grid_dim=grid_size,
             block_dim=BLOCK_SIZE,
