@@ -184,7 +184,6 @@ void OutlineClosuresPass::runOnOperation() {
       b.setInsertionPoint(generator);
       auto uniqueName = b.getStringAttr(getUniqueSymbolName(
           (generator.getName() + "_" + regionName).str(), symtab, counter));
-      assert(regionDecl.getResultParams().empty() && "no result params!");
       auto liftedWrapper = b.create<GeneratorOp>(
           uniqueName, wrapperSignature, regionDecl.getFunctionType(),
           inputParamDecls, regionDecl.getInlineLevel(),

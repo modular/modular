@@ -88,7 +88,6 @@ def LIT_FnOp : LITOp<"fn", [
 
   let extraClassDeclaration = [{
     ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     Block *getBody() { return &getFunctionBody().back(); }
     Region *getCallableRegion() { return &getBodyRegion(); }
     bool isOptionalSymbol() { return getParamDecl().has_value(); }
@@ -412,9 +411,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     auto field_end() { return getFieldDecls().end(); }
 
     /// Struct declarations just have input parameters.
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
-
     bool isRegisterPassable() {
       return getConvention() != TypeConvention::MemoryOnly;
     }
@@ -607,7 +604,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
   let extraClassDeclaration = [{
     /// Trait declarations only have input parameters.
     ArrayRef<ParamDeclAttr> getInputParams() { return getParams(); }
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
 
     /// Get a bound reference to the Trait type.
     TraitType bindReference();

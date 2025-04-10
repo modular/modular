@@ -101,7 +101,6 @@ def KGEN_FuncOp : KGENOp<"func", [
     using OpTrait::SingleBlock<FuncOp>::getBody;
 
     ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
     FunctionType getFunctionType() {
       return getFuncTypeGenerator().getBody().getValues();
     }
@@ -194,9 +193,6 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     using OpTrait::SingleBlock<GeneratorOp>::getBody;
     Region *getCallableRegion() { return &getBodyRegion(); }
 
-    // TODO: Remove this when result parameters are gone.
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
-
     ArrayAttr getArgAttrsAttr() { return nullptr; }
     ArrayAttr getResAttrsAttr() { return nullptr; }
     void setArgAttrsAttr(ArrayAttr attrs) {}
@@ -262,7 +258,6 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
   let extraClassDeclaration = [{
     InlineLevel getInlineLevel() { return InlineLevel::Never; }
     Region *getCallableRegion() { return &getBody(); }
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
 
     ArrayAttr getArgAttrsAttr() { return nullptr; }
     ArrayAttr getResAttrsAttr() { return nullptr; }
@@ -307,10 +302,6 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
                        TypeAttr:$valueDomainType,
                        TypeAttr:$metaType);
   let regions = (region SizedRegion<1>:$body);
-
-  let extraClassDeclaration = [{
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
-  }];
 
   let assemblyFormat = [{
     $sym_name ``
@@ -685,8 +676,6 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     /// Region body op doesn't form a symbol.
     bool isOptionalSymbol() { return true; }
 
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
-
     ArrayAttr getArgAttrsAttr() { return nullptr; }
     ArrayAttr getResAttrsAttr() { return nullptr; }
     void setArgAttrsAttr(ArrayAttr attrs) {}
@@ -914,7 +903,6 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
     bool isIsolatedFromAbove(unsigned regionNum);
     void notifyKnownIsolatedFromAbove(unsigned regionNum);
     ArrayRef<ParamDeclAttr> getInputParams();
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
 
   let hasVerifier = 1;
@@ -1020,7 +1008,6 @@ def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
 
     /// Parametric ifs have no parameters.
     ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
 
   let assemblyFormat = [{
@@ -2051,7 +2038,6 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
   let extraClassDeclaration = [{
     Region *getCallableRegion() { return &getBodyRegion(); }
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
   }];
   let hasVerifier = 1;
 }

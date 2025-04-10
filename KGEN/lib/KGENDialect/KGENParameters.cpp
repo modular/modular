@@ -708,8 +708,7 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
           return recordDecl(*this, decl, op, *scope);
         };
         // A declaration declares input and/or result parameters.
-        for (ParamDeclAttr paramDecl : llvm::concat<const ParamDeclAttr>(
-                 decl.getInputParams(), decl.getResultParams()))
+        for (ParamDeclAttr paramDecl : decl.getAllParams())
           if (failed(recordDeclWrapper(paramDecl)))
             return failure();
         // The input parameters are defined by the declaration.
