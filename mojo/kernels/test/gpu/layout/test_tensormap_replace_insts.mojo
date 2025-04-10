@@ -442,7 +442,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     ]()
 
     debug_assert(
-        ctx.get_driver_version() >= 12050,
+        ctx.get_api_version() >= 12050,
         (
             "CUDA version must be >= 12.5. Current implementation of"
             " `replace_tensormap_global_dim_strides_in_shared_mem` dose not"
