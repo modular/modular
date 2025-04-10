@@ -28,7 +28,7 @@ from transformers import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-from max.pipelines.registry import PIPELINE_REGISTRY, SupportedArchitecture
+from max.pipelines.registry import SupportedArchitecture
 
 from .max_config import KVCacheConfig
 from .pipeline import KVCacheMixin, PipelineModel
@@ -46,9 +46,7 @@ class MemoryEstimator:
         model_cls = arch.pipeline_model
         model_config = pipeline_config.model_config
 
-        huggingface_config = PIPELINE_REGISTRY.get_active_huggingface_config(
-            model_config
-        )
+        huggingface_config = model_config.huggingface_config
 
         try:
             free_memory = int(sum(d.stats["free_memory"] for d in devices))

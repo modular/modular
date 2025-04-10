@@ -36,7 +36,6 @@ from .max_config import (
     MAXModelConfig,
     ProfilingConfig,
     SamplingConfig,
-    repo_exists_with_retry,
 )
 
 logger = logging.getLogger("max.pipelines")
@@ -275,12 +274,6 @@ class PipelineConfig(MAXConfig):
         self.draft_model = ""
 
         assert self.draft_model_config is not None  # keep mypy happy
-
-        if not repo_exists_with_retry(self.draft_model_config.model_path):
-            raise ValueError(
-                "draft_model provided does not exist on HuggingFace."
-                "Only public HuggingFace draft models currently supported."
-            )
 
         # Assume `draft_model` is provided, and thus speculative decoding is enabled.
         # We don't support running speculative decoding with the HuggingFace backend.
