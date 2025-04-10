@@ -250,8 +250,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
     TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
-    KGEN_ExportKindAttr:$exportKind,
-    OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef
+    KGEN_ExportKindAttr:$exportKind
   );
   let regions = (region SizedRegion<0>:$body);
 

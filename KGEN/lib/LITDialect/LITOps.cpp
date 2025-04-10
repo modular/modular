@@ -932,8 +932,8 @@ void FnOp::build(OpBuilder &b, OperationState &state, StringAttr declName,
         /*isSynthetic=*/none, /*isImplicitConversion=*/none,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
-        FlatSymbolRefAttr(), StringAttr(), b.getStringAttr(sourceName),
-        StringAttr(), DocStringAttr(), StringAttr(), ArrayAttr::get(ctx, {}),
+        StringAttr(), b.getStringAttr(sourceName), StringAttr(),
+        DocStringAttr(), StringAttr(), ArrayAttr::get(ctx, {}),
         ArrayAttr::get(ctx, {}), Attribute());
   state.regions[0]->push_back(new Block());
 }
@@ -952,8 +952,8 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         /*isImplicitConversion=*/none,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
-        builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
-        StringAttr(), sourceName, StringAttr(), DocStringAttr(), StringAttr(),
+        builder.getI8IntegerAttr(uint8_t(specialFnKind)), StringAttr(),
+        sourceName, StringAttr(), DocStringAttr(), StringAttr(),
         ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute());
   result.regions[0]->push_back(new Block());
 }
