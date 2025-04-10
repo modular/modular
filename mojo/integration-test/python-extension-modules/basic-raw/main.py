@@ -16,8 +16,6 @@ sys.path.insert(0, "")
 import mojo_module
 
 if __name__ == "__main__":
-    pass
-
     result = mojo_module.mojo_count_args(1, 2)
 
     assert result == 2
