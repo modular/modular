@@ -1073,7 +1073,8 @@ fn repack_Q4_0_for_sm8x[
             alias scales_thread_layout = Layout(IntTuple(4, 8), IntTuple(16, 1))
             var rt_scales_thread_layout = RuntimeLayout[
                 scales_thread_layout,
-                linear_idx_type = q_warp_tile.index_type,
+                element_type = q_warp_tile.layout_int_type,
+                linear_idx_type = q_warp_tile.linear_idx_type,
             ]()
 
             # cast scales to bf16 before storing back
@@ -1329,7 +1330,8 @@ fn repack_GPTQ_for_sm8x[
             alias scales_thread_layout = Layout(IntTuple(4, 8), IntTuple(16, 1))
             var rt_scales_thread_layout = RuntimeLayout[
                 scales_thread_layout,
-                linear_idx_type = scales_warp_tile.index_type,
+                element_type = scales_warp_tile.layout_int_type,
+                linear_idx_type = scales_warp_tile.linear_idx_type,
             ]()
 
             scales_warp_tile[0, 2 * lane_id] = convert_bytes_to_bf16[
