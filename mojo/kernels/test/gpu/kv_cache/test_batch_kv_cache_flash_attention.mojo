@@ -288,7 +288,8 @@ def execute_flash_attention[
             if (config.block_k() % (mma_shape[2] << blf)) != 0:
                 continue
             alias width = 32 if type is DType.float32 else (
-                128 if ctx.device_info is H100 else 64
+                128 if ctx.device_info
+                is H100 else (64 if has_nvidia_gpu_accelerator() else 128)
             )
             # fmt: off
             var config_str = String(
