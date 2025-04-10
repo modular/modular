@@ -10,11 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: disabled
 # RUN: %mojo --debug-level full %s
 
-from collections.string import InlineString
-from collections.string.inline_string import _FixedString
+from collections.string.inline_string import InlineString, _FixedString
 from os import abort
 
 from testing import assert_equal, assert_true
@@ -37,14 +35,16 @@ def test_fixed_string():
     assert_equal(String(s), "hello world")
 
     # Test comparison with StringLiteral
-    assert_equal(s, "hello world")
+    # TODO: Use `assert_equal` once the trait limitations are lifted.
+    assert_true(s == "hello world")
 
     try:
         var s2 = _FixedString[5]("hello world")
         abort("unreachable: Expected FixedString creation to fail")
     except e:
         assert_equal(
-            e, "String literal (len=11) is longer than FixedString capacity (5)"
+            String(e),
+            "String literal (len=11) is longer than FixedString capacity (5)",
         )
 
     # -----------------------------------
@@ -71,7 +71,7 @@ def test_fixed_string_growth():
         assert_true(False, "expected exception to be thrown")
     except e:
         assert_equal(
-            e,
+            String(e),
             (
                 "Insufficient capacity to append len=5 string to len=6"
                 " FixedString with capacity=10"
@@ -169,7 +169,7 @@ def test_small_string_add():
     var s1: InlineString = InlineString("hello") + " world"
 
     assert_equal(String(s1), "hello world")
-    assert_equal(len(s1), "11")
+    assert_equal(len(s1), 11)
 
     #
     # Test InlineString + InlineString
@@ -178,7 +178,7 @@ def test_small_string_add():
     var s2: InlineString = InlineString("hello") + InlineString(" world")
 
     assert_equal(String(s2), "hello world")
-    assert_equal(len(s2), "11")
+    assert_equal(len(s2), 11)
 
     #
     # Test InlineString + String
@@ -187,4 +187,4 @@ def test_small_string_add():
     var s3: InlineString = InlineString("hello") + String(" world")
 
     assert_equal(String(s3), "hello world")
-    assert_equal(len(s3), "11")
+    assert_equal(len(s3), 11)
