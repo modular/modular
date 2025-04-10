@@ -237,9 +237,8 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         try:
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
-            # TODO(MAXCORE-137): TokenGeneratorContext currently does not enforce
-            # a seq_len property.
-            prompt_token_count = None
+
+            # TODO(AITLIB-319): Remove hashattr check
             if hasattr(context, "active_length"):
                 METRICS.input_tokens(context.active_length)
 
@@ -288,7 +287,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                         decoded_token=decoded_token,
                         token_log_probabilities=token_log_probabilities,
                         top_log_probabilities=top_log_probabilities,
-                        prompt_token_count=prompt_token_count,
+                        prompt_token_count=context.current_length,
                         stop_sequence=stop_sequence_match,
                     )
 

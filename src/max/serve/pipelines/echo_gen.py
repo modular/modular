@@ -33,6 +33,9 @@ class EchoTokenGeneratorContext:
     active_idx: int = 0
     cache_seq_id: int = -1
 
+    # Used by frontend to make Usage objects
+    current_length: int = 0
+
     def assign_to_cache(self, cache_seq_id: int) -> None:
         """Assigns the context to a cache slot."""
         self.cache_seq_id = cache_seq_id
