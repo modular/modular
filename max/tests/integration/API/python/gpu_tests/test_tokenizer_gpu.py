@@ -13,10 +13,14 @@ from max.pipelines import (
     TokenGeneratorRequestMessage,
     TokenGeneratorResponseFormat,
 )
-from test_common.pipeline_model import mock_estimate_memory_footprint
+from test_common.pipeline_model import (
+    mock_estimate_memory_footprint,
+    mock_huggingface_config,
+)
 
 
 @mock_estimate_memory_footprint
+@mock_huggingface_config
 def test_text_tokenizer_with_constrained_decoding():
     pipeline_config = PipelineConfig(
         model_path="HuggingFaceTB/SmolLM-135M",

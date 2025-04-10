@@ -4,25 +4,25 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import os
 import pickle
 from pathlib import Path
 
 import pytest
-from huggingface_hub import snapshot_download
 from max.driver import DeviceSpec
 from max.pipelines.config import PipelineConfig
-from test_common.pipeline_model import mock_estimate_memory_footprint
+from test_common.pipeline_model import (
+    mock_pipeline_config_hf_dependencies,
+)
 
 
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_config_init__raises_with_no_model_path():
     # We expect this to fail.
     with pytest.raises(ValueError):
         _ = PipelineConfig(weight_path="file.gguf")
 
 
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_config_post_init__with_weight_path_but_no_model_path():
     config = PipelineConfig(
         trust_remote_code=True,
@@ -37,7 +37,7 @@ def test_config_post_init__with_weight_path_but_no_model_path():
     ]
 
 
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.
     config = PipelineConfig(
@@ -50,21 +50,13 @@ def test_config_init__reformats_with_str_weights_path():
     assert isinstance(config.model_config.weight_path[0], Path)
 
 
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_validate_model_path__correct_repo_id_provided():
     config = PipelineConfig(
         model_path="modularai/llama-3.1",
     )
 
     assert config.model_config.model_path == "modularai/llama-3.1"
-
-
-@mock_estimate_memory_footprint
-def test_validate_model_path__bad_repo_provided():
-    with pytest.raises(Exception):
-        _ = PipelineConfig(
-            model_path="bert-base-asdfasdf",
-        )
 
 
 class LimitedPickler(pickle.Unpickler):
@@ -79,7 +71,7 @@ class LimitedPickler(pickle.Unpickler):
         return super().find_class(module, name)
 
 
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_config_is_picklable(tmp_path):
     config = PipelineConfig(
         model_path="modularai/llama-3.1",
@@ -96,24 +88,7 @@ def test_config_is_picklable(tmp_path):
     assert loaded_config == config
 
 
-@pytest.mark.skip("huggingface download is flaky")
-def test_config__with_local_huggingface_repo():
-    # Download huggingface repo to local path.
-    target_path = os.path.join(os.getcwd(), "tmp_repo")
-    downloaded_path = snapshot_download(
-        repo_id="trl-internal-testing/tiny-LlamaForCausalLM-3.2",
-        local_dir=target_path,
-        revision="main",
-    )
-
-    # Load pipeline config with downloaded_path.
-    # This should not raise, as the path should be available locally.
-    _ = PipelineConfig(
-        model_path=downloaded_path,
-    )
-
-
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_config__validate_devices():
     # This test should always have a cpu available.
     _ = PipelineConfig(
@@ -129,7 +104,19 @@ def test_config__validate_devices():
         )
 
 
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
+@pytest.mark.skip(
+    "TODO: AITLIB-293, this still requires a HF call to throw the exception"
+)
+def test_validate_model_path__bad_repo_provided():
+    with pytest.raises(Exception):
+        _ = PipelineConfig(
+            model_path="bert-base-asdfasdf",
+        )
+
+
+@mock_pipeline_config_hf_dependencies
+@pytest.mark.skip("TODO: AITLIB-293, this still requires a HF call")
 def test_config_post_init__other_repo_weights():
     config = PipelineConfig(
         model_path="replit/replit-code-v1_5-3b",

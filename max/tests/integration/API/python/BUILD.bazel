@@ -5,6 +5,8 @@ modular_py_test(
     size = "large",
     srcs = [
         "conftest.py",
+        "test_cli.py",
+        "test_config.py",
         "test_context.py",
         "test_dtype.py",
         "test_engine.py",
@@ -40,8 +42,6 @@ modular_py_test(
     size = "large",
     srcs = [
         "conftest.py",
-        "test_cli.py",
-        "test_config.py",
         "test_huggingface_utilities.py",
         "test_tokenizer.py",
     ],
@@ -79,11 +79,13 @@ modular_py_test(
     size = "large",
     srcs = [
         "gpu_tests/conftest.py",
+        "gpu_tests/test_cli_gpu.py",
         "gpu_tests/test_cumsum_gpu.py",
         "gpu_tests/test_engine.py",
         "gpu_tests/test_explicit_device.py",
         "gpu_tests/test_gpu_weight.py",
         "gpu_tests/test_load_weights_fp8.py",
+        "gpu_tests/test_registry_gpu.py",
     ],
     data = [
         "//ModularFramework/tools/mof",
@@ -124,10 +126,10 @@ modular_py_test(
     size = "large",
     srcs = [
         "gpu_tests/conftest.py",
-        "gpu_tests/test_cli.py",
-        "gpu_tests/test_config.py",
-        "gpu_tests/test_registry_gpu.py",
+        "gpu_tests/test_config_gpu.py",
+        "gpu_tests/test_memory_estimation_gpu.py",
         "gpu_tests/test_sampling_gpu.py",
+        "gpu_tests/test_speculative_decoding_gpu.py",
         "gpu_tests/test_tokenizer_gpu.py",
     ],
     data = [

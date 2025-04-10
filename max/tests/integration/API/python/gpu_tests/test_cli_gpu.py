@@ -35,7 +35,7 @@ from test_common.pipeline_cli_utils import (
 )
 from test_common.pipeline_model import (
     DUMMY_ARCH,
-    mock_estimate_memory_footprint,
+    mock_pipeline_config_hf_dependencies,
     prepare_registry,
 )
 
@@ -86,7 +86,7 @@ VALID_RESULTS = {
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_pipeline_config_cli_parsing():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(PipelineConfig)
@@ -96,6 +96,7 @@ def test_pipeline_config_cli_parsing():
 
 
 @prepare_registry
+@mock_pipeline_config_hf_dependencies
 def test_cli__get_default():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     for config_field in fields(CLITestConfig):
@@ -106,7 +107,7 @@ def test_cli__get_default():
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_cli__get_field_type():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
@@ -123,7 +124,7 @@ def test_cli__get_field_type():
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_cli__option_is_flag():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
@@ -136,7 +137,7 @@ def test_cli__option_is_flag():
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_cli__option_is_multiple():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
@@ -147,7 +148,7 @@ def test_cli__option_is_multiple():
 
 
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_cli__option_is_optional():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
@@ -328,7 +329,7 @@ def testing(
     ids=["TEST_COMMANDS[" + str(i) + "]" for i in range(len(TEST_COMMANDS))],
 )
 @prepare_registry
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_cli_commands(command, idx):
     """
     Test individual CLI commands

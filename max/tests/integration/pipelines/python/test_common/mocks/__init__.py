@@ -27,24 +27,13 @@ from .pipeline_model import MockPipelineModel
 from .tokenizer import MockTextTokenizer
 
 
-@contextmanager
-def retrieve_mock_text_generation_pipeline(
+def create_mock_pipeline_config(
+    eos_prob: float,
+    max_length: Optional[int],
     vocab_size: int,
     eos_token: int,
-    seed: int = 42,
-    eos_prob: float = 0.1,
-    max_length: Optional[int] = None,
-    max_new_tokens: Union[int, None] = None,
-    device_specs: Optional[list[DeviceSpec]] = None,
-) -> Generator[tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:
-    if eos_token > vocab_size:
-        msg = f"eos_token provided '{eos_token}' must be less than vocab_size provided '{vocab_size}'"
-        raise ValueError(msg)
-
-    if not device_specs:
-        device_specs = scan_available_devices()
-
-    # Create a mock Pipeline Config
+    device_specs: list[DeviceSpec],
+) -> MagicMock:
     mock_config = MagicMock()
     mock_config.profiling_config = ProfilingConfig(
         gpu_profiling=GPUProfilingMode.OFF,
@@ -68,6 +57,33 @@ def retrieve_mock_text_generation_pipeline(
     mock_config.max_length = max_length
     mock_config.vocab_size = vocab_size
     mock_config.eos_token = [eos_token]
+    return mock_config
+
+
+@contextmanager
+def retrieve_mock_text_generation_pipeline(
+    vocab_size: int,
+    eos_token: int,
+    seed: int = 42,
+    eos_prob: float = 0.1,
+    max_length: Optional[int] = None,
+    max_new_tokens: Union[int, None] = None,
+    device_specs: Optional[list[DeviceSpec]] = None,
+) -> Generator[tuple[MockTextTokenizer, TextGenerationPipeline], None, None]:
+    if eos_token > vocab_size:
+        msg = f"eos_token provided '{eos_token}' must be less than vocab_size provided '{vocab_size}'"
+        raise ValueError(msg)
+
+    if not device_specs:
+        device_specs = scan_available_devices()
+
+    mock_config = create_mock_pipeline_config(
+        eos_prob=eos_prob,
+        max_length=max_length,
+        vocab_size=vocab_size,
+        eos_token=eos_token,
+        device_specs=device_specs,
+    )
 
     tokenizer = MockTextTokenizer(
         max_new_tokens=max_new_tokens,
@@ -88,4 +104,8 @@ def retrieve_mock_text_generation_pipeline(
         ...
 
 
-__all__ = ["MockTextTokenizer", "retrieve_mock_text_generation_pipeline"]
+__all__ = [
+    "MockTextTokenizer",
+    "create_mock_pipeline_config",
+    "retrieve_mock_text_generation_pipeline",
+]

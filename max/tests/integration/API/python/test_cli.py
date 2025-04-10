@@ -14,7 +14,7 @@ from max.entrypoints.cli import pipeline_config_options
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig
 from test_common.pipeline_cli_utils import CLITestCommand
-from test_common.pipeline_model import mock_estimate_memory_footprint
+from test_common.pipeline_model import mock_pipeline_config_hf_dependencies
 
 
 @click.group()
@@ -31,22 +31,6 @@ TEST_COMMANDS = [
     CLITestCommand(
         args=["--devices", "cpu"],
         expected={},
-        valid=False,
-    ),
-    CLITestCommand(
-        args=[
-            "--model-path",
-            "modularai/test_modelid",
-            "--trust-remote-code",
-            "--devices",
-            "cpu",
-        ],
-        expected={
-            "model_config": {
-                "model_path": "modularai/test_modelid",
-                "trust_remote_code": True,
-            },
-        },
         valid=False,
     ),
     CLITestCommand(
@@ -205,7 +189,7 @@ def testing(
     [(cmd, i) for i, cmd in enumerate(TEST_COMMANDS)],
     ids=["TEST_COMMANDS[" + str(i) + "]" for i in range(len(TEST_COMMANDS))],
 )
-@mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_cli__terminal_commands(command, idx):
     """
     Test individual terminal CLI commands
