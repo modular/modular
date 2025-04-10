@@ -735,9 +735,9 @@ struct Range:
     @staticmethod
     fn execute[
         type: DType,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         output: FusedOutputTensor[type=type, rank=1],
         start: Scalar[type],
@@ -801,9 +801,9 @@ struct Copy:
 struct Add:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -829,9 +829,9 @@ struct Add:
 struct Sub:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -857,9 +857,9 @@ struct Sub:
 struct Mul:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -885,9 +885,9 @@ struct Mul:
 struct Div:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -913,9 +913,9 @@ struct Div:
 struct Mod:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -941,9 +941,9 @@ struct Mod:
 struct Equal:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -969,9 +969,9 @@ struct Equal:
 struct Greater:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -997,9 +997,9 @@ struct Greater:
 struct GreaterEqual:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -1025,9 +1025,9 @@ struct GreaterEqual:
 struct NotEqual:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -1053,9 +1053,9 @@ struct NotEqual:
 struct And:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -1081,9 +1081,9 @@ struct And:
 struct Or:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -1109,9 +1109,9 @@ struct Or:
 struct Xor:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -1137,9 +1137,9 @@ struct Xor:
 struct Pow:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -1165,9 +1165,9 @@ struct Pow:
 struct Max:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -1193,9 +1193,9 @@ struct Max:
 struct Min:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
         x: FusedInputTensor,
@@ -1226,9 +1226,9 @@ struct Min:
 struct Cast:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1248,9 +1248,9 @@ struct Cast:
 struct Negative:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1269,9 +1269,9 @@ struct Negative:
 struct ReLU:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1290,9 +1290,9 @@ struct ReLU:
 struct GeLU:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1311,9 +1311,9 @@ struct GeLU:
 struct Ceil:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1332,9 +1332,9 @@ struct Ceil:
 struct Floor:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1353,9 +1353,9 @@ struct Floor:
 struct Tanh:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1374,9 +1374,9 @@ struct Tanh:
 struct Cos:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1395,9 +1395,9 @@ struct Cos:
 struct Sin:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1416,9 +1416,9 @@ struct Sin:
 struct Erf:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1437,9 +1437,9 @@ struct Erf:
 struct Exp:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1458,9 +1458,9 @@ struct Exp:
 struct Round:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1479,9 +1479,9 @@ struct Round:
 struct Sqrt:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1500,9 +1500,9 @@ struct Sqrt:
 struct Isqrt:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1521,9 +1521,9 @@ struct Isqrt:
 struct Select:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         out: FusedOutputTensor,
         condition: FusedInputTensor,
@@ -1555,9 +1555,9 @@ struct Select:
 struct Trunc:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1581,9 +1581,9 @@ struct Trunc:
 struct Log:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1602,9 +1602,9 @@ struct Log:
 struct Log1p:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1623,9 +1623,9 @@ struct Log1p:
 struct IsNan:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1644,9 +1644,9 @@ struct IsNan:
 struct IsInf:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1665,9 +1665,9 @@ struct IsInf:
 struct Not:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1687,9 +1687,9 @@ struct Not:
 struct Abs:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
         @always_inline
@@ -1708,7 +1708,7 @@ struct Abs:
 struct SqueezeShape:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
         type: DType,
         indices_type: DType,
@@ -1777,7 +1777,7 @@ struct SqueezeShape:
 struct UnsqueezeShape:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
         type: DType,
         indices_type: DType,
@@ -1849,7 +1849,7 @@ struct UnsqueezeShape:
 struct ScatterND:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -1898,7 +1898,7 @@ struct ScatterND:
 struct ScatterNDAdd:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -1957,7 +1957,7 @@ struct ScatterNDAdd:
 struct ScatterNDMul:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -2016,7 +2016,7 @@ struct ScatterNDMul:
 struct ScatterNDMin:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -2075,7 +2075,7 @@ struct ScatterNDMin:
 struct ScatterNDMax:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -2139,7 +2139,7 @@ struct ScatterNDMax:
 struct Scatter:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -2183,7 +2183,7 @@ struct Scatter:
 struct ScatterAdd:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -2227,7 +2227,7 @@ struct ScatterAdd:
 struct ScatterMax:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -2271,7 +2271,7 @@ struct ScatterMax:
 struct ScatterMin:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -2315,7 +2315,7 @@ struct ScatterMin:
 struct ScatterMul:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor,
@@ -2558,12 +2558,12 @@ struct StaticBroadcastTo:
 
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
         type: DType,
         in_rank: Int,
         out_rank: Int,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         z: OutputTensor[type=type, rank=out_rank],
         x: InputTensor[type=type, rank=in_rank],
@@ -2614,9 +2614,9 @@ struct StaticReshape:
 
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
         type: DType,
         output_rank: Int,
     ](
@@ -2710,9 +2710,9 @@ struct Transpose:
 
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
         static_permutations: DimList,
         type: DType,
         rank: Int,
@@ -2792,9 +2792,9 @@ struct Slice:
 
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
         static_steps: DimList,
         type: DType,
         rank: Int,
@@ -2851,9 +2851,9 @@ struct Slice:
 struct MutableStore:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         buffer: MutableInputTensor,
         tensor: FusedInputTensor,
@@ -2880,7 +2880,7 @@ struct MutableStore:
 struct MutableStoreSlice:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
         type: DType,
         rank: Int,
@@ -2926,9 +2926,9 @@ struct SliceDim:
 
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
         type: DType,
         rank: Int,
         axis: Int,
@@ -2977,9 +2977,9 @@ struct SliceDim:
 struct ArgMax:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         rank: Int,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         output: OutputTensor[rank=rank],
         input: InputTensor[rank=rank],
@@ -2988,7 +2988,7 @@ struct ArgMax:
     ) raises:
         var axis_val = normalize_neg_index(Int(axis), rank)
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
             if target == "cpu":
@@ -3017,9 +3017,9 @@ struct ArgMax:
 struct ArgMin:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         rank: Int,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         output: OutputTensor[rank=rank],
         input: InputTensor[rank=rank],
@@ -3028,7 +3028,7 @@ struct ArgMin:
     ) raises:
         var axis_val = normalize_neg_index(Int(axis), rank)
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
             if target == "cpu":
@@ -3076,7 +3076,7 @@ struct ArgNonZero:
 struct Mean:
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StringLiteral
+        _synchronous: Bool, target: StaticString
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[type = output.type, rank = output.rank],
@@ -3127,7 +3127,7 @@ struct Mean:
 struct ReduceAdd:
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StringLiteral, _trace_name: StringLiteral
+        _synchronous: Bool, target: StaticString, _trace_name: StaticString
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[type = output.type, rank = output.rank],
@@ -3155,7 +3155,7 @@ struct ReduceAdd:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             sum[
                 output.type,
                 input_fn,
@@ -3180,8 +3180,8 @@ struct ReduceMul:
     @staticmethod
     fn execute[
         _synchronous: Bool,
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[type = output.type, rank = output.rank],
@@ -3209,7 +3209,7 @@ struct ReduceMul:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             product[
                 output.type,
                 input_fn,
@@ -3234,8 +3234,8 @@ struct ReduceMax:
     @staticmethod
     fn execute[
         _synchronous: Bool,
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[type = output.type, rank = output.rank],
@@ -3263,7 +3263,7 @@ struct ReduceMax:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             reduce_max[
                 output.type,
                 input_fn,
@@ -3288,8 +3288,8 @@ struct ReduceMin:
     @staticmethod
     fn execute[
         _synchronous: Bool,
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[type = output.type, rank = output.rank],
@@ -3317,7 +3317,7 @@ struct ReduceMin:
 
         var axis_val = Int(axis)
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             reduce_min[
                 output.type,
                 input_fn,
@@ -3341,9 +3341,9 @@ struct ReduceMin:
 struct ReduceMinMax:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
         type: DType,
         rank: Int,
     ](
@@ -3429,7 +3429,7 @@ struct ReduceMinMax:
         var init_max = Scalar[type].MIN
         var init = StaticTuple[Scalar[type], num_reductions](init_min, init_max)
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             _reduce_generator[
                 num_reductions,
                 type,
@@ -3647,7 +3647,7 @@ struct MaxPoolCeilModeTrue:
 struct PadConstant:
     @staticmethod
     fn execute[
-        type: DType, rank: Int, target: StringLiteral
+        type: DType, rank: Int, target: StaticString
     ](
         output: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
@@ -3760,9 +3760,9 @@ struct GatherND:
     @staticmethod
     fn execute[
         batchDims: Int,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         output: OutputTensor,
         data: InputTensor[type = output.type, *_],
@@ -3774,8 +3774,8 @@ struct GatherND:
         var data_ndbuffer = managed_tensor_slice_to_ndbuffer(data)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
-            gather_nd[batch_dims=batchDims, target = StaticString(target)](
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            gather_nd[batch_dims=batchDims, target=target](
                 data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
             )
 
@@ -3802,9 +3802,9 @@ struct GatherND:
 struct Gather:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[type = output.type, *_],
@@ -3840,7 +3840,7 @@ struct Gather:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             gather[
                 type = output.type,
                 indices_type = indices.type,
@@ -3911,7 +3911,7 @@ struct LayerNorm:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=rank],
         input: FusedInputTensor[type=type, rank=rank],
@@ -3967,7 +3967,7 @@ struct RMSNorm:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=rank],
         input: FusedInputTensor[type=type, rank=rank],
@@ -4014,7 +4014,7 @@ struct BottomK:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         values: OutputTensor[type=type, rank=rank],
         indices: OutputTensor[type = DType.int64, rank=rank],
@@ -4052,8 +4052,8 @@ struct TopK:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         values: OutputTensor[type=type, rank=rank],
         indices: OutputTensor[type = DType.int64, rank=rank],
@@ -4063,7 +4063,7 @@ struct TopK:
         sorted: Scalar[DType.bool],
         ctx: DeviceContextPtr,
     ) raises:
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             top_k[largest=True, target=target](
                 managed_tensor_slice_to_ndbuffer(input),
                 Int(k),
@@ -4152,9 +4152,9 @@ struct Matmul:
         transpose_b: Bool,
         packed_b: Bool,
         lambdas_have_fusion: Bool,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         c: FusedOutputTensor[rank=2],
         a: InputTensor[rank=2],
@@ -4206,7 +4206,7 @@ struct BatchMatmul:
         lambdas_have_fusion: Bool,
         rank: Int,
         transpose_b: Bool,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         c: FusedOutputTensor[rank=rank],
@@ -4292,7 +4292,7 @@ struct LinalgSolve:
 struct LinalgBandPart:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
         type: DType,
         int_type: DType,
@@ -4417,7 +4417,7 @@ struct ROIAlign:
     @staticmethod
     fn execute[
         aligned: Bool,
-        mode: StringLiteral,
+        mode: StaticString,
         type: DType,
     ](
         output: OutputTensor[type=type, rank=4],
@@ -4561,7 +4561,7 @@ struct StaticRandomNormal:
 struct Softmax:
     @staticmethod
     fn execute[
-        target: StringLiteral
+        target: StaticString
     ](
         output: OutputTensor,
         input: FusedInputTensor[type = output.type, rank = output.rank],
@@ -4599,7 +4599,7 @@ struct Softmax:
 struct LogSoftmax:
     @staticmethod
     fn execute[
-        target: StringLiteral
+        target: StaticString
     ](
         output: OutputTensor,
         input: FusedInputTensor[type = output.type, rank = output.rank],
@@ -4702,7 +4702,7 @@ struct Concat:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: FusedOutputTensor[type=type, rank=rank],
@@ -4867,7 +4867,7 @@ struct ConcatFromList:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor[type=type, rank=rank],
@@ -4928,8 +4928,8 @@ struct Split:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         output: OutputVariadicTensors[type, rank, *_],
         input: InputTensor[type=type, rank=rank],
@@ -5020,7 +5020,7 @@ struct Conv:
         static_strides: DimList,
         static_dilations: DimList,
         static_padding: DimList,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: FusedOutputTensor,
         input: InputTensor[rank = output.rank],
@@ -5306,7 +5306,7 @@ struct ConvTranspose:
 struct MaskedFlashAttentionGPU:
     @staticmethod
     fn execute[
-        target: StringLiteral, rank: Int
+        target: StaticString, rank: Int
     ](
         output: OutputTensor[rank=rank],
         q: InputTensor[rank=rank],
@@ -5586,7 +5586,7 @@ struct GGMLQ40Dequantize:
     @staticmethod
     @always_inline
     fn execute[
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         output: OutputTensor[type = DType.float32, rank=2],
         input: InputTensor[type = DType.uint8, rank=2],
@@ -5614,7 +5614,7 @@ struct VroomQ40Matmul:
     @staticmethod
     @always_inline
     fn execute[
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         c: OutputTensor[type = DType.float32, rank=2],
         a: InputTensor[type = DType.float32, rank=2],
@@ -5641,7 +5641,7 @@ struct VroomQ40RepackWeights:
     @staticmethod
     @always_inline
     fn execute[
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         b_packed: OutputTensor[type = DType.uint8, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
@@ -5668,7 +5668,7 @@ struct GGMLQ4KDequantize:
     @staticmethod
     @always_inline
     fn execute[
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         output: OutputTensor[type = DType.float32, rank=2],
         input: InputTensor[type = DType.uint8, rank=2],
@@ -5700,7 +5700,7 @@ struct VroomQ4KMatmul:
     @staticmethod
     @always_inline
     fn execute[
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         c: OutputTensor[type = DType.float32, rank=2],
         a: InputTensor[type = DType.float32, rank=2],
@@ -5727,7 +5727,7 @@ struct VroomQ4KRepackWeights:
     @staticmethod
     @always_inline
     fn execute[
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         b_packed: OutputTensor[type = DType.uint8, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
@@ -5756,7 +5756,7 @@ struct GGMLQ6KDequantize:
     @staticmethod
     @always_inline
     fn execute[
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         output: OutputTensor[type = DType.float32, rank=2],
         input: InputTensor[type = DType.uint8, rank=2],
@@ -5789,7 +5789,7 @@ struct VroomQ6KMatmul:
     @staticmethod
     @always_inline
     fn execute[
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         c: OutputTensor[type = DType.float32, rank=2],
         a: InputTensor[type = DType.float32, rank=2],
@@ -5816,7 +5816,7 @@ struct VroomQ6KRepackWeights:
     @staticmethod
     @always_inline
     fn execute[
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         b_packed: OutputTensor[type = DType.uint8, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
@@ -5845,8 +5845,8 @@ struct QMatmulGPU_b4_g32:
     @staticmethod
     @always_inline
     fn execute[
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         c: OutputTensor[type = DType.bfloat16, rank=2],
         a: InputTensor[type = DType.bfloat16, rank=2],
@@ -5855,7 +5855,7 @@ struct QMatmulGPU_b4_g32:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             matmul_gpu_qint4[32, target](
                 managed_tensor_slice_to_ndbuffer(c),
                 managed_tensor_slice_to_ndbuffer(a),
@@ -5877,8 +5877,8 @@ struct QMatmulGPU_b4_g128:
     @staticmethod
     @always_inline
     fn execute[
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         c: OutputTensor[type = DType.bfloat16, rank=2],
         a: InputTensor[type = DType.bfloat16, rank=2],
@@ -5887,7 +5887,7 @@ struct QMatmulGPU_b4_g128:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             matmul_gpu_qint4[128, target](
                 managed_tensor_slice_to_ndbuffer(c),
                 managed_tensor_slice_to_ndbuffer(a),
@@ -5909,8 +5909,8 @@ struct QMatmulGPURepackGGUF:
     @staticmethod
     @always_inline
     fn execute[
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         b_packed: OutputTensor[type = DType.uint8, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
@@ -5918,7 +5918,7 @@ struct QMatmulGPURepackGGUF:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             gpu_qint4_repack_Q4_0[b_shape = b.static_spec.shape, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5938,8 +5938,8 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     @staticmethod
     @always_inline
     fn execute[
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         b_packed: OutputTensor[type = DType.uint8, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
@@ -5947,7 +5947,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             gpu_qint4_repack_GPTQ[128, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -5967,8 +5967,8 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     @staticmethod
     @always_inline
     fn execute[
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         b_packed: OutputTensor[type = DType.uint8, rank=2],
         b: InputTensor[type = DType.uint8, rank=2],
@@ -5977,7 +5977,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             gpu_qint4_repack_GPTQ[128, target](
                 managed_tensor_slice_to_ndbuffer(b),
                 managed_tensor_slice_to_ndbuffer(b_packed),
@@ -6054,7 +6054,7 @@ struct Struct_fused_qkv_matmul_ragged_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         output: OutputTensor[type=type, rank=2],
         hidden_state: InputTensor[type=type, rank=2],
@@ -6119,7 +6119,7 @@ struct Struct_fused_qkv_matmul_padded_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         output: OutputTensor[type=type, rank=3],
         hidden_state: InputTensor[type=type, rank=3],
@@ -6215,7 +6215,7 @@ struct Struct_fused_qkv_matmul_ragged_paged_fa3_fallback:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=2],
         hidden_state: InputTensor[type=type, rank=2],
@@ -6251,7 +6251,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=2],
         hidden_state: InputTensor[type=type, rank=2],
@@ -6290,7 +6290,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_quantized:
         group_size: Int,
         has_zp_int: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=2],
         hidden_state: InputTensor[type=type, rank=2],
@@ -6333,7 +6333,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=2],
         hidden_state: InputTensor[type=type, rank=2],
@@ -6374,7 +6374,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
         group_size: Int,
         has_zp_int: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=2],
         hidden_state: InputTensor[type=type, rank=2],
@@ -6460,7 +6460,7 @@ struct Struct_fused_qk_rope_padded_continuous_batching[interleaved: Bool]:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         output: OutputTensor[type=type, rank=4],
         q_proj: InputTensor[type=type, rank=4],
@@ -6519,7 +6519,7 @@ struct Struct_fused_qk_rope_bshd_continuous_batch_ragged[interleaved: Bool]:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         output: OutputTensor[type=type, rank=3],
         q_proj: InputTensor[type=type, rank=3],
@@ -6585,7 +6585,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         q_proj: InputTensor[type=type, rank=3],
@@ -6621,7 +6621,7 @@ struct Struct_fused_qk_rope_ragged_paged_fa3_fallback[interleaved: Bool]:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         q_proj: InputTensor[type=type, rank=3],
@@ -6660,7 +6660,7 @@ struct Struct_fused_qk_rope_ragged_paged_fa3_fallback[interleaved: Bool]:
         ) + ".hdim_" + String(
             kv_collection.kv_params.head_size
         )
-        with Trace[TraceLevel.OP, target = StaticString(target)](
+        with Trace[TraceLevel.OP, target=target](
             name,
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         ):
@@ -6715,7 +6715,7 @@ struct Struct_mha_padded_continuous_batching_tensor_mask_no_pos:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         output: OutputTensor[type=type, rank=4],
         q: InputTensor[type=type, rank=4],
@@ -6769,7 +6769,7 @@ struct Struct_mha_padded_continuous_batching_causal_mask_no_pos:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         output: OutputTensor[type=type, rank=4],
         q: InputTensor[type=type, rank=4],
@@ -6842,7 +6842,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_no_pos:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -6873,7 +6873,7 @@ struct Struct_mha_ragged_continuous_batching_causal_mask_alibi_pos:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -6932,7 +6932,7 @@ struct Struct_mha_ragged_paged_causal_mask_no_pos:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -7096,7 +7096,7 @@ struct Struct_mha_ragged_paged_fa3_fallback_causal_mask_no_pos:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -7168,7 +7168,7 @@ struct Struct_mla_decode_ragged_paged_causal_mask_no_pos:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -7204,7 +7204,7 @@ struct Struct_mla_prefill_ragged_paged_causal_mask_no_pos:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -7248,7 +7248,7 @@ struct Struct_mla_prefill_ragged_plan:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         buffer_row_offsets: OutputTensor[type = DType.uint32, rank=2],
         cache_offsets: OutputTensor[type = DType.uint32, rank=2],
@@ -7284,7 +7284,7 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         k_latent_buffer: OutputTensor[type=type, rank=2],
         k_buffer: OutputTensor[type=type, rank=2],
@@ -7318,7 +7318,7 @@ struct Struct_kv_cache_get_max_seq_len_paged:
     @always_inline
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
     ](
         max_seq_len: OutputTensor[type = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection,
@@ -7371,7 +7371,7 @@ struct Struct_cross_attention_ragged_continuous_batching_null_mask_no_pos:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -7498,7 +7498,7 @@ struct Struct_kv_collection_ctor_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, target: StaticString
     ](
         blocks: InputTensor[type=type, rank=6],
         cache_lengths: InputTensor[type = DType.uint32, rank=1],
@@ -7813,7 +7813,7 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
@@ -7846,7 +7846,7 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         kv_collection: PagedKVCacheCollection[
             type,
@@ -7945,7 +7945,7 @@ struct Struct_print_kv_cache_paged:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         valid_lengths: InputTensor[type = DType.uint32, rank=1],
         kv_collection: PagedKVCacheCollection[
@@ -7971,7 +7971,7 @@ struct Struct_print_kv_cache_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         valid_lengths: InputTensor[type = DType.uint32, rank=1],
         kv_collection: ContinuousBatchingKVCacheCollection[
@@ -8008,7 +8008,7 @@ struct Struct_kv_collection_ctor_paged_fa3_fallback:
         num_heads: Int,
         head_dim: Int,
         page_size: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         blocks: InputTensor[type=type, rank=5],
         cache_lengths: InputTensor[type = DType.int32, rank=1],
@@ -8037,7 +8037,7 @@ struct Struct_kv_collection_ctor_paged:
         num_heads: Int,
         head_dim: Int,
         page_size: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         blocks: InputTensor[type=type, rank=6],
         cache_lengths: InputTensor[type = DType.uint32, rank=1],
@@ -8070,7 +8070,7 @@ struct Struct_kv_matmul_ragged_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, num_heads: Int, head_dim: Int, //, target: StringLiteral
+        type: DType, num_heads: Int, head_dim: Int, //, target: StaticString
     ](
         hidden_state: InputTensor[type=type, rank=2],
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
@@ -8109,7 +8109,7 @@ struct Struct_k_matmul_ragged_paged:
         num_heads: Int,
         head_dim: Int,
         page_size: Int, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         hidden_state: InputTensor[type=type, rank=2],
         input_row_offsets: InputTensor[type = DType.uint32, rank=1],
@@ -8141,9 +8141,9 @@ struct Struct_unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized:
     fn execute[
         num_heads: Int,
         head_dim: Int, //,
-        quantization_encoding_q: StringLiteral,
-        quantization_encoding_k: StringLiteral,
-        quantization_encoding_v: StringLiteral,
+        quantization_encoding_q: StaticString,
+        quantization_encoding_k: StaticString,
+        quantization_encoding_v: StaticString,
     ](
         output: OutputTensor[type = DType.float32, rank=2],
         hidden_state: InputTensor[type = DType.float32, rank=2],
@@ -8188,8 +8188,8 @@ struct Struct_topk_fused_sampling:
         type: DType,
         rank: Int,
         out_idx_type: DType,
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         out_idxs: OutputTensor[type=out_idx_type, rank=rank],
         K: Scalar,
@@ -8200,7 +8200,7 @@ struct Struct_topk_fused_sampling:
 
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var out_idxs_buf = managed_tensor_slice_to_ndbuffer(out_idxs)
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
             if is_cpu[target]():
@@ -8226,7 +8226,7 @@ struct Struct_swishGLU:
     @always_inline
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
     ](
         c: OutputTensor[rank=2],
         a: InputTensor[rank=2],
@@ -8270,8 +8270,8 @@ struct DistributedAllReduceSum:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
-        _trace_name: StringLiteral,
+        target: StaticString,
+        _trace_name: StaticString,
     ](
         outputs: FusedOutputVariadicTensors[type, rank, *_],
         inputs: InputVariadicTensors[type, rank, *_],
@@ -8358,7 +8358,7 @@ struct DistributedAllReduceSum:
                 width=_width, element_alignment=_alignment
             ](rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val))
 
-        with Trace[TraceLevel.OP, target = StaticString(target)](_trace_name):
+        with Trace[TraceLevel.OP, target=target](_trace_name):
             allreduce[ngpus=num_devices, outputs_lambda=outputs_lambda](
                 in_bufs, out_bufs, rank_sigs, dev_ctxs
             )
@@ -8370,7 +8370,7 @@ struct DistributedAllGather:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         outputs: OutputVariadicTensors[type, rank, *_],
         inputs: InputVariadicTensors[type, rank, *_],
@@ -8427,7 +8427,7 @@ struct IndexTensor:
         indices_rank: Int,
         output_rank: Int,
         batch_dims: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=output_rank],
         data: InputTensor[type=type, rank=data_rank],
@@ -8466,9 +8466,9 @@ struct AdvancedIndexingGetItem:
         index_type: DType,
         num_index_tensors: Int, //,
         start_axis: Int,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         out_tensor: OutputTensor[
             type=input_type, rank = input_rank + index_rank - num_index_tensors
@@ -8543,9 +8543,9 @@ struct AdvancedIndexingSetItemInplace:
         index_type: DType,
         num_index_tensors: Int, //,
         start_axis: Int,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         input_tensor: MutableInputTensor[type=input_type, rank=input_rank],
         updates: FusedInputTensor[type=input_type, rank=updates_rank],
@@ -8599,9 +8599,9 @@ struct AdvancedIndexingSetItem:
         index_type: DType,
         num_index_tensors: Int, //,
         start_axis: Int,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         output_tensor: OutputTensor[type=input_type, rank=input_rank],
         input_tensor: FusedInputTensor[type=input_type, rank=input_rank],
@@ -8659,7 +8659,7 @@ struct AdvancedIndexingSetItem:
 struct ArgSort[*, ascending: Bool]:
     @staticmethod
     fn execute[
-        target: StringLiteral
+        target: StaticString
     ](
         indecies: OutputTensor[rank=1],
         input: InputTensor[rank=1],

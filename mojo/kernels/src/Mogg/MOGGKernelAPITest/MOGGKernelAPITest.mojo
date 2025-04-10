@@ -100,7 +100,7 @@ struct OpaqueToCustomScalarSI32Reg:
 struct OpaqueAddToTensorSI32Reg:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         out: OutputTensor[type = DType.int32, rank=1],
@@ -114,7 +114,7 @@ struct OpaqueAddToTensorSI32Reg:
 struct OpaqueAddToTensorF32:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         out: OutputTensor[type = DType.float32, rank=1],
@@ -157,7 +157,7 @@ struct OpaqueToCustomScalarSI32:
 struct OpaqueAddToTensorSI32:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         out: OutputTensor[type = DType.int32, rank=1],
@@ -171,7 +171,7 @@ struct OpaqueAddToTensorSI32:
 struct OpaqueAddToTensorSI32Raises:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         out: OutputTensor[type = DType.int32, rank=1],
@@ -190,7 +190,7 @@ struct OpaqueAddToTensorSI32Raises:
 struct Foo:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](z: OutputTensor, x: InputTensor, y: InputTensor) raises:
         @parameter
@@ -255,7 +255,7 @@ fn _matmul[
 struct ImposterMatmul:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         c: OutputTensor,
@@ -279,7 +279,7 @@ struct ImposterMatmul:
 struct PrintTensorSpecOp:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](out: OutputTensor, x: InputTensor) raises:
         print("x.shape =", x._static_shape)
@@ -304,7 +304,7 @@ struct PrintTensorSpecOp:
 struct PrintTensor:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](out: OutputTensor, input: InputTensor) raises:
         print(input)
@@ -322,7 +322,7 @@ struct PrintTensor:
 struct PrintTensorSpecViewOp:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](out: OutputTensor, x: InputTensor) raises:
         print("x.shape =", x._static_shape)
@@ -347,7 +347,7 @@ struct PrintTensorSpecViewOp:
 struct PrintTensorSpecFusedOp:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](out: FusedOutputTensor, x: FusedInputTensor) raises:
         print("x.shape =", x._static_shape)
@@ -372,7 +372,7 @@ struct PrintTensorSpecFusedOp:
 struct AddElementwise:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](z: FusedOutputTensor, x: FusedInputTensor, y: FusedInputTensor) raises:
         @parameter
@@ -389,7 +389,7 @@ struct AddElementwise:
 struct AddFuseLHS:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](z: OutputTensor, x: FusedInputTensor, y: InputTensor) raises:
         @parameter
@@ -411,7 +411,7 @@ struct AddFuseLHS:
 struct AddFuseInputs:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](z: OutputTensor, x: FusedInputTensor, y: FusedInputTensor) raises:
         @parameter
@@ -434,7 +434,7 @@ struct AddFuseInputs:
 struct MatmulFuseOut:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         lambdas_have_fusion: Bool,
         _synchronous: Bool,
     ](
@@ -499,7 +499,7 @@ struct VariadicInputToOutput:
         type: DType,
         _synchronous: Bool,
         size: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputVariadicTensors[type, rank=1, size=size],
         bias: InputTensor[type=type, rank=1],
@@ -561,7 +561,7 @@ struct VariadicAdd:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output: OutputTensor[type=type, rank=rank],
@@ -609,7 +609,7 @@ struct Transpose2DOp:
 
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
         type: DType,
     ](
@@ -632,7 +632,7 @@ struct Transpose2DOp:
 struct ElementwisePrintShape:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](z: FusedOutputTensor, x: FusedInputTensor) raises:
         @parameter
@@ -655,7 +655,7 @@ struct ElementwisePrintShape:
 struct CustomOpThatRaises:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](z: OutputTensor, x: InputTensor) raises:
         if x.shape()[0] == 10:
@@ -748,7 +748,7 @@ struct OpWithCustomParams:
         type: DType,
         rank: Int,
         custom_int: Int,
-        custom_str: StringLiteral,
+        custom_str: StaticString,
         custom_dtype: DType,
     ](
         out_tensor: OutputTensor[type=type, rank=rank],
@@ -802,7 +802,7 @@ struct KernelWithNoTarget:
 struct BasicTarget:
     @staticmethod
     fn execute[
-        type: DType, target: StringLiteral
+        type: DType, target: StaticString
     ](out: OutputTensor[type=type, *_], x: InputTensor[type=type, *_],) raises:
         print("hello from kernel on", target)
 
@@ -825,7 +825,7 @@ struct MyCustomScalarReg[type: DType]:
 struct BuffToMyCustomScalarReg:
     @staticmethod
     fn execute[
-        target: StringLiteral
+        target: StaticString
     ](x: InputTensor[type = DType.int32, rank=1]) -> MyCustomScalarReg[
         DType.int32
     ]:
@@ -836,7 +836,7 @@ struct BuffToMyCustomScalarReg:
 struct CustomScalarRegToBuff:
     @staticmethod
     fn execute[
-        target: StringLiteral
+        target: StaticString
     ](
         input: OutputTensor[type = DType.int32, rank=1],
         x: MyCustomScalarReg[DType.int32],
@@ -848,7 +848,7 @@ struct CustomScalarRegToBuff:
 struct TestCustomOp:
     @staticmethod
     fn execute[
-        target: StringLiteral, type: DType, rank: Int
+        target: StaticString, type: DType, rank: Int
     ](
         out: OutputTensor[type=type, rank=rank],
         input: InputTensor[type=type, rank=rank],
@@ -913,7 +913,7 @@ struct VariadicDeviceContext:
     fn execute[
         type: DType,
         rank: Int,
-        target: StringLiteral = "gpu",
+        target: StaticString = "gpu",
     ](
         outputs: OutputVariadicTensors[type, rank, *_],
         inputs: InputVariadicTensors[type, rank, *_],
@@ -928,7 +928,7 @@ struct VariadicDeviceContext:
 struct CastElementwise:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
@@ -945,7 +945,7 @@ struct CastElementwise:
 struct PrintVectorSize:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr) raises:
         @parameter
@@ -972,7 +972,7 @@ struct PrintVectorSize:
 struct TensorOpaqueTensorKernel:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
     ](
         output1: OutputTensor,
