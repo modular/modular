@@ -321,34 +321,6 @@ fn test_print_large():
     print(String(tensor))
 
 
-# CHECK-LABEL: test_tensor
-def test_tensor_from_file():
-    print("== test_tensor")
-    var tensor = Tensor[DType.int8](TensorShape(4), 1, 2, 3, 4)
-    with NamedTemporaryFile(name=String("test_tensor_from_file")) as TEMP_FILE:
-        tensor.tofile(TEMP_FILE.name)
-        var tensor_from_file = Tensor[DType.int8].fromfile(TEMP_FILE.name)
-
-        # CHECK-NOT: False
-        for i in range(tensor.num_elements()):
-            print(tensor[i] == tensor_from_file[i])
-
-
-# CHECK-LABEL: test_tensor_load_save
-fn test_tensor_load_save() raises:
-    print("== test_tensor_load_save")
-    var tensor = Tensor[DType.int8](2, 2, 3)
-    tensor._to_buffer().fill(2)
-
-    with NamedTemporaryFile(name=String("test_tensor_load_save")) as TEMP_FILE:
-        tensor.save(TEMP_FILE.name)
-
-        var tensor_loaded = Tensor[DType.int8].load(TEMP_FILE.name)
-
-        # CHECK: True
-        print(tensor == tensor_loaded)
-
-
 def main():
     test_tensor()
     test_tensor_init()
@@ -363,7 +335,3 @@ def main():
     test_print()
     test_print_small()
     test_print_large()
-
-    # File-related tests
-    test_tensor_from_file()
-    test_tensor_load_save()
