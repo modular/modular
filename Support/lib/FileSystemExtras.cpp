@@ -8,6 +8,8 @@
 #include "Support/ErrorOr.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/LockFileManager.h"
@@ -17,6 +19,18 @@
 #include <chrono>
 
 using namespace M;
+
+static std::string errorCodeToString(const llvm::Error &E) {
+  SmallVector<std::string, 2> Errors;
+  llvm::visitErrors(E, [&Errors](const llvm::ErrorInfoBase &EI) {
+    std::error_code ec = EI.convertToErrorCode();
+    Errors.push_back("ErrorCode value: " + std::to_string(ec.value()) +
+                     " category: " + ec.category().name() +
+                     " message: " + ec.message());
+  });
+
+  return llvm::join(Errors.begin(), Errors.end(), "\n");
+}
 
 /// Do a file operation under an LLVM file lock - readFileUnderLock and
 /// writeFileUnderLock do almost exactly the same thing, so this keeps the
@@ -32,8 +46,9 @@ doLockedFileOperation(const std::filesystem::path &filePath,
     llvm::LockFileManager lockManager(filePathStr);
     bool owned;
     if (llvm::Error err = lockManager.tryLock().moveInto(owned)) {
+      std::string ecMsg = errorCodeToString(err);
       return Error("unable to take lock file for '" + filePathStr +
-                   "': " + toString(std::move(err)));
+                   "': " + toString(std::move(err)) + " " + ecMsg);
     } else if (!owned) {
       // Wait for the other process to finish touching the file.
       switch (lockManager.waitForUnlockFor(std::chrono::seconds(90))) {
