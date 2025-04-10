@@ -63,7 +63,7 @@ from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.dual_gemm import swishGLU
-from linalg.grouped_matmul import naive_grouped_matmul
+from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
@@ -7450,11 +7450,9 @@ struct Struct_grouped_matmul_ragged:
         num_active_experts: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        constrained[
-            is_gpu[target](), "naive grouped matmul only support GPUs"
-        ]()
+        constrained[is_gpu[target](), "grouped matmul only support GPUs"]()
         cuda_ctx = context.get_device_context()
-        naive_grouped_matmul[transpose_b=True](
+        grouped_matmul(
             managed_tensor_slice_to_ndbuffer(c),
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),
