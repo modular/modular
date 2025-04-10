@@ -253,6 +253,11 @@ class _Llama4TextAttention(Module):
 
         # Calculate Flash Attention.
         context_lengths = kwargs.get("context_lengths")
+        mask_variant = (
+            MHAMaskVariant.CHUNKED_CAUSAL_MASK
+            if int((self.layer_idx + 1) % 4) != 0
+            else MHAMaskVariant.CAUSAL_MASK
+        )
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
@@ -260,7 +265,7 @@ class _Llama4TextAttention(Module):
             layer_idx=layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
             context_lengths=context_lengths,
-            mask_variant=MHAMaskVariant.CHUNKED_CAUSAL_MASK,
+            mask_variant=mask_variant,
             scale=self.scale,
         )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
