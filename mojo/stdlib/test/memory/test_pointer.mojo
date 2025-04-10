@@ -49,14 +49,11 @@ def test_pointer_to():
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
 def test_get_immutable() -> Int:
-    fn foo(x: Pointer[Int], y: Pointer[Int]) -> Int:
+    fn foo(x: Pointer[mut=False, Int], y: Pointer[mut=False, Int]) -> Int:
         return x[]
 
     var x = Int(0)
-    return foo(
-        Pointer(to=x).get_immutable(),
-        Pointer(to=x).get_immutable(),
-    )
+    return foo(Pointer(to=x), Pointer(to=x))
 
 
 def main():

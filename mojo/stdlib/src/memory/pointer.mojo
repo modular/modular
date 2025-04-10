@@ -317,6 +317,7 @@ struct Pointer[
         address_space: The address space of the pointee data.
     """
 
+    # Aliases
     alias _mlir_type = __mlir_type[
         `!lit.ref<`,
         type,
@@ -326,13 +327,34 @@ struct Pointer[
         address_space._value.value,
         `>`,
     ]
+    alias _with_origin = Pointer[type, _, address_space]
+    alias _immutable_cast = ImmutableOrigin.cast_from[_]
 
+    alias Mutable = Self._with_origin[MutableOrigin.cast_from[origin].result]
+    """The mutable version of the `Pointer`."""
+    alias Immutable = Self._with_origin[Self._immutable_cast[origin].result]
+    """The immutable version of the `Pointer`."""
+    # Fields
     var _value: Self._mlir_type
     """The underlying MLIR representation."""
 
     # ===------------------------------------------------------------------===#
     # Initializers
     # ===------------------------------------------------------------------===#
+
+    @doc_private
+    @implicit
+    @always_inline("nodebug")
+    fn __init__(
+        other: Self._with_origin[_],
+        out self: Self._with_origin[Self._immutable_cast[other.origin].result],
+    ):
+        """Implicitly cast the mutable origin of self to an immutable one.
+
+        Args:
+            other: The `Pointer` to cast.
+        """
+        self = rebind[__type_of(self)](other)
 
     @doc_private
     @always_inline("nodebug")
@@ -378,23 +400,17 @@ struct Pointer[
         return Self(_mlir_value=self._value)
 
     @always_inline
-    fn get_immutable(
-        self,
-        out result: Pointer[
-            type,
-            ImmutableOrigin.cast_from[origin].result,
-            address_space=address_space,
-        ],
-    ):
+    fn get_immutable(self) -> Self.Immutable:
         """Constructs a new Pointer with the same underlying target
         and an ImmutableOrigin.
 
-        Note that this does **not** copy the underlying data.
-
         Returns:
             A new Pointer with the same target as self and an ImmutableOrigin.
+
+        Notes:
+            This does **not** copy the underlying data.
         """
-        return __type_of(result)(_mlir_value=self._value)
+        return rebind[Self.Immutable](self)
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
