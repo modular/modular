@@ -249,9 +249,9 @@ struct NDBuffer[
     ]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
-    var dynamic_shape: IndexList[rank, unsigned=True]
+    var dynamic_shape: IndexList[rank, element_type = DType.uint64]
     """The dynamic value of the shape."""
-    var dynamic_stride: IndexList[rank, unsigned=True]
+    var dynamic_stride: IndexList[rank, element_type = DType.uint64]
     """The dynamic stride of the buffer."""
 
     @staticmethod
@@ -294,7 +294,9 @@ struct NDBuffer[
         ]()
 
         self.data = ptr
-        self.dynamic_shape = _make_tuple[rank, unsigned=True](shape)
+        self.dynamic_shape = _make_tuple[rank, element_type = DType.uint64](
+            shape
+        )
         self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
     @always_inline
@@ -384,12 +386,7 @@ struct NDBuffer[
         """
         self.data = ptr.bitcast[Scalar[type]]()
         self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
-            dynamic_shape.cast[
-                element_bitwidth = __type_of(
-                    self.dynamic_shape
-                ).element_bitwidth,
-                unsigned = __type_of(self.dynamic_shape).unsigned,
-            ]()
+            dynamic_shape.cast[__type_of(self.dynamic_shape).element_type]()
         )
         self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
@@ -413,12 +410,7 @@ struct NDBuffer[
         """
         self.data = ptr
         self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
-            dynamic_shape.cast[
-                element_bitwidth = __type_of(
-                    self.dynamic_shape
-                ).element_bitwidth,
-                unsigned = __type_of(self.dynamic_shape).unsigned,
-            ]()
+            dynamic_shape.cast[__type_of(self.dynamic_shape).element_type]()
         )
         self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
@@ -500,20 +492,10 @@ struct NDBuffer[
         """
         self.data = ptr
         self.dynamic_shape = rebind[__type_of(self.dynamic_shape)](
-            dynamic_shape.cast[
-                element_bitwidth = __type_of(
-                    self.dynamic_shape
-                ).element_bitwidth,
-                unsigned = __type_of(self.dynamic_shape).unsigned,
-            ]()
+            dynamic_shape.cast[__type_of(self.dynamic_shape).element_type]()
         )
         self.dynamic_stride = rebind[__type_of(self.dynamic_stride)](
-            dynamic_stride.cast[
-                element_bitwidth = __type_of(
-                    self.dynamic_stride
-                ).element_bitwidth,
-                unsigned = __type_of(self.dynamic_stride).unsigned,
-            ]()
+            dynamic_stride.cast[__type_of(self.dynamic_shape).element_type]()
         )
 
     @always_inline
@@ -946,13 +928,9 @@ struct NDBuffer[
         """
         constrained[idx.size == rank, "invalid index size"]()
         return self.load[width=width, alignment=alignment](
-            rebind[
-                IndexList[
-                    rank,
-                    element_bitwidth = idx.element_bitwidth,
-                    unsigned = idx.unsigned,
-                ]
-            ](idx).as_tuple()
+            rebind[IndexList[rank, element_type = idx.element_type]](
+                idx
+            ).as_tuple()
         )
 
     @always_inline("nodebug")

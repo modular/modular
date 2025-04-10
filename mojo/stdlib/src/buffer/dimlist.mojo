@@ -717,8 +717,8 @@ struct DimList(
 
 @always_inline
 fn _make_tuple[
-    size: Int, *, unsigned: Bool = False
-](values: DimList, out result: IndexList[size, unsigned=unsigned]):
+    size: Int, *, element_type: DType = DType.int64
+](values: DimList, out result: IndexList[size, element_type=element_type]):
     """Creates a tuple constant using the specified values.
 
     Args:
@@ -747,8 +747,11 @@ fn _make_tuple[
 
 @always_inline
 fn _make_partially_static_index_list[
-    size: Int, static_list: DimList, *, unsigned: Bool = False
-](dynamic_list: IndexList, out result: IndexList[size, unsigned=unsigned]):
+    size: Int, static_list: DimList, *, element_type: DType = DType.int64
+](
+    dynamic_list: IndexList,
+    out result: IndexList[size, element_type=element_type],
+):
     """Creates a tuple constant using the specified values.
 
     Args:
