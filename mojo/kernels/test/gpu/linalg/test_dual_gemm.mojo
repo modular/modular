@@ -69,8 +69,14 @@ fn multistage_gemm_simple[
         b_type,
         b_layout,
         transpose_b,
-        config,
-        elementwise_lambda_fn,
+        c_layout_int_type = c.layout_int_type,
+        c_linear_idx_type = c.linear_idx_type,
+        a_layout_int_type = a.layout_int_type,
+        a_linear_idx_type = a.linear_idx_type,
+        b_layout_int_type = b.layout_int_type,
+        b_linear_idx_type = b.linear_idx_type,
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
     ctx.enqueue_function[kernel](
@@ -147,7 +153,9 @@ fn runtime_row_major[
         Layout(IntTuple(UNKNOWN_VALUE, cols), IntTuple(cols, 1))
     ],
 ):
-    return __type_of(res).row_major(IndexList[2]((rows, cols)))
+    return __type_of(res).row_major(
+        IndexList[2, element_type = res.element_type](rows, cols)
+    )
 
 
 fn test_dual_matmul[

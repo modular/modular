@@ -133,13 +133,11 @@ struct test_matmul[
             ptr: UnsafePointer[Scalar[dtype]],
             out result: LayoutTensor[dtype, layout, ptr.origin],
         ):
-            var dynamic_layout = RuntimeLayout[
-                layout, linear_idx_type = result.index_type
-            ](
-                RuntimeTuple[layout.shape, unsigned=True](m, n),
-                RuntimeTuple[layout.stride, unsigned=True](n, 1),
+            var dynamic_layout = __type_of(result.runtime_layout)(
+                __type_of(result.runtime_layout.shape)(m, n),
+                __type_of(result.runtime_layout.stride)(n, 1),
             )
-            return LayoutTensor[dtype, layout](ptr, dynamic_layout)
+            return __type_of(result)(ptr, dynamic_layout)
 
         var a = create_tensor[a_layout](
             self.M, self.K, self.a_device_buffer._unsafe_ptr()

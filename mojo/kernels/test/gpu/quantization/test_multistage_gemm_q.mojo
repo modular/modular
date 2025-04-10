@@ -534,8 +534,14 @@ fn test_repack_Q4_0_for_sm8x(
     var gguf_b_tensor = gguf_b_tensor_type(
         gguf_b_device.buffer,
         RuntimeLayout[
-            gguf_b_layout, linear_idx_type = gguf_b_tensor_type.index_type
-        ].row_major(gguf_b_device.tensor.dynamic_shape),
+            gguf_b_layout,
+            element_type = gguf_b_tensor_type.layout_int_type,
+            linear_idx_type = gguf_b_tensor_type.linear_idx_type,
+        ].row_major(
+            gguf_b_device.tensor.dynamic_shape.cast[
+                gguf_b_tensor_type.layout_int_type
+            ]()
+        ),
     )
     var repacked_b_tensor = LayoutTensor[DType.uint8, repacked_b_layout](
         repacked_b_device.buffer,
@@ -544,8 +550,13 @@ fn test_repack_Q4_0_for_sm8x(
         repacked_dequan_device.buffer._unsafe_ptr(),
         RuntimeLayout[
             repack_dequan_layout,
-            linear_idx_type = repacked_dequan_tensor_type.index_type,
-        ].row_major(repacked_dequan_device.tensor.dynamic_shape),
+            element_type = repacked_dequan_tensor_type.layout_int_type,
+            linear_idx_type = repacked_dequan_tensor_type.linear_idx_type,
+        ].row_major(
+            repacked_dequan_device.tensor.dynamic_shape.cast[
+                repacked_dequan_tensor_type.layout_int_type
+            ]()
+        ),
     )
 
     var smem_usage: Int = BN * 2 * group_bytes
@@ -690,14 +701,24 @@ fn test_quantized[
     var b_tensor = b_tensor_type(
         b_device.buffer,
         RuntimeLayout[
-            b_layout, linear_idx_type = b_tensor_type.index_type
-        ].row_major(b_device.tensor.dynamic_shape),
+            b_layout,
+            element_type = b_tensor_type.layout_int_type,
+            linear_idx_type = b_tensor_type.linear_idx_type,
+        ].row_major(
+            b_device.tensor.dynamic_shape.cast[b_tensor_type.layout_int_type]()
+        ),
     )
     var b_ref_tensor = b_ref_tensor_type(
         b_device_ref.buffer,
         RuntimeLayout[
-            b_ref_layout, linear_idx_type = b_ref_tensor_type.index_type
-        ].row_major(b_device_ref.tensor.dynamic_shape),
+            b_ref_layout,
+            element_type = b_ref_tensor_type.layout_int_type,
+            linear_idx_type = b_ref_tensor_type.linear_idx_type,
+        ].row_major(
+            b_device_ref.tensor.dynamic_shape.cast[
+                b_ref_tensor_type.layout_int_type
+            ]()
+        ),
     )
 
     var c_device_ref = DeviceNDBuffer[a_type, 2, static_c_shape](

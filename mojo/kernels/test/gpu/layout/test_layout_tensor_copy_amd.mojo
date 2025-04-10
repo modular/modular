@@ -41,14 +41,17 @@ fn copy_dram_to_sram_buffer_load_kernel[
     m: Int,
 ):
     alias layout = Layout.row_major(BM, BN)
+    alias q_tile_type = LayoutTensor[
+        dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
+    ]
 
     var runtime_layout = RuntimeLayout[
-        layout, linear_idx_type = DType.int32
-    ].row_major(IndexList[2](m, BN))
+        layout,
+        element_type = q_tile_type.layout_int_type,
+        linear_idx_type = q_tile_type.linear_idx_type,
+    ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
 
-    var q_tile = LayoutTensor[
-        dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
-    ](
+    var q_tile = q_tile_type(
         input_ptr,
         runtime_layout,
     )
@@ -118,14 +121,17 @@ fn copy_dram_to_local_buffer_load_kernel[
     m: Int,
 ):
     alias layout = Layout.row_major(BM, BN)
+    alias q_tile_type = LayoutTensor[
+        dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
+    ]
 
     var runtime_layout = RuntimeLayout[
-        layout, linear_idx_type = DType.int32
-    ].row_major(IndexList[2](m, BN))
+        layout,
+        element_type = q_tile_type.layout_int_type,
+        linear_idx_type = q_tile_type.linear_idx_type,
+    ].row_major(IndexList[2, element_type = q_tile_type.layout_int_type](m, BN))
 
-    var q_tile = LayoutTensor[
-        dtype, layout, masked=True, address_space = AddressSpace.GLOBAL
-    ](
+    var q_tile = q_tile_type(
         input_ptr,
         runtime_layout,
     )

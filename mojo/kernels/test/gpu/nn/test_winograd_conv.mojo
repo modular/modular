@@ -76,13 +76,20 @@ fn matmul[
     b_type: DType,
     c_layout: Layout,
     a_layout: Layout,
-    b_layout: Layout, //,
+    b_layout: Layout,
+    element_layout: Layout, //,
     transpose_b: Bool,
     s_type: DType = get_accum_type[c_type](),
 ](
-    C: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
-    A: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    B: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
+    C: LayoutTensor[
+        c_type, c_layout, MutableAnyOrigin, element_layout=element_layout, **_
+    ],
+    A: LayoutTensor[
+        a_type, a_layout, MutableAnyOrigin, element_layout=element_layout, **_
+    ],
+    B: LayoutTensor[
+        b_type, b_layout, MutableAnyOrigin, element_layout=element_layout, **_
+    ],
 ):
     alias M = Int(c_layout.shape[0])
     alias N = Int(c_layout.shape[1])

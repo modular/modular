@@ -66,15 +66,15 @@ def test_causal_mask_asm():
     fn kernel(q_idx: UInt32, k_idx: UInt32) -> Float32:
         var mask = CausalMask()
         var vec = mask.mask(
-            IndexList[4, element_bitwidth=32, unsigned=True](
+            IndexList[4, element_type = DType.uint32](
                 0, 0, Int(q_idx), Int(k_idx)
             ),
             SIMD[DType.float32, 4](0),
         )
         if (
             mask.status(
-                Index[element_bitwidth=32, unsigned=True](q_idx, k_idx),
-                Index[element_bitwidth=32, unsigned=True](4, 5),
+                Index[type = DType.uint32](q_idx, k_idx),
+                Index[type = DType.uint32](4, 5),
             )
             == TileMaskStatus.PARTIAL_MASK
         ):

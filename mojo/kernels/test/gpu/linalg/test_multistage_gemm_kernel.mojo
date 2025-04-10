@@ -40,7 +40,13 @@ fn multistage_gemm_simple[
         b_type,
         b_layout,
         transpose_b,
-        config,
+        c_layout_int_type = DType.int64,
+        c_linear_idx_type = DType.int64,
+        a_layout_int_type = DType.int64,
+        a_linear_idx_type = DType.int64,
+        b_layout_int_type = DType.int64,
+        b_linear_idx_type = DType.int64,
+        config=config,
     ]
 
     var gemm_kernel = ctx.compile_function[gemm_kernel_type, dump_asm=True](

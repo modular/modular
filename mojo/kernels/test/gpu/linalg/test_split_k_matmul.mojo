@@ -89,22 +89,38 @@ fn test_split_k_multistage_gemm[
     ) if transpose_b else Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     alias c_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
 
-    var a_runtime_layout = RuntimeLayout(
-        RuntimeTuple[a_layout.shape, unsigned=True](M, K_part),
-        RuntimeTuple[a_layout.stride, unsigned=True](K, 1),
+    var a_runtime_layout = RuntimeLayout[
+        a_layout,
+        element_type = DType.int64,
+        linear_idx_type = DType.int64,
+    ](
+        RuntimeTuple[a_layout.shape, element_type = DType.int64](M, K_part),
+        RuntimeTuple[a_layout.stride, element_type = DType.int64](K, 1),
     )
 
-    var b_runtime_layout = RuntimeLayout(
-        RuntimeTuple[b_layout.shape, unsigned=True](N, K_part),
-        RuntimeTuple[b_layout.stride, unsigned=True](K, 1),
-    ) if transpose_b else RuntimeLayout(
-        RuntimeTuple[b_layout.shape, unsigned=True](K_part, N),
-        RuntimeTuple[b_layout.stride, unsigned=True](N, 1),
+    var b_runtime_layout = RuntimeLayout[
+        b_layout,
+        element_type = DType.int64,
+        linear_idx_type = DType.int64,
+    ](
+        RuntimeTuple[b_layout.shape, element_type = DType.int64](N, K_part),
+        RuntimeTuple[b_layout.stride, element_type = DType.int64](K, 1),
+    ) if transpose_b else RuntimeLayout[
+        b_layout,
+        element_type = DType.int64,
+        linear_idx_type = DType.int64,
+    ](
+        RuntimeTuple[b_layout.shape, element_type = DType.int64](K_part, N),
+        RuntimeTuple[b_layout.stride, element_type = DType.int64](N, 1),
     )
 
-    var c_runtime_layout = RuntimeLayout(
-        RuntimeTuple[c_layout.shape, unsigned=True](M, N),
-        RuntimeTuple[c_layout.stride, unsigned=True](N, 1),
+    var c_runtime_layout = RuntimeLayout[
+        c_layout,
+        element_type = DType.int64,
+        linear_idx_type = DType.int64,
+    ](
+        RuntimeTuple[c_layout.shape, element_type = DType.int64](M, N),
+        RuntimeTuple[c_layout.stride, element_type = DType.int64](N, 1),
     )
 
     alias a_dim = DimList(M, K)
@@ -137,9 +153,24 @@ fn test_split_k_multistage_gemm[
     var c_device = ctx.enqueue_create_buffer[type](M * N)
     var c_device_ref = ctx.enqueue_create_buffer[type](M * N)
 
-    var a_tensor = LayoutTensor[type, a_layout](a_device, a_runtime_layout)
-    var b_tensor = LayoutTensor[type, b_layout](b_device, b_runtime_layout)
-    var c_tensor = LayoutTensor[type, c_layout](c_device, c_runtime_layout)
+    var a_tensor = LayoutTensor[
+        type,
+        a_layout,
+        layout_int_type = DType.int64,
+        linear_idx_type = DType.int64,
+    ](a_device, a_runtime_layout)
+    var b_tensor = LayoutTensor[
+        type,
+        b_layout,
+        layout_int_type = DType.int64,
+        linear_idx_type = DType.int64,
+    ](b_device, b_runtime_layout)
+    var c_tensor = LayoutTensor[
+        type,
+        c_layout,
+        layout_int_type = DType.int64,
+        linear_idx_type = DType.int64,
+    ](c_device, c_runtime_layout)
 
     alias kernels = MatmulKernels[type, type, type, transpose_b]()
     alias config = kernels.ampere_128x128_4
@@ -151,7 +182,13 @@ fn test_split_k_multistage_gemm[
         type,
         b_layout,
         transpose_b,
-        config,
+        c_layout_int_type = DType.int64,
+        c_linear_idx_type = DType.int64,
+        a_layout_int_type = DType.int64,
+        a_linear_idx_type = DType.int64,
+        b_layout_int_type = DType.int64,
+        b_linear_idx_type = DType.int64,
+        config=config,
     ]
 
     ctx.enqueue_copy(a_device, a_host.tensor.data)
