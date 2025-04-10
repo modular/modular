@@ -28,6 +28,16 @@ def load_db() -> Mapping[str, str]:
                     "hf-repo-lock.tsv must be sorted, but I found key "
                     f"{key!r} after {last_key!r}.  Please sort and try again."
                 )
+            if not value:
+                guess = ""
+                if any(c.isspace() or c == "," for c in key):
+                    guess += (
+                        "  Did you perhaps use something "
+                        "other than tab to delimit fields?"
+                    )
+                raise ValueError(
+                    f"Missing value for key {key!r} in hf-repo-lock.tsv.{guess}"
+                )
             db[key] = value
             last_key = key
     return db
