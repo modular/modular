@@ -362,7 +362,13 @@ struct VariantValueStorageBase {
   /// not, return a null Value.
   Value getMlirValue() const;
 
+  /// If this value is a type, then return it.  This can happen when this is a
+  /// PValue with a type metatype (e.g. a computed type) or if it is some other
+  /// value that has struct metatype type.
+  ASTType getIfTypeValue() const;
+
 protected:
+  // This is the actual storage for the representation.
   Storage storage;
 };
 
@@ -401,13 +407,6 @@ struct VariantRValue {
   PValue getIfPValue() const { return dyn_cast<PValue>(getStorageR()); }
   SRValue getIfSRValue() const { return dyn_cast<SRValue>(getStorageR()); }
   MRValue getIfMRValue() const { return dyn_cast<MRValue>(getStorageR()); }
-
-  /// If this value is a PValue for a type, then return the type.
-  ASTType getIfTypeValue() const {
-    if (auto value = getIfPValue())
-      return value.getIfTypeValue();
-    return {};
-  }
 
 private:
   // These are named getStorageR instead of getStorage to easy

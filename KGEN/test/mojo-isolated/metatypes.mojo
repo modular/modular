@@ -83,12 +83,20 @@ struct StefStressTest[x: Int]:
       while True: pass
       #return StefStressTest[x+1]  # Doesn't work yet.
 
+fn use_int(a: Int): pass
+
 # CHECK-LABEL: lit.fn @"access_param_from_metatype()"
 fn access_param_from_metatype():
     # CHECK-NEXT: lit.alias.decl *"f1`": meta<!lit.struct<#StefStressTest <:!Int {1}>>>
     alias f1 = StefStressTest[0].increment()
-    # CHECK-NEXT: %value = lit.var.decl "value"
-    # CHECK-NEXT: %0 = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: lit.ref.store %0, %value
-    var value = f1.x
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK: lit.call {{.*}}@"use_int{{.*}}([[TMP]]) 
+    use_int(f1.x)
+
+    # CHECK: lit.call {{.*}}@"increment()"<:!Int {0}>()
+    # CHECK: lit.call {{.*}}@"increment()"<:!Int {1}>()
+    # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-NEXT: lit.call {{.*}}@"use_int{{.*}}([[TMP]]) 
+    use_int(StefStressTest[0].increment().increment().x)
+
 
