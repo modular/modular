@@ -1,9 +1,12 @@
+---
+markdown-notebook-data-directory: mdnb-data/manual-readme/
+---
+
 <!-- markdownlint-disable -->
 
 # Mojo 🔥 Compiler Dev Manual
 
 ## Introduction
-
 
 Welcome to the Mojo Compiler Dev Manual! The main goal of this is to help people
 who are just getting started in modifying the Mojo compiler.
@@ -52,12 +55,9 @@ Useful background on MLIR:
 
 * [Builtin Dialect](https://mlir.llvm.org/docs/Dialects/Builtin)
 
-
 ### Mojo Dialects
 
-
 <!-- todo: LIT::StructType is different than KGEN::StructType... why/how? -->
-
 
 Above, we saw some MLIR that **contained multiple “dialects” at once.**
 
@@ -77,13 +77,15 @@ Here we see instructions from two dialects (`lit` and `kgen`) working together.
 
 Some things from the `lit` dialect:
 
- * `lit.call` - A call operation.
- * `!lit.generator` - A function signature.
+* `lit.call` - A call operation.
+
+* `!lit.generator` - A function signature.
 
 Some things from the `kgen` dialect:
 
- * `!kgen.none` - The "none" type.
- * `!kgen.param.constant` - Makes a compile-time value.
+* `!kgen.none` - The "none" type.
+
+* `!kgen.param.constant` - Makes a compile-time value.
 
 (We'll cover these, the rest of the `lit`/`kgen` things, and things from other dialects further below.
 
@@ -121,7 +123,6 @@ In summary:
 
 * `llvm` can exist at all levels of KGEN IR to describe target-specific
   operations, but then the kernel can only target LLVM.
-
 
 ### MLIR Guide
 
@@ -326,7 +327,7 @@ Parameter Operator Code’s are named operations that are variants of the `POC` 
 
 This is used for a variety of reasons, from “simple” operations like `sizeof()`, to innovative use-cases like `compile_assembly` (a way to compile a Mojo function to assembly that is then embedded in the resulting binary).
 
-<wolfram-cell cexpr="Input07.wl" />
+<wolfram-cell ctext="Input07.wl" />
 
 <img cexpr="Input07-Output.wl" src="Input07-Output.png" />
 
@@ -374,7 +375,7 @@ fn foo():
 	pass
 ```
 
-<wolfram-cell cexpr="Input09.wl" />
+<wolfram-cell ctext="Input09.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -398,7 +399,7 @@ fn foo(borrowed arg: String):
 	pass
 ```
 
-<wolfram-cell cexpr="Input10.wl" />
+<wolfram-cell ctext="Input10.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -421,7 +422,7 @@ fn foo(inout arg: String):
 	pass
 ```
 
-<wolfram-cell cexpr="Input11.wl" />
+<wolfram-cell ctext="Input11.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -444,7 +445,7 @@ fn foo(owned arg: String):
 	pass
 ```
 
-<wolfram-cell cexpr="Input12.wl" />
+<wolfram-cell ctext="Input12.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -479,7 +480,7 @@ struct Person:
 	var age: Int
 ```
 
-<wolfram-cell cexpr="Input13.wl" />
+<wolfram-cell ctext="Input13.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -514,7 +515,7 @@ fn foo(x: Person):
 	pass
 ```
 
-<wolfram-cell cexpr="Input14.wl" />
+<wolfram-cell ctext="Input14.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -547,7 +548,7 @@ $ kgen-translate --import-mojo example.mojo
 alias MyInt64 = Scalar[DType.int64]
 ```
 
-<wolfram-cell cexpr="Input15.wl" />
+<wolfram-cell ctext="Input15.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -565,7 +566,7 @@ $ kgen-translate --import-mojo example.mojo
     	var x: Int = 5
 
 
-<wolfram-cell cexpr="Input16.wl" />
+<wolfram-cell ctext="Input16.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -591,7 +592,7 @@ fn foo(c: String) -> Int:
 	return ord(c)
 ```
 
-<wolfram-cell cexpr="Input17.wl" />
+<wolfram-cell ctext="Input17.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -609,9 +610,9 @@ $ kgen-translate --import-mojo example.mojo
 
 When we see a “lit” instruction like `lit.call`, that’s not something built into MLIR, that’s something we define (in [KGEN/include/KGEN/LITDialect/LITOps.td](https://github.com/modularml/modular/blob/main/KGEN/include/KGEN/LITDialect/LITOps.td#L159) actually). Same with kgen instructions, which are defined in [KGEN/include/KGEN/KGENDialect/KGENOps.td](https://github.com/modularml/modular/blob/main/KGEN/include/KGEN/KGENDialect/KGENOps.td#L39).
 
-<wolfram-cell cexpr="Input18.wl" />
+<wolfram-cell ctext="Input18.wl" />
 
-<wolfram-cell cexpr="Input19.wl" />
+<wolfram-cell ctext="Input19.wl" />
 
 #### Reference Types
 
@@ -636,7 +637,7 @@ fn main():
     var me = Person("Connor", 25)
 ```
 
-<wolfram-cell cexpr="Input20.wl" />
+<wolfram-cell ctext="Input20.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -704,7 +705,7 @@ fn main():
 	var value = foo()
 ```
 
-<wolfram-cell cexpr="Input21.wl" />
+<wolfram-cell ctext="Input21.wl" />
 
 $ kgen-translate --import-mojo example.mojo
 
@@ -737,7 +738,6 @@ $ kgen-translate --import-mojo example.mojo
       }
       lit.package @stdlib { }
     }
-
 
 
 #### Variadics
@@ -872,7 +872,6 @@ Our `lit.struct` is both a type and a value. When prefixed by !, that indicates 
 
 Guaranteed inlining in Mojo enables a neat trick: you can return a pointer to stack-allocated data that is valid in the frame of the *caller*, as long as the function calling `stack_allocation()` is marked with `@always_inline`:
 
-
 ```python
 from memory import stack_allocation, UnsafePointer
 
@@ -947,7 +946,7 @@ $ kgen-translate --import-mojo example.mojo
 BuildSourceCode["Mojo"]
 ```
 
-<wolfram-cell cexpr="Input25.wl" />
+<wolfram-cell ctext="Input25.wl" />
 
 ### IR Navigation Techniques
 
@@ -980,7 +979,6 @@ struct Foo(MyExplicitlyCopyable):
 ```
 
 ##### Register Passable (Trivial)
-
 
 $ kgen-translate --import-mojo example.mojo
 
