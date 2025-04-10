@@ -234,6 +234,7 @@ def run_llm_verification(
     *,
     device_type: DeviceKind,
     devices: str,
+    find_tolerances: bool,
     print_suggested_tolerances: bool,
     pipeline: str,
     encoding: str,
@@ -249,6 +250,16 @@ def run_llm_verification(
     SDK/integration-test/pipelines/python/llama3/verify.py -- check that script
     for details on acceptable flags.
     """
+
+    # When find_tolerances is enabled, we set all tolerances to a lower bound and enable print_suggested_tolerances.
+    # This ensures we find the suggested lower bound tolerances for a model.
+    if find_tolerances:
+        print_suggested_tolerances = True
+        kl_div_threshold = 1e-10
+        cos_dist_threshold = 1e-10
+        absolute_tolerance = 1e-4
+        relative_tolerance = 1e-4
+
     max_golden_path = Path(
         f"/tmp/goldens_max_{device_type.value}_{pipeline}_{encoding}.json"
     )
@@ -330,17 +341,23 @@ class PipelineDef:
     """
 
     compatible_with: Sequence[DeviceKind]
-    run: Callable[[DeviceKind, str, bool], VerificationVerdict]
+    run: Callable[[DeviceKind, str, bool, bool], VerificationVerdict]
     tags: Sequence[str] = field(default_factory=list)
 
     def run_protected(
         self,
         device_type: DeviceKind,
         devices: str,
+        find_tolerances: bool,
         print_suggested_tolerances: bool,
     ) -> VerificationVerdict:
         try:
-            return self.run(device_type, devices, print_suggested_tolerances)
+            return self.run(
+                device_type,
+                devices,
+                find_tolerances,
+                print_suggested_tolerances,
+            )
         except Flake:
             return VerificationVerdict(status=VerificationStatus.FLAKE)
         except Exception:
@@ -361,9 +378,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.CPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3_1",
             encoding="q4_k",
@@ -384,9 +403,11 @@ PIPELINES = {
         tags=["big"],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3_1",
             encoding="float32",
@@ -404,9 +425,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3_1",
             encoding="bfloat16",
@@ -428,9 +451,11 @@ PIPELINES = {
         tags=["h100-multi"],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3.3-70b",
             encoding="bfloat16",
@@ -448,9 +473,11 @@ PIPELINES = {
         tags=["h100-multi"],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama4-scout",
             encoding="bfloat16",
@@ -464,9 +491,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="replit",
             encoding="bfloat16",
@@ -489,9 +518,11 @@ PIPELINES = {
         tags=["big"],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="mistral",
             encoding="bfloat16",
@@ -510,9 +541,11 @@ PIPELINES = {
         tags=["big"],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3-vision",
             encoding="bfloat16",
@@ -536,9 +569,11 @@ PIPELINES = {
         tags=["big"],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="pixtral",
             encoding="bfloat16",
@@ -555,9 +590,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="mpnet",
             encoding="float32",
@@ -574,9 +611,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="mpnet",
             encoding="bfloat16",
@@ -591,9 +630,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="qwen",
             encoding="bfloat16",
@@ -610,9 +651,11 @@ PIPELINES = {
         tags=["big"],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="exaone",
             encoding="float32",
@@ -630,9 +673,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="olmo",
             encoding="float32",
@@ -650,9 +695,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="phi-3.5-mini",
             encoding="bfloat16",
@@ -668,9 +715,11 @@ PIPELINES = {
         tags=["big"],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="phi-4",
             encoding="bfloat16",
@@ -684,9 +733,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq_golden.json",
             pipeline="llama-gptq",
@@ -701,9 +752,11 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
+        find_tolerances,
         print_suggested_tolerances: run_llm_verification(
             device_type=device_type,
             devices=devices,
+            find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama-gptq-no-perm-idx",
             pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
@@ -733,6 +786,15 @@ PIPELINES = {
     default=TagFilter(),
 )
 @click.option(
+    "--find-tolerances",
+    is_flag=True,
+    default=False,
+    help=(
+        "Set all tolerances to a lower bound and enables `--print-suggested-tolerances`."
+        " This leads to automatically searching for the suggested tolerances."
+    ),
+)
+@click.option(
     "--print-suggested-tolerances",
     is_flag=True,
     default=False,
@@ -746,6 +808,7 @@ def main(
     devices_str: Optional[str],
     pipeline: Optional[str],
     tag_filter: TagFilter,
+    find_tolerances: bool,
     print_suggested_tolerances: bool,
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
@@ -768,7 +831,10 @@ def main(
                 continue
             print(f"\n===== Running {pipeline_name} =====", flush=True)
             verdicts[pipeline_name] = pipeline_def.run_protected(
-                device_type, devices_str, print_suggested_tolerances
+                device_type,
+                devices_str,
+                find_tolerances,
+                print_suggested_tolerances,
             )
             print(f"===== Finished {pipeline_name} =====", flush=True)
     else:
@@ -784,7 +850,10 @@ def main(
                 f"Pipeline {pipeline!r} doesn't match tag filter {tag_filter}"
             )
         verdicts[pipeline] = pipeline_def.run_protected(
-            device_type, devices_str, print_suggested_tolerances
+            device_type,
+            devices_str,
+            find_tolerances,
+            print_suggested_tolerances,
         )
 
     if report:
