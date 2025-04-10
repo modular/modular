@@ -29,7 +29,7 @@ struct Mandelbrot:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
-        target: StringLiteral,
+        target: StaticString,
     ](
         out: OutputTensor,
         # starting here are the list of inputs

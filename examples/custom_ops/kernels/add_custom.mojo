@@ -23,7 +23,7 @@ struct AddConstantCustom[value: Int]:
     @staticmethod
     fn execute[
         # e.g. "CUDA" or "CPU"
-        target: StringLiteral,
+        target: StaticString,
     ](
         out: OutputTensor,
         x: InputTensor[type = out.type, rank = out.rank],
@@ -53,7 +53,7 @@ struct AddOneCustom:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
-        target: StringLiteral,
+        target: StaticString,
     ](
         out: OutputTensor,
         x: InputTensor[type = out.type, rank = out.rank],
