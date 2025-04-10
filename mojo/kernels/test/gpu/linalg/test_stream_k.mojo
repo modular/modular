@@ -369,7 +369,7 @@ fn matmul_stream_k[
             M,
             N,
             K,
-            locks_data.unsafe_ptr(),
+            locks_data,
             K,
             1,
             N,
@@ -401,7 +401,7 @@ fn matmul_stream_k[
             M,
             N,
             K,
-            locks_data.unsafe_ptr(),
+            locks_data,
             K,
             1,
             N,
@@ -456,13 +456,13 @@ fn run_matmul_stream_k[
     var b_device = ctx.enqueue_create_buffer[type](K * N)
     var c_device = ctx.enqueue_create_buffer[type](M * N)
     var a_buf = NDBuffer[type, 2, _, a_shape](
-        a_device.unsafe_ptr(), Index(M, K)
+        a_device._unsafe_ptr(), Index(M, K)
     )
     var b_buf = NDBuffer[type, 2, _, b_shape](
-        b_device.unsafe_ptr(), Index(K, N)
+        b_device._unsafe_ptr(), Index(K, N)
     )
     var c_buf = NDBuffer[type, 2, _, c_shape](
-        c_device.unsafe_ptr(), Index(M, N)
+        c_device._unsafe_ptr(), Index(M, N)
     )
 
     var a_device_n = ctx.enqueue_create_buffer[type](M * K)

@@ -294,13 +294,13 @@ fn test(ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
 
     var c_buffer = NDBuffer[DType.float32, 2, _, DimList(M, N)](
-        c_device.unsafe_ptr()
+        c_device._unsafe_ptr()
     )
     var a_buffer = NDBuffer[DType.float32, 2, _, DimList(M, K)](
-        a_device.unsafe_ptr()
+        a_device._unsafe_ptr()
     )
     var b_buffer = NDBuffer[DType.float32, 2, _, DimList(K, N)](
-        b_device.unsafe_ptr()
+        b_device._unsafe_ptr()
     )
 
     var c_tensor = LayoutTensor[DType.float32, c_layout](c_device)
@@ -364,7 +364,7 @@ fn test(ctx: DeviceContext) raises:
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
     var c_buffer_ref = NDBuffer[DType.float32, 2, _, DimList(M, N)](
-        c_device_ref.unsafe_ptr()
+        c_device_ref._unsafe_ptr()
     )
     ctx.enqueue_function[gemm_naive](
         c_buffer_ref,

@@ -137,7 +137,7 @@ def execute_flash_attention[
     )
     ctx.enqueue_copy(valid_lengths_dev, valid_lengths_host_ptr)
     var valid_lengths = NDBuffer[DType.uint32, 1](
-        valid_lengths_dev.unsafe_ptr(), Index(batch_size)
+        valid_lengths_dev._unsafe_ptr(), Index(batch_size)
     )
     k_block_host = HostNDBuffer[type, 5](
         Index(
@@ -206,10 +206,10 @@ def execute_flash_attention[
         Int(kv_params.head_size),
     )
     var k_4dbuffer = NDBuffer[type, 4](
-        k_block_device.buffer.unsafe_ptr(), kv_4d_shape
+        k_block_device.buffer._unsafe_ptr(), kv_4d_shape
     )
     var v_4dbuffer = NDBuffer[type, 4](
-        v_block_device.buffer.unsafe_ptr(), kv_4d_shape
+        v_block_device.buffer._unsafe_ptr(), kv_4d_shape
     )
 
     mha_gpu_naive(

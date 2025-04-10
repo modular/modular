@@ -37,7 +37,7 @@ fn _create_device_buffer[
     return (
         storage,
         NDBuffer[dtype, rank, _, shape](
-            storage.unsafe_ptr(), dynamic_shape=dynamic_shape
+            storage._unsafe_ptr(), dynamic_shape=dynamic_shape
         ),
     )
 
@@ -125,12 +125,12 @@ def test_split_k_reduce_rank3[
     ctx.enqueue_copy(work_space_device, work_space_host)
     ctx.enqueue_copy(epilogue_data_device, epilogue_data_host)
 
-    var c = NDBuffer[c_type, 2](c_device.unsafe_ptr(), Index(M, N))
+    var c = NDBuffer[c_type, 2](c_device._unsafe_ptr(), Index(M, N))
     var work_space = NDBuffer[work_space_type, 3](
-        work_space_device.unsafe_ptr(), Index(num_partitions, M, N)
+        work_space_device._unsafe_ptr(), Index(num_partitions, M, N)
     )
     var epilogue_buffer = NDBuffer[c_type, 2](
-        epilogue_data_device.unsafe_ptr(), Index(M, N)
+        epilogue_data_device._unsafe_ptr(), Index(M, N)
     )
 
     @parameter

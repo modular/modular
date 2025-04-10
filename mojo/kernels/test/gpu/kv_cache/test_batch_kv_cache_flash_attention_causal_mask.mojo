@@ -187,7 +187,7 @@ def execute_flash_attention[
 
     ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.data)
     var cache_lengths = NDBuffer[DType.uint32, 1](
-        cache_lengths_dev.unsafe_ptr(), Index(batch_size)
+        cache_lengths_dev._unsafe_ptr(), Index(batch_size)
     )
 
     k_block_host = HostNDBuffer[

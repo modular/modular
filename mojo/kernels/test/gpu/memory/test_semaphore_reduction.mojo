@@ -72,17 +72,15 @@ fn run_vector_reduction[
     var a_device = ctx.enqueue_create_buffer[type](PN)
     var c_device = ctx.enqueue_create_buffer[type](N)
     var lock_dev = ctx.enqueue_create_buffer[type](1)
-    var a_buf = NDBuffer[type, 1](a_device.unsafe_ptr(), Index(PN))
-    var c_buf = NDBuffer[type, 1](c_device.unsafe_ptr(), Index(N))
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(c_device, c_host)
 
     ctx.enqueue_function[semaphore_vector_reduce[type, N, num_parts]](
-        c_buf.data,
-        a_buf.data,
-        lock_dev.unsafe_ptr(),
+        c_device,
+        a_device,
+        lock_dev,
         grid_dim=num_parts,
         block_dim=N,
     )
@@ -161,8 +159,6 @@ fn run_matrix_reduction[
     var a_device = ctx.enqueue_create_buffer[type](PX)
     var c_device = ctx.enqueue_create_buffer[type](M * N)
     var lock_dev = ctx.enqueue_create_buffer[type](1)
-    var a_buf = NDBuffer[type, 1](a_device.unsafe_ptr(), Index(PX))
-    var c_buf = NDBuffer[type, 1](c_device.unsafe_ptr(), Index(M * N))
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -171,9 +167,9 @@ fn run_matrix_reduction[
     var block_size = 1024
 
     ctx.enqueue_function[semaphore_matrix_reduce[type, M, N, num_parts]](
-        c_buf.data,
-        a_buf.data,
-        lock_dev.unsafe_ptr(),
+        c_device,
+        a_device,
+        lock_dev,
         grid_dim=num_parts,
         block_dim=block_size,
     )

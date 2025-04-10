@@ -64,13 +64,13 @@ fn test_batched_matmul(ctx: DeviceContext) raises:
     )
 
     var lhs_buffer = NDBuffer[DType.float32, 3](
-        rhs_device.unsafe_ptr(), Index(b, m, k)
+        rhs_device._unsafe_ptr(), Index(b, m, k)
     )
     var rhs_buffer = NDBuffer[DType.float32, 3](
-        lhs_device.unsafe_ptr(), Index(b, k, n)
+        lhs_device._unsafe_ptr(), Index(b, k, n)
     )
     var dst_buffer = NDBuffer[DType.float32, 3](
-        dst_device.unsafe_ptr(), Index(b, m, n)
+        dst_device._unsafe_ptr(), Index(b, m, n)
     )
 
     ctx.enqueue_copy(lhs_device, lhs_host.data)

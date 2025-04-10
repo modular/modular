@@ -53,12 +53,12 @@ fn fused_reduce_inner_test[
 
     var res_device0 = ctx.enqueue_create_buffer[type](out_size)
     var res_device1 = ctx.enqueue_create_buffer[type](out_size)
-    var input_buf_device = NDBuffer[type, rank](vec_device.unsafe_ptr(), shape)
+    var input_buf_device = NDBuffer[type, rank](vec_device._unsafe_ptr(), shape)
     var output_buf_device0 = NDBuffer[type, rank](
-        res_device0.unsafe_ptr(), out_shape
+        res_device0._unsafe_ptr(), out_shape
     )
     var output_buf_device1 = NDBuffer[type, rank](
-        res_device1.unsafe_ptr(), out_shape
+        res_device1._unsafe_ptr(), out_shape
     )
 
     @__copy_capture(input_buf_device)
@@ -143,9 +143,9 @@ fn reduce_inner_test[
             vec_host[i] = i // shape[axis] + offset
 
     var res_device = ctx.enqueue_create_buffer[type](out_size)
-    var input_buf_device = NDBuffer[type, rank](vec_device.unsafe_ptr(), shape)
+    var input_buf_device = NDBuffer[type, rank](vec_device._unsafe_ptr(), shape)
     var output_buf_device = NDBuffer[type, rank](
-        res_device.unsafe_ptr(), out_shape
+        res_device._unsafe_ptr(), out_shape
     )
 
     @always_inline

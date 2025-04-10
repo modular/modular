@@ -448,13 +448,13 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     ctx.enqueue_copy(mat_b_dev, mat_b_ptr)
 
     var mat_c = NDBuffer[DType.float32, 2, _, DimList.create_unknown[2]()](
-        mat_c_dev.unsafe_ptr(), dynamic_shape=Index(M, N)
+        mat_c_dev._unsafe_ptr(), dynamic_shape=Index(M, N)
     )
     var mat_a = NDBuffer[DType.float32, 2, _, DimList(M, K)](
-        mat_a_dev.unsafe_ptr(), dynamic_shape=Index(M, K)
+        mat_a_dev._unsafe_ptr(), dynamic_shape=Index(M, K)
     )
     var mat_b = NDBuffer[DType.float32, 2, _, DimList(K, N)](
-        mat_b_dev.unsafe_ptr(), dynamic_shape=Index(K, N)
+        mat_b_dev._unsafe_ptr(), dynamic_shape=Index(K, N)
     )
 
     alias sram_blocked_matmul_dynamic_nd_buffer_kernel = sram_blocked_matmul_dynamic_nd_buffer[

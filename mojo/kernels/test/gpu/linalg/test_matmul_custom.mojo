@@ -179,13 +179,13 @@ fn run_matmul[
     var b_device = ctx.enqueue_create_buffer[type](K * N)
     var c_device = ctx.enqueue_create_buffer[type](M * N)
     var a_buf = NDBuffer[type, 2, _, a_shape](
-        a_device.unsafe_ptr(), Index(M, K)
+        a_device._unsafe_ptr(), Index(M, K)
     )
     var b_buf = NDBuffer[type, 2, _, b_shape](
-        b_device.unsafe_ptr(), Index(K, N)
+        b_device._unsafe_ptr(), Index(K, N)
     )
     var c_buf = NDBuffer[type, 2, _, c_shape](
-        c_device.unsafe_ptr(), Index(M, N)
+        c_device._unsafe_ptr(), Index(M, N)
     )
 
     var a_device_n = ctx.enqueue_create_buffer[type](M * K)
@@ -298,13 +298,13 @@ fn run_matmul_split_k[
     var b_device = ctx.enqueue_create_buffer[type](K * N)
     var c_device = ctx.enqueue_create_buffer[type](M * N)
     var a_buf = NDBuffer[type, 2, _, a_shape](
-        a_device.unsafe_ptr(), Index(M, K)
+        a_device._unsafe_ptr(), Index(M, K)
     )
     var b_buf = NDBuffer[type, 2, _, b_shape](
-        b_device.unsafe_ptr(), Index(K, N)
+        b_device._unsafe_ptr(), Index(K, N)
     )
     var c_buf = NDBuffer[type, 2, _, c_shape](
-        c_device.unsafe_ptr(), Index(M, N)
+        c_device._unsafe_ptr(), Index(M, N)
     )
 
     var a_device_n = ctx.enqueue_create_buffer[type](M * K)
@@ -422,13 +422,13 @@ fn run_matmul_transpose[
     var b_device = ctx.enqueue_create_buffer[type](N * K)
     var c_device = ctx.enqueue_create_buffer[type](M * N)
     var a_buf = NDBuffer[type, 2, _, a_shape](
-        a_device.unsafe_ptr(), Index(M, K)
+        a_device._unsafe_ptr(), Index(M, K)
     )
     var b_buf = NDBuffer[type, 2, _, b_shape](
-        b_device.unsafe_ptr(), Index(N, K)
+        b_device._unsafe_ptr(), Index(N, K)
     )
     var c_buf = NDBuffer[type, 2, _, c_shape](
-        c_device.unsafe_ptr(), Index(M, N)
+        c_device._unsafe_ptr(), Index(M, N)
     )
 
     var a_device_n = ctx.enqueue_create_buffer[type](M * K)
@@ -528,26 +528,26 @@ fn run_batched_matmul(
     var b_device = ctx.enqueue_create_buffer[DType.bfloat16](B * K * N)
     var c_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * N)
     var a_buf = NDBuffer[DType.bfloat16, 3](
-        a_device.unsafe_ptr(), Index(B, M, K)
+        a_device._unsafe_ptr(), Index(B, M, K)
     )
     var b_buf = NDBuffer[DType.bfloat16, 3](
-        b_device.unsafe_ptr(), Index(B, K, N)
+        b_device._unsafe_ptr(), Index(B, K, N)
     )
     var c_buf = NDBuffer[DType.bfloat16, 3](
-        c_device.unsafe_ptr(), Index(B, M, N)
+        c_device._unsafe_ptr(), Index(B, M, N)
     )
 
     var a_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * K)
     var b_device_n = ctx.enqueue_create_buffer[DType.float32](B * K * N)
     var c_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * N)
     var a_buf_n = NDBuffer[DType.float32, 3](
-        a_device_n.unsafe_ptr(), Index(B, M, K)
+        a_device_n._unsafe_ptr(), Index(B, M, K)
     )
     var b_buf_n = NDBuffer[DType.float32, 3](
-        b_device_n.unsafe_ptr(), Index(B, K, N)
+        b_device_n._unsafe_ptr(), Index(B, K, N)
     )
     var c_buf_n = NDBuffer[DType.float32, 3](
-        c_device_n.unsafe_ptr(), Index(B, M, N)
+        c_device_n._unsafe_ptr(), Index(B, M, N)
     )
 
     ctx.enqueue_copy(a_device, a_host)

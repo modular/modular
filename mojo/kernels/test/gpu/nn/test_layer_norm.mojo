@@ -221,9 +221,9 @@ fn run_layer_norm_warp_tiling[
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, 2](data_d.unsafe_ptr(), data_shape)
-    var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
-    var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
+    var data_buf = NDBuffer[type, 2](data_d._unsafe_ptr(), data_shape)
+    var gamma = NDBuffer[type, 1](gamma_d._unsafe_ptr(), param_shape)
+    var beta = NDBuffer[type, 1](beta_d._unsafe_ptr(), param_shape)
     var epsilon = Scalar[type]()
 
     ctx.enqueue_copy(data_d, data_h)

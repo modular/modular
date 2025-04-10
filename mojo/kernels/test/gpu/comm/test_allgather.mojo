@@ -79,10 +79,10 @@ fn all_gather_test[
     for i in range(ngpus):
         var length = lengths[i]
         in_bufs[i] = NDBuffer[type, rank](
-            in_bufs_list[i].unsafe_ptr(), DimList(length)
+            in_bufs_list[i]._unsafe_ptr(), DimList(length)
         )
         out_bufs[i] = NDBuffer[type, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(total_length)
+            out_bufs_list[i]._unsafe_ptr(), DimList(total_length)
         )
 
     # Perform allgather

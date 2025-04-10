@@ -172,13 +172,13 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     var mat_a = NDBuffer[
         DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
-    ](a_device.unsafe_ptr(), dynamic_shape=Index(M, K))
+    ](a_device._unsafe_ptr(), dynamic_shape=Index(M, K))
     var mat_b = NDBuffer[
         DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
-    ](b_device.unsafe_ptr(), dynamic_shape=Index(K, M))
+    ](b_device._unsafe_ptr(), dynamic_shape=Index(K, M))
     var mat_c = NDBuffer[
         DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
-    ](c_device.unsafe_ptr(), dynamic_shape=Index(N, M))
+    ](c_device._unsafe_ptr(), dynamic_shape=Index(N, M))
 
     alias kernel = gemm_kernel[
         DType.float32,
@@ -214,7 +214,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ]
     var c_buffer_ref = NDBuffer[
         DType.float32, 2, MutableAnyOrigin, DimList(M, N)
-    ](c_device_ref.unsafe_ptr())
+    ](c_device_ref._unsafe_ptr())
     ctx.enqueue_function[gemm_naive](
         c_buffer_ref,
         mat_a,

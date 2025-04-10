@@ -46,10 +46,10 @@ def test_vendor_blas[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var a = NDBuffer[type, 2](a_device.unsafe_ptr(), (M, K))
-    var b = NDBuffer[type, 2](b_device.unsafe_ptr(), (K, N))
-    var c = NDBuffer[type, 2](c_device.unsafe_ptr(), (M, N))
-    var c_ref = NDBuffer[type, 2](c_device_ref.unsafe_ptr(), (M, N))
+    var a = NDBuffer[type, 2](a_device._unsafe_ptr(), (M, K))
+    var b = NDBuffer[type, 2](b_device._unsafe_ptr(), (K, N))
+    var c = NDBuffer[type, 2](c_device._unsafe_ptr(), (M, N))
+    var c_ref = NDBuffer[type, 2](c_device_ref._unsafe_ptr(), (M, N))
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True)
 
