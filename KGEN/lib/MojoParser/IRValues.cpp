@@ -197,6 +197,27 @@ ASTType PValue::getIfTypeValue() const {
   return {};
 }
 
+/// If this value is a type, then return it.  This can happen when this is a
+/// PValue with a type metatype (e.g. a computed type) or if it is some other
+/// value that has struct metatype type.
+ASTType VariantValueStorageBase::getIfTypeValue() const {
+  // We can only evaluate this on CValues.
+  auto cv = CValue::getFrom(storage);
+  if (!cv)
+    return {};
+
+  // If this is a PValue, then we can use it directly.
+  if (auto value = dyn_cast<PValue>(storage))
+    return value.getIfTypeValue();
+
+  // Otherwise, check to see if this is some other sort of value that is
+  // returning a struct metatype.  If so, we know it is a singleton result.
+  if (auto structMeta = dyn_cast<StructMetaType>(cv.getRValueType()))
+    return structMeta.getType();
+
+  return {};
+}
+
 /// This method looks through references to return the element type.
 ASTType RValue::getRValueType() const {
   auto type = getType();
