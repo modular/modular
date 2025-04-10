@@ -17,16 +17,10 @@ trait ScoreModTrait:
     """
 
     fn score_mod[
-        type: DType,
-        width: Int, //,
-        *,
-        element_bitwidth: Int = bitwidthof[Int](),
-        unsigned: Bool = False,
+        type: DType, width: Int, //, *, element_type: DType = DType.int32
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
         max_prompt_len: Int = 0,
     ) -> SIMD[type, width]:
@@ -87,16 +81,10 @@ struct AlibiScoreMod[
 
     @always_inline
     fn score_mod[
-        type: DType,
-        width: Int, //,
-        *,
-        element_bitwidth: Int = bitwidthof[Int](),
-        unsigned: Bool = False,
+        type: DType, width: Int, //, *, element_type: DType = DType.int32
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
         max_prompt_len: Int,
     ) -> SIMD[type, width]:
@@ -130,16 +118,10 @@ struct IdentityScoreMod(ScoreModTrait):
 
     @always_inline
     fn score_mod[
-        type: DType,
-        width: Int, //,
-        *,
-        element_bitwidth: Int = bitwidthof[Int](),
-        unsigned: Bool = False,
+        type: DType, width: Int, //, *, element_type: DType = DType.int32
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
         max_prompt_len: Int = 0,
     ) -> SIMD[type, width]:

@@ -77,16 +77,10 @@ trait MHAMask:
     alias mask_out_of_bound: Bool
 
     fn mask[
-        type: DType,
-        width: Int, //,
-        *,
-        element_bitwidth: Int = bitwidthof[UInt32](),
-        unsigned: Bool = True,
+        type: DType, width: Int, //, *, element_type: DType = DType.uint32
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
         """Return mask vector at given coordinates.
@@ -100,15 +94,11 @@ trait MHAMask:
         ...
 
     fn status[
-        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = True
+        *, element_type: DType = DType.uint32
     ](
         self,
-        tile_offset: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
-        tile_size: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
         """Given a tile's index range, return its masking status."""
         ...
@@ -134,13 +124,10 @@ struct CausalMask(MHAMask):
         type: DType,
         width: Int, //,
         *,
-        element_bitwidth: Int = bitwidthof[UInt32](),
-        unsigned: Bool = True,
+        element_type: DType = DType.uint32,
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
         alias index_type = coord.element_type
@@ -162,15 +149,11 @@ struct CausalMask(MHAMask):
 
     @always_inline
     fn status[
-        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = True
+        *, element_type: DType = DType.uint32
     ](
         self,
-        tile_offset: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
-        tile_size: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
         # Consider tile corners
         #
@@ -221,31 +204,21 @@ struct NullMask(MHAMask):
 
     @always_inline
     fn mask[
-        type: DType,
-        width: Int, //,
-        *,
-        element_bitwidth: Int = bitwidthof[UInt32](),
-        unsigned: Bool = False,
+        type: DType, width: Int, //, *, element_type: DType = DType.uint32
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
         return score_vec
 
     @always_inline
     fn status[
-        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
+        *, element_type: DType = DType.uint32
     ](
         self,
-        tile_offset: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
-        tile_size: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
         # no mask
         return TileMaskStatus(0)
@@ -287,13 +260,10 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
         type: DType,
         width: Int, //,
         *,
-        element_bitwidth: Int = bitwidthof[UInt32](),
-        unsigned: Bool = False,
+        element_type: DType = DType.uint32,
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
         constrained[
@@ -335,15 +305,11 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
 
     @always_inline
     fn status[
-        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
+        *, element_type: DType = DType.uint32
     ](
         self,
-        tile_offset: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
-        tile_size: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
         q_start_window = tile_offset[0] // local_window_size
         q_end_window = (tile_offset[0] + tile_size[0] - 1) // local_window_size
@@ -405,18 +371,13 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](MHAMask):
         type: DType,
         width: Int, //,
         *,
-        element_bitwidth: Int = bitwidthof[UInt32](),
-        unsigned: Bool = False,
+        element_type: DType = DType.uint32,
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
-        alias IndexListType = IndexList[
-            rank_, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ]
+        alias IndexListType = IndexList[rank_, element_type=element_type]
         var adjusted_coord: IndexListType
 
         var start_pos = self.get_start_pos(coord[0])
@@ -454,15 +415,11 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](MHAMask):
 
     @always_inline
     fn status[
-        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
+        *, element_type: DType = DType.uint32
     ](
         self,
-        tile_offset: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
-        tile_size: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
         # This is counter-intuitive but setting to `partial` ensures we
         # always read the values for the tensor.
@@ -484,16 +441,10 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
 
     @always_inline
     fn mask[
-        type: DType,
-        width: Int, //,
-        *,
-        element_bitwidth: Int = bitwidthof[UInt32](),
-        unsigned: Bool = False,
+        type: DType, width: Int, //, *, element_type: DType = DType.uint32
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
         @parameter
@@ -510,15 +461,11 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
 
     @always_inline
     fn status[
-        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
+        *, element_type: DType = DType.uint32
     ](
         self,
-        tile_offset: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
-        tile_size: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
         var lhs_status = self.lhs.status(tile_offset, tile_size)
         var rhs_status = self.rhs.status(tile_offset, tile_size)
@@ -541,16 +488,10 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
 
     @always_inline
     fn mask[
-        type: DType,
-        width: Int, //,
-        *,
-        element_bitwidth: Int = bitwidthof[UInt32](),
-        unsigned: Bool = False,
+        type: DType, width: Int, //, *, element_type: DType = DType.uint32
     ](
         self,
-        coord: IndexList[
-            4, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
         @parameter
@@ -566,15 +507,11 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
 
     @always_inline
     fn status[
-        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
+        *, element_type: DType = DType.uint32
     ](
         self,
-        tile_offset: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
-        tile_size: IndexList[
-            2, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
         var lhs_status = self.lhs.status(tile_offset, tile_size)
         var rhs_status = self.rhs.status(tile_offset, tile_size)

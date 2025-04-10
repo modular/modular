@@ -344,7 +344,7 @@ fn _apply_mask[
                         block_idx.y * group + group_idx
                     ) if token_gen else block_idx.y
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
-                        IndexList[4, element_bitwidth=32, unsigned=True,](
+                        IndexList[4, element_type = DType.uint32](
                             Int(block_idx.z),
                             Int(q_head_idx),
                             Int(score_row_with_start_pos + fragment_row),
@@ -374,18 +374,16 @@ fn _apply_mask[
                     var bound_x = num_keys if token_gen else seq_len
 
                     p_reg_vectorized[mma_id, 0][j] = _kernel_mask(
-                        IndexList[2, element_bitwidth=32, unsigned=True,](
+                        IndexList[2, element_type = DType.uint32](
                             Int(
                                 score_row
                                 + (fragment_row if not token_gen else 0)
                             ),
                             Int(score_col + fragment_col),
                         ),
-                        IndexList[
-                            2,
-                            element_bitwidth=32,
-                            unsigned=True,
-                        ](bound_x, bound_y),
+                        IndexList[2, element_type = DType.uint32](
+                            bound_x, bound_y
+                        ),
                         p_reg_vectorized[mma_id, 0][j],
                     )
 
@@ -541,7 +539,9 @@ struct GlobalMemoryManager[
 
     var q_offset: UInt32
     var q_runtime_layout: RuntimeLayout[
-        Self._q_gmem_layout, linear_idx_type = DType.int32
+        Self._q_gmem_layout,
+        element_type = DType.int32,
+        linear_idx_type = DType.int32,
     ]
 
     @always_inline
@@ -557,13 +557,15 @@ struct GlobalMemoryManager[
             + num_heads * q_tile_idx * BM
         )
 
-        self.q_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[Self._q_gmem_layout.shape, unsigned=True](
-                Int(q_tile_num_rows), Int(depth)
-            ),
-            RuntimeTuple[Self._q_gmem_layout.stride, unsigned=True](
-                Int(num_heads * depth if not token_gen else depth), 1
-            ),
+        self.q_runtime_layout = __type_of(self.q_runtime_layout)(
+            RuntimeTuple[
+                Self._q_gmem_layout.shape,
+                element_type = __type_of(self.q_runtime_layout).element_type,
+            ](Int(q_tile_num_rows), Int(depth)),
+            RuntimeTuple[
+                Self._q_gmem_layout.stride,
+                element_type = __type_of(self.q_runtime_layout).linear_idx_type,
+            ](Int(num_heads * depth if not token_gen else depth), 1),
         )
 
     @always_inline
@@ -573,7 +575,12 @@ struct GlobalMemoryManager[
         self,
         ptr: UnsafePointer[Scalar[qtype]],
         out result: LayoutTensor[
-            qtype, Self._q_gmem_layout, MutableAnyOrigin, masked=True
+            qtype,
+            Self._q_gmem_layout,
+            MutableAnyOrigin,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
+            masked=True,
         ],
     ):
         return __type_of(result)(
@@ -588,7 +595,12 @@ struct GlobalMemoryManager[
         self,
         ptr: UnsafePointer[Scalar[out_type]],
         out result: LayoutTensor[
-            out_type, Self._q_gmem_layout, MutableAnyOrigin, masked=True
+            out_type,
+            Self._q_gmem_layout,
+            MutableAnyOrigin,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
+            masked=True,
         ],
     ):
         return self.get_q_tensor(ptr)
@@ -610,11 +622,11 @@ struct GlobalMemoryManager[
         ],
     ):
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[Self._kv_gmem_layout.shape, unsigned=True](
+        var kv_runtime_layout = __type_of(result.runtime_layout)(
+            __type_of(result.runtime_layout.shape)(
                 kv_tile_num_rows, Int(depth)
             ),
-            RuntimeTuple[Self._kv_gmem_layout.stride, unsigned=True](
+            __type_of(result.runtime_layout.stride)(
                 Int(Self._kv_num_heads * depth), 1
             ),
         )
@@ -765,11 +777,11 @@ fn mha_single_batch[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         var mask_status = mask.status(
-            Index[element_bitwidth=32, unsigned=True](
+            Index[type = DType.uint32](
                 Int(q_tile_idx * BM + start_pos),
                 Int(kv_tile_start_row),
             ),
-            Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+            Index[type = DType.uint32](Int(BM), Int(BN)),
         )
 
         @parameter
@@ -1201,11 +1213,11 @@ fn mha_decoding_single_batch[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         var mask_status = mask.status(
-            Index[element_bitwidth=32, unsigned=True](
+            Index[type = DType.uint32](
                 Int(q_tile_idx * BM + start_pos),
                 Int(kv_tile_start_row),
             ),
-            Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+            Index[type = DType.uint32](Int(BM), Int(BN)),
         )
 
         @parameter

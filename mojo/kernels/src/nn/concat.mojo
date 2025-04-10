@@ -89,9 +89,7 @@ fn memcpy_or_fuse[
             )
 
             func[type, rank, simd_width](
-                out_index.cast[
-                    element_bitwidth = bitwidthof[Int](), unsigned=False
-                ](),
+                out_index.cast[DType.int64](),
                 load,
             )
             return

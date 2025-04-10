@@ -220,10 +220,8 @@ fn _mask_tensor_row(
 ):
     return __type_of(tensor)(
         tensor.ptr,
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[tensor.layout.shape, unsigned=True](
-                num_rows, tensor.dim(1)
-            ),
+        __type_of(tensor.runtime_layout)(
+            __type_of(tensor.runtime_layout.shape)(num_rows, tensor.dim(1)),
             tensor.runtime_layout.stride,
         ),
     )
@@ -266,13 +264,21 @@ fn _produce[
 ):
     kv_tile_num_rows = min(Int(BN), num_keys - kv_tile_start_row)
 
-    kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
-        RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
-            kv_tile_num_rows, depth
-        ),
-        RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
-            kv_num_heads * depth, 1
-        ),
+    alias kv_runtime_layout_type = RuntimeLayout[
+        kv_gmem_layout,
+        element_type = DType.int32,
+        linear_idx_type = DType.int32,
+    ]
+
+    kv_runtime_layout = kv_runtime_layout_type(
+        RuntimeTuple[
+            kv_gmem_layout.shape,
+            element_type = kv_runtime_layout_type.element_type,
+        ](kv_tile_num_rows, depth),
+        RuntimeTuple[
+            kv_gmem_layout.stride,
+            element_type = kv_runtime_layout_type.linear_idx_type,
+        ](kv_num_heads * depth, 1),
     )
 
     smem_subi = smem_iter.next_unsafe(Int(write_idx * num_k_iters))
@@ -285,7 +291,12 @@ fn _produce[
     @always_inline
     fn copy_gmem_to_smem[masked: Bool]():
         gmem_block = LayoutTensor[
-            kv_t.type, kv_gmem_layout, MutableAnyOrigin, masked=masked
+            kv_t.type,
+            kv_gmem_layout,
+            MutableAnyOrigin,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
+            masked=masked,
         ](
             kv.block_paged_ptr[BN](
                 batch_idx, kv_tile_start_row, Int(head_idx // group), 0
@@ -395,11 +406,7 @@ fn _apply_mask[
                         @parameter
                         if masked:
                             p_reg_vec2[mma_id, i + j * 2] = mask.mask(
-                                IndexList[
-                                    4,
-                                    element_bitwidth=32,
-                                    unsigned=True,
-                                ](
+                                IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -416,11 +423,7 @@ fn _apply_mask[
                         if use_score_mod:
                             p_reg_vec2[mma_id, i + j * 2] = (
                                 score_mod.score_mod(
-                                    IndexList[
-                                        4,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
+                                    IndexList[4, element_type = DType.uint32,](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
                                         Int(score_row_with_start_pos),
@@ -440,12 +443,10 @@ fn _apply_mask[
                         if masked:
                             # if last_iter:
                             p_reg_vec2[mma_id, i + j * 2] = _kernel_mask(
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](Int(score_row), Int(score_col)),
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](
+                                IndexList[2, element_type = DType.uint32](
+                                    Int(score_row), Int(score_col)
+                                ),
+                                IndexList[2, element_type = DType.uint32](
                                     Int(seq_len),
                                     Int(num_keys),
                                 ),
@@ -722,25 +723,26 @@ fn _mha_single_batch_sm90_fa3[
     fn q_out_gmem_tensor[
         type: DType, //
     ](
-        ptr: UnsafePointer[Scalar[type]], head_idx: UInt32, q_tile_idx: UInt32
-    ) -> LayoutTensor[
-        type,
-        q_output_gmem_layout,
-        MutableAnyOrigin,
-        masked=True,
-    ]:
+        ptr: UnsafePointer[Scalar[type]],
+        head_idx: UInt32,
+        q_tile_idx: UInt32,
+        out result: LayoutTensor[
+            type,
+            q_output_gmem_layout,
+            MutableAnyOrigin,
+            masked=True,
+        ],
+    ):
         var q_tile_num_rows: UInt32 = min(BM, UInt32(seq_len) - q_tile_idx * BM)
         var q_offset: UInt32 = depth * (head_idx + q_tile_idx * BM * num_heads)
         # Global memory iterator
-        gmem_block = LayoutTensor[type, q_output_gmem_layout, masked=True,](
+        gmem_block = __type_of(result)(
             ptr + Int(q_offset),
-            RuntimeLayout[linear_idx_type = DType.int32](
-                RuntimeTuple[q_output_gmem_layout.shape, unsigned=True](
+            __type_of(result.runtime_layout)(
+                __type_of(result.runtime_layout.shape)(
                     Int(q_tile_num_rows), depth
                 ),
-                RuntimeTuple[q_output_gmem_layout.stride, unsigned=True](
-                    num_heads * depth, 1
-                ),
+                __type_of(result.runtime_layout.stride)(num_heads * depth, 1),
             ),
         )
         return gmem_block
@@ -897,11 +899,11 @@ fn _mha_single_batch_sm90_fa3[
 
         while (
             mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.int32](
                     Int(_q_tile_idx * BM + start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[type = DType.int32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -964,11 +966,11 @@ fn _mha_single_batch_sm90_fa3[
 
             if (
                 mask.status(
-                    Index[element_bitwidth=32, unsigned=True](
+                    Index[type = DType.int32](
                         Int(_q_tile_idx * BM + start_pos),
                         Int(kv_tile_start_row),
                     ),
-                    Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                    Index[type = DType.int32](Int(BM), Int(BN)),
                 )
                 == TileMaskStatus.FULL_MASK
             ):
@@ -1289,11 +1291,11 @@ fn _mha_single_batch_sm90_fa3[
         var mask_status: TileMaskStatus
         while True:
             mask_status = mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.int32](
                     Int(_q_tile_idx * BM + start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[type = DType.int32](Int(BM), Int(BN)),
             )
             if mask_status != TileMaskStatus.FULL_MASK:
                 break
@@ -1351,11 +1353,11 @@ fn _mha_single_batch_sm90_fa3[
                     )
 
             mask_status = mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.int32](
                     Int(_q_tile_idx * BM + start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[type = DType.int32](Int(BM), Int(BN)),
             )
             if mask_status == TileMaskStatus.FULL_MASK:
                 mask_warp_col += BN
@@ -1625,17 +1627,27 @@ fn _mha_single_batch_sm90_fa2[
     alias q_gmem_layout = Layout(
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
     )
+    alias q_gmem_block_type = LayoutTensor[
+        q_type,
+        q_gmem_layout,
+        masked=True,
+    ]
     q_tile_num_rows = min(BM, seq_len - BM * q_tile_idx)
     q_offset = depth * (head_idx + num_heads * BM * q_tile_idx)
-    q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True,](
+    q_gmem_block = q_gmem_block_type(
         q_ptr + Int(q_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[q_gmem_layout.shape, unsigned=True](
-                Int(q_tile_num_rows), depth
-            ),
-            RuntimeTuple[q_gmem_layout.stride, unsigned=True](
-                num_heads * depth, 1
-            ),
+        RuntimeLayout[
+            element_type = q_gmem_block_type.layout_int_type,
+            linear_idx_type = q_gmem_block_type.linear_idx_type,
+        ](
+            RuntimeTuple[
+                q_gmem_layout.shape,
+                element_type = q_gmem_block_type.layout_int_type,
+            ](Int(q_tile_num_rows), depth),
+            RuntimeTuple[
+                q_gmem_layout.stride,
+                element_type = q_gmem_block_type.linear_idx_type,
+            ](num_heads * depth, 1),
         ),
     )
     q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
@@ -1848,11 +1860,11 @@ fn _mha_single_batch_sm90_fa2[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         mask_status = mask.status(
-            Index[element_bitwidth=32, unsigned=True](
+            Index[type = DType.int32](
                 Int(q_tile_idx * BM + start_pos),
                 Int(kv_tile_start_row),
             ),
-            Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+            Index[type = DType.int32](Int(BM), Int(BN)),
         )
         if mask_status == TileMaskStatus.FULL_MASK:
             mask_warp_col += BN
@@ -1865,11 +1877,13 @@ fn _mha_single_batch_sm90_fa2[
         kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
-        kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
+        kv_runtime_layout = RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
                 kv_tile_num_rows, depth
             ),
-            RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
                 kv_num_heads * depth, 1
             ),
         )
@@ -1877,6 +1891,8 @@ fn _mha_single_batch_sm90_fa2[
         k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             k.block_paged_ptr[BN](
@@ -1889,6 +1905,8 @@ fn _mha_single_batch_sm90_fa2[
         v_gmem_block = LayoutTensor[
             v_type,
             kv_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             v.block_paged_ptr[BN](
@@ -2057,14 +2075,20 @@ fn _mha_single_batch_sm90_fa2[
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
     )
     output_gmem_tile = LayoutTensor[
-        output_type, output_gmem_layout, masked=True
+        output_type,
+        output_gmem_layout,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
+        masked=True,
     ](
         output_ptr + Int(q_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[output_gmem_layout.shape, unsigned=True](
+        RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
                 Int(q_tile_num_rows), depth
             ),
-            RuntimeTuple[output_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
                 num_heads * depth, 1
             ),
         ),

@@ -657,14 +657,20 @@ fn gather[
                 simd_width=1,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](output_shape, context)
+            ](
+                output_shape.canonicalize(),
+                context,
+            )
         else:
             elementwise[
                 gather_elementwise_fn,
                 simd_width = simdwidthof[type](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](output_shape, context)
+            ](
+                output_shape.canonicalize(),
+                context,
+            )
 
 
 @always_inline
@@ -1482,7 +1488,7 @@ fn _gather_nd_impl[
     @parameter
     fn gather_nd_elementwise_fn[
         simd_width: Int, rank: Int
-    ](output_idx_arg: IndexList[rank]) capturing -> None:
+    ](output_idx_arg: IndexList[rank]):
         var output_idx = rebind[IndexList[output_rank]](output_idx_arg)
         var data_idx = IndexList[data_rank]()
         var indices_idx = IndexList[indices_rank]()

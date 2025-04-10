@@ -667,7 +667,7 @@ fn layer_norm[
     if beta.dynamic_shape[0] != shape[rank - 1]:
         raise Error("Beta size does not match dimension of reduction.")
 
-    if output.dynamic_shape.canonicalize() != shape.canonicalize():
+    if output.dynamic_shape.canonicalize() != shape:
         raise Error("Input and output buffers are not same shape")
 
     @always_inline
@@ -1086,7 +1086,7 @@ fn rms_norm[
     output: NDBuffer[mut=True, type, rank],
     ctx: DeviceContextPtr,
 ) raises:
-    if output.dynamic_shape.canonicalize() != shape.canonicalize():
+    if output.dynamic_shape.canonicalize() != shape:
         raise Error("Input and output buffers are not same shape")
 
     alias align = simdwidthof[type]()

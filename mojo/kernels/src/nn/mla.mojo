@@ -754,11 +754,13 @@ fn mla_decoding_single_batch[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
+        var kv_runtime_layout = RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
                 kv_tile_num_rows, depth
             ),
-            RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
                 kv_num_heads * depth, 1
             ),
         )
@@ -768,6 +770,8 @@ fn mla_decoding_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             k_ptr,
@@ -885,11 +889,7 @@ fn mla_decoding_single_batch[
                         @parameter
                         if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[
-                                    4,
-                                    element_bitwidth=32,
-                                    unsigned=True,
-                                ](
+                                IndexList[4, element_type = DType.uint32,](
                                     block_idx.z,
                                     score_head_idx,
                                     score_row_with_start_pos,
@@ -906,11 +906,7 @@ fn mla_decoding_single_batch[
                         if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[
-                                        4,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
+                                    IndexList[4, element_type = DType.uint32,](
                                         block_idx.z,
                                         score_head_idx,
                                         score_row_with_start_pos,
@@ -928,12 +924,10 @@ fn mla_decoding_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](score_row, score_col),
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](
+                                IndexList[2, element_type = DType.uint32](
+                                    score_row, score_col
+                                ),
+                                IndexList[2, element_type = DType.uint32](
                                     seq_len,
                                     num_keys,
                                 ),
@@ -942,11 +936,11 @@ fn mla_decoding_single_batch[
 
         unswitch[_apply_mask](
             mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.uint32](
                     num_keys,
                     kv_tile_start_row,
                 ),
-                Index[element_bitwidth=32, unsigned=True](1, BN),
+                Index[type = DType.uint32](1, BN),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
@@ -1586,13 +1580,21 @@ fn mla_prefill_single_batch[
     var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
     var q_offset = q_depth * (head_idx + num_heads * q_tile_idx * BM)
 
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
+    var q_gmem_block = LayoutTensor[
+        q_type,
+        q_gmem_layout,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
+        masked=True,
+    ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[q_gmem_layout.shape, unsigned=True](
+        RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
                 Int(q_tile_num_rows), q_depth
             ),
-            RuntimeTuple[q_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
                 num_heads * q_depth, 1
             ),
         ),
@@ -1709,11 +1711,11 @@ fn mla_prefill_single_batch[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.uint32](
                     Int(q_tile_idx * BM + start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[type = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -1727,11 +1729,13 @@ fn mla_prefill_single_batch[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
+        var kv_runtime_layout = RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
                 kv_tile_num_rows, depth
             ),
-            RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
                 num_heads * depth, 1
             ),
         )
@@ -1739,6 +1743,8 @@ fn mla_prefill_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             k.block_paged_ptr[BN](
@@ -1751,6 +1757,8 @@ fn mla_prefill_single_batch[
         var v_gmem_block = LayoutTensor[
             v_type,
             kv_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             v.block_paged_ptr[BN](
@@ -1767,12 +1775,12 @@ fn mla_prefill_single_batch[
         )
 
         var k_rope_runtime_layout = RuntimeLayout[
-            linear_idx_type = DType.int32
+            element_type = DType.int32, linear_idx_type = DType.int32
         ](
-            RuntimeTuple[k_rope_gmem_layout.shape, unsigned=True](
+            RuntimeTuple[k_rope_gmem_layout.shape, element_type = DType.int32](
                 kv_tile_num_rows, cache_depth
             ),
-            RuntimeTuple[k_rope_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[k_rope_gmem_layout.stride, element_type = DType.int32](
                 cache_num_heads * cache_depth, 1
             ),
         )
@@ -1780,6 +1788,8 @@ fn mla_prefill_single_batch[
         var k_rope_gmem_block = LayoutTensor[
             k_rope_type,
             k_rope_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             k_rope.block_paged_ptr[BN](
@@ -1804,8 +1814,8 @@ fn mla_prefill_single_batch[
         ):
             return __type_of(tensor)(
                 tensor.ptr,
-                RuntimeLayout[linear_idx_type = tensor.index_type](
-                    RuntimeTuple[tensor.layout.shape, unsigned=True](
+                __type_of(tensor.runtime_layout)(
+                    __type_of(tensor.runtime_layout.shape)(
                         num_rows, tensor.dim(1)
                     ),
                     tensor.runtime_layout.stride,
@@ -1919,11 +1929,7 @@ fn mla_prefill_single_batch[
                         @parameter
                         if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[
-                                    4,
-                                    element_bitwidth=32,
-                                    unsigned=True,
-                                ](
+                                IndexList[4, element_type = DType.uint32](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -1940,11 +1946,7 @@ fn mla_prefill_single_batch[
                         if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[
-                                        4,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
+                                    IndexList[4, element_type = DType.uint32](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
                                         Int(score_row_with_start_pos),
@@ -1962,12 +1964,10 @@ fn mla_prefill_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](Int(score_row), Int(score_col)),
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](
+                                IndexList[2, element_type = DType.uint32](
+                                    Int(score_row), Int(score_col)
+                                ),
+                                IndexList[2, element_type = DType.uint32](
                                     seq_len,
                                     num_keys,
                                 ),
@@ -1976,11 +1976,11 @@ fn mla_prefill_single_batch[
 
         unswitch[_apply_mask](
             mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.uint32](
                     Int(q_tile_idx * BM + start_pos),
                     kv_tile_start_row,
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[type = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
@@ -2136,14 +2136,20 @@ fn mla_prefill_single_batch[
 
     var output_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
     var output_gmem_tile = LayoutTensor[
-        output_type, output_gmem_layout, masked=True
+        output_type,
+        output_gmem_layout,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
+        masked=True,
     ](
         output_ptr + Int(output_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[output_gmem_layout.shape, unsigned=True](
+        RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
                 Int(q_tile_num_rows), depth
             ),
-            RuntimeTuple[output_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
                 num_heads * depth, 1
             ),
         ),

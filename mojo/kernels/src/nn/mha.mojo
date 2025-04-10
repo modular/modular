@@ -1121,13 +1121,21 @@ fn mha_single_batch[
     )
     var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
+    var q_gmem_block = LayoutTensor[
+        q_type,
+        q_gmem_layout,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
+        masked=True,
+    ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[q_gmem_layout.shape, unsigned=True](
+        RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
                 Int(q_tile_num_rows), depth
             ),
-            RuntimeTuple[q_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
                 num_heads * depth, 1
             ),
         ),
@@ -1245,11 +1253,11 @@ fn mha_single_batch[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.uint32](
                     Int(q_tile_idx * BM + start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[type = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -1263,11 +1271,13 @@ fn mha_single_batch[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
+        var kv_runtime_layout = RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
                 kv_tile_num_rows, depth
             ),
-            RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
                 kv_num_heads * depth, 1
             ),
         )
@@ -1275,6 +1285,8 @@ fn mha_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             k.block_paged_ptr[BN](
@@ -1287,6 +1299,8 @@ fn mha_single_batch[
         var v_gmem_block = LayoutTensor[
             v_type,
             kv_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             v.block_paged_ptr[BN](
@@ -1306,8 +1320,8 @@ fn mha_single_batch[
         ):
             return __type_of(tensor)(
                 tensor.ptr,
-                RuntimeLayout[linear_idx_type = tensor.index_type](
-                    RuntimeTuple[tensor.layout.shape, unsigned=True](
+                __type_of(tensor.runtime_layout)(
+                    __type_of(tensor.runtime_layout.shape)(
                         num_rows, tensor.dim(1)
                     ),
                     tensor.runtime_layout.stride,
@@ -1404,11 +1418,7 @@ fn mha_single_batch[
                         @parameter
                         if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[
-                                    4,
-                                    element_bitwidth=32,
-                                    unsigned=True,
-                                ](
+                                IndexList[4, element_type = DType.uint32,](
                                     Int(block_idx.z),
                                     Int(block_idx.y),
                                     Int(score_row_with_start_pos),
@@ -1425,11 +1435,7 @@ fn mha_single_batch[
                         if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[
-                                        4,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
+                                    IndexList[4, element_type = DType.uint32,](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
                                         Int(score_row_with_start_pos),
@@ -1447,12 +1453,10 @@ fn mha_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](Int(score_row), Int(score_col)),
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](
+                                IndexList[2, element_type = DType.uint32](
+                                    Int(score_row), Int(score_col)
+                                ),
+                                IndexList[2, element_type = DType.uint32](
                                     seq_len,
                                     num_keys,
                                 ),
@@ -1461,11 +1465,11 @@ fn mha_single_batch[
 
         unswitch[_apply_mask](
             mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.uint32](
                     Int(q_tile_idx * BM + start_pos),
                     kv_tile_start_row,
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[type = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
@@ -1613,14 +1617,20 @@ fn mha_single_batch[
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
     )
     var output_gmem_tile = LayoutTensor[
-        output_type, output_gmem_layout, masked=True
+        output_type,
+        output_gmem_layout,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
+        masked=True,
     ](
         output_ptr + Int(q_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[output_gmem_layout.shape, unsigned=True](
+        RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
                 Int(q_tile_num_rows), depth
             ),
-            RuntimeTuple[output_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
                 num_heads * depth, 1
             ),
         ),
@@ -1786,13 +1796,21 @@ fn mha_single_batch_pipelined[
     )
     var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
+    var q_gmem_block = LayoutTensor[
+        q_type,
+        q_gmem_layout,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
+        masked=True,
+    ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[q_gmem_layout.shape, unsigned=True](
+        RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
                 Int(q_tile_num_rows), depth
             ),
-            RuntimeTuple[q_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
                 num_heads * depth, 1
             ),
         ),
@@ -1890,10 +1908,10 @@ fn mha_single_batch_pipelined[
     ](kv_tile_start_row: Int, end: Int):
         if (
             mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.uint32](
                     Int(q_tile_idx * BM + start_pos), Int(kv_tile_start_row)
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[type = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -1907,11 +1925,13 @@ fn mha_single_batch_pipelined[
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
+        var kv_runtime_layout = RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[kv_gmem_layout.shape, element_type = DType.int32](
                 kv_tile_num_rows, depth
             ),
-            RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[kv_gmem_layout.stride, element_type = DType.int32](
                 kv_num_heads * depth, 1
             ),
         )
@@ -1919,6 +1939,8 @@ fn mha_single_batch_pipelined[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             k.block_paged_ptr[BN](
@@ -1931,6 +1953,8 @@ fn mha_single_batch_pipelined[
         var v_gmem_block = LayoutTensor[
             v_type,
             kv_gmem_layout,
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked = not not_last_iter,
         ](
             v.block_paged_ptr[BN](
@@ -1962,6 +1986,12 @@ fn mha_single_batch_pipelined[
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
                 next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
+                next_op_b_layout_int_type = __type_of(
+                    v_gmem_iter
+                ).layout_int_type,
+                next_op_b_linear_idx_type = __type_of(
+                    v_gmem_iter
+                ).linear_idx_type,
                 k_group_size = config.k_group_size,
             ](
                 p_reg_tile,
@@ -1991,6 +2021,12 @@ fn mha_single_batch_pipelined[
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
                 next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
+                next_op_b_layout_int_type = __type_of(
+                    v_gmem_iter
+                ).layout_int_type,
+                next_op_b_linear_idx_type = __type_of(
+                    v_gmem_iter
+                ).linear_idx_type,
                 k_group_size = config.k_group_size,
             ](
                 p_reg_tile,
@@ -2054,11 +2090,7 @@ fn mha_single_batch_pipelined[
                             @parameter
                             if is_nvidia_gpu():
                                 p_reg_vec2[mma_id, i] = mask.mask(
-                                    IndexList[
-                                        4,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
+                                    IndexList[4, element_type = DType.uint32,](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
                                         Int(score_row_with_start_pos),
@@ -2073,8 +2105,7 @@ fn mha_single_batch_pipelined[
                                     p_reg_vec2[mma_id, i][j] = mask.mask(
                                         IndexList[
                                             4,
-                                            element_bitwidth=32,
-                                            unsigned=True,
+                                            element_type = DType.uint32,
                                         ](
                                             Int(block_idx.z),
                                             Int(block_idx.y),
@@ -2092,11 +2123,7 @@ fn mha_single_batch_pipelined[
                         if use_score_mod:
                             p_reg_vec2[mma_id, i] = (
                                 score_mod.score_mod(
-                                    IndexList[
-                                        4,
-                                        element_bitwidth=32,
-                                        unsigned=True,
-                                    ](
+                                    IndexList[4, element_type = DType.uint32,](
                                         Int(block_idx.z),
                                         Int(block_idx.y),
                                         Int(score_row_with_start_pos),
@@ -2119,13 +2146,11 @@ fn mha_single_batch_pipelined[
                                 p_reg_vec2[mma_id, i] = _kernel_mask(
                                     IndexList[
                                         2,
-                                        element_bitwidth=32,
-                                        unsigned=True,
+                                        element_type = DType.uint32,
                                     ](Int(score_row), Int(score_col)),
                                     IndexList[
                                         2,
-                                        element_bitwidth=32,
-                                        unsigned=True,
+                                        element_type = DType.uint32,
                                     ](seq_len, num_keys),
                                     p_reg_vec2[mma_id, i],
                                 )
@@ -2136,26 +2161,24 @@ fn mha_single_batch_pipelined[
                                     p_reg_vec2[mma_id, i][j] = _kernel_mask(
                                         IndexList[
                                             2,
-                                            element_bitwidth=32,
-                                            unsigned=True,
+                                            element_type = DType.uint32,
                                         ](
                                             Int(score_row + j),
                                             Int(score_col),
                                         ),
                                         IndexList[
                                             2,
-                                            element_bitwidth=32,
-                                            unsigned=True,
+                                            element_type = DType.uint32,
                                         ](seq_len, num_keys),
                                         p_reg_vec2[mma_id, i][j],
                                     )
 
         unswitch[_apply_mask](
             mask.status(
-                Index[element_bitwidth=32, unsigned=True](
+                Index[type = DType.uint32](
                     Int(q_tile_idx * BM + start_pos), kv_tile_start_row
                 ),
-                Index[element_bitwidth=32, unsigned=True](Int(BM), Int(BN)),
+                Index[type = DType.uint32](Int(BM), Int(BN)),
             )
             == TileMaskStatus.PARTIAL_MASK
         )
@@ -2296,14 +2319,20 @@ fn mha_single_batch_pipelined[
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
     )
     var output_gmem_tile = LayoutTensor[
-        output_type, output_gmem_layout, masked=True
+        output_type,
+        output_gmem_layout,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
+        masked=True,
     ](
         output_ptr + Int(q_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[output_gmem_layout.shape, unsigned=True](
+        RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
                 Int(q_tile_num_rows), depth
             ),
-            RuntimeTuple[output_gmem_layout.stride, unsigned=True](
+            RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
                 num_heads * depth, 1
             ),
         ),
@@ -3060,11 +3089,23 @@ fn mha_decoding_single_batch[
     var q_offset = depth * kv_head_idx * group
 
     alias q_gmem_layout = Layout.row_major(BM, depth)
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
+    var q_gmem_block = LayoutTensor[
+        q_type,
+        q_gmem_layout,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
+        masked=True,
+    ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[q_gmem_layout.shape, unsigned=True](group, depth),
-            RuntimeTuple[q_gmem_layout.stride, unsigned=True](depth, 1),
+        RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
+                group, depth
+            ),
+            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
+                depth, 1
+            ),
         ),
     )
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
@@ -3086,10 +3127,8 @@ fn mha_decoding_single_batch[
     ):
         return __type_of(tensor)(
             tensor.ptr,
-            RuntimeLayout[linear_idx_type = tensor.index_type](
-                RuntimeTuple[tensor.layout.shape, unsigned=True](
-                    num_rows, tensor.dim(1)
-                ),
+            __type_of(tensor.runtime_layout)(
+                __type_of(tensor.runtime_layout.shape)(num_rows, tensor.dim(1)),
                 tensor.runtime_layout.stride,
             ),
         )
@@ -3473,14 +3512,21 @@ fn mha_decoding_single_batch[
 
     alias output_gmem_layout = Layout.row_major(BM, depth)
     var output_gmem_runtime_layout = RuntimeLayout[
-        linear_idx_type = DType.int32
+        element_type = DType.int32,
+        linear_idx_type = DType.int32,
     ](
-        RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
-        RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
+        RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
+            group, depth
+        ),
+        RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
+            depth, 1
+        ),
     )
     var output_gmem_tile = LayoutTensor[
         output_type,
         Layout.row_major(BM, depth),
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
         masked=True,
     ](output_ptr + q_offset, output_gmem_runtime_layout)
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
@@ -3681,11 +3727,23 @@ fn mha_decoding_single_batch_pipelined[
     var q_offset = depth * kv_head_idx * group
 
     alias q_gmem_layout = Layout.row_major(BM, depth)
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
+    var q_gmem_block = LayoutTensor[
+        q_type,
+        q_gmem_layout,
+        layout_int_type = DType.int32,
+        linear_idx_type = DType.int32,
+        masked=True,
+    ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[linear_idx_type = DType.int32](
-            RuntimeTuple[q_gmem_layout.shape, unsigned=True](group, depth),
-            RuntimeTuple[q_gmem_layout.stride, unsigned=True](depth, 1),
+        RuntimeLayout[
+            element_type = DType.int32, linear_idx_type = DType.int32
+        ](
+            RuntimeTuple[q_gmem_layout.shape, element_type = DType.int32](
+                group, depth
+            ),
+            RuntimeTuple[q_gmem_layout.stride, element_type = DType.int32](
+                depth, 1
+            ),
         ),
     )
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
@@ -3926,14 +3984,20 @@ fn mha_decoding_single_batch_pipelined[
 
         alias output_gmem_layout = Layout.row_major(BM, depth)
         var output_gmem_runtime_layout = RuntimeLayout[
-            linear_idx_type = DType.int32
+            element_type = DType.int32, linear_idx_type = DType.int32
         ](
-            RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
-            RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
+            RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
+                group, depth
+            ),
+            RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
+                depth, 1
+            ),
         )
         var output_gmem_tile = LayoutTensor[
             output_type,
             Layout.row_major(BM, depth),
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked=True,
         ](output_ptr + q_offset, output_gmem_runtime_layout)
         var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
@@ -3958,14 +4022,20 @@ fn mha_decoding_single_batch_pipelined[
 
         alias output_gmem_layout = Layout.row_major(BM, depth)
         var output_gmem_runtime_layout = RuntimeLayout[
-            linear_idx_type = DType.int32
+            element_type = DType.int32, linear_idx_type = DType.int32
         ](
-            RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
-            RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
+            RuntimeTuple[output_gmem_layout.shape, element_type = DType.int32](
+                group, depth
+            ),
+            RuntimeTuple[output_gmem_layout.stride, element_type = DType.int32](
+                depth, 1
+            ),
         )
         var output_gmem_tile = LayoutTensor[
             output_type,
             Layout.row_major(BM, depth),
+            layout_int_type = DType.int32,
+            linear_idx_type = DType.int32,
             masked=True,
         ](output_ptr + q_offset, output_gmem_runtime_layout)
         var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
