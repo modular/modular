@@ -166,12 +166,7 @@ fn _is_unsigned[dtype: DType]() -> Bool:
 
 @value
 @register_passable("trivial")
-struct IndexList[
-    size: Int,
-    *,
-    element_bitwidth: Int = bitwidthof[Int](),
-    unsigned: Bool = False,
-](
+struct IndexList[size: Int, *, element_type: DType = DType.int64](
     Sized,
     Stringable,
     Writable,
@@ -182,14 +177,10 @@ struct IndexList[
 
     Parameters:
         size: The size of the tuple.
-        element_bitwidth: The bitwidth of the underlying integer element type.
-        unsigned: Whether the integer is signed or unsigned.
+        element_type: The underlying dtype of the integer element value.
     """
 
-    alias element_type = _type_of_width[element_bitwidth, unsigned]()
-    """The underlying dtype of the integer element value."""
-
-    alias _int_type = Scalar[Self.element_type]
+    alias _int_type = Scalar[element_type]
     """The underlying storage of the integer element value."""
 
     var data: StaticTuple[Self._int_type, size]
@@ -208,6 +199,9 @@ struct IndexList[
         Args:
             data: The StaticTuple to construct the IndexList from.
         """
+        constrained[
+            element_type.is_integral(), "Element type must be of integral type."
+        ]()
         self.data = data
 
     @doc_private
@@ -220,6 +214,9 @@ struct IndexList[
             value: The initial value.
         """
         constrained[size == 1]()
+        constrained[
+            element_type.is_integral(), "Element type must be of integral type."
+        ]()
         self = Int(value)
 
     @always_inline
@@ -230,7 +227,9 @@ struct IndexList[
         Args:
             elems: The tuple to copy from.
         """
-
+        constrained[
+            element_type.is_integral(), "Element type must be of integral type."
+        ]()
         var num_elements = len(elems)
 
         debug_assert(
@@ -254,7 +253,9 @@ struct IndexList[
         Args:
             elems: The tuple to copy from.
         """
-
+        constrained[
+            element_type.is_integral(), "Element type must be of integral type."
+        ]()
         var num_elements = len(elems)
 
         debug_assert(
@@ -278,7 +279,9 @@ struct IndexList[
         Args:
             elems: The tuple to copy from.
         """
-
+        constrained[
+            element_type.is_integral(), "Element type must be of integral type."
+        ]()
         var num_elements = len(elems)
 
         debug_assert(
@@ -302,7 +305,9 @@ struct IndexList[
         Args:
             elems: The elements to construct the tuple.
         """
-
+        constrained[
+            element_type.is_integral(), "Element type must be of integral type."
+        ]()
         var num_elements = len(elems)
 
         debug_assert(
@@ -326,7 +331,9 @@ struct IndexList[
         Args:
             elem: The elem to splat into the tuple.
         """
-
+        constrained[
+            element_type.is_integral(), "Element type must be of integral type."
+        ]()
         self.data = __mlir_op.`pop.array.repeat`[
             _type = __mlir_type[
                 `!pop.array<`, size.value, `, `, Self._int_type, `>`
@@ -339,6 +346,9 @@ struct IndexList[
         Args:
             other: The other tuple to copy from.
         """
+        constrained[
+            element_type.is_integral(), "Element type must be of integral type."
+        ]()
         self.data = other.data
 
     @always_inline
@@ -349,7 +359,9 @@ struct IndexList[
         Args:
             values: The list of values.
         """
-
+        constrained[
+            element_type.is_integral(), "Element type must be of integral type."
+        ]()
         var num_elements = len(values)
 
         debug_assert(
@@ -452,19 +464,14 @@ struct IndexList[
     @always_inline("nodebug")
     fn canonicalize(
         self,
-        out result: IndexList[
-            size, element_bitwidth = bitwidthof[Int](), unsigned=False
-        ],
+        out result: IndexList[size, element_type = DType.int64],
     ):
         """Canonicalizes the IndexList.
 
         Returns:
             Canonicalizes the object.
         """
-        return self.cast[
-            element_bitwidth = result.element_bitwidth,
-            unsigned = result.unsigned,
-        ]()
+        return self.cast[DType.int64]()
 
     @always_inline
     fn flattened_length(self) -> Int:
@@ -741,7 +748,7 @@ struct IndexList[
             var element = self[i]
 
             @parameter
-            if element_bitwidth == 32:
+            if bitwidthof[element_type]() == 32:
                 writer.write(Int32(element))
             else:
                 writer.write(Int64(element))
@@ -765,14 +772,7 @@ struct IndexList[
     @always_inline
     fn cast[
         dtype: DType
-    ](
-        self,
-        out result: IndexList[
-            size,
-            element_bitwidth = bitwidthof[dtype](),
-            unsigned = _is_unsigned[dtype](),
-        ],
-    ):
+    ](self, out result: IndexList[size, element_type=dtype]):
         """Casts to the target DType.
 
         Parameters:
@@ -794,38 +794,6 @@ struct IndexList[
             )
         return res
 
-    @always_inline
-    fn cast[
-        *,
-        element_bitwidth: Int = Self.element_bitwidth,
-        unsigned: Bool = Self.unsigned,
-    ](
-        self,
-        out result: IndexList[
-            size, element_bitwidth=element_bitwidth, unsigned=unsigned
-        ],
-    ):
-        """Casts to the target DType.
-
-        Parameters:
-            element_bitwidth: The bitwidth to cast towards.
-            unsigned: The signess of the list.
-
-        Returns:
-            The list casted to the target type.
-        """
-
-        @parameter
-        if (
-            element_bitwidth == Self.element_bitwidth
-            and unsigned == Self.unsigned
-        ):
-            return rebind[__type_of(result)](self)
-
-        return rebind[__type_of(result)](
-            self.cast[_type_of_width[element_bitwidth, unsigned]()]()
-        )
-
     fn __hash__[H: _Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
@@ -846,22 +814,13 @@ struct IndexList[
 # ===-----------------------------------------------------------------------===#
 @always_inline
 fn Index[
-    T0: Intable, //,
-    *,
-    element_bitwidth: Int = bitwidthof[Int](),
-    unsigned: Bool = False,
-](
-    x: T0,
-    out result: IndexList[
-        1, element_bitwidth=element_bitwidth, unsigned=unsigned
-    ],
-):
+    T0: Intable, //, *, type: DType = DType.int64
+](x: T0, out result: IndexList[1, element_type=type]):
     """Constructs a 1-D Index from the given value.
 
     Parameters:
         T0: The type of the 1st argument.
-        element_bitwidth: The bitwidth of the underlying integer element type.
-        unsigned: Whether the integer is signed or unsigned.
+        type: The integer type of the underlying element.
 
     Args:
         x: The initial value.
@@ -874,18 +833,12 @@ fn Index[
 
 @always_inline
 fn Index[
-    *, element_bitwidth: Int = bitwidthof[Int](), unsigned: Bool = False
-](
-    x: UInt,
-    out result: IndexList[
-        1, element_bitwidth=element_bitwidth, unsigned=unsigned
-    ],
-):
+    *, type: DType = DType.int64
+](x: UInt, out result: IndexList[1, element_type=type]):
     """Constructs a 1-D Index from the given value.
 
     Parameters:
-        element_bitwidth: The bitwidth of the underlying integer element type.
-        unsigned: Whether the integer is signed or unsigned.
+        type: The integer type of the underlying element.
 
     Args:
         x: The initial value.
@@ -898,25 +851,14 @@ fn Index[
 
 @always_inline
 fn Index[
-    T0: Intable,
-    T1: Intable, //,
-    *,
-    element_bitwidth: Int = bitwidthof[Int](),
-    unsigned: Bool = False,
-](
-    x: T0,
-    y: T1,
-    out result: IndexList[
-        2, element_bitwidth=element_bitwidth, unsigned=unsigned
-    ],
-):
+    T0: Intable, T1: Intable, //, *, type: DType = DType.int64
+](x: T0, y: T1, out result: IndexList[2, element_type=type]):
     """Constructs a 2-D Index from the given values.
 
     Parameters:
         T0: The type of the 1st argument.
         T1: The type of the 2nd argument.
-        element_bitwidth: The bitwidth of the underlying integer element type.
-        unsigned: Whether the integer is signed or unsigned.
+        type: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.
@@ -930,19 +872,12 @@ fn Index[
 
 @always_inline
 fn Index[
-    *, element_bitwidth: Int = bitwidthof[Int](), unsigned: Bool = False
-](
-    x: UInt,
-    y: UInt,
-    out result: IndexList[
-        2, element_bitwidth=element_bitwidth, unsigned=unsigned
-    ],
-):
+    *, type: DType = DType.int64
+](x: UInt, y: UInt, out result: IndexList[2, element_type=type]):
     """Constructs a 2-D Index from the given values.
 
     Parameters:
-        element_bitwidth: The bitwidth of the underlying integer element type.
-        unsigned: Whether the integer is signed or unsigned.
+        type: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.
@@ -960,24 +895,15 @@ fn Index[
     T1: Intable,
     T2: Intable, //,
     *,
-    element_bitwidth: Int = bitwidthof[Int](),
-    unsigned: Bool = False,
-](
-    x: T0,
-    y: T1,
-    z: T2,
-    out result: IndexList[
-        3, element_bitwidth=element_bitwidth, unsigned=unsigned
-    ],
-):
+    type: DType = DType.int64,
+](x: T0, y: T1, z: T2, out result: IndexList[3, element_type=type]):
     """Constructs a 3-D Index from the given values.
 
     Parameters:
         T0: The type of the 1st argument.
         T1: The type of the 2nd argument.
         T2: The type of the 3rd argument.
-        element_bitwidth: The bitwidth of the underlying integer element type.
-        unsigned: Whether the integer is signed or unsigned.
+        type: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.
@@ -997,17 +923,8 @@ fn Index[
     T2: Intable,
     T3: Intable, //,
     *,
-    element_bitwidth: Int = bitwidthof[Int](),
-    unsigned: Bool = False,
-](
-    x: T0,
-    y: T1,
-    z: T2,
-    w: T3,
-    out result: IndexList[
-        4, element_bitwidth=element_bitwidth, unsigned=unsigned
-    ],
-):
+    type: DType = DType.int64,
+](x: T0, y: T1, z: T2, w: T3, out result: IndexList[4, element_type=type]):
     """Constructs a 4-D Index from the given values.
 
     Parameters:
@@ -1015,8 +932,7 @@ fn Index[
         T1: The type of the 2nd argument.
         T2: The type of the 3rd argument.
         T3: The type of the 4th argument.
-        element_bitwidth: The bitwidth of the underlying integer element type.
-        unsigned: Whether the integer is signed or unsigned.
+        type: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.
@@ -1038,17 +954,14 @@ fn Index[
     T3: Intable,
     T4: Intable, //,
     *,
-    element_bitwidth: Int = bitwidthof[Int](),
-    unsigned: Bool = False,
+    type: DType = DType.int64,
 ](
     x: T0,
     y: T1,
     z: T2,
     w: T3,
     v: T4,
-    out result: IndexList[
-        5, element_bitwidth=element_bitwidth, unsigned=unsigned
-    ],
+    out result: IndexList[5, element_type=type],
 ):
     """Constructs a 5-D Index from the given values.
 
@@ -1058,8 +971,7 @@ fn Index[
         T2: The type of the 3rd argument.
         T3: The type of the 4th argument.
         T4: The type of the 5th argument.
-        element_bitwidth: The bitwidth of the underlying integer element type.
-        unsigned: Whether the integer is signed or unsigned.
+        type: The integer type of the underlying element.
 
     Args:
         x: The 1st initial value.

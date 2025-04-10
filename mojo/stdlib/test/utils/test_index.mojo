@@ -34,37 +34,33 @@ def test_cast():
         "(1, 2)",
     )
     assert_equal(
-        String(IndexList[2, element_bitwidth=64](1, 2).cast[DType.int32]()),
+        String(IndexList[2, element_type = DType.int32](1, 2)),
         "(1, 2)",
     )
     assert_equal(
-        String(IndexList[2, element_bitwidth=32](1, 2).cast[DType.int64]()),
+        String(IndexList[2, element_type = DType.int64](1, 2)),
         "(1, 2)",
     )
     assert_equal(
         String(
-            IndexList[2, element_bitwidth=32](1, -2).cast[element_bitwidth=64]()
+            IndexList[2, element_type = DType.int32](1, -2).cast[DType.int64]()
         ),
         "(1, -2)",
     )
     assert_equal(
-        String(IndexList[2, element_bitwidth=32](1, 2)),
+        String(IndexList[2, element_type = DType.int32](1, 2)),
         "(1, 2)",
     )
     alias s = String(
-        IndexList[2, element_bitwidth=32](1, 2).cast[
-            element_bitwidth=64, unsigned=True
-        ]()
+        IndexList[2, element_type = DType.int32](1, 2).cast[DType.int64]()
     )
     assert_equal(s, "(1, 2)")
 
 
 def test_index():
-    assert_equal(String(Index[element_bitwidth=64](1, 2, 3)), "(1, 2, 3)")
-    assert_equal(String(Index[element_bitwidth=32](1, 2, 3)), "(1, 2, 3)")
-    assert_equal(
-        String(Index[element_bitwidth=32, unsigned=True](1, 2, 3)), "(1, 2, 3)"
-    )
+    assert_equal(String(Index[type = DType.int64](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[type = DType.int32](1, 2, 3)), "(1, 2, 3)")
+    assert_equal(String(Index[type = DType.uint32](1, 2, 3)), "(1, 2, 3)")
 
 
 def main():

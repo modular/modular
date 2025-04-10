@@ -221,7 +221,8 @@ fn matmul[
         MutableAnyOrigin,
         address_space = lhs.address_space,
         element_layout = lhs.element_layout,
-        layout_bitwidth = lhs.layout_bitwidth,
+        layout_int_type = lhs.layout_int_type,
+        linear_idx_type = lhs.linear_idx_type,
     ],
 ):
     res = __type_of(res).stack_allocation()
