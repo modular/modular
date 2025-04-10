@@ -33,10 +33,10 @@ from .config_enums import (
 from .max_config import (
     KVCacheConfig,
     MAXConfig,
-    MAXModelConfig,
     ProfilingConfig,
     SamplingConfig,
 )
+from .model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -260,7 +260,7 @@ class PipelineConfig(MAXConfig):
         self._draft_model_config.model_path = self.draft_model
         self._draft_model_config._huggingface_config = (
             PIPELINE_REGISTRY.get_active_huggingface_config(
-                model_config=self._draft_model_config
+                huggingface_repo=self._draft_model_config.huggingface_repo
             )
         )
 
@@ -286,7 +286,7 @@ class PipelineConfig(MAXConfig):
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            model_config=self.draft_model_config,
+            huggingface_repo=self.draft_model_config.huggingface_repo,
         )
 
         if not draft_arch:
@@ -294,7 +294,7 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            model_config=self.model_config,
+            huggingface_repo=self.model_config.huggingface_repo,
         )
         if not target_arch:
             msg = "MAX-Optimized architecture not found for target model (`model_path`)"
@@ -305,11 +305,11 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         # Validate that their tokenizers are identical.
-        draft_tokenizer = PIPELINE_REGISTRY._get_active_tokenizer(
-            self.draft_model_config
+        draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+            huggingface_repo=self.draft_model_config.huggingface_repo
         )
-        target_tokenizer = PIPELINE_REGISTRY._get_active_tokenizer(
-            self.model_config
+        target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+            huggingface_repo=self.model_config.huggingface_repo
         )
 
         # Compare Vocabularies
@@ -336,7 +336,7 @@ class PipelineConfig(MAXConfig):
         reason."""
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            model_config=self.model_config,
+            huggingface_repo=self.model_config.huggingface_repo,
         )
 
         # If nothing is provided, we should not update any more params.
@@ -387,7 +387,7 @@ class PipelineConfig(MAXConfig):
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
             hf_config=PIPELINE_REGISTRY.get_active_huggingface_config(
-                model_config=self.model_config
+                huggingface_repo=self.model_config.huggingface_repo
             ),
         )
 
@@ -395,7 +395,9 @@ class PipelineConfig(MAXConfig):
             self.rope_type = arch.rope_type
 
         devices = load_devices(self.model_config.device_specs)
-        MEMORY_ESTIMATOR.estimate_memory_footprint(self, arch, devices)
+        MEMORY_ESTIMATOR.estimate_memory_footprint(
+            self, arch.pipeline_model, devices
+        )
 
         # If we pass validation ensure and the engine is not set, just set it
         # to MAX.

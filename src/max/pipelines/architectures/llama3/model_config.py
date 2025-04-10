@@ -27,11 +27,8 @@ from max.nn.kv_cache import KVCacheParams
 from max.pipelines import upper_bounded_default
 from max.pipelines.config import PipelineConfig
 from max.pipelines.config_enums import RopeType
-from max.pipelines.max_config import (
-    KVCacheConfig,
-    MAXModelConfig,
-    MAXModelConfigBase,
-)
+from max.pipelines.max_config import KVCacheConfig
+from max.pipelines.model_config import MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
 
 

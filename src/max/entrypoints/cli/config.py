@@ -29,10 +29,10 @@ from max.driver import DeviceSpec
 from max.pipelines.config import PipelineConfig
 from max.pipelines.max_config import (
     KVCacheConfig,
-    MAXModelConfig,
     ProfilingConfig,
     SamplingConfig,
 )
+from max.pipelines.model_config import MAXModelConfig
 
 from .device_options import DevicesOptionType
 

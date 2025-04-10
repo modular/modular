@@ -22,11 +22,8 @@ from max.graph.weights import WeightData, weights_format
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.config import PipelineConfig
-from max.pipelines.max_config import (
-    KVCacheConfig,
-    MAXModelConfig,
-    MAXModelConfigBase,
-)
+from max.pipelines.max_config import KVCacheConfig
+from max.pipelines.model_config import MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
 
 

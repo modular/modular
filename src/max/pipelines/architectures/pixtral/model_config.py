@@ -18,7 +18,8 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.max_config import KVCacheConfig, MAXModelConfig
+from max.pipelines.max_config import KVCacheConfig
+from max.pipelines.model_config import MAXModelConfig
 from transformers import AutoConfig
 
 

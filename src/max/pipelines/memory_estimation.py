@@ -28,7 +28,6 @@ from transformers import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-from max.pipelines.registry import SupportedArchitecture
 
 from .max_config import KVCacheConfig
 from .pipeline import KVCacheMixin, PipelineModel
@@ -40,10 +39,10 @@ class MemoryEstimator:
     def estimate_memory_footprint(
         self,
         pipeline_config: PipelineConfig,
-        arch: SupportedArchitecture,
+        pipeline_model: type[PipelineModel],
         devices: list[Device],
     ):
-        model_cls = arch.pipeline_model
+        model_cls = pipeline_model
         model_config = pipeline_config.model_config
 
         huggingface_config = model_config.huggingface_config

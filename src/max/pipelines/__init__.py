@@ -47,12 +47,11 @@ from .hf_utils import (
 from .log_probabilities import compute_log_probabilities
 from .max_config import (
     KVCacheConfig,
-    MAXModelConfig,
     ProfilingConfig,
-    QuantizationConfig,
     SamplingConfig,
 )
 from .memory_estimation import MEMORY_ESTIMATOR
+from .model_config import MAXModelConfig
 from .pipeline import (
     ModelInputs,
     ModelOutputs,
@@ -77,7 +76,6 @@ __all__ = [
     "ProfilingConfig",
     "KVCacheConfig",
     "MAXModelConfig",
-    "QuantizationConfig",
     "PipelineEngine",
     "PipelineTask",
     "PIPELINE_REGISTRY",

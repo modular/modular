@@ -46,7 +46,7 @@ from .core import (
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
-from .max_config import HuggingFaceRepo, MAXModelConfig
+from .hf_utils import HuggingFaceRepo
 from .pipeline import PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer
@@ -167,11 +167,11 @@ class PipelineRegistry:
         self.architectures[architecture.name] = architecture
 
     def retrieve_architecture(
-        self, model_config: MAXModelConfig
+        self, huggingface_repo: HuggingFaceRepo
     ) -> Optional[SupportedArchitecture]:
         # Retrieve model architecture names
         hf_config = self.get_active_huggingface_config(
-            model_config=model_config
+            huggingface_repo=huggingface_repo
         )
         architecture_names = getattr(hf_config, "architectures", [])
 
@@ -186,13 +186,13 @@ class PipelineRegistry:
                 return self.architectures[architecture_name]
 
         logger.debug(
-            f"optimized architecture not available for {model_config.model_path} in MAX REGISTRY"
+            f"optimized architecture not available for {huggingface_repo.repo_id} in MAX REGISTRY"
         )
 
         return None
 
     def get_active_huggingface_config(
-        self, model_config: MAXModelConfig
+        self, huggingface_repo: HuggingFaceRepo
     ) -> AutoConfig:
         """Retrieves or creates a cached HuggingFace AutoConfig for the given
         model configuration.
@@ -204,30 +204,24 @@ class PipelineRegistry:
         settings.
 
         Args:
-            model_config: The MAX model configuration containing model path and
-            loading settings.
+            huggingface_repo: The HuggingFaceRepo containing the model.
 
         Returns:
             AutoConfig: The HuggingFace configuration object for the model.
         """
-        if (
-            model_config.huggingface_weights_repo
-            not in self._cached_huggingface_configs
-        ):
-            self._cached_huggingface_configs[
-                model_config.huggingface_weights_repo
-            ] = AutoConfig.from_pretrained(
-                model_config.model_path,
-                trust_remote_code=model_config.trust_remote_code,
-                revision=model_config.huggingface_revision,
+        if huggingface_repo not in self._cached_huggingface_configs:
+            self._cached_huggingface_configs[huggingface_repo] = (
+                AutoConfig.from_pretrained(
+                    huggingface_repo.repo_id,
+                    trust_remote_code=huggingface_repo.trust_remote_code,
+                    revision=huggingface_repo.revision,
+                )
             )
 
-        return self._cached_huggingface_configs[
-            model_config.huggingface_weights_repo
-        ]
+        return self._cached_huggingface_configs[huggingface_repo]
 
-    def _get_active_tokenizer(
-        self, model_config: MAXModelConfig
+    def get_active_tokenizer(
+        self, huggingface_repo: HuggingFaceRepo
     ) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
         """Retrieves or creates a cached HuggingFace AutoTokenizer for the given
         model configuration.
@@ -239,27 +233,21 @@ class PipelineRegistry:
         settings.
 
         Args:
-            model_config: The MAX model configuration containing model path and
-            loading settings.
+            huggingface_repo: The HuggingFaceRepo containing the model.
 
         Returns:
             PreTrainedTokenizer | PreTrainedTokenizerFast: The HuggingFace tokenizer for the model.
         """
-        if (
-            model_config.huggingface_weights_repo
-            not in self._cached_huggingface_tokenizers
-        ):
-            self._cached_huggingface_tokenizers[
-                model_config.huggingface_weights_repo
-            ] = AutoTokenizer.from_pretrained(
-                model_config.model_path,
-                trust_remote_code=model_config.trust_remote_code,
-                revision=model_config.huggingface_revision,
+        if huggingface_repo not in self._cached_huggingface_tokenizers:
+            self._cached_huggingface_tokenizers[huggingface_repo] = (
+                AutoTokenizer.from_pretrained(
+                    huggingface_repo.repo_id,
+                    trust_remote_code=huggingface_repo.trust_remote_code,
+                    revision=huggingface_repo.revision,
+                )
             )
 
-        return self._cached_huggingface_tokenizers[
-            model_config.huggingface_weights_repo
-        ]
+        return self._cached_huggingface_tokenizers[huggingface_repo]
 
     def _load_logging_message(
         self,
@@ -330,12 +318,12 @@ class PipelineRegistry:
 
             # MAX pipeline
             arch = self.retrieve_architecture(
-                model_config=pipeline_config.model_config,
+                huggingface_repo=pipeline_config.model_config.huggingface_repo,
             )
 
             # Load HuggingFace Config
             huggingface_config = self.get_active_huggingface_config(
-                pipeline_config.model_config
+                huggingface_repo=pipeline_config.model_config.huggingface_repo
             )
 
             # Architecture should not be None here, as the engine is MAX.
