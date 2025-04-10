@@ -6995,8 +6995,8 @@ struct Struct_mha_ragged_continuous_batching_chunked_causal_mask_no_pos:
     fn execute[
         type: DType,
         num_heads: Int,
-        head_dim: Int,
-        local_window_size: Int, //,
+        head_dim: Int, //,
+        local_window_size: Int,
         target: StringLiteral,
     ](
         output: OutputTensor[type=type, rank=3],
@@ -7010,8 +7010,8 @@ struct Struct_mha_ragged_continuous_batching_chunked_causal_mask_no_pos:
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged_kernel_api[
-            target
+        generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged_kernel_api[
+            local_window_size, target
         ](
             q,
             input_row_offsets,
