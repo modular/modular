@@ -198,6 +198,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
 
     @parameter
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache)
+    @always_inline
     fn write_to_cache[
         type_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[type_, width]):

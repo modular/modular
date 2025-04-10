@@ -482,6 +482,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
 
     @parameter
     @__copy_capture(q_dim, qk_offset, batch_size)
+    @always_inline
     fn write_to_cache[
         type_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[type_, width]):
@@ -615,6 +616,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
 
     @parameter
     @__copy_capture(q_dim, qk_offset, batch_size)
+    @always_inline
     fn write_to_cache[
         type_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[type_, width]):
@@ -969,6 +971,7 @@ fn _matmul_kv_cache_ragged_impl[
 
     @parameter
     @__copy_capture(k_cache_reg, v_cache_reg)
+    @always_inline
     fn write_to_cache_continuous[
         type_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[type_, width]):
