@@ -19,7 +19,7 @@ from transformers.models.llama4.configuration_llama4 import (
 Fixtures for Llama4 tests, including config, generated input tensors, and dummy weights.
 """
 
-WEIGHTS_STDDEV = 0.001
+WEIGHTS_STDDEV = 0.01
 
 
 @pytest.fixture
