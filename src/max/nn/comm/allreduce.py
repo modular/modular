@@ -87,7 +87,7 @@ class Signals:
     synchronization, and to hold intermediate communication results.
     """
 
-    NUM_BYTES = (1 + 128) * 1024 * 1024
+    NUM_BYTES = (1 + 512) * 1024 * 1024
     """The size of the signal buffers used for communication in allreduce."""
     # NOTE: ``NUM_BYTES`` must stay in sync with the size of the ``Signal``
     # Mojo struct + the size of the intermediate buffer for communication.
