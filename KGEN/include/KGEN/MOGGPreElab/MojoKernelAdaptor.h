@@ -230,7 +230,12 @@ struct MojoKernelFunctionAdaptor {
 
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {
-    StringRef sourceName = mojoCode.getSymName();
+    StringRef sourceName;
+    if constexpr (std::is_same_v<LIT::FnOp, FuncOpType>) {
+      if (mojoCode.getSymName().has_value())
+        sourceName = *mojoCode.getSymName();
+    }
+
     if (auto name = mojoCode->getAttr("sourceName"))
       sourceName = cast<StringAttr>(name).strref();
     os << nesting << sourceName.str() << "\n" << nesting << "(\n";
