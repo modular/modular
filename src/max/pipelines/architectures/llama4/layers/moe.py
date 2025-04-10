@@ -143,7 +143,9 @@ class MoE(Module):
         # (batch * seq_len, num_experts)
         top_idx = ops.squeeze(ops.argmax(router_logits, axis=-1), axis=1)
         # (batch * seq_len,)
-        router_probs = ops.sigmoid(ops.max(router_logits, axis=-1))
+        router_probs = ops.sigmoid(
+            ops.max(router_logits, axis=-1).cast(DType.float32)
+        ).cast(hidden_states.dtype)
         # (batch * seq_len, 1)
 
         down_proj_weight = self.down_proj.to(self.device)
@@ -161,8 +163,8 @@ class MoE(Module):
         )
 
         permutated_states = ops.gather(
-            hidden_states, token_expert_order, axis=0
-        )
+            router_probs, token_expert_order, axis=0
+        ) * ops.gather(hidden_states, token_expert_order, axis=0)
         gate_up_projs = grouped_matmul_ragged(
             permutated_states,
             ops.transpose(gate_up_proj_weight, 1, 2),
@@ -194,4 +196,4 @@ class MoE(Module):
             ).cast(DType.bfloat16)
             * self.shared_expert_up_proj(hidden_states)
         )
-        return [router_probs * routed_expert_out + shared_expert_out]
+        return [routed_expert_out + shared_expert_out]
