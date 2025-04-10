@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from enum import Enum
 from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
@@ -23,6 +24,13 @@ import numpy as np
 from .interfaces import LogProbabilities
 
 CHUNK_SIZE = 128
+
+
+class ContextStatus(str, Enum):
+    """Identify if the sequence has reached an EOS token, or remains active."""
+
+    ACTIVE = "active"
+    END_OF_SEQUENCE = "end_of_sequence"
 
 
 @runtime_checkable
@@ -110,7 +118,7 @@ class InputContext(Protocol):
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         ...
 
-    def jump_ahead(self, new_token: int) -> None:
+    def jump_ahead(self, new_token: int, is_eos: bool = False) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
         ...
 
@@ -242,6 +250,7 @@ class TextContext:
         self.json_schema = json_schema
         self.is_initial_prompt = True
         self.ignore_eos = ignore_eos
+        self.active_status = ContextStatus.ACTIVE
 
     @property
     def start_idx(self) -> int:
@@ -276,6 +285,16 @@ class TextContext:
         self._active_idx = new_active_idx
         self._end_idx = new_active_idx
         self._completion_end_idx = new_active_idx
+
+        # If the new active_idx is less than the completion end idx
+        # and current status suggests we have hit an EOS token
+        # reset the status
+        if (
+            self._active_idx < self._completion_end_idx
+            and self.active_status == ContextStatus.END_OF_SEQUENCE
+        ):
+            self.active_status = ContextStatus.ACTIVE
+            self._completion_end_idx = new_active_idx
 
     @property
     def current_length(self) -> int:
@@ -387,7 +406,10 @@ class TextContext:
         self._active_idx += 1
         self._end_idx += 1
 
-        if not is_eos:
+        if is_eos:
+            self.active_status = ContextStatus.END_OF_SEQUENCE
+
+        if self.active_status == ContextStatus.ACTIVE:
             self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
@@ -396,7 +418,7 @@ class TextContext:
 
         self.is_initial_prompt = False
 
-    def jump_ahead(self, new_token: int) -> None:
+    def jump_ahead(self, new_token: int, is_eos: bool = False) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
 
         self._upsize()
@@ -407,7 +429,12 @@ class TextContext:
         # Bump Indices
         self._active_idx += 1
         self._end_idx += 1
-        self._completion_end_idx += 1
+
+        if is_eos:
+            self.active_status = ContextStatus.END_OF_SEQUENCE
+
+        if self.active_status == ContextStatus.ACTIVE:
+            self._completion_end_idx += 1
 
         # Accept the token, and move the FSM for constrained decoding forward.
         if self.matcher:
@@ -443,6 +470,7 @@ class TextContext:
             )
 
         self._completion_start_idx = self._completion_end_idx
+        self.active_status = ContextStatus.ACTIVE
 
         return res
 
