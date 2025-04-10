@@ -13,8 +13,9 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import pytest
 from max.driver import DeviceSpec, load_devices, scan_available_devices
 from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.max_config import KVCacheConfig, MAXModelConfig
+from max.pipelines.max_config import KVCacheConfig
 from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
+from max.pipelines.model_config import MAXModelConfig
 from test_common.pipeline_model import DUMMY_ARCH, DummyLlamaPipelineModel
 
 
