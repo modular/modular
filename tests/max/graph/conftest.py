@@ -183,6 +183,32 @@ def axes(shapes):
     return shapes.flatmap(strategy)
 
 
+def symbolic_axes(shapes):
+    """Samples the axes corresponding to the symbolic dimensions of the given
+    shapes.
+    """
+
+    def strategy(shape):
+        rank = shape.rank
+        assume(rank > 0)
+        positives = [
+            i for i, x in enumerate(shape.shape) if isinstance(x, SymbolicDim)
+        ]
+        negatives = [
+            i - rank
+            for i, x in enumerate(shape.shape)
+            if isinstance(x, SymbolicDim)
+        ]
+
+        return (
+            st.sampled_from(positives + negatives)
+            if positives or negatives
+            else st.nothing()
+        )
+
+    return shapes.flatmap(strategy)
+
+
 def new_axes(shapes):
     def strategy(shapes):
         if not shapes.rank:

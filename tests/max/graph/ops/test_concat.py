@@ -6,7 +6,7 @@
 """ops.concat tests."""
 
 import pytest
-from conftest import axes, shapes, tensor_types
+from conftest import axes, shapes, symbolic_axes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -140,7 +140,7 @@ def test_concat__mismatched_dims(
             out = ops.concat(graph.inputs, axis)
 
 
-@given(base_type=shared_tensor_types, axis=axes(shared_tensor_types))
+@given(base_type=shared_tensor_types, axis=symbolic_axes(shared_tensor_types))
 def test_concat__symbolic__size_1(base_type: TensorType, axis: int):
     assume(not isinstance(base_type.shape[axis], StaticDim))
 
@@ -153,14 +153,13 @@ def test_concat__symbolic__size_1(base_type: TensorType, axis: int):
 @given(
     base_type=shared_tensor_types,
     axis=axes(shared_tensor_types),
-    axis_dims=st.lists(st.from_type(Dim), min_size=1, max_size=MAX_CONCAT_SIZE),
+    axis_dims=st.lists(st.from_type(Dim), min_size=2, max_size=MAX_CONCAT_SIZE),
 )
 def test_concat__symbolic__algebraic_result(
     base_type: TensorType,
     axis: int,
     axis_dims: list[Dim],
 ):
-    assume(len(axis_dims) > 1)
     assume(not all(isinstance(dim, StaticDim) for dim in axis_dims))
     merged_static_size = sum(
         dim.dim for dim in axis_dims if isinstance(dim, StaticDim)
