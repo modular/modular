@@ -260,7 +260,7 @@ class _Llama4TextAttention(Module):
             layer_idx=layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
             context_lengths=context_lengths,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            mask_variant=MHAMaskVariant.CHUNKED_CAUSAL_MASK,
             scale=self.scale,
         )
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
