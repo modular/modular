@@ -198,7 +198,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, Testable):
         """
         return __type_of(result)(
             self.unsafe_ptr(),
-            RuntimeLayout[result.layout](self._spec.shape, self._strides),
+            __type_of(result.runtime_layout)(self._spec.shape, self._strides),
         )
 
     fn _steal_ptr(owned self) -> UnsafePointer[Scalar[type]]:
