@@ -6997,7 +6997,7 @@ struct Struct_mha_ragged_continuous_batching_chunked_causal_mask_no_pos:
         num_heads: Int,
         head_dim: Int, //,
         local_window_size: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -7060,7 +7060,7 @@ struct Struct_mha_ragged_paged_chunked_causal_mask_no_pos:
         head_dim: Int,
         page_size: Int, //,
         local_window_size: Int,
-        target: StringLiteral,
+        target: StaticString,
     ](
         output: OutputTensor[type=type, rank=3],
         q: InputTensor[type=type, rank=3],
@@ -7410,7 +7410,7 @@ struct Struct_moe_create_indices:
     @always_inline
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
     ](
         token_expert_order: OutputTensor[type = DType.uint32, rank=1],
         expert_start_indices: OutputTensor[type = DType.uint32, rank=1],
@@ -7439,7 +7439,7 @@ struct Struct_grouped_matmul_ragged:
         c_type: DType,
         a_type: DType,
         b_type: DType, //,
-        target: StringLiteral,
+        target: StaticString,
     ](
         c: OutputTensor[type=c_type, rank=2],
         a: InputTensor[type=a_type, rank=2],
