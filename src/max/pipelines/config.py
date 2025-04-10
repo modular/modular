@@ -258,11 +258,6 @@ class PipelineConfig(MAXConfig):
         # except the model_path / repo_id to the draft_model_config.
         self._draft_model_config = deepcopy(self._model_config)
         self._draft_model_config.model_path = self.draft_model
-        self._draft_model_config._huggingface_config = (
-            PIPELINE_REGISTRY.get_active_huggingface_config(
-                huggingface_repo=self._draft_model_config.huggingface_repo
-            )
-        )
 
         # TODO(E2EOPT-108): Remove this once we have fully migrated draft model
         # to MAXModelConfig.
@@ -326,7 +321,7 @@ class PipelineConfig(MAXConfig):
             msg = "enable_echo not currently supported with speculative decoding enabled"
             raise ValueError(msg)
 
-        if self._sampling_config.enable_structured_output:
+        if self.sampling_config.enable_structured_output:
             msg = "structured outputs not currently supported with speculative decoding enabled"
             raise ValueError(msg)
 
@@ -386,9 +381,6 @@ class PipelineConfig(MAXConfig):
         self.model_config.validate_and_resolve_with_set_quantization_encoding(
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
-            hf_config=PIPELINE_REGISTRY.get_active_huggingface_config(
-                huggingface_repo=self.model_config.huggingface_repo
-            ),
         )
 
         if self.rope_type is None:

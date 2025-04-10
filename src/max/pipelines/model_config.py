@@ -402,7 +402,6 @@ class MAXModelConfig(MAXModelConfigBase):
         self,
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
         default_weights_format: WeightsFormat,
-        hf_config: AutoConfig,
     ) -> None:
         """
         Validates that the model path, and weight path
@@ -412,8 +411,7 @@ class MAXModelConfig(MAXModelConfigBase):
         self._validate_quantization_encoding_device_compatibility(
             supported_encodings_list=list(supported_encodings.keys()),
         )
-        self._huggingface_config = hf_config
-        self._finalize_encoding_config(hf_config=hf_config)
+        self._finalize_encoding_config()
         self._resolve_weight_path(default_weights_format=default_weights_format)
         self._resolve_kv_cache_strategy(supported_encodings=supported_encodings)
         self._validate_final_architecture_model_path_weight_path()
@@ -565,7 +563,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     f"unexpected repository type: {repo.repo_type}"
                 )
 
-    def _finalize_encoding_config(self, hf_config: AutoConfig):
+    def _finalize_encoding_config(self):
         """
         Finalizes the encoding config.
 
@@ -573,9 +571,9 @@ class MAXModelConfig(MAXModelConfigBase):
         been set.
         """
         if self.quantization_encoding == SupportedEncoding.gptq:
-            hf_quant_config = hf_config.quantization_config
+            hf_quant_config = self.huggingface_config.quantization_config
 
-            if hf_config.torch_dtype is not torch.float16:
+            if self.huggingface_config.torch_dtype is not torch.float16:
                 raise ValueError(
                     "bfloat16 scales are not supported for GPTQ-quantized models."
                 )
