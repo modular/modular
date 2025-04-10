@@ -3706,8 +3706,8 @@ struct DeviceContext(CollectionElement):
         )
 
     @always_inline
-    fn get_driver_version(self) raises -> Int:
-        """Returns the driver version associated with this device.
+    fn get_api_version(self) raises -> Int:
+        """Returns the API version associated with this device.
 
         This method retrieves the version number of the GPU driver currently installed
         on the system for the device associated with this context. The version is
@@ -3726,16 +3726,16 @@ struct DeviceContext(CollectionElement):
         from gpu.host import DeviceContext
 
         with DeviceContext() as ctx:
-            # Get the driver version
-            var driver_version = ctx.get_driver_version()
-            print("GPU driver version:", driver_version)
+            # Get the API version
+            var api_version = ctx.get_api_version()
+            print("GPU API version:", api_version)
         ```
         """
         var value: Int32 = 0
-        # const char * AsyncRT_DeviceContext_getDriverVersion(int *result, const DeviceContext *ctx)
+        # const char * AsyncRT_DeviceContext_getApiVersion(int *result, const DeviceContext *ctx)
         _checked(
             external_call[
-                "AsyncRT_DeviceContext_getDriverVersion",
+                "AsyncRT_DeviceContext_getApiVersion",
                 _CharPtr,
                 _IntPtr,
                 _DeviceContextPtr,
