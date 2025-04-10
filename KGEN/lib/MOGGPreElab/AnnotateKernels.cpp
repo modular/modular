@@ -321,7 +321,15 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
                              builder.getArrayAttr(sourceName));
   }
 
+  // This is a hack because it assumes that subsequent LIT->KGEN passes prepend
+  // function parameters with struct parameters. When we move on from KGEN, this
+  // will no longer be a hack.
   SmallVector<Attribute> types;
+  if (auto structDeclOp = func->getParentOfType<LIT::StructDeclOp>()) {
+    for (auto inputParameter : structDeclOp.getInputParams())
+      types.push_back(litTypeToSourceName(inputParameter.getType()));
+  }
+
   for (auto inputParameter : func.getInputParams())
     types.push_back(litTypeToSourceName(inputParameter.getType()));
 
