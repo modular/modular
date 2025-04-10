@@ -436,7 +436,7 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
+    shape: IndexList[_, element_type = DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -501,7 +501,7 @@ fn _reduce_generator_gpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
+    shape: IndexList[_, element_type = DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
     ctx: DeviceContext,
@@ -560,7 +560,7 @@ fn _reduce_generator_cpu[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
+    shape: IndexList[_, element_type = DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ) raises:
@@ -637,7 +637,7 @@ fn _reduce_generator_wrapper[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
+    shape: IndexList[_, element_type = DType.int64],
     init: Scalar,
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -694,7 +694,7 @@ fn _reduce_generator[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
+    shape: IndexList[_, element_type = DType.int64],
     init: Scalar,
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -768,7 +768,7 @@ fn _reduce_along_inner_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
+    shape: IndexList[_, element_type = DType.int64],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -951,7 +951,7 @@ fn _reduce_along_outer_dimension[
     /,
     single_thread_blocking_override: Bool = False,
 ](
-    shape: IndexList[_, element_bitwidth = bitwidthof[Int](), unsigned=False],
+    shape: IndexList[_, element_type = DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
     reduce_dim: Int,
 ):
@@ -1129,9 +1129,7 @@ fn max[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    input_shape: IndexList[_, element_type = DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1254,9 +1252,7 @@ fn min[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    input_shape: IndexList[_, element_type = DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1379,9 +1375,7 @@ fn sum[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    input_shape: IndexList[_, element_type = DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1504,9 +1498,7 @@ fn product[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    input_shape: IndexList[_, element_type = DType.int64],
     reduce_dim: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -1644,9 +1636,7 @@ fn mean[
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
-    input_shape: IndexList[
-        _, element_bitwidth = bitwidthof[Int](), unsigned=False
-    ],
+    input_shape: IndexList[_, element_type = DType.int64],
     reduce_dim: Int,
     output_shape: __type_of(input_shape),
     context: DeviceContextPtr = DeviceContextPtr(),
