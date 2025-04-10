@@ -425,38 +425,6 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         ]
         return kv_caches_per_dev
 
-    @staticmethod
-    def infer_optimal_batch_size(
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        huggingface_config: AutoConfig,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Infers the optimal batch size based on available memory and model
-        configuration.
-
-        Note:
-            This method currently returns a placeholder value and needs a more
-            sophisticated implementation.
-
-        Args:
-            pipeline_config: The configuration for the pipeline.
-            available_cache_memory: The memory available for the KV cache in bytes.
-            huggingface_config: The HuggingFace model configuration object
-                (:obj:`transformers.AutoConfig`).
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`).
-            kv_cache_config: Configuration settings for the KV cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The inferred optimal batch size.
-        """
-        # TODO: Implement a more sophisticated batch size inference
-        return 1  # Placeholder
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Llama 4 model with the prepared inputs.
 
