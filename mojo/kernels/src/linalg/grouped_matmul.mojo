@@ -195,7 +195,24 @@ fn naive_grouped_matmul_kernel[
 # ===----------------------------------------------------------------------=== #
 
 
-fn grouped_matmul[
+@always_inline
+fn default_config_sm90[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool,
+    wgmma_shape: IndexList[3],
+]() -> MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape]:
+    return MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape,](
+        block_tile_shape=Index(128, 256, 64),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=4,
+        num_consumer=2,
+        partitioned_multicast=False,
+    )
+
+
+fn grouped_matmul_sm90[
     c_type: DType,
     c_shape: DimList,
     a_type: DType,
@@ -203,9 +220,17 @@ fn grouped_matmul[
     b_type: DType,
     b_shape: DimList, //,
     *,
-    transpose_b: Bool,
-    wgmma_shape: IndexList[3],
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b, wgmma_shape],
+    transpose_b: Bool = True,
+    wgmma_shape: IndexList[3] = Index(64, 256, 16),
+    config: MatmulConfig[
+        a_type, b_type, c_type, transpose_b, wgmma_shape
+    ] = default_config_sm90[
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        wgmma_shape,
+    ](),
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
@@ -678,3 +703,55 @@ fn grouped_matmul_kernel[
     @parameter
     if cluster_size[cluster_shape]() > 1:
         cluster_sync()
+
+
+# ===----------------------------------------------------------------------=== #
+# Entry Point and Dispatch
+# ===----------------------------------------------------------------------=== #
+
+
+fn grouped_matmul[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList, //,
+](
+    c: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
+    a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
+    b: NDBuffer[b_type, 3, MutableAnyOrigin, b_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    expert_ids: NDBuffer[DType.uint32, 1, MutableAnyOrigin],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    alias is_expert_shape_static = b_shape.all_known[3]() and a_shape.has_value[
+        1
+    ]() and c_shape.has_value[1]()
+    alias is_sm90_kernel_applicable = ctx.device_info is H100 and is_expert_shape_static
+
+    @parameter
+    if is_sm90_kernel_applicable:
+        grouped_matmul_sm90(
+            c,
+            a,
+            a_offsets,
+            max_num_tokens_per_expert,
+            b,
+            expert_ids,
+            num_active_experts,
+            ctx,
+        )
+    else:
+        naive_grouped_matmul(
+            c,
+            a,
+            b,
+            a_offsets,
+            expert_ids,
+            max_num_tokens_per_expert,
+            num_active_experts,
+            ctx,
+        )
