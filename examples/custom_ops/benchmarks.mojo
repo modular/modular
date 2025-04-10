@@ -213,7 +213,7 @@ def matmul():
         var c_dev = _BenchTensor[Output, c_spec](gpu_ctx).rand()
 
         @parameter
-        def bench_matmul_kernel[impl: StringLiteral]():
+        def bench_matmul_kernel[impl: StaticString]():
             @parameter
             @always_inline
             fn bench_gpu(mut bench: Bencher) raises:
@@ -227,7 +227,7 @@ def matmul():
                 bench.iter_custom[kernel_launch](gpu_ctx)
 
             bench.bench_function[bench_gpu](
-                BenchId("gpu", impl), flops, elements
+                BenchId("gpu", String(impl)), flops, elements
             )
 
         bench_matmul_kernel["naive"]()

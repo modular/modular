@@ -1229,7 +1229,7 @@ def test_format_args():
     var s = String(" {} , {} {} !").format("Hello", "Beautiful", "World")
     assert_equal(s, " Hello , Beautiful World !")
 
-    fn curly(c: StringLiteral) -> StringLiteral:
+    fn curly(c: StaticString) -> String:
         return "there is a single curly " + c + " left unclosed or unescaped"
 
     with assert_raises(contains=curly("{")):

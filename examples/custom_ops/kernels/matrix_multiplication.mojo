@@ -768,7 +768,7 @@ fn tensor_core_matrix_multiplication[
 
 
 @compiler.register("matrix_multiplication")
-struct MatrixMultiplication[algorithm: StringLiteral]:
+struct MatrixMultiplication[algorithm: StaticString]:
     """
     The central custom operation that dispatches to multiple different
     matrix multiplication implementations, depending on target hardware and

@@ -35,6 +35,7 @@ from sys import (
 from math import iota, align_down
 
 from memory.pointer import AddressSpace, _GPUAddressSpace
+from collections.string.string_slice import _get_kgen_string
 
 # ===-----------------------------------------------------------------------===#
 # memcmp
@@ -413,7 +414,7 @@ fn stack_allocation[
     count: Int,
     type: AnyType,
     /,
-    name: Optional[StringLiteral] = None,
+    name: Optional[StaticString] = None,
     alignment: Int = alignof[type]() if is_gpu() else 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]() -> UnsafePointer[type, address_space=address_space]:
@@ -440,7 +441,7 @@ fn stack_allocation[
         @parameter
         if address_space == _GPUAddressSpace.SHARED:
             return __mlir_op.`pop.global_alloc`[
-                name = global_name.value,
+                name = _get_kgen_string[global_name](),
                 count = count.value,
                 memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
                 _type = UnsafePointer[
@@ -453,7 +454,7 @@ fn stack_allocation[
             # GPU shared memory won't prevent llvm module splitting to
             # happen since they are immutables.
             return __mlir_op.`pop.global_alloc`[
-                name = global_name.value,
+                name = _get_kgen_string[global_name](),
                 count = count.value,
                 _type = UnsafePointer[
                     type, address_space=address_space, alignment=alignment

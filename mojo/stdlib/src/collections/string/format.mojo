@@ -72,7 +72,7 @@ from utils import Variant
 @value
 struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
     """The struct that handles string formatting by curly braces entries.
-    This is internal for the types: `String`, `StringLiteral` and `StringSlice`.
+    This is internal for the types: `StringSlice` compatible types.
     """
 
     var first_curly: Int
