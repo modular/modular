@@ -107,7 +107,7 @@ def test_external_constant_mem(ctx: DeviceContext):
         var static_constant = stack_allocation[
             16,
             Float32,
-            name="static_constant",
+            name = StaticString("static_constant"),
             address_space = AddressSpace.CONSTANT,
             alignment=8,
         ]()
