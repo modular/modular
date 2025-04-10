@@ -68,6 +68,15 @@ def VerifyKernels : Pass<"mogg-verify-kernels", "ModuleOp"> {
   }];
 }
 
+def DumpKernels : Pass<"mogg-dump-kernels", "ModuleOp"> {
+  let summary = "Prints the internal representation of kernels";
+  let description = [{
+    Prints the internal in-memory representation of kernels for debugging
+    purposes. This pass can be run on both `LIT` and `KGEN` kernels because the
+    underlying representation is compatible with both.
+  }];
+}
+
 def MOGGPreElabPipeline : Pass<"mogg-pre-elab-pipeline", "ModuleOp"> {
   let summary = "Run all the mogg pre elab passes";
   let description = [{
