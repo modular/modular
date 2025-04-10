@@ -833,6 +833,7 @@ fn flash_attention[
 # ===-----------------------------------------------------------------------===#
 
 
+@__llvm_metadata(`rocdl.waves_per_eu`=Int(2))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
 )

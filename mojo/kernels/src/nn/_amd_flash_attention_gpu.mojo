@@ -74,127 +74,44 @@ from math import exp
 from nn.mha_utils import MHAConfig
 from layout._utils import idx2crd, hash
 from layout.layout_tensor import LayoutTensorIter
+from gpu.mma import mma as mma_simd
+from sys.intrinsics import readfirstlane
 
 
-# @always_inline
-# fn mma[
-#     transpose_b: Bool,
-#     k_group_size: Int,
-#     config: MHAConfig,
-#     swizzle: OptionalReg[Swizzle] = None,
-#     swap_operands: Bool = False,
-# ](
-#     c: LayoutTensor,
-#     a: LayoutTensor,
-#     a_smem: LayoutTensor,
-#     b: LayoutTensor,
-#     b_smem: LayoutTensor,
-# ):
-#     alias mma_input_type = b.dtype
-#     alias mma_input_type = b.dtype
-#     alias simd_width = (simdwidthof[mma_input_type]() // 2) * k_group_size
-#     alias mma_shape = get_mma_shape[mma_input_type, get_accum_type[mma_input_type]()]()
-#     alias MMA_M = mma_shape[0]
-#     alias MMA_N = mma_shape[1]
-#     alias MMA_K = mma_shape[2]
-#     alias accum_type = get_accum_type[mma_input_type]()
-#     alias WM = config.warp_m()
-#     alias BM = config.block_m()
-#     alias BN = config.block_n()
-#     alias depth = config.depth
-#     var warp_id = thread_idx.x // WARP_SIZE
-#     alias num_warps = config.num_threads() // WARP_SIZE
-#     alias num_threads = config.num_threads()
+@always_inline
+fn tensor_core_mma[
+    swap_operands: Bool = False
+](a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor):
+    alias num_m_mmas = a_frag.shape[0]()
+    alias num_n_mmas = b_frag.shape[0]()
+    constrained[
+        c_frag.shape[0]() == num_m_mmas * num_n_mmas,
+        "Fragments size mismatch. Expected c_frag shape[0] to be num_m_mmas"
+        " * num_n_mmas = "
+        + String(num_m_mmas * num_n_mmas)
+        + ", got "
+        + String(c_frag.shape[0]()),
+    ]()
 
-#     @parameter
-#     if a.address_space in (AddressSpace.GLOBAL, AddressSpace.GENERIC):
-#         copy_dram_to_sram[
-#             thread_layout = Layout.row_major(num_threads // 16, 16),
-#             swizzle=swizzle,
-#         ](
-#             a_smem.vectorize[1, 8](),
-#             a.vectorize[1, 8](),
-#             a,
-#         )
+    @always_inline
+    fn flatten_index(m_mma: Int, n_mma: Int) -> Int:
+        @parameter
+        if not swap_operands:
+            return n_mma * num_m_mmas + m_mma
+        else:
+            return m_mma * num_n_mmas + n_mma
 
-#     @parameter
-#     if b.address_space != AddressSpace.SHARED:
-#         copy_dram_to_sram[
-#             thread_layout = Layout.row_major(num_threads // 16, 16),
-#             swizzle=swizzle,
-#         ](
-#             b_smem.vectorize[1, 8](),
-#             b.vectorize[1, 8](),
-#             b,
-#         )
+    @parameter
+    for m_mma in range(num_m_mmas):
 
-#     barrier()
-#     var mma_op = TensorCore[
-#         accum_type,
-#         mma_input_type,
-#         (MMA_M, MMA_N, MMA_K),
-#         transpose_b=transpose_b,
-#     ]()
-
-#     var a_warp_tile = a_smem.tile[WM, depth](warp_id, 0)
-
-#     alias num_m_mmas = ceildiv(WM, MMA_M)
-#     alias num_n_mmas = ceildiv(BN, MMA_N)
-#     alias num_k_mmas2 = ceildiv(depth, (MMA_K * k_group_size))
-
-#     var a_reg_tile = tb[mma_input_type]().row_major[
-#         num_m_mmas * num_k_mmas2, simd_width
-#     ]().local().alloc()
-#     var b_reg_tile = tb[mma_input_type]().row_major[
-#         num_n_mmas * num_k_mmas2, simd_width
-#     ]().local().alloc()
-
-#     @parameter
-#     for k_mma in range(Int(num_k_mmas2)):
-
-#         @parameter
-#         if a.address_space != AddressSpace.LOCAL:
-#             mma_op.load_a[swizzle= True if swizzle else False](
-#                 a_warp_tile,
-#                 a_reg_tile.tile[num_m_mmas, simd_width](k_mma, 0).vectorize[
-#                     1, simd_width
-#                 ](),
-#                 k_mma,
-#             )
-#         mma_op.load_b[swizzle=swizzle](
-#             b_smem,
-#             b_reg_tile.tile[num_n_mmas, simd_width](k_mma, 0).vectorize[
-#                 1, simd_width
-#             ](),
-#             k_mma,
-#         )
-
-#     # var p_reg_tile = tb[accum_type]().row_major[
-#     #     num_m_mmas * num_n_mmas, output_frag_size
-#     # ]().local().alloc().fill(0)
-
-#     @parameter
-#     if a.address_space == AddressSpace.LOCAL:
-#         a_reg_tile.copy_from(a)
-
-#     @parameter
-#     for k_mma in range(Int(num_k_mmas2)):
-
-#         @parameter
-#         for k in range(k_group_size):
-#             alias elements_per_thread = simd_width // k_group_size
-#             var a_reg_k = a_reg_tile.tile[num_m_mmas, elements_per_thread](
-#                 k_mma, k
-#             ).vectorize[1, elements_per_thread]()
-#             var b_reg_k = b_reg_tile.tile[num_n_mmas, elements_per_thread](
-#                 k_mma, k
-#             ).vectorize[1, elements_per_thread]()
-
-#             @parameter
-#             if swap_operands:
-#                 mma_op.mma(b_reg_k, a_reg_k, c.vectorize[1, 4]())
-#             else:
-#                 mma_op.mma(a_reg_k, b_reg_k, c.vectorize[1, 4]())
+        @parameter
+        for n_mma in range(num_n_mmas):
+            mma_simd(
+                c_frag[flatten_index(m_mma, n_mma), 0],
+                a_frag[m_mma, 0],
+                b_frag[n_mma, 0],
+                c_frag[flatten_index(m_mma, n_mma), 0],
+            )
 
 
 @always_inline
@@ -338,9 +255,13 @@ fn mma[
                 # we will have to change the layout of c from col_major to row_major
                 @parameter
                 if swap_operands:
-                    mma_op.mma(b_reg_k, a_reg_k, c.vectorize[1, c_frag_size]())
+                    tensor_core_mma[True](
+                        b_reg_k, a_reg_k, c.vectorize[1, c_frag_size]()
+                    )
                 else:
-                    mma_op.mma(a_reg_k, b_reg_k, c.vectorize[1, c_frag_size]())
+                    tensor_core_mma(
+                        a_reg_k, b_reg_k, c.vectorize[1, c_frag_size]()
+                    )
 
 
 @always_inline
@@ -353,10 +274,10 @@ fn _apply_mask[
     num_m_mmas: Int,
     num_n_mmas: Int,
     mask_t: MHAMask,
-    not_last_iter: Bool,
     group: Int,
     fragment_layout: Layout,
     warp_layout: Layout,
+    not_last_iter: Bool,
     use_exp2: Bool = False,
 ](
     kv_tile_start_row: Int,
@@ -442,7 +363,8 @@ fn _apply_mask[
                     p_reg_vectorized[mma_id, 0] * log2e
                 )
 
-            if not not_last_iter or token_gen:
+            @parameter
+            if (not not_last_iter or token_gen) and mask_t.mask_out_of_bound:
                 var bound_y = kv_tile_start_row + kv_tile_num_rows if token_gen else num_keys
 
                 @parameter
@@ -674,7 +596,6 @@ struct GlobalMemoryManager[
     @always_inline
     fn get_kv_tensor[
         kvtype: DType, //,
-        not_last_iter: Bool,
     ](
         self,
         ptr: UnsafePointer[Scalar[kvtype], **_],
@@ -683,7 +604,7 @@ struct GlobalMemoryManager[
             kvtype,
             Self._kv_gmem_layout,
             ptr.origin,
-            masked = not not_last_iter,
+            masked=True,
             address_space = ptr.address_space,
             alignment = ptr.alignment,
         ],
@@ -704,9 +625,6 @@ struct GlobalMemoryManager[
         )
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
-)
 @always_inline
 fn mha_single_batch[
     output_type: DType,
@@ -820,6 +738,14 @@ fn mha_single_batch[
 
     var q_gmem_warp_iter = q_tile.tiled_iterator[WM, BK, axis=1](warp_row, 0)
 
+    # TODO: This is expensive, dereferencing q_gmem_warp_iter[] is expensive and
+    # using its dim() is also expensive. Need to find a better way to do this.
+    var q_bounds = max(
+        min(Int32(WM), Int32(q_tile.dim(0) - WM * warp_row))
+        * q_tile.stride[0](),
+        0,
+    )
+
     @parameter
     for i in range(Int(depth // BK)):
         var q_reg_tile = q_reg_tile_iter.next_unsafe(i)[]
@@ -829,7 +755,7 @@ fn mha_single_batch[
         ](
             q_reg_tile.vectorize[1, simd_width](),
             q_gmem_warp_iter,
-            q_tile.dim(0) * q_tile.stride[0](),
+            Int(readfirstlane(Int32(q_bounds))),
         )
         q_gmem_warp_iter._incr()
 
@@ -854,13 +780,13 @@ fn mha_single_batch[
 
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
-        var k_tile = gmem_manager.get_kv_tensor[not_last_iter=not_last_iter](
+        var k_tile = gmem_manager.get_kv_tensor(
             k.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
             kv_tile_num_rows,
         )
         var k_gmem_iter = k_tile.tiled_iterator[BN, BK, axis=1](0, 0)
 
-        var v_tile = gmem_manager.get_kv_tensor[not_last_iter=not_last_iter](
+        var v_tile = gmem_manager.get_kv_tensor(
             v.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
             kv_tile_num_rows,
         )
@@ -873,9 +799,7 @@ fn mha_single_batch[
 
         alias swizzle = Swizzle(2, 0, 2)
 
-        var num_b_rows = OptionalReg[Int](
-            kv_tile_num_rows
-        ) if not not_last_iter else None
+        var num_b_rows = OptionalReg[Int](kv_tile_num_rows)
 
         # TODO (KERN-1708):this is just a dummy iterator to satisfy the interface
         # will fix it with better interface later
@@ -924,10 +848,10 @@ fn mha_single_batch[
                 num_m_mmas=num_m_mmas,
                 num_n_mmas=num_n_mmas,
                 mask_t=mask_t,
-                not_last_iter=not_last_iter,
                 group=group,
                 fragment_layout=fragment_layout,
                 warp_layout=warp_layout,
+                not_last_iter=not_last_iter,
                 use_exp2=use_exp2,
             ](
                 kv_tile_start_row,
@@ -943,13 +867,7 @@ fn mha_single_batch[
                 p_reg_vectorized,
             )
 
-        @parameter
-        if not token_gen:
-            unswitch[_apply_mask_impl](
-                mask_status == TileMaskStatus.PARTIAL_MASK
-            )
-        else:
-            _apply_mask_impl[masked=True]()
+        unswitch[_apply_mask_impl](mask_status == TileMaskStatus.PARTIAL_MASK)
 
         mask_warp_col += BN
         alias reg_layout_by_mma_unit = Layout.row_major(
@@ -1086,17 +1004,29 @@ fn mha_single_batch[
             ]().local().alloc()
 
             constrained[BK // MMA_N == 2, "BK//MMA_N must be 2"]()
-            var p_mma_tile = p_reg_tile.tile[2, output_frag_size](i, 0)
+
+            var p_mma_tile = tb[q_type]().row_major[
+                num_m_mmas * 2, output_frag_size
+            ]().local().alloc().split[num_m_mmas]()
+
+            @parameter
+            for m_mma in range(Int(num_m_mmas)):
+                p_mma_tile[m_mma].copy_from(
+                    p_reg_tile.tile[2, output_frag_size](2 * i + m_mma, 0)
+                )
 
             # interleave p_reg_tile to match the pattern in v_smem_warp_tile_mma_tile
             @parameter
             for j in range(output_frag_size):
-                p_mma_tile_interleaved[0, 2 * j] = p_mma_tile[0, j].cast[
-                    q_type
-                ]()
-                p_mma_tile_interleaved[0, 2 * j + 1] = p_mma_tile[1, j].cast[
-                    q_type
-                ]()
+
+                @parameter
+                for k in range(2):
+
+                    @parameter
+                    for m_mma in range(Int(num_m_mmas)):
+                        p_mma_tile_interleaved[k, 2 * j + m_mma] = p_mma_tile[
+                            m_mma
+                        ][k, j].cast[q_type]()
 
             @parameter
             for k in range(2):
@@ -1106,7 +1036,7 @@ fn mha_single_batch[
                 var b_reg_k = p_mma_tile_interleaved.tile[
                     WM // MMA_N, output_frag_size
                 ](0, k).vectorize[1, output_frag_size]()
-                mma_op.mma(
+                tensor_core_mma[True](
                     a_reg_k,
                     b_reg_k,
                     out_reg_tile.vectorize[1, output_frag_size](),
@@ -1136,9 +1066,6 @@ fn mha_single_batch[
     )
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
-)
 @always_inline
 fn mha_decoding_single_batch[
     output_type: DType,
@@ -1289,13 +1216,13 @@ fn mha_decoding_single_batch[
 
         var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
-        var k_tile = gmem_manager.get_kv_tensor[not_last_iter=not_last_iter](
+        var k_tile = gmem_manager.get_kv_tensor(
             k.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
             kv_tile_num_rows,
         )
         var k_gmem_iter = k_tile.tiled_iterator[BN, BK, axis=1](0, 0)
 
-        var v_tile = gmem_manager.get_kv_tensor[not_last_iter=not_last_iter](
+        var v_tile = gmem_manager.get_kv_tensor(
             v.block_paged_ptr[BN](batch_idx, kv_tile_start_row, kv_head_idx, 0),
             kv_tile_num_rows,
         )
@@ -1359,10 +1286,10 @@ fn mha_decoding_single_batch[
                 num_m_mmas=num_m_mmas,
                 num_n_mmas=num_n_mmas,
                 mask_t=mask_t,
-                not_last_iter=not_last_iter,
                 group=group,
                 fragment_layout=fragment_layout,
                 warp_layout=warp_layout,
+                not_last_iter=not_last_iter,
                 use_exp2=use_exp2,
             ](
                 kv_tile_start_row,

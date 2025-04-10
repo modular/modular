@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from sys import bitwidthof
+from sys import bitwidthof, is_nvidia_gpu
 from buffer import NDBuffer, DimList
 from collections import OptionalReg
 
@@ -74,6 +74,7 @@ trait MHAMask:
     """
 
     alias apply_log2e_after_mask: Bool
+    alias mask_out_of_bound: Bool
 
     fn mask[
         type: DType,
@@ -126,6 +127,7 @@ struct CausalMask(MHAMask):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
     alias apply_log2e_after_mask: Bool = False
+    alias mask_out_of_bound: Bool = is_nvidia_gpu()
 
     @always_inline
     fn mask[
@@ -215,6 +217,7 @@ struct NullMask(MHAMask):
     """Mask that's effectively a noop."""
 
     alias apply_log2e_after_mask: Bool = False
+    alias mask_out_of_bound: Bool = True
 
     @always_inline
     fn mask[
@@ -277,6 +280,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
     """
 
     alias apply_log2e_after_mask: Bool = False
+    alias mask_out_of_bound: Bool = True
 
     @always_inline
     fn mask[
@@ -367,6 +371,8 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](MHAMask):
     """Mask that's backed by a materialized tensor."""
 
     alias apply_log2e_after_mask: Bool = True
+    alias mask_out_of_bound: Bool = True
+
     alias MaskType = NDBuffer[type_, rank_, MutableAnyOrigin, shape_]
     var mask_tensor: Self.MaskType
     var start_pos: OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
@@ -474,6 +480,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
     """Mask that's the AND of two masks."""
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
+    alias mask_out_of_bound: Bool = T.mask_out_of_bound or S.mask_out_of_bound
 
     @always_inline
     fn mask[
@@ -530,6 +537,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
     """Mask that's the OR of two masks."""
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
+    alias mask_out_of_bound: Bool = T.mask_out_of_bound and S.mask_out_of_bound
 
     @always_inline
     fn mask[
