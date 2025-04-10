@@ -1323,7 +1323,7 @@ fn swishGLU[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList, //,
-    target: StringLiteral = "cpu",
+    target: StaticString = "cpu",
 ](
     a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
     b0: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
@@ -1354,7 +1354,7 @@ fn swishGLU[
             trace_arg("C", IndexList[2](shape.M, shape.N), c.type),
         )
 
-    with Trace[TraceLevel.OP, target = StaticString(target)](
+    with Trace[TraceLevel.OP, target=target](
         "swish_glu",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
