@@ -244,7 +244,8 @@ fn max[
         MutableAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
-        layout_bitwidth = inp.layout_bitwidth,
+        layout_int_type = inp.layout_int_type,
+        linear_idx_type = inp.linear_idx_type,
     ],
 ):
     """Computes maximum reduction along specified axis, returning a new tensor.
@@ -322,7 +323,8 @@ fn sum[
         MutableAnyOrigin,
         address_space = inp.address_space,
         element_layout = inp.element_layout,
-        layout_bitwidth = inp.layout_bitwidth,
+        layout_int_type = inp.layout_int_type,
+        linear_idx_type = inp.linear_idx_type,
     ],
 ):
     """Computes sum reduction along specified axis, returning a new tensor.

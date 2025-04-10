@@ -27,12 +27,12 @@ struct ManagedLayoutTensor[
     *,
 ]:
     alias index_type: DType = _get_index_type(layout, AddressSpace.GENERIC)
-    alias layout_bitwidth = bitwidthof[Self.index_type]()
+    alias element_type: DType = _get_index_type(layout, AddressSpace.GENERIC)
     var device_data: Optional[DeviceBuffer[dtype]]
     var host_data: HostBuffer[dtype]
     var runtime_layout: RuntimeLayout[
         layout,
-        bitwidth = Self.layout_bitwidth,
+        element_type = Self.element_type,
         linear_idx_type = Self.index_type,
     ]
     var ctx: DeviceContext
@@ -86,11 +86,15 @@ struct ManagedLayoutTensor[
         out self, runtime_layout: RuntimeLayout[layout, **_], ctx: DeviceContext
     ) raises:
         constrained[
-            runtime_layout.bitwidth == Self.layout_bitwidth,
-            "Mismatch of bitwidth for RuntimeLayout: ",
-            String(runtime_layout.bitwidth),
-            " and LayoutTensor: ",
-            String(Self.layout_bitwidth),
+            runtime_layout.element_type == Self.element_type,
+            String(
+                "Mismatch of element type for RuntimeLayout:",
+                runtime_layout.element_type,
+                "and LayoutTensor:",
+                Self.element_type,
+                ".",
+                sep=" ",
+            ),
         ]()
 
         constrained[

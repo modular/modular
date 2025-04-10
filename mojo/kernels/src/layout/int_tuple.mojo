@@ -72,12 +72,12 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
     ):
         return DType.int32
     else:
-        return DType.index
+        return DType.int64
 
 
 fn _get_index_type(layout: Layout) -> DType:
-    """Returns int32 if layout size fits in int32 range, int64 otherwise."""
-    if layout.cosize() < Int(max_finite[DType.int32]()):
+    """Returns uint32 if layout size fits in uint32 range, int64 otherwise."""
+    if layout.cosize() < Int(max_finite[DType.uint32]()):
         return DType.int32
 
     return DType.int64
@@ -95,12 +95,12 @@ fn _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
     """Returns uint32 if layout fits in uint32 range or index type is int32, otherwise index.
     """
     if layout.all_dims_known() and layout.cosize() < Int(
-        max_finite[DType.uint32]()
+        max_finite[DType.int32]()
     ):
-        return DType.uint32
+        return DType.int32
     else:
         var dtype = _get_index_type(address_space)
-        return DType.uint32 if dtype is DType.int32 else DType.index
+        return DType.int32 if dtype is DType.int32 else DType.int64
 
 
 @register_passable

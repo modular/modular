@@ -132,7 +132,7 @@ struct LayoutTensorBuild[
     __layout: Layout = Layout(1),
     __layout_init: Bool = False,
     __address_space: AddressSpace = _GPUAddressSpace.GENERIC,
-    __layout_bitwidth: Int = bitwidthof[_get_index_type(__address_space)](),
+    __layout_int_type: DType = _get_index_type(__layout, __address_space),
     __index_type: DType = _get_index_type(__layout, __address_space),
     __circular: Bool = False,
 ]:
@@ -144,13 +144,13 @@ struct LayoutTensorBuild[
         __layout: The tensor's memory layout.
         __layout_init: Whether the layout has been initialized.
         __address_space: Memory space (generic, shared, local).
-        __layout_bitwidth: Bit width for layout index type.
+        __layout_int_type: Layout index type.
         __index_type: Type used for indexing.
         __circular: Whether tensor has circular indexing semantics.
     """
 
     var runtime_layout: RuntimeLayout[
-        __layout, bitwidth=__layout_bitwidth, linear_idx_type=__index_type
+        __layout, element_type=__layout_int_type, linear_idx_type=__index_type
     ]
     """
     Runtime representation of the tensor's layout.
@@ -212,9 +212,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
-                    shape0.value, shape1.value
-                )
+                Index[type = res.__layout_int_type](shape0.value, shape1.value)
             )
         )
 
@@ -242,7 +240,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                Index[type = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value
                 )
             )
@@ -276,7 +274,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                Index[type = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value, shape3.value
                 )
             )
@@ -312,7 +310,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                Index[type = res.__layout_int_type](
                     shape0.value,
                     shape1.value,
                     shape2.value,
@@ -366,9 +364,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
-                    shape0.value, shape1.value
-                )
+                Index[type = res.__layout_int_type](shape0.value, shape1.value)
             )
         )
 
@@ -396,7 +392,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                Index[type = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value
                 )
             )
@@ -430,7 +426,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                Index[type = res.__layout_int_type](
                     shape0.value, shape1.value, shape2.value, shape3.value
                 )
             )
@@ -466,7 +462,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                Index[type = res.__layout_int_type](
                     shape0.value,
                     shape1.value,
                     shape2.value,
@@ -548,7 +544,14 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with the specified custom layout.
         """
-        return __type_of(res)(__type_of(res.runtime_layout)(shape, stride))
+        return __type_of(res)(
+            __type_of(res.runtime_layout)(
+                shape.cast[__type_of(res.runtime_layout.shape).element_type](),
+                stride.cast[
+                    __type_of(res.runtime_layout.stride).element_type
+                ](),
+            )
+        )
 
     fn layout(
         self,
@@ -572,9 +575,7 @@ struct LayoutTensorBuild[
         """
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
-                    shape0.value
-                )
+                Index[type = res.__layout_int_type](shape0.value)
             )
         )
 
@@ -669,6 +670,8 @@ struct LayoutTensorBuild[
             __layout,
             ptr.origin,
             address_space=address_space,
+            layout_int_type=__layout_int_type,
+            linear_idx_type=__index_type,
         ],
     ):
         """
@@ -729,6 +732,8 @@ struct LayoutTensorBuild[
             __layout,
             ptr.origin,
             address_space=__address_space,
+            layout_int_type=__layout_int_type,
+            linear_idx_type=__index_type,
             circular=__circular,
         ],
     ):

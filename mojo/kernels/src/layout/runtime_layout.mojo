@@ -36,8 +36,8 @@ struct RuntimeLayout[
     layout: Layout,
     /,
     *,
-    bitwidth: Int = bitwidthof[Int](),
-    linear_idx_type: DType = DType.index,
+    element_type: DType = DType.int64,
+    linear_idx_type: DType = DType.int64,
 ](Stringable, Writable):
     """A runtime-configurable layout that uses `RuntimeTuple` for storage.
 
@@ -48,25 +48,21 @@ struct RuntimeLayout[
 
     Parameters:
         layout: The static `Layout` type to base this runtime layout on.
-        bitwidth: The bit width to use for shape storage, defaults to system
-            `Int`.
+        element_type: The integer type of the each dimension element.
         linear_idx_type: The integer type of the linear index into memory returned by `crd2idx`.
 
     The layout must have statically known dimensions at compile time, but the
     actual shape and stride values can be modified during execution.
     """
 
-    var shape: RuntimeTuple[
-        layout.shape, element_bitwidth=bitwidth, unsigned=True
-    ]
+    var shape: RuntimeTuple[layout.shape, element_type=element_type]
     """The shape of the layout as a runtime tuple.
 
     Stores the size of each dimension. Uses the specified bitwidth and is
     unsigned. Must match the static layout's shape dimensions.
     """
 
-    # stride can be huge so default to int64 for now
-    var stride: RuntimeTuple[layout.stride, unsigned=True]
+    var stride: RuntimeTuple[layout.stride, element_type=linear_idx_type]
     """The stride of the layout as a runtime tuple.
 
     Stores the stride (step size) for each dimension. Uses 64-bit unsigned
@@ -90,18 +86,14 @@ struct RuntimeLayout[
         constrained[
             layout.all_dims_known(), "Static layout with known dims is required"
         ]()
-        self.shape = RuntimeTuple[
-            layout.shape, element_bitwidth=bitwidth, unsigned=True
-        ]()
-        self.stride = RuntimeTuple[layout.stride, unsigned=True]()
+        self.shape = __type_of(self.shape)()
+        self.stride = __type_of(self.stride)()
 
     @always_inline
     fn __init__(
         out self,
-        shape: RuntimeTuple[
-            layout.shape, element_bitwidth=bitwidth, unsigned=True
-        ],
-        stride: RuntimeTuple[layout.stride, unsigned=True],
+        shape: RuntimeTuple[layout.shape, element_type=element_type],
+        stride: RuntimeTuple[layout.stride, element_type=linear_idx_type],
     ):
         """Initialize a `RuntimeLayout` with specified shape and stride.
 
@@ -171,25 +163,28 @@ struct RuntimeLayout[
 
     @always_inline
     fn cast[
-        type: DType
+        element_type: DType,
+        /,
+        *,
+        linear_idx_type: DType = linear_idx_type,
     ](
         self,
         out result: RuntimeLayout[
-            layout,
-            bitwidth = bitwidthof[type](),
-            linear_idx_type=linear_idx_type,
+            layout, element_type=element_type, linear_idx_type=linear_idx_type
         ],
     ):
         """Cast the layout to use a different element bitwidth.
 
         Parameters:
-            type: The target data type that determines the new bitwidth.
+            element_type: The target data type.
+            linear_idx_type: The target linear idx type.
 
         Returns:
-            A new `RuntimeLayout` with the shape cast to the specified type's
-            bitwidth.
+            A new `RuntimeLayout` with the shape cast to the specified type.
         """
-        return __type_of(result)(self.shape.cast[type](), self.stride)
+        return __type_of(result)(
+            self.shape.cast[element_type](), self.stride.cast[linear_idx_type]()
+        )
 
     @no_inline
     fn __str__(self) -> String:
@@ -207,7 +202,7 @@ struct RuntimeLayout[
         shape: IndexList[rank, **_],
         out result: RuntimeLayout[
             layout,
-            bitwidth = shape.element_bitwidth,
+            element_type=element_type,
             linear_idx_type=linear_idx_type,
         ],
     ):
@@ -226,7 +221,18 @@ struct RuntimeLayout[
             A `RuntimeLayout` with row-major stride ordering.
         """
 
-        var stride = __type_of(shape)()
+        constrained[
+            shape.element_type == element_type,
+            String(
+                "Element type mismatch, shape has element type",
+                shape.element_type,
+                "but layout has element type",
+                element_type,
+                sep=" ",
+            ),
+        ]()
+
+        var stride = IndexList[rank, element_type=linear_idx_type]()
         var c_stride = 1
         stride[rank - 1] = c_stride
 
@@ -244,7 +250,7 @@ struct RuntimeLayout[
         shape: IndexList[rank, **_],
         out result: RuntimeLayout[
             layout,
-            bitwidth = shape.element_bitwidth,
+            element_type=element_type,
             linear_idx_type=linear_idx_type,
         ],
     ):
@@ -263,7 +269,18 @@ struct RuntimeLayout[
             A `RuntimeLayout` with column-major stride ordering.
         """
 
-        var stride = __type_of(shape)()
+        constrained[
+            shape.element_type == element_type,
+            String(
+                "Element type mismatch, shape has element type",
+                shape.element_type,
+                "but layout has element type",
+                element_type,
+                sep=" ",
+            ),
+        ]()
+
+        var stride = IndexList[rank, element_type=linear_idx_type]()
         var c_stride = 1
         stride[0] = c_stride
 
@@ -293,7 +310,14 @@ struct RuntimeLayout[
 
     fn sublayout[
         i: Int
-    ](self, out result: RuntimeLayout[layout[i], bitwidth=bitwidth]):
+    ](
+        self,
+        out result: RuntimeLayout[
+            layout[i],
+            element_type=element_type,
+            linear_idx_type=linear_idx_type,
+        ],
+    ):
         """Extract a nested sublayout at the specified index.
 
         Parameters:
@@ -303,16 +327,12 @@ struct RuntimeLayout[
             A `RuntimeLayout` representing the nested layout at index i.
         """
         return __type_of(result)(
-            rebind[
-                RuntimeTuple[
-                    layout[i].shape,
-                    element_bitwidth=bitwidth,
-                    unsigned=True,
-                ],
-            ](self.shape[i]),
-            rebind[RuntimeTuple[layout[i].stride, unsigned=True]](
-                self.stride[i]
+            rebind[RuntimeTuple[layout[i].shape, element_type=element_type]](
+                self.shape[i]
             ),
+            rebind[
+                RuntimeTuple[layout[i].stride, element_type=linear_idx_type]
+            ](self.stride[i]),
         )
 
     fn dim(self, i: Int) -> Int:
@@ -342,7 +362,9 @@ fn coalesce[
 ](
     layout: RuntimeLayout[l, **_],
     out result: RuntimeLayout[
-        coalesce_layout(l, keep_rank), bitwidth = layout.bitwidth
+        coalesce_layout(l, keep_rank),
+        element_type = layout.element_type,
+        linear_idx_type = layout.linear_idx_type,
     ],
 ):
     """Coalesce adjacent dimensions in a runtime layout when possible.
@@ -364,13 +386,11 @@ fn coalesce[
     constrained[not keep_rank, "Unsupported coalesce mode"]()
 
     var res_shape = RuntimeTuple[
-        coalesce_layout(l, keep_rank).shape,
-        element_bitwidth = layout.bitwidth,
-        unsigned=True,
+        coalesce_layout(l, keep_rank).shape, element_type = layout.element_type
     ]()
     var res_stride = RuntimeTuple[
         coalesce_layout(l, keep_rank).stride,
-        unsigned=True,
+        element_type = layout.linear_idx_type,
     ]()
 
     res_shape.value[0] = 1
@@ -418,7 +438,7 @@ fn make_layout[
     b: RuntimeLayout[l2, **_],
     out result: RuntimeLayout[
         make_layout_static(l1, l2),
-        bitwidth = b.bitwidth,
+        element_type = b.element_type,
         linear_idx_type=linear_idx_type,
     ],
 ):
@@ -443,11 +463,11 @@ fn make_layout[
 
     var res_shape = RuntimeTuple[
         make_layout_static(l1, l2).shape,
-        element_bitwidth = b.bitwidth,
-        unsigned=True,
+        element_type = b.element_type,
     ]()
     var res_stride = RuntimeTuple[
-        make_layout_static(l1, l2).stride, unsigned=True
+        make_layout_static(l1, l2).stride,
+        element_type=linear_idx_type,
     ]()
 
     alias a_length = len(flatten(l1.shape))

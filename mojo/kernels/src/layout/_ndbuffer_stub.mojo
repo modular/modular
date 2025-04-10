@@ -1317,9 +1317,9 @@ fn from_ndbuffer_row_major(
     """This function takes the underlying buffer from NDBuffer without explicitly
     copying any data.
     """
-    var runtime_layout = __type_of(result.runtime_layout).row_major[
-        buffer.rank
-    ](buffer.get_shape())
+    var runtime_layout = __type_of(result.runtime_layout).row_major(
+        buffer.get_shape().cast[result.layout_int_type]()
+    )
     return __type_of(result)(
         buffer.data,
         runtime_layout,

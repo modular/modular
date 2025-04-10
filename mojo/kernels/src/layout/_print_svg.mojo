@@ -14,6 +14,8 @@ from pathlib import Path
 fn print_svg[
     dtype: DType,
     layout: Layout,
+    layout_int_type: DType,
+    linear_idx_type: DType,
     element_layout: Layout,
     masked: Bool, //,
     swizzle: Optional[Swizzle] = None,
@@ -26,6 +28,8 @@ fn print_svg[
             layout,
             MutableAnyOrigin,
             element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
             masked=masked,
         ]
     ],
@@ -43,6 +47,8 @@ fn print_svg[
 fn _print_svg_impl[
     dtype: DType,
     layout: Layout,
+    layout_int_type: DType,
+    linear_idx_type: DType,
     element_layout: Layout,
     masked: Bool,
     W: Writer, //,
@@ -56,6 +62,8 @@ fn _print_svg_impl[
             layout,
             MutableAnyOrigin,
             element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
             masked=masked,
         ]
     ],
