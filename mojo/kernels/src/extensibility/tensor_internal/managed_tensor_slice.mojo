@@ -885,8 +885,9 @@ struct ManagedTensorSlice[
         alias layout = static_spec.to_layout()
         return LayoutTensor[type, layout](
             self.unsafe_ptr(),
-            RuntimeLayout[layout, linear_idx_type = result.index_type](
-                self.shape(), self.strides()
+            __type_of(result.runtime_layout)(
+                self.shape().cast[result.layout_int_type](),
+                self.strides().cast[result.linear_idx_type](),
             ),
         )
 
