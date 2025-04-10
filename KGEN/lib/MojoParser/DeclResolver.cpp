@@ -867,10 +867,6 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   shimMainFn.setCExported();
   shimMainFn.getBody()->clear();
 
-  // The shim may be parsed from the precompiled standard library package, make
-  // sure to drop any of the package metadata.
-  shimMainFn.setPreCompiledModuleRef(std::nullopt);
-
   // Populate the body of the shim. For this we designate the internal
   // implementation to one of the wrapper helpers in the Startup module,
   // depending on how the user specified their main function.

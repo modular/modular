@@ -65,9 +65,6 @@ def LIT_FnOp : LITOp<"fn", [
     KGEN_ExportKindAttr:$exportKind,
     KGEN_InlineLevelAttr:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
-    // Used for binary packages, a reference to the symbol containing the
-    // precompiled module that contains this function.
-    OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef,
     // The linkage name of this function within the compiled artifact. If null,
     // the flattened full symbol reference of the function will be used.
     OptionalAttr<StrAttr>:$linkageName,
@@ -110,10 +107,6 @@ def LIT_FnOp : LITOp<"fn", [
     /// function like __init__ or __radd__.
     SpecialFunctionKind getSpecialFunctionKind();
     const SpecialFunctionInfo &getSpecialFunctionInfo();
-
-    /// Check if a function is coming from an external package. This is
-    /// signified by having the pre-compiled metadata on the func itself.
-    bool isExternal() { return getPreCompiledModuleRef().has_value(); }
 
     /// Return the decl name of the function.
     StringAttr getDeclName() { return getSourceNameAttr(); }
