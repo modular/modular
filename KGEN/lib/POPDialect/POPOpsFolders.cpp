@@ -271,16 +271,69 @@ OpFoldResult NegOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 // Binary Operations
 
+// Check if the input is an integer constant and return it.
+// In case of a SIMD input, check that all values are equal.
+static std::optional<APSInt> getIntVal(Value val) {
+  SIMDAttr constAttr;
+  if (!mlir::matchPattern(val, mlir::m_Constant(&constAttr)))
+    return std::nullopt;
+  const APSInt &constVal = constAttr.getValues().front().getIntVal();
+  if (!llvm::all_of(constAttr.getValues(), [&](const DTypeValue &val) {
+        return val.getIntVal() == constVal;
+      }))
+    return std::nullopt;
+  return constVal;
+}
+
+template <typename OpT>
+static bool hasIntLikeType(OpT op) {
+  std::optional<KGENDType> dtype = op->getType().getResolvedDType();
+  return dtype && dtype->isIntLike();
+}
+
+static bool isIntZero(Value val) {
+  std::optional<APSInt> maybeConst = getIntVal(val);
+  return maybeConst && maybeConst->isZero();
+};
+
 OpFoldResult AddOp::fold(FoldAdaptor adaptor) {
-  return foldSIMDOp(
-      adaptor.getOperands(), [](APSInt lhs, APSInt rhs) { return lhs + rhs; },
-      [](APFloat lhs, APFloat rhs) { return lhs + rhs; });
+  if (SIMDAttr const &res = foldSIMDOp(
+          adaptor.getOperands(),
+          [](APSInt lhs, APSInt rhs) { return lhs + rhs; },
+          [](APFloat lhs, APFloat rhs) { return lhs + rhs; })) {
+    return res;
+  }
+  // integer X+0 or 0+X -> X
+  //
+  // for floating-point types that have negative zero, this optimization is
+  // not valid because -0 + 0 = 0
+  // TODO: this optimization can be done for fp types
+  // if we add a 'fast fp math' or 'ignore negative 0' config parameter.
+  if (hasIntLikeType(this)) {
+    if (isIntZero(getLhs()))
+      return getRhs();
+    if (isIntZero(getRhs()))
+      return getLhs();
+  }
+  return {};
 }
 
 OpFoldResult SubOp::fold(FoldAdaptor adaptor) {
-  return foldSIMDOp(
-      adaptor.getOperands(), [](APSInt lhs, APSInt rhs) { return lhs - rhs; },
-      [](APFloat lhs, APFloat rhs) { return lhs - rhs; });
+  if (SIMDAttr const &res = foldSIMDOp(
+          adaptor.getOperands(),
+          [](APSInt lhs, APSInt rhs) { return lhs - rhs; },
+          [](APFloat lhs, APFloat rhs) { return lhs - rhs; })) {
+    return res;
+  }
+  // X-0 -> X
+  // Note that unlike the 'add' case above, this optimization
+  // is valid for floating-point types as well, because -0 - 0 = -0
+  // TODO: generalize to support floating-point types.
+  if (hasIntLikeType(this)) {
+    if (isIntZero(getRhs()))
+      return getLhs();
+  }
+  return {};
 }
 
 OpFoldResult MulOp::fold(FoldAdaptor adaptor) {
@@ -290,25 +343,19 @@ OpFoldResult MulOp::fold(FoldAdaptor adaptor) {
           [](APFloat lhs, APFloat rhs) { return lhs * rhs; }))
     return res;
 
-  std::optional<KGENDType> dtype = getType().getResolvedDType();
-  if (!dtype || !dtype->isIntLike())
+  if (!hasIntLikeType(this))
     return {};
 
   // Pattern-match trivial cases, such as 0*x or 1*x. Support both scalar and
   // SIMD types.
   auto foldTrivialMultiplication = [&](Value lhs, Value rhs) -> OpFoldResult {
-    SIMDAttr constAttr;
-    if (!mlir::matchPattern(lhs, mlir::m_Constant(&constAttr)))
-      return {};
-    const APSInt &constVal = constAttr.getValues().front().getIntVal();
-    if (!llvm::all_of(constAttr.getValues(), [&](const DTypeValue &val) {
-          return val.getIntVal() == constVal;
-        }))
-      return {};
-    if (constVal.isZero())
-      return lhs;
-    if (constVal.isOne())
-      return rhs;
+    if (auto maybeVal = getIntVal(lhs)) {
+      auto constVal = maybeVal.value();
+      if (constVal.isZero())
+        return lhs;
+      if (constVal.isOne())
+        return rhs;
+    }
     return {};
   };
 
@@ -403,24 +450,45 @@ OpFoldResult RemOp::fold(FoldAdaptor adaptor) {
       });
 }
 
+template <typename OpT>
+static bool hasEqualOperands(OpT op) {
+  return op->getLhs() == op->getRhs();
+}
+
 OpFoldResult MaxOp::fold(FoldAdaptor adaptor) {
-  return foldSIMDOp(
-      adaptor.getOperands(),
-      [](APSInt lhs, APSInt rhs) -> APSInt { return lhs > rhs ? lhs : rhs; },
-      [](APFloat lhs, APFloat rhs) -> APFloat {
-        return llvm::maxnum(lhs, rhs);
-      },
-      [](bool lhs, bool rhs) -> bool { return lhs | rhs; });
+  if (SIMDAttr const &res = foldSIMDOp(
+          adaptor.getOperands(),
+          [](APSInt lhs, APSInt rhs) -> APSInt {
+            return lhs > rhs ? lhs : rhs;
+          },
+          [](APFloat lhs, APFloat rhs) -> APFloat {
+            return llvm::maxnum(lhs, rhs);
+          },
+          [](bool lhs, bool rhs) -> bool { return lhs | rhs; })) {
+    return res;
+  }
+  if (hasEqualOperands(this)) {
+    return getLhs();
+  }
+  return {};
 }
 
 OpFoldResult MinOp::fold(FoldAdaptor adaptor) {
-  return foldSIMDOp(
-      adaptor.getOperands(),
-      [](APSInt lhs, APSInt rhs) -> APSInt { return lhs < rhs ? lhs : rhs; },
-      [](APFloat lhs, APFloat rhs) -> APFloat {
-        return llvm::minnum(lhs, rhs);
-      },
-      [](bool lhs, bool rhs) -> bool { return lhs & rhs; });
+  if (SIMDAttr const &res = foldSIMDOp(
+          adaptor.getOperands(),
+          [](APSInt lhs, APSInt rhs) -> APSInt {
+            return lhs < rhs ? lhs : rhs;
+          },
+          [](APFloat lhs, APFloat rhs) -> APFloat {
+            return llvm::minnum(lhs, rhs);
+          },
+          [](bool lhs, bool rhs) -> bool { return lhs & rhs; })) {
+    return res;
+  }
+  if (hasEqualOperands(this)) {
+    return getLhs();
+  }
+  return {};
 }
 
 OpFoldResult ShlOp::fold(FoldAdaptor adaptor) {
