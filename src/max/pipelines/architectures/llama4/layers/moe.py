@@ -176,7 +176,7 @@ class MoE(Module):
         gate_up_projs = (
             ops.silu(
                 gate_up_projs[:, : self.intermediate_size].cast(DType.float32)
-            ).cast(DType.bfloat16)
+            ).cast(hidden_states.dtype)
             * gate_up_projs[:, self.intermediate_size :]
         )
 
@@ -193,7 +193,7 @@ class MoE(Module):
         shared_expert_out = self.shared_expert_down_proj(
             ops.silu(
                 self.shared_expert_gate_proj(hidden_states).cast(DType.float32)
-            ).cast(DType.bfloat16)
+            ).cast(hidden_states.dtype)
             * self.shared_expert_up_proj(hidden_states)
         )
         return [routed_expert_out + shared_expert_out]

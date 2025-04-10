@@ -62,7 +62,7 @@ class Llama4Inputs(ModelInputs):
     tokens: np.ndarray | Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets_or_attn_mask: np.ndarray | Tensor
+    input_row_offsets: np.ndarray | Tensor
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence."""
 
@@ -75,7 +75,7 @@ class Llama4Inputs(ModelInputs):
     def __init__(
         self,
         tokens: np.ndarray | Tensor,
-        input_row_offsets_or_attn_mask: np.ndarray | Tensor,
+        input_row_offsets: np.ndarray | Tensor,
         cache_positions: np.ndarray | Tensor,
         signal_buffers: list[Tensor],
         kv_cache_inputs: KVCacheInputs | None = None,
@@ -83,23 +83,16 @@ class Llama4Inputs(ModelInputs):
         """
         Args:
             tokens: Input token IDs.
-            input_row_offsets_or_attn_mask: Input row offsets (ragged tensors)
-                or attention mask (padded tensors).
+            input_row_offsets: Input row offsets (ragged tensors).
             cache_positions: Positions in the cache of each input token.
             signal_buffers: Device buffers used for synchronization in
                 communication collectives.
         """
         self.tokens = tokens
-        self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
+        self.input_row_offsets = input_row_offsets
         self.cache_positions = cache_positions
         self.signal_buffers = signal_buffers
         self.kv_cache_inputs = kv_cache_inputs
-
-    @property
-    def input_row_offsets(self) -> np.ndarray | Tensor:
-        """Gets the row offsets of the ragged input sequence."""
-        # TODO(bduke): this should implement a ragged tensor interface.
-        return self.input_row_offsets_or_attn_mask
 
 
 class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
@@ -443,7 +436,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         model_outputs = self.model.execute(
             model_inputs.tokens,
-            model_inputs.input_row_offsets_or_attn_mask,
+            model_inputs.input_row_offsets,
             model_inputs.cache_positions,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
@@ -515,9 +508,9 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
 
         return Llama4Inputs(
             tokens=Tensor.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets_or_attn_mask=Tensor.from_numpy(
-                input_row_offsets
-            ).to(self.devices[0]),
+            input_row_offsets=Tensor.from_numpy(input_row_offsets).to(
+                self.devices[0]
+            ),
             cache_positions=Tensor.from_numpy(
                 np.concatenate(cache_positions)
             ).to(self.devices[0]),
@@ -543,9 +536,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             The prepared :obj:`ModelInputs` object for the next execution step.
         """
         prev_model_inputs = cast(Llama4Inputs, prev_model_inputs)
-        row_offsets_size = (
-            prev_model_inputs.input_row_offsets_or_attn_mask.shape[0]
-        )
+        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
 
         # Create cache positions for each token.
@@ -557,7 +548,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         )
         return Llama4Inputs(
             tokens=next_tokens,
-            input_row_offsets_or_attn_mask=next_row_offsets,
+            input_row_offsets=next_row_offsets,
             cache_positions=ragged_kv_cache_inputs.cache_lengths,
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
