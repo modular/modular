@@ -1420,7 +1420,7 @@ struct TMATensorTileArray[
             tensormaps_device: Device buffer to store TMA descriptors.
         """
 
-        self.tensormaps_ptr = tensormaps_device.unsafe_ptr()
+        self.tensormaps_ptr = tensormaps_device._unsafe_ptr()
 
     @always_inline
     fn __getitem__(
