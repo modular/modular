@@ -73,3 +73,22 @@ fn metatypes():
     # CHECK: [[MVAL:%.*]] = kgen.param.constant: !Thing = <apply({{.*}}@Thing::@"__init__
     # CHECK: call {{.*}}@"anytype_arg[AnyTrivialRegType]($0)"<:type !Thing>([[MVAL]])
     anytype_arg(nm_alias)
+
+
+# Stef's crazy metatype stress test.
+@value
+struct StefStressTest[x: Int]:
+    @staticmethod
+    fn increment() -> __type_of(StefStressTest[x+1]):
+      while True: pass
+      #return StefStressTest[x+1]  # Doesn't work yet.
+
+# CHECK-LABEL: lit.fn @"access_param_from_metatype()"
+fn access_param_from_metatype():
+    # CHECK-NEXT: lit.alias.decl *"f1`": meta<!lit.struct<#StefStressTest <:!Int {1}>>>
+    alias f1 = StefStressTest[0].increment()
+    # CHECK-NEXT: %value = lit.var.decl "value"
+    # CHECK-NEXT: %0 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: lit.ref.store %0, %value
+    var value = f1.x
+

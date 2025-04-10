@@ -1608,7 +1608,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // to construct this specific type, not the shared type on the struct.
   if (auto parameter = memberDecl.getIfIRValue().getIfPValue()) {
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
-    if (auto baseDecl = dyn_cast<LIT::StructType>(baseRVType)) {
+    if (auto baseDecl = dyn_cast<StructMetaType>(baseRVType.getMetaType())) {
       for (auto [name, value] :
            llvm::zip(cast<StructDeclOp>(typeDecl).getParams(),
                      baseDecl.getParamValues())) {
