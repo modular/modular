@@ -260,9 +260,11 @@ static void augmentDeclsWithDocumentation(ArrayRef<StringRef> lines,
     fullArgDescOS << argDesc;
 
     // Merge in additional description lines that have a larger indentation.
+    // Remove the initial indent but leave other whitespace intact to preserve
+    // Markdown formatting.
     size_t indent = getIndentationLevel(lines[line]);
     while (++line < lineE && getIndentationLevel(lines[line]) > indent)
-      fullArgDescOS << " " << lines[line].trim();
+      fullArgDescOS << "\n" << lines[line].drop_front(indent).rtrim();
 
     // If it's a known entry, process it, otherwise skip it.
     if (auto it = declMap.find(argName); it != declMap.end()) {
