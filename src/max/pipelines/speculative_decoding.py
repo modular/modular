@@ -60,7 +60,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             filenames=[
                 str(x) for x in self.pipeline_config.model_config.weight_path
             ],
-            revision=self.pipeline_config.model_config.huggingface_revision,
+            revision=self.pipeline_config.model_config.huggingface_weight_revision,
             max_workers=8,
         )
         target_weights = load_weights(weight_paths)

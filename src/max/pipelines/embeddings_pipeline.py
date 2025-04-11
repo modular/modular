@@ -64,7 +64,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             filenames=[
                 str(x) for x in self._pipeline_config.model_config.weight_path
             ],
-            revision=self._pipeline_config.model_config.huggingface_revision,
+            revision=self._pipeline_config.model_config.huggingface_weight_revision,
             force_download=self._pipeline_config.model_config.force_download,
         )
 

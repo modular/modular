@@ -61,7 +61,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         self._huggingface_config = AutoConfig.from_pretrained(
             pipeline_config.model_config.model_path,
             trust_remote_code=pipeline_config.model_config.trust_remote_code,
-            revision=pipeline_config.model_config.huggingface_revision,
+            revision=pipeline_config.model_config.huggingface_model_revision,
         )
 
         self._model = AutoModelForCausalLM.from_pretrained(

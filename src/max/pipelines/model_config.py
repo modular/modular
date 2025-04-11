@@ -78,7 +78,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
-    huggingface_revision: str = hf_hub_constants.DEFAULT_REVISION
+    huggingface_model_revision: str = hf_hub_constants.DEFAULT_REVISION
+    """Branch or Git revision of Hugging Face model repository to use."""
+
+    huggingface_weight_revision: str = hf_hub_constants.DEFAULT_REVISION
     """Branch or Git revision of Hugging Face model repository to use."""
 
     trust_remote_code: bool = False
@@ -283,15 +286,17 @@ class MAXModelConfig(MAXModelConfigBase):
 
         return total_weights_size
 
+    @property
+    def huggingface_weight_repo_id(self) -> str:
+        return (
+            self._weights_repo_id if self._weights_repo_id else self.model_path
+        )
+
     @cached_property
     def huggingface_weight_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(
-            repo_id=(
-                self._weights_repo_id
-                if self._weights_repo_id
-                else self.model_path
-            ),
-            revision=self.huggingface_revision,
+            repo_id=self.huggingface_weight_repo_id,
+            revision=self.huggingface_weight_revision,
             trust_remote_code=self.trust_remote_code,
         )
 
@@ -299,7 +304,7 @@ class MAXModelConfig(MAXModelConfigBase):
     def huggingface_model_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(
             repo_id=self.model_path,
-            revision=self.huggingface_revision,
+            revision=self.huggingface_model_revision,
             trust_remote_code=self.trust_remote_code,
         )
 
@@ -668,7 +673,8 @@ class MAXModelConfig(MAXModelConfigBase):
             "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
-            "huggingface_revision": "Branch or Git revision of Hugging Face model repository to use.",
+            "huggingface_model_revision": "Branch or Git revision of Hugging Face model repository to use.",
+            "huggingface_weight_revision": "Branch or Git revision of Hugging Face weight repository to use.",
             "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
             "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
         }
