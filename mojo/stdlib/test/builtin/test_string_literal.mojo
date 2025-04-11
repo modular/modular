@@ -72,12 +72,6 @@ def test_bool():
     assert_false(StringLiteral.__bool__(""))
 
 
-def test_contains():
-    assert_true(StringLiteral.__contains__("abcde", "abc"))
-    assert_true(StringLiteral.__contains__("abcde", "bc"))
-    assert_false(StringLiteral.__contains__("abcde", "xy"))
-
-
 def test_find():
     assert_equal(0, "Hello world".find(""))
     assert_equal(0, "Hello world".find("Hello"))
@@ -372,7 +366,6 @@ def main():
     test_equality()
     test_len()
     test_bool()
-    test_contains()
     test_find()
     test_rfind()
     test_comparison_operators()

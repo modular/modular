@@ -37,18 +37,16 @@ from utils._visualizers import lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct StringLiteral(
     Boolable,
-    Comparable,
     CollectionElementNew,
     Writable,
     IntableRaising,
-    KeyElement,
+    CollectionElement,
     Representable,
     Sized,
     Stringable,
     FloatableRaising,
     _HashableWithHasher,
     PathLike,
-    EqualityComparableCollectionElement,
     _CurlyEntryFormattable,
 ):
     """This type represents a string literal.
@@ -115,30 +113,6 @@ struct StringLiteral(
         return self.as_string_slice() * n
 
     @always_inline("nodebug")
-    fn __eq__(self, rhs: StringLiteral) -> Bool:
-        """Compare two string literals for equality.
-
-        Args:
-            rhs: The string to compare.
-
-        Returns:
-            True if they are equal.
-        """
-        return not (self != rhs)
-
-    @always_inline("nodebug")
-    fn __ne__(self, rhs: StringLiteral) -> Bool:
-        """Compare two string literals for inequality.
-
-        Args:
-            rhs: The string to compare.
-
-        Returns:
-            True if they are not equal.
-        """
-        return self.as_string_slice() != rhs.as_string_slice()
-
-    @always_inline("nodebug")
     fn __eq__(self, rhs: StringSlice) -> Bool:
         """Compare two string literals for equality.
 
@@ -163,111 +137,52 @@ struct StringLiteral(
         return self.as_string_slice() != rhs
 
     @always_inline("nodebug")
-    fn __lt__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using lesser than (LT) comparison.
-
-        Args:
-            rhs: The other StringLiteral to compare against.
-
-        Returns:
-            True if this StringLiteral is strictly less than the RHS StringLiteral and False otherwise.
-        """
-        return self.as_string_slice() < rhs.as_string_slice()
-
-    @always_inline("nodebug")
-    fn __le__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using lesser than or equal to (LE) comparison.
-
-        Args:
-            rhs: The other StringLiteral to compare against.
-
-        Returns:
-            True if this StringLiteral is less than or equal to the RHS StringLiteral and False otherwise.
-        """
-        return not (rhs < self)
-
-    @always_inline("nodebug")
-    fn __gt__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using greater than (GT) comparison.
-
-        Args:
-            rhs: The other StringLiteral to compare against.
-
-        Returns:
-            True if this StringLiteral is strictly greater than the RHS StringLiteral and False otherwise.
-        """
-        return rhs < self
-
-    @always_inline("nodebug")
-    fn __ge__(self, rhs: StringLiteral) -> Bool:
-        """Compare this StringLiteral to the RHS using greater than or equal to (GE) comparison.
-
-        Args:
-            rhs: The other StringLiteral to compare against.
-
-        Returns:
-            True if this StringLiteral is greater than or equal to the RHS StringLiteral and False otherwise.
-        """
-        return not (self < rhs)
-
-    @always_inline("nodebug")
     fn __lt__(self, rhs: StringSlice) -> Bool:
-        """Compare this StringLiteral to the RHS using lesser than (LT) comparison.
+        """Compare this value to the RHS using lesser than (LT) comparison.
 
         Args:
-            rhs: The other StringLiteral to compare against.
+            rhs: The other value to compare against.
 
         Returns:
-            True if this StringLiteral is strictly less than the RHS StringLiteral and False otherwise.
+            True if this is strictly less than the RHS and False otherwise.
         """
         return self.as_string_slice() < rhs
 
     @always_inline("nodebug")
     fn __le__(self, rhs: StringSlice) -> Bool:
-        """Compare this StringLiteral to the RHS using lesser than or equal to (LE) comparison.
+        """Compare this value to the RHS using lesser than or equal to (LE) comparison.
 
         Args:
-            rhs: The other StringLiteral to compare against.
+            rhs: The other value to compare against.
 
         Returns:
-            True if this StringLiteral is less than or equal to the RHS StringLiteral and False otherwise.
+            True if this is less than or equal to the RHS and False otherwise.
         """
         return not (rhs < self)
 
     @always_inline("nodebug")
     fn __gt__(self, rhs: StringSlice) -> Bool:
-        """Compare this StringLiteral to the RHS using greater than (GT) comparison.
+        """Compare this value to the RHS using greater than (GT) comparison.
 
         Args:
-            rhs: The other StringLiteral to compare against.
+            rhs: The other value to compare against.
 
         Returns:
-            True if this StringLiteral is strictly greater than the RHS StringLiteral and False otherwise.
+            True if this is strictly greater than the RHS and False otherwise.
         """
         return rhs < self
 
     @always_inline("nodebug")
     fn __ge__(self, rhs: StringSlice) -> Bool:
-        """Compare this StringLiteral to the RHS using greater than or equal to (GE) comparison.
+        """Compare this value to the RHS using greater than or equal to (GE) comparison.
 
         Args:
-            rhs: The other StringLiteral to compare against.
+            rhs: The other value to compare against.
 
         Returns:
-            True if this StringLiteral is greater than or equal to the RHS StringLiteral and False otherwise.
+            True if this is greater than or equal to the RHS and False otherwise.
         """
         return not (self < rhs)
-
-    fn __contains__(self, substr: StringLiteral) -> Bool:
-        """Returns True if the substring is contained within the current string.
-
-        Args:
-          substr: The substring to check.
-
-        Returns:
-          True if the string contains the substring.
-        """
-        return substr in self.as_string_slice()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -278,7 +193,7 @@ struct StringLiteral(
         """Get the string length.
 
         Returns:
-            The length of this StringLiteral.
+            The length of this value.
         """
         # TODO(MSTDL-160):
         #   Properly count Unicode codepoints instead of returning this length
@@ -332,7 +247,7 @@ struct StringLiteral(
 
     @no_inline
     fn __repr__(self) -> String:
-        """Return a representation of the `StringLiteral` instance.
+        """Return a representation of this value.
 
         You don't need to call this method directly, use `repr("...")` instead.
 
@@ -411,7 +326,7 @@ struct StringLiteral(
         """Get the string length in bytes.
 
         Returns:
-            The length of this StringLiteral in bytes.
+            The length of this string in bytes.
 
         Notes:
             This does not include the trailing null terminator in the count.
@@ -486,7 +401,7 @@ struct StringLiteral(
 
         writer.write(self.as_string_slice())
 
-    fn find(self, substr: StringLiteral, start: Int = 0) -> Int:
+    fn find(self, substr: StaticString, start: Int = 0) -> Int:
         """Finds the offset of the first occurrence of `substr` starting at
         `start`. If not found, returns -1.
 
@@ -499,7 +414,7 @@ struct StringLiteral(
         """
         return self.as_string_slice().find(substr, start=start)
 
-    fn rfind(self, substr: StringLiteral, start: Int = 0) -> Int:
+    fn rfind(self, substr: StaticString, start: Int = 0) -> Int:
         """Finds the offset of the last occurrence of `substr` starting at
         `start`. If not found, returns -1.
 
