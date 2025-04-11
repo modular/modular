@@ -485,6 +485,11 @@ struct Graph(CollectionElement, Stringable, Writable):
         if out_param_attr:
             op.set_inherent_attr("outputParamDecls", out_param_attr.take())
 
+        # Now perform verification of the new operation
+        with self._context().diagnostic_error():
+            if not op.verify():
+                raise error(self, "operation did not verify")
+
         return results
 
     # ===------------------------------------------------------------------=== #

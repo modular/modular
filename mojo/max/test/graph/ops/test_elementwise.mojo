@@ -105,7 +105,12 @@ fn test_dynamic_not_allowed() raises:
         ),
     )
 
-    with assert_raises(contains="contain dynamic dimensions"):
+    with assert_raises(
+        contains=(
+            "'rmo.add' op operand #0 must be parametrically known shape, but"
+            " got '!mo.tensor<[?], f32>'"
+        )
+    ):
         _ = g[0] + g[1]
 
 
