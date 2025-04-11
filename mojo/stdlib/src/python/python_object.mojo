@@ -30,6 +30,10 @@ from memory import UnsafePointer
 from ._cpython import CPython, PyObjectPtr
 from .python import Python, _get_global_python_itf
 
+# This apparently redundant import is needed so PythonBindingsGen.cpp can find
+# the StringLiteral declaration.
+from builtin.string_literal import StringLiteral
+
 
 struct _PyIter(Sized):
     """A Python iterator."""
@@ -121,7 +125,7 @@ struct _PyIter(Sized):
 
 
 @register_passable
-struct TypedPythonObject[type_hint: StringLiteral](
+struct TypedPythonObject[type_hint: StaticString](
     SizedRaising,
 ):
     """A wrapper around `PythonObject` that indicates the type of the contained
