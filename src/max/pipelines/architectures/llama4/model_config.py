@@ -14,14 +14,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Callable, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
-from max.graph.weights import WeightData, weights_format
-from max.nn import ReturnLogits
+from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.nn import Llama3RopeScalingParams, ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.config import PipelineConfig
+from max.pipelines.config_enums import RopeType
 from max.pipelines.max_config import KVCacheConfig
 from max.pipelines.model_config import MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
@@ -57,8 +58,11 @@ class Llama4ConfigBase(MAXModelConfigBase):
     rope_theta: float
     """Base period for RoPE embeddings."""
 
-    rope_scaling: dict[str, Any]
-    """Configuration dictionary for RoPE scaling."""
+    rope_scaling_params: Llama3RopeScalingParams | None
+    """Configuration for RoPE scaling."""
+
+    interleaved_rope_weights: bool
+    """True if the rope weights are in interleaved complex format."""
 
     num_experts_per_tok: int
     """Number of experts to route to per token in MoE layers."""
@@ -243,6 +247,10 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
         )
+        interleaved_rope_weights = (
+            _weights_format == WeightsFormat.gguf
+            and pipeline_config.rope_type == RopeType.normal
+        )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model_config.device_specs
@@ -257,6 +265,28 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             or "lm_head.weight" not in state_dict
         )
 
+        rope_scaling_params = None
+        rope_scaling = text_config.rope_scaling
+
+        if rope_scaling is not None:
+            # Since "rope_type" huggingface config is not standardized, we need
+            # to check for both "type" and "rope_type" keys.
+            rope_type = rope_scaling.get("type")
+            rope_type_alt = rope_scaling.get("rope_type")
+            if rope_type is None and rope_type_alt is None:
+                raise ValueError(
+                    "Neither 'type' nor 'rope_type' found in rope_scaling huggingface config"
+                )
+            if rope_type == "llama3" or rope_type_alt == "llama3":
+                rope_scaling_params = Llama3RopeScalingParams(
+                    factor=rope_scaling["factor"],
+                    low_freq_factor=rope_scaling["low_freq_factor"],
+                    high_freq_factor=rope_scaling["high_freq_factor"],
+                    orig_max_position=rope_scaling[
+                        "original_max_position_embeddings"
+                    ],
+                )
+
         return Llama4Config(
             hidden_size=text_config.hidden_size,
             intermediate_size=text_config.intermediate_size,
@@ -265,7 +295,8 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             num_key_value_heads=text_config.num_key_value_heads,
             head_dim=text_config.head_dim,
             rope_theta=text_config.rope_theta,
-            rope_scaling=text_config.rope_scaling,
+            rope_scaling_params=rope_scaling_params,
+            interleaved_rope_weights=interleaved_rope_weights,
             num_experts_per_tok=text_config.num_experts_per_tok,
             num_local_experts=text_config.num_local_experts,
             moe_layers=list(

@@ -22,8 +22,8 @@ from max.nn import (
     ColumnParallelLinear,
     DistributedMLP,
     DistributedRMSNorm,
+    Llama3RotaryEmbedding,
     Module,
-    OptimizedRotaryEmbedding,
     ReturnLogits,
     VocabParallelEmbedding,
 )
@@ -48,7 +48,7 @@ class Llama4DecoderLayer(Module):
 
     def __init__(
         self,
-        rope: OptimizedRotaryEmbedding,
+        rope: Llama3RotaryEmbedding,
         config: Llama4Config,
         layer_idx: int,
         devices: list[DeviceRef],
@@ -148,12 +148,13 @@ class Llama4TextModel(Module):
 
     def __init__(self, config: Llama4Config):
         super().__init__()
-        self.rope = OptimizedRotaryEmbedding(
-            config.hidden_size,
-            config.num_attention_heads,
-            config.rope_theta,
-            config.max_seq_len,
-            interleaved=True,
+        self.rope = Llama3RotaryEmbedding(
+            dim=config.hidden_size,
+            n_heads=config.num_attention_heads,
+            theta=config.rope_theta,
+            max_seq_len=config.max_seq_len,
+            interleaved=config.interleaved_rope_weights,
+            scaling_params=config.rope_scaling_params,
         )
         self.n_heads = config.num_attention_heads
         self.layers = LayerList(
