@@ -547,7 +547,7 @@ struct StringLiteral(
 
         return String(self).upper()
 
-    fn rjust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string literal of specified width.
 
         Args:
@@ -559,7 +559,7 @@ struct StringLiteral(
         """
         return String(self).rjust(width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string literal of specified width.
 
         Args:
@@ -571,7 +571,7 @@ struct StringLiteral(
         """
         return String(self).ljust(width, fillchar)
 
-    fn center(self, width: Int, fillchar: StringLiteral = " ") -> String:
+    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string literal of specified width.
 
         Args:
