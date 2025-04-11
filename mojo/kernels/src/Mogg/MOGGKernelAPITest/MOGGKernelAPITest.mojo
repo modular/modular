@@ -1100,9 +1100,9 @@ struct TensorWrapperPrinter:
 struct MutableStore:
     @staticmethod
     fn execute[
-        target: StringLiteral,
+        target: StaticString,
         _synchronous: Bool,
-        _trace_name: StringLiteral,
+        _trace_name: StaticString,
     ](
         tw: TensorWrapper,
         tensor: FusedInputTensor[type = DType.float32, rank=2],
