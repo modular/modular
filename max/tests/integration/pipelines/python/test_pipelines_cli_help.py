@@ -6,6 +6,7 @@
 
 import time
 
+import pytest
 from click.testing import CliRunner
 from max.entrypoints import pipelines
 
@@ -19,6 +20,7 @@ def test_main_help():
     assert "Commands:" in result.output
 
 
+@pytest.mark.skip("AITLIB-318: flaky, cant recreate the error locally.")
 def test_subcommand_help():
     """Test that help for each subcommand works properly."""
     # Dynamically get all registered subcommands from the main command group

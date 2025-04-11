@@ -67,7 +67,10 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
-                mock_config, DUMMY_ARCH, devices
+                mock_config,
+                DUMMY_ARCH.pipeline_model,
+                mock_config.model_config,
+                devices,
             )
 
 
@@ -92,7 +95,10 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution():
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
-                mock_config, DUMMY_ARCH, devices
+                mock_config,
+                DUMMY_ARCH.pipeline_model,
+                mock_config.model_config,
+                devices,
             )
 
 
@@ -117,7 +123,10 @@ def test_memory_estimation__raise_oom_error_all_defaults(caplog):
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
-                mock_config, DUMMY_ARCH, devices
+                mock_config,
+                DUMMY_ARCH.pipeline_model,
+                mock_config.model_config,
+                devices,
             )
 
         assert "Truncated model's default max_length from" in caplog.text
@@ -147,7 +156,10 @@ def test_memory_estimation__raise_oom_error_max_length_set():
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
-                mock_config, DUMMY_ARCH, devices
+                mock_config,
+                DUMMY_ARCH.pipeline_model,
+                mock_config.model_config,
+                devices,
             )
 
 
@@ -170,7 +182,10 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set():
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
-                mock_config, DUMMY_ARCH, devices
+                mock_config,
+                DUMMY_ARCH.pipeline_model,
+                mock_config.model_config,
+                devices,
             )
 
 
@@ -195,5 +210,8 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
             )
             devices = load_devices(mock_config.model_config.device_specs)
             MEMORY_ESTIMATOR.estimate_memory_footprint(
-                mock_config, DUMMY_ARCH, devices
+                mock_config,
+                DUMMY_ARCH.pipeline_model,
+                mock_config.model_config,
+                devices,
             )
