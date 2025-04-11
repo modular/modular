@@ -20,16 +20,20 @@
 
 using namespace M;
 
-static std::string errorCodeToString(const llvm::Error &E) {
-  SmallVector<std::string, 2> Errors;
-  llvm::visitErrors(E, [&Errors](const llvm::ErrorInfoBase &EI) {
-    std::error_code ec = EI.convertToErrorCode();
-    Errors.push_back("ErrorCode value: " + std::to_string(ec.value()) +
+/// The maximum number of retries we will do when trying to take a lock file
+/// on an error.
+static constexpr int kLockMaxRetriesOnError = 1'000;
+
+static std::string errorCodeToString(const llvm::Error &err) {
+  SmallVector<std::string, 2> errors;
+  llvm::visitErrors(err, [&errors](const llvm::ErrorInfoBase &ei) {
+    std::error_code ec = ei.convertToErrorCode();
+    errors.push_back("ErrorCode value: " + std::to_string(ec.value()) +
                      " category: " + ec.category().name() +
                      " message: " + ec.message());
   });
 
-  return llvm::join(Errors.begin(), Errors.end(), "\n");
+  return llvm::join(errors.begin(), errors.end(), "\n");
 }
 
 /// Do a file operation under an LLVM file lock - readFileUnderLock and
@@ -39,6 +43,7 @@ template <typename T>
 static ErrorOr<T>
 doLockedFileOperation(const std::filesystem::path &filePath,
                       llvm::function_ref<ErrorOr<T>()> callable) {
+  int retries = 0;
   std::string filePathStr = filePath.string();
 
   // Lock or wait for the file to be able to operate on it.
@@ -46,9 +51,14 @@ doLockedFileOperation(const std::filesystem::path &filePath,
     llvm::LockFileManager lockManager(filePathStr);
     bool owned;
     if (llvm::Error err = lockManager.tryLock().moveInto(owned)) {
-      std::string ecMsg = errorCodeToString(err);
-      return Error("unable to take lock file for '" + filePathStr +
-                   "': " + toString(std::move(err)) + " " + ecMsg);
+      // We don't need to do anything with the error here, since we will just
+      // retry, but we also don't want to retry indefinitely so we have a limit.
+      if (retries++ > kLockMaxRetriesOnError) {
+        std::string ecMsg = errorCodeToString(err);
+        return Error("unable to take lock file for '" + filePathStr +
+                     "': " + toString(std::move(err)) + " " + ecMsg);
+      }
+      consumeError(std::move(err));
     } else if (!owned) {
       // Wait for the other process to finish touching the file.
       switch (lockManager.waitForUnlockFor(std::chrono::seconds(90))) {
