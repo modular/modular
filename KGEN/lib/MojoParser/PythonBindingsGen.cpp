@@ -45,7 +45,6 @@ private:
 
   OverloadSet lookupPyBindFunction(StringRef name, ASTDecl &scope,
                                    const SyntheticNode &node);
-  StringAttr getMLIRString(const Twine &value);
   std::pair<FnOp, ASTDecl *> createFunction(const Twine &name, ASTDecl &parent,
                                             ArrayRef<ASTType> argRValueTypes,
                                             ArrayRef<ArgConvention> convs,
@@ -123,14 +122,12 @@ BindingGenerator::BindingGenerator(ASTDecl &moduleDecl)
 
 LogicalResult BindingGenerator::genPyInitImplFunc() {
   ImplicitLocOpBuilder b(moduleOp.getLoc(), moduleDecl.getDeclEndBuilder());
-  SMLoc loc = moduleLoc;
 
   // Create a function in the form:
   //
   //   fn PyInit_impl_<MODULE_NAME>() raises -> PythonObject as module:
   //       module = create_pybind_module["<MODULE_NAME>"]()
   //
-
   StringRef moduleName = moduleOp.getSymName();
 
   // Declare the error and result slots.
@@ -142,19 +139,21 @@ LogicalResult BindingGenerator::genPyInitImplFunc() {
       "PyInit_impl_" + moduleName, moduleDecl, /*argTypes=*/{}, /*convs=*/{},
       /*resultType=*/pyObjType, FnEffects().setThrows());
 
-  // Generate the module object.
-  ExprEmitter emitter(*pyInitDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
-  SyntheticNode node(loc);
-  OverloadSet createModuleOv =
-      lookupPyBindFunction("create_pybind_module", *pyInitDecl, node);
+  // Generate the module object. Form the AST we want to emit.
+  DeclRefNode typePythonObject("create_pybind_module");
+  SyntheticNode moduleNameVal(
+      moduleLoc, PValue(StringAttr::get(moduleName, StringType::get(ctx))));
+  Operand subscriptOperand(&moduleNameVal, moduleLoc, Operand::kPositional);
+  SubscriptNode subscript(&typePythonObject, moduleLoc, subscriptOperand,
+                          moduleLoc);
+  CallNode call(&subscript, moduleLoc, {}, moduleLoc);
 
-  // Emit the call into the result slot.
-  createModuleOv.paramBindings.add(node, getMLIRString(moduleName));
+  // Emit it.
+  ExprEmitter emitter(*pyBindDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   pyModule = MLValue(pyInitFunc.getArgument(1));
   ValueDest moduleDest(pyModule, EC_PyBindGen);
-  if (!createModuleOv.emitCall(CallOperands(), moduleDest, emitter))
+  if (!emitter.emitExpr(&call, moduleDest))
     return failure();
-
   return success();
 }
 
@@ -558,7 +557,7 @@ ErrorOrSuccess BindingGenerator::genTypeBinding(ASTType type) {
   // bar = use_int(val) # might type error, crash, or something worse!
   //
   // Binding generation needs to be on a per-module basis, and (as an
-  // optimiation) not perform duplicate work.
+  // optimization) not perform duplicate work.
   ASTDecl *typeDecl = type.getDecl(shared);
   auto structDecl = dyn_cast_or_null<StructDeclOp>(typeDecl);
   if (!structDecl)
@@ -590,10 +589,6 @@ OverloadSet BindingGenerator::lookupPyBindFunction(StringRef name,
   ParamBindings bindings(scope);
   return OverloadSet(name, fnDecls, std::move(bindings), &node,
                      CallSyntax::kDirectCall);
-}
-
-StringAttr BindingGenerator::getMLIRString(const Twine &value) {
-  return StringAttr::get(value, StringType::get(ctx));
 }
 
 std::pair<FnOp, ASTDecl *>
