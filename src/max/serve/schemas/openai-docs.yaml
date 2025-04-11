@@ -117,6 +117,19 @@ paths:
                   response_format:
                     type: "json_object"
                   max_tokens: 100
+              withImage:
+                summary: Chat completion with image
+                value:
+                  model: "meta-llama/Llama-3.2-11B-Vision"
+                  messages:
+                    - role: "system"
+                      content: "You are a helpful assistant that can analyze images."
+                    - role: "user"
+                      content: "What's in this image?"
+                      image_url:
+                        url: "https://example.com/image.jpg"
+                        detail: "high"
+                  max_tokens: 300
       responses:
         '200':
           description: OK
@@ -459,8 +472,22 @@ components:
         name:
           type: string
           description: |
-            The name of the author of this message.
-
+            The name of the author of this message.  
+        image_url:
+          type: object
+          description: |
+            An object that contains either a URL or base64-encoded string of the image to be processed. Only supported in user messages.
+          properties:
+            url:
+              type: string
+              description: |
+                Either a URL of the image or a base64 encoded image with the data-uri scheme.
+            detail:
+              type: string
+              enum: [auto, low, high]
+              default: auto
+              description: |
+                Controls the detail level of the image. "high" will enable more detailed processing of the image.
     ChatCompletionTool:
       type: object
       required:
