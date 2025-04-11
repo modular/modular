@@ -135,14 +135,14 @@ struct CausalMask(MHAMask):
         var masked_score_vec = score_vec
 
         # coord[2] and coord[3] are the token index in query and key respectively.
-        var q_idx = SIMD[index_type, width](coord[2])
-        var k_idx = SIMD[index_type, width](coord[3])
+        var q_idx = coord[2]
+        var k_idx = coord[3]
 
         # coords[2] >= coords[3] ensures the current tokens is only affected by
         # itself and previous tokens.
         # TODO(KERN-782): -10000 should be -inf but softmax saturates with NaNs.
         masked_score_vec = (
-            q_idx >= (k_idx + iota[index_type, width]())
+            SIMD[index_type, width](q_idx) >= iota[index_type, width](k_idx)
         ).select(score_vec, MASK_VALUE)
 
         return masked_score_vec
@@ -221,7 +221,7 @@ struct NullMask(MHAMask):
         tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
         # no mask
-        return TileMaskStatus(0)
+        return TileMaskStatus.NO_MASK
 
 
 # ===-----------------------------------------------------------------------===#
@@ -311,10 +311,14 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
         tile_offset: IndexList[2, element_type=element_type],
         tile_size: IndexList[2, element_type=element_type],
     ) -> TileMaskStatus:
-        q_start_window = tile_offset[0] // local_window_size
-        q_end_window = (tile_offset[0] + tile_size[0] - 1) // local_window_size
-        k_start_window = tile_offset[1] // local_window_size
-        k_end_window = (tile_offset[1] + tile_size[1] - 1) // local_window_size
+        var q_start_window = tile_offset[0] // local_window_size
+        var q_end_window = (
+            tile_offset[0] + tile_size[0] - 1
+        ) // local_window_size
+        var k_start_window = tile_offset[1] // local_window_size
+        var k_end_window = (
+            tile_offset[1] + tile_size[1] - 1
+        ) // local_window_size
 
         var overlapping_windows = k_end_window >= q_start_window and q_end_window >= k_start_window
 
@@ -524,7 +528,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
 
 
 @always_inline
-fn chunked_causal_mask[
+fn ChunkedCausalMask[
     local_window_size: Int
 ](out res: OrMask[CausalMask(), ChunkedMask[local_window_size]()]):
     """Mask implementing Chunked Causal attention for Llama4 models.

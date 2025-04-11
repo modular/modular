@@ -30,7 +30,7 @@ from nn.flash_attention import (
 )
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import CausalMask, MHAMask, NullMask, chunked_causal_mask
+from nn.mha_mask import CausalMask, MHAMask, NullMask, ChunkedCausalMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from nn.mla import (
     flare_mla_decoding,
@@ -1653,7 +1653,7 @@ fn generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged[
             input_row_offsets,
             kv_collection,
             layer_idx,
-            chunked_causal_mask[local_window_size](),
+            ChunkedCausalMask[local_window_size](),
             scale,
             output,
             context,
@@ -2168,7 +2168,7 @@ fn _flash_attention_kv_cache_chunked_causal_mask_ragged[
         input_row_offsets,
         kv_collection,
         layer_idx,
-        chunked_causal_mask[local_window_size](),
+        ChunkedCausalMask[local_window_size](),
         scale,
         output,
         cuda_ctx,
