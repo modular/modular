@@ -887,7 +887,9 @@ fn assume(val: Bool):
     Args:
       val: The input value which is assumed to be `True`.
     """
-    llvm_intrinsic["llvm.assume", NoneType, has_side_effect=False](val)
+    if is_compile_time():
+        return
+    llvm_intrinsic["llvm.assume", NoneType](val)
 
 
 # ===-----------------------------------------------------------------------===#

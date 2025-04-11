@@ -182,3 +182,6 @@ previously compiler would throw error "cannot fold operation".
 
 - [#4198](https://github.com/modular/max/issues/4198) - Apple M4
   is not properly detected with `sys.is_apple_silicon()`.
+
+- [#3662](https://github.com/modular/max/issues/3662) - Code using `llvm.assume`
+  cannot run at compile time.
