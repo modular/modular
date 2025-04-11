@@ -10,13 +10,11 @@ import tempfile
 from collections import Optional
 from pathlib import Path
 from sys.info import _get_arch
-from sys.ffi import external_call
 
-from compile import Info, compile_info, get_linkage_name
+from compile import Info, compile_info
 
 from .info import A100, DEFAULT_GPU_ARCH
 from .info import Info as HardwareInfo
-from .info import _get_info_from_target
 from collections.string import StaticString
 
 # ===-----------------------------------------------------------------------===#
@@ -115,37 +113,15 @@ fn _to_sass[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _ptx_compiler_path() raises -> Path:
-    # Try to find the ptxas binary in the modular config file. This should
-    # always be present in the modular build.
-    var ptxas_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
-    ](StaticString(".ptxas_path"))
-
-    # In the offchance that the ptxas path is not present, then throw an error.
-    if not ptxas_path_str_ptr:
-        raise String(
-            "the `ptxas` binary does not exist in the Modular config file."
-        )
-
-    # Convert the ptxas path to a Path object and check if it exists.
-    var path = Path(String._from_bytes(ptxas_path_str_ptr))
-
-    # This should always be present in the modular build, but report an error
-    # just in case it's not.
-    if not path.exists():
-        raise String("the `ptxas` binary does not exist in '", path, "'")
-
-    return path
-
-
 @no_inline
 fn _ptxas_compile[
     target: __mlir_type.`!kgen.target` = _get_gpu_target()
 ](
     asm: String, *, options: String = "", output_file: Optional[Path] = None
 ) raises -> String:
-    var ptxas_path = _ptx_compiler_path()
+    alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
+    if not ptxas_path.exists():
+        raise String("the `ptxas` binary does not exist in '", ptxas_path, "'")
     # Compile the PTX code to an ELF file. Here we care about the diagnostics.
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         var ptx_file = Path(tmpdir) / "output.ptx"

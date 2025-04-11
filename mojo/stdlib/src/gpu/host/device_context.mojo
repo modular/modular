@@ -1722,7 +1722,7 @@ struct DeviceFunction[
 
         @parameter
         if do_dump_sass:
-            var ptx = Self._cleanup_asm(self._func_impl.asm)
+            var ptx = Self._cleanup_asm(get_asm())
             var sass = _to_sass[target](ptx)
 
             @parameter
