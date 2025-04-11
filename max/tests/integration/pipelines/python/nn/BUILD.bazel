@@ -3,38 +3,6 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 modular_py_test(
-    name = "test_tokenizer",
-    size = "small",
-    srcs = ["test_tokenizer.py"],
-    data = [
-        "//Kernels/tools/gpu-query",
-        "//Support/tools/system-info",
-    ],
-    tags = [
-        "manual",  # TODO(AITLIB-293)
-        "no-sandbox",
-        "requires-network",
-    ],
-    deps = [
-        "//SDK/integration-test/API/python/graph:modular_graph_test",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/core",
-        "//SDK/lib/API/python/max/pipelines/dataprocessing",
-        "//SDK/lib/API/python/max/serve",
-        requirement("torch"),
-        requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("sentencepiece"),
-        requirement("gguf"),
-        requirement("pytest-mock"),
-        requirement("pytest-asyncio"),
-    ],
-)
-
-modular_py_test(
     name = "tests",
     size = "large",
     srcs = glob(
@@ -44,7 +12,6 @@ modular_py_test(
         exclude = [
             "**/*_gpu.py",
             "**/*_distributed_gpu.py",
-            "**/test_tokenizer.py",
         ],
     ),
     data = [

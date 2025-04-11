@@ -33,7 +33,7 @@ def test_config__validate_speculative_decoding_pipeline():
         model_path="HuggingFaceTB/SmolLM-135M",
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.float32,
-        draft_model="HuggingFaceTB/SmolLM-135M",
+        draft_model_path="HuggingFaceTB/SmolLM-135M",
     )
 
     with pytest.raises(ValueError):
@@ -42,7 +42,7 @@ def test_config__validate_speculative_decoding_pipeline():
             model_path="modularai/llama-3.1",
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
-            draft_model="HuggingFaceTB/SmolLM-135M",
+            draft_model_path="HuggingFaceTB/SmolLM-135M",
             engine=PipelineEngine.HUGGINGFACE,
         )
 
@@ -53,7 +53,7 @@ def test_config__validate_speculative_decoding_pipeline():
             model_path="LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
             quantization_encoding=SupportedEncoding.q4_k,
             device_specs=[DeviceSpec.cpu()],
-            draft_model="HuggingFaceTB/SmolLM-135M",
+            draft_model_path="HuggingFaceTB/SmolLM-135M",
         )
 
     with pytest.raises(ValueError):
@@ -67,5 +67,5 @@ def test_config__validate_speculative_decoding_pipeline():
                     "lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf"
                 )
             ],
-            draft_model="HuggingFaceTB/SmolLM-135M",
+            draft_model_path="HuggingFaceTB/SmolLM-135M",
         )

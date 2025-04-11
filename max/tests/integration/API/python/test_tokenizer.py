@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 import requests
 from max.pipelines import (
+    SupportedEncoding,
     TextAndVisionTokenizer,
     TextTokenizer,
     TokenGeneratorRequest,
@@ -184,3 +185,21 @@ def test_tokenizer_regression_MODELS_467() -> None:
     # But not all single tokens should have a preceding space, including rank-0.
     assert decode(rank1([1056])) == "ing"
     assert decode(rank0(1056)) == "ing"
+
+
+@pytest.mark.asyncio
+async def test_tokenizer__encode_and_decode():
+    encoding = SupportedEncoding.q4_k
+    tokenizer = TextTokenizer(model_path="modularai/llama-3.1")
+
+    test_string = "hi my name is"
+    encoded = await tokenizer.encode(test_string, add_special_tokens=False)
+    context = TextContext(
+        max_length=10,
+        cache_seq_id=0,
+        prompt=test_string,
+        tokens=np.array(encoded),
+    )
+    assert context.current_length == len(encoded)
+    decoded = await tokenizer.decode(context, encoded)
+    assert test_string == decoded
