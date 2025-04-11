@@ -183,22 +183,15 @@ def axes(shapes):
     return shapes.flatmap(strategy)
 
 
-def symbolic_axes(shapes):
-    """Samples the axes corresponding to the symbolic dimensions of the given
-    shapes.
+def axes_of(shapes, pred):
+    """Samples the axes satisfying the given predicate for the  dimensions of
+    the given shapes.
     """
 
     def strategy(shape):
         rank = shape.rank
-        assume(rank > 0)
-        positives = [
-            i for i, x in enumerate(shape.shape) if isinstance(x, SymbolicDim)
-        ]
-        negatives = [
-            i - rank
-            for i, x in enumerate(shape.shape)
-            if isinstance(x, SymbolicDim)
-        ]
+        positives = [i for i, x in enumerate(shape.shape) if pred(x)]
+        negatives = [i - rank for i in positives]
 
         return (
             st.sampled_from(positives + negatives)
@@ -207,6 +200,30 @@ def symbolic_axes(shapes):
         )
 
     return shapes.flatmap(strategy)
+
+
+def static_axes(shapes):
+    """Samples the axes corresponding to the static dimensions of the given
+    shapes.
+    """
+
+    return axes_of(shapes, lambda x: isinstance(x, StaticDim))
+
+
+def symbolic_axes(shapes):
+    """Samples the axes corresponding to the symbolic dimensions of the given
+    shapes.
+    """
+
+    return axes_of(shapes, lambda x: isinstance(x, SymbolicDim))
+
+
+def non_static_axes(shapes):
+    """Samples the axes corresponding to the non-static (SymbolicDim or
+    AlgebraicDim) dimensions of the given shapes.
+    """
+
+    return axes_of(shapes, lambda x: not isinstance(x, StaticDim))
 
 
 def new_axes(shapes):

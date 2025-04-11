@@ -9,7 +9,7 @@ import operator
 from functools import reduce
 
 import pytest
-from conftest import axes, shapes, tensor_types
+from conftest import non_static_axes, shapes, static_axes, tensor_types
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -19,9 +19,9 @@ shared_types = st.shared(tensor_types())
 chunks = st.integers(min_value=1, max_value=20)
 
 
-@given(input_type=shared_types, chunks=chunks, axis=axes(shared_types))
+@given(input_type=shared_types, chunks=chunks, axis=static_axes(shared_types))
 def test_chunk(input_type: TensorType, chunks: int, axis: int):
-    assume(isinstance(input_type.shape[axis], StaticDim))
+    assert isinstance(input_type.shape[axis], StaticDim)
     chunk_size = int(input_type.shape[axis])
 
     assume(chunk_size * chunks < 2**63)
@@ -43,7 +43,7 @@ def test_chunk(input_type: TensorType, chunks: int, axis: int):
 @given(
     input_type=shared_types,
     chunks=st.integers(min_value=2),
-    axis=axes(shared_types),
+    axis=static_axes(shared_types),
 )
 @example(
     input_type=TensorType(DType.float32, [9223372036854775806]),
@@ -51,7 +51,7 @@ def test_chunk(input_type: TensorType, chunks: int, axis: int):
     axis=-1,
 ).via("MAXPLAT-183")
 def test_chunk__not_exact(input_type: TensorType, chunks: int, axis: int):
-    assume(isinstance(input_type.shape[axis], StaticDim))
+    assert isinstance(input_type.shape[axis], StaticDim)
     assume(int(input_type.shape[axis]) % chunks != 0)
     with Graph("chunk", input_types=[input_type]) as graph:
         with pytest.raises(ValueError, match="must statically divide"):
@@ -68,9 +68,9 @@ def test_chunk__split_scalar(input_type: TensorType, chunks: int):
             outs = ops.chunk(graph.inputs[0], chunks)
 
 
-@given(input_type=shared_types, chunks=..., axis=axes(shared_types))
+@given(input_type=shared_types, chunks=..., axis=non_static_axes(shared_types))
 def test_chunk__non_static_dim(input_type: TensorType, chunks: int, axis: int):
-    assume(not isinstance(input_type.shape[axis], StaticDim))
+    assert not isinstance(input_type.shape[axis], StaticDim)
     with Graph("chunk", input_types=[input_type]) as graph:
         with pytest.raises(TypeError):
             outs = ops.chunk(graph.inputs[0], chunks, axis=axis)
