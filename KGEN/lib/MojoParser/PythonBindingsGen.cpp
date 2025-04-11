@@ -142,7 +142,7 @@ LogicalResult BindingGenerator::genPyInitImplFunc() {
   // Generate the module object. Form the AST we want to emit.
   DeclRefNode typePythonObject("create_pybind_module");
   SyntheticNode moduleNameVal(
-      moduleLoc, PValue(StringAttr::get(moduleName, StringType::get(ctx))));
+      moduleLoc, StringAttr::get(moduleName, StringType::get(ctx)));
   Operand subscriptOperand(&moduleNameVal, moduleLoc, Operand::kPositional);
   SubscriptNode subscript(&typePythonObject, moduleLoc, subscriptOperand,
                           moduleLoc);
@@ -393,7 +393,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
 
   AnyValue pyArgsTuple = MBValue(wrapperFunc.getArgument(1));
 
-  ExprEmitter emitter(*wrapperDecl, builder);
+  ExprEmitter emitter(*pyBindDecl, builder);
 
   SyntheticNode synth(funcDecl.getLoc());
 
@@ -440,29 +440,34 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
        llvm::enumerate(func.getArgumentTypes(), sig.getArgConventions())) {
     ASTType rvType = getFunctionArgumentRValueType(type, conv);
 
-    ArrayRef<ASTDecl *> checkAndGetArgFnDecls = shared.getBuiltinFunction(
-        *pyBindDecl, "check_and_get_arg", wrapperDecl->getLoc());
-    ParamBindings bindings(*wrapperDecl);
-    bindings.add(synth, PValue(rvType));
-    OverloadSet checkAndGetArgOv("check_and_get_arg", checkAndGetArgFnDecls,
-                                 std::move(bindings), &synth,
-                                 CallSyntax::kDirectCall);
-
-    PValue argTypeNameStr = getTypeName(shared, rvType);
-
-    AnyValue argIndexAttr = IntegerAttr::get(IndexType::get(ctx), argIndex);
-
+    // We emit into a vardecl and infer the type of it.
     std::string varName = std::string("arg_") + std::to_string(argIndex);
     VarDeclOp argUnsafePointerVar =
         emitter.emitVarDecl(varName, UnresolvedType::get(shared.getContext()),
                             builder.getLoc(), VarDeclKind::Synthesized);
 
+    DeclRefNode nameDRE("check_and_get_arg");
+    SyntheticNode argTypeVal(moduleLoc, rvType);
+    Operand argTypeOp(&argTypeVal, moduleLoc, Operand::kPositional);
+    SubscriptNode subscript(&nameDRE, moduleLoc, argTypeOp, moduleLoc);
+
+    SyntheticNode callOp0(moduleLoc, originalFuncNameStrAttr);
+    SyntheticNode callOp1(moduleLoc, getTypeName(shared, rvType));
+    SyntheticNode callOp2(moduleLoc, pyArgsTuple);
+    SyntheticNode callOp3(moduleLoc,
+                          IntegerAttr::get(IndexType::get(ctx), argIndex));
+    Operand callOps[] = {
+        Operand(&callOp0, moduleLoc, Operand::kPositional),
+        Operand(&callOp1, moduleLoc, Operand::kPositional),
+        Operand(&callOp2, moduleLoc, Operand::kPositional),
+        Operand(&callOp3, moduleLoc, Operand::kPositional),
+    };
+    CallNode call(&subscript, moduleLoc, callOps, moduleLoc);
+
+    // Emit the call into the vardecl.
     ValueDest argUnsafePointerDest(argUnsafePointerVar, EC_PyBindGen);
-    checkAndGetArgOv.emitCall(CallOperands({{originalFuncNameStrAttr, synth},
-                                            {argTypeNameStr, synth},
-                                            {pyArgsTuple, synth},
-                                            {argIndexAttr, synth}}),
-                              argUnsafePointerDest, emitter);
+    if (!emitter.emitExpr(&call, argUnsafePointerDest))
+      return Error("Error emitting 'check_and_get_arg' call");
 
     argUnsafePointerVars.emplace_back(std::move(argUnsafePointerVar));
   }
@@ -517,22 +522,22 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   //
   // Above here we were emitting into the wrapper function for the user's
   // function, but we're emitting this call into e.g. PyInit_my_module.
+  DeclRefNode typePythonObject("add_wrapper_to_module");
+  SyntheticNode funcPointerVal(moduleLoc, wrapperDecl->getFuncAsPValue());
+  SyntheticNode funcNameVal(moduleLoc, originalFuncNameStrAttr);
 
-  OverloadSet pyTypeOv =
-      lookupPyBindFunction("add_wrapper_to_module", *pyInitDecl, synth);
+  Operand subscriptOperands[] = {
+      Operand(&funcPointerVal, moduleLoc, Operand::kPositional),
+      Operand(&funcNameVal, moduleLoc, Operand::kPositional)};
 
-  // Bind the type and name parameters. Since parametric functions are
-  // forbidden, the type and its parameters will be concrete.
-  // FIXME(MOCO-1306): The name parameter should not be required.
-  pyTypeOv.paramBindings.add(synth, wrapperDecl->getFuncAsPValue());
-  pyTypeOv.paramBindings.add(synth, originalFuncNameStrAttr);
-
-  ExprEmitter pyInitEmitter(*pyInitDecl,
+  SubscriptNode subscript(&typePythonObject, moduleLoc, subscriptOperands,
+                          moduleLoc);
+  SyntheticNode moduleVal(moduleLoc, pyModule);
+  Operand moduleOp(&moduleVal, moduleLoc, Operand::kPositional);
+  CallNode call(&subscript, moduleLoc, moduleOp, moduleLoc);
+  ExprEmitter pyInitEmitter(*pyBindDecl,
                             OpBuilder::atBlockEnd(pyInitFunc.getBody()));
-  ValueDest addWrapperToModuleCallDest(EC_PyBindGen);
-  pyTypeOv.emitCall(CallOperands({{pyModule, synth}}),
-                    addWrapperToModuleCallDest, pyInitEmitter);
-
+  pyInitEmitter.emitExpr(&call, EC_PyBindGen);
   return success();
 }
 
@@ -564,20 +569,26 @@ ErrorOrSuccess BindingGenerator::genTypeBinding(ASTType type) {
     return Error("TODO: type binding generation only supported for structs");
 
   // Use the location of the current type for better error reporting.
-  SyntheticNode node(typeDecl->getLoc());
-  OverloadSet pyTypeOv =
-      lookupPyBindFunction("gen_pytype_wrapper", *pyInitDecl, node);
+  SMLoc loc = typeDecl->getLoc();
 
-  // Bind the type and name parameters. Since parametric functions are
-  // forbidden, the type and its parameters will be concrete.
-  // FIXME(MOCO-1306): The name parameter should not be required.
-  pyTypeOv.paramBindings.add(node, PValue(type));
-  pyTypeOv.paramBindings.add(node, getTypeName(shared, type));
+  // Generate the module object. Form the AST we want to emit.
+  DeclRefNode typePythonObject("gen_pytype_wrapper");
+  SyntheticNode moduleNameVal(loc, type);
+  SyntheticNode typeNameVal(loc, getTypeName(shared, type));
+  Operand subscriptOps[] = {
+      Operand(&moduleNameVal, loc, Operand::kPositional),
+      Operand(&typeNameVal, loc, Operand::kPositional),
+  };
+  SubscriptNode subscript(&typePythonObject, loc, subscriptOps, loc);
 
-  ExprEmitter emitter(*pyInitDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
-  ValueDest noneDest(EC_PyBindGen);
-  pyTypeOv.emitCall(CallOperands({{pyModule, node}}), noneDest, emitter);
+  SyntheticNode moduleVal(loc, pyModule);
+  Operand moduleOp(&moduleVal, loc, Operand::kPositional);
+  CallNode call(&subscript, loc, moduleOp, loc);
 
+  // Emit it.
+  ExprEmitter emitter(*pyBindDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
+  if (!emitter.emitExpr(&call, ExprContext::EC_PyBindGen))
+    return Error("Error emitting 'gen_pytype_wrapper' call");
   return success();
 }
 
