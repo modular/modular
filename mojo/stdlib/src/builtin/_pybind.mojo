@@ -45,8 +45,8 @@ fn get_cpython() -> CPython:
 
 
 # This function is used by the compiler to create a new module.
-fn create_pybind_module[name: MLIRKGENString]() raises -> PyModule:
-    return Python.create_module(String(StaticString(name)))
+fn create_pybind_module[name: StaticString]() raises -> PyModule:
+    return Python.create_module(String(name))
 
 
 fn fail_initialization(owned err: Error) -> PythonObject:
@@ -60,23 +60,6 @@ fn fail_initialization(owned err: Error) -> PythonObject:
     )
     _ = err^
     return PythonObject(PyObjectPtr())
-
-
-fn pointer_bitcast[
-    To: AnyType
-](
-    ptr: Pointer,
-    out result: Pointer[To, ptr.origin, ptr.address_space, *_, **_],
-):
-    return __type_of(result)(
-        _mlir_value=__mlir_op.`lit.ref.from_pointer`[
-            _type = __type_of(result)._mlir_type
-        ](
-            UnsafePointer(__mlir_op.`lit.ref.to_pointer`(ptr._value))
-            .bitcast[To]()
-            .address
-        )
-    )
 
 
 fn gen_pytype_wrapper[
@@ -95,9 +78,7 @@ fn gen_pytype_wrapper[
     # instance so that callers can pass it around instead of performing a lookup
     # each time.
     # FIXME(MSTDL-969): Bitcast to `TypedPythonObject["Module"]`.
-    Python.add_object(
-        pointer_bitcast[PyModule](Pointer(to=module))[], name, type_obj
-    )
+    Python.add_object(PyModule(unsafe_unchecked_from=module), name, type_obj)
 
 
 fn add_wrapper_to_module[

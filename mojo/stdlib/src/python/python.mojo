@@ -98,7 +98,7 @@ struct Python:
         """
         self.impl = existing.impl
 
-    fn eval(mut self, code: StringSlice) -> Bool:
+    fn eval(self, code: StringSlice) -> Bool:
         """Executes the given Python code.
 
         Args:
@@ -267,7 +267,7 @@ struct Python:
 
     @staticmethod
     fn add_functions(
-        mut module: TypedPythonObject["Module"],
+        module: TypedPythonObject["Module"],
         owned functions: List[PyMethodDef],
     ) raises:
         """Adds functions to a PyModule object.
@@ -289,7 +289,7 @@ struct Python:
 
     @staticmethod
     fn unsafe_add_methods(
-        mut module: TypedPythonObject["Module"],
+        module: TypedPythonObject["Module"],
         functions: UnsafePointer[PyMethodDef],
     ) raises:
         """Adds methods to a PyModule object.
@@ -316,7 +316,7 @@ struct Python:
 
     @staticmethod
     fn add_object(
-        mut module: TypedPythonObject["Module"],
+        module: TypedPythonObject["Module"],
         name: String,
         value: PythonObject,
     ) raises:
@@ -369,7 +369,7 @@ struct Python:
 
     @no_inline
     fn as_string_slice(
-        mut self, str_obj: PythonObject
+        self, str_obj: PythonObject
     ) -> StringSlice[__origin_of(str_obj.py_object.unsized_obj_ptr.origin)]:
         """Return a string representing the given Python object.
 
@@ -383,7 +383,7 @@ struct Python:
         return cpython.PyUnicode_AsUTF8AndSize(str_obj.py_object)
 
     @staticmethod
-    fn throw_python_exception_if_error_state(mut cpython: CPython) raises:
+    fn throw_python_exception_if_error_state(cpython: CPython) raises:
         """Raise an exception if CPython interpreter is in an error state.
 
         Args:
@@ -393,7 +393,7 @@ struct Python:
             raise Python.unsafe_get_python_exception(cpython)
 
     @staticmethod
-    fn unsafe_get_python_exception(mut cpython: CPython) -> Error:
+    fn unsafe_get_python_exception(cpython: CPython) -> Error:
         """Get the `Error` object corresponding to the current CPython
         interpreter error state.
 
