@@ -209,6 +209,17 @@ class PipelineRegistry:
         Returns:
             AutoConfig: The HuggingFace configuration object for the model.
         """
+        # TODO: This is a hack to get around the fact that in serving and the
+        # way we instantiate multiprocess model workers, pickling AutoConfig will
+        # not work and AutoConfig.from_pretrained will need to be called again
+        # when trust_remote_code=True.
+        if huggingface_repo.trust_remote_code:
+            return AutoConfig.from_pretrained(
+                huggingface_repo.repo_id,
+                trust_remote_code=huggingface_repo.trust_remote_code,
+                revision=huggingface_repo.revision,
+            )
+
         if huggingface_repo not in self._cached_huggingface_configs:
             self._cached_huggingface_configs[huggingface_repo] = (
                 AutoConfig.from_pretrained(
