@@ -85,12 +85,12 @@ and adds it to the graph, returning the symbolic result.
         same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the division.
+    rhs: The symbol to use as right side of the division.
     location: An optional location for a more specific error message.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the division.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -123,11 +123,11 @@ and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the maximum operation.
+    rhs: The symbol to use as right side of the maximum operation.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the maximum operation.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -160,11 +160,11 @@ and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the minimum operation.
+    rhs: The symbol to use as right side of the minimum operation.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the minimum operation.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -176,9 +176,9 @@ Raises:
 """
 mod = _elementwise_binary(rmo.mod)
 """
-Computes the elementwise maximum of two symbolic tensors.
+Computes the elementwise modulus of two symbolic tensors.
 
-Creates a new op node to compute the maximum of two symbol tensor values
+Creates a new op node to compute the modulus of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
 -
@@ -188,11 +188,11 @@ and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the modulus operation.
+    rhs: The symbol to use as right side of the modulus operation.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the modulus operation.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -216,11 +216,11 @@ and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the multiplication.
+    rhs: The symbol to use as right side of the multiplication.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the multiplication.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -244,11 +244,11 @@ and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the exponentiation.
+    rhs: The symbol to use as right side of the exponentiation.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the exponentiation.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -284,11 +284,11 @@ and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the subtraction.
+    rhs: The symbol to use as right side of the subtraction.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the subtraction.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -324,11 +324,11 @@ tensor values and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the equality comparison.
+    rhs: The symbol to use as right side of the equality comparison.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the equality comparison.
     The result will have:
     - the same dtype as the type promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -365,11 +365,11 @@ tensor values and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the greater than comparison.
+    rhs: The symbol to use as right side of the greater than comparison.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the greater than comparison.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -393,11 +393,11 @@ tensor values and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the greater-or-equal comparison.
+    rhs: The symbol to use as right side of the greater-or-equal comparison.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the greater-or-equal comparison.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -434,11 +434,11 @@ tensor values and adds it to the graph, returning the symbolic result.
       the same shape according to broadcasting rules` before the operation.
 
 Args:
-    lhs: The symbol to use as left side of the addition.
-    rhs: The symbol to use as right side of the addition.
+    lhs: The symbol to use as left side of the inequality comparison.
+    rhs: The symbol to use as right side of the inequality comparison.
 
 Returns:
-    A symbolic tensor value representing the output of the addition.
+    A symbolic tensor value representing the output of the inequality comparison.
     The result will have:
     - the same dtype as the type-promotion of the two input dtypes
     - the same shape as the broadcast of the two input shapes.
@@ -579,7 +579,7 @@ Args:
         computation.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the exp
         value computation.
 
 Raises:
@@ -600,7 +600,7 @@ Args:
            computation.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the error function
     value computation.
 
 Raises:
@@ -622,8 +622,7 @@ Args:
         computation.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
-        value computation.
+    A new symbolic tensor value representing the output of the gelu computation.
 
 Raises:
     Error: If the symbol doesn't represent a tensor value.
@@ -648,8 +647,8 @@ def _gelu_quick(x: TensorValue):
             computation.
 
     Returns:
-        A new symbolic tensor value representing the output of the absolute
-            value computation.
+        A new symbolic tensor value representing the output of the quick gelu
+            ccomputation.
 
     Raises:
         Error: If the symbol doesn't represent a tensor value.
@@ -669,7 +668,7 @@ def _gelu_tanh(x: TensorValue):
             computation.
 
     Returns:
-        A new symbolic tensor value representing the output of the absolute
+        A new symbolic tensor value representing the output of the tanh
             value computation.
 
     Raises:
@@ -709,7 +708,7 @@ def gelu(x: TensorValue, approximate: str = "none"):
             computation.
 
     Returns:
-        A new symbolic tensor value representing the output of the absolute
+        A new symbolic tensor value representing the output of the gelu
             value computation.
 
     Raises:
@@ -745,7 +744,7 @@ Args:
         computation.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the natural logarithm
         value computation.
 
 Raises:
@@ -773,7 +772,7 @@ Args:
         computation.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the log1p
         value computation.
 
 Raises:
@@ -792,7 +791,7 @@ Args:
         computation.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the logsoftmax
         value computation.
 
 Raises:
@@ -811,7 +810,7 @@ Args:
         computation.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the relu
         value computation.
 
 Raises:
@@ -830,7 +829,7 @@ Args:
         computation.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the sigmoid
         value computation.
 
 Raises:
@@ -852,7 +851,7 @@ def silu(x: TensorValue):
             computation.
 
     Returns:
-        A new symbolic tensor value representing the output of the absolute
+        A new symbolic tensor value representing the output of the silu
             value computation.
 
     Raises:
@@ -873,7 +872,7 @@ Args:
         computation.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the softmax
         value computation.
 
 Raises:
@@ -893,7 +892,7 @@ Args:
            raised.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the cosine
     value computation.
 
 Raises:
@@ -913,7 +912,7 @@ Args:
            raised.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the floor
     value computation.
 
 Raises:
@@ -947,7 +946,7 @@ Args:
            raised.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the round
     value computation.
 
 Raises:
@@ -966,7 +965,7 @@ Args:
         computation. If it's not a floating-point DType, an exception will be raised.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the rsqrt
         value computation.
 
 Raises:
@@ -985,7 +984,7 @@ Args:
         computation. If it's not a floating-point DType, an exception will be raised.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the sqrt
         value computation.
 
 Raises:
@@ -1004,7 +1003,7 @@ Args:
         computation. If it's not a floating-point DType, an exception will be raised.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the sin
         value computation.
 
 Raises:
@@ -1022,7 +1021,7 @@ Args:
         computation. If it's not a floating-point DType, an exception will be raised.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the tanh
         value computation.
 
 Raises:
@@ -1042,7 +1041,7 @@ Args:
         raised.
 
 Returns:
-    A new symbolic tensor value representing the output of the absolute
+    A new symbolic tensor value representing the output of the truncation
         value computation.
 
 Raises:
@@ -1114,13 +1113,13 @@ Raises:
 
 negate = _elementwise_unary(rmo.mo_negative)
 """
-Computes the elementwise negate of a symbolic tensor.
+Computes the elementwise negation of a symbolic tensor.
 
-Creates a new op node to compute the elementwise negate of a
+Creates a new op node to compute the elementwise negation of a
 symbolic tensor and adds it to the graph, returning the symbolic result.
 
 Args:
-    value: The symbolic tensor to use as the input to the negate
+    value: The symbolic tensor to use as the input to the negation
         computation.
 
 Returns:
