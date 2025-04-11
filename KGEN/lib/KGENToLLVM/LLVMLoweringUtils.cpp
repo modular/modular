@@ -49,10 +49,6 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
   }
   if (auto vecType = dyn_cast<VectorType>(type)) {
     return target.getDataLayout().getVectorBitWidth(
-        vecType.getNumElements(), vecType.getElementTypeBitWidth());
-  }
-  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(type)) {
-    return target.getDataLayout().getVectorBitWidth(
         vecType.getNumElements(), getTypeSizeInBits(vecType.getElementType()));
   }
   if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type)) {
@@ -80,12 +76,7 @@ int64_t LLVMDataLayout::getTypeABIAlign(Type type) const {
     return target.getDataLayout().getFloatABIAlign(fpType.getWidth());
   if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type))
     return target.getDataLayout().getPointerABIAlign();
-
   if (auto vecType = dyn_cast<VectorType>(type)) {
-    return target.getDataLayout().getVectorABIAlign(
-        vecType.getNumElements(), vecType.getElementTypeBitWidth());
-  }
-  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(type)) {
     return target.getDataLayout().getVectorABIAlign(
         vecType.getNumElements(), getTypeSizeInBits(vecType.getElementType()));
   }
@@ -260,7 +251,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
       return *type;
 
     // Vector case, size != 1
-    return LLVM::getFixedVectorType(*type, *size);
+    return VectorType::get(*size, *type);
   });
 
   // Convert data type types to `i8`.
@@ -393,7 +384,7 @@ void VariantHelper::walkAndCreateVariant(
     }
     return;
   }
-  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(value.getType())) {
+  if (auto vecType = dyn_cast<VectorType>(value.getType())) {
     for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
       Value nestedValue = b.create<LLVM::ExtractElementOp>(
           value, b.create<LLVM::ConstantOp>(b.getI32Type(), i));
@@ -475,7 +466,7 @@ Value VariantHelper::walkAndExtractVariant(ArrayRef<Value>::iterator &valueIt,
     }
     return result;
   }
-  if (auto vecType = dyn_cast<LLVM::LLVMFixedVectorType>(type)) {
+  if (auto vecType = dyn_cast<VectorType>(type)) {
     for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
       Value element = walkAndExtractVariant(valueIt, storageOffset, offset,
                                             vecType.getElementType());
@@ -816,8 +807,8 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
     if (dtype.isIndex())
       return addr;
     return b.create<LLVM::IntToPtrOp>(
-        LLVM::LLVMFixedVectorType::get(
-            LLVM::LLVMPointerType::get(b.getContext()), values.size()),
+        VectorType::get(values.size(),
+                        LLVM::LLVMPointerType::get(b.getContext())),
         addr);
   }
   SmallVector<APFloat> values;

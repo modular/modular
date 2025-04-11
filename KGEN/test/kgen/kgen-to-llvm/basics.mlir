@@ -73,7 +73,7 @@ kgen.func @reference_me(%a: i64) -> i64 {
 
 // CHECK-LABEL: @address_dtype
 // CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr
-// CHECK-SAME: %[[ARG1:.*]]: !llvm.vec<4 x ptr>
+// CHECK-SAME: %[[ARG1:.*]]: vector<4x!llvm.ptr>
 kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, address>) {
   kgen.return
 }

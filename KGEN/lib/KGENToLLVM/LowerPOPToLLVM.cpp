@@ -763,10 +763,10 @@ struct ConvertPOPSIMDShuffle : public ConvertPOPToLLVMPattern<SIMDShuffleOp> {
     // contains a different value, the behavior is undefined - we will simply
     // treat such a case as value 1.
     KGENDType dtype = *op.getType().getResolvedDType();
-    auto llvmVecType = LLVM::getFixedVectorType(
+    auto llvmVecType = VectorType::get(
+        mask.getValues().size(),
         *getMLIRTypeForDType(op.getType().getContext(), dtype,
-                             getTypeConverter()->getIndexTypeBitwidth()),
-        mask.getValues().size());
+                             getTypeConverter()->getIndexTypeBitwidth()));
     Value result = rewriter.create<LLVM::UndefOp>(op.getLoc(), llvmVecType);
     int idx = 0;
     for (int32_t maskElement : maskValues) {

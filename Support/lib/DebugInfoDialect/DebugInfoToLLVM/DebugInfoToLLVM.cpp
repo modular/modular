@@ -516,7 +516,7 @@ struct DebugInfoToLLVMTypeConverter : public DebugInfo::DebugInfoTypeConverter {
           convertDebugType(arrayType.getElementType()),
           arrayType.getNumElements());
     });
-    addConversion([&](LLVM::LLVMFixedVectorType vecType) {
+    addConversion([&](VectorType vecType) {
       return DebugInfo::DIVectorType::get(
           convertDebugType(vecType.getElementType()), vecType.getNumElements());
     });
