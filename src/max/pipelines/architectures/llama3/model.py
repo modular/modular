@@ -153,6 +153,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         self.model = self.load_model(session)
 
         # Initialize state needed for communication collectives.
+        # Contents of signal buffer should be filled with zeros.
         self.signal_buffers = (
             [
                 Tensor.zeros(

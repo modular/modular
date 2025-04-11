@@ -20,12 +20,7 @@ from collections import deque
 from collections.abc import Iterable, Mapping
 from functools import wraps
 from inspect import signature
-from typing import (
-    Any,
-    Callable,
-    Union,
-    get_args,
-)
+from typing import Any, Callable, Union, get_args
 
 import numpy as np
 from max._core_types.driver import DLPackArray
@@ -238,8 +233,10 @@ class Module(Layer, ABC):
                     raise ValueError(
                         f"Weight '{full_weight_name}' was not initialized."
                     )
+                # Contents of weights should be filled with zeros.
                 data = self._weight_values[full_weight_name] = Tensor.zeros(
-                    weight.shape.static_dims, weight.dtype
+                    shape=weight.shape.static_dims,
+                    dtype=weight.dtype,
                 )
             state_dict[full_weight_name] = data
             weight.name = full_weight_name

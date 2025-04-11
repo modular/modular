@@ -110,6 +110,7 @@ class Signals:
 
     def buffers(self) -> list[Tensor]:
         """Allocates and returns buffers used for communication in allreduce."""
+        # Contents of signal buffer should be filled with zeros.
         return [
             Tensor.zeros(
                 shape=(Signals.NUM_BYTES,),

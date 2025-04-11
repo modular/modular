@@ -69,13 +69,13 @@ class NaiveKVCacheManager(KVCacheManager):
             is_ragged=False,
         )
 
-        self.keys = Tensor.zeros(
+        self.keys = Tensor(
             shape=self.cache_shape,
             dtype=self.params.dtype,
             device=self.devices[0],
         )
 
-        self.values = Tensor.zeros(
+        self.values = Tensor(
             shape=self.cache_shape,
             dtype=self.params.dtype,
             device=self.devices[0],

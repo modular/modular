@@ -171,9 +171,9 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         self.blocks: list[Tensor] = []
         for i in range(len(self.devices)):
             self.blocks.append(
-                Tensor.zeros(
-                    self.block_shape(self.max_batch_size),
-                    self.params.dtype,
+                Tensor(
+                    shape=self.block_shape(self.max_batch_size),
+                    dtype=self.params.dtype,
                     device=self.devices[i],
                 )
             )

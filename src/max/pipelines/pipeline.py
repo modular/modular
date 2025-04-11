@@ -700,8 +700,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         # Multistep execution loop.
         tracer.next("allocate_generated_tokens")
-        generated_tokens = Tensor.zeros(
-            (len(context_batch), 0),
+        generated_tokens = Tensor(
+            shape=(len(context_batch), 0),
             dtype=DType.int64,
             device=self._devices[0],
         )

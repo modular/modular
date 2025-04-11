@@ -150,6 +150,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
 
         self.model = self.load_model(session)
 
+        # Contents of signal buffer should be filled with zeros.
         self.signal_buffers = [
             Tensor.zeros(
                 shape=(Signals.NUM_BYTES,),

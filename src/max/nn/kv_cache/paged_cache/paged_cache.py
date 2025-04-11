@@ -399,9 +399,9 @@ class PagedKVCacheManager(KVCacheManager):
         self.device_tensors: list[Tensor] = []
         for device in self.devices:
             self.device_tensors.append(
-                Tensor.zeros(
-                    self.block_shape(),  # type: ignore
-                    self.params.dtype,
+                Tensor(
+                    shape=self.block_shape(),  # type: ignore
+                    dtype=self.params.dtype,
                     device=device,
                 )
             )
@@ -437,9 +437,9 @@ class PagedKVCacheManager(KVCacheManager):
             )
 
             # create a host tensor
-            self.host_tensor = Tensor.zeros(
-                self.block_shape(self.total_num_host_pages),  # type: ignore
-                self.params.dtype,
+            self.host_tensor = Tensor(
+                shape=self.block_shape(self.total_num_host_pages),  # type: ignore
+                dtype=self.params.dtype,
                 device=Device.cpu(),
             )
 
