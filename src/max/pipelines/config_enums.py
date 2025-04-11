@@ -74,7 +74,7 @@ class SupportedEncoding(str, Enum):
     def parse_from_file_name(cls, name: str):
         # TODO(AITLIB-127): Robustify detection of quantization encoding
         name = name.lower()
-        if "f32" in name or "float32" in name:
+        if "f32" in name or "fp32" in name or "float32" in name:
             return SupportedEncoding.float32
         elif "bf16" in name or "bfloat16" in name:
             return SupportedEncoding.bfloat16
