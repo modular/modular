@@ -48,19 +48,15 @@ kgen.generator @closure_types_escaping(%arg0 : index, %arg1: !kgen.pointer<struc
 // COM: Verify ClosureSymbols and ClosureTypes are lowered correctly.
 
 // CHECK: #type_value = #kgen.type<struct<(index)>, {
-// CHECK-SAME: "CAPTURE_TYPE" : type = none,
-// CHECK-SAME: "__call__" : <none>(!kgen.pointer<struct<(index)>>, index) -> index = @foo_fn<:none ?>}> : !kgen.type
+// CHECK-SAME: "__call__" : (!kgen.pointer<struct<(index)>>, index) -> index = @foo_fn<:none #kgen.none>}> : !kgen.type
 #type_value = #kgen.type<!kgen.closure<@foo, "fn" nonescaping>,
-              {
-                "CAPTURE_TYPE" : type = !kgen.param_closure<@foo "fn">,
-                "__call__" :
-                <!kgen.param_closure<@foo "fn">>
+              {"__call__" :
               (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>, index) -> index =
-               #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> ?> >}> : !kgen.type
+               #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> #kgen.closure<@foo "fn">> >}> : !kgen.type
 
 
-kgen.generator @consume<x: type, impl:!kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(%arg0: !kgen.pointer<x> read_mem) -> index {
-    %0 = kgen.call_param[(!kgen.pointer<x> read_mem) -> index: bind_params(:<!kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(!kgen.pointer<x> read_mem) -> index get_vtable_entry(x, "__call__"), impl)](%arg0)
+kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x> read_mem) -> index {
+    %0 = kgen.call_param[(!kgen.pointer<x> read_mem) -> index: get_vtable_entry(x, "__call__")](%arg0)
     kgen.return %0 : index
 }
 
@@ -73,13 +69,13 @@ kgen.generator @consume<x: type, impl:!kgen.param<get_vtable_entry(x, "CAPTURE_T
 // CHECK-NEXT: [[V0:%.*]] = pop.stack_allocation 1 x struct<(index)> marked
 // CHECK-NEXT: [[V1:%.*]] = kgen.struct.gep [[V0]][0] : <struct<(index)>>
 // CHECK-NEXT: pop.store %arg0, [[V1]] : !kgen.pointer<index>
-// CHECK-NEXT: [[V2:%.*]] = kgen.call @consume<:type #type_value, :none #kgen.none>([[V0]]) : (!kgen.pointer<struct<(index)>> read_mem) -> index
+// CHECK-NEXT: [[V2:%.*]] = kgen.call @consume<:type #type_value>([[V0]]) : (!kgen.pointer<struct<(index)>> read_mem) -> index
 // CHECK-NEXT: kgen.return
 kgen.generator @foo(%arg0 : index) {
   %3 = kgen.closure.init(%arg0)(%arg1: index) -> index {
     kgen.return %arg0 : index
   } : (index), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
-  %2 = kgen.call @consume<:type #type_value, :!kgen.param_closure<@foo "fn"> #kgen.closure<@foo "fn">>(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>> read_mem) -> index
+  %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>> read_mem) -> index
   kgen.return
 }
 
@@ -88,18 +84,15 @@ kgen.generator @foo(%arg0 : index) {
 // COM: Thin closures (todo: optimize away the none arguments MOCO 1702 and MOCO 1762)
 
 // CHECK: #type_value = #kgen.type<none, {
-// CHECK-SAME: "CAPTURE_TYPE" : type = none,
-// CHECK-SAME: "__call__" : <none>(!kgen.pointer<none>, index) -> index = @thin_fn<:none ?>}> : !kgen.type
+// CHECK-SAME: "__call__" : (!kgen.pointer<none>, index) -> index = @thin_fn<:none #kgen.none>}> : !kgen.type
 #type_value = #kgen.type<!kgen.closure<@thin, "fn" nonescaping>,
-              {
-                 "CAPTURE_TYPE" : type = !kgen.param_closure<@thin "fn">,
-                "__call__" :
-              <!kgen.param_closure<@thin "fn">>(!kgen.pointer<!kgen.closure<@thin, "fn" nonescaping>>, index) -> index =
-               #kgen.closure.symbol<@thin, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@thin "fn"> ?> >}> : !kgen.type
+              { "__call__" :
+              (!kgen.pointer<!kgen.closure<@thin, "fn" nonescaping>>, index) -> index =
+               #kgen.closure.symbol<@thin, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@thin "fn"> #kgen.closure<@thin "fn">> >}> : !kgen.type
 
 
-kgen.generator @consume<x: type, impl:!kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(%arg0: !kgen.pointer<x> read_mem) -> index {
-    %0 = kgen.call_param[(!kgen.pointer<x> read_mem) -> index: bind_params(:<!kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(!kgen.pointer<none>) -> index get_vtable_entry(x, "__call__"), impl)](%arg0)
+kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x> read_mem) -> index {
+    %0 = kgen.call_param[(!kgen.pointer<x> read_mem) -> index: get_vtable_entry(x, "__call__")](%arg0)
     kgen.return %0 : index
 }
 
@@ -109,13 +102,13 @@ kgen.generator @consume<x: type, impl:!kgen.param<get_vtable_entry(x, "CAPTURE_T
 
 // CHECK-LABEL: kgen.generator @thin()
 // CHECK-NEXT: pop.stack_allocation 1 x none marked
-// CHECK-NEXT: kgen.call @consume<:type #type_value, :none #kgen.none>(%{{.*}}) : (!kgen.pointer<none> read_mem) -> index
+// CHECK-NEXT: kgen.call @consume<:type #type_value>(%{{.*}}) : (!kgen.pointer<none> read_mem) -> index
 // CHECK-NEXT: kgen.return
 kgen.generator @thin() {
   %3 = kgen.closure.init()(%arg2: index) -> index {
     kgen.return %arg2 : index
   } : (), !kgen.pointer<!kgen.closure<@thin, "fn" nonescaping>>
-  %2 = kgen.call @consume<:type #type_value, :!kgen.param_closure<@thin "fn"> #kgen.closure<@thin "fn">>(%3) : (!kgen.pointer<!kgen.closure<@thin, "fn" nonescaping>> read_mem) -> index
+  %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.pointer<!kgen.closure<@thin, "fn" nonescaping>> read_mem) -> index
   kgen.return
 }
 
@@ -124,18 +117,16 @@ kgen.generator @thin() {
 // COM: Register passable closures (TODO: remove none params MOCO 1762)
 
 // CHECK: #type_value = #kgen.type<struct<(index)>, {
-// CHECK-SAME: "CAPTURE_TYPE" : type = none,
-// CHECK-SAME: "__call__" : <none>(!kgen.struct<(index)>, index) -> index = @foo_fn<:none ?>}> : !kgen.type
+// CHECK-SAME: "__call__" : (!kgen.struct<(index)>, index) -> index = @foo_fn<:none #kgen.none>}> : !kgen.type
 #type_value = #kgen.type<!kgen.closure<@foo, "fn" registerpassable>,
               {
-                "CAPTURE_TYPE" : type = !kgen.param_closure<@foo "fn">,
                 "__call__" :
-              <!kgen.param_closure<@foo "fn">>(!kgen.closure<@foo, "fn" registerpassable>, index) -> index =
-               #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> ?> >}> : !kgen.type
+              (!kgen.closure<@foo, "fn" registerpassable>, index) -> index =
+               #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> #kgen.closure<@foo "fn">> >}> : !kgen.type
 
 
-kgen.generator @consume<x: type, impl:!kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(%arg0: !kgen.param<x>, %arg1: index) -> index {
-    %0 = kgen.call_param[(!kgen.param<x>, index) -> index: bind_params(:<!kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(!kgen.param<x>, index) -> index get_vtable_entry(x, "__call__"), impl)](%arg0, %arg1)
+kgen.generator @consume<x: type>(%arg0: !kgen.param<x>, %arg1: index) -> index {
+    %0 = kgen.call_param[(!kgen.param<x>, index) -> index: get_vtable_entry(x, "__call__")](%arg0, %arg1)
     kgen.return %0 : index
 }
 
@@ -149,7 +140,7 @@ kgen.generator @consume<x: type, impl:!kgen.param<get_vtable_entry(x, "CAPTURE_T
 // CHECK-NEXT: [[W1:%.*]] = kgen.struct.gep [[W0]][0] : <struct<(index)>>
 // CHECK-NEXT: pop.store %arg0, [[W1]] : !kgen.pointer<index>
 // CHECK-NEXT: [[W2:%.*]] = pop.load [[W0]] : !kgen.pointer<struct<(index)>>
-// CHECK-NEXT: [[W3:%.*]] = kgen.call @consume<:type #type_value, :none #kgen.none>([[W2]], %arg0) : (!kgen.struct<(index)>, index) -> index
+// CHECK-NEXT: [[W3:%.*]] = kgen.call @consume<:type #type_value>([[W2]], %arg0) : (!kgen.struct<(index)>, index) -> index
 // CHECK-NEXT: kgen.return
 // CHECK-NEXT: }
 
@@ -157,7 +148,7 @@ kgen.generator @foo(%arg0 : index) {
   %3 = kgen.closure.init(%arg0)(%arg1: index) -> index {
     kgen.return %arg0 : index
   } : (index), !kgen.closure<@foo, "fn" registerpassable>
-  %2 = kgen.call @consume<:type #type_value, :!kgen.param_closure<@foo "fn"> #kgen.closure<@foo "fn">>(%3, %arg0) : (!kgen.closure<@foo, "fn" registerpassable>, index) -> index
+  %2 = kgen.call @consume<:type #type_value>(%3, %arg0) : (!kgen.closure<@foo, "fn" registerpassable>, index) -> index
   kgen.return
 }
 
@@ -166,19 +157,15 @@ kgen.generator @foo(%arg0 : index) {
 // COM: Register Passable Thin closures (todo: MOCO 1702 and MOCO 1762)
 
 // CHECK: #type_value = #kgen.type<none, {
-// CHECK-SAME: "CAPTURE_TYPE" : type = none,
-// CHECK-SAME: "__call__" : <none>(!kgen.none, index) -> index = @thin_fn<:none ?>}> : !kgen.type
+// CHECK-SAME: "__call__" : (!kgen.none, index) -> index = @thin_fn<:none #kgen.none>}> : !kgen.type
 #type_value = #kgen.type<!kgen.closure<@thin, "fn" registerpassable>,
-              {
-                "CAPTURE_TYPE" : type = !kgen.param_closure<@thin "fn">,
-                "__call__" :
-                <!kgen.param_closure<@thin "fn">>
+              {"__call__" :
               (!kgen.closure<@thin, "fn" registerpassable>, index) -> index =
-               #kgen.closure.symbol<@thin, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@thin "fn"> ?> >}> : !kgen.type
+               #kgen.closure.symbol<@thin, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@thin "fn"> #kgen.closure<@thin "fn">> >}> : !kgen.type
 
 
-kgen.generator @consume<x: type, impl:!kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(%arg0: !kgen.param<x>) -> index {
-    %0 = kgen.call_param[(!kgen.param<x>) -> index: bind_params(:<!kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(!kgen.param<x>) -> index get_vtable_entry(x, "__call__"), impl)](%arg0)
+kgen.generator @consume<x: type>(%arg0: !kgen.param<x>) -> index {
+    %0 = kgen.call_param[(!kgen.param<x>) -> index: get_vtable_entry(x, "__call__")](%arg0)
     kgen.return %0 : index
 }
 
@@ -188,13 +175,13 @@ kgen.generator @consume<x: type, impl:!kgen.param<get_vtable_entry(x, "CAPTURE_T
 
 // CHECK: kgen.generator @thin()
 // CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
-// CHECK-NEXT: kgen.call @consume<:type #type_value, :none #kgen.none>(%{{.*}}) : (!kgen.none) -> index
+// CHECK-NEXT: kgen.call @consume<:type #type_value>(%{{.*}}) : (!kgen.none) -> index
 // CHECK-NEXT: kgen.return
 kgen.generator @thin() {
   %3 = kgen.closure.init()(%arg2: index) -> index {
     kgen.return %arg2 : index
   } : (), !kgen.closure<@thin, "fn" registerpassable>
-  %2 = kgen.call @consume<:type #type_value, :!kgen.param_closure<@thin "fn"> #kgen.closure<@thin "fn">>(%3) : (!kgen.closure<@thin, "fn" registerpassable>) -> index
+  %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.closure<@thin, "fn" registerpassable>) -> index
   kgen.return
 }
 
@@ -203,24 +190,20 @@ kgen.generator @thin() {
 // COM: Test that a Parameterless Closure that Captures Parameters Is Lifted Correctly
 
 // CHECK: #type_value = #kgen.type<struct<(index)>,
-// CHECK-SAME: {"CAPTURE_TYPE" : type = struct<(index, index)>,
-// CHECK-SAME: "__call__" : <struct<(index, index)>>
+// CHECK-SAME: "__call__" :
 // CHECK-SAME: (!kgen.pointer<struct<(index)>>) -> index =
-// CHECK-SAME: @foo_fn<:struct<(index, index)> ?>}> : !kgen.type
+// CHECK-SAME: @foo_fn<:struct<(index, index)> CAPTURES>}> : !kgen.type
 #type_value =
   #kgen.type<!kgen.closure<@foo, "fn" nonescaping>,
-    {"CAPTURE_TYPE" : type = !kgen.param_closure<@foo "fn">,
-     "__call__" :
-      <!kgen.param_closure<@foo "fn">>
+    {"__call__" :
       (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index =
-      #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> ?> >}
+      #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> #kgen.closure<@foo "fn">> >}
   > : !kgen.type
 
 
-kgen.generator @consume<x: type,
-                        CAPTURE_INST: !kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>
+kgen.generator @consume<x: type
                         >(%arg0: !kgen.pointer<x>) -> index {
-  %0 = kgen.call_param[(!kgen.pointer<x>) -> index: bind_params(:<!kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(!kgen.pointer<none>) -> index get_vtable_entry(x, "__call__"), CAPTURE_INST)](%arg0)
+  %0 = kgen.call_param[(!kgen.pointer<x>) -> index: get_vtable_entry(x, "__call__")](%arg0)
   kgen.return %0 : index
 }
 
@@ -241,8 +224,8 @@ kgen.generator @consume<x: type,
 // CHECK-NEXT:   [[V0:%.*]] = pop.stack_allocation 1 x struct<(index)> marked
 // CHECK-NEXT:   kgen.struct.gep
 // CHECK-NEXT:   pop.store
-// CHECK-NEXT:   kgen.call @consume<:type #type_value,
-// CHECK-SAME:   :struct<(index, index)> CAPTURES>([[V0]]) : (!kgen.pointer<struct<(index)>>) -> index
+// CHECK-NEXT:   kgen.call @consume<:type #type_value
+// CHECK-SAME:   ) : (!kgen.pointer<struct<(index)>>) -> index
 // CHECK-NEXT:   kgen.return
 // CHECK-NEXT:   }
 kgen.generator @foo<C,D>(%arg0 : index) {
@@ -250,9 +233,7 @@ kgen.generator @foo<C,D>(%arg0 : index) {
 	%0 = kgen.param.constant = <mul(C, D)>
 	kgen.return %arg0 : index
   } : (index), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
-  %2 = kgen.call @consume<:type #type_value,
-                          :!kgen.param<!kgen.param_closure<@foo "fn">> #kgen.closure<@foo "fn">
-                         >(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index
+  %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index
   kgen.return
 }
 
@@ -260,26 +241,17 @@ kgen.generator @foo<C,D>(%arg0 : index) {
 
 // COM: Test that a Parametric Closure that Captures Parameters Is Lifted Correctly
 
-// CHECK: #type_value = #kgen.type<struct<(index)>,
-// CHECK-SAME: {"CAPTURE_TYPE" : type = index,
-// CHECK-SAME: "__call__" :
-// CHECK-SAME: <index, index>
-// CHECK-SAME: (!kgen.pointer<struct<(index)>>) -> index =
-// CHECK-SAME: @foo_fn<?, ?>}> : !kgen.type
 #type_value =
   #kgen.type<!kgen.closure<@foo, "fn" nonescaping>,
-    { "CAPTURE_TYPE" : type = !kgen.param_closure<@foo "fn">,
-      "__call__" :
-      <index, !kgen.param_closure<@foo "fn">>
+    {"__call__" :
+      <index>
       (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index =
-      #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:index ?, :!kgen.param_closure<@foo "fn"> ?> >}
+      #kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:index ?, :!kgen.param_closure<@foo "fn"> #kgen.closure<@foo "fn">> >}
   > : !kgen.type
 
 
-kgen.generator @consume<x: type,
-                        CAPTURE_INST: !kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>
-                        >(%arg0: !kgen.pointer<x>) -> index {
-  %0 = kgen.call_param[(!kgen.pointer<x>) -> index: bind_params(:<index, !kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>>(!kgen.pointer<none>) -> index get_vtable_entry(x, "__call__"), 3, CAPTURE_INST)](%arg0)
+kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x>) -> index {
+  %0 = kgen.call_param[(!kgen.pointer<x>) -> index: bind_params(:<index>(!kgen.pointer<none>) -> index get_vtable_entry(x, "__call__"), 3)](%arg0)
   kgen.return %0 : index
 }
 
@@ -292,14 +264,12 @@ kgen.generator @consume<x: type,
 
 // COM: Verify single capture does not result in struct.
 // CHECK-NOT: CAPTURES
-// CHECK: kgen.call @consume<:type #type_value, C>
+// CHECK: kgen.call @consume<:type #type_value>
 kgen.generator @foo<C>(%arg0 : index) {
   %3 = kgen.closure.init(%arg0)<A>() -> index {
 	%0 = kgen.param.constant = <mul(C, A)>
 	kgen.return %arg0 : index
   } : (index), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>
-  %2 = kgen.call @consume<:type #type_value,
-                          :!kgen.param<!kgen.param_closure<@foo "fn">> #kgen.closure<@foo "fn">
-                         >(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index
+  %2 = kgen.call @consume<:type #type_value>(%3) : (!kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>>) -> index
   kgen.return
 }

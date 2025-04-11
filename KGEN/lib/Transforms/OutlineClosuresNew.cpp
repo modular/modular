@@ -76,7 +76,8 @@ struct ClosureLifter {
                                             ArrayRef<Type> argTypes,
                                             ArrayRef<Type> resultTypes,
                                             ClosureType closureType,
-                                            ArrayRef<Type> params);
+                                            ArrayRef<Type> params,
+                                            ParamClosureType closureParamType);
   /// Given a closure init op, generate functions for call, copy, move, and del
   /// + struct instance to store captures.
   LogicalResult liftClosureInit(ClosureInitOp closureInit,
@@ -152,23 +153,26 @@ private:
   /// signature: a register passable closure's lifted call function has an
   /// implicit self argument of struct type.
   Value liftRegPassableClosure(ImplicitLocOpBuilder &b, ClosureInitData &data,
+                               TypedAttr capturedInstance,
                                ArrayRef<Capture> captureMechanisms,
                                Type loweredClosureType);
   /// Lift a closure with no captures. We can skip the loading/storing of
   /// captures and the self type is none or opaque pointer, depending on the
   /// register passable flag.
   Value liftThinClosure(ImplicitLocOpBuilder &b, ClosureInitData &data,
-                        bool isRegisterPassable);
+                        TypedAttr capturedInstance, bool isRegisterPassable);
   /// Lift a non-register passable closure. The characterization is in the
   /// lifted signature: a non-register passable closure's lifted call function
   /// has an implicit self argument of pointer type.
   Value liftNonRegPassableClosure(ImplicitLocOpBuilder &b,
                                   ClosureInitData &closureInitData,
+                                  TypedAttr capturedInstance,
                                   ArrayRef<Capture> captureMechanisms,
                                   Type loweredClosureType);
   /// Given closure metadata, lift the region of the closure init into a top
   /// level function.
-  void liftCallFunction(ImplicitLocOpBuilder &b, ClosureInitData &data);
+  void liftCallFunction(ImplicitLocOpBuilder &b, ClosureInitData &data,
+                        TypedAttr capturedInstance);
   /// Given closure metadata the captures, emit code that results in the storage
   /// of the captures into capture struct.
   void storeCaptures(ImplicitLocOpBuilder &b, Value captureStructArg,
@@ -179,6 +183,7 @@ private:
   /// necessary for extracting the capture value out of the closure struct
   /// instance.
   Value liftClosure(ImplicitLocOpBuilder &b, ClosureInitData &closureInitData,
+                    TypedAttr capturedInstance,
                     ArrayRef<Capture> captureMechanisms,
                     Type loweredClosureType,
                     function_ref<Value(Capture, int, Value)> replacementFn);
@@ -261,7 +266,8 @@ unpackCapturesInto(ImplicitLocOpBuilder &b, Region &region,
 ClosureSymbolAttr ClosureLifter::createClosureSymbolAttr(
     GeneratorOp parent, StringRef name, ClosureMethod method,
     ArrayRef<Type> argTypes, ArrayRef<Type> resultTypes,
-    ClosureType closureType, ArrayRef<Type> params) {
+    ClosureType closureType, ArrayRef<Type> params,
+    ParamClosureType closureParamType) {
   MLIRContext *cxt = parent->getContext();
   SmallVector<Type> originalArgTypes;
   Type selfType =
@@ -274,15 +280,16 @@ ClosureSymbolAttr ClosureLifter::createClosureSymbolAttr(
       FunctionType::get(cxt, originalArgTypes, resultTypes);
   M::KGEN::FuncTypeGeneratorType originalfuncGenType =
       M::KGEN::FuncTypeGeneratorType::get(params, originalFuncType);
-  SmallVector<TypedAttr> boundParams =
-      llvm::map_to_vector(params, [&](Type type) -> TypedAttr {
-        return UnboundAttr::get(parent.getContext(), type);
-      });
-  auto closureAttr = ClosureSymbolAttr::get(
+  SmallVector<TypedAttr> boundParams;
+  llvm::append_range(boundParams,
+                     llvm::map_to_vector(params, [&](Type type) -> TypedAttr {
+                       return UnboundAttr::get(parent.getContext(), type);
+                     }));
+  boundParams.push_back(ClosureAttr::get(cxt, closureParamType));
+  return ClosureSymbolAttr::get(
       cxt, SymbolRefAttr::get(parent.getSymNameAttr()),
       StringAttr::get(cxt, name), ClosureMethodAttr::get(cxt, method),
       boundParams, originalfuncGenType);
-  return closureAttr;
 }
 
 /// A closure init op has two possible types: pointer<closure_type> or
@@ -301,7 +308,8 @@ static ClosureType getClosureType(ClosureInitOp closureInit) {
 }
 
 void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
-                                     ClosureInitData &closureInitData) {
+                                     ClosureInitData &closureInitData,
+                                     TypedAttr capturedInstance) {
   Region &region = closureInitData.region();
   GeneratorOp generator = closureInitData.getGenerator();
   SmallVector<Type> argTypes;
@@ -309,26 +317,35 @@ void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
   b.setInsertionPoint(generator);
   FunctionType funcType =
       FunctionType::get(b.getContext(), argTypes, closureInitData.results());
-  SmallVector<ParamDeclAttr> topLevelParams;
-  append_range(topLevelParams,
-               closureInitData.getClosureInit().getInputParams());
-  topLevelParams.push_back(closureInitData.getSelfParam());
-
+  SmallVector<ParamDeclAttr> allParams;
+  append_range(allParams, closureInitData.getClosureInit().getInputParams());
+  allParams.push_back(closureInitData.getSelfParam());
   FuncTypeGeneratorType funcGenType =
       FuncTypeGeneratorType::remapToFuncTypeGenerator(
-          topLevelParams, funcType, /*argConv=*/{}, /*effects=*/{},
+          allParams, funcType, /*argConv=*/{}, /*effects=*/{},
           /*fnMetadata=*/{}, /*genMetadata=*/{});
   auto uniqueName = b.getStringAttr(getUniqueSymbolName(
       (generator.getName() + "_" + closureInitData.regionName()).str(), symtab,
       counter));
   auto liftedWrapper =
-      b.create<GeneratorOp>(uniqueName, funcGenType, funcType, topLevelParams);
-  SmallVector<TypedAttr> boundParams =
-      llvm::map_to_vector(topLevelParams, [&](ParamDeclAttr attr) -> TypedAttr {
+      b.create<GeneratorOp>(uniqueName, funcGenType, funcType, allParams);
+  symtab.insert(liftedWrapper);
+
+  // Remap the symbol to not include the self param by only using input params
+  // and binding the final parameter.
+  SmallVector<TypedAttr> boundParams = llvm::map_to_vector(
+      closureInitData.getClosureInit().getInputParams(),
+      [&](ParamDeclAttr attr) -> TypedAttr {
         return UnboundAttr::get(b.getContext(), attr.getType());
       });
-  symtab.insert(liftedWrapper);
-  auto sym = SymbolConstantAttr::get(liftedWrapper, funcGenType, boundParams);
+  boundParams.push_back(capturedInstance);
+  auto sym = SymbolConstantAttr::get(
+      liftedWrapper,
+      FuncTypeGeneratorType::remapToFuncTypeGenerator(
+          closureInitData.getClosureInit().getInputParams(), funcType,
+          /*argConv=*/{}, /*effects=*/{},
+          /*fnMetadata=*/{}, /*genMetadata=*/{}),
+      boundParams);
   Region &body = liftedWrapper.getBodyRegion();
   body.takeBody(region);
   unpackCapturesInto(b, body, closureInitData);
@@ -338,11 +355,11 @@ void ClosureLifter::liftCallFunction(ImplicitLocOpBuilder &b,
   SmallVector<Type> paramsUnmapped;
   for (ParamDeclAttr param : closureInitData.getClosureInit().getInputParams())
     paramsUnmapped.push_back(param.getType());
-  paramsUnmapped.push_back(closureInitData.getParamClosureType());
   ClosureSymbolAttr closureAttr = createClosureSymbolAttr(
       closureInitData.getGenerator(), closureInitData.regionName(),
       ClosureMethod::CALL, argTypes, closureInitData.results(),
-      closureInitData.getClosureType(), paramsUnmapped);
+      closureInitData.getClosureType(), paramsUnmapped,
+      closureInitData.getParamClosureType());
   liftedClosureSymbols[closureAttr] = sym;
 }
 
@@ -368,7 +385,8 @@ void ClosureLifter::storeCaptures(ImplicitLocOpBuilder &b, Value captureStruct,
 
 Value ClosureLifter::liftClosure(
     ImplicitLocOpBuilder &b, ClosureInitData &closureInitData,
-    ArrayRef<Capture> captureMechanisms, Type loweredClosureType,
+    TypedAttr capturedInstance, ArrayRef<Capture> captureMechanisms,
+    Type loweredClosureType,
     function_ref<Value(Capture, int, Value)> replacementFn) {
   Region &region = closureInitData.region();
   // Outline Closure.
@@ -381,7 +399,7 @@ Value ClosureLifter::liftClosure(
                                replacementFn(capture, index, captureStructArg),
                                region);
   // Synthesize methods.
-  liftCallFunction(b, closureInitData);
+  liftCallFunction(b, closureInitData, capturedInstance);
 
   // Instantiate capture struct.
   b.setInsertionPoint(closureInitData.getClosureInit());
@@ -399,6 +417,7 @@ Value ClosureLifter::liftClosure(
 
 Value ClosureLifter::liftRegPassableClosure(ImplicitLocOpBuilder &b,
                                             ClosureInitData &closureInitData,
+                                            TypedAttr capturedInstance,
                                             ArrayRef<Capture> captureMechanisms,
                                             Type loweredClosureType) {
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
@@ -406,34 +425,38 @@ Value ClosureLifter::liftRegPassableClosure(ImplicitLocOpBuilder &b,
         ->getResults()
         .front();
   };
-  Value captureStruct = liftClosure(b, closureInitData, captureMechanisms,
-                                    loweredClosureType, replacementFn);
+  Value captureStruct =
+      liftClosure(b, closureInitData, capturedInstance, captureMechanisms,
+                  loweredClosureType, replacementFn);
   return b.create<POP::LoadOp>(captureStruct);
 }
 
 Value ClosureLifter::liftNonRegPassableClosure(
     ImplicitLocOpBuilder &b, ClosureInitData &closureInitData,
-    ArrayRef<Capture> captureMechanisms, Type loweredClosureType) {
+    TypedAttr capturedInstance, ArrayRef<Capture> captureMechanisms,
+    Type loweredClosureType) {
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
     Value replacement = b.create<KGEN::StructGEPOp>(captureStructArg, index);
     if (!capture.moveOrCopySym.has_value())
       replacement = b.create<POP::LoadOp>(replacement);
     return replacement;
   };
-  Value captureStruct = liftClosure(b, closureInitData, captureMechanisms,
-                                    loweredClosureType, replacementFn);
+  Value captureStruct =
+      liftClosure(b, closureInitData, capturedInstance, captureMechanisms,
+                  loweredClosureType, replacementFn);
   return captureStruct;
 }
 
 Value ClosureLifter::liftThinClosure(ImplicitLocOpBuilder &b,
                                      ClosureInitData &closureInitData,
+                                     TypedAttr capturedInstance,
                                      bool isRegisterPassable) {
   Type loweredClosureType = KGEN::NoneType::get(b.getContext());
   Type selfType = isRegisterPassable ? loweredClosureType
                                      : PointerType::get(loweredClosureType);
   Region &region = closureInitData.region();
   region.insertArgument((unsigned)0, selfType, region.getLoc());
-  liftCallFunction(b, closureInitData);
+  liftCallFunction(b, closureInitData, capturedInstance);
   closureTypeToStructTypes[closureInitData.getClosureType()] =
       loweredClosureType;
   b.setInsertionPoint(closureInitData.getClosureInit());
@@ -579,20 +602,22 @@ LogicalResult ClosureLifter::liftClosureInit(ClosureInitOp closureInit,
   // Replace runtime abstractions.
   Value replacement;
   if (isThin) {
-    replacement = liftThinClosure(b, closureInitData,
+    replacement = liftThinClosure(b, closureInitData, capturedInstance,
                                   /*isRegisterPassable=*/memoryKind ==
                                       ClosureMemoryKind::REGISTER_PASSABLE);
   } else {
     Type loweredClosureType = StructType::get(fieldTypes);
     switch (memoryKind) {
     case ClosureMemoryKind::REGISTER_PASSABLE:
-      replacement = liftRegPassableClosure(
-          b, closureInitData, captureMechanisms, loweredClosureType);
+      replacement =
+          liftRegPassableClosure(b, closureInitData, capturedInstance,
+                                 captureMechanisms, loweredClosureType);
       break;
     case ClosureMemoryKind::ESCAPING:
     case ClosureMemoryKind::NONESCAPING:
-      replacement = liftNonRegPassableClosure(
-          b, closureInitData, captureMechanisms, loweredClosureType);
+      replacement =
+          liftNonRegPassableClosure(b, closureInitData, capturedInstance,
+                                    captureMechanisms, loweredClosureType);
       break;
     }
   }
