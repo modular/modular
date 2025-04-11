@@ -286,32 +286,55 @@ struct Flamscrankle[N: Int]:
 
 Here are involved concepts in those lines (not in order).
 
-- In `var x: Int = 42`:
-    - `42` is the “runtime value”
-    - `Int` is the “type”
-- In `var blork: Blork[N]`:
-    - `N` is a “parameter value”
-    - `N` is not a type (which makes sense, it’s declared as `N: Int` ).
-- In `fn foo[T: Stringable](x: T):`
-    - `x` is an “argument”. `x` is **not** a “parameter” ⚠️
-    - The first `T` is a “parameter decl”.
-    - The second `T` is a “parameter reference”.
-- In `struct Flamscrankle[N: Int]: ...`
-    - `N` here is a “parameter decl”.
-- Revisiting `fn foo[T: Stringable](x: T):`:
-    - In this case, the second mention of `T` is also a “type”.
-    - A “type” is a “parameter value”.
-        - Well, not technically, but it’s so easy to convert it that it basically is.
-    - A “parameter value” is **not** always a “type”. ⚠️ For example, `N` is a value that’s not a type.
-    - `Stringable` is a trait, but since it’s after `T:` we say it’s `T`'s “meta type”.
-    - `Stringable` is not a “type” *in this context specifically*. ⚠️ It’s a meta type.
-        - I like to think of it like: `Stringable` is a type, `: Stringable` is a meta type.
-    - Meta types are not values; meta types are not parameters.
-- Revisiting `var x: Int = 42` :
-    - `Int` is the “type”, but it’s **not** a “value”. A type is only a “value” when it’s in a parameter; only parameters have values.
-    - `x` is not a “value” (despite LLVM handling it with `LLVMValueRef`)
-- Revisiting `struct Flamscrankle[N: Int]: ...` :
-    - `Int` is a metatype in this context.
+* In `var x: Int = 42`:
+
+  * `42` is the “runtime value”
+
+  * `Int` is the “type”
+
+* In `var blork: Blork[N]`:
+
+  * `N` is a “parameter value”
+
+  * `N` is not a type (which makes sense, it’s declared as `N: Int` ).
+
+* In `fn foo[T: Stringable](x: T):`
+
+  * `x` is an “argument”. `x` is **not** a “parameter” ⚠️
+
+  * The first `T` is a “parameter decl”.
+
+  * The second `T` is a “parameter reference”.
+
+* In `struct Flamscrankle[N: Int]: ...`
+
+  * `N` here is a “parameter decl”.
+
+* Revisiting `fn foo[T: Stringable](x: T):`:
+
+  * In this case, the second mention of `T` is also a “type”.
+
+  * A “type” is a “parameter value”.
+
+    * Well, not technically, but it’s so easy to convert it that it basically is.
+  * A “parameter value” is **not** always a “type”. ⚠️ For example, `N` is a value that’s not a type.
+
+  * `Stringable` is a trait, but since it’s after `T:` we say it’s `T`'s “meta type”.
+
+  * `Stringable` is not a “type” *in this context specifically*. ⚠️ It’s a meta type.
+
+    * I like to think of it like: `Stringable` is a type, `: Stringable` is a meta type.
+  * Meta types are not values; meta types are not parameters.
+
+* Revisiting `var x: Int = 42` :
+
+  * `Int` is the “type”, but it’s **not** a “value”. A type is only a “value” when it’s in a parameter; only parameters have values.
+
+  * `x` is not a “value” (despite LLVM handling it with `LLVMValueRef`)
+
+* Revisiting `struct Flamscrankle[N: Int]: ...` :
+
+  * `Int` is a metatype in this context.
 
 See also [Modular Jargon, Slang and Lingo](https://www.notion.so/modularai/Modular-Jargon-Slang-and-Lingo-d71a8b9aad66401d914309cc2f3c3eca)
 
@@ -329,7 +352,18 @@ This is used for a variety of reasons, from “simple” operations like `sizeof
 
 <wolfram-cell ctext="Input07.wl" />
 
-<img cexpr="Input07-Output.wl" src="Input07-Output.png" />
+```
+def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
+  /// Fully associative variadic expressions.
+  I32EnumAttrCase<"Add", 0, "add">,
+  I32EnumAttrCase<"Mul", 1, "mul">,
+  I32EnumAttrCase<"MulNuw", 2, "mul_nuw">,
+  I32EnumAttrCase<"And", 3, "and">,
+  I32EnumAttrCase<"Or",  4, "or">,
+  I32EnumAttrCase<"Xor", 5, "xor">,
+  I32EnumAttrCase<"Max", 6, "max">,
+  I32EnumAttrCase<"Min", 7, "min">,
+```
 
 ## Mojo ↔ IR Correspondence
 
