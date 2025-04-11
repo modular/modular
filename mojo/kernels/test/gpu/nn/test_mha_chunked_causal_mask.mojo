@@ -7,7 +7,7 @@
 from collections import OptionalReg
 from sys import sizeof
 from nn.mha_mask import (
-    chunked_causal_mask,
+    ChunkedCausalMask,
     MaterializedMask,
     MASK_VALUE,
     TileMaskStatus,
@@ -28,7 +28,7 @@ from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 
 
-def build_chunked_causal_mask[
+def build_ChunkedCausalMask[
     local_window_size: Int, mask_type: DType
 ](
     batch_size: Int,
@@ -122,7 +122,7 @@ fn test_attention[
     rand[qkv_type](v_ptr, v_size, min=-1.0, max=1.0)
 
     # Initialize causal mask.
-    build_chunked_causal_mask[local_window_size](
+    build_ChunkedCausalMask[local_window_size](
         batch_size, num_heads, seq_len, num_keys, mask
     )
 
@@ -174,7 +174,7 @@ fn test_attention[
         q_device,
         k_device,
         v_device,
-        chunked_causal_mask[local_window_size](),
+        ChunkedCausalMask[local_window_size](),
         IdentityScoreMod(),
         scale,
         ctx,
@@ -289,7 +289,7 @@ def test_attention_suite(ctx: DeviceContext):
 
 
 def test_mask_status():
-    var mask = chunked_causal_mask[local_window_size=4]()
+    var mask = ChunkedCausalMask[local_window_size=4]()
 
     assert_equal(
         mask.status(Index(0, 0), Index(4, 4)), TileMaskStatus.PARTIAL_MASK
@@ -325,7 +325,7 @@ def test_mask_status():
         mask.status(Index(50, 0), Index(100, 100)), TileMaskStatus.PARTIAL_MASK
     )
 
-    var bigger_mask = chunked_causal_mask[local_window_size=256]()
+    var bigger_mask = ChunkedCausalMask[local_window_size=256]()
     assert_equal(
         bigger_mask.status(Index(256, 256), Index(128, 128)),
         TileMaskStatus.PARTIAL_MASK,
@@ -342,7 +342,7 @@ def test_mask_status():
 
 def test_mask_apply():
     alias local_window_size = 4
-    var mask = chunked_causal_mask[local_window_size]()
+    var mask = ChunkedCausalMask[local_window_size]()
 
     var score_vec = SIMD[DType.float32, 4](0.0)
     score_vec[0] = 1.0
