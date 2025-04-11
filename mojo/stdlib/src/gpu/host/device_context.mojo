@@ -660,6 +660,20 @@ struct HostBuffer[
         ]()
         self._host_ptr[idx] = val
 
+    fn as_span(
+        ref self,
+        out span: Span[
+            Scalar[type], __origin_of(self), address_space=address_space
+        ],
+    ):
+        """
+        Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
+
+        Returns:
+            A `Span` pointing to the underlying memory of the `HostBuffer`.
+        """
+        return __type_of(span)(ptr=self._host_ptr, length=len(self))
+
 
 struct DeviceBuffer[
     type: DType,
@@ -1261,6 +1275,20 @@ struct DeviceBuffer[
             "DeviceBuffer is not supported on GPUs",
         ]()
         return String.write(self)
+
+    fn as_span(
+        ref self,
+        out span: Span[
+            Scalar[type], __origin_of(self), address_space=address_space
+        ],
+    ):
+        """
+        Returns a `Span` pointing to the underlying memory of the `DeviceBuffer`.
+
+        Returns:
+            A `Span` pointing to the underlying memory of the `DeviceBuffer`.
+        """
+        return __type_of(span)(ptr=self._device_ptr, length=len(self))
 
 
 # @doc_private does not work on structs - see MOTO-992.
