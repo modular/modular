@@ -41,9 +41,13 @@ DLPackCompatible = Union[DLPackArray, np.ndarray]
 
 
 class Layer:
-    """Base Layer class (deprecated, use `max.nn.Module` instead).
+    """
+    .. deprecated:: 25.2.
 
-    Currently, only functionality is for adding hooks to the call function of
+    Base class for neural network components.
+    Use :obj:`Module` instead.
+
+    Provides functionality for adding hooks to the call function of
     each layer to support testing, debugging or profiling.
     """
 
@@ -68,11 +72,11 @@ class Layer:
 
 
 class Module(Layer, ABC):
-    """Base class for model layers with weight management.
+    """Base class for model components with weight management.
 
-    This class can be used to write layers and construct networks of layers.
+    Provides functionality to create custom layers and construct networks with automatic weight tracking.
 
-    Example usage:
+    The following example uses the :obj:`Module` class to create custom layers and build a neural network:
 
     .. code-block:: python
 
@@ -100,10 +104,10 @@ class Module(Layer, ABC):
         model = MLP()
         print(model.state_dict())  # {"up.weight": Tensor([5, 10]), ...}
 
-    Constructing a graph without `max.nn.Module` can result in name collisions
+    Constructing a graph without :obj:`Module` can result in name collisions
     with the weights (in this example, there would be three weights with the
-    name `Weight`). With `max.nn.Module`, you can use `state_dict()` or
-    `load_state_dict()` to initialize or set the weights values, and finalize
+    name `Weight`). With :obj:`Module`, you can use :obj:`state_dict()` or
+    :obj:`load_state_dict()` to initialize or set the weights values, and finalize
     the weight names to be unique within the model.
     """
 
@@ -163,7 +167,7 @@ class Module(Layer, ABC):
 
         Args:
             state_dict: A map from weight name to a numpy array or
-                max.driver.Tensor.
+                :obj:`max.driver.Tensor`.
             override_quantization_encoding: Whether to override the weight
                 quantization based on the loaded value.
             weight_alignment: If specified, overrides the alignment for each
@@ -213,8 +217,8 @@ class Module(Layer, ABC):
     ) -> dict[str, DLPackCompatible]:
         """Returns values of all weights in the model.
 
-        The values returned are the same as the values set in `load_state_dict`.
-        If `load_state_dict` has not been called and none of the weights have
+        The values returned are the same as the values set in :obj:`load_state_dict`.
+        If :obj:`load_state_dict` has not been called and none of the weights have
         values, then they are initialized to zero.
 
         Args:
@@ -224,7 +228,7 @@ class Module(Layer, ABC):
 
         Returns:
             Map from weight name to the weight value (can be numpy array or
-            max.driver.Tensor).
+            :obj:`max.driver.Tensor`).
         """
 
         state_dict = {}
@@ -243,19 +247,18 @@ class Module(Layer, ABC):
 
     def raw_state_dict(self) -> dict[str, Weight]:
         """Returns all weights objects in the model.
-        Unlike `state_dict`, this returns `max.graph.Weight` objects instead of
-        the assigned values. Some parameters inside the `Weight` can be
+        Unlike :obj:`state_dict`, this returns :obj:`max.graph.Weight` objects instead of
+        the assigned values. Some parameters inside the :obj:`Weight` can be
         configured before a graph is built. Do not change these attributes after
         building a graph:
 
-          - Weight.shape
-          - Weight.dtype
-          - Weight.quantization_encoding
-          - Weight.device
-          - Weight.align
+        - :obj:`~max.graph.Weight.align`
+        - :obj:`~max.graph.Weight.dtype`
+        - :obj:`~max.graph.Weight.quantization_encoding`
+        - :obj:`~max.graph.Weight.shape`
 
         Returns:
-            Map from weight name to the `max.graph.Weight` object.
+            Map from weight name to the :obj:`max.graph.Weight` object.
         """
         state_dict = {}
         for name, layer in recursive_named_layers(self):
@@ -271,7 +274,7 @@ class Module(Layer, ABC):
 
         Subclasses must override this function. There is no exact signature that a
         call function must follow, but inputs/outputs should generally be
-        `max.graph.TensorValue`. Non-`TensorValue` inputs are fine, but
+        :obj:`max.graph.TensorValue`. Non-:obj:`TensorValue` inputs are fine, but
         cannot be updated once the graph is built.
         """
 
@@ -393,15 +396,20 @@ _LAYER_HOOKS = _LOCAL._layer_hooks = []
 def add_layer_hook(
     fn: Callable[[Layer, tuple[Any, ...], dict[str, Any], Any], Any],
 ) -> None:
-    """Adds a hook to call a function after each layer's `__call__`.
+    """Adds a hook to call a function after each layer's ``__call__``.
 
-    The function will be passed four inputs: the layer, input_args,
-    input_kwargs and outputs. The function can either return `None` or new
+    The function will be passed four inputs:
+    - layer
+    - input_args
+    - input_kwargs
+    - outputs
+
+    The function can either return `None` or new
     outputs that will replace the layer returned outputs.
 
     Note that input and outputs contain graph Values, which show limited
-    information (like shape and dtype). You can still see the computed values
-    if you include the Value in the `graph.output` op, or call `value.print`.
+    information (like :obj:`~max.graph.TensorValue.shape` and :obj:`~max.graph.TensorValue.dtype`). You can still see the computed values
+    if you include the Value in the :obj:`graph.ops.output` op, or call :obj:`graph.ops.print`.
 
     Example of printing debug inputs:
 
