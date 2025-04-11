@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import os
-from copy import deepcopy
 from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Optional, get_type_hints
 
@@ -104,11 +103,6 @@ class PipelineConfig(MAXConfig):
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
 
-    # TODO(E2EOPT-108): Remove this once we have fully migrated draft model
-    # to MAXModelConfig.
-    draft_model: Optional[str] = None
-    """Draft model for use during Speculative Decoding."""
-
     ignore_eos: bool = False
     """Ignore EOS and continue generating tokens, even when an EOS variable is hit."""
 
@@ -132,6 +126,20 @@ class PipelineConfig(MAXConfig):
                 setattr(self, curr_field.name, curr_field.default)
             elif curr_field.default_factory is not MISSING:
                 setattr(self, curr_field.name, curr_field.default_factory())
+
+        # Check against draft model first
+        draft_kwargs = {}
+        for k, v in list(kwargs.items()):
+            if k.startswith("draft"):
+                field_name = k.replace("draft_", "")
+                if field_name in MAXModelConfig.__dataclass_fields__:
+                    draft_kwargs[field_name] = v
+                    del kwargs[k]
+
+        if draft_kwargs.get("model_path", "") != "":
+            self._draft_model_config = MAXModelConfig(**draft_kwargs)
+        else:
+            self._draft_model_config = None
 
         # Check if any kwargs are meant for other MAXConfig classes
         unmatched_kwargs: dict[str, Any] = {}
@@ -176,8 +184,14 @@ class PipelineConfig(MAXConfig):
                             **kv_cache_kwargs
                         )
                         setattr(self, config_name, model_config)
+
+                        if self._draft_model_config:
+                            self._draft_model_config._kv_cache_config = (
+                                KVCacheConfig(**kv_cache_kwargs)
+                            )
+
                     elif config_name == "_sampling_config" and (
-                        self.enable_echo or self.draft_model
+                        self.enable_echo or self._draft_model_config
                     ):
                         sampling_config = config_class(**matched_kwargs)
                         sampling_config.enable_variable_logits = True
@@ -235,45 +249,22 @@ class PipelineConfig(MAXConfig):
                 )
 
         # Run Baseline Validation
-        self._validate_and_resolve_remaining_pipeline_config()
+        self._validate_and_resolve_remaining_pipeline_config(self.model_config)
 
         # Run Additional Checks for Speculative Decoding
-        self._validate_pipeline_config_for_speculative_decoding()
+        if self.draft_model_config:
+            self._validate_and_resolve_remaining_pipeline_config(
+                self.draft_model_config
+            )
+
+            self._validate_pipeline_config_for_speculative_decoding()
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """
         Validate the pipeline configs when used in speculative decoding mode.
         """
-        if self.draft_model is None:
-            # NOTE: Do not use this directly after instantiating PipelineConfig. We
-            # only keep this here to support backward compatibility of the draft_model
-            # field entrypoint. This will be removed entirely soon. I purposefully
-            # set this to an empty string than None, to ensure that we catch any
-            # inadvertent use of draft_model.
-            self.draft_model = ""
-            return
-
-        # TODO(E2EOPT-108): Clean this up once we have fully migrated draft model
-        # to MAXModelConfig. For now, we copy all of the model_config fields
-        # except the model_path / repo_id to the draft_model_config.
-        self._draft_model_config = deepcopy(self._model_config)
-        self._draft_model_config.model_path = self.draft_model
-        self._draft_model_config._huggingface_config = (
-            self._draft_model_config.huggingface_config
-        )
-
-        # TODO(E2EOPT-108): Remove this once we have fully migrated draft model
-        # to MAXModelConfig.
-        # NOTE: Do not use this directly after instantiating PipelineConfig. We
-        # only keep this here to support backward compatibility of the draft_model
-        # field entrypoint. This will be removed entirely soon. I purposefully
-        # set this to an empty string than None, to ensure that we catch any
-        # inadvertent use of draft_model.
-        self.draft_model = ""
-
         assert self.draft_model_config is not None  # keep mypy happy
 
-        # Assume `draft_model` is provided, and thus speculative decoding is enabled.
         # We don't support running speculative decoding with the HuggingFace backend.
         if self.engine == PipelineEngine.HUGGINGFACE:
             msg = (
@@ -316,9 +307,19 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         # Compare Tokenizer Configuration
-        if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
-            msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
-            raise ValueError(msg)
+        if hasattr(draft_tokenizer, "_tokenizer") and hasattr(
+            target_tokenizer, "_tokenizer"
+        ):
+            if (
+                draft_tokenizer._tokenizer.__dict__
+                != target_tokenizer._tokenizer.__dict__
+            ):
+                msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                raise ValueError(msg)
+        else:
+            if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
+                msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+                raise ValueError(msg)
 
         if self.enable_echo:
             msg = "enable_echo not currently supported with speculative decoding enabled"
@@ -328,13 +329,15 @@ class PipelineConfig(MAXConfig):
             msg = "structured outputs not currently supported with speculative decoding enabled"
             raise ValueError(msg)
 
-    def _validate_and_resolve_remaining_pipeline_config(self) -> None:
+    def _validate_and_resolve_remaining_pipeline_config(
+        self, model_config: MAXModelConfig
+    ) -> None:
         """Update remaining pipeline config fields with appropriate values
         if not provided. If invalid config is provided, error out with detailed
         reason."""
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo,
+            huggingface_repo=model_config.huggingface_model_repo,
         )
 
         # If nothing is provided, we should not update any more params.
@@ -347,14 +350,14 @@ class PipelineConfig(MAXConfig):
         elif not arch:
             msg = (
                 "MAX-optimized architecture not available for"
-                f" '{self.model_config.model_path}' falling back to"
+                f" '{model_config.model_path}' falling back to"
                 " HuggingFace."
             )
             logger.warning(msg)
             self.engine = PipelineEngine.HUGGINGFACE
             return
 
-        self.model_config.validate_multi_gpu_supported(
+        model_config.validate_multi_gpu_supported(
             multi_gpu_supported=arch.multi_gpu_supported
         )
 
@@ -362,26 +365,23 @@ class PipelineConfig(MAXConfig):
         # and a SupportedArchitecture. We should then validate the details of the existing architecture
         # and fallback to HuggingFace if needed.
 
-        self.model_config.validate_and_resolve_quantization_encoding_weight_path(
+        model_config.validate_and_resolve_quantization_encoding_weight_path(
             default_encoding=arch.default_encoding
         )
 
         # by this point, the quantization_encoding must be provided. verify it is supported.
-        if (
-            self.model_config.quantization_encoding
-            not in arch.supported_encodings
-        ):
+        if model_config.quantization_encoding not in arch.supported_encodings:
             if self.engine == PipelineEngine.MAX:
-                msg = f"quantization_encoding of '{self.model_config.quantization_encoding}' not supported by MAX engine, unable to run with engine = 'max'."
+                msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine, unable to run with engine = 'max'."
                 raise ValueError(msg)
 
             else:
-                msg = f"quantization_encoding of '{self.model_config.quantization_encoding}' not supported by MAX engine, falling back to HuggingFace."
+                msg = f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine, falling back to HuggingFace."
                 logger.warning(msg)
                 self.engine = PipelineEngine.HUGGINGFACE
                 return
 
-        self.model_config.validate_and_resolve_with_set_quantization_encoding(
+        model_config.validate_and_resolve_with_set_quantization_encoding(
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
@@ -389,9 +389,9 @@ class PipelineConfig(MAXConfig):
         if self.rope_type is None:
             self.rope_type = arch.rope_type
 
-        devices = load_devices(self.model_config.device_specs)
+        devices = load_devices(model_config.device_specs)
         MEMORY_ESTIMATOR.estimate_memory_footprint(
-            self, arch.pipeline_model, devices
+            self, arch.pipeline_model, model_config, devices
         )
 
         # If we pass validation ensure and the engine is not set, just set it
@@ -428,7 +428,6 @@ class PipelineConfig(MAXConfig):
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is set to 1.",
             "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
-            "draft_model": "Draft model for use in speculative decoding.",
             "ignore_eos": "Ignore EOS and continue generating tokens, even when an EOS variable is hit.",
         }
 

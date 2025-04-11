@@ -22,7 +22,7 @@ import pathlib
 from dataclasses import MISSING, Field, fields
 from enum import Enum
 from pathlib import Path
-from typing import Any, Union, get_args, get_origin, get_type_hints
+from typing import Any, Optional, Union, get_args, get_origin, get_type_hints
 
 import click
 from max.driver import DeviceSpec
@@ -141,7 +141,7 @@ def create_click_option(
     )
 
 
-def config_to_flag(cls):
+def config_to_flag(cls, prefix: Optional[str] = None):
     options = []
     if hasattr(cls, "help"):
         help_text = cls.help()
@@ -157,9 +157,19 @@ def config_to_flag(cls):
         ):
             continue
 
-        new_option = create_click_option(
-            help_text, _field, field_types[_field.name]
-        )
+        if prefix:
+            field_type = field_types[_field.name]
+            new_name = f"{prefix}_{_field.name}"
+
+            if _field.name in help_text:
+                help_text[new_name] = help_text[_field.name]
+
+            _field.name = new_name
+            new_option = create_click_option(help_text, _field, field_type)
+        else:
+            new_option = create_click_option(
+                help_text, _field, field_types[_field.name]
+            )
         options.append(new_option)
 
     def apply_flags(func):
@@ -175,6 +185,7 @@ def pipeline_config_options(func):
     # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)
     @config_to_flag(MAXModelConfig)
+    @config_to_flag(MAXModelConfig, prefix="draft")
     @config_to_flag(KVCacheConfig)
     @config_to_flag(ProfilingConfig)
     @config_to_flag(SamplingConfig)

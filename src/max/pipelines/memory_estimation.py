@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .max_config import KVCacheConfig
+from .model_config import MAXModelConfig
 from .pipeline import KVCacheMixin, PipelineModel
 
 logger = logging.getLogger("max.pipelines")
@@ -40,11 +41,9 @@ class MemoryEstimator:
         self,
         pipeline_config: PipelineConfig,
         pipeline_model: type[PipelineModel],
+        model_config: MAXModelConfig,
         devices: list[Device],
     ):
-        model_cls = pipeline_model
-        model_config = pipeline_config.model_config
-
         huggingface_config = model_config.huggingface_config
 
         try:
@@ -57,13 +56,17 @@ class MemoryEstimator:
             if not pipeline_config.max_batch_size:
                 pipeline_config.max_batch_size = 1
             if not pipeline_config.max_length:
-                pipeline_config.max_length = model_cls.calculate_max_seq_len(
-                    pipeline_config,
-                    huggingface_config=huggingface_config,
+                pipeline_config.max_length = (
+                    pipeline_model.calculate_max_seq_len(
+                        pipeline_config,
+                        huggingface_config=huggingface_config,
+                    )
                 )
             return
 
-        model_weights_size = model_cls.estimate_weights_size(pipeline_config)
+        model_weights_size = pipeline_model.estimate_weights_size(
+            pipeline_config
+        )
 
         if model_weights_size > free_memory:
             raise RuntimeError(
@@ -83,7 +86,7 @@ class MemoryEstimator:
             pipeline_config.max_batch_size is not None
         )
         if not user_provided_max_length:
-            pipeline_config.max_length = model_cls.calculate_max_seq_len(
+            pipeline_config.max_length = pipeline_model.calculate_max_seq_len(
                 pipeline_config,
                 huggingface_config=huggingface_config,
             )
@@ -95,7 +98,7 @@ class MemoryEstimator:
         if not user_provided_max_batch_size:
             pipeline_config.max_batch_size = self._infer_optimal_batch_size(
                 pipeline_config,
-                model_cls,
+                pipeline_model,
                 available_kv_cache_memory,
                 huggingface_config=huggingface_config,
                 devices=devices,
@@ -104,7 +107,7 @@ class MemoryEstimator:
             )
 
         actual_kv_cache_size = self._calculate_kv_cache_size(
-            model_cls,
+            pipeline_model,
             pipeline_config,
             available_kv_cache_memory,
             huggingface_config,
@@ -128,7 +131,7 @@ class MemoryEstimator:
                 _,
             ) = self._find_valid_max_length(
                 pipeline_config,
-                model_cls,
+                pipeline_model,
                 available_kv_cache_memory,
                 user_provided_max_batch_size,
                 huggingface_config=huggingface_config,
@@ -144,7 +147,7 @@ class MemoryEstimator:
                 pipeline_config.max_length = 1
 
             actual_kv_cache_size = self._calculate_kv_cache_size(
-                model_cls,
+                pipeline_model,
                 pipeline_config,
                 available_kv_cache_memory,
                 huggingface_config,
@@ -193,7 +196,7 @@ class MemoryEstimator:
                     pipeline_config,
                     user_provided_max_length,
                     user_provided_max_batch_size,
-                    model_cls,
+                    pipeline_model,
                     total_size,
                     free_memory,
                     available_kv_cache_memory,
@@ -210,7 +213,7 @@ class MemoryEstimator:
     def _find_valid_max_length(
         self,
         pipeline_config: PipelineConfig,
-        model_cls: type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         available_kv_cache_memory: int,
         user_provided_max_batch_size: bool,
         huggingface_config: AutoConfig,
@@ -244,7 +247,7 @@ class MemoryEstimator:
             if not user_provided_max_batch_size:
                 pipeline_config.max_batch_size = self._infer_optimal_batch_size(
                     pipeline_config,
-                    model_cls,
+                    pipeline_model,
                     available_kv_cache_memory,
                     huggingface_config,
                     devices=devices,
@@ -253,7 +256,7 @@ class MemoryEstimator:
                 )
 
             kv_cache_size = self._calculate_kv_cache_size(
-                model_cls,
+                pipeline_model,
                 pipeline_config,
                 available_kv_cache_memory,
                 huggingface_config,
@@ -282,7 +285,7 @@ class MemoryEstimator:
     def _find_valid_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        model_cls: type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         available_kv_cache_memory: int,
         original_max_length: int,
         user_provided_max_batch_size: bool,
@@ -318,7 +321,7 @@ class MemoryEstimator:
                 raise ValueError(msg)
 
             kv_cache_size = self._calculate_kv_cache_size(
-                model_cls,
+                pipeline_model,
                 pipeline_config,
                 available_kv_cache_memory,
                 huggingface_config,
@@ -343,7 +346,7 @@ class MemoryEstimator:
 
     def _calculate_kv_cache_size(
         self,
-        model_cls: type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         pipeline_config: PipelineConfig,
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
@@ -352,8 +355,8 @@ class MemoryEstimator:
         cache_dtype: DType,
     ) -> int:
         """Calculate the KV cache size for the current configuration."""
-        if issubclass(model_cls, KVCacheMixin):
-            return model_cls.estimate_kv_cache_size(
+        if issubclass(pipeline_model, KVCacheMixin):
+            return pipeline_model.estimate_kv_cache_size(
                 pipeline_config=pipeline_config,
                 available_cache_memory=available_kv_cache_memory,
                 devices=devices,
@@ -368,7 +371,7 @@ class MemoryEstimator:
         pipeline_config: PipelineConfig,
         user_provided_max_length: bool,
         user_provided_max_batch_size: bool,
-        model_cls: type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         total_size: int,
         original_free_memory: int,
         available_kv_cache_memory: int,
@@ -403,7 +406,7 @@ class MemoryEstimator:
             inferred_max_length_compatible_batch_size,
         ) = self._find_valid_max_length(
             pipeline_config,
-            model_cls,
+            pipeline_model,
             available_kv_cache_memory,
             user_provided_max_batch_size,
             huggingface_config,
@@ -415,7 +418,7 @@ class MemoryEstimator:
         found_valid_max_batch_size, inferred_max_batch_size = (
             self._find_valid_batch_size(
                 pipeline_config,
-                model_cls,
+                pipeline_model,
                 available_kv_cache_memory,
                 original_max_length,
                 user_provided_max_batch_size,
@@ -595,14 +598,14 @@ class MemoryEstimator:
     def _infer_optimal_batch_size(
         self,
         pipeline_config: PipelineConfig,
-        model_cls: type[PipelineModel],
+        pipeline_model: type[PipelineModel],
         available_kv_cache_memory: int,
         huggingface_config: AutoConfig,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> int:
-        return model_cls.infer_optimal_batch_size(
+        return pipeline_model.infer_optimal_batch_size(
             pipeline_config,
             available_kv_cache_memory,
             huggingface_config=huggingface_config,

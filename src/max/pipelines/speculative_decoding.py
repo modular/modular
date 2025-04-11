@@ -25,7 +25,11 @@ from max.graph.weights import (
 )
 from max.nn import ReturnLogits
 
-from .core import InputContext, TextGenerationResponse, TokenGenerator
+from .core import (
+    InputContext,
+    TextGenerationResponse,
+    TokenGenerator,
+)
 from .hf_utils import download_weight_files
 from .pipeline import PipelineModel
 
@@ -52,7 +56,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         target_config = self.pipeline_config.model_config.huggingface_config
 
         target_hf_repo = (
-            self.pipeline_config.model_config.huggingface_weights_repo
+            self.pipeline_config.model_config.huggingface_weight_repo
         )
 
         weight_paths = download_weight_files(
@@ -99,7 +103,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             )
 
         draft_hf_repo = (
-            self.pipeline_config.draft_model_config.huggingface_weights_repo
+            self.pipeline_config.draft_model_config.huggingface_weight_repo
         )
         encodings = draft_hf_repo.supported_encodings
         if not encodings:
