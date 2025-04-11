@@ -490,10 +490,10 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
 
     ```mlir
     // Pack with 'Ts' elements, with a parametric origin and addrspace=42.
-    !lit.ref.pack<Ts, life, 42>
+    !lit.ref.pack<Ts, origin, 42>
 
     lit.fn @pack<Ts: variadic<!kgen.type>>(
-      %0: !lit.ref.pack<Ts, life, 42>
+      %0: !lit.ref.pack<Ts, origin, 42>
     )
     ```
   }];
