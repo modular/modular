@@ -14,6 +14,15 @@ trait PackageTrait:
         pass
 
 
+trait PackageTrait2:
+    fn method2(self):
+        pass
+
+
+trait PackageChildTrait(PackageTrait, PackageTrait2):
+    pass
+
+
 trait UsedInPackageTrait:
     fn method(self):
         pass

@@ -1491,6 +1491,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             })
             .Case([&](TraitDeclOp traitOp) {
               // TODO(traits): Resolve parameter types, when they exist.
+              refWalker.walk(traitOp.getCanonicalTrait());
               return success();
             })
             .Case([&](UnresolvedImportOp unresolvedImport) {
