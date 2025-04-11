@@ -2,21 +2,47 @@ openapi: 3.1.0
 info:
   title: MAX Serve API reference
   description: |
-    MAX Serve is a high-performance, Python-based inference server for deploying large language models (LLMs) locally or in the cloud. It provides efficient request handling through advanced batching and scheduling.
 
-    **OpenAI API compatibility**
+    MAX Serve is a high-performance, Python-based inference server for
+    deploying large language models (LLMs) locally or in the cloud. It provides
+    efficient request handling through advanced batching and scheduling, and
+    an OpenAI-compatible REST endpoint.
 
-    A key feature of MAX Serve is its compatibility with a subset of the [OpenAI REST API](https://platform.openai.com/docs/api-reference/introduction). This allows you to use many existing OpenAI client applications with MAX Serve endpoints, often with minimal code changes.
+    ## Getting started
 
-    * **Supported endpoints:** Currently, MAX Serve supports:
+    With just a few commands, you can start a local endpoint with the GenAI
+    model of your choice using our [`max-pipelines`](/max/max-pipelines) CLI
+    and start sending requests—[see our quickstart guide](/max/get-started).
+
+    When you want to deploy your model to a cloud-hosted endpoint, you can use
+    our [MAX container](/max/container)—see our [tutorial to deploy an LLM on a
+    GPU](/max/tutorials/max-serve-local-to-cloud).
+
+    ## OpenAI API compatibility
+
+    MAX Serve is compatible with a subset of the [OpenAI REST
+    API](https://platform.openai.com/docs/api-reference/introduction). This
+    allows you to use many existing OpenAI client applications with MAX Serve
+    endpoints.
+
+    * **Supported endpoints:**
 
         * [Chat completions](#operation/createChatCompletion) (`/v1/chat/completions`)
         * [Completions](#operation/createCompletion) (`/v1/completions`)
         * [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
         * [List models](#operation/listModels) (`/v1/models`)
 
-    * **Parameter handling:** While aiming for high compatibility, not all OpenAI body parameters are implemented. Some may be accepted as no-ops (ignored but won't cause errors) to maintain client compatibility. The specific endpoint documentation below details only the parameters that actively affect behavior in MAX Serve.
-paths:  
+    * **Parameter handling:** While aiming for high compatibility, not all
+    OpenAI body parameters are implemented. Some may be accepted as no-ops
+    (ignored but won't cause errors) to maintain client compatibility. The
+    specific endpoint documentation below details only the parameters that
+    actively affect behavior in MAX Serve.
+
+    In addition to the OpenAI APIs, MAX Serve provides a Prometheus-formatted
+    [metrics endpoint](/max/container#metrics) to help track your model's
+    performance.
+
+paths:
   /v1/chat/completions:
     post:
       operationId: createChatCompletion
@@ -353,7 +379,7 @@ components:
         model:
           type: string
           description: |
-            ID of the model to use. 
+            ID of the model to use.
             Supported by MAX Serve but handled by frontend load balancer to route traffic to nodes.
         messages:
           type: array
@@ -412,7 +438,7 @@ components:
                       type: string
           description: |
             Controls which (if any) tool is called by the model.
-            
+
     ChatCompletionMessage:
       type: object
       required:
@@ -424,17 +450,17 @@ components:
           enum: [system, user, assistant, function]
           description: |
             The role of the message author.
-            
+
         content:
           type: string
           description: |
             The content of the message.
-            
+
         name:
           type: string
           description: |
             The name of the author of this message.
-            
+
     ChatCompletionTool:
       type: object
       required:
@@ -515,7 +541,7 @@ components:
           type: string
           description: |
             ID of the model to use.
-            
+
         prompt:
           oneOf:
             - type: string
@@ -524,31 +550,31 @@ components:
                 type: string
           description: |
             The prompt to generate completions for.
-            
+
         echo:
           type: boolean
           default: false
           description: |
             Echo back the prompt in addition to the completion.
-            
+
         max_tokens:
           type: integer
           minimum: 1
           description: |
             The maximum number of tokens to generate in the completion.
-            
+
         stream:
           type: boolean
           default: false
           description: |
             Whether to stream back partial progress.
-            
+
         logprobs:
           type: integer
           minimum: 0
           description: |
             Include the log probabilities on the logprobs most likely tokens.
-            
+
     CreateCompletionResponse:
       type: object
       required:
@@ -622,17 +648,17 @@ components:
           default: float
           description: |
             The format to return the embeddings in.
-            
+
         dimensions:
           type: integer
           description: |
             The number of dimensions the resulting output embeddings should have.
-            
+
         user:
           type: string
           description: |
             A unique identifier representing your end-user.
-            
+
     CreateEmbeddingResponse:
       type: object
       required:
