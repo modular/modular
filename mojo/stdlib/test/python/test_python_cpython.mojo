@@ -14,6 +14,8 @@
 # RUN: %mojo %s
 
 from python import Python, PythonObject
+from python._cpython import PyObjectPtr
+from memory import UnsafePointer
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -34,7 +36,34 @@ def test_PyObject_HasAttrString(mut python: Python):
     _ = the_object
 
 
+fn destructor(capsule: PyObjectPtr) -> None:
+    pass
+
+
+def test_PyCapsule(mut python: Python):
+    var Cpython_env = python.impl._cpython
+
+    # Not a PyCapsule, a NULL pointer is expected.
+    var the_object = PythonObject(0)
+    var result = Cpython_env[].PyCapsule_GetPointer(
+        the_object.py_object, "some_name"
+    )
+    var expected = UnsafePointer[NoneType]()
+    assert_equal(expected, result)
+
+    # Build a capsule.
+    var capsule_impl = UnsafePointer[UInt64].alloc(1)
+    var capsule = Cpython_env[].PyCapsule_New(
+        capsule_impl.bitcast[NoneType](), "some_name", destructor
+    )
+    var capsule_pointer = Cpython_env[].PyCapsule_GetPointer(
+        capsule, "some_name"
+    )
+    assert_equal(capsule_impl.bitcast[NoneType](), capsule_pointer)
+
+
 def main():
     # initializing Python instance calls init_python
     var python = Python()
     test_PyObject_HasAttrString(python)
+    test_PyCapsule(python)
