@@ -72,6 +72,7 @@ class Llama4DecoderLayer(Module):
             devices=config.devices,
             use_rope=use_rope,
             use_qk_norm=config.use_qk_norm,
+            qk_norm_eps=config.rms_norm_eps,
         )
         self.is_moe_layer = layer_idx in config.moe_layers
         self.feed_forward: Module

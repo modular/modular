@@ -72,6 +72,7 @@ class _Llama4TextAttention(Module):
         has_bias: bool = False,
         use_rope: bool = True,
         use_qk_norm: bool = False,
+        qk_norm_eps: float = 1e-6,
     ):
         """Initializes the attention layer.
 
@@ -96,6 +97,7 @@ class _Llama4TextAttention(Module):
             has_bias: Whether to use an attention bias. Defaults to False.
             use_rope: Whether to use rope in this layer. Defaults to True.
             use_qk_norm: Whether to normalize the qk values. Defaults to False.
+            qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
         """
 
         super().__init__()
@@ -114,6 +116,7 @@ class _Llama4TextAttention(Module):
         self.attn_scale = attn_scale
         self.floor_scale = floor_scale
         self.attn_temperature_tuning = attn_temperature_tuning
+        self.qk_norm_eps = qk_norm_eps
 
         if not self.kv_params.cache_strategy.uses_opaque():
             raise ValueError(
@@ -230,7 +233,7 @@ class _Llama4TextAttention(Module):
                 gamma=ops.constant(1, self.kv_params.dtype)
                 .broadcast_to([self.kv_params.head_dim])
                 .to(self.devices[0]),
-                epsilon=1e-6,
+                epsilon=self.qk_norm_eps,
                 layer_idx=self.layer_idx,
                 total_seq_len=total_seq_len,
                 input_row_offsets=kwargs["input_row_offsets"],
