@@ -491,7 +491,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             RaggedKVCacheInputs, kv_cache_inputs.kv_cache_inputs[0]
         )
         for n, ctx in enumerate(context_batch):
-            cache_length = ragged_kv_cache_inputs.cache_lengths[n].to_numpy()
+            cache_length = ragged_kv_cache_inputs.cache_lengths.to_numpy()[n]
             cache_positions.append(
                 np.arange(
                     cache_length,
