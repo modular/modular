@@ -118,7 +118,12 @@ struct Span[
         alignment: The minimum alignment of the underlying pointer known statically.
     """
 
-    # Field
+    # Aliases
+    alias Mutable = Span[T, MutableOrigin.cast_from[origin].result]
+    """The mutable version of the `Span`."""
+    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin].result]
+    """The immutable version of the `Span`."""
+    # Fields
     var _data: UnsafePointer[
         T,
         mut=mut,
@@ -131,6 +136,20 @@ struct Span[
     # ===------------------------------------------------------------------===#
     # Life cycle methods
     # ===------------------------------------------------------------------===#
+
+    @doc_private
+    @implicit
+    @always_inline("nodebug")
+    fn __init__(
+        other: Span[T, _],
+        out self: Span[T, ImmutableOrigin.cast_from[other.origin].result],
+    ):
+        """Implicitly cast the mutable origin of self to an immutable one.
+
+        Args:
+            other: The Span to cast.
+        """
+        self = rebind[__type_of(self)](other)
 
     @always_inline("builtin")
     fn __init__(
@@ -345,6 +364,15 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline
+    fn get_immutable(self) -> Self.Immutable:
+        """Return an immutable version of this `Span`.
+
+        Returns:
+            An immutable version of the same `Span`.
+        """
+        return rebind[Self.Immutable](self)
+
+    @always_inline
     fn unsafe_ptr(
         self,
     ) -> UnsafePointer[
@@ -470,27 +498,6 @@ struct Span[
         """
         for element in self:
             element[] = value
-
-    fn get_immutable(
-        self,
-    ) -> Span[
-        T,
-        ImmutableOrigin.cast_from[origin].result,
-        address_space=address_space,
-        alignment=alignment,
-    ]:
-        """
-        Return an immutable version of this span.
-
-        Returns:
-            A span covering the same elements, but without mutability.
-        """
-        return Span[
-            T,
-            ImmutableOrigin.cast_from[origin].result,
-            address_space=address_space,
-            alignment=alignment,
-        ](ptr=self._data, length=self._len)
 
     fn swap_elements(
         self: Span[mut=True, T, alignment=alignment], a: UInt, b: UInt

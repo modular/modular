@@ -478,11 +478,31 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         UTF-8.
     """
 
+    # Aliases
+    alias Mutable = StringSlice[MutableOrigin.cast_from[origin].result]
+    """The mutable version of the `StringSlice`."""
+    alias Immutable = StringSlice[ImmutableOrigin.cast_from[origin].result]
+    """The immutable version of the `StringSlice`."""
+    # Fields
     var _slice: Span[Byte, origin]
 
     # ===------------------------------------------------------------------===#
     # Initializers
     # ===------------------------------------------------------------------===#
+
+    @doc_private
+    @implicit
+    @always_inline("nodebug")
+    fn __init__(
+        other: StringSlice,
+        out self: StringSlice[ImmutableOrigin.cast_from[other.origin].result],
+    ):
+        """Implicitly cast the mutable origin of self to an immutable one.
+
+        Args:
+            other: The Span to cast.
+        """
+        self = rebind[__type_of(self)](other)
 
     @doc_private
     @always_inline
@@ -1034,6 +1054,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#
+
+    @always_inline
+    fn get_immutable(self) -> Self.Immutable:
+        """Return an immutable version of this Span.
+
+        Returns:
+            An immutable version of the same Span.
+        """
+        return rebind[Self.Immutable](self)
 
     fn replace(self, old: StringSlice, new: StringSlice) -> String:
         """Return a copy of the string with all occurrences of substring `old`
@@ -1642,20 +1671,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var byte = self.as_bytes()[index]
         # If this is not a continuation byte, then it must be a start byte.
         return _utf8_byte_type(byte) != 1
-
-    fn get_immutable(
-        self,
-    ) -> StringSlice[ImmutableOrigin.cast_from[origin].result]:
-        """
-        Return an immutable version of this string slice.
-
-        Returns:
-            A string slice covering the same elements, but without mutability.
-        """
-        return StringSlice[ImmutableOrigin.cast_from[origin].result](
-            ptr=self._slice.unsafe_ptr(),
-            length=len(self),
-        )
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
