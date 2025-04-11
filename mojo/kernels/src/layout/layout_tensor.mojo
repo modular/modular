@@ -513,10 +513,18 @@ struct LayoutTensor[
     @always_inline
     @implicit
     fn __init__(
-        out self,
-        ref [origin]device_buffer: DeviceBuffer[
-            dtype, address_space=address_space
+        out self: LayoutTensor[
+            dtype,
+            layout,
+            origin,
+            address_space = AddressSpace.GENERIC,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+            alignment=alignment,
         ],
+        ref [origin]device_buffer: DeviceBuffer[dtype],
     ):
         """Create a LayoutTensor from a `DeviceBuffer`. The layout must have
         statically known dimensions.
@@ -537,13 +545,23 @@ struct LayoutTensor[
         Args:
             device_buffer: Contains the underlying data to point to.
         """
-        self = Self(device_buffer._unsafe_ptr())
+        self = __type_of(self)(device_buffer._unsafe_ptr())
 
     @always_inline
     @implicit
     fn __init__(
-        out self,
-        ref [origin]host_buffer: HostBuffer[dtype, address_space=address_space],
+        out self: LayoutTensor[
+            dtype,
+            layout,
+            origin,
+            address_space = AddressSpace.GENERIC,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+            alignment=alignment,
+        ],
+        ref [origin]host_buffer: HostBuffer[dtype],
     ):
         """Create a LayoutTensor from a `DeviceBuffer`. The layout must have
         statically known dimensions.
@@ -564,14 +582,22 @@ struct LayoutTensor[
         Args:
             host_buffer: Contains the underlying data to point to.
         """
-        self = Self(host_buffer.unsafe_ptr())
+        self = __type_of(self)(host_buffer.unsafe_ptr())
 
     @always_inline
     fn __init__(
-        out self,
-        ref [origin]device_buffer: DeviceBuffer[
-            dtype, address_space=address_space
+        out self: LayoutTensor[
+            dtype,
+            layout,
+            origin,
+            address_space = AddressSpace.GENERIC,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+            alignment=alignment,
         ],
+        ref [origin]device_buffer: DeviceBuffer[dtype],
         runtime_layout: RuntimeLayout[
             layout,
             element_type=layout_int_type,
@@ -585,12 +611,22 @@ struct LayoutTensor[
             device_buffer: The DeviceBuffer containing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
         """
-        self = Self(device_buffer._unsafe_ptr(), runtime_layout)
+        self = __type_of(self)(device_buffer._unsafe_ptr(), runtime_layout)
 
     @always_inline
     fn __init__(
-        out self,
-        ref [origin]host_buffer: HostBuffer[dtype, address_space=address_space],
+        out self: LayoutTensor[
+            dtype,
+            layout,
+            origin,
+            address_space = AddressSpace.GENERIC,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+            alignment=alignment,
+        ],
+        ref [origin]host_buffer: HostBuffer[dtype],
         runtime_layout: RuntimeLayout[
             layout,
             element_type=layout_int_type,
@@ -604,14 +640,22 @@ struct LayoutTensor[
             host_buffer: The HostBuffer containing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
         """
-        self = Self(host_buffer.unsafe_ptr(), runtime_layout)
+        self = __type_of(self)(host_buffer.unsafe_ptr(), runtime_layout)
 
     @always_inline
     fn __init__(
-        out self,
-        ref [origin]device_buffer: DeviceBuffer[
-            dtype, address_space=address_space
+        out self: LayoutTensor[
+            dtype,
+            layout,
+            origin,
+            address_space = AddressSpace.GENERIC,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+            alignment=alignment,
         ],
+        ref [origin]device_buffer: DeviceBuffer[dtype],
         runtime_layout: RuntimeLayout[
             layout,
             element_type=layout_int_type,
@@ -631,14 +675,24 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the LayoutTensor.
             element_runtime_layout: The runtime layout of each element.
         """
-        self = Self(
+        self = __type_of(self)(
             device_buffer._unsafe_ptr(), runtime_layout, element_runtime_layout
         )
 
     @always_inline
     fn __init__(
-        out self,
-        ref [origin]host_buffer: HostBuffer[dtype, address_space=address_space],
+        out self: LayoutTensor[
+            dtype,
+            layout,
+            origin,
+            address_space = AddressSpace.GENERIC,
+            element_layout=element_layout,
+            layout_int_type=layout_int_type,
+            linear_idx_type=linear_idx_type,
+            masked=masked,
+            alignment=alignment,
+        ],
+        ref [origin]host_buffer: HostBuffer[dtype],
         runtime_layout: RuntimeLayout[
             layout,
             element_type=layout_int_type,
@@ -658,7 +712,7 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the LayoutTensor.
             element_runtime_layout: The runtime layout of each element.
         """
-        self = Self(
+        self = __type_of(self)(
             host_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
         )
 
