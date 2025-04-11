@@ -5047,13 +5047,13 @@ struct Conv:
         ]()
 
         if strides.size() != input.rank - 2:
-            raise Error("$(input_rank-2) values expected in conv strides")
+            raise Error("(input_rank-2) values expected in conv strides")
 
         if dilation.size() != input.rank - 2:
-            raise Error("$(input_rank-2) values expected in conv dilation")
+            raise Error("(input_rank-2) values expected in conv dilation")
 
         if paddings.size() != 2 * (input.rank - 2):
-            raise Error("$(2*(input_rank-2)) value expected in conv paddings")
+            raise Error("(2*(input_rank-2)) value expected in conv paddings")
 
         var stride_tuple = IndexList[input.rank - 2](0)
         var dilation_tuple = IndexList[input.rank - 2](0)
@@ -5197,23 +5197,23 @@ struct ConvTranspose:
 
         if strides.size() != input.rank - 2:
             raise Error(
-                "$(input_rank-2) values expected in convTranspose stride"
+                "(input_rank-2) values expected in convTranspose stride"
             )
 
         if dilation.size() != input.rank - 2:
             raise Error(
-                "$(input_rank-2) values expected in convTranspose dilation"
+                "(input_rank-2) values expected in convTranspose dilation"
             )
 
         if output_paddings.size() != input.rank - 2:
             raise Error(
-                "$(input_rank-2) values expected in convTranspose output"
+                "(input_rank-2) values expected in convTranspose output"
                 " paddings"
             )
 
         if paddings.size() != 2 * (input.rank - 2):
             raise Error(
-                "$(2*(input_rank-2)) value expected in convTranspose paddings"
+                "(2*(input_rank-2)) value expected in convTranspose paddings"
             )
 
         var stride_tuple = IndexList[input.rank - 2](0)
