@@ -201,9 +201,9 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
 
                 # Update context
                 context.update(next_token_id)
-                next_tokens = np.array([next_token_id])
+                next_token = np.array([next_token_id])
                 self._cache.tokens[context.cache_seq_id] = np.append(
-                    self._cache.tokens[context.cache_seq_id], next_tokens
+                    self._cache.tokens[context.cache_seq_id], next_token
                 )
 
                 max_length = (
