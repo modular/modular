@@ -329,13 +329,11 @@ class PipelineRegistry:
 
             # MAX pipeline
             arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_repo,
+                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
             )
 
             # Load HuggingFace Config
-            huggingface_config = self.get_active_huggingface_config(
-                huggingface_repo=pipeline_config.model_config.huggingface_repo
-            )
+            huggingface_config = pipeline_config.model_config.huggingface_config
 
             # Architecture should not be None here, as the engine is MAX.
             assert arch is not None

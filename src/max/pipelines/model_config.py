@@ -250,7 +250,7 @@ class MAXModelConfig(MAXModelConfigBase):
             RuntimeError: If the determined `repo_type` is unexpected.
         """
         total_weights_size = 0
-        repo = self.huggingface_repo
+        repo = self.huggingface_weight_repo
 
         for file_path in self.weight_path:
             file_path_str = str(file_path)
@@ -284,13 +284,21 @@ class MAXModelConfig(MAXModelConfigBase):
         return total_weights_size
 
     @cached_property
-    def huggingface_repo(self) -> HuggingFaceRepo:
+    def huggingface_weight_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(
             repo_id=(
                 self._weights_repo_id
                 if self._weights_repo_id
                 else self.model_path
             ),
+            revision=self.huggingface_revision,
+            trust_remote_code=self.trust_remote_code,
+        )
+
+    @cached_property
+    def huggingface_model_repo(self) -> HuggingFaceRepo:
+        return HuggingFaceRepo(
+            repo_id=self.model_path,
             revision=self.huggingface_revision,
             trust_remote_code=self.trust_remote_code,
         )
@@ -303,14 +311,14 @@ class MAXModelConfig(MAXModelConfigBase):
         # when trust_remote_code=True.
         if self.trust_remote_code:
             return AutoConfig.from_pretrained(
-                self.huggingface_repo.repo_id,
-                trust_remote_code=self.huggingface_repo.trust_remote_code,
-                revision=self.huggingface_repo.revision,
+                self.huggingface_model_repo.repo_id,
+                trust_remote_code=self.huggingface_model_repo.trust_remote_code,
+                revision=self.huggingface_model_repo.revision,
             )
         if self._huggingface_config is None:
             self._huggingface_config = (
                 PIPELINE_REGISTRY.get_active_huggingface_config(
-                    huggingface_repo=self.huggingface_repo
+                    huggingface_repo=self.huggingface_model_repo
                 )
             )
         return self._huggingface_config
@@ -353,7 +361,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     str(self.weight_path[0])
                 )
             else:
-                file_encoding = self.huggingface_repo.encoding_for_file(
+                file_encoding = self.huggingface_weight_repo.encoding_for_file(
                     self.weight_path[0]
                 )
 
@@ -381,7 +389,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     self.quantization_encoding = encoding
 
             else:
-                if encoding := self.huggingface_repo.encoding_for_file(
+                if encoding := self.huggingface_weight_repo.encoding_for_file(
                     self.weight_path[0]
                 ):
                     msg = f"encoding inferred from weights file: {encoding}"
@@ -392,7 +400,9 @@ class MAXModelConfig(MAXModelConfigBase):
                     raise ValueError(msg)
         elif not self.quantization_encoding:
             # Check if the repo only has one quantization_encoding.
-            supported_encodings = self.huggingface_repo.supported_encodings
+            supported_encodings = (
+                self.huggingface_weight_repo.supported_encodings
+            )
             if len(supported_encodings) == 1:
                 msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
                 logger.debug(msg)
@@ -481,7 +491,7 @@ class MAXModelConfig(MAXModelConfigBase):
             else:
                 alternate_encoding = None
 
-            weight_files = self.huggingface_repo.files_for_encoding(
+            weight_files = self.huggingface_weight_repo.files_for_encoding(
                 encoding=self.quantization_encoding,
                 alternate_encoding=alternate_encoding,
             )
@@ -499,7 +509,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 SupportedEncoding.bfloat16,
                 SupportedEncoding.float32,
             ]:
-                msg = f"compatible weights cannot be found for '{self.quantization_encoding}' in 'gguf' format, in the provided repo: '{self.huggingface_repo.repo_id}'"
+                msg = f"compatible weights cannot be found for '{self.quantization_encoding}' in 'gguf' format, in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
                 raise ValueError(msg)
             else:
                 msg = f"compatible weights cannot be found for '{self.quantization_encoding}'"
@@ -545,7 +555,7 @@ class MAXModelConfig(MAXModelConfigBase):
         # Assume at this point, an architecture,
         # a model_path and weight_paths are available.
         assert self.weight_path, "weight_path must be provided."
-        repo = self.huggingface_repo
+        repo = self.huggingface_weight_repo
         for path in self.weight_path:
             path_str = str(path)
             # Check if file exists locally (direct, local repo, or cache).
@@ -613,7 +623,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Returns:
             The absolute path (as a string) to the local file if found, otherwise None.
         """
-        repo = self.huggingface_repo
+        repo = self.huggingface_weight_repo
 
         # Check direct path first (absolute or relative to CWD).
         # NOTE(bduke): do this even for online repositories, because upstream

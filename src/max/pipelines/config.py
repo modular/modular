@@ -258,6 +258,9 @@ class PipelineConfig(MAXConfig):
         # except the model_path / repo_id to the draft_model_config.
         self._draft_model_config = deepcopy(self._model_config)
         self._draft_model_config.model_path = self.draft_model
+        self._draft_model_config._huggingface_config = (
+            self._draft_model_config.huggingface_config
+        )
 
         # TODO(E2EOPT-108): Remove this once we have fully migrated draft model
         # to MAXModelConfig.
@@ -281,7 +284,7 @@ class PipelineConfig(MAXConfig):
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.draft_model_config.huggingface_repo,
+            huggingface_repo=self.draft_model_config.huggingface_model_repo,
         )
 
         if not draft_arch:
@@ -289,7 +292,7 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_repo,
+            huggingface_repo=self.model_config.huggingface_model_repo,
         )
         if not target_arch:
             msg = "MAX-Optimized architecture not found for target model (`model_path`)"
@@ -301,10 +304,10 @@ class PipelineConfig(MAXConfig):
 
         # Validate that their tokenizers are identical.
         draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-            huggingface_repo=self.draft_model_config.huggingface_repo
+            huggingface_repo=self.draft_model_config.huggingface_model_repo
         )
         target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-            huggingface_repo=self.model_config.huggingface_repo
+            huggingface_repo=self.model_config.huggingface_model_repo
         )
 
         # Compare Vocabularies
@@ -331,7 +334,7 @@ class PipelineConfig(MAXConfig):
         reason."""
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_repo,
+            huggingface_repo=self.model_config.huggingface_model_repo,
         )
 
         # If nothing is provided, we should not update any more params.
