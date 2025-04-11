@@ -6,7 +6,7 @@
 # RUN: kgen-translate -import-mojo %s | FileCheck %s
 
 
-fn register_internal(x: StringLiteral):
+fn register_internal(x: StaticString):
     pass
 
 
