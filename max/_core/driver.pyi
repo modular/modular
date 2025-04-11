@@ -232,6 +232,8 @@ class Tensor:
     :param dtype: DType of tensor
     :param shape: Tuple of positive, non-zero integers denoting the tensor shape.
     :param device: Device to allocate tensor onto.
+    :param on_host: If True tensor is allocated in host memory, but associated
+                    with the device.
     """
 
     @overload
@@ -240,6 +242,7 @@ class Tensor:
         dtype: max._core.dtype.DType,
         shape: Sequence[int],
         device: Device | None = None,
+        on_host: bool | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -247,6 +250,7 @@ class Tensor:
         dtype: max._core.dtype.DType,
         shape: Sequence[int],
         stream: DeviceStream,
+        on_host: bool | None = None,
     ) -> None: ...
     @overload
     def __init__(
