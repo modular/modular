@@ -2247,3 +2247,62 @@ void KGEN::printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region) {
   }
   p.printRegion(region, /*printEntryBlockArgs=*/false);
 }
+
+ParseResult KGEN::parseMemSymbolParts(AsmParser &p,
+                                      MemSymbolTripleParts &parts) {
+  SmallVector<SymbolParts> symbols;
+  do {
+    SymbolRefAttr callee;
+    ParameterExprArrayAttr paramValues;
+    if (p.parseAttribute(callee) || parseParameterValues(p, paramValues))
+      return failure();
+    symbols.push_back(SymbolParts{callee, paramValues});
+  } while (succeeded(p.parseOptionalComma()));
+  switch (symbols.size()) {
+  case 2:
+    parts = MemSymbolTripleParts{{}, symbols[0], symbols[1]};
+    break;
+  case 3:
+    parts = MemSymbolTripleParts{symbols[0], symbols[1], symbols[2]};
+    break;
+  default:
+    return p.emitError(p.getCurrentLocation(), "expected 2 or 3 symbols");
+  }
+  return success();
+}
+
+SymbolConstantAttr KGEN::makeSymbol(Type type, SymbolRefAttr symbol,
+                                    ParameterExprArrayAttr paramValues,
+                                    bool isConstructor) {
+  SmallVector<Type> inputs;
+  if (isConstructor) {
+    inputs = {type, type};
+  } else {
+    inputs = {type};
+  }
+  return SymbolConstantAttr::get(
+      symbol,
+      FuncTypeGeneratorType::get(
+          {}, FunctionType::get(type.getContext(), inputs, {}), {}, {}, {}, {}),
+      paramValues);
+}
+
+void KGEN::printMemSymbolTripleAttrWithoutType(AsmPrinter &p,
+                                               SymbolConstantAttr copy,
+                                               SymbolConstantAttr move,
+                                               SymbolConstantAttr del) {
+  if (copy) {
+    p << copy.getSymbol();
+    printParameterValues(p, copy.getParamValues());
+    p << ", ";
+  }
+  if (move) {
+    p << move.getSymbol();
+    printParameterValues(p, move.getParamValues());
+    p << ", ";
+  }
+  if (del) {
+    p << del.getSymbol();
+    printParameterValues(p, del.getParamValues());
+  }
+}

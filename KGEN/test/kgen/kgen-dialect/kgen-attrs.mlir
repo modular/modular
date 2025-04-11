@@ -148,3 +148,15 @@ kgen.generator @closureSymbol(){
     <#kgen.closure.symbol<@foo, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "fn"> ?> >>
   kgen.return
 }
+
+"some.op"() {
+  // CHECK: a = #kgen.mem_symbol_triple<@bar_move<:type index, :type index>,
+  // CHECK-SAME: @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>
+  a = #kgen.mem_symbol_triple<@bar_move<:type index, :type index>,
+                              @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>,
+  // CHECK: b = #kgen.mem_symbol_triple<@bar_copy<:type index, :type index>,
+  // CHECK-SAME: @bar_move<:type index, :type index>, @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>
+  b = #kgen.mem_symbol_triple<@bar_copy<:type index, :type index>,
+                              @bar_move<:type index, :type index>,
+                              @bar_del<:type index, :type index> : !kgen.pointer<struct<(index, index)>>>
+} : () -> ()

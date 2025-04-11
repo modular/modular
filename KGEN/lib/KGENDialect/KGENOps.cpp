@@ -1637,12 +1637,25 @@ static void printCompileOffloadOp(OpAsmPrinter &p, Operation *op,
 // ClosureInitOp
 //===----------------------------------------------------------------------===//
 
-namespace {
-struct SymbolParts {
-  SymbolRefAttr callee;
-  ParameterExprArrayAttr paramValues;
-};
-} // namespace
+static MemSymbolTripleAttr
+assembleMemSymbolTripleAttr(MemSymbolTripleParts symbolTriple,
+                            Type captureType) {
+  MLIRContext *context = captureType.getContext();
+
+  SymbolConstantAttr copy;
+  if (symbolTriple.copy.callee)
+    copy = makeSymbol(captureType, symbolTriple.copy.callee,
+                      symbolTriple.copy.paramValues);
+  SymbolConstantAttr move;
+  if (symbolTriple.move.callee)
+    move = makeSymbol(captureType, symbolTriple.move.callee,
+                      symbolTriple.move.paramValues);
+  SymbolConstantAttr del;
+  if (symbolTriple.del.callee)
+    del = makeSymbol(captureType, symbolTriple.del.callee,
+                     symbolTriple.del.paramValues, /*isConstructor=*/false);
+  return MemSymbolTripleAttr::get(context, copy, move, del);
+}
 
 static ParseResult parseClosureInitValue(
     OpAsmParser &p, TypeAttr &funcTypeGenerator, TypeAttr &functionType,
@@ -1654,7 +1667,7 @@ static ParseResult parseClosureInitValue(
     return failure();
 
   // Collect the captures and symbols, if provided.
-  SmallVector<SymbolParts> symbols;
+  SmallVector<MemSymbolTripleParts> memSymParts;
   LogicalResult result = success();
   if (p.parseOptionalRParen()) {
     do {
@@ -1663,16 +1676,13 @@ static ParseResult parseClosureInitValue(
 
       // Build optional symbol.
       if (p.parseOptionalLSquare()) {
-        symbols.push_back(SymbolParts());
+        memSymParts.push_back(MemSymbolTripleParts());
       } else {
-        SymbolRefAttr callee;
-        ParameterExprArrayAttr paramValues;
-        if (p.parseAttribute(callee) || parseParameterValues(p, paramValues) ||
-            p.parseRSquare())
+        if (parseMemSymbolParts(p, memSymParts.emplace_back()))
           return failure();
-        symbols.push_back(SymbolParts{callee, paramValues});
+        if (p.parseRSquare())
+          return failure();
       }
-
       result = p.parseOptionalComma();
     } while (succeeded(result));
     if (p.parseRParen())
@@ -1691,27 +1701,36 @@ static ParseResult parseClosureInitValue(
   }
 
   // Parse the capture types.
-  if (capturesTypes.size() != symbols.size())
+  if (capturesTypes.size() != memSymParts.size())
     return p.emitError(p.getCurrentLocation(),
                        "expected symbols to match number of capture types");
 
   // Now that we have the capture types and the symbols, we can infer the
   // signatures and build the symbol constant attributes.
   SmallVector<Attribute> copyOrMoveSymbols;
-  for (auto [symbolParts, captureType] : llvm::zip(symbols, capturesTypes)) {
-    if (!symbolParts.callee) {
+  for (auto [symbolTriple, captureType] :
+       llvm::zip(memSymParts, capturesTypes)) {
+    // If a value is captured by copy or move the del must also be provided
+    if (symbolTriple.getIsTrivial()) {
       copyOrMoveSymbols.push_back(UnitAttr::get(p.getContext()));
       continue;
     }
-
-    FuncTypeGeneratorType fnGenType = FuncTypeGeneratorType::get(
-        {}, FunctionType::get(p.getContext(), {captureType, captureType}, {}),
-        {}, {}, {}, {});
-    copyOrMoveSymbols.push_back(SymbolConstantAttr::get(
-        symbolParts.callee, fnGenType, symbolParts.paramValues));
+    MemSymbolTripleAttr memSymbolTriple =
+        assembleMemSymbolTripleAttr(symbolTriple, captureType);
+    if (!memSymbolTriple)
+      return p.emitError(p.getCurrentLocation(),
+                         "expected move and del symbols");
+    copyOrMoveSymbols.push_back(memSymbolTriple);
   }
   moveOrCopyCaptureSymbols = ArrayAttr::get(p.getContext(), copyOrMoveSymbols);
   return success();
+}
+
+static void printMemSymbolTriple(OpAsmPrinter &p, MemSymbolTripleAttr triple) {
+  p << "[";
+  printMemSymbolTripleAttrWithoutType(p, triple.getCopy(), triple.getMove(),
+                                      triple.getDel());
+  p << "]";
 }
 
 // Print function for ClosureInitValue custom format
@@ -1727,13 +1746,8 @@ static void printClosureInitValue(OpAsmPrinter &p, Operation *op,
   int n = captures.size();
   for (auto [capture, symbol] : llvm::zip(captures, moveOrCopyCaptureSymbols)) {
     p << capture;
-    if (!isa<UnitAttr>(symbol)) {
-      p << "[";
-      SymbolConstantAttr callee = cast<SymbolConstantAttr>(symbol);
-      p << callee.getSymbol();
-      printParameterValues(p, callee.getParamValues());
-      p << "]";
-    }
+    if (!isa<UnitAttr>(symbol))
+      printMemSymbolTriple(p, cast<MemSymbolTripleAttr>(symbol));
     if (++i < n)
       p << ", ";
   }
@@ -1751,18 +1765,18 @@ LogicalResult ClosureInitOp::verify() {
   if (getCaptures().size() != getMoveOrCopyCaptureSymbols().size())
     return emitOpError("expected symbols to match number of capture types");
   for (Attribute symbol : getMoveOrCopyCaptureSymbols()) {
-    if (!isa<SymbolConstantAttr, UnitAttr>(symbol))
+    if (!isa<MemSymbolTripleAttr, UnitAttr>(symbol))
       return emitOpError(
           "expected symbol constant attribute or unit attribute");
   }
-  // If type is pointer it must be a pointer to a closure type and it cannot be
-  // register passable.
+  // If type is pointer it must be a pointer to a closure type and it cannot
+  // be register passable.
   if (auto ptr = dyn_cast<PointerType>(getResult().getType())) {
     if (auto closureType = dyn_cast<ClosureType>((ptr.getElementType()))) {
       if (closureType.getClosureMemoryKind() ==
           ClosureMemoryKind::REGISTER_PASSABLE)
-        return emitOpError(
-            "expected escaping/nonescaping closure type if type is a pointer");
+        return emitOpError("expected escaping/nonescaping closure type if "
+                           "type is a pointer");
       else
         return success();
     }
