@@ -94,39 +94,18 @@ static StringAttr getTypeName(SharedState &shared, const ASTType &type) {
 
 /// Instantiates TypedPythonObject["Tuple"]
 static ASTType makeTupleTypedPythonObj(ASTDecl &moduleDecl,
-                                       ASTDecl &pythonModule, SMLoc moduleLoc,
-                                       ::mlir::MLIRContext *context) {
-  auto &shared = moduleDecl.getShared();
-  auto typedPyObjType =
-      shared.lookupNamedType("TypedPythonObject", pythonModule, moduleLoc);
-  if (typedPyObjType.isTypeCheckErrorType())
-    return {};
-
-  PValue tupleNameStrPValue =
-      PValue(StringAttr::get("Tuple", StringType::get(context)));
-
-  ASTDecl *typedPyObjTypeDecl = ASTType(typedPyObjType).getDecl(shared);
-  auto structOp = dyn_cast_or_null<StructDeclOp>(typedPyObjTypeDecl);
-  if (!structOp) {
-    mlir::emitError(
-        shared.translateLocation(moduleLoc),
-        "internal error: TypedPythonObject type not found or not a struct");
-    return {};
-  }
-
-  SyntheticNode synth(moduleLoc);
-  ParamBindings bindings(*typedPyObjTypeDecl);
-  bindings.add(&synth, tupleNameStrPValue);
-
-  // Check the bindings.
-  auto metaType = cast<StructMetaType>(typedPyObjType.getMetaType());
-  auto bindingsAttr = bindings.verifyBindings(structOp, metaType.getSignature(),
-                                              moduleLoc, /*partial=*/false);
-  if (!bindingsAttr)
-    return {};
-
-  // Ok, we succeeded at reparameterizing the type.
-  return ASTType(BindTypeAttr::get(PValue(typedPyObjType), bindingsAttr));
+                                       ASTDecl &pythonModule) {
+  // Form the AST we want to emit.
+  SMLoc moduleLoc = moduleDecl.getLoc();
+  DeclRefNode typePythonObject("TypedPythonObject");
+  StringRef tupleStr = "\"Tuple\""; // Avoid dangling pointer.
+  StringLiteralNode tupleString(tupleStr);
+  Operand subscriptOperand(&tupleString, moduleLoc, Operand::kPositional);
+  SubscriptNode subscript(&typePythonObject, moduleLoc, subscriptOperand,
+                          moduleLoc);
+  // Emit it as a type.
+  ExprEmitter emitter(pythonModule, ExprContext::EC_PyBindGen);
+  return emitter.emitExprType(&subscript);
 }
 
 BindingGenerator::BindingGenerator(ASTDecl &moduleDecl)
@@ -140,8 +119,7 @@ BindingGenerator::BindingGenerator(ASTDecl &moduleDecl)
                                        /*currentPackage=*/nullptr, moduleLoc)),
       pyObjType(
           shared.lookupNamedType("PythonObject", pythonModule, moduleLoc)),
-      tupleTypedPyObjType(
-          makeTupleTypedPythonObj(moduleDecl, pythonModule, moduleLoc, ctx)) {}
+      tupleTypedPyObjType(makeTupleTypedPythonObj(moduleDecl, pythonModule)) {}
 
 LogicalResult BindingGenerator::genPyInitImplFunc() {
   ImplicitLocOpBuilder b(moduleOp.getLoc(), moduleDecl.getDeclEndBuilder());

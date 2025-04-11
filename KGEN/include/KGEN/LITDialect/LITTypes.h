@@ -106,7 +106,7 @@ public:
   bool isPackVarArg(size_t index);
 
   /// For a PackVarArg, return the declared ArgConvention of the elements. For
-  /// example: fn x[*Ts: AnyType](inout *pack: *Ts) is declared 'inout'.
+  /// example: fn x[*Ts: AnyType](mut *pack: *Ts) is declared 'mut'.
   ArgConvention getPackVarArgConvention(size_t index);
 
   /// If the specified argument is a variadic pack, return the VariadicPack.
