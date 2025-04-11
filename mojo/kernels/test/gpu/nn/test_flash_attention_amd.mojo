@@ -434,6 +434,16 @@ fn test_context_encoding[batch_size: Int](ctx: DeviceContext) raises:
         against_gpu_naive=True,
     ](528, 528, ctx)
 
+    test[
+        4,
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=128,
+        num_heads=32,
+        group=4,
+        against_gpu_naive=True,
+    ](1, 1, ctx)
+
 
 fn test_decoding[
     batch_size: Int,
@@ -495,6 +505,18 @@ fn test_decoding[
         batch_size=batch_size,
         num_partitions=num_partitions,
     ](1, 208, ctx, use_index_input=use_index_input)
+
+    test[
+        4,
+        qkv_type,
+        DType.bfloat16,
+        128,
+        32,
+        group=4,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 1, ctx, use_index_input=use_index_input)
 
 
 def main():
