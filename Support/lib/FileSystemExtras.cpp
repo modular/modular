@@ -59,6 +59,7 @@ doLockedFileOperation(const std::filesystem::path &filePath,
                      "': " + toString(std::move(err)) + " " + ecMsg);
       }
       consumeError(std::move(err));
+      continue;
     } else if (!owned) {
       // Wait for the other process to finish touching the file.
       switch (lockManager.waitForUnlockFor(std::chrono::seconds(90))) {
