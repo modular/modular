@@ -707,6 +707,13 @@ def _detect_hf_flakes(
     default=False,
     help="Dump goldens in non-JSON format to stdout",
 )
+@click.option(
+    "--max-batch-size",
+    "max_batch_size",
+    type=int,
+    default=1,
+    help="The maximum batch size to use when evaluating the model.",
+)
 def main(
     device_type: str | list[int],
     framework_name: str,
@@ -714,6 +721,7 @@ def main(
     encoding_name: str,
     output_path: Path,
     print_output: bool,
+    max_batch_size: int,
 ) -> None:
     """Click command entry point that delegates to the implementation function.
 
@@ -729,6 +737,7 @@ def main(
             encoding_name=encoding_name,
             output_path=output_path,
             print_output=print_output,
+            max_batch_size=max_batch_size,
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)
@@ -742,6 +751,7 @@ def generate_llm_logits(
     encoding_name: str,
     output_path: Path,
     print_output: bool,
+    max_batch_size: int,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
@@ -786,6 +796,7 @@ def generate_llm_logits(
                 if isinstance(pipeline_oracle, MultiModalPipelineOracle)
                 else None,
                 print_outputs=True,
+                batch_size=max_batch_size,
             )
         elif (
             pipeline_oracle.task
@@ -799,6 +810,7 @@ def generate_llm_logits(
                 max_pipeline_and_tokenizer.generator,
                 max_pipeline_and_tokenizer.tokenizer,
                 pipeline_oracle.prompts,
+                batch_size=max_batch_size,
             )
         else:
             raise ValueError(

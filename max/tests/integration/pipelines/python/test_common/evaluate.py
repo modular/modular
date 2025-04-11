@@ -56,6 +56,7 @@ def run_model(
     images: Optional[Iterable[str]] = None,
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
+    batch_size: int = 1,
 ) -> list[dict[str, Any]]:
     """Runs the model for N steps on each prompt provide."""
     return asyncio.run(
@@ -66,6 +67,7 @@ def run_model(
             images=images,
             num_steps=num_steps,
             print_outputs=print_outputs,
+            batch_size=batch_size,
         )
     )
 
@@ -77,8 +79,10 @@ async def run_model_async(
     images: Optional[Iterable[str]] = None,
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
+    batch_size: int = 1,
 ) -> list[dict[str, Any]]:
     """Runs the model for N steps on each prompt provide."""
+    assert batch_size >= 1
 
     # Download images.
     downloaded_images: Optional[list[bytes]] = None
@@ -88,42 +92,59 @@ async def run_model_async(
             downloaded_images.append(resolve_image_from_url(url))
 
     results = []
-    # Evaluate prompts individually (not batched).
-    # TODO: add batched version of run_model.
+
+    async def _evaluate_batch(
+        batch_prompts: dict[str, str], batch_contexts: dict[str, Any]
+    ) -> None:
+        values: dict[str, list[Any]] = {req_id: [] for req_id in batch_contexts}
+        for _ in range(num_steps):
+            is_eos = next_token_with_logits(
+                model, batch_contexts, values, tokenizer.eos
+            )
+            if is_eos:
+                break
+        for req_id, prompt in batch_prompts.items():
+            context = batch_contexts[req_id]
+            results.append({"prompt": prompt, "values": values[req_id]})
+            if print_outputs:
+                print(
+                    "Prompt:",
+                    f"{prompt[:100]}..." if len(prompt) > 100 else prompt,
+                )
+                print(
+                    "Output:",
+                    await tokenizer.decode(
+                        context,
+                        np.array(
+                            [v["next_token"] for v in values[req_id]],
+                            dtype=np.int64,
+                        ),
+                    ),
+                )
+            model.kv_manager.release(context.cache_seq_id)
+
+    # Evaluate prompts.
+    batch_contexts: dict[str, Any] = {}
+    batch_prompts: dict[str, str] = {}
     for prompt in prompts:
         curr_req_id = str(uuid.uuid4())
         context = await tokenizer.new_context(
             TokenGeneratorRequest(
                 id="",
-                index=0,
+                index=len(batch_contexts),
                 prompt=prompt,
                 model_name="llama3",
                 images=downloaded_images,
             )
         )
-        values: dict[str, list[Any]] = {curr_req_id: []}
-        for _ in range(num_steps):
-            is_eos = next_token_with_logits(
-                model, {curr_req_id: context}, values, tokenizer.eos
-            )
-            if is_eos:
-                break
-        results.append({"prompt": prompt, "values": values[curr_req_id]})
-        if print_outputs:
-            print(
-                "Prompt:", f"{prompt[:100]}..." if len(prompt) > 100 else prompt
-            )
-            print(
-                "Output:",
-                await tokenizer.decode(
-                    context,
-                    np.array(
-                        [v["next_token"] for v in values[curr_req_id]],
-                        dtype=np.int64,
-                    ),
-                ),
-            )
-        model.kv_manager.release(context.cache_seq_id)
+        batch_prompts[curr_req_id] = prompt
+        batch_contexts[curr_req_id] = context
+        if len(batch_contexts) == batch_size:
+            await _evaluate_batch(batch_prompts, batch_contexts)
+            batch_prompts.clear()
+            batch_contexts.clear()
+    if batch_contexts:
+        await _evaluate_batch(batch_prompts, batch_contexts)
 
     return results
 
