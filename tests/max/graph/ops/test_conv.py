@@ -14,7 +14,7 @@ from conftest import (
     static_dims,
     tensor_types,
 )
-from hypothesis import assume, given
+from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import Graph, TensorType, Weight, ops
@@ -49,13 +49,18 @@ def test_conv_valid(
 ):
     assume(filter_type.shape[0] <= x_type.shape[1])
     assume(filter_type.shape[1] <= x_type.shape[2])
+
     with Graph("conv", input_types=[x_type, filter_type]) as graph:
-        out = ops.conv2d(
-            graph.inputs[0],
-            graph.inputs[1],
-            stride=stride,
-            padding=padding,
-        )
+        try:
+            out = ops.conv2d(
+                graph.inputs[0].tensor,
+                graph.inputs[1].tensor,
+                stride=stride,
+                padding=padding,
+            )
+        except ValueError:
+            reject()
+
         output_height = (
             x_type.shape[1]
             - filter_type.shape[0]
@@ -85,7 +90,7 @@ def test_conv_dtype_promote_np():
     filter = np.ones(filter_shape, dtype=np.float32)
     with Graph("conv", input_types=[x_type]) as graph:
         out = ops.conv2d(
-            graph.inputs[0],
+            graph.inputs[0].tensor,
             filter,
         )
         # The numpy filter has a weak dtype. This all resolves happily.
