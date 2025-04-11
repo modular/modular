@@ -125,10 +125,7 @@ struct _DeviceBufferMode:
         return self._mode == other._mode
 
 
-struct HostBuffer[
-    type: DType,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-](Sized, Stringable, Writable):
+struct HostBuffer[type: DType](Sized, Stringable, Writable):
     """Represents a block of host-resident storage. For GPU devices, a host
     buffer is allocated in the host's global memory.
 
@@ -138,10 +135,9 @@ struct HostBuffer[
 
     Parameters:
         type: Data type to be stored in the buffer.
-        address_space: The address space of the underlying pointer.
     """
 
-    alias _HostPtr = UnsafePointer[Scalar[type], address_space=address_space]
+    alias _HostPtr = UnsafePointer[Scalar[type]]
 
     # We cache the pointer of the buffer here to provide access to elements.
     var _host_ptr: Self._HostPtr
@@ -660,12 +656,7 @@ struct HostBuffer[
         ]()
         self._host_ptr[idx] = val
 
-    fn as_span(
-        ref self,
-        out span: Span[
-            Scalar[type], __origin_of(self), address_space=address_space
-        ],
-    ):
+    fn as_span(ref self, out span: Span[Scalar[type], __origin_of(self)]):
         """
         Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
 
@@ -675,10 +666,9 @@ struct HostBuffer[
         return __type_of(span)(ptr=self._host_ptr, length=len(self))
 
 
-struct DeviceBuffer[
-    type: DType,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-](Sized, Stringable, Writable, CollectionElement):
+struct DeviceBuffer[type: DType](
+    Sized, Stringable, Writable, CollectionElement
+):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
 
@@ -688,10 +678,9 @@ struct DeviceBuffer[
 
     Parameters:
         type: Data type to be stored in the buffer.
-        address_space: The address space of the underlying pointer.
     """
 
-    alias _DevicePtr = UnsafePointer[Scalar[type], address_space=address_space]
+    alias _DevicePtr = UnsafePointer[Scalar[type]]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
@@ -1174,9 +1163,7 @@ struct DeviceBuffer[
 
     fn map_to_host(
         self,
-        out mapped_buffer: _HostMappedBuffer[
-            type, __origin_of(self), address_space
-        ],
+        out mapped_buffer: _HostMappedBuffer[type, __origin_of(self)],
     ) raises:
         """Maps this device buffer to host memory for CPU access.
 
@@ -1216,9 +1203,9 @@ struct DeviceBuffer[
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        mapped_buffer = _HostMappedBuffer[
-            type, __origin_of(self), address_space
-        ](self.context(), self)
+        mapped_buffer = _HostMappedBuffer[type, __origin_of(self)](
+            self.context(), self
+        )
 
     fn write_to[W: Writer](self, mut writer: W):
         """Writes a string representation of this buffer to the provided writer.
@@ -1276,12 +1263,7 @@ struct DeviceBuffer[
         ]()
         return String.write(self)
 
-    fn as_span(
-        ref self,
-        out span: Span[
-            Scalar[type], __origin_of(self), address_space=address_space
-        ],
-    ):
+    fn as_span(ref self, out span: Span[Scalar[type], __origin_of(self)]):
         """
         Returns a `Span` pointing to the underlying memory of the `DeviceBuffer`.
 
@@ -4220,18 +4202,15 @@ struct _HostMappedBuffer[
     mut: Bool, //,
     type: DType,
     origin: Origin[mut],
-    address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
     var _ctx: DeviceContext
-    var _dev_buf: Pointer[
-        DeviceBuffer[type, address_space=address_space], origin
-    ]
+    var _dev_buf: Pointer[DeviceBuffer[type], origin]
     var _cpu_buf: HostBuffer[type]
 
     fn __init__(
         out self,
         ctx: DeviceContext,
-        ref [origin]buf: DeviceBuffer[type, address_space=address_space],
+        ref [origin]buf: DeviceBuffer[type],
     ) raises:
         var cpu_buf = ctx.enqueue_create_host_buffer[type](len(buf))
         self._ctx = ctx
