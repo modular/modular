@@ -541,7 +541,7 @@ class GenericOracle(PipelineOracle):
         return self._device_encoding_map
 
     def weight_path(self, encoding: str) -> str | None:
-        if self._weight_path_map:
+        if self._weight_path_map and encoding in self._weight_path_map:
             return self._weight_path_map[encoding]
         return None
 

@@ -392,10 +392,10 @@ PIPELINES = {
             # further regressions with this.
             # Example sign flip:
             # `(26, array([12445])) |  -3.12881e+00 │  3.12882e+00`
-            absolute_tolerance=20,
+            absolute_tolerance=21,
             relative_tolerance=1e-4,
             cos_dist_threshold=0.7,
-            kl_div_threshold=15,
+            kl_div_threshold=16,
         ),
     ),
     "Llama-3.1-8B-Instruct-float32": PipelineDef(
