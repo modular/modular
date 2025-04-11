@@ -396,7 +396,7 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](MHAMask):
                 coord[0], coord[1], coord[2] - start_pos, coord[3]
             )
 
-        var retval = SIMD[type, width](min_or_neg_inf[type]())
+        var retval = SIMD[type, width](MASK_VALUE)
         if adjusted_coord[rank_ - 2] < self.mask_tensor.dim[rank_ - 2]():
             if (
                 adjusted_coord[rank_ - 1] + width
