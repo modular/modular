@@ -31,6 +31,7 @@ from python._cpython import (
     newfunc,
 )
 from python.python import _get_global_python_itf
+from collections.string.string_slice import get_static_string
 
 alias MLIRKGENString = __mlir_type.`!kgen.string`
 
@@ -82,7 +83,7 @@ struct PyMojoObject[T: AnyType]:
 
 fn python_type_object[
     T: Pythonable,
-    type_name: StringLiteral,
+    type_name: StaticString,
 ](owned methods: List[PyMethodDef]) raises -> TypedPythonObject["Type"]:
     """Construct a Python 'type' describing PyMojoObject[T].
 
@@ -110,9 +111,11 @@ fn python_type_object[
     # Zeroed item terminator
     slots.append(PyType_Slot.null())
 
+    # Get this as a static string to force it to be nul terminated.
+    alias type_name_static = get_static_string[type_name]()
     var type_spec = PyType_Spec(
         # FIXME(MOCO-1306): This should be `T.__name__`.
-        type_name.unsafe_cstr_ptr(),
+        type_name_static.unsafe_ptr().bitcast[sys.ffi.c_char](),
         sizeof[PyMojoObject[T]](),
         0,
         Py_TPFLAGS_DEFAULT,

@@ -504,11 +504,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Args:
             lit: The literal to construct this `StringSlice` from.
         """
-        # Since a StringLiteral has static origin, it will outlive
+        # Since a StaticString has static origin, it will outlive
         # whatever arbitrary `origin` the user has specified they need this
         # slice to live for.
         # SAFETY:
-        #   StringLiteral is guaranteed to use UTF-8 encoding.
+        #   StaticString is guaranteed to use UTF-8 encoding.
         # FIXME(MSTDL-160):
         #   Ensure StringLiteral _actually_ always uses UTF-8 encoding.
         self = StaticString(lit.value)
@@ -2184,7 +2184,7 @@ fn _get_kgen_string[
         extra: Additional StringSlice values to concatenate.
 
     Returns:
-        The string value as a StringLiteral.
+        The string value as a `!kgen.string`.
     """
     return _get_kgen_string[string, extra]()
 
@@ -2200,7 +2200,7 @@ fn _get_kgen_string[
         extra: Additional string slices to concatenate.
 
     Returns:
-        The string value as a StringLiteral.
+        The string value as a `!kgen.string`.
     """
     return __mlir_attr[
         `#kgen.param.expr<data_to_str,`,

@@ -447,6 +447,9 @@ struct PythonObject(
 
             var obj: PythonObject
 
+            # FIXME: We should constraint the arguments to be some kind of trait
+            # like "PythonObjectible" and use that instead of a hard coded list.
+            # ListLiteral needs to be rewritten first.
             @parameter
             if _type_is_eq[T, PythonObject]():
                 obj = value.get[i, PythonObject]()

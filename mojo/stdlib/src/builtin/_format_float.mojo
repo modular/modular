@@ -1948,7 +1948,7 @@ alias float8_e4m3fn_to_str = StaticTuple[StaticString, 256](
     "nan",
 )
 
-alias float8_e5m2fnuz_to_str = StaticTuple[StringLiteral, 256](
+alias float8_e5m2fnuz_to_str = StaticTuple[StaticString, 256](
     "0.0",
     "7.62939453125e-06",
     "1.52587890625e-05",
@@ -2207,7 +2207,7 @@ alias float8_e5m2fnuz_to_str = StaticTuple[StringLiteral, 256](
     "-57344.0",
 )
 
-alias float8_e4m3fnuz_to_str = StaticTuple[StringLiteral, 256](
+alias float8_e4m3fnuz_to_str = StaticTuple[StaticString, 256](
     "0.0",
     "0.0009765625",
     "0.001953125",
