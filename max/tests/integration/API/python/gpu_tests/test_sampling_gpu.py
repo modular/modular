@@ -66,8 +66,8 @@ def test_bitmask_sampling_vs_xgrammar():
     vocab_size = tokenizer_info.vocab_size
     n_trials = 1
 
-    generated_tokens = Tensor.zeros(
-        (batch_size, 0),
+    generated_tokens = Tensor(
+        shape=(batch_size, 0),
         dtype=DType.int64,
         device=device,
     )
@@ -127,13 +127,13 @@ def test_sampling_return_logits():
     # Variables
     batch_size = 3
     vocab_size = 10
-    generated_tokens = Tensor.zeros(
-        (batch_size, 0),
+    generated_tokens = Tensor(
+        shape=(batch_size, 0),
         dtype=DType.int64,
         device=device,
     )
-    generated_logits = Tensor.zeros(
-        (batch_size, 0), dtype=DType.float32, device=device
+    generated_logits = Tensor(
+        shape=(batch_size, 0), dtype=DType.float32, device=device
     )
 
     # Generate Random Logits
