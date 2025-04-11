@@ -1293,4 +1293,34 @@ def KGEN_ClosureAttr : KGENAttr<"Closure", "closure", [
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// MemSymbolTripleAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_MemSymbolTripleAttr : KGENAttr<"MemSymbolTriple", "mem_symbol_triple"> {
+  let summary = "A tuple of symbols";
+  let description = [{
+    The `#kgen.mem_symbol_triple` attribute holds the symbols of a memory value.
+    The symbols it holds are copy, move, and del. The copy symbol is optional.
+    This attribute is useful in the context of abstracted operations whose
+    lowering depends on these core symbols.
+
+    Example:
+
+    ```mlir
+      #kgen.mem_symbol_triple<@bar_move<:type index, :type index>>,
+                              @bar_del<:type index, :type index>>
+                               : !kgen.pointer<struct<(index, index)>>
+    ```
+  }];
+
+  let parameters = (ins OptionalParameter<"SymbolConstantAttr">:$copy,
+                        "SymbolConstantAttr":$move,
+                        "SymbolConstantAttr":$del);
+
+ let assemblyFormat = [{
+    `<` custom<MemSymbolTripleAttr>($copy, $move, $del) `>`
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

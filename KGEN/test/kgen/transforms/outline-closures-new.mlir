@@ -5,6 +5,12 @@
 kgen.generator @foo_copy(%self:!kgen.pointer<struct<(index,index)>>, %src:!kgen.pointer<struct<(index,index)>>){
   kgen.return
 }
+kgen.generator @foo_move(%self:!kgen.pointer<struct<(index,index)>>, %src:!kgen.pointer<struct<(index,index)>>){
+  kgen.return
+}
+kgen.generator @foo_del(%self:!kgen.pointer<struct<(index,index)>>){
+  kgen.return
+}
 
 // CHECK: kgen.generator @closure_types_fn<CAPTURES: none>(%arg0: !kgen.pointer<struct<(struct<(index, index)>)>>, %arg1: index) -> index {
 // CHECK-NEXT: [[CAP:%.*]] = kgen.struct.gep %arg0[0] : <struct<(struct<(index, index)>)>>
@@ -20,7 +26,7 @@ kgen.generator @foo_copy(%self:!kgen.pointer<struct<(index,index)>>, %src:!kgen.
 // CHECK-NEXT: kgen.return
 // CHECK-NEXT: }
 kgen.generator @closure_types(%arg0 : index, %arg1: !kgen.pointer<struct<(index,index)>>) {
-  %3 = kgen.closure.init(%arg1[@foo_copy])(%arg2: index) -> index {
+  %3 = kgen.closure.init(%arg1[@foo_copy, @foo_move, @foo_del])(%arg2: index) -> index {
     %0 = kgen.struct.gep %arg1[0] : !kgen.pointer<struct<(index,index)>>
     %1 = pop.load %0 : !kgen.pointer<index>
     kgen.return %1 : index
@@ -34,7 +40,7 @@ kgen.generator @closure_types(%arg0 : index, %arg1: !kgen.pointer<struct<(index,
 // CHECK-NEXT: %index_0 = kgen.param.constant = <get_alignof(struct<(struct<(index, index)>)>, current_target())>
 // CHECK-NEXT: %0 = pop.aligned_alloc %index_0, %index : <struct<(struct<(index, index)>)>>
 kgen.generator @closure_types_escaping(%arg0 : index, %arg1: !kgen.pointer<struct<(index,index)>>) {
-  %3 = kgen.closure.init(%arg1[@foo_copy])(%arg2: index) escaping -> index {
+  %3 = kgen.closure.init(%arg1[@foo_copy, @foo_move, @foo_del])(%arg2: index) escaping -> index {
     %0 = kgen.struct.gep %arg1[0] : !kgen.pointer<struct<(index,index)>>
     %1 = pop.load %0 : !kgen.pointer<index>
     kgen.return %1 : index

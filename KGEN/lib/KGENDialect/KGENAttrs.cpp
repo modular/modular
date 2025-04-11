@@ -2976,6 +2976,39 @@ static void printClosureAttr(AsmPrinter &p, Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// MemSymbolTripleAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseMemSymbolTripleAttr(AsmParser &p,
+                                            SymbolConstantAttr &copy,
+                                            SymbolConstantAttr &move,
+                                            SymbolConstantAttr &del) {
+  MemSymbolTripleParts parts;
+  if (parseMemSymbolParts(p, parts))
+    return failure();
+  Type type;
+  if (p.parseColon() || p.parseType(type))
+    return failure();
+
+  if (parts.copy.callee) {
+    copy = makeSymbol(type, parts.copy.callee, parts.copy.paramValues);
+    move = makeSymbol(type, parts.move.callee, parts.move.paramValues);
+    del = makeSymbol(type, parts.del.callee, parts.del.paramValues, false);
+  } else {
+    move = makeSymbol(type, parts.move.callee, parts.move.paramValues);
+    del = makeSymbol(type, parts.del.callee, parts.del.paramValues, false);
+  }
+  return success();
+}
+
+static void printMemSymbolTripleAttr(AsmPrinter &p, SymbolConstantAttr copy,
+                                     SymbolConstantAttr move,
+                                     SymbolConstantAttr del) {
+  printMemSymbolTripleAttrWithoutType(p, copy, move, del);
+  p << " : " << del.getType().getBody().getArguments().front();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

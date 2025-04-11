@@ -2003,14 +2003,25 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
     struct. The closure struct holds the captured values. It maps the nested
     function to the capture struct.
 
+    The closure init op contains a list of captured values. For each value,
+    there is an optional symbol list. The first symbol is the copy or move
+    symbol used to copy or move the captured value into the closure.
+
+    The second and third symbols are the move and the del methods for that
+    capture. If the first symbol is the move symbol then the second symbol
+    is the del method. The assumption is that copyable values are movable.
+    Movable values may be copyable but since closures are not copyable we
+    do not need the copy symbol if the captured value is not captured by
+    copy.
+
     Example:
     ```mlir
-      kgen.generator @closure_types(%arg0 : index,
-          %foo: !kgen.pointer<struct<(index,index)>>) {
-        %3 = kgen.closure.init(%foo[@foo_copy])(%arg1: index) -> index {
-	        %0 = kgen.struct.gep %foo[0] : !kgen.pointer<struct<(index,index)>>
-	        %1 = pop.load %0 : !kgen.pointer<index>
-	        kgen.return %1 : index
+    kgen.generator @closure_types(%arg0 : index,
+       %foo: !kgen.pointer<struct<(index,index)>>) {
+      %3 = kgen.closure.init(%foo[@copy, @move, @del])(%arg1: index) -> index {
+	      %0 = kgen.struct.gep %foo[0] : !kgen.pointer<struct<(index,index)>>
+	      %1 = pop.load %0 : !kgen.pointer<index>
+	      kgen.return %1 : index
       } : (!kgen.pointer<struct<(index,index)>>),
           <!kgen.closure<@closure_types, "name" escaping>>
 

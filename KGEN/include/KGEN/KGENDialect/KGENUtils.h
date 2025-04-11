@@ -452,6 +452,33 @@ void printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region);
 /// llvm::printEscapedString.
 void printAsMojoStringLiteral(StringRef Name, raw_ostream &Out);
 
+struct SymbolParts {
+  SymbolRefAttr callee;
+  ParameterExprArrayAttr paramValues;
+};
+
+struct MemSymbolTripleParts {
+  MemSymbolTripleParts() : isTrivial(true) {}
+  MemSymbolTripleParts(SymbolParts copy, SymbolParts move, SymbolParts del)
+      : copy(copy), move(move), del(del), isTrivial(false) {}
+  SymbolParts copy;
+  SymbolParts move;
+  SymbolParts del;
+  bool getIsTrivial() const { return isTrivial; }
+
+private:
+  bool isTrivial = false;
+};
+/// Parse a MemSymbolTriple symbol ref and parameter values. Type is not parsed.
+ParseResult parseMemSymbolParts(AsmParser &p, MemSymbolTripleParts &parts);
+
+SymbolConstantAttr makeSymbol(Type type, SymbolRefAttr symbol,
+                              ParameterExprArrayAttr paramValues,
+                              bool isConstructor = true);
+void printMemSymbolTripleAttrWithoutType(AsmPrinter &p, SymbolConstantAttr copy,
+                                         SymbolConstantAttr move,
+                                         SymbolConstantAttr del);
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENUTILS_H

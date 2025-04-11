@@ -578,7 +578,9 @@ LogicalResult ClosureLifter::liftClosureInit(ClosureInitOp closureInit,
   for (Value capture : closureInit.getCaptures()) {
     auto ptr = captureToSymbol.find(capture);
     assert(ptr != captureToSymbol.end() && "capture must be in capture list");
-    if (auto symbol = dyn_cast<SymbolConstantAttr>(ptr->second)) {
+    if (auto triple = dyn_cast<MemSymbolTripleAttr>(ptr->second)) {
+      SymbolConstantAttr symbol = cast<SymbolConstantAttr>(
+          triple.getCopy() ? triple.getCopy() : triple.getMove());
       Type capturingType =
           cast<PointerType>(capture.getType()).getElementType();
       fieldTypes.push_back(capturingType);
