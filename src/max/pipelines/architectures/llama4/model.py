@@ -150,20 +150,14 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
 
         self.model = self.load_model(session)
 
-        self.signal_buffers = (
-            [
-                Tensor.zeros(
-                    shape=(Signals.NUM_BYTES,),
-                    dtype=DType.uint8,
-                    device=dev,
-                )
-                for dev in self.devices
-            ]
-            if len(self.devices) > 1
-            # Skip creating buffers for single-device, where communication
-            # collectives shouldn't be called.
-            else []
-        )
+        self.signal_buffers = [
+            Tensor.zeros(
+                shape=(Signals.NUM_BYTES,),
+                dtype=DType.uint8,
+                device=dev,
+            )
+            for dev in self.devices
+        ]
 
     @staticmethod
     def calculate_max_seq_len(
