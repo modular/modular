@@ -330,7 +330,7 @@ e.g. tile with widths [2, 2] at index (0, 0) would be:
 [ 4 5 ]
 ```
 
-And index (1, 0) would be:
+And index (2, 0) would be:
 
 ```plaintext
 [ 2 3 ]
@@ -726,7 +726,7 @@ see what happens!
 and initialize the numbers ordered sequentially. Copy the host buffer to the
 device.
 2. Create a in_tensor that wraps the host buffer, with the dimensions (8, 4)
-3. Create an host and device buffer for the output of `DType` `Int64`, with 8
+3. Create an host and device buffer for the output of `DType` `Float32`, with 8
 elements, don't forget to zero the values with `enqueue_memset()`.
 4. Launch a GPU kernel with 8 blocks and 4 threads that reduce sums the values,
 using your preferred method to write to the output buffer.
