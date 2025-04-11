@@ -374,6 +374,65 @@ PIPELINES = {
     # Layer by layer golden tests would be exceptionally useful.
     # For now, using atol alone to check correctness for these models.
     # Setting rtol high hides other issues.
+    "Llama-3-8B-Instruct-q4_k": PipelineDef(
+        compatible_with=[DeviceKind.CPU],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama3-8b",
+            encoding="q4_k",
+            # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
+            # pipeline.  We only pass with these sky-high tolerances --
+            # something is very wrong but at least we will be able to detect
+            # further regressions with this.
+            absolute_tolerance=27,
+            relative_tolerance=1e-4,
+            cos_dist_threshold=1.0,
+            kl_div_threshold=21,
+        ),
+    ),
+    "Llama-3-8B-Instruct-float32": PipelineDef(
+        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        tags=["big"],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama3-8b",
+            encoding="float32",
+            absolute_tolerance=3e-02,
+            relative_tolerance=8e-3,
+            cos_dist_threshold=2.1e-6,
+            kl_div_threshold=1e-5,
+        ),
+    ),
+    "Llama-3-8B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="llama3-8b",
+            encoding="bfloat16",
+            absolute_tolerance=38,
+            relative_tolerance=0.17,
+            cos_dist_threshold=1.5,
+            kl_div_threshold=32,
+        ),
+    ),
     "Llama-3.1-8B-Instruct-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
         run=lambda device_type,

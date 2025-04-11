@@ -130,7 +130,7 @@ class PipelineOracle(ABC):
 
     @abstractmethod
     def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
+        self, *, encoding: str, device: torch.device | str
     ) -> TorchModelAndDataProcessor:
         """Instantiate a Torch pipeline for the given encoding/device."""
         raise NotImplementedError
@@ -373,147 +373,6 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
-class Llama3_3_70BInstructPipelineOracle(PipelineOracle):
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
-    ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            model_path="meta-llama/Llama-3.3-70B-Instruct",
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            max_length=512,
-        )
-        hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
-
-    def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
-    ) -> TorchModelAndDataProcessor:
-        hf_repo_id = "meta-llama/Llama-3.3-70B-Instruct"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-        model = transformers.AutoModelForCausalLM.from_pretrained(
-            hf_repo_id,
-            revision=revision,
-            config=config,
-            # Set device map to auto and just hope for enough GPU VRAM.
-            device_map="auto",
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
-
-    @property
-    def prompts(self) -> Sequence[str]:
-        return evaluate.PROMPTS
-
-
-class Llama4_17BScoutInstructPipelineOracle(PipelineOracle):
-    """Oracle for the Llama-4-Scout-17B-16E-Instruct model."""
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        """A map from device type to supported encodings."""
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
-    ) -> MaxPipelineAndTokenizer:
-        """Instantiates the MAX pipeline for Llama-4-Scout-17B-16E-Instruct.
-
-        Args:
-            encoding:
-                The quantization encoding to use.
-            device_specs:
-                The device specifications to run the pipeline on.
-
-        Returns:
-            An object containing the instantiated MAX pipeline and tokenizer.
-        """
-        for device_spec in device_specs:
-            if not self.is_supported(
-                encoding=encoding, device_spec=device_spec
-            ):
-                raise ValueError(f"Unsupported device spec {device_spec}")
-
-        config = pipelines.PipelineConfig(
-            device_specs=device_specs,
-            model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            # TODO(bduke): test chunked attention with >8192 context length cases.
-            max_length=8192,
-        )
-        hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            config, task=self.task
-        )
-
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
-
-    def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
-    ) -> TorchModelAndDataProcessor:
-        """Instantiates the Torch pipeline for Llama-4-Scout-17B-16E-Instruct.
-
-        Args:
-            encoding:
-                The quantization encoding (used to determine Torch dtype).
-            device:
-                The Torch device to load the model onto.
-
-        Returns:
-            An object containing the instantiated Torch model and data processor.
-        """
-        hf_repo_id = "meta-llama/Llama-4-Scout-17B-16E-Instruct"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
-
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_repo_id, revision=revision
-        )
-
-        model = transformers.Llama4ForCausalLM.from_pretrained(
-            hf_repo_id,
-            revision=revision,
-            # Set device map to auto and just hope for enough GPU VRAM.
-            device_map="auto",
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
-        )
-
-        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
-
-    @property
-    def use_cache(self) -> bool:
-        """Disables KV cache for Llama 4 due to upstream issue."""
-        # TODO(bduke): remove this once upstream [issue](https://github.com/huggingface/transformers/issues/37380) is fixed.
-        return False
-
-
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
@@ -523,6 +382,7 @@ class GenericOracle(PipelineOracle):
         weight_path_map: dict[str, str] | None = None,
         config_params: dict[str, Any] = {},
         prompts: list[str] | None = None,
+        use_cache: bool = True,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
         auto_processor_cls: Any = transformers.AutoTokenizer,
         task: interfaces.PipelineTask = interfaces.PipelineTask.TEXT_GENERATION,
@@ -535,6 +395,7 @@ class GenericOracle(PipelineOracle):
         self.auto_model_cls = auto_model_cls
         self.auto_processor_cls = auto_processor_cls
         self.task = task
+        self._use_cache = use_cache
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -623,6 +484,10 @@ class GenericOracle(PipelineOracle):
     def prompts(self) -> Sequence[str]:
         return self._prompts or evaluate.PROMPTS
 
+    @property
+    def use_cache(self) -> bool:
+        return self._use_cache
+
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "olmo": GenericOracle(
@@ -653,6 +518,18 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
     ),
+    "llama3-8b": GenericOracle(
+        model_path="meta-llama/Meta-Llama-3-8B-Instruct",
+        weight_path_map={
+            "q4_k": "bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
+            "float32": "bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp32.gguf",
+        },
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float32", "bfloat16"],
+            "cpu": ["float32", "q4_k"],
+        },
+    ),
     "llama3.1-8b": GenericOracle(
         model_path="meta-llama/Llama-3.1-8B-Instruct",
         weight_path_map={
@@ -665,7 +542,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["float32", "q4_k"],
         },
     ),
-    "llama3.3-70b": Llama3_3_70BInstructPipelineOracle(),
+    "llama3.3-70b": GenericOracle(
+        model_path="meta-llama/Llama-3.3-70B-Instruct",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "replit": ReplitPipelineOracle(),
     "mistral": GenericOracle(
         model_path="mistralai/Mistral-Nemo-Instruct-2407",
@@ -721,7 +602,14 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16", "gptq"],
         },
     ),
-    "llama4-scout": Llama4_17BScoutInstructPipelineOracle(),
+    "llama4-scout": GenericOracle(
+        model_path="meta-llama/Llama-3.3-70B-Instruct",
+        # TODO(bduke): test chunked attention with >8192 context length cases.
+        config_params={"max_length": 8192},
+        device_encoding_map={"gpu": ["bfloat16"]},
+        # TODO(bduke): remove this once upstream [issue](https://github.com/huggingface/transformers/issues/37380) is fixed.
+        use_cache=False,
+    ),
 }
 
 
@@ -921,12 +809,16 @@ def generate_llm_logits(
         if device_specs[0].device_type == "cpu":
             torch_device = torch.device("cpu")
         elif device_specs[0].device_type == "gpu":
-            # Set device to device 0 even for multi-GPU: model parallelism is
-            # handled at model construction time in `create_torch_pipeline`.
             torch_device = torch.device("cuda:0")
 
+        # For multi-gpu, use auto to handle mapping automatically.
+        if len(device_specs) > 1:
+            device = "auto"
+        else:
+            device = torch_device
+
         torch_pipeline_and_tokenizer = pipeline_oracle.create_torch_pipeline(
-            encoding=encoding_name, device=torch_device
+            encoding=encoding_name, device=device
         )
         if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
             results = torch_utils.run_text_generation(
