@@ -51,12 +51,11 @@ def test_invalid_split():
         "split",
         input_types=[TensorType(DType.float32, input_shape)],
     ) as graph:
-        output = ops.split(graph.inputs[0], split_sizes, axis)
         with pytest.raises(
             ValueError,
             match="sum of output shapes along split axis must match input shape",
         ):
-            graph.output(*output)
+            output = ops.split(graph.inputs[0], split_sizes, axis)
 
 
 def test_invalid_axis():

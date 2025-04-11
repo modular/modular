@@ -177,9 +177,10 @@ def while_loop(
 
     # Create while loop operation with chain-aware signature
     # The chain is passed as implicit final operand/result for state management
-    results, while_op = Graph.current._add_op_get_op_with_results(
-        mo.while_, out_mlir_types, initial_values
-    )
+    with Graph.current._pause_verification():
+        results, while_op = Graph.current._add_op_get_op_with_results(
+            mo.while_, out_mlir_types, initial_values
+        )
 
     # Separate actual loop results from the execution chain
     *results, out_chain = results
@@ -220,6 +221,7 @@ def while_loop(
         )
 
         Graph.current._update_chain(out_chain)
+        Graph.current._verify_op(while_op)
         return results
     except Exception as e:
         while_op.erase()

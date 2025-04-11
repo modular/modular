@@ -157,6 +157,7 @@ class Graph:
     # A global sequence of chains that is updated by side-effecting ops.
     _current_chain: _ChainValue
     _current_block: mlir.Block
+    _should_verify_ops: bool
 
     _kernel_library: KernelLibrary
 
@@ -189,6 +190,7 @@ class Graph:
         self._unique_symbolic_dim_counter = 0
         self._context_state = []
         self._context = context or mlir.Context()
+        self._should_verify_ops = True
 
         with self._context, self._location() as loc:
             # Create the top level module op.
@@ -291,6 +293,21 @@ class Graph:
                 self._current_block = current_block
 
     @contextlib.contextmanager
+    def _pause_verification(self):
+        """Temporarily disable verification."""
+        old_value = self._should_verify_ops
+        try:
+            self._should_verify_ops = False
+            yield
+        finally:
+            self._should_verify_ops = old_value
+
+    def _verify_op(self, op: mlir.Operation | mlir.OpView):
+        if self._should_verify_ops:
+            with self._capturing_mlir_diagnostics():
+                op.verify()
+
+    @contextlib.contextmanager
     def _capturing_mlir_diagnostics(self):
         diagnostics = []
 
@@ -354,6 +371,13 @@ class Graph:
                     # Insert op at the end of self._body, location set up by
                     # the context manager.
                     results = op(*unwrapped_args, **unwrapped_kwargs)
+
+                    # Get the op we just staged, which is the last op in the body block.
+                    ops = self._body.operations
+
+                    staged_op = self._body.operations[len(ops) - 1]
+                    self._verify_op(staged_op)
+
             except (mlir.MLIRError, ValueError) as e:  # type: ignore
                 # MLIRError is raised from the MLIR Python bindings on MLIR
                 # errors, however so is ValueError when operation create faile.
@@ -373,10 +397,6 @@ class Graph:
                     + f"\n{e}"
                     # Intentionally suppress extra stack traces from max._mlir.
                 ) from None
-
-        # Get the op we just staged, which is the last op in the body block.
-        ops = self._body.operations
-        staged_op = ops[len(ops) - 1]
 
         if isinstance(results, (mlir.Operation, mlir.OpView)):
             return [], staged_op
@@ -473,7 +493,7 @@ class Graph:
         """Sets the output nodes of the :obj:`Graph`."""
         # mo.output doesn't support infer_type
         mlir_values = [o._mlir_value for o in outputs]
-        self._add_op(mo.output, mlir_values)
+
         # We have a type mismatch now, these are MLIR types
         output_types = [value.type for value in mlir_values]
         # Need to set some more stuff.
@@ -486,6 +506,8 @@ class Graph:
         self._mlir_op.attributes["functionType"] = mlir.TypeAttr.get(
             function_type
         )
+
+        self._add_op(mo.output, mlir_values)
 
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.

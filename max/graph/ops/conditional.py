@@ -90,9 +90,12 @@ def cond(
         _ChainType().to_mlir(),
     ]
 
-    results, if_op = Graph.current._add_op_get_op_with_results(
-        mo.if_, pred, out_types_actual
-    )
+    # Pause verification until the operation is fully constructed
+    with Graph.current._pause_verification():
+        results, if_op = Graph.current._add_op_get_op_with_results(
+            mo.if_, pred, out_types_actual
+        )
+
     results_len = len(results)
     out_chain = results[results_len - 1]
     results = results[: results_len - 1]
@@ -115,6 +118,7 @@ def cond(
         )
 
         Graph.current._update_chain(out_chain)
+        Graph.current._verify_op(if_op)
         return results
     except Exception as e:
         if_op.erase()
