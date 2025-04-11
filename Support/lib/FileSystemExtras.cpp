@@ -54,9 +54,22 @@ doLockedFileOperation(const std::filesystem::path &filePath,
       // We don't need to do anything with the error here, since we will just
       // retry, but we also don't want to retry indefinitely so we have a limit.
       if (retries++ > kLockMaxRetriesOnError) {
+        std::error_code parentExistsEC;
+        bool parentExists =
+            std::filesystem::exists(filePath.parent_path(), parentExistsEC);
         std::string ecMsg = errorCodeToString(err);
-        return Error("unable to take lock file for '" + filePathStr +
-                     "': " + toString(std::move(err)) + " " + ecMsg);
+        std::string parentMsg =
+            "Parent path: " + std::string(filePath.parent_path().c_str()) +
+            " exists: " + std::to_string(parentExists);
+        if (parentExistsEC) {
+          parentMsg +=
+              " ErrorCode value: " + std::to_string(parentExistsEC.value()) +
+              " category: " + parentExistsEC.category().name() +
+              " message: " + parentExistsEC.message();
+        }
+
+        return Error("unable to take lock file for '" + filePathStr + "': " +
+                     toString(std::move(err)) + " " + ecMsg + parentMsg);
       }
       consumeError(std::move(err));
       continue;
