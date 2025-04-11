@@ -28,7 +28,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry):
         enable_structured_output=True,
         quantization_encoding=SupportedEncoding.bfloat16,
         device_specs=[DeviceSpec.accelerator()],
-        huggingface_revision=hf_repo_lock.revision_for_hf_repo(
+        huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
             "HuggingFaceTB/SmolLM2-135M-Instruct",
         ),
     )

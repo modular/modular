@@ -31,6 +31,6 @@ def test_revision_for_hf_repo() -> None:
 @pytest.mark.skip("TODO: AITLIB-280")
 def test_apply_to_config(repo_exists_mock: mock.Mock) -> None:
     config = pipelines.PipelineConfig(model_path=EXAMPLE_KEY)
-    assert config.model_config.huggingface_revision == "main"
+    assert config.model_config.huggingface_model_revision == "main"
     hf_repo_lock.apply_to_config(config)
-    assert config.model_config.huggingface_revision == EXAMPLE_VALUE
+    assert config.model_config.huggingface_model_revision == EXAMPLE_VALUE

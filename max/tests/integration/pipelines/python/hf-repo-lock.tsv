@@ -5,8 +5,10 @@ HuggingFaceTB/SmolLM2-135M-Instruct	e2c3f7557efbdec707ae3a336371d169783f1da1
 LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct	7f15baedd46858153d817445aff032f4d6cf4939
 Qwen/Qwen2.5-7B-Instruct	a09a35458c702b33eeacc393d103063234e8bc28
 allenai/OLMo-1B-hf	aee7752d9c08ee4775e9b0091426d8410e8f6a89
+bartowski/Meta-Llama-3.1-8B-Instruct-GGUF	bf5b95e96dac0462e2a09145ec66cae9a3f12067
 hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4	f184d2b18e2b7c257af79aa0bc53ef3ee505caa2
 kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit	0dbc9d99d9036c187562e72e9eeb8036da4e1105
+meta-llama/Llama-3.1-8B-Instruct	0e9e39f249a16976918f6564b8830bc894c89659
 meta-llama/Llama-3.2-11B-Vision-Instruct	9eb2daaa8597bf192a8b0e73f848f3a102794df5
 meta-llama/Llama-3.3-70B-Instruct	6f6073b423013f6a7d4d9f39144961bfbfbc386b
 meta-llama/Llama-4-Scout-17B-16E-Instruct	4bd10c4dc905b4000d76640d07a552344146faec

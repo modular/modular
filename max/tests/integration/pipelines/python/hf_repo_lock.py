@@ -67,6 +67,9 @@ def revision_for_hf_repo(hf_repo_id: str) -> str:
 
 
 def apply_to_config(config: pipelines.PipelineConfig) -> None:
-    config.model_config.huggingface_revision = revision_for_hf_repo(
+    config.model_config.huggingface_model_revision = revision_for_hf_repo(
         config.model_config.model_path
+    )
+    config.model_config.huggingface_weight_revision = revision_for_hf_repo(
+        config.model_config.huggingface_weight_repo_id
     )

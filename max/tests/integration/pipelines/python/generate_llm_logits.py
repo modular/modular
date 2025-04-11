@@ -34,7 +34,7 @@ from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.architectures import register_all_models
-from max.pipelines.architectures.llama3.config import get_llama_huggingface_file
+from max.pipelines.config_enums import PipelineEngine
 from max.pipelines.core import interfaces
 from test_common import (
     evaluate,
@@ -168,85 +168,6 @@ class MultiModalPipelineOracle(PipelineOracle):
         return [evaluate.IMAGES_MULTI_MODAL]
 
 
-class Llama3_1PipelineOracle(PipelineOracle):
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        supported_encodings = [e.name for e in pipelines.SupportedEncoding]
-        return {
-            "cpu": [e for e in supported_encodings if e != "bfloat16"],
-            "gpu": ["float32", "bfloat16"],
-        }
-
-    def _weight_path_for(self, encoding: str) -> Path:
-        return Path(
-            get_llama_huggingface_file(
-                "3.1",
-                pipelines.SupportedEncoding[encoding],
-                hf_repo_lock.revision_for_hf_repo("modularai/llama-3.1"),
-            ).download()
-        )
-
-    def create_max_pipeline(
-        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
-    ) -> MaxPipelineAndTokenizer:
-        for device_spec in device_specs:
-            assert self.is_supported(encoding=encoding, device_spec=device_spec)
-        config = pipelines.PipelineConfig(
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            # Normally we do not override batch size, preferring to test the
-            # defaults, but the default is known to be broken on A10.  Product
-            # has requested that we work around rather than fix for now.  Do
-            # NOT override, and instead leave as default, for CPU.
-            max_batch_size=(
-                32
-                if any(
-                    device_spec.device_type == "gpu"
-                    for device_spec in device_specs
-                )
-                else None
-            ),
-            max_new_tokens=10,
-            model_path="modularai/llama-3.1",
-            weight_path=[self._weight_path_for(encoding=encoding)],
-            device_specs=device_specs,
-        )
-        hf_repo_lock.apply_to_config(config)
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
-        return MaxPipelineAndTokenizer(
-            model=pipeline._pipeline_model,
-            generator=pipeline,
-            tokenizer=tokenizer,
-        )
-
-    def create_torch_pipeline(
-        self, *, encoding: str, device: torch.device
-    ) -> TorchModelAndDataProcessor:
-        # Tokenizer from testdata is used even for non-tiny Llama.
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            Path(os.environ["PIPELINES_TESTDATA"])
-        )
-        config_path = Path(
-            huggingface_hub.hf_hub_download(
-                repo_id="modularai/llama-3.1",
-                filename="config.json",
-                revision=hf_repo_lock.revision_for_hf_repo(
-                    "modularai/llama-3.1"
-                ),
-            )
-        )
-        weight_path = self._weight_path_for(encoding=encoding)
-        config = transformers.AutoConfig.from_pretrained(config_path)
-        model = transformers.AutoModelForCausalLM.from_pretrained(
-            "UNUSED",
-            config=config,
-            gguf_file=str(weight_path),
-            device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
-
-
 class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -281,7 +202,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             model_path=hf_repo_id,
-            huggingface_revision=revision,
+            huggingface_model_revision=revision,
             max_length=num_vision_embeddings,
             trust_remote_code=True,
         )
@@ -599,6 +520,7 @@ class GenericOracle(PipelineOracle):
         *,
         model_path: str,
         device_encoding_map: dict[str, list[str]],
+        weight_path_map: dict[str, str] | None = None,
         config_params: dict[str, Any] = {},
         prompts: list[str] | None = None,
         auto_model_cls: Any = transformers.AutoModelForCausalLM,
@@ -607,6 +529,7 @@ class GenericOracle(PipelineOracle):
     ) -> None:
         self.model_path = model_path
         self._device_encoding_map = device_encoding_map
+        self._weight_path_map = weight_path_map
         self.config_params = config_params
         self._prompts = prompts
         self.auto_model_cls = auto_model_cls
@@ -617,15 +540,23 @@ class GenericOracle(PipelineOracle):
     def device_encoding_map(self) -> dict[str, list[str]]:
         return self._device_encoding_map
 
+    def weight_path(self, encoding: str) -> str | None:
+        if self._weight_path_map:
+            return self._weight_path_map[encoding]
+        return None
+
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
+        weight_path = self.weight_path(encoding)
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=self.model_path,
+            weight_path=[] if weight_path is None else [weight_path],
+            engine=PipelineEngine.MAX,
             **self.config_params,
         )
         hf_repo_lock.apply_to_config(config)
@@ -650,13 +581,42 @@ class GenericOracle(PipelineOracle):
             self.model_path,
             trust_remote_code=trust_remote_code,
         )
-        model = self.auto_model_cls.from_pretrained(
-            self.model_path,
-            revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
-            device_map=device,
-            trust_remote_code=trust_remote_code,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
-        )
+        weight_path = self.weight_path(encoding)
+        if weight_path:
+            config_path = Path(
+                huggingface_hub.hf_hub_download(
+                    repo_id=self.model_path,
+                    filename="config.json",
+                    revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
+                )
+            )
+            path_pieces = weight_path.split("/")
+            weight_repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
+            weight_filename = "/".join(path_pieces[2:])
+            downloaded_weight_path = Path(
+                huggingface_hub.hf_hub_download(
+                    repo_id=weight_repo_id,
+                    filename=weight_filename,
+                    revision=hf_repo_lock.revision_for_hf_repo(weight_repo_id),
+                )
+            )
+            config = transformers.AutoConfig.from_pretrained(config_path)
+            model = self.auto_model_cls.from_pretrained(
+                "UNUSED",
+                config=config,
+                gguf_file=str(downloaded_weight_path),
+                device_map=device,
+                trust_remote_code=trust_remote_code,
+                torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            )
+        else:
+            model = self.auto_model_cls.from_pretrained(
+                self.model_path,
+                revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
+                device_map=device,
+                trust_remote_code=trust_remote_code,
+                torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     @property
@@ -693,7 +653,18 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
     ),
-    "llama3_1": Llama3_1PipelineOracle(),
+    "llama3.1-8b": GenericOracle(
+        model_path="meta-llama/Llama-3.1-8B-Instruct",
+        weight_path_map={
+            "q4_k": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+            "float32": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-f32.gguf",
+        },
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float32", "bfloat16"],
+            "cpu": ["float32", "q4_k"],
+        },
+    ),
     "llama3.3-70b": Llama3_3_70BInstructPipelineOracle(),
     "replit": ReplitPipelineOracle(),
     "mistral": GenericOracle(

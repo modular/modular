@@ -374,7 +374,7 @@ PIPELINES = {
     # Layer by layer golden tests would be exceptionally useful.
     # For now, using atol alone to check correctness for these models.
     # Setting rtol high hides other issues.
-    "llama3_1-q4_k": PipelineDef(
+    "Llama-3.1-8B-Instruct-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
         run=lambda device_type,
         devices,
@@ -384,7 +384,7 @@ PIPELINES = {
             devices=devices,
             find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
-            pipeline="llama3_1",
+            pipeline="llama3.1-8b",
             encoding="q4_k",
             # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
             # pipeline.  We only pass with these sky-high tolerances --
@@ -392,13 +392,13 @@ PIPELINES = {
             # further regressions with this.
             # Example sign flip:
             # `(26, array([12445])) |  -3.12881e+00 │  3.12882e+00`
-            absolute_tolerance=30,
+            absolute_tolerance=20,
             relative_tolerance=1e-4,
-            cos_dist_threshold=2,
-            kl_div_threshold=25,
+            cos_dist_threshold=0.7,
+            kl_div_threshold=15,
         ),
     ),
-    "llama3_1-float32": PipelineDef(
+    "Llama-3.1-8B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
         run=lambda device_type,
@@ -409,7 +409,7 @@ PIPELINES = {
             devices=devices,
             find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
-            pipeline="llama3_1",
+            pipeline="llama3.1-8b",
             encoding="float32",
             # TODO(AIPIPE-134): GPU has significantly worse tolerances than cpu.
             # cpu passes with `2e-04` atol. Gpu requires 100x worse tolerances.
@@ -421,7 +421,7 @@ PIPELINES = {
             kl_div_threshold=1e-5,
         ),
     ),
-    "llama3_1-bfloat16": PipelineDef(
+    "Llama-3.1-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
@@ -431,7 +431,7 @@ PIPELINES = {
             devices=devices,
             find_tolerances=find_tolerances,
             print_suggested_tolerances=print_suggested_tolerances,
-            pipeline="llama3_1",
+            pipeline="llama3.1-8b",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
