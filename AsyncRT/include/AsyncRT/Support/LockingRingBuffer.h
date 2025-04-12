@@ -9,9 +9,9 @@
 
 #include "Support/Threading/Atomics.h"
 #include "Support/Threading/SpinWaiter.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MathExtras.h"
 #include <cassert>
-#include <llvm/ADT/SmallVector.h>
 #include <memory>
 
 namespace M::AsyncRT {

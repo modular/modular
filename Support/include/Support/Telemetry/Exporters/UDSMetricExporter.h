@@ -8,7 +8,7 @@
 #define SUPPORT_TELEMETRY_EXPORTERS_UDSMetricExporter_H
 
 #include "Support/HTTP/HTTPClient.h"
-#include <llvm/Support/Debug.h>
+#include "llvm/Support/Debug.h"
 #ifdef MODULAR_ENABLE_TELEMETRY
 #include "opentelemetry/exporters/otlp/otlp_http_metric_exporter.h"
 #include "opentelemetry/sdk/metrics/push_metric_exporter.h"

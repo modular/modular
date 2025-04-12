@@ -17,11 +17,11 @@
 #include "Support/Process.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
-#include <llvm/ADT/StringExtras.h>
 
 using namespace M;
 using namespace M::KGEN::Mojo;
