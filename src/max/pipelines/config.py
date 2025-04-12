@@ -25,10 +25,7 @@ from max.graph.quantization import QuantizationEncoding
 from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
 from max.pipelines.registry import PIPELINE_REGISTRY
 
-from .config_enums import (
-    PipelineEngine,
-    RopeType,
-)
+from .config_enums import PipelineEngine, RopeType
 from .max_config import (
     KVCacheConfig,
     MAXConfig,
@@ -353,6 +350,8 @@ class PipelineConfig(MAXConfig):
                 f" '{model_config.model_path}' falling back to"
                 " HuggingFace."
             )
+            logger.warning(msg)
+            msg = "Please file a request at https://modul.ar/request to add this model architecture to MAX."
             logger.warning(msg)
             self.engine = PipelineEngine.HUGGINGFACE
             return
