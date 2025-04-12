@@ -6,20 +6,21 @@
 # REQUIRES: AMD-GPU
 # RUN: %mojo-no-debug %s
 
-from memory import UnsafePointer, stack_allocation
-from testing import assert_equal
 from math import ceildiv
-from gpu import barrier, thread_idx, block_idx, block_dim, grid_dim
-from gpu.memory import AddressSpace
+
+from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
 from gpu.intrinsics import (
-    make_buffer_resource,
-    buffer_load,
-    buffer_store,
-    buffer_load_store_lds,
     _buffer_load_store_lds_nowait,
     _waitcnt,
+    buffer_load,
+    buffer_load_store_lds,
+    buffer_store,
+    make_buffer_resource,
 )
+from gpu.memory import AddressSpace
+from memory import UnsafePointer, stack_allocation
+from testing import assert_equal
 
 alias size = 257
 alias size_clip = size - 3

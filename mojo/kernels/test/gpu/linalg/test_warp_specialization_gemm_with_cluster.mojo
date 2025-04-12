@@ -6,14 +6,27 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s
 
-from gpu import barrier, WARP_SIZE
-from gpu.host import DeviceContext, FuncAttribute
+from collections import OptionalReg
+from math import ceildiv
+from sys import alignof, simdwidthof, sizeof
+from sys._assembly import inlined_assembly
+
+import linalg.vendor_blas
+from buffer.dimlist import Dim, DimList, _make_tuple
+from gpu import WARP_SIZE, barrier
+from gpu.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    cluster_sync_relaxed,
+    elect_one_sync,
+)
+from gpu.host import DeviceContext
 from gpu.host import Dim as ClusterDim
+from gpu.host import FuncAttribute
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.id import block_idx, thread_idx, block_dim
-from gpu.intrinsics import warpgroup_reg_dealloc, warpgroup_reg_alloc
+from gpu.id import block_dim, block_idx, thread_idx
+from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from memory import stack_allocation
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -21,24 +34,6 @@ from gpu.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout import IntTuple, Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.layout_tensor import LayoutTensorIter, copy_local_to_dram
-from utils.numerics import get_accum_type
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    TensorCoreAsync,
-    _lhs_descriptor,
-    _rhs_descriptor,
-)
-from layout.tma_async import (
-    TMATensorTile,
-    create_tma_tile,
-    PipelineState,
-)
-from buffer.dimlist import Dim, DimList, _make_tuple
-from internal_utils._utils import ValOrDim, dynamic, static
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -47,23 +42,26 @@ from internal_utils import (
     random,
     zero,
 )
-import linalg.vendor_blas
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
-from collections import OptionalReg
-from math import ceildiv
-from sys import sizeof, simdwidthof
-from sys._assembly import inlined_assembly
-from sys import alignof
-from gpu.cluster import (
-    elect_one_sync,
-    block_rank_in_cluster,
-    cluster_sync,
-    cluster_sync_relaxed,
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout import IntTuple, Layout, LayoutTensor
+from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._utils import ManagedLayoutTensor
+from layout.layout_tensor import LayoutTensorIter, copy_local_to_dram
+from layout.tensor_core_async import (
+    TensorCoreAsync,
+    _lhs_descriptor,
+    _rhs_descriptor,
+    tile_layout_k_major,
 )
+from layout.tma_async import PipelineState, TMATensorTile, create_tma_tile
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
-from linalg.utils_gpu import MatmulConfig
 from linalg.matmul_tile_scheduler import MatmulSchedule
+from linalg.utils_gpu import MatmulConfig
+from memory import stack_allocation
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4

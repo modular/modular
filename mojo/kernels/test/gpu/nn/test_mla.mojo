@@ -8,7 +8,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose, isqrt
-from random import randn, rand
+from random import rand, randn
 from sys import argv
 
 from buffer import NDBuffer
@@ -19,17 +19,14 @@ from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import assert_with_measure
 from internal_utils._measure import cosine
 from memory import UnsafePointer
-from nn.mha import (
-    _naive_attention_with_transpose,
-    mha_gpu_naive,
-)
-from nn.mla import flare_mla_decoding, flare_mla_prefill
-from nn.mha_mask import MaterializedMask, CausalMask
+from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
+from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import NDBufferMHAOperand
 from nn.mha_score_mod import IdentityScoreMod
+from nn.mla import flare_mla_decoding, flare_mla_prefill
+from testing import assert_almost_equal
 
 from utils.index import Index
-from testing import assert_almost_equal
 
 
 fn is_benchmark() -> Bool:

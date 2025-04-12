@@ -7,6 +7,7 @@
 
 from math import isclose
 from random import rand, random_float64, seed
+from sys import has_amd_gpu_accelerator
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -17,7 +18,7 @@ from layout.layout_tensor import LayoutTensor
 from memory import UnsafePointer
 from nn.softmax import _online_softmax_kernel, _softmax_cpu, _softmax_gpu
 from testing import assert_almost_equal
-from sys import has_amd_gpu_accelerator
+
 from utils import IndexList
 
 

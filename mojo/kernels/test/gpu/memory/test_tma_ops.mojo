@@ -5,21 +5,21 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
+from gpu.cluster import elect_one_sync
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.memory import (
     CacheEviction,
+    ReduceOp,
     _GPUAddressSpace,
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce,
     cp_async_bulk_tensor_shared_cluster_global,
     fence_proxy_tensormap_generic_sys_acquire,
     fence_proxy_tensormap_generic_sys_release,
-    ReduceOp,
 )
 from memory import UnsafePointer
 
 from utils.index import Index
-from gpu.cluster import elect_one_sync
 
 
 # CHECK-LABEL: test_async_copy_asm

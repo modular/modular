@@ -6,6 +6,7 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s
 
+from math import ceildiv
 from sys import sizeof
 
 from gpu import WARP_SIZE, barrier
@@ -14,11 +15,10 @@ from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
 from gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
+from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import product
 from layout.layout_tensor import copy_local_to_dram
-from utils.numerics import get_accum_type
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
@@ -26,11 +26,12 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
-from math import ceildiv
-from testing import assert_almost_equal
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
+from testing import assert_almost_equal
+
 from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 

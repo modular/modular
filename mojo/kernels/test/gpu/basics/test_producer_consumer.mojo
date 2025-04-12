@@ -6,6 +6,8 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from sys import sizeof
+
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, thread_idx
 from gpu.host import DeviceContext
@@ -15,10 +17,10 @@ from gpu.sync import async_copy_arrive
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout.tma_async import PipelineState, SharedMemBarrier
 from memory import UnsafePointer, stack_allocation
-from testing import assert_equal
 from memory.pointer import _GPUAddressSpace
+from testing import assert_equal
+
 from utils import StaticTuple
-from sys import sizeof
 
 
 fn producer_consumer_kernel[NUM_THREADS: Int]():

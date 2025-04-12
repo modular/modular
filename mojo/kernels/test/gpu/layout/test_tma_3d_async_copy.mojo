@@ -8,26 +8,28 @@
 
 from math import align_up, ceildiv
 from sys import sizeof
-from layout.swizzle import make_swizzle
+
 from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.id import block_idx, thread_idx, grid_dim
+from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.id import block_idx, grid_dim, thread_idx
 from gpu.memory import tma_store_fence
 from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
-from layout import Layout, LayoutTensor, IntTuple
-from layout._utils import ManagedLayoutTensor
+from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
+from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
+from layout.runtime_layout import RuntimeLayout
+from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_not_equal
-from layout.runtime_layout import RuntimeLayout
+
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from memory import stack_allocation
 
 
 # Test loading a single 2d tile.

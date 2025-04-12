@@ -14,7 +14,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH, Info, Vendor, A100, H100
+from gpu.host.info import A100, DEFAULT_GPU_ARCH, H100, Info, Vendor
 from internal_utils import assert_with_measure
 from memory import UnsafePointer
 from nn.mha import (
@@ -25,6 +25,7 @@ from nn.mha import (
 from nn.mha_mask import MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
+
 from utils.index import Index
 
 

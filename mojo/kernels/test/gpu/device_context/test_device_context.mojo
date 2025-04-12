@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from math import iota
+
 from gpu import *
 from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
-from math import iota
 from testing import assert_equal
 
 

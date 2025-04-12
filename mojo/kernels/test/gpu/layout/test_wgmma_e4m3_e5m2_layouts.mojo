@@ -23,8 +23,8 @@ from gpu.mma import (
     wgmma_wait_group_sync,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
+from layout._utils import ManagedLayoutTensor
 from layout.layout import print_layout
 from memory import bitcast
 

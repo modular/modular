@@ -9,10 +9,10 @@
 
 from collections import OptionalReg
 
+from gpu.cluster import block_rank_in_cluster
 from gpu.host import DeviceContext, Dim, FuncAttribute
 from gpu.host._compile import _get_gpu_target
 from gpu.id import block_idx, cluster_idx
-from gpu.cluster import block_rank_in_cluster
 
 
 fn test_thread_block_cluster():

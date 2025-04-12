@@ -5,27 +5,27 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 from collections import OptionalReg
-from sys import sizeof
-from nn.mha_mask import (
-    ChunkedCausalMask,
-    MaterializedMask,
-    MASK_VALUE,
-    TileMaskStatus,
-)
 from math import ceildiv, isclose, isqrt
-from nn.mha_utils import MHAConfig
-from internal_utils import HostNDBuffer
-from nn.mha_score_mod import IdentityScoreMod
-from testing import assert_equal, assert_almost_equal
-from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf
-from buffer import NDBuffer, DimList, Dim
 from random import rand
-from gpu.host import (
-    DeviceContext,
-)
+from sys import sizeof
+
+from buffer import Dim, DimList, NDBuffer
+from gpu.host import DeviceContext
+from internal_utils import HostNDBuffer
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import (
+    MASK_VALUE,
+    ChunkedCausalMask,
+    MaterializedMask,
+    TileMaskStatus,
+)
+from nn.mha_score_mod import IdentityScoreMod
+from nn.mha_utils import MHAConfig
+from testing import assert_almost_equal, assert_equal
+
+from utils.index import Index, IndexList
+from utils.numerics import min_or_neg_inf
 
 
 def build_ChunkedCausalMask[

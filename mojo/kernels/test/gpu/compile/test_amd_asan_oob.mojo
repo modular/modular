@@ -16,9 +16,10 @@
 # CHECK: AddressSanitizer: heap-buffer-overflow on amdgpu device
 # CHECK: at {{.*}}test_amd_asan_oob.mojo:26
 
+from sys import argv
+
 from gpu.host import DeviceContext
 from memory import UnsafePointer
-from sys import argv
 
 
 fn bad_func(ptr: UnsafePointer[Int32], i: Int):

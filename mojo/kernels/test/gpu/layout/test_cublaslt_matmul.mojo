@@ -14,8 +14,8 @@ from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
-    zero,
     random_float8,
+    zero,
 )
 from linalg.matmul_gpu import matmul_kernel_naive
 from linalg.vendor_blas import Backend, Handle, matmul

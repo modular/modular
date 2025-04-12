@@ -8,6 +8,7 @@
 from collections import InlineArray
 from math import ceildiv, isclose
 from sys import argv, simdwidthof
+from sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -27,10 +28,6 @@ from layout.tensor_builder import LayoutTensorBuild as tb
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
-from sys.info import (
-    has_nvidia_gpu_accelerator,
-    is_nvidia_gpu,
-)
 from testing import assert_almost_equal
 
 

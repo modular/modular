@@ -6,20 +6,19 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv, isclose
+from os.atomic import Atomic
 from random import random_float64
-from sys import bitwidthof
+from sys import _RegisterPackType, bitwidthof, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from gpu import block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
-from testing import assert_almost_equal
-from gpu import thread_idx, block_idx
-from os.atomic import Atomic
-from sys import _RegisterPackType, sizeof
-from utils import Index, IndexList
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import bitcast
+from memory import UnsafePointer, bitcast
+from testing import assert_almost_equal
+
+from utils import Index, IndexList
 
 
 fn compare_and_swap(

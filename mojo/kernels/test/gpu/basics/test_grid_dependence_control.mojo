@@ -6,13 +6,13 @@
 # RUN: %mojo-no-debug --target-accelerator=nvidia:90 %s | FileCheck %s
 
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.grid_controls import _ENABLE_PDL_LAUNCH as ENABLE_PDL_LAUNCH
 from gpu.grid_controls import (
-    wait_on_dependent_grids,
-    launch_dependent_grids,
-    _ENABLE_PDL_LAUNCH as ENABLE_PDL_LAUNCH,
     PDL,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
 )
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from testing import assert_true
 
 

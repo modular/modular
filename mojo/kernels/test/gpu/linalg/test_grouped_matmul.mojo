@@ -7,10 +7,13 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s
 
+from collections.optional import Optional, OptionalReg
+from math import ceildiv
+from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof
+
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections.optional import Optional, OptionalReg
 from gpu import barrier, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
@@ -25,14 +28,13 @@ from internal_utils import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg import vendor_blas
-from linalg.grouped_matmul import naive_grouped_matmul, grouped_matmul_sm90
+from linalg.grouped_matmul import grouped_matmul_sm90, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels
-from math import ceildiv
 from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
-from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof
 from testing import assert_almost_equal
+
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import FPUtils

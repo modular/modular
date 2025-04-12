@@ -7,6 +7,7 @@
 # CHECK-NOT: CUDA ERROR
 
 from math import isclose, isqrt
+from sys import has_nvidia_gpu_accelerator
 
 from algorithm import max as tensor_max
 from buffer import Dim, DimList, NDBuffer
@@ -18,7 +19,7 @@ from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
-from sys import has_nvidia_gpu_accelerator
+
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import min_or_neg_inf

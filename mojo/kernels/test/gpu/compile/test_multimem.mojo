@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from testing import *
-from gpu.host.info import H100
 from gpu.host._compile import _compile_code_asm
+from gpu.host.info import H100
 from gpu.memory import *
+from testing import *
 
 
 def test_multimem_ld_reduce():

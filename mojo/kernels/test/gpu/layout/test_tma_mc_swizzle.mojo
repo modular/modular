@@ -9,33 +9,24 @@
 from sys import sizeof
 
 from gpu import barrier
+from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
 from gpu.host._compile import _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import (
-    block_idx,
-    cluster_dim,
-    cluster_idx,
-    thread_idx,
-)
-from gpu.cluster import block_rank_in_cluster, cluster_sync
+from gpu.id import block_idx, cluster_dim, cluster_idx, thread_idx
 from gpu.memory import fence_mbarrier_init, tma_store_fence
-from gpu.sync import (
-    cp_async_bulk_commit_group,
-    cp_async_bulk_wait_group,
-)
+from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange, random
+from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from memory import stack_allocation
-from testing import assert_equal
 from memory.pointer import _GPUAddressSpace
+from testing import assert_equal
+
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
-
-from gpu.memory import fence_mbarrier_init
 
 
 # Test loading a single 2d tile.

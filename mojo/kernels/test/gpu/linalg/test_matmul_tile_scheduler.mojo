@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from linalg.matmul_tile_scheduler import WorkInfo, TileScheduler
 from gpu.host import DeviceContext
 from gpu.id import block_idx
+from linalg.matmul_tile_scheduler import TileScheduler, WorkInfo
+
 from utils.index import Index, IndexList
 
 

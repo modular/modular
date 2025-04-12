@@ -7,10 +7,11 @@
 
 from math import ceildiv
 from random import randn, seed
+from sys import has_nvidia_gpu_accelerator
 
+import gpu.warp as warp
 from buffer import NDBuffer
 from gpu import WARP_SIZE
-import gpu.warp as warp
 from gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
 from linalg.matmul_gpu import matmul_kernel
@@ -19,8 +20,6 @@ from memory import UnsafePointer
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import isnan
-
-from sys import has_nvidia_gpu_accelerator
 
 
 def run_matvec[

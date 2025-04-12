@@ -17,9 +17,9 @@ from gpu.id import block_idx, thread_idx
 from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.sync import barrier
 from layout import Layout, LayoutTensor
+from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout.layout_tensor import copy_sram_to_local
 from layout.math import outer_product_acc
-from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout.tensor_builder import LayoutTensorBuild as tb
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer

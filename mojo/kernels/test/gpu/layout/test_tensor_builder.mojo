@@ -9,7 +9,8 @@ from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._fillers import *
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_builder import static, dynamic
+from layout.tensor_builder import dynamic, static
+
 from utils.index import Index
 
 

@@ -9,8 +9,8 @@
 
 from math import ceildiv
 
-from gpu import WARP_SIZE
 import gpu.warp as warp
+from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel
 from linalg.matmul_gpu import matmul_kernel_naive

@@ -6,16 +6,17 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s
 
-from sys import sizeof
 from math import ceildiv
+from sys import sizeof
 
 from gpu import WARP_SIZE, barrier
+from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
 from gpu.intrinsics import threadfence
-from gpu.memory import AddressSpace
+from gpu.memory import AddressSpace, fence_mbarrier_init
 from gpu.mma import (
     WGMMADescriptor,
     wgmma_async,
@@ -24,11 +25,10 @@ from gpu.mma import (
     wgmma_wait_group_sync,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
+from layout._utils import ManagedLayoutTensor
 from layout.layout import print_layout
 from layout.layout_tensor import copy_local_to_dram
-from utils.numerics import get_accum_type
 from layout.tensor_core_async import (
     TensorCoreAsync,
     _lhs_descriptor,
@@ -38,15 +38,13 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
-from memory import bitcast
-from testing import assert_almost_equal
-from memory import stack_allocation
+from memory import bitcast, stack_allocation
 from memory.pointer import _GPUAddressSpace
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from testing import assert_almost_equal
 
-from gpu.memory import fence_mbarrier_init
-from gpu.cluster import cluster_sync, block_rank_in_cluster
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
 
 
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)

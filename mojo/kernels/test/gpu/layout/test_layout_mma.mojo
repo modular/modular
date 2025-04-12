@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose
+from os import abort
 from random import random_float64
 from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
@@ -26,7 +27,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 from layout.tensor_core import *
 from testing import *
-from os import abort
 
 
 fn mma_layout_tc[

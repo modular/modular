@@ -30,32 +30,31 @@ from gpu.mma import ld_matrix, mma
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
+    arange,
     assert_almost_equal,
     assert_equal,
     fill,
-    arange,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     _swizzle_signature,
+    copy,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
-    copy,
     copy_sram_to_dram,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from utils.numerics import get_accum_type
 from linalg._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import (
     MatmulConfig,
@@ -66,6 +65,7 @@ from linalg.utils_gpu import (
 from memory import UnsafePointer
 
 from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
 
 
 fn test_fp8_multistage_gemm[

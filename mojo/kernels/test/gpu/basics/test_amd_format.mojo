@@ -9,6 +9,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections import InlineArray
+from collections.string import StaticString
 from os import abort
 
 from builtin._format_float import _write_float
@@ -16,7 +17,6 @@ from builtin.simd import Float8_e4m3fn, Float8_e5m2
 from gpu.host import DeviceContext
 from memory import Span, memcmp, memcpy
 from testing import assert_true
-from collections.string import StaticString
 
 from utils.write import _WriteBufferStack
 

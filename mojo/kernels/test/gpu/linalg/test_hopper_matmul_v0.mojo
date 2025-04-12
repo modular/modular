@@ -26,19 +26,18 @@ from gpu.mma import (
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
+    arange,
     assert_almost_equal,
     fill,
-    arange,
     random,
     zero,
 )
 from internal_utils._measure import cosine
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import IntTuple, Layout, LayoutTensor
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_local_to_dram
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from utils.numerics import get_accum_type
 from layout.tensor_core_async import (
     TensorCoreAsync,
     _lhs_descriptor,
@@ -46,7 +45,9 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
 )
 from linalg.matmul_sm90 import hopper_matmul_tma_wgmma
+
 from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 

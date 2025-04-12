@@ -26,8 +26,8 @@ from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer, memcpy
 from nn.kv_cache_ragged import (
     _fused_qkv_matmul_kv_cache_ragged_impl,
-    _matmul_kv_cache_ragged_impl,
     _matmul_k_cache_ragged_impl,
+    _matmul_kv_cache_ragged_impl,
 )
 from testing import assert_almost_equal
 

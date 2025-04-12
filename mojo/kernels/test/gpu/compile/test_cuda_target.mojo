@@ -6,10 +6,11 @@
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug %s
 
+from collections.string import StringSlice
 from math import erf
 from sys.info import is_nvidia_gpu, simdwidthof
-from collections.string import StringSlice
 
+import gpu.warp as warp
 from algorithm.functional import elementwise
 from bit import log2_floor
 from builtin.io import _printf
@@ -22,7 +23,6 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-import gpu.warp as warp
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.memory import AddressSpace

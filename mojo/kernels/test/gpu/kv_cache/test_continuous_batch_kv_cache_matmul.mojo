@@ -15,8 +15,8 @@ from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
-    fill,
     arange,
+    fill,
     random,
     zero,
 )

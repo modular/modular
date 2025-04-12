@@ -20,17 +20,17 @@ from gpu.memory import (
     async_copy_wait_group,
 )
 from layout import *
-from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
+from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,
     binary_op_type,
+    copy,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
-    copy,
     copy_sram_to_dram,
     copy_sram_to_local,
 )

@@ -4,8 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
-from nn.mha_mask import ChunkedMask, TileMaskStatus, MASK_VALUE
+from nn.mha_mask import MASK_VALUE, ChunkedMask, TileMaskStatus
 from testing import assert_equal
+
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
 

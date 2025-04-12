@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from collections.string import StringSlice
+
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.memory import AddressSpace, CacheEviction, Fill, async_copy
 from gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait

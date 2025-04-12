@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from time import perf_counter_ns, sleep, time_function
 from collections.string import StringSlice
+from time import perf_counter_ns, sleep, time_function
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.intrinsics import *

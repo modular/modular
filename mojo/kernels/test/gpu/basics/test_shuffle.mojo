@@ -5,16 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
+import gpu.warp as warp
 from gpu import barrier, thread_idx
 from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.warp import (
-    shuffle_down,
-    shuffle_idx,
-    shuffle_up,
-    shuffle_xor,
-)
-import gpu.warp as warp
+from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
 from memory import UnsafePointer
 from testing import assert_equal
 

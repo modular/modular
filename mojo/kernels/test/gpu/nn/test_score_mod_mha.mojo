@@ -19,7 +19,7 @@ from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from memory import UnsafePointer
 from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, NullMask, MaterializedMask
+from nn.mha_mask import CausalMask, MaterializedMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from testing import assert_almost_equal
 

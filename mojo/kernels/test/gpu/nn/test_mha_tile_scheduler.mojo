@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from nn.mha_tile_scheduler import WorkInfo, TileScheduler, MHASchedule
 from gpu.host import DeviceContext
 from gpu.id import block_idx
+from nn.mha_tile_scheduler import MHASchedule, TileScheduler, WorkInfo
+
 from utils.index import Index, IndexList
 
 

@@ -25,7 +25,6 @@ from memory import UnsafePointer
 from utils import IndexList
 from utils.index import Index
 
-
 alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
     IndexList[2], IndexList[2], SIMD[type, width]
 ) capturing -> SIMD[type, width]

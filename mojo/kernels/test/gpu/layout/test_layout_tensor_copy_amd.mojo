@@ -12,19 +12,18 @@ from math import ceildiv
 from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.id import thread_idx
-from gpu.memory import (
-    AddressSpace,
-)
+from gpu.memory import AddressSpace
 from layout import *
-from layout._utils import load_to_simd
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout._fillers import arange
+from layout._utils import load_to_simd
 from layout.layout_tensor import (
     LayoutTensor,
-    copy_dram_to_sram,
     copy_dram_to_local,
+    copy_dram_to_sram,
 )
+from layout.tensor_builder import LayoutTensorBuild as tb
 from memory import UnsafePointer
+
 from utils import IndexList
 
 

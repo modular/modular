@@ -12,8 +12,8 @@ from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
-    random,
     assert_with_measure,
+    random,
 )
 from internal_utils._measure import cosine
 from kv_cache.types import (

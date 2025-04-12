@@ -15,10 +15,10 @@ from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
+    arange,
     assert_almost_equal,
     assert_equal,
     fill,
-    arange,
     random,
     zero,
 )

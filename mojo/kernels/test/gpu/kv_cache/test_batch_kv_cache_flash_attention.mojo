@@ -18,13 +18,13 @@ from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from layout.tensor_core import get_mma_shape
 from memory import UnsafePointer
 from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
-from nn.mha_mask import NullMask, MaterializedMask
+from nn.mha_mask import MaterializedMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal, assert_equal
-from utils.numerics import get_accum_type
 
 from utils import IndexList
 from utils.index import Index
+from utils.numerics import get_accum_type
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24

@@ -15,10 +15,10 @@ from gpu.memory import AddressSpace
 from gpu.mma import mma
 from gpu.sync import barrier
 from layout import *
-from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
-from layout.math import outer_product_acc
 from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
+from layout._utils import ManagedLayoutTensor
+from layout.math import outer_product_acc
 from memory import UnsafePointer
 
 from utils import IndexList

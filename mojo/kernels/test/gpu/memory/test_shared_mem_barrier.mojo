@@ -6,12 +6,12 @@
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 
-from gpu.host._compile import _get_gpu_target, _compile_code_asm
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.id import thread_idx
-from gpu.sync import mbarrier_init
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, stack_allocation
+from gpu.sync import mbarrier_init
 from layout.tma_async import SharedMemBarrier
+from memory import UnsafePointer, stack_allocation
 
 
 # CHECK-LABEL: test_shared_mem_barrier

@@ -9,10 +9,13 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
+from collections.optional import Optional, OptionalReg
+from math import ceildiv
+from sys import alignof, bitwidthof, has_nvidia_gpu_accelerator, simdwidthof
+
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections.optional import Optional, OptionalReg
 from gpu import barrier, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
@@ -30,11 +33,10 @@ from linalg import vendor_blas
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels
-from math import ceildiv
 from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
-from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof, bitwidthof
 from testing import assert_almost_equal, assert_true
+
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import FPUtils

@@ -10,6 +10,7 @@ import linalg.vendor_blas
 from buffer import DimList, NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (
@@ -19,17 +20,17 @@ from gpu.mma import (
     wgmma_wait_group_sync,
 )
 from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
+from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,
     tile_layout_k_major,
 )
 from testing import assert_almost_equal
-from gpu.host._compile import _get_gpu_target, _compile_code_asm
-from utils.index import Index
+
 from utils import StaticTuple
+from utils.index import Index
 
 
 fn wgmma_kernel_ss[

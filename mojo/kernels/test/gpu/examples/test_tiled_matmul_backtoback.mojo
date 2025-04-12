@@ -35,32 +35,28 @@ from gpu.memory import (
     external_memory,
 )
 from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
 from layout._fillers import arange
+from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import size
 from layout.layout_tensor import (
     LayoutTensorIter,
+    copy,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy,
     copy_sram_to_dram,
 )
 from layout.swizzle import make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import (
-    TensorCore,
-    get_fragment_size,
-    get_mma_shape,
-)
+from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, block_swizzle
 from testing import assert_almost_equal, assert_false
-from utils.numerics import get_accum_type
 
 from utils import StaticTuple
 from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
 
 
 @value
