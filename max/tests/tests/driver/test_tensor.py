@@ -733,3 +733,10 @@ def test_inplace_copy_from_tensor_view():
         ]
     )
     assert np.array_equal(dst.to_numpy(), expected)
+
+
+def test_GEX_2088():
+    t = Tensor(DType.uint32, [2])
+    # TODO(GEX_2088): make this work
+    with pytest.raises(ValueError):
+        t[1].to_numpy()
