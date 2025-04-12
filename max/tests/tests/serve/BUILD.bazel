@@ -28,7 +28,6 @@ modular_py_test(
         requirement("opentelemetry-sdk"),
         requirement("pytest-asyncio"),
         requirement("pytest-grpc"),
-        requirement("sentencepiece"),
         requirement("sse-starlette"),
         requirement("sseclient-py"),
         requirement("transformers"),
