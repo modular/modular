@@ -4,12 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.string import StaticString
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._amdgpu_hip import _ihipStream_t
-from collections.string import StaticString
 
 alias hipblasLtHandle_t = UnsafePointer[NoneType]
 alias hipblasLtMatmulDesc_t = UnsafePointer[NoneType]

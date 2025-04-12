@@ -21,7 +21,8 @@ multiple kernels need to execute in a specific order with minimal overhead. They
 eliminate the need for host-side synchronization when orchestrating dependent GPU work.
 """
 from sys import has_nvidia_gpu_accelerator
-from .host.info import H100, DEFAULT_GPU
+
+from .host.info import DEFAULT_GPU, H100
 from .host.launch_attribute import (
     LaunchAttribute,
     LaunchAttributeID,

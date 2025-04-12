@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import List, Optional
+from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys import (
@@ -15,7 +16,7 @@ from sys import (
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, c_char
 from sys.param_env import env_get_int
-from collections.string import StaticString
+
 from memory import UnsafePointer, stack_allocation
 
 from utils.variant import Variant

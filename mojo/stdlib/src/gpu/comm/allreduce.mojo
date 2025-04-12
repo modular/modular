@@ -32,25 +32,25 @@ Limitations:
 
 from collections import InlineArray
 from math import ceildiv
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from sys import simdwidthof
 
 from buffer import NDBuffer
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     block_dim,
     block_idx,
     grid_dim,
     thread_idx,
-    MAX_THREADS_PER_BLOCK_METADATA,
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
+from memory import stack_allocation
+from memory.pointer import _GPUAddressSpace
+
 from utils.index import StaticTuple
 from utils.numerics import get_accum_type
-
 
 alias elementwise_epilogue_type = fn[
     input_index: Int, type: DType, rank: Int, width: Int, *, alignment: Int

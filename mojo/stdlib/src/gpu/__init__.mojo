@@ -32,10 +32,10 @@ For an example of launching a GPU kernel from a MAX custom operation, see the
 in the MAX repo.
 """
 
+from .cluster import *
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
+from .grid_controls import *
 from .id import *
 from .memory import *
 from .semaphore import Semaphore
 from .sync import *
-from .cluster import *
-from .grid_controls import *

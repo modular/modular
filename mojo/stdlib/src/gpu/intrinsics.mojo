@@ -18,9 +18,10 @@ directly to hardware instructions and require understanding of the
 underlying GPU architecture.
 """
 
+from collections.string.string_slice import get_static_string
 from sys._assembly import inlined_assembly
-from sys.info import alignof, bitwidthof, _is_sm_9x
-from sys.intrinsics import llvm_intrinsic
+from sys.info import _is_sm_9x, alignof, bitwidthof
+from sys.intrinsics import llvm_intrinsic, readfirstlane
 
 from builtin.dtype import _int_type_of_width
 from memory import UnsafePointer
@@ -28,10 +29,6 @@ from memory.unsafe import bitcast
 
 from .host.info import H100, Info
 from .memory import AddressSpace, _int_to_str
-
-from sys.intrinsics import readfirstlane
-from collections.string.string_slice import get_static_string
-
 
 # ===-----------------------------------------------------------------------===#
 # ldg

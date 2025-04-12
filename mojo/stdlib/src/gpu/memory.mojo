@@ -21,25 +21,23 @@ achieve optimal memory access patterns and cache utilization.
 
 from collections import OptionalReg
 from collections.string import StaticString
+from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import alignof, bitwidthof, is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
 from sys._assembly import inlined_assembly
-from sys.intrinsics import _RegisterPackType
 from sys.info import _is_sm_9x_or_newer
+from sys.intrinsics import _RegisterPackType
 
 from builtin.dtype import _uint_type_of_width
 from memory import UnsafePointer
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.pointer import _GPUAddressSpace
 from memory.unsafe import bitcast
-from utils.numerics import get_accum_type
 
 from utils import IndexList, StaticTuple
-from .intrinsics import Scope
+from utils.numerics import get_accum_type
+
 from ._utils import to_i16, to_i32, to_i64, to_llvm_ptr, to_llvm_shared_mem_ptr
-from collections.string.string_slice import (
-    _get_kgen_string,
-    get_static_string,
-)
+from .intrinsics import Scope
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace

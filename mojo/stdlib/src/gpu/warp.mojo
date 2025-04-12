@@ -24,13 +24,14 @@ implementations of the core operations. It supports various data types including
 integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
-from sys import is_nvidia_gpu, llvm_intrinsic
 from collections.string import StringSlice
+from sys import is_nvidia_gpu, llvm_intrinsic
 
 from bit import log2_floor
+from builtin.math import max as _max
+from builtin.math import min as _min
 from gpu import lane_id
 from memory import bitcast
-from builtin.math import max as _max, min as _min
 
 from .tensor_ops import tc_reduce
 

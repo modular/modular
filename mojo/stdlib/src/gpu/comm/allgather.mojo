@@ -8,6 +8,7 @@ into an output buffer.
 """
 
 from collections import InlineArray
+
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
 

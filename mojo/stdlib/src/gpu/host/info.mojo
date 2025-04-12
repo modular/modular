@@ -11,11 +11,11 @@ NVIDIA and AMD GPUs. It includes information about compute capabilities,
 memory specifications, thread organization, and performance characteristics.
 """
 
+from collections.string.string_slice import StaticString, StringSlice
 from math import ceildiv, floor
 from os import abort
 from sys import env_get_string
 from sys.info import _accelerator_arch, _get_arch
-from collections.string.string_slice import StringSlice, StaticString
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()
 alias DEFAULT_GPU = Info.from_name[DEFAULT_GPU_ARCH]()
