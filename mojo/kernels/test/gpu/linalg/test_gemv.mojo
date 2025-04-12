@@ -97,7 +97,7 @@ def run_matvec[
         )
 
     var nstime = 0.0
-    var kernelType = ""
+    var kernelType: StaticString
     if N == 1:
         run_func_gemv(ctx)
         ctx.enqueue_copy(c_host, c_device)
@@ -284,7 +284,7 @@ fn run_matvec_with_epilogue_fn[
     ctx.enqueue_copy(c_device, c_host)
 
     var nstime = 0.0
-    var kernelType = ""
+    var kernelType: StaticString
     if N == 1:
         run_func_gemv(ctx)
         ctx.enqueue_copy(c_host, c_device)

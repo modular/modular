@@ -120,7 +120,7 @@ fn test_case_batched[
             ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
             ctx.synchronize()
 
-        alias msg = "tk-smpl-gpu" if sampling else "tk-gpu"
+        alias msg = "tk-smpl-gpu" if sampling else String("tk-gpu")
         time_kernel[run_func](m, ctx, msg)
 
     _topk_gpu[sampling=sampling, largest=largest](
@@ -141,7 +141,9 @@ fn test_case_batched[
     ctx.synchronize()
 
     var _msg1: String = "Top-K values: "
-    var _msg2 = "Sample token index: " if sampling else "Top K indices: "
+    var _msg2 = "Sample token index: " if sampling else StaticString(
+        "Top K indices: "
+    )
 
     @parameter
     if sampling and PRINT_OUTPUT:

@@ -143,7 +143,7 @@ def test_tma_multicast_swizzle[
         tma_tensor.layout.size() > tma_tensor.desc_layout.size()
     )
     alias test_name = "test " + String(dtype) + (
-        " multiple " if use_multiple_loads else " single "
+        " multiple " if use_multiple_loads else StaticString(" single ")
     ) + "tma w/ " + String(swizzle_mode) + " multicast"
     print(test_name)
 

@@ -164,7 +164,7 @@ def test_warp_specialize_gemm_with_multicasting[
         " NUM PIPELINE STAGES: ",
         num_pipeline_stages,
         " MULTICAST MODE: ",
-        "PARTITIONED" if partitioned_multicast else "BROADCAST",
+        "PARTITIONED" if partitioned_multicast else StaticString("BROADCAST"),
     )
 
     debug_assert(

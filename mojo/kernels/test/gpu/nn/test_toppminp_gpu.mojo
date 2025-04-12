@@ -209,7 +209,7 @@ fn test_is_sorted_descending[
 fn print_test_case(test_case: TestCase):
     print(
         "==== Running",
-        "Top-P" if test_case.is_top_p else "Min-P",
+        "Top-P" if test_case.is_top_p else StaticString("Min-P"),
         ", type=",
         test_case.type,
         ", out_idx_type=",
@@ -327,7 +327,9 @@ fn test_case_sampling[
             ctx.synchronize()
 
         time_kernel[run_func](
-            m, ctx, "top-p-sampling" if is_top_p else "min-p-sampling"
+            m,
+            ctx,
+            "top-p-sampling" if is_top_p else String("min-p-sampling"),
         )
 
     # Run sampling
