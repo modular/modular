@@ -44,24 +44,26 @@ fn _get_run_name[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
-    var vendor_str = String("vendor_matmul" if use_vendor_blas else "matmul")
+    var vendor_str = "vendor_matmul" if use_vendor_blas else String("matmul")
     var type_str = String("(", type, ") : ")
     # M
     var m_str = String(shape_c_dim[0], "_dynamic")
     # N
     var n_str = String(
-        shape_c_dim[1], "_dynamic" if shape_c.at[1]().is_dynamic() else ""
+        shape_c_dim[1],
+        "_dynamic" if shape_c.at[1]().is_dynamic() else StaticString(""),
     )
     # K
     var k_str = String(
-        shape_a_dim[1], "_dynamic" if shape_a.at[1]().is_dynamic() else ""
+        shape_a_dim[1],
+        "_dynamic" if shape_a.at[1]().is_dynamic() else StaticString(""),
     )
 
     var transpose_b_str = String(
-        "/transpose_b=", "True" if transpose_b else "False"
+        "/transpose_b=", "True" if transpose_b else StaticString("False")
     )
     var cache_busting_str = String(
-        "/cache_busting=", "True" if cache_busting else "False"
+        "/cache_busting=", "True" if cache_busting else StaticString("False")
     )
     return String(
         vendor_str,

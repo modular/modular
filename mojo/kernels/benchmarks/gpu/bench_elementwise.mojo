@@ -205,8 +205,16 @@ fn run_elementwise[
             "elementwise",
             input_id=String(
                 "/",
-                ("aligned" if use_aligned_memory else "unaligned"),
-                ("/graph_compiler_emulated" if emulate_graph_compiler else ""),
+                (
+                    "aligned" if use_aligned_memory else StaticString(
+                        "unaligned"
+                    )
+                ),
+                (
+                    "/graph_compiler_emulated" if emulate_graph_compiler else StaticString(
+                        ""
+                    )
+                ),
                 "/",
                 fn_name,
                 "/",
