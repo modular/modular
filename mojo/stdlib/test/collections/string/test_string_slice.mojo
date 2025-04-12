@@ -72,8 +72,7 @@ fn test_string_slice_layout() raises:
 
 
 fn test_string_literal_byte_span() raises:
-    alias string: StringLiteral = "Hello"
-    alias slc = string.as_bytes()
+    alias slc = "Hello".as_bytes()
 
     assert_equal(len(slc), 5)
     assert_equal(slc[0], ord("H"))
@@ -243,9 +242,7 @@ fn test_string_byte_span() raises:
 
 
 fn test_heap_string_from_string_slice() raises:
-    alias string_lit: StringLiteral = "Hello"
-
-    alias static_str = string_lit.as_string_slice()
+    alias static_str = "Hello".as_string_slice()
 
     alias heap_string = String(static_str)
 
@@ -359,10 +356,10 @@ fn test_slice_char_length() raises:
 fn test_slice_eq() raises:
     var str1: String = "12345"
     var str2: String = "12345"
-    var str3: StringLiteral = "12345"
+    var str3: StaticString = "12345"
     var str4: String = "abc"
     var str5: String = "abcdef"
-    var str6: StringLiteral = "abcdef"
+    var str6: StaticString = "abcdef"
 
     # eq
 

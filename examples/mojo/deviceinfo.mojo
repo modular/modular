@@ -37,7 +37,7 @@ from collections.string import StaticString
 
 
 def main():
-    var os = ""
+    var os = StaticString("")
     if os_is_linux():
         os = "linux"
     elif os_is_macos():

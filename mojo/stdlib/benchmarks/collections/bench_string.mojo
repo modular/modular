@@ -228,14 +228,26 @@ def main():
     seed()
     var m = Bench(BenchConfig(num_repetitions=1))
     alias filenames = (
-        "UN_charter_EN",
-        "UN_charter_ES",
-        "UN_charter_AR",
-        "UN_charter_RU",
-        "UN_charter_zh-CN",
+        StaticString("UN_charter_EN"),
+        StaticString("UN_charter_ES"),
+        StaticString("UN_charter_AR"),
+        StaticString("UN_charter_RU"),
+        StaticString("UN_charter_zh-CN"),
     )
-    alias old_chars = ("a", "ó", "ل", "и", "一")
-    alias new_chars = ("A", "Ó", "ل", "И", "一")
+    alias old_chars = (
+        StaticString("a"),
+        StaticString("ó"),
+        StaticString("ل"),
+        StaticString("и"),
+        StaticString("一"),
+    )
+    alias new_chars = (
+        StaticString("A"),
+        StaticString("Ó"),
+        StaticString("ل"),
+        StaticString("И"),
+        StaticString("一"),
+    )
     alias lengths = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
     """At an average 5 letters per word and 300 words per page
     (in the English language):
