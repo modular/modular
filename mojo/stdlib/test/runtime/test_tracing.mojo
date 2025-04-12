@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: env MODULAR_PROFILE_FILENAME="-" %mojo-no-debug %s | FileCheck %s
 
+from collections.string import StaticString
 from pathlib import Path
 
 from runtime.asyncrt import create_task
 from runtime.tracing import Trace, TraceLevel
-from collections.string import StaticString
 
 
 fn test_tracing[level: TraceLevel, enabled: Bool]():
