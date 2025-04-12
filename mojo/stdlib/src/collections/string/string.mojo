@@ -941,17 +941,19 @@ struct String(
         Returns:
             True if the Strings are equal and False otherwise.
         """
-        if not self and not other:
-            return True
-        if len(self) != len(other):
-            return False
-        # same pointer and length, so equal
-        if self.unsafe_ptr() == other.unsafe_ptr():
-            return True
-        for i in range(len(self)):
-            if self.unsafe_ptr()[i] != other.unsafe_ptr()[i]:
-                return False
-        return True
+        return self.as_string_slice() == other.as_string_slice()
+
+    @always_inline
+    fn __eq__(self, other: StringSlice) -> Bool:
+        """Compares two Strings if they have the same values.
+
+        Args:
+            other: The rhs of the operation.
+
+        Returns:
+            True if the Strings are equal and False otherwise.
+        """
+        return self.as_string_slice() == other
 
     @always_inline
     fn __ne__(self, other: String) -> Bool:
@@ -964,6 +966,18 @@ struct String(
             True if the Strings are not equal and False otherwise.
         """
         return not (self == other)
+
+    @always_inline
+    fn __ne__(self, other: StringSlice) -> Bool:
+        """Compares two Strings if they have the same values.
+
+        Args:
+            other: The rhs of the operation.
+
+        Returns:
+            True if the Strings are equal and False otherwise.
+        """
+        return self.as_string_slice() != other
 
     @always_inline
     fn __lt__(self, rhs: String) -> Bool:

@@ -51,12 +51,12 @@ fn _candidate_tempdir_list() -> List[String]:
     constrained[not sys.os_is_windows(), "windows not supported yet"]()
 
     var dirlist = List[String]()
-    var possible_env_vars = List("TMPDIR", "TEMP", "TMP")
+    var possible_env_vars = List[StaticString]("TMPDIR", "TEMP", "TMP")
     var dirname: String
 
     # First, try the environment.
     for env_var in possible_env_vars:
-        if dirname := os.getenv(env_var[]):
+        if dirname := os.getenv(String(env_var[])):
             dirlist.append(dirname^)
 
     # Failing that, try OS-specific locations.

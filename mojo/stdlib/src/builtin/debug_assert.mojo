@@ -245,6 +245,10 @@ fn _debug_assert_msg[
     abort's implementation could use debug_assert)
     """
 
+    alias kind_str = StaticString(
+        "Warning: "
+    ) if ASSERT_MODE == "warn" else "Error: "
+
     @parameter
     if is_gpu():
         print(
@@ -253,7 +257,7 @@ fn _debug_assert_msg[
             ": ",
             _GPUThreadInfo(),
             " Assert ",
-            "Warning: " if ASSERT_MODE == "warn" else "Error: ",
+            kind_str,
             WritableVariadicPack(messages),
             sep="",
         )
@@ -263,7 +267,7 @@ fn _debug_assert_msg[
             loc,
             ": ",
             " Assert ",
-            "Warning: " if ASSERT_MODE == "warn" else "Error: ",
+            kind_str,
             WritableVariadicPack(messages),
             sep="",
         )

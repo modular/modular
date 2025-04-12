@@ -259,7 +259,7 @@ struct Bool(
             writer: The object to write to.
         """
 
-        writer.write("True" if self else "False")
+        writer.write(StaticString("True") if self else "False")
 
     fn __repr__(self) -> String:
         """Get the bool as a string.

@@ -433,7 +433,7 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
                         res += data
 
         if self.is_escaped_brace():
-            res += "}" if self.field[Bool] else "{"
+            res += StaticString("}") if self.field[Bool] else "{"
         elif self.is_manual_indexing():
             _format(self.field[Int])
         elif self.is_automatic_indexing():

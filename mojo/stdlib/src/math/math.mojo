@@ -206,7 +206,9 @@ fn _sqrt_nvvm(x: SIMD) -> __type_of(x):
     constrained[
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
-    alias instruction = "llvm.nvvm.sqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
+    alias instruction = StaticString(
+        "llvm.nvvm.sqrt.approx.ftz.f"
+    ) if x.dtype is DType.float32 else "llvm.nvvm.sqrt.approx.d"
     var res = __type_of(x)()
 
     @parameter
@@ -272,7 +274,9 @@ fn _isqrt_nvvm(x: SIMD) -> __type_of(x):
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
+    alias instruction = StaticString(
+        "llvm.nvvm.rsqrt.approx.ftz.f"
+    ) if x.dtype is DType.float32 else "llvm.nvvm.rsqrt.approx.d"
     var res = __type_of(x)()
 
     @parameter
@@ -318,7 +322,9 @@ fn _recip_nvvm(x: SIMD) -> __type_of(x):
         x.dtype in (DType.float32, DType.float64), "must be f32 or f64 type"
     ]()
 
-    alias instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
+    alias instruction = StaticString(
+        "llvm.nvvm.rcp.approx.ftz.f"
+    ) if x.dtype is DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
     var res = __type_of(x)()
 
     @parameter
@@ -409,9 +415,9 @@ fn exp2[
 
     @parameter
     if is_amd_gpu() and dtype in (DType.float16, DType.float32):
-        alias asm = "llvm.amdgcn.exp2." + (
-            "f16" if dtype is DType.float16 else "f32"
-        )
+        alias asm = StaticString(
+            "llvm.amdgcn.exp2.f16"
+        ) if dtype is DType.float16 else "llvm.amdgcn.exp2.f32"
         var res = SIMD[dtype, simd_width]()
 
         @parameter

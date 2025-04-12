@@ -1563,7 +1563,9 @@ struct SIMD[dtype: DType, size: Int](
 
                 @parameter
                 if dtype.is_half_float():
-                    alias prefix = "abs.bf16" if dtype is DType.bfloat16 else "abs.f16"
+                    alias prefix = StaticString(
+                        "abs.bf16"
+                    ) if dtype is DType.bfloat16 else "abs.f16"
                     return _call_ptx_intrinsic[
                         scalar_instruction=prefix,
                         vector2_instruction = prefix + "x2",
@@ -3355,7 +3357,9 @@ fn _bfloat16_to_f32_scalar(
     @parameter
     if is_nvidia_gpu():
         return inlined_assembly[
-            "cvt.f32.bf16 $0, $1;" if _is_sm_9x_or_newer() else "mov.b32 $0, {0, $1};",
+            StaticString(
+                "cvt.f32.bf16 $0, $1;"
+            ) if _is_sm_9x_or_newer() else "mov.b32 $0, {0, $1};",
             Float32,
             constraints="=f,h",
             has_side_effect=False,

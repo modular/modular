@@ -31,7 +31,7 @@ from .path import isdir, split
 from .pathlike import PathLike
 
 # TODO move this to a more accurate location once nt/posix like modules are in stdlib
-alias sep = "\\" if os_is_windows() else "/"
+alias sep = StaticString("\\") if os_is_windows() else "/"
 
 
 # ===----------------------------------------------------------------------=== #

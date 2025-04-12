@@ -43,12 +43,12 @@ def main():
 
     # Single separator
     head, tail = split(os.sep)
-    assert_equal(head, os.sep)
+    assert_equal(head, String(os.sep))
     assert_equal(tail, "")
 
     # Two chars, absolute on Linux.
-    head, tail = split(os.path.join(os.sep, "a"))
-    assert_equal(head, os.sep)
+    head, tail = split(os.path.join(String(os.sep), "a"))
+    assert_equal(head, String(os.sep))
     assert_equal(tail, "a")
 
     # Two chars relative, empty tail

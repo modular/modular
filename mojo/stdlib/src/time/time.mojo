@@ -132,7 +132,9 @@ fn _gettime_as_nsec_unix(clockid: Int) -> UInt:
 @always_inline
 fn _gpu_clock() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
-    alias asm = "llvm.nvvm.read.ptx.sreg.clock64" if is_nvidia_gpu() else "llvm.amdgcn.s.memtime"
+    alias asm = StaticString(
+        "llvm.nvvm.read.ptx.sreg.clock64"
+    ) if is_nvidia_gpu() else "llvm.amdgcn.s.memtime"
     return Int(llvm_intrinsic[asm, Int64]())
 
 
@@ -334,7 +336,9 @@ fn sleep(sec: Float64):
     @parameter
     if is_gpu():
         var nsec = sec * 1.0e9
-        alias intrinsic = "llvm.nvvm.nanosleep" if is_nvidia_gpu() else "llvm.amdgcn.s.sleep"
+        alias intrinsic = StaticString(
+            "llvm.nvvm.nanosleep"
+        ) if is_nvidia_gpu() else "llvm.amdgcn.s.sleep"
         llvm_intrinsic[intrinsic, NoneType](nsec.cast[DType.int32]())
         return
 
