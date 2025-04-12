@@ -1059,7 +1059,7 @@ struct _ThreadIdx:
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         @parameter
         if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.tid." + dim
@@ -1099,7 +1099,7 @@ struct _BlockIdx:
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         @parameter
         if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
@@ -1317,7 +1317,7 @@ struct _ClusterIdx:
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         return "llvm.nvvm.read.ptx.sreg.clusterid." + dim
 
     @always_inline("nodebug")
@@ -1357,7 +1357,7 @@ struct _Cluster_BlockIdx:
 
     @always_inline("nodebug")
     @staticmethod
-    fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+    fn _get_intrinsic_name[dim: StringLiteral]() -> StaticString:
         return "llvm.nvvm.read.ptx.sreg.cluster.ctaid." + dim
 
     @always_inline("nodebug")
