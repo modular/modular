@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import Optional, Dict
+from collections import Dict, Optional
+from collections.string import StaticString, StringSlice
 from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 from pathlib import Path
@@ -15,7 +16,6 @@ from gpu.host import DeviceContext
 from stdlib.builtin.file import FileHandle
 from stdlib.builtin.io import _snprintf
 from testing import assert_true
-from collections.string import StaticString, StringSlice
 
 from utils.numerics import FlushDenormals
 

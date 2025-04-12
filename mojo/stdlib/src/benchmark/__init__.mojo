@@ -144,9 +144,9 @@ from .bencher import (
     BenchId,
     BenchmarkInfo,
     BenchMetric,
+    Format,
     Mode,
     ThroughputMeasure,
-    Format,
 )
 from .benchmark import Batch, Report, Unit, run
 from .compiler import keep

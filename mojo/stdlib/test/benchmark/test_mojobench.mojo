@@ -13,9 +13,9 @@ from benchmark import (
     Bencher,
     BenchId,
     BenchMetric,
+    Format,
     Mode,
     ThroughputMeasure,
-    Format,
 )
 
 
