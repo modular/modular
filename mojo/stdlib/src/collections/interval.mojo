@@ -48,11 +48,13 @@ In essence, this data structure provides a fast and efficient way to manage and
 query interval data, particularly for finding overlaps.
 """
 
-from memory import UnsafePointer
-from .deque import Deque
-from builtin.math import _CopyableGreaterThanComparable
 from collections import Optional
+
+from builtin.math import _CopyableGreaterThanComparable
 from builtin.string_literal import StaticString
+from memory import UnsafePointer
+
+from .deque import Deque
 
 
 trait IntervalPayload(CollectionElement, Stringable, Comparable):

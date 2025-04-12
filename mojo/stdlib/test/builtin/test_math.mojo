@@ -13,6 +13,7 @@
 # RUN: %mojo %s
 
 from testing import assert_equal
+
 from utils.numerics import isnan
 
 

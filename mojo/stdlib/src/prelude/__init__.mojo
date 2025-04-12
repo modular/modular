@@ -14,7 +14,7 @@
   that are automatically imported into every Mojo program.
 """
 
-from collections import KeyElement, List, Optional, InlineArray
+from collections import InlineArray, KeyElement, List, Optional
 from collections.string import (
     Codepoint,
     StaticString,
@@ -31,12 +31,6 @@ from hashlib.hash import Hashable, hash
 from builtin.anytype import AnyType, UnknownDestructibility
 from builtin.bool import Bool, Boolable, ImplicitlyBoolable, all, any, bool
 from builtin.breakpoint import breakpoint
-from builtin.list_literal import (
-    ListLiteral,
-    VariadicList,
-    VariadicListMem,
-    VariadicPack,
-)
 from builtin.builtin_slice import Slice, slice
 from builtin.comparable import (
     Comparable,
@@ -69,6 +63,12 @@ from builtin.int import (
 from builtin.int_literal import IntLiteral
 from builtin.io import input, print
 from builtin.len import Sized, SizedRaising, UIntSized, len
+from builtin.list_literal import (
+    ListLiteral,
+    VariadicList,
+    VariadicListMem,
+    VariadicPack,
+)
 from builtin.math import (
     Absable,
     Powable,

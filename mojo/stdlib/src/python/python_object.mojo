@@ -20,19 +20,17 @@ from python import PythonObject
 """
 
 from collections import Dict
-
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys.ffi import c_ssize_t
 from sys.intrinsics import _type_is_eq
 
+# This apparently redundant import is needed so PythonBindingsGen.cpp can find
+# the StringLiteral declaration.
+from builtin.string_literal import StringLiteral
 from memory import UnsafePointer
 
 from ._cpython import CPython, PyObjectPtr
 from .python import Python, _get_global_python_itf
-
-# This apparently redundant import is needed so PythonBindingsGen.cpp can find
-# the StringLiteral declaration.
-from builtin.string_literal import StringLiteral
 
 
 trait PythonObjectible:

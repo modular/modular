@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from max.tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
+from max.tensor import InputTensor, ManagedTensorSlice, OutputTensor, foreach
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList

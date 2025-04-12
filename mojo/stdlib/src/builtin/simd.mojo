@@ -42,7 +42,6 @@ domain-specific libraries for machine learning and scientific computing.
 
 import math
 from collections import InlineArray
-
 from collections.string.string import (
     _calc_format_buffer_size,
     _calc_initial_buffer_size,
@@ -53,6 +52,7 @@ from math import Ceilable, CeilDivable, Floorable, Truncable
 from math.math import _call_ptx_intrinsic
 from os import abort
 from sys import (
+    CompilationTarget,
     PrefetchOptions,
     _RegisterPackType,
     alignof,
@@ -66,7 +66,6 @@ from sys import (
     prefetch,
     simdwidthof,
     sizeof,
-    CompilationTarget,
 )
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x_or_newer
@@ -76,7 +75,6 @@ from builtin._format_float import _write_float
 from builtin.dtype import _uint_type_of_width
 from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
-
 from documentation import doc_private
 from memory import Span, UnsafePointer, bitcast, memcpy
 from python import PythonObject, PythonObjectible

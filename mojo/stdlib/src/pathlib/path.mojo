@@ -14,8 +14,7 @@
 """
 
 import os
-from collections import List, InlineArray
-
+from collections import InlineArray, List
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, listdir, stat_result
 from sys import external_call, os_is_windows

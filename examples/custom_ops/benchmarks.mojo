@@ -11,28 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from benchmark import ThroughputMeasure, BenchId, BenchMetric, Bench, Bencher
+from math import iota
+from random import rand
+from sys import has_nvidia_gpu_accelerator, sizeof
+
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from bit import log2_floor
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceBuffer, DeviceContext
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.top_k import TopK
-from math import iota
 from max.driver import cpu
 from max.tensor import (
-    ManagedTensorSlice,
+    Input,
     InputTensor,
+    IOSpec,
+    ManagedTensorSlice,
+    MutableInput,
+    Output,
     OutputTensor,
     StaticTensorSpec,
-    IOSpec,
-    Input,
-    Output,
-    MutableInput,
 )
-from memory import AddressSpace
-from memory import UnsafePointer
-from random import rand
-from sys import sizeof, has_nvidia_gpu_accelerator
+from memory import AddressSpace, UnsafePointer
+
 from utils import IndexList
 
 

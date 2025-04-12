@@ -22,9 +22,9 @@ from sys import (
     bitwidthof,
     external_call,
     is_amd_gpu,
+    is_compile_time,
     is_gpu,
     is_nvidia_gpu,
-    is_compile_time,
     stdout,
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
@@ -35,6 +35,7 @@ from sys.intrinsics import _type_is_eq
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
 from memory import UnsafePointer, bitcast, memcpy
+
 from utils import write_args, write_buffered
 
 # ===----------------------------------------------------------------------=== #

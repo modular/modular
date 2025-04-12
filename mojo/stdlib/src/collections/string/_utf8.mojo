@@ -13,11 +13,11 @@
 
 """Implement UTF-8 utils."""
 
-from bit import count_leading_zeros
 from base64._b64encode import _sub_with_saturation
-from sys import simdwidthof, is_compile_time
-from sys.intrinsics import llvm_intrinsic, likely
+from sys import is_compile_time, simdwidthof
+from sys.intrinsics import likely, llvm_intrinsic
 
+from bit import count_leading_zeros
 from memory import Span, UnsafePointer
 
 # ===-----------------------------------------------------------------------===#

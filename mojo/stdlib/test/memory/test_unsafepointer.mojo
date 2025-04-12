@@ -16,8 +16,8 @@ from memory import AddressSpace, UnsafePointer
 from test_utils import (
     ExplicitCopyOnly,
     MoveCounter,
-    ObservableMoveOnly,
     ObservableDel,
+    ObservableMoveOnly,
 )
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 

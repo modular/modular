@@ -13,7 +13,7 @@
 """Implements a foreign functions interface (FFI)."""
 
 from collections.string.string_slice import _get_kgen_string, get_static_string
-from os import abort, PathLike
+from os import PathLike, abort
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 
 from memory import UnsafePointer

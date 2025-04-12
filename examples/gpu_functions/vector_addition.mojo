@@ -11,18 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from sys import has_nvidia_gpu_accelerator
+
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
-from layout import LayoutTensor, Layout
-from math import ceildiv
-from max.driver import (
-    Accelerator,
-    Device,
-    Tensor,
-    accelerator,
-    cpu,
-)
-from sys import has_nvidia_gpu_accelerator
+from layout import Layout, LayoutTensor
+from max.driver import Accelerator, Device, Tensor, accelerator, cpu
 
 alias float_dtype = DType.float32
 alias tensor_rank = 1

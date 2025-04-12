@@ -13,7 +13,6 @@
 # RUN: %mojo  -D TEMP_FILE=%t %s
 
 import os
-
 from pathlib import DIR_SEPARATOR, Path, cwd
 from sys import env_get_string, os_is_windows
 from tempfile import NamedTemporaryFile, gettempdir

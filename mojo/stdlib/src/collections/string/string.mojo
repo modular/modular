@@ -56,27 +56,26 @@ Example:
 from collections import KeyElement, List, Optional
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from collections.string.string_slice import (
-    CodepointSliceIter,
-    _to_string_list,
-    _utf8_byte_type,
-)
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
     to_lowercase,
     to_uppercase,
 )
+from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
+from collections.string.string_slice import (
+    CodepointSliceIter,
+    _to_string_list,
+    _utf8_byte_type,
+)
 from hashlib._hasher import _HashableWithHasher, _Hasher
-from os import abort
+from os import PathLike, abort
 from sys import bitwidthof, llvm_intrinsic
 from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy
-from os import PathLike
 from python import PythonObject, PythonObjectible
 
 from utils import IndexList, Variant, Writable, Writer, write_args

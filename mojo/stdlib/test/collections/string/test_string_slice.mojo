@@ -18,7 +18,6 @@ from sys.info import alignof, sizeof
 from memory import Span, UnsafePointer
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
-
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #

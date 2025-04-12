@@ -38,7 +38,6 @@ Example:
 """
 
 from collections import InlineArray, Optional
-
 from os import abort
 from sys import sizeof
 

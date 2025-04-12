@@ -12,24 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-
-from gpu import (
-    thread_idx,
-    global_idx,
-    MAX_THREADS_PER_BLOCK_METADATA,
-)
-from gpu.memory import AddressSpace
-from gpu.host import DeviceContext
-from runtime.asyncrt import DeviceContextPtr
-from tensor import ManagedTensorSlice, OutputTensor, InputTensor
 from os import Atomic
-from memory import stack_allocation
-from utils import StaticTuple
 
-from utils.index import IndexList
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
+from gpu.host import DeviceContext
 from gpu.host.info import Info, is_cpu, is_gpu
+from gpu.memory import AddressSpace
+from memory import UnsafePointer, stack_allocation
+from runtime.asyncrt import DeviceContextPtr
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-from memory import UnsafePointer
+from utils import StaticTuple
+from utils.index import IndexList
 
 alias bin_width = Int(UInt8.MAX)
 

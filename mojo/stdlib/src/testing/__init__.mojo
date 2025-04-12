@@ -14,6 +14,7 @@
 """Implements the testing package."""
 
 from .testing import (
+    Testable,
     assert_almost_equal,
     assert_equal,
     assert_false,
@@ -22,5 +23,4 @@ from .testing import (
     assert_not_equal,
     assert_raises,
     assert_true,
-    Testable,
 )

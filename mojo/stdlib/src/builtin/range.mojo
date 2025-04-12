@@ -20,10 +20,10 @@ from math import ceildiv
 
 # FIXME(MOCO-658): Explicit conformance to these traits shouldn't be needed.
 from builtin._stubs import (
+    _IntIter,
     _IntIterable,
     _StridedIterable,
     _UIntStridedIterable,
-    _IntIter,
 )
 from python import (
     PythonObject,

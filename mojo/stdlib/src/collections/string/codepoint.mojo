@@ -40,11 +40,10 @@ Example:
 """
 
 from collections import Optional
-
+from sys.intrinsics import likely
 
 from bit import count_leading_zeros
 from memory import UnsafePointer
-from sys.intrinsics import likely
 
 
 @always_inline

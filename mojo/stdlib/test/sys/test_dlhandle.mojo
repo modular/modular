@@ -13,8 +13,8 @@
 # REQUIRES: has_not
 # RUN: not --crash mojo %s 2>&1
 
-from sys import DLHandle
 from pathlib import Path
+from sys import DLHandle
 
 
 def check_invalid_dlhandle():

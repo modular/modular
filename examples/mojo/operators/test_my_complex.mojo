@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from my_complex import Complex
 from collections.string import StaticString
+
+from my_complex import Complex
 from testing import *
 
 

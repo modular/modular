@@ -49,32 +49,33 @@ Example:
 """
 
 from collections import List, Optional
-from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from collections.string._utf8 import (
-    _is_valid_utf8,
-    _count_utf8_continuation_bytes,
-    _utf8_first_byte_sequence_length,
-    _utf8_byte_type,
-    _is_newline_char_utf8,
-)
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
     to_lowercase,
     to_uppercase,
 )
+from collections.string._utf8 import (
+    _count_utf8_continuation_bytes,
+    _is_newline_char_utf8,
+    _is_valid_utf8,
+    _utf8_byte_type,
+    _utf8_first_byte_sequence_length,
+)
+from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from hashlib._hasher import _HashableWithHasher, _Hasher
+from math import align_down
 from os import PathLike, abort
-from sys import bitwidthof, simdwidthof, is_compile_time
+from sys import bitwidthof, is_compile_time, simdwidthof
 from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
-from math import align_down
 from bit import count_leading_zeros, count_trailing_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
-from utils.write import _WriteBufferStack
 from python import PythonObject, PythonObjectible
+
+from utils.write import _WriteBufferStack
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""

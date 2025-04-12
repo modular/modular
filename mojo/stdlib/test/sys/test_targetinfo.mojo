@@ -13,6 +13,7 @@
 # RUN: %mojo %s
 
 from sys import (
+    CompilationTarget,
     alignof,
     has_avx,
     has_avx2,
@@ -27,7 +28,6 @@ from sys import (
     num_performance_cores,
     num_physical_cores,
     sizeof,
-    CompilationTarget,
 )
 
 from testing import assert_equal, assert_true

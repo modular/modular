@@ -14,7 +14,8 @@
 
 import os
 from os.path import is_absolute
-from testing import assert_true, assert_false
+
+from testing import assert_false, assert_true
 
 
 def main():

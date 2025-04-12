@@ -16,12 +16,7 @@ from os import abort
 
 from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import (
-    CopyCounter,
-    MoveCounter,
-    DelRecorder,
-    AbortOnDel,
-)
+from test_utils import AbortOnDel, CopyCounter, DelRecorder, MoveCounter
 from testing import assert_equal
 
 

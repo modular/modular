@@ -21,21 +21,21 @@ from memory import memcmp
 
 
 from collections import Optional
+from collections.string.string_slice import _get_kgen_string
+from math import align_down, iota
 from sys import _libc as libc
 from sys import (
     alignof,
     external_call,
+    is_compile_time,
     is_gpu,
     llvm_intrinsic,
     simdbitwidth,
     simdwidthof,
     sizeof,
-    is_compile_time,
 )
-from math import iota, align_down
 
 from memory.pointer import AddressSpace, _GPUAddressSpace
-from collections.string.string_slice import _get_kgen_string
 
 # ===-----------------------------------------------------------------------===#
 # memcmp

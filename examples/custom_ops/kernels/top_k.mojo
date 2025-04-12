@@ -12,15 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
-from sys import alignof, sizeof, num_physical_cores
+from sys import alignof, num_physical_cores, sizeof
+
 from algorithm import parallelize_over_rows
 from bit import log2_floor
 from compiler import register
-from gpu import WARP_SIZE, barrier, block_idx, block_dim, thread_idx, warp
+from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx, warp
 from gpu.memory import AddressSpace, external_memory
-from max.tensor import OutputTensor, InputTensor
+from max.tensor import InputTensor, OutputTensor
 from memory import Span
 from runtime.asyncrt import DeviceContextPtr
+
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 

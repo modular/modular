@@ -12,18 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from math import ceildiv
+from sys import has_nvidia_gpu_accelerator
+
 from gpu.host import Dim
 from gpu.id import block_dim, block_idx, thread_idx
-from math import ceildiv
-from layout import LayoutTensor, Layout
-from max.driver import (
-    Accelerator,
-    Device,
-    Tensor,
-    accelerator,
-    cpu,
-)
-from sys import has_nvidia_gpu_accelerator
+from layout import Layout, LayoutTensor
+from max.driver import Accelerator, Device, Tensor, accelerator, cpu
 
 alias channel_dtype = DType.uint8
 alias internal_float_dtype = DType.float32

@@ -18,9 +18,10 @@ These are Mojo built-ins, so you don't need to import them.
 from collections import List, Set
 from hashlib._hasher import _Hasher
 
+from python import PythonObject, PythonObjectible
+
 from utils._select import _select_register_value
 from utils._visualizers import lldb_formatter_wrapping_type
-from python import PythonObject, PythonObjectible
 
 # ===----------------------------------------------------------------------=== #
 #  Boolable

@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
+from collections.string import StaticString
 from sys import (
+    CompilationTarget,
     has_avx,
     has_avx2,
     has_avx512f,
@@ -27,13 +29,11 @@ from sys import (
     os_is_linux,
     os_is_macos,
     os_is_windows,
-    CompilationTarget,
 )
 
 # This sample prints the current host system information using APIs from the
 # sys module.
 from sys.info import _current_arch, _current_target, _triple_attr
-from collections.string import StaticString
 
 
 def main():

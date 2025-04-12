@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
+from sys.info import simdwidthof
+
 from gpu import WARP_SIZE, barrier, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
@@ -23,11 +26,10 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from math import ceildiv
 from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
-from sys.info import simdwidthof
-from tensor import ManagedTensorSlice, foreach, OutputTensor, InputTensor
+from tensor import InputTensor, ManagedTensorSlice, OutputTensor, foreach
+
 from utils.index import Index
 
 # ===-----------------------------------------------------------------------===#

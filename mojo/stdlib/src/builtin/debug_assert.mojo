@@ -27,11 +27,11 @@ from builtin._location import __call_location, _SourceLocation
 from memory import Span, UnsafePointer
 
 from utils.write import (
+    WritableVariadicPack,
     _TotalWritableBytes,
     _WriteBufferHeap,
     _WriteBufferStack,
     write_args,
-    WritableVariadicPack,
 )
 
 alias ASSERT_MODE = env_get_string["ASSERT", "safe"]()

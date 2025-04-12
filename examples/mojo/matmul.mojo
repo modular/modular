@@ -15,6 +15,7 @@
 # This sample demonstrates how various systems optimizations can be applied to a
 # naive matmul implementation in Mojo to gain significant performance speedups
 
+from collections.string import StaticString
 from os.env import getenv
 from random import rand
 from sys import info, simdwidthof
@@ -22,7 +23,6 @@ from sys import info, simdwidthof
 import benchmark
 from algorithm import Static2DTileUnitFunc as Tile2DFunc
 from algorithm import parallelize, vectorize
-from collections.string import StaticString
 from memory import UnsafePointer, memset_zero, stack_allocation
 from python import Python, PythonObject
 

@@ -26,9 +26,9 @@
 * `AbortOnDel`
 """
 
-from memory import UnsafePointer
-
 from os import abort
+
+from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------=== #
 # MoveOnly

@@ -20,11 +20,11 @@ from sys import PrefetchLocality
 """
 
 import math
-from sys.info import is_gpu, _is_sm_9x_or_newer
+from collections.string.string_slice import _get_kgen_string
+from sys.info import _is_sm_9x_or_newer, is_gpu
 
 from memory import AddressSpace, UnsafePointer
 from memory.pointer import _GPUAddressSpace
-from collections.string.string_slice import _get_kgen_string
 
 from ._assembly import inlined_assembly
 from .info import is_amd_gpu, is_nvidia_gpu, sizeof

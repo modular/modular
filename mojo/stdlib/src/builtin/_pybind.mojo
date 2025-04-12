@@ -17,7 +17,6 @@ from sys import alignof, sizeof
 import python._cpython as cp
 from memory import UnsafePointer, stack_allocation
 from python import Python, PythonObject, TypedPythonObject
-
 from python._bindings import (  # Imported for use by the compiler
     ConvertibleFromPython,
     PyMojoObject,

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-from testing import assert_equal, assert_true, assert_not_equal
+from testing import assert_equal, assert_not_equal, assert_true
 
 
 def test_copy_reference_explicitly():

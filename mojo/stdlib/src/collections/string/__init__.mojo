@@ -54,6 +54,6 @@ A handful of operations are known to not be Unicode / UTF-8 compliant yet, but w
 fixed as time permits.
 """
 
+from .codepoint import Codepoint
 from .string import String, ascii, atof, atol, chr, ord
 from .string_slice import CodepointsIter, StaticString, StringSlice
-from .codepoint import Codepoint

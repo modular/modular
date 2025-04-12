@@ -15,7 +15,7 @@
 from collections import InlineArray, List
 
 from memory import Span, UnsafePointer
-from testing import assert_equal, assert_true, assert_raises
+from testing import assert_equal, assert_raises, assert_true
 
 
 def test_span_list_int():

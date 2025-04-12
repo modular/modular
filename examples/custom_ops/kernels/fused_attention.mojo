@@ -54,18 +54,18 @@ leading to the final output.
 
 from algorithm import parallelize_over_rows
 from compiler import register
-from utils.index import IndexList
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from layout.tensor_core import TensorCore
-from layout.math import exp, sum, max
 from gpu.host import DeviceContext
 from gpu.id import block_idx
-from gpu.sync import barrier
 from gpu.memory import AddressSpace
+from gpu.sync import barrier
+from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
+from layout.math import exp, max, sum
+from layout.tensor_core import TensorCore
 from runtime.asyncrt import DeviceContextPtr
-from utils import Index
+from tensor import InputTensor, OutputTensor
 
-from tensor import OutputTensor, InputTensor
+from utils import Index
+from utils.index import IndexList
 
 
 @register("fused_attention_custom")

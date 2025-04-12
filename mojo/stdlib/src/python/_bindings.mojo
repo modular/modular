@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
+from collections.string.string_slice import get_static_string
 from os import abort
 from sys.ffi import c_int
 from sys.info import sizeof
-
 
 from memory import UnsafePointer
 from python import PythonObject, TypedPythonObject
@@ -31,7 +31,6 @@ from python._cpython import (
     newfunc,
 )
 from python.python import _get_global_python_itf
-from collections.string.string_slice import get_static_string
 
 alias MLIRKGENString = __mlir_type.`!kgen.string`
 

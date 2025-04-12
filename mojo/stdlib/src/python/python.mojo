@@ -20,7 +20,6 @@ from python import Python
 """
 
 from collections import Dict
-
 from os import abort, getenv
 from sys import external_call, sizeof
 from sys.ffi import _Global

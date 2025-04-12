@@ -14,14 +14,13 @@
 
 
 import sys
-
 from tempfile import NamedTemporaryFile
 
 from builtin._location import __call_location, _SourceLocation
 from testing import assert_equal
-from utils.write import WritableVariadicPack
 
 from utils import IndexList
+from utils.write import WritableVariadicPack
 
 
 @always_inline

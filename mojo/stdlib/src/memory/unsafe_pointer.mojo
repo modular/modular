@@ -29,8 +29,8 @@ from sys.intrinsics import (
     strided_store,
 )
 
-from memory.memory import _free, _malloc
 from builtin.simd import _simd_construction_checks
+from memory.memory import _free, _malloc
 
 # ===----------------------------------------------------------------------=== #
 # UnsafePointer
