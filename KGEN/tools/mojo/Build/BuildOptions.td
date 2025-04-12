@@ -35,7 +35,10 @@ defm emitted_file_type: CommandOptionWithValues<
   Values<"exe,shared-lib">
 >;
 
+def emit_llvm : Flag<["--"], "emit-llvm">, Group<OutputOptionGroup>, Index<2>,
+  HelpText<"Whether to emit LLVM IR. Defaults to false.">;
+
 def generate_python_extension_module :  Flag<["--"], "gen-py">,
-  Group<OutputOptionGroup>, Index<2>,
+  Group<OutputOptionGroup>, Index<3>,
   HelpText<"Whether to generate a Python extension module (dynamic library). Defaults to false.">,
   Flags<[HelpHidden]>;
