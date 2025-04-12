@@ -4,9 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 from collections import Optional, OptionalReg
+from collections.string.string_slice import StaticString, get_static_string
 from math import align_up, ceildiv
 from sys.info import alignof, has_neon, has_nvidia_gpu_accelerator, simdwidthof
-from collections.string.string_slice import StaticString, get_static_string
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import NDBuffer

@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Matrix Solve functions."""
 
+from collections.string import StaticString
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from runtime.tracing import Trace, TraceLevel
-from collections.string import StaticString
 
 from utils.index import Index, IndexList
 

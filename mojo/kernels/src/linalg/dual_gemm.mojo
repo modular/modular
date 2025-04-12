@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from collections.string import StaticString
 from math import ceildiv, exp
 from os import abort
 from sys import alignof, is_defined, simdwidthof
-from collections.string import StaticString
 
+import gpu.warp as warp
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
@@ -21,7 +22,6 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-import gpu.warp as warp
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import A100, is_gpu
 from gpu.memory import (
@@ -30,25 +30,20 @@ from gpu.memory import (
     external_memory,
 )
 from layout import Layout
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
+    copy,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy,
     copy_sram_to_dram,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
-from layout.swizzle import make_swizzle, Swizzle, make_ldmatrix_swizzle
+from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import (
-    TensorCore,
-    get_fragment_size,
-    get_mma_shape,
-)
-from utils.numerics import get_accum_type
+from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from memory import memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
@@ -57,14 +52,10 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import StaticTuple
 from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
 
 from .utils import GemmShape, elementwise_epilogue_type
-from .utils_gpu import (
-    MatmulConfig,
-    MatmulKernels,
-    _bk_base,
-    block_swizzle,
-)
+from .utils_gpu import MatmulConfig, MatmulKernels, _bk_base, block_swizzle
 
 
 @always_inline

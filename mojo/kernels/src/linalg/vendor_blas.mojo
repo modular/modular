@@ -3,7 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from collections.string.string_slice import StringSlice
 from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator, sizeof
+from sys.ffi import OpaquePointer, _get_global_or_null, external_call
 
 import gpu._rocblas
 from buffer import DimList, NDBuffer
@@ -17,11 +19,11 @@ from gpu._cublas.cublas import (
     cublasCreate,
     cublasDestroy,
     cublasGemmEx,
-    cublasSetStream,
     cublasLoggerConfigure,
-    cublasOperation_t,
     cublasMath_t,
+    cublasOperation_t,
     cublasSetMathMode,
+    cublasSetStream,
 )
 from gpu._cublas.cublaslt import (
     Context,
@@ -80,8 +82,6 @@ from layout import Layout
 from memory import UnsafePointer
 
 from utils.variant import Variant
-from collections.string.string_slice import StringSlice
-from sys.ffi import external_call, OpaquePointer, _get_global_or_null
 
 # ===----------------------------------------------------------------------===#
 # Backend

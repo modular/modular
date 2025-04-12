@@ -8,6 +8,7 @@ from collections import OptionalReg
 from math import ceildiv
 from sys import alignof, is_nvidia_gpu, simdwidthof, sizeof
 
+import gpu.warp as warp
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
@@ -20,7 +21,6 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-import gpu.warp as warp
 from gpu.host import FuncAttribute
 from gpu.memory import (
     CacheEviction,
@@ -37,22 +37,18 @@ from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     _swizzle_signature,
+    copy,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
-    copy,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
-from layout.swizzle import Swizzle, make_swizzle, make_ldmatrix_swizzle
+from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import (
-    TensorCore,
-    get_fragment_size,
-    get_mma_shape,
-)
+from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 

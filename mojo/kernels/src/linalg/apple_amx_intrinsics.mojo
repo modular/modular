@@ -10,9 +10,9 @@
 #
 # ===-----------------------------------------------------------------------===#
 
+from collections.string import StaticString
 from sys._assembly import inlined_assembly
 from sys.info import sizeof
-from collections.string import StaticString
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

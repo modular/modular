@@ -5,45 +5,46 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray, OptionalReg
+from math import align_down, align_up, ceildiv
+from sys import alignof, simdwidthof
+
+import gpu.warp as warp
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
     barrier,
-    lane_id,
     block_dim,
     block_idx,
     global_idx,
-    thread_idx,
-    WARP_SIZE,
     grid_dim,
-    MAX_THREADS_PER_BLOCK_METADATA,
+    lane_id,
+    thread_idx,
 )
-from gpu.sync import (
-    schedule_barrier as amd_schedule_barrier,
-    schedule_group_barrier,
-    AMDScheduleBarrierMask,
-)
-import gpu.warp as warp
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
-from layout import Layout, LayoutTensor, IntTuple
+from gpu.sync import AMDScheduleBarrierMask
+from gpu.sync import schedule_barrier as amd_schedule_barrier
+from gpu.sync import schedule_group_barrier
+from layout import IntTuple, Layout, LayoutTensor
 from layout.layout_tensor import (
-    copy_dram_to_sram,
-    copy_local_to_dram,
-    copy_dram_to_local,
-    copy,
     ThreadScope,
     _tile_is_masked,
+    copy,
+    copy_dram_to_local,
+    copy_dram_to_sram,
+    copy_local_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout
+from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
 from linalg.utils import GemmShape
-from math import align_down, ceildiv, align_up
 from memory import UnsafePointer
-from sys import simdwidthof, alignof
+
 from utils import Index, IndexList, StaticTuple
 from utils.numerics import get_accum_type
-from .utils_gpu import MatmulConfig
+
 from .utils import apply_epilogue, elementwise_epilogue_type
-from layout.swizzle import Swizzle
+from .utils_gpu import MatmulConfig
 
 
 struct MMATileBuffers[

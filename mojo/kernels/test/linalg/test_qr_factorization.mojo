@@ -5,20 +5,21 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
+from os import abort
+from random import rand, seed
+
+import internal_utils
 from layout.layout_tensor import (
-    LayoutTensor,
+    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
+    LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
-    UNKNOWN_VALUE,
 )
+from linalg.qr_factorization import apply_q, form_q, qr_factorization
 from memory import UnsafePointer, memcpy
-from linalg.qr_factorization import qr_factorization, apply_q, form_q
-from random import rand, seed
 from testing import assert_almost_equal
-import internal_utils
-from os import abort
 
 
 # A is a general matrix, B is a non-unit upper triangular matrix

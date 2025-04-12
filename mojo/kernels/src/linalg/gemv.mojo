@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-
 from math import align_up, ceildiv
 from sys import (
     alignof,
-    simdwidthof,
-    has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+    simdwidthof,
 )
+
+import gpu.warp as warp
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -25,15 +26,10 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import (
-    DeviceAttribute,
-    DeviceContext,
-    LaunchAttribute,
-)
+from gpu.host import DeviceAttribute, DeviceContext, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, CacheOperation, load
-import gpu.warp as warp
 from gpu.tensor_ops import tc_reduce_gevm_8x
 from memory import UnsafePointer, memset_zero, stack_allocation
 

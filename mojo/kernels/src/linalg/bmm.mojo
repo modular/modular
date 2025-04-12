@@ -5,15 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from collections.string import StaticString
 from math import align_up, ceildiv, gcd
 from sys import alignof
 from sys.info import simdwidthof
-from collections.string import StaticString
 
 from algorithm import sync_parallelize, vectorize
-from algorithm.functional import (
-    _get_start_indices_of_nth_subvolume_uint,
-)
+from algorithm.functional import _get_start_indices_of_nth_subvolume_uint
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -32,8 +30,8 @@ from .matmul import _submatmul_sequential_sync
 from .matmul_gpu import _matmul_gpu
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
 from .utils import (
-    get_kernel_type,
     get_kernel_config,
+    get_kernel_type,
     get_matmul_num_tasks,
     get_min_task_size,
     get_partitioned_matmul,

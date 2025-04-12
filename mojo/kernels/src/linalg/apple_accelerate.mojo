@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
+from collections.string import StaticString
 from math import fma
 from os import abort
 from pathlib import Path
@@ -20,7 +21,6 @@ from algorithm.functional import (
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
-from collections.string import StaticString
 
 from utils import IndexList
 from utils.index import Index

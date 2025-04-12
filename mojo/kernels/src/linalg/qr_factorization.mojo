@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt, copysign
-from layout.layout_tensor import LayoutTensor
-from layout.layout import Layout
+from math import copysign, sqrt
 from os import abort
+
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensor
 
 
 fn qr_factorization[

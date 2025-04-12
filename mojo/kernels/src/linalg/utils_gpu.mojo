@@ -4,15 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from hashlib._hasher import _Hasher
 from collections.string import StaticString
+from hashlib._hasher import _Hasher
 from math import ceildiv
 from sys import (
     env_get_bool,
     env_get_int,
     env_get_string,
-    has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
     sizeof,
 )
 
@@ -20,9 +20,9 @@ from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host.info import A100, DEFAULT_GPU_ARCH, _get_info_from_target
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from utils.numerics import get_accum_type
 
 from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling

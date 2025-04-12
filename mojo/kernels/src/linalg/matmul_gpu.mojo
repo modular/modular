@@ -33,9 +33,15 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import A100, H100, DEFAULT_GPU, Vendor
+from gpu.host.info import A100, DEFAULT_GPU, H100, Vendor
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.mma import ld_matrix, mma
+from layout._ndbuffer_stub import (
+    copy_from_nd_buffer,
+    distribute,
+    from_ndbuffer_row_major,
+    vectorize,
+)
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -46,12 +52,7 @@ from layout.layout_tensor import (
     copy_sram_to_local,
 )
 from layout.math import outer_product_acc
-from layout._ndbuffer_stub import (
-    copy_from_nd_buffer,
-    distribute,
-    from_ndbuffer_row_major,
-    vectorize,
-)
+from linalg.matmul_tile_scheduler import MatmulSchedule
 from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
 
 from utils import IndexList
@@ -59,15 +60,17 @@ from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
+from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
 )
+from .gemv import gemv_gpu
 from .matmul_sm90 import (
     hopper_matmul_tma_wgmma,
     warp_specialize_gemm_with_multicasting,
 )
-from .gemv import gemv_gpu
+from .matmul_vendor import matmul as matmul_vendor
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import (
     MatmulConfig,
@@ -76,9 +79,6 @@ from .utils_gpu import (
     _get_block_warp_tile_shape,
     select_config,
 )
-from linalg.matmul_tile_scheduler import MatmulSchedule
-from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
-from .matmul_vendor import matmul as matmul_vendor
 
 alias tile_shapes_64X64X32 = _get_block_warp_tile_shape[64, 64, 32]()
 alias tile_shapes_64X128X32 = _get_block_warp_tile_shape[64, 128, 32]()

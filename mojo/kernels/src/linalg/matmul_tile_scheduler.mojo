@@ -5,10 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from gpu.id import grid_dim, block_idx
-from utils.index import Index, IndexList
-from .utils_gpu import block_swizzle
+
+from gpu.id import block_idx, grid_dim
 from linalg.fast_div import FastDiv
+
+from utils.index import Index, IndexList
+
+from .utils_gpu import block_swizzle
 
 
 @value

@@ -3,56 +3,68 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from collections import OptionalReg
 from math import ceildiv
-from sys import sizeof
+from pathlib import Path
+from sys import alignof, simdwidthof, sizeof
+from sys._assembly import inlined_assembly
 
 import linalg.vendor_blas
+from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList, _make_tuple
-from collections import OptionalReg
-from gpu import WARP_SIZE, barrier, MAX_THREADS_PER_BLOCK_METADATA
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from gpu.cluster import (
+    block_rank_in_cluster,
+    cluster_sync,
+    cluster_sync_relaxed,
+    elect_one_sync,
+)
 from gpu.grid_controls import (
-    pdl_launch_attributes,
     launch_dependent_grids,
+    pdl_launch_attributes,
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
 from gpu.id import (
     block_dim,
+    block_id_in_cluster,
     block_idx,
-    thread_idx,
     global_idx,
     grid_dim,
     lane_id,
-    block_id_in_cluster,
+    thread_idx,
 )
-from gpu.memory import AddressSpace
+from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from gpu.mma import (
     WGMMADescriptor,
+    st_matrix,
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
+from gpu.sync import cp_async_bulk_wait_group, named_barrier
+from gpu.warp import broadcast
 from layout import IntTuple, Layout, LayoutTensor
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.layout_tensor import (
-    copy_local_to_dram,
     LayoutTensorIter,
+    copy_local_to_dram,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import RuntimeLayout, RuntimeTuple, UNKNOWN_VALUE
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from utils.numerics import get_accum_type
+from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
+from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
     TensorCoreAsync,
     _lhs_descriptor,
     _rhs_descriptor,
-    tile_layout_k_major,
     st_matrix_n_layout,
+    tile_layout_k_major,
 )
 from layout.tma_async import (
     PipelineState,
@@ -60,36 +72,22 @@ from layout.tma_async import (
     TMATensorTile,
     create_tma_tile,
 )
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
-from buffer.buffer import NDBuffer
-from sys._assembly import inlined_assembly
-from sys import alignof, simdwidthof
-from gpu.cluster import (
-    elect_one_sync,
-    block_rank_in_cluster,
-    cluster_sync,
-    cluster_sync_relaxed,
-)
-from gpu.intrinsics import warpgroup_reg_dealloc, warpgroup_reg_alloc
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.sync import cp_async_bulk_wait_group, named_barrier
-from pathlib import Path
-
-from .utils import elementwise_epilogue_type
-from linalg.matmul_tile_scheduler import TileScheduler, MatmulSchedule
 from linalg.matmul_sm90 import (
-    warp_specialized_gemm_output,
     _get_c_smem_layout,
     cluster_size,
+    warp_specialized_gemm_output,
 )
-from .utils_gpu import block_swizzle, MatmulConfig
-from gpu.warp import broadcast
-from gpu.mma import st_matrix
-from memory import bitcast
+from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler
+from memory import bitcast, stack_allocation
+from memory.pointer import _GPUAddressSpace
 from stdlib.bit import log2_floor
+
+from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
+from utils.static_tuple import StaticTuple
+
+from .utils import elementwise_epilogue_type
+from .utils_gpu import MatmulConfig, block_swizzle
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4

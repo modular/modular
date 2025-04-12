@@ -5,13 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements matrix band part functions."""
 
+from collections.string import StaticString
+
 from algorithm.functional import elementwise, unswitch
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import TraceLevel
-from collections.string import StaticString
 
 from utils.index import Index, IndexList
 

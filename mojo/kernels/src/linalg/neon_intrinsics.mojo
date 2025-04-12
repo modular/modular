@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.string import StaticString
 from sys import llvm_intrinsic
 
 from memory.unsafe import bitcast
-from collections.string import StaticString
 
 # ===-----------------------------------------------------------------------===#
 # dot product
