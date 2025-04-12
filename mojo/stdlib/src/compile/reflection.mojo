@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _current_target
 from collections.string import StaticString
+from sys.info import _current_target
 
 
 fn get_linkage_name[
