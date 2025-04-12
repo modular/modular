@@ -13,7 +13,7 @@ from utils.index import StaticTuple
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, barrier
 from runtime.tracing import Trace, TraceLevel
 from runtime.asyncrt import DeviceContextPtr
-from math import next_power_of_two
+from bit import next_power_of_two
 
 
 @__llvm_metadata(

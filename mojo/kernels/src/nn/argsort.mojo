@@ -17,7 +17,7 @@ from utils.index import IndexList, StaticTuple
 from gpu.host._compile import _get_gpu_target
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from runtime.tracing import Trace, TraceLevel
-from math import next_power_of_two
+from bit import next_power_of_two
 
 
 fn _argsort_cpu[
