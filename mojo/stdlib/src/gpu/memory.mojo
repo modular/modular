@@ -758,7 +758,9 @@ fn async_copy[
     ) else CacheOperation.ALWAYS.mnemonic()
     alias access_size = _int_to_str[size]()
 
-    alias cache_hint = ".L2::cache_hint" if eviction_policy is not CacheEviction.EVICT_NORMAL else ""
+    alias cache_hint = ".L2::cache_hint" if eviction_policy is not CacheEviction.EVICT_NORMAL else StaticString(
+        ""
+    )
     var cache_policy = _mark_eviction[eviction_policy]()
 
     alias l2_prefetch_substr = ".L2::" + _int_to_str[
@@ -1453,7 +1455,7 @@ fn _load_impl[
     alias pretch_size_mnemonic = (
         ".L2::" + _int_to_str[prefetch_size.value()]() + "B"
     ) if prefetch_size else ""
-    alias cache_operation = ".nc" if read_only else ""
+    alias cache_operation = StaticString(".nc") if read_only else ""
 
     alias cache_policy_inst = (
         "" if cache_policy

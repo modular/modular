@@ -222,7 +222,9 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
         - On NVIDIA: Maps to PRMT instruction
         - On AMD: Maps to PERM instruction.
     """
-    alias asm = "llvm.nvvm.prmt" if is_nvidia_gpu() else "llvm.amdgcn.perm"
+    alias asm = StaticString(
+        "llvm.nvvm.prmt"
+    ) if is_nvidia_gpu() else "llvm.amdgcn.perm"
     return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
 
 
@@ -675,9 +677,10 @@ fn store_release[
 
     @parameter
     if is_nvidia_gpu():
+        alias mem_constraint = StaticString(",~{memory}") if memory else ""
         alias constraints = _get_register_constraint[
             type
-        ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+        ]() + "," + _get_pointer_constraint() + mem_constraint
         alias scope_str = scope.mnemonic()
         inlined_assembly[
             "st.release."
@@ -728,9 +731,10 @@ fn load_acquire[
 
     @parameter
     if is_nvidia_gpu():
+        alias mem_constraint = StaticString(",~{memory}") if memory else ""
         alias constraints = "=" + _get_register_constraint[
             type
-        ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+        ]() + "," + _get_pointer_constraint() + mem_constraint
         alias scope_str = scope.mnemonic()
         return inlined_assembly[
             "ld.acquire."
@@ -777,9 +781,10 @@ fn store_volatile[
     constrained[
         is_nvidia_gpu(), "store_volatile is not currently supported on AMD GPUs"
     ]()
+    alias mem_constraint = StaticString(",~{memory}") if memory else ""
     alias constraints = _get_register_constraint[
         type
-    ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+    ]() + "," + _get_pointer_constraint() + mem_constraint
     inlined_assembly[
         "st.volatile.global." + _get_type_suffix[type]() + " [$1], $0;",
         NoneType,
@@ -816,9 +821,10 @@ fn load_volatile[
     constrained[
         is_nvidia_gpu(), "load_volatile is not currently supported on AMD GPUs"
     ]()
+    alias mem_constraint = StaticString(",~{memory}") if memory else ""
     alias constraints = "=" + _get_register_constraint[
         type
-    ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+    ]() + "," + _get_pointer_constraint() + mem_constraint
     return inlined_assembly[
         "ld.volatile.global." + _get_type_suffix[type]() + " $0, [$1];",
         Scalar[type],
