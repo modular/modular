@@ -5,14 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from random import rand
-from os import abort
-from sys import argv, env_get_string, is_defined, bitwidthof
-from sys.info import alignof
 from collections.string import StaticString
-from builtin.dtype import _integral_type_of
+from os import abort
+from random import rand, random_float64
+from sys import argv, bitwidthof, env_get_string, is_defined
+from sys.info import alignof
 
-from random import random_float64
 from benchmark import (
     Bench,
     Bencher,
@@ -24,13 +22,14 @@ from benchmark import (
 )
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
+from builtin.dtype import _integral_type_of
 from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
+from memory.unsafe import bitcast
 from stdlib.builtin.io import _snprintf
 from tensor_internal import DynamicTensor, ManagedTensorSlice
 from testing import assert_almost_equal, assert_equal, assert_true
-from memory.unsafe import bitcast
 
 from utils import Index, IndexList
 from utils.index import product

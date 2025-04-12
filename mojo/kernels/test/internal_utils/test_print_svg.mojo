@@ -6,8 +6,8 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 from layout import IntTuple, Layout, LayoutTensor
 from layout._print_svg import print_svg
-from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.swizzle import Swizzle
+from layout.tensor_builder import LayoutTensorBuild as tb
 
 
 fn test_svg_nvidia_shape() raises:
