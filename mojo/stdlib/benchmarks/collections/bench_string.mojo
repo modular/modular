@@ -248,6 +248,7 @@ def main():
         StaticString("И"),
         StaticString("一"),
     )
+
     alias lengths = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
     """At an average 5 letters per word and 300 words per page
     (in the English language):
