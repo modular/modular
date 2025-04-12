@@ -15,7 +15,7 @@ from sys.ffi import (
     external_call,
 )
 from sys.param_env import env_get_string, is_defined
-from collections.string import StaticString
+
 from memory import UnsafePointer
 
 
