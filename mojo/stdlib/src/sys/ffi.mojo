@@ -13,7 +13,7 @@
 """Implements a foreign functions interface (FFI)."""
 
 from collections.string.string_slice import _get_kgen_string, get_static_string
-from os import abort
+from os import abort, PathLike
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 
 from memory import UnsafePointer
@@ -174,9 +174,14 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
     # TODO(#15590): Implement support for windows and remove the always_inline.
     @always_inline
-    fn __init__(out self, path: String, flags: Int = DEFAULT_RTLD):
+    fn __init__[
+        PathLike: os.PathLike, //
+    ](out self, path: PathLike, flags: Int = DEFAULT_RTLD):
         """Initialize a DLHandle object by loading the dynamic library at the
         given path.
+
+        Parameters:
+            PathLike: The type conforming to the `os.PathLike` trait.
 
         Args:
             path: The path to the dynamic library file.
@@ -185,7 +190,7 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
         @parameter
         if not os_is_windows():
-            var handle = dlopen(path.unsafe_cstr_ptr(), flags)
+            var handle = dlopen(path.__fspath__().unsafe_cstr_ptr(), flags)
             if handle == OpaquePointer():
                 var error_message = dlerror()
                 abort(
