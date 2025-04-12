@@ -97,7 +97,9 @@ def load_mnist_test_data() -> PythonObject:
 def preprocess(image: PythonObject) -> PythonObject:
     transforms = py.import_module("torchvision.transforms")
     image_tensor = transforms.ToTensor()(image)
-    image_tensor_normalized = transforms.Normalize((0.5,), (0.5,))(image_tensor)
+    image_tensor_normalized = transforms.Normalize(
+        PythonObject.tuple(0.5), PythonObject.tuple(0.5)
+    )(image_tensor)
     reshaped_image = image_tensor_normalized.reshape(1, 28 * 28).numpy()
     return reshaped_image
 
