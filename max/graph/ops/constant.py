@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
 
+from __future__ import annotations
+
 from typing import Union
 
 import numpy as np
@@ -12,13 +14,15 @@ from max._core import graph as _graph
 from max.dtype import DType
 from max.mlir.dialects import mo
 
-from ..graph import Graph
+from ..graph import DeviceRef, Graph
 from ..type import TensorType
 from ..value import TensorValue
 
 
 def constant(
-    value: Union[np.ndarray, int, float, np.integer, np.floating], dtype: DType
+    value: Union[np.ndarray, int, float, np.integer, np.floating],
+    dtype: DType,
+    device: DeviceRef | None = None,
 ) -> TensorValue:
     """Adds a node representing a constant operation.
 
@@ -50,7 +54,7 @@ def constant(
     if dtype == DType.bfloat16:
         # Numpy can't natively generate in bf16.
         # Generate in f32 and cast to bf16.
-        return constant(value, DType.float32).cast(DType.bfloat16)
+        return constant(value, DType.float32, device).cast(DType.bfloat16)
     elif dtype in (
         DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
@@ -59,7 +63,7 @@ def constant(
     ):
         # Numpy can't natively generate in these types.
         # Generate in f32 and cast to these types.
-        return constant(value, DType.float32).cast(dtype)
+        return constant(value, DType.float32, device).cast(dtype)
 
     if not dtype.is_float():
         min, max = _DTYPE_MIN_AND_MAX[dtype]
@@ -68,7 +72,7 @@ def constant(
                 f"Unsafe cast: Can't cast numpy array with value ({value}) to"
                 f" dtype({dtype}). Values out of range of dtype."
             )
-    tensor_type = TensorType(dtype, value.shape).to_mlir()
+    tensor_type = TensorType(dtype, value.shape, device).to_mlir()
     array_attr = _graph.array_attr(
         "value",
         np.ascontiguousarray(value.astype(dtype.to_numpy())),
