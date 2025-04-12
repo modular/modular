@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
+# FIXME: KERN-1738
+# UNSUPPORTED: AMD-GPU
 # RUN: not --crash %mojo %s 2>&1 | FileCheck %s
 
 from buffer import NDBuffer

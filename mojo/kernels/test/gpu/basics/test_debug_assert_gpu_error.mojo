@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# FIXME: KERN-1738
+# UNSUPPORTED: AMD-GPU
 # RUN: not --crash %bare-mojo -D ASSERT=all %s 2>&1 | FileCheck %s -check-prefix=CHECK-FAIL
 
 from gpu.host import DeviceContext
