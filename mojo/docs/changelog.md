@@ -159,6 +159,11 @@ alias b: Int = (5 * a) // 2
 
 previously compiler would throw error "cannot fold operation".
 
+- New `--emit-llvm` option to the `mojo build` command that allows users to emit
+LLVM IR. When `--emit-llvm` is specified, the build process will: compile mojo
+code to LLVM IR, save the IR to a .ll file (using the same name as the input
+ file), and print the IR to stdout for immediate inspection.
+
 ### ❌ Removed
 
 - The `SIMD.roundeven()` method has been removed from the standard library.
