@@ -2364,26 +2364,6 @@ fn clamp(
 
 
 # ===----------------------------------------------------------------------=== #
-# next_power_of_two
-# ===----------------------------------------------------------------------=== #
-
-
-fn next_power_of_two(n: Int) -> Int:
-    """Computes the next power of two greater than or equal to the input.
-
-    Args:
-        n: The input value.
-
-    Returns:
-        The next power of two greater than or equal to the input.
-    """
-    if n <= 1:
-        return 1
-
-    return 1 << (bitwidthof[Int]() - count_leading_zeros(n - 1))
-
-
-# ===----------------------------------------------------------------------=== #
 # utilities
 # ===----------------------------------------------------------------------=== #
 

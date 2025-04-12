@@ -368,21 +368,39 @@ fn next_power_of_two(val: Int) -> Int:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value. Any integral value less than or equal to 1 will be ceiled to 1.
 
-    This operation is called `bit_ceil()` in C++.
+    Args:
+        val: The input value.
+
+    Returns:
+        The smallest power of 2 that is greater than or equal to the input
+        value.
+
+    Notes:
+        This operation is called `bit_ceil()` in C++.
+    """
+    return select(
+        val <= 1, 1, 1 << (bitwidthof[Int]() - count_leading_zeros(val - 1))
+    )
+
+
+@always_inline
+fn next_power_of_two(val: UInt) -> UInt:
+    """Computes the smallest power of 2 that is greater than or equal to the
+    input value. Any integral value less than or equal to 1 will be ceiled to 1.
 
     Args:
         val: The input value.
 
     Returns:
-        The smallest power of 2 that is greater than or equal to the input value.
+        The smallest power of 2 that is greater than or equal to the input
+        value.
+
+    Notes:
+        This operation is called `bit_ceil()` in C++.
     """
-    if val <= 1:
-        return 1
-
-    if val.is_power_of_two():
-        return val
-
-    return 1 << bit_width(val - 1)
+    return select(
+        val == 0, 1, 1 << (bitwidthof[UInt]() - count_leading_zeros(val - 1))
+    )
 
 
 @always_inline
