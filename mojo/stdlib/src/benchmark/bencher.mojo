@@ -120,7 +120,7 @@ struct BenchMetric(CollectionElement, Stringable, Writable):
             if m[].check_name(name):
                 return m[]
 
-        alias sep = "-" * 80 + "\n"
+        alias sep = StaticString("-") * 80 + "\n"
         var err = String(
             "\n",
             sep,
