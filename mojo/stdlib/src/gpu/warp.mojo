@@ -902,12 +902,14 @@ fn prefix_sum[
     for i in range(1, log2_floor(WARP_SIZE)):
         alias offset = 1 << i
         var n = shuffle_up(res, offset)
-        if thread_idx.x % WARP_SIZE >= offset:
+        if lane_id() >= offset:
             res += n
 
     @parameter
     if exclusive:
         res = shuffle_up(res, 1)
+        if lane_id() == 0:
+            res = 0
 
     return res.cast[output_type]()
 
