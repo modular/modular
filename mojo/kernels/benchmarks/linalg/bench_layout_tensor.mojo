@@ -6,9 +6,9 @@
 # RUN: %mojo-build-no-debug-no-assert %s
 
 import math
+from collections.string import StaticString
 from random import rand
 from sys import alignof, simdwidthof
-from collections.string import StaticString
 
 import benchmark
 from algorithm import Static2DTileUnitFunc as Tile2DFunc

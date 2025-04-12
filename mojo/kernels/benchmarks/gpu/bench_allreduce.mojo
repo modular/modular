@@ -10,20 +10,7 @@
 import time
 from collections import InlineArray
 from math import floor
-from sys import sizeof
-
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
-from testing import assert_almost_equal
-
-from utils.index import IndexList, StaticTuple
-
-from sys import env_get_dtype, env_get_int
-from internal_utils import arg_parse
-from testing import assert_true
+from sys import env_get_dtype, env_get_int, sizeof
 
 from benchmark import (
     Bench,
@@ -34,6 +21,15 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
+from buffer import NDBuffer
+from buffer.dimlist import DimList
+from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
+from gpu.host import DeviceBuffer, DeviceContext
+from internal_utils import arg_parse
+from memory import UnsafePointer
+from testing import assert_almost_equal, assert_true
+
+from utils.index import IndexList, StaticTuple
 
 
 fn _pretty_print_float(val: Float64) -> String:

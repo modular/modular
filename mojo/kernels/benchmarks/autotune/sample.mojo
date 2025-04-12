@@ -17,7 +17,7 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
-from internal_utils import arg_parse, env_get_shape, int_list_to_tuple, Mode
+from internal_utils import Mode, arg_parse, env_get_shape, int_list_to_tuple
 
 
 fn bench_func[

@@ -13,28 +13,20 @@ import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from gpu._cublas.cublas import (
-    cublasContext,
-    cublasCreate,
-    cublasDestroy,
-)
+from gpu._cublas.cublas import cublasContext, cublasCreate, cublasDestroy
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    arg_parse,
-)
+from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse
 from internal_utils._utils import (
+    InitializationType,
     ValOrDim,
     dynamic,
-    static,
-    InitializationType,
     initialize,
+    static,
 )
-
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
+
 from utils import IndexList
 
 

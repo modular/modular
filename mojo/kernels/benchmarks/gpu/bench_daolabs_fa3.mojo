@@ -7,28 +7,28 @@
 # REQUIRES: H100-GPU
 # RUN: %mojo-build-no-debug-no-assert %s
 
-from memory import memcpy
+from collections import Set
+from math import ceildiv, isqrt
+from random import random_ui64, seed
+from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from buffer import Dim, DimList, NDBuffer
 from flash_attention3.flash_attention import (
     daolabs_flash_attention3_paged_ragged_dispatch,
 )
+from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import CUDA
+from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
+from kv_cache.types import KVCacheStaticParams, PagedKVCache
+from memory import UnsafePointer, memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
-from gpu.host import DeviceContext
-from internal_utils import arg_parse
-from random import seed, random_ui64
-from memory import UnsafePointer
-from math import ceildiv, isqrt
-from collections import Set
-from buffer import NDBuffer, Dim, DimList
-from gpu.host._nvidia_cuda import CUDA
-from kv_cache.types import PagedKVCache, KVCacheStaticParams
-from internal_utils import HostNDBuffer, DeviceNDBuffer, random
+
 from utils import IndexList
 from utils.index import StaticTuple
-from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 
 
 def flops(

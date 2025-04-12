@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
 
+from collections.string import StaticString
 from math import align_up, ceildiv, erf, exp, fma, isqrt, log, sin, sqrt, tanh
 from sys import (
     alignof,
@@ -26,7 +27,6 @@ from gpu.host._compile import _get_gpu_target
 from internal_utils import DeviceNDBuffer, arg_parse, parse_shape
 from memory import UnsafePointer
 from testing import assert_equal
-from collections.string import StaticString
 
 from utils import IndexList
 from utils.index import product
