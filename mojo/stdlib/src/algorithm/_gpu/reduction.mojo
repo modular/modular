@@ -6,6 +6,7 @@
 
 from math import align_up
 
+import gpu.warp as warp
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -17,11 +18,10 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-import gpu.warp as warp
+from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
-from gpu.grid_controls import PDL, pdl_launch_attributes
 
 from utils import IndexList
 from utils.numerics import get_accum_type

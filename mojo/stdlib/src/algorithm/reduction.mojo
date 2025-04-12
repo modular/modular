@@ -13,6 +13,7 @@ from algorithm import map_reduce
 """
 
 from collections import OptionalReg
+from collections.string import StaticString
 from math import align_down, ceildiv, iota
 from os import abort
 from sys.info import bitwidthof, is_nvidia_gpu, simdwidthof, sizeof
@@ -30,7 +31,6 @@ from gpu.host.info import is_cpu, is_valid_target
 from memory.unsafe import bitcast
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from collections.string import StaticString
 
 from utils.index import Index, IndexList, StaticTuple
 

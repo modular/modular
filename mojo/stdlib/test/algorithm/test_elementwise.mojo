@@ -5,13 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from collections import InlineArray
+
 from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import InlineArray
 
 from utils.index import Index, IndexList
 

@@ -12,10 +12,10 @@ from algorithm import map
 ```
 """
 
+from collections.string.string_slice import StaticString, get_static_string
 from math import align_down, ceildiv
 from os import abort
 from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
-from collections.string.string_slice import StaticString, get_static_string
 
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -24,7 +24,7 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu.grid_controls import pdl_launch_attributes, PDL
+from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_cpu, is_gpu, is_valid_target
 from runtime import tracing
