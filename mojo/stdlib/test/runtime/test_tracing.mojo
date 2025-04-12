@@ -16,8 +16,12 @@ fn test_tracing[level: TraceLevel, enabled: Bool]():
     @parameter
     async fn test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
         var result = Int()
-        alias s1 = "ENABLED: trace event 2" if enabled else "DISABLED: trace event 2"
-        alias s2 = "ENABLED: detail event 2" if enabled else "DISABLED: detail event 2"
+        alias s1 = "ENABLED: trace event 2" if enabled else StaticString(
+            "DISABLED: trace event 2"
+        )
+        alias s2 = "ENABLED: detail event 2" if enabled else String(
+            "DISABLED: detail event 2"
+        )
         with Trace[level](s1, s2):
             result = lhs + rhs
         return result
@@ -28,8 +32,12 @@ fn test_tracing[level: TraceLevel, enabled: Bool]():
         var t1 = create_task(test_tracing_add[enabled, 2](b))
         return await t0 + await t1
 
-    alias s1 = "ENABLED: trace event 1" if enabled else "DISABLED: trace event 1"
-    alias s2 = "ENABLED: detail event 1" if enabled else "DISABLED: detail event 1"
+    alias s1 = "ENABLED: trace event 1" if enabled else StaticString(
+        "DISABLED: trace event 1"
+    )
+    alias s2 = "ENABLED: detail event 1" if enabled else String(
+        "DISABLED: detail event 1"
+    )
     with Trace[level](s1, s2):
         var task = create_task(test_tracing_add_two_of_them[enabled](10, 20))
         _ = task.wait()
