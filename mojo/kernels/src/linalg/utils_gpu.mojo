@@ -212,7 +212,7 @@ struct MatmulConfig[
         # transpose A
         writer.write("N")
         # transpose B
-        writer.write("T" if transpose_b else "N")
+        writer.write("T" if transpose_b else StaticString("N"))
 
     fn __repr__(self) -> String:
         return String.write(self)
