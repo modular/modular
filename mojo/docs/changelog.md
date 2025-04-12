@@ -95,6 +95,12 @@ for i in range(iteration_range):
 
 - Added `os.path.is_absolute` to check if a given path is absolute or not.
 
+- `PythonObject` is no longer implicitly constructible from tuple or list
+  literals, e.g. `var x : PythonObject = [1, 2, "foo"]` is no longer accepted.
+  Instead, please use named constructors like
+  `var x = PythonObject.list(1, 2, "foo")`.  We hope to re-enable the syntax in
+  the future as the standard library matures.
+
 ### GPU changes
 
 - `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the

@@ -74,6 +74,7 @@ from bit import count_leading_zeros, count_trailing_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
 from utils.write import _WriteBufferStack
+from python import PythonObject, PythonObjectible
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
@@ -460,6 +461,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     FloatableRaising,
     Boolable,
     IntableRaising,
+    PythonObjectible,
     RepresentableCollectionElement,
     EqualityComparableCollectionElement,
     _CurlyEntryFormattable,
@@ -843,6 +845,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             raise Error(msg^)
 
         return Self(unsafe_from_utf8=self._slice[span])
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
 
     # ===------------------------------------------------------------------===#
     # Operator dunders

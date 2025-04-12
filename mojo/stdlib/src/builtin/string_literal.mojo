@@ -27,6 +27,7 @@ from os import PathLike
 
 from utils import Writable, Writer
 from utils._visualizers import lldb_formatter_wrapping_type
+from python import PythonObject, PythonObjectible
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
@@ -48,6 +49,7 @@ struct StringLiteral(
     _HashableWithHasher,
     PathLike,
     _CurlyEntryFormattable,
+    PythonObjectible,
 ):
     """This type represents a string literal.
 
@@ -187,6 +189,14 @@ struct StringLiteral(
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:

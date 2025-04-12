@@ -92,10 +92,10 @@ def main():
         ),
     )
 
-    var obj: PythonObject = [1, 2.4, True, "False"]
+    var obj = PythonObject.list(1, 2.4, True, "False")
     assert_equal(String(obj), "[1, 2.4, True, 'False']")
 
-    obj = (1, 2.4, True, "False")
+    obj = PythonObject.tuple(1, 2.4, True, "False")
     assert_equal(String(obj), "(1, 2.4, True, 'False')")
 
     obj = None

@@ -77,7 +77,7 @@ from sys.intrinsics import _type_is_eq
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy
 from os import PathLike
-from python import PythonObject
+from python import PythonObject, PythonObjectible
 
 from utils import IndexList, Variant, Writable, Writer, write_args
 from utils.write import _TotalWritableBytes, _WriteBufferHeap, write_buffered
@@ -583,6 +583,7 @@ struct String(
     WritableCollectionElement,
     PathLike,
     _CurlyEntryFormattable,
+    PythonObjectible,
 ):
     """Represents a mutable string."""
 
@@ -1184,6 +1185,14 @@ struct String(
           The file system path representation as a string.
         """
         return self
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
 
     # ===------------------------------------------------------------------=== #
     # Methods

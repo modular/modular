@@ -365,7 +365,7 @@ struct Python:
         Returns:
             The constructed empty Python list.
         """
-        return PythonObject([])
+        return PythonObject.list()
 
     @no_inline
     fn as_string_slice(

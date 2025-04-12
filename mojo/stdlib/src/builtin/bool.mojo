@@ -20,6 +20,7 @@ from hashlib._hasher import _Hasher
 
 from utils._select import _select_register_value
 from utils._visualizers import lldb_formatter_wrapping_type
+from python import PythonObject, PythonObjectible
 
 # ===----------------------------------------------------------------------=== #
 #  Boolable
@@ -107,6 +108,7 @@ struct Bool(
     ImplicitlyIntable,
     Indexer,
     Representable,
+    PythonObjectible,
     Stringable,
     Writable,
     Floatable,
@@ -531,6 +533,14 @@ struct Bool(
             hasher: The hasher instance.
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
 
 
 # ===----------------------------------------------------------------------=== #

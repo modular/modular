@@ -26,7 +26,7 @@ def test_PyObject_HasAttrString(mut python: Python):
     )
     assert_equal(0, result)
 
-    the_object = PythonObject([1, 2, 3])
+    the_object = PythonObject.list(1, 2, 3)
     result = Cpython_env[].PyObject_HasAttrString(
         the_object.py_object, "__contains__"
     )

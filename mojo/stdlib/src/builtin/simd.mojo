@@ -79,6 +79,7 @@ from builtin.io import _snprintf
 
 from documentation import doc_private
 from memory import Span, UnsafePointer, bitcast, memcpy
+from python import PythonObject, PythonObjectible
 
 from utils import IndexList, StaticTuple
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -273,6 +274,7 @@ struct SIMD[dtype: DType, size: Int](
     Representable,
     Roundable,
     Sized,
+    PythonObjectible,
     RepresentableCollectionElement,
     Stringable,
 ):
@@ -1409,6 +1411,15 @@ struct SIMD[dtype: DType, size: Int](
     # ===------------------------------------------------------------------=== #
     # Trait implementations
     # ===------------------------------------------------------------------=== #
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        constrained[size == 1, "only works with scalar values"]()
+        return PythonObject(rebind[Scalar[dtype]](self))
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:

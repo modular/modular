@@ -35,7 +35,7 @@ from sys import bitwidthof
 
 from builtin.io import _snprintf
 from memory import UnsafePointer
-from python import Python, PythonObject
+from python import Python, PythonObject, PythonObjectible
 from python._cpython import Py_ssize_t
 
 from utils import Writable, Writer
@@ -338,6 +338,7 @@ struct Int(
     _CurlyEntryFormattable,
     _CopyableLessThanComparable,
     EqualityComparableCollectionElement,
+    PythonObjectible,
 ):
     """This type represents an integer value."""
 
@@ -1201,6 +1202,14 @@ struct Int(
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    fn to_python_object(self) -> PythonObject:
+        """Convert this value to a PythonObject.
+
+        Returns:
+            A PythonObject representing the value.
+        """
+        return PythonObject(self)
 
     @always_inline("builtin")
     fn is_power_of_two(self) -> Bool:
