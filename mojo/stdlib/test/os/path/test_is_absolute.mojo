@@ -10,22 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides a set of operating-system independent functions for manipulating
-file system paths."""
+# RUN: %mojo %s
 
-from .path import (
-    basename,
-    dirname,
-    exists,
-    expanduser,
-    expandvars,
-    getsize,
-    isdir,
-    isfile,
-    islink,
-    is_absolute,
-    join,
-    lexists,
-    split,
-    splitroot,
-)
+import os
+from os.path import is_absolute
+from testing import assert_true, assert_false
+
+
+def main():
+    assert_true(is_absolute("/"))
+    assert_true(is_absolute("/foo"))
+    assert_true(is_absolute("/foo/bar"))
+
+    assert_false(is_absolute(""))
+    assert_false(is_absolute("foo/bar"))

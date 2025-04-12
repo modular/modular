@@ -308,6 +308,28 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 
 
 # ===----------------------------------------------------------------------=== #
+# is_absolute
+# ===----------------------------------------------------------------------=== #
+
+
+fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+    """Return True if `path` is an absolute path name.
+    On Unix, that means it begins with a slash.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to check.
+
+    Returns:
+        Return `True` if path is an absolute path name.
+    """
+    _constrain_unix()
+    return path.__fspath__().startswith(sep)
+
+
+# ===----------------------------------------------------------------------=== #
 # join
 # ===----------------------------------------------------------------------=== #
 

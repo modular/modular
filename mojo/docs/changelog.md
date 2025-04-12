@@ -91,6 +91,8 @@ for i in range(iteration_range):
   `constrained[cond, "hello: ", String(n), ": world"]()` which is more comptime
   efficient and somewhat more ergonomic than using string concatenation.
 
+- Added `os.path.is_absolute` to check if a given path is absolute or not.
+
 ### GPU changes
 
 - `debug_assert` in AMD GPU kernels now behaves the same as NVIDIA, printing the
