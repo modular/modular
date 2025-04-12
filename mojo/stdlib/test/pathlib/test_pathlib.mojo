@@ -16,6 +16,7 @@ import os
 
 from pathlib import DIR_SEPARATOR, Path, cwd
 from sys import env_get_string, os_is_windows
+from tempfile import NamedTemporaryFile, gettempdir
 
 from builtin._location import __source_location
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
@@ -86,6 +87,14 @@ def test_joinpath():
 def test_read_write():
     Path(TEMP_FILE).write_text("hello")
     assert_equal(Path(TEMP_FILE).read_text(), "hello")
+
+
+def test_read_write_bytes():
+    alias data = "hello world".as_bytes()
+    with NamedTemporaryFile() as tmp:
+        var file = Path(tmp.name)
+        file.write_bytes(data)
+        assert_equal(List[Byte](data), file.read_bytes())
 
 
 fn get_user_path() -> Path:
