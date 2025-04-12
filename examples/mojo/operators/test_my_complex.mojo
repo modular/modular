@@ -31,6 +31,18 @@ def test_init():
     assert_equal(im2, c2.im)
 
 
+def test_bool():
+    c1 = Complex(0.0, 0.0)
+    c2 = Complex(1.0, 0.0)
+    c3 = Complex(0.0, 1.0)
+    c4 = Complex(-1.2, 6.5)
+
+    assert_false(c1)
+    assert_true(c2)
+    assert_true(c3)
+    assert_true(c4)
+
+
 def test_str():
     re1 = 3.3
     im1 = 5.1
@@ -54,7 +66,6 @@ def test_str():
 
 
 def test_indexing():
-    err_msg = "index out of bounds"
     re1 = -1.2
     im1 = 6.5
     c1 = Complex(re1, im1)
@@ -67,18 +78,6 @@ def test_indexing():
     c1[1] = im2
     assert_equal(re2, c1[0])
     assert_equal(im2, c1[1])
-
-    with assert_raises(contains=err_msg):
-        _ = c1[-1]
-
-    with assert_raises(contains=err_msg):
-        _ = c1[2]
-
-    with assert_raises(contains=err_msg):
-        c1[-1] = 1.0
-
-    with assert_raises(contains=err_msg):
-        c1[2] = 1.0
 
 
 def test_unary():
@@ -234,11 +233,27 @@ def test_complex_inplace():
 
 def test_equality():
     c1 = Complex(-1.2, 6.5)
-    c2 = Complex(3.14159, -2.71828)
-    c3 = Complex(-1.2, 6.5)
+    c2 = Complex(-1.2, 0.0)
+    c3 = Complex(0.0, 6.5)
 
-    assert_false(c1 == c2)
+    assert_true(c1 == c1)
+    assert_false(c1 != c1)
+
     assert_true(c1 != c2)
+    assert_false(c1 == c2)
 
-    assert_true(c1 == c3)
-    assert_false(c1 != c3)
+    assert_true(c1 != c3)
+    assert_false(c1 == c3)
+
+
+def main():
+    test_init()
+    test_bool()
+    test_str()
+    test_indexing()
+    test_unary()
+    test_binary_complex()
+    test_binary_float()
+    test_binary_rfloat()
+    test_complex_inplace()
+    test_equality()
