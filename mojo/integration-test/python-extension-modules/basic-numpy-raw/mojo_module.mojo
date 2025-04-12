@@ -7,15 +7,15 @@
 from os import abort
 
 import builtin
-from python import Python, PythonObject, TypedPythonObject
-from python._cpython import PyMethodDef, PyObjectPtr
 from memory import UnsafePointer
+from python import Python, PythonObject, TypedPythonObject
 from python._bindings import (
-    check_arguments_arity,
     check_argument_type,
-    python_type_object,
+    check_arguments_arity,
     py_c_function_wrapper,
+    python_type_object,
 )
+from python._cpython import PyMethodDef, PyObjectPtr
 
 
 @export
