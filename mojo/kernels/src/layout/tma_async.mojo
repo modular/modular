@@ -25,9 +25,10 @@ Key Components:
   various configurations for different tensor shapes and memory access patterns.
 """
 
-from sys import sizeof, alignof, simdwidthof
+from collections import Optional
+from sys import alignof, llvm_intrinsic, simdwidthof, sizeof
 from sys._assembly import inlined_assembly
-from sys import llvm_intrinsic
+
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._nvidia_cuda import (
     TensorMapSwizzle,
@@ -35,30 +36,30 @@ from gpu.host._nvidia_cuda import (
     create_tma_descriptor,
     prefetch_tma_descriptor,
 )
+from gpu.id import block_idx, thread_idx
 from gpu.memory import (
     AddressSpace,
+    ReduceOp,
+    async_copy,
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
-    ReduceOp,
 )
 from gpu.sync import (
+    cp_async_bulk_commit_group,
+    cp_async_bulk_wait_group,
     mbarrier_arrive,
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
-    cp_async_bulk_wait_group,
-    cp_async_bulk_commit_group,
 )
-from layout import IntTuple, LayoutTensor, Layout
+from layout import IntTuple, Layout, LayoutTensor
 from memory import UnsafePointer, stack_allocation
 from memory.pointer import _GPUAddressSpace
+
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
-from gpu.id import block_idx, thread_idx
-from gpu.memory import async_copy
-from collections import Optional
 
 
 # Returns an IntTuple of variadic Int values.

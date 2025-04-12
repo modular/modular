@@ -27,6 +27,8 @@ Performance features:
 
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
+from sys import sizeof
+
 from gpu import WARP_SIZE, barrier
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import thread_idx
@@ -52,9 +54,8 @@ from layout.layout import (
     upcast,
 )
 from memory.unsafe_pointer import UnsafePointer
-from sys import sizeof
-from utils import Index, IndexList
-from utils import StaticTuple
+
+from utils import Index, IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #

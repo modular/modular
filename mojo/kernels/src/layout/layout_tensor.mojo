@@ -10,21 +10,22 @@ from math import align_up, ceildiv
 from sys import (
     alignof,
     bitwidthof,
-    is_nvidia_gpu,
     is_amd_gpu,
+    is_nvidia_gpu,
     prefetch,
     simdwidthof,
     sizeof,
 )
-
 from sys.intrinsics import PrefetchOptions
+
+import gpu.memory as gpu_memory
 from algorithm import vectorize
 from bit import log2_floor
 from gpu.host import DeviceBuffer, HostBuffer
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx, lane_id
+from gpu.id import block_idx, lane_id, thread_idx
+from gpu.intrinsics import buffer_load, buffer_store
 from gpu.memory import CacheEviction, Fill, async_copy
-import gpu.memory as gpu_memory
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
@@ -33,14 +34,15 @@ from memory.pointer import AddressSpace, _GPUAddressSpace
 from utils import IndexList, StaticTuple
 from utils.index import Index
 
+from ._utils import get_amd_buffer_descriptor
 from .int_tuple import (
+    _get_index_type,
+    _get_unsigned_type,
     depth,
     fill_like,
     flatten,
     idx2crd,
     product,
-    _get_index_type,
-    _get_unsigned_type,
 )
 from .layout import *
 from .runtime_layout import RuntimeLayout
@@ -48,8 +50,6 @@ from .runtime_layout import coalesce as runtime_coalesce
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
-from gpu.intrinsics import buffer_load, buffer_store
-from ._utils import get_amd_buffer_descriptor
 
 
 fn _compute_distribute_layout[

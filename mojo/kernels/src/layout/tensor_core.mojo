@@ -39,6 +39,15 @@ Supported Matrix Shapes:
 """
 
 from collections import OptionalReg
+from math import align_down
+from sys import (
+    has_nvidia_gpu_accelerator,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    simdwidthof,
+    sizeof,
+)
+
 from gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
@@ -48,21 +57,14 @@ from layout.int_tuple import IntTuple, product
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.swizzle import (
-    Swizzle,
-    make_ldmatrix_swizzle,
-    eval_composed,
     ComposedLayout,
+    Swizzle,
+    eval_composed,
+    make_ldmatrix_swizzle,
 )
-from math import align_down
 from memory.unsafe import bitcast
 from stdlib.builtin.simd import _has_native_f8_support
-from sys import (
-    has_nvidia_gpu_accelerator,
-    is_amd_gpu,
-    is_nvidia_gpu,
-    simdwidthof,
-    sizeof,
-)
+
 from utils import IndexList
 from utils.index import Index
 

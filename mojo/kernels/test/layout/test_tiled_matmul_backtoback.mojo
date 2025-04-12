@@ -10,7 +10,7 @@
 from math import fma, isclose
 from os import abort
 from random import rand
-from sys import argv, has_avx512f, CompilationTarget, simdwidthof, sizeof
+from sys import CompilationTarget, argv, has_avx512f, simdwidthof, sizeof
 
 import benchmark
 from algorithm.functional import vectorize

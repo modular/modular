@@ -58,11 +58,12 @@ from buffer.dimlist import DimList
 from utils import Writable, Writer
 
 from .int_tuple import (
-    UNKNOWN_VALUE,
     INT_TUPLE_VALIDATION,
-    IntTuple,
+    UNKNOWN_VALUE,
     IntArray,
+    IntTuple,
     abs,
+    compact_order,
     crd2idx,
     flatten,
     idx2crd,
@@ -72,6 +73,7 @@ from .int_tuple import (
     mul,
     prefix_product,
     product,
+    product_each,
     propagate_unknown,
     reverse,
     shape_div,
@@ -79,8 +81,6 @@ from .int_tuple import (
     to_unknown,
     tuple_min,
     zip,
-    compact_order,
-    product_each,
 )
 
 # ===-----------------------------------------------------------------------===#

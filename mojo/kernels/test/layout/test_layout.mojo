@@ -10,6 +10,7 @@ from layout.layout import (
     UNKNOWN_VALUE,
     Layout,
     MakeLayoutList,
+    blocked_product,
     coalesce,
     complement,
     composition,
@@ -19,14 +20,13 @@ from layout.layout import (
     is_row_major,
     logical_divide,
     logical_product,
-    blocked_product,
-    tile_to_shape,
     print_layout,
     right_inverse,
     size,
     sublayout,
-    zipped_divide,
+    tile_to_shape,
     upcast,
+    zipped_divide,
 )
 from testing import assert_equal, assert_not_equal
 

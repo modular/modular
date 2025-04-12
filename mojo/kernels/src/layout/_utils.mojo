@@ -6,19 +6,19 @@
 
 from collections import Optional
 from sys import bitwidthof, sizeof
+from sys.intrinsics import readfirstlane
 
 from buffer import NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from gpu.intrinsics import _buffer_resource, make_buffer_resource
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from memory import UnsafePointer
 
+from utils import IndexList
 from utils.index import Index
 
-from .int_tuple import product, _get_index_type
-from gpu.intrinsics import make_buffer_resource, _buffer_resource
-from utils import IndexList
-from sys.intrinsics import readfirstlane
+from .int_tuple import _get_index_type, product
 
 
 struct ManagedLayoutTensor[

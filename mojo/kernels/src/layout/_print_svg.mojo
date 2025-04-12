@@ -4,11 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 from collections import Dict, Optional
+from pathlib import Path
 from sys import sizeof
+
 from layout import Layout, LayoutTensor
 from layout.swizzle import Swizzle
+
 from utils import Writer
-from pathlib import Path
 
 
 fn print_svg[

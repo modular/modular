@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from collections import InlineArray
+
 from layout import Layout
 from layout._fillers import arange
 from layout.tensor_builder import LayoutTensorBuild as tb
-from collections import InlineArray
 
 
 fn test_tile_masked():

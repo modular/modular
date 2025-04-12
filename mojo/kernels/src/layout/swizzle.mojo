@@ -27,7 +27,7 @@ optimizes memory access patterns for higher throughput.
 """
 
 from collections import OptionalReg
-from sys import simdwidthof, sizeof, is_compile_time
+from sys import is_compile_time, simdwidthof, sizeof
 
 from bit import log2_floor
 from gpu.host._nvidia_cuda import TensorMapSwizzle

@@ -49,17 +49,16 @@ var total_size = size(shape)  # Results in 120
 ```
 """
 
-from collections import InlineArray
+import sys
+from collections import InlineArray, List
 from os import abort
 
+from buffer import DimList
 from builtin.range import _StridedRange
 from memory import UnsafePointer, memcpy
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
-from collections import List
-from buffer import DimList
 from utils.numerics import max_finite
-import sys
 
 alias INT_TUPLE_VALIDATION = False
 
