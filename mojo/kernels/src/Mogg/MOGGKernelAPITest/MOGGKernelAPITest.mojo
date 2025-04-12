@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import Optional
+from collections.string import StaticString
 from sys import external_call
 from sys.info import simdwidthof
 
@@ -13,32 +15,40 @@ from buffer.dimlist import DimList
 from compiler_internal import StaticTensorSpec
 from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
 from tensor_internal import (
-    ManagedTensorSlice,
-    VariadicTensors,
-    InputVariadicTensors,
-    OutputVariadicTensors,
     InputTensor,
+    InputVariadicTensors,
+    IOUnknown,
+    ManagedTensorSlice,
     OutputTensor,
-    foreach,
+    OutputVariadicTensors,
+    VariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
+    foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
 )
-from tensor_internal import IOUnknown
+from tensor_internal.managed_tensor_slice import (
+    _FusedInputTensor as FusedInputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedInputVariadicTensors as FusedInputVariadicTensors,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedOutputTensor as FusedOutputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
+)
 from tensor_internal.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
-    _FusedInputTensor as FusedInputTensor,
-    _FusedOutputTensor as FusedOutputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
-    _FusedInputVariadicTensors as FusedInputVariadicTensors,
-    _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
 )
 
 from utils import IndexList, StaticTuple
-from collections import Optional
-from collections.string import StaticString
 
 
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.

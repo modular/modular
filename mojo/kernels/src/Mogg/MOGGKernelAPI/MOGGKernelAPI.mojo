@@ -8,7 +8,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import InlineArray, Optional, OptionalReg, List
+from collections import InlineArray, List, Optional, OptionalReg
 from collections.string import StaticString
 from math import (
     ceil,
@@ -26,9 +26,8 @@ from math import (
     tanh,
 )
 from random import randn, seed
-from sys import external_call, llvm_intrinsic
+from sys import bitwidthof, external_call, llvm_intrinsic
 from sys.info import simdwidthof, sizeof
-from sys import bitwidthof
 
 import compiler_internal as compiler
 
@@ -44,8 +43,11 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
-from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce
+from flash_attention3.flash_attention import (
+    daolabs_flash_attention3_paged_ragged_dispatch,
+)
 from gpu.comm.allgather import allgather
+from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
@@ -54,9 +56,6 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
     PagedKVCacheCollectionFA3Fallback,
-)
-from flash_attention3.flash_attention import (
-    daolabs_flash_attention3_paged_ragged_dispatch,
 )
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
@@ -93,25 +92,24 @@ from nn.flash_attention import flash_attention_split_kv
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.gather_scatter import (
     Axis,
+    _unsafe_normalize_neg_index,
     gather,
     gather_nd,
     gather_nd_shape,
     gather_reduce,
     gather_shape,
     normalize_neg_index,
-    _unsafe_normalize_neg_index,
     scatter_elements,
     scatter_elements_shape,
     scatter_nd,
     scatter_nd_generator,
     scatter_nd_shape,
 )
-from gpu.host.info import is_cpu, is_gpu
 from nn.index_tensor import (
-    index_tensor,
     advanced_indexing_getitem,
-    advanced_indexing_setitem_inplace,
     advanced_indexing_getitem_shape,
+    advanced_indexing_setitem_inplace,
+    index_tensor,
 )
 from nn.kv_cache import (
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
@@ -132,23 +130,23 @@ from nn.kv_cache_ragged import (
     generic_cross_attention_kv_cache_null_mask_cont_batch_ragged,
     generic_flare_mla_decode_kv_cache_causal_mask_paged_ragged,
     generic_flare_mla_decompress_k_cache_ragged_paged,
-    generic_flare_mla_prefill_ragged_paged_plan,
     generic_flare_mla_prefill_kv_cache_causal_mask_paged_ragged,
+    generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_causal_mask_paged_ragged,
-    generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged,
     generic_flash_attention_kv_cache_chunked_causal_mask_cont_batch_ragged,
+    generic_flash_attention_kv_cache_chunked_causal_mask_paged_ragged,
     generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
+    generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
-    kv_matmul_ragged_continuous_batching,
     k_matmul_ragged_paged,
+    kv_matmul_ragged_continuous_batching,
     unfused_qkv_matmul_ragged_continuous_batching_gguf_quantized,
-    generic_fused_qkv_matmul_kv_cache_paged_fa3_fallback_ragged,
 )
 from nn.mha import flash_attention
 from nn.moe import moe_create_indices
@@ -198,39 +196,46 @@ from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import (
     DynamicTensor,
-    ManagedTensorSlice,
     InputTensor,
-    OutputTensor,
-    VariadicTensors,
     InputVariadicTensors,
+    IOSpec,
+    IOUnknown,
+    ManagedTensorSlice,
+    OutputTensor,
     OutputVariadicTensors,
+    VariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
     view_copy_impl,
-    IOSpec,
-    IOUnknown,
 )
-
+from tensor_internal.io_spec import IO
 from tensor_internal.managed_tensor_slice import (
-    _MutableInputTensor as MutableInputTensor,
     _FusedInputTensor as FusedInputTensor,
-    _FusedOutputTensor as FusedOutputTensor,
-    _MutableInputVariadicTensors as MutableInputVariadicTensors,
+)
+from tensor_internal.managed_tensor_slice import (
     _FusedInputVariadicTensors as FusedInputVariadicTensors,
+)
+from tensor_internal.managed_tensor_slice import (
+    _FusedOutputTensor as FusedOutputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
 )
-
-from tensor_internal.io_spec import IO
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputTensor as MutableInputTensor,
+)
+from tensor_internal.managed_tensor_slice import (
+    _MutableInputVariadicTensors as MutableInputVariadicTensors,
+)
 from tensor_internal.managed_tensor_slice import get_kernel_simd_width
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _create_array, _set_array_elem
-
 
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
