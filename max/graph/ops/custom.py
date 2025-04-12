@@ -15,7 +15,7 @@ from max.dtype import DType
 from max.mlir import BoolAttr, IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo
 
-from ..graph import Graph
+from ..graph import DeviceRef, Graph
 from ..type import Type, _ChainType
 from ..value import BufferValue, Value, _OpaqueValue
 
@@ -46,6 +46,7 @@ def custom(
     values: list[Value],
     out_types: list[Type],
     parameters: dict[str, bool | int | str | DType] | None = None,
+    device: DeviceRef | None = None,
 ) -> list[Value]:
     """Creates a node to execute a custom graph operation in the graph.
 
@@ -58,6 +59,8 @@ def custom(
         values: The op function's arguments.
         out_types: The list of op function's return type.
         parameters: Dictionary of extra parameters expected by the kernel.
+        device: Device that the op is assigned to.
+            This becomes a `target` parameter to the kernel.
 
     Returns:
         Symbolic values representing the outputs of the op in the graph.
@@ -83,6 +86,9 @@ def custom(
                 param, graph._context
             )
 
+    if device is not None:
+        custom_op.attributes["device"] = device.to_mlir()
+
     # Call the verifier, will throw if the call is invalid.
     graph._kernel_library.verify_custom_op(custom_op)
 
@@ -94,6 +100,7 @@ def inplace_custom(
     values: Iterable[Value],
     out_types: Iterable[Type] | None = None,
     parameters: dict[str, bool | int | str | DType] | None = None,
+    device: DeviceRef | None = None,
 ) -> list[Value]:
     """Creates a node to execute an in-place custom graph operation in the graph.
 
@@ -105,6 +112,8 @@ def inplace_custom(
         name: The op name provided to ``@compiler.register``.
         values: The op function's arguments.
         parameters: Dictionary of extra parameters expected by the kernel.
+        device: Device that the op is assigned to.
+            This becomes a `target` parameter to the kernel.
     """
     # Unfortunately there's no existing way to mark a particular NDBuffer input
     # as needing to be backed by a `mo.buffer` value at the graph level.
@@ -140,6 +149,9 @@ def inplace_custom(
             custom_op.attributes[name] = _parameter_attribute(
                 param, graph._context
             )
+
+    if device is not None:
+        custom_op.attributes["device"] = device.to_mlir()
 
     # Call the verifier, will throw if the call is invalid.
     graph._kernel_library.verify_custom_op(custom_op)
