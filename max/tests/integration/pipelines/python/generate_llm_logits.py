@@ -205,6 +205,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             huggingface_model_revision=revision,
             max_length=num_vision_embeddings,
             trust_remote_code=True,
+            engine=PipelineEngine.MAX,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -253,6 +254,7 @@ class ReplitPipelineOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path="modularai/replit-code-1.5",
             trust_remote_code=True,
+            engine=PipelineEngine.MAX,
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -341,6 +343,7 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=hf_repo_id,
+            engine=PipelineEngine.MAX,
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
