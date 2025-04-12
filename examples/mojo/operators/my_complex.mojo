@@ -73,21 +73,22 @@ struct Complex(
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__(self, idx: Int) raises -> Float64:
-        if idx == 0:
-            return self.re
-        elif idx == 1:
-            return self.im
-        else:
-            raise "index out of bounds"
+    fn __getitem__[idx: Int](ref self) -> ref [self] Float64:
+        from memory import UnsafePointer
 
-    fn __setitem__(mut self, idx: Int, value: Float64) raises:
+        constrained[idx in (0, 1), "idx must be 0 or 1"]()
+
+        @parameter
         if idx == 0:
-            self.re = value
-        elif idx == 1:
-            self.im = value
+            var p = UnsafePointer(to=self.re).origin_cast[
+                origin = __origin_of(self)
+            ]()
+            return p[]
         else:
-            raise "index out of bounds"
+            var p = UnsafePointer(to=self.im).origin_cast[
+                origin = __origin_of(self)
+            ]()
+            return p[]
 
     # ===-------------------------------------------------------------------===#
     # Unary arithmetic operator dunders
