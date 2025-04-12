@@ -87,9 +87,9 @@ fn _print_svg_impl[
         )
 
     var colors = List(
-        "#FFFFFF",
-        "#93C572",
-        "#ECFFDC",
+        StaticString("#FFFFFF"),
+        StaticString("#93C572"),
+        StaticString("#ECFFDC"),
     )
 
     var cell_size = 80
@@ -255,9 +255,9 @@ fn _print_svg_impl[
                             var y = start_y + orig_pos[0].value() * cell_size
                             var color = color_map.value()(
                                 t, element_idx
-                            ) if color_map else colors[
-                                orig_pos[0].value() % 2 + 1
-                            ]
+                            ) if color_map else String(
+                                colors[orig_pos[0].value() % 2 + 1]
+                            )
                             draw_element(x, y, color, t, element_idx, writer)
                             element_idx += 1
         else:
@@ -275,7 +275,9 @@ fn _print_svg_impl[
                     var y = start_y + orig_pos[0].value() * cell_size
                     var color = color_map.value()(
                         t, element_idx
-                    ) if color_map else colors[orig_pos[0].value() % 2 + 1]
+                    ) if color_map else String(
+                        colors[orig_pos[0].value() % 2 + 1]
+                    )
                     draw_element(x, y, color, t, element_idx, writer)
                     element_idx += 1
 

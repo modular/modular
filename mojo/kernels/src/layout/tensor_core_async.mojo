@@ -874,7 +874,9 @@ struct TensorCoreAsync[
                         mma_shape[2],
                         a_type=a_type,
                         b_type=b_type,
-                        layout_b= "col" if transpose_b else "row",
+                        layout_b = "col" if transpose_b else StaticString(
+                            "row"
+                        ),
                         scale_d=scale_d,
                         scale_a=scale_a,
                         scale_b=scale_b,
@@ -981,7 +983,9 @@ struct TensorCoreAsync[
                         mma_shape[2],
                         a_type=a_type,
                         b_type=b_type,
-                        layout_b= "col" if transpose_b else "row",
+                        layout_b = "col" if transpose_b else StaticString(
+                            "row"
+                        ),
                     ](
                         a_frags[m_mma + k_mma * num_m_mmas, 0],
                         b_desc_n,
