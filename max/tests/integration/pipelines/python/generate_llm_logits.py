@@ -751,7 +751,7 @@ def generate_llm_logits(
     encoding_name: str,
     output_path: Path,
     print_output: bool,
-    max_batch_size: int,
+    max_batch_size: int = 1,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
