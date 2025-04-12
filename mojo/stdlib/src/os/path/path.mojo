@@ -443,6 +443,68 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
 #     return join(path.__fspath__(), *paths_str)
 
 # ===----------------------------------------------------------------------=== #
+# split_extension
+# ===----------------------------------------------------------------------=== #
+
+
+# TODO: Move this to a generic path module when Windows is supported.
+# As it can be used for both Windows and Unix-like systems.
+fn _split_extension(
+    path: StringSlice,
+    sep: StringSlice,
+    alt_sep: StringSlice,
+    extension_sep: StringSlice,
+) raises -> Tuple[String, String]:
+    """Splits `path` into the root and extension.
+
+    Args:
+        path: The path to be split.
+        sep: The separator used in the path.
+        alt_sep: The alternative separator used in the path.
+        extension_sep: The extension separator used in the path.
+
+    Returns:
+        A tuple containing two strings: (root, extension).
+    """
+    # Find the last extension separator after the last separator.
+    var head_end = path.rfind(sep)
+    if alt_sep:
+        head_end = max(head_end, path.rfind(alt_sep))
+
+    var file_end = path.rfind(extension_sep)
+    if file_end > head_end:
+        # skip all leading dots
+        var file_start = head_end + 1
+        while file_start < file_end:
+            if path[file_start].as_string_slice() != extension_sep:
+                return String(path[:file_end]), String(path[file_end:])
+            file_start += 1
+
+    return String(path), String("")
+
+
+fn split_extension[
+    PathLike: os.PathLike, //
+](path: PathLike) raises -> Tuple[String, String]:
+    """Splits `path` into the root and extension.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to be split.
+
+    Returns:
+        A tuple containing two strings: (root, extension).
+    """
+
+    @parameter
+    if os_is_windows():
+        return _split_extension(path.__fspath__(), "\\", "/", ".")
+    return _split_extension(path.__fspath__(), sep, "", ".")
+
+
+# ===----------------------------------------------------------------------=== #
 # splitroot
 # ===----------------------------------------------------------------------=== #
 
