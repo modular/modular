@@ -15,7 +15,6 @@ modular_py_binary(
     srcs = ["gen_external_checkpoints.py"],
     deps = [
         requirement("torch"),
-        requirement("sentencepiece"),
         requirement("gguf"),
         requirement("click"),
         requirement("numpy"),

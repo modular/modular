@@ -45,7 +45,6 @@ def _check_gguf():
         _FROM_QUANTIZED_GGML_DTYPES, \
         _TO_QUANTIZED_GGML_DTYPES
     if gguf is None:
-        _install("sentencepiece")
         _install("gguf")
         import gguf as _gguf
 

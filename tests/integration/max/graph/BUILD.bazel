@@ -60,7 +60,6 @@ modular_py_test(
         requirement("torch"),
         requirement("transformers"),
         requirement("hypothesis"),
-        requirement("sentencepiece"),
         requirement("gguf"),
         requirement("pytest-asyncio"),
         requirement("pytest-xdist"),
