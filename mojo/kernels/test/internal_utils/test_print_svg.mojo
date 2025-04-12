@@ -26,19 +26,19 @@ fn test_svg_nvidia_shape() raises:
 
     fn color_map(t: Int, v: Int) -> String:
         colors = List(
-            "red",
-            "blue",
-            "green",
-            "yellow",
-            "purple",
-            "orange",
-            "pink",
-            "brown",
-            "gray",
-            "black",
-            "white",
+            StaticString("red"),
+            StaticString("blue"),
+            StaticString("green"),
+            StaticString("yellow"),
+            StaticString("purple"),
+            StaticString("orange"),
+            StaticString("pink"),
+            StaticString("brown"),
+            StaticString("gray"),
+            StaticString("black"),
+            StaticString("white"),
         )
-        return colors[t // 4]
+        return String(colors[t // 4])
 
     print_svg(tensor, tensor_list, color_map)
 
@@ -108,19 +108,19 @@ fn test_svg_wgmma_shape() raises:
 
     fn color_map(t: Int, v: Int) -> String:
         colors = List(
-            "red",
-            "blue",
-            "green",
-            "yellow",
-            "purple",
-            "orange",
-            "pink",
-            "brown",
-            "gray",
-            "black",
-            "white",
+            StaticString("red"),
+            StaticString("blue"),
+            StaticString("green"),
+            StaticString("yellow"),
+            StaticString("purple"),
+            StaticString("orange"),
+            StaticString("pink"),
+            StaticString("brown"),
+            StaticString("gray"),
+            StaticString("black"),
+            StaticString("white"),
         )
-        return colors[t]
+        return String(colors[t])
 
     print_svg(
         tensor,
@@ -140,16 +140,16 @@ fn test_svg_swizzle() raises:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/async-warpgroup-smem-layout-128B-k.png
     fn color_map(t: Int, v: Int) -> String:
         var colors = List(
-            "blue",
-            "green",
-            "yellow",
-            "red",
-            "lightblue",
-            "lightgreen",
-            "lightyellow",
-            "salmon",  # lighter variant of red
+            StaticString("blue"),
+            StaticString("green"),
+            StaticString("yellow"),
+            StaticString("red"),
+            StaticString("lightblue"),
+            StaticString("lightgreen"),
+            StaticString("lightyellow"),
+            StaticString("salmon"),  # lighter variant of red
         )
-        return colors[t % len(colors)]
+        return String(colors[t % len(colors)])
 
     print_svg[swizzle](
         tensor,
