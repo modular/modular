@@ -251,16 +251,22 @@ fn _debug_assert_msg[
 
     @parameter
     if is_gpu():
-        print(
-            "At ",
-            loc,
-            ": ",
-            _GPUThreadInfo(),
-            " Assert ",
-            kind_str,
-            WritableVariadicPack(messages),
-            sep="",
-        )
+
+        @parameter
+        if is_amd_gpu():
+            # TODO(KERN-1738): Resolve stack usage for AMDGPU target.
+            print("Assert failed")
+        else:
+            print(
+                "At ",
+                loc,
+                ": ",
+                _GPUThreadInfo(),
+                " Assert ",
+                kind_str,
+                WritableVariadicPack(messages),
+                sep="",
+            )
     else:
         print(
             "At ",
