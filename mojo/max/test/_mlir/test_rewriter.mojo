@@ -30,10 +30,10 @@ fn main() raises:
         var replacing_op = rewriter.insert(Operation("d.replacing_op", loc))
         rewriter.replace_op_with(new_op, replacing_op)
 
-        new_module_str = """module {
+        var new_module_str2 = """module {
   "d.replacing_op"() : () -> ()
 }\n"""
-        assert_equal(new_module_str, String(module))
+        assert_equal(new_module_str2, String(module))
 
         # Right now the lifetime of `module` is poorly defined.
         # This `destroy()` is just a temp. workaround so
