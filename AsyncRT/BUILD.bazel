@@ -113,6 +113,7 @@ modular_cc_library(
     deps = [
         ":DeviceContext.headers",
         ":RuntimeGlobals",
+        "//Support:ML",
     ] + select({
         "//:linux_x86_64": ["@nvptxcompiler_x86_64//:nvptxcompiler"],
         "//:linux_aarch64": ["@nvptxcompiler_aarch64//:nvptxcompiler"],
