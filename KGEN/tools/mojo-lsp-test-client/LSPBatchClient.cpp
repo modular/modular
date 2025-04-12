@@ -11,10 +11,10 @@
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/LLVMForwardDecls.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
-#include <llvm/ADT/SmallVectorExtras.h>
-#include <llvm/Support/Program.h>
+#include "llvm/Support/Program.h"
 #include <type_traits>
 
 namespace lsp = mlir::lsp;
