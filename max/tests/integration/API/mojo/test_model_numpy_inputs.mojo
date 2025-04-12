@@ -10,7 +10,7 @@ from sys import argv
 
 from max.engine import EngineNumpyView, InferenceSession
 from max.tensor import Tensor, TensorShape
-from python import Python
+from python import Python, PythonObject
 from testing import assert_equal
 
 
@@ -28,7 +28,7 @@ fn test_model_numpy_input() raises:
     )
 
     var np = Python.import_module("numpy")
-    var input_np_tensor = np.ones((5,)).astype(np.float32)
+    var input_np_tensor = np.ones(PythonObject.tuple(5)).astype(np.float32)
 
     var np_outputs = model.execute("input", input_np_tensor)
     _ = input_np_tensor^
