@@ -969,6 +969,7 @@ struct Bench(Writable):
             else:
                 total_width += timing_widths[0] + 3
 
+        var sep: StaticString
         if self.config.format == Format.table:
             sep = " | "
         elif self.config.format == Format.tabular:
@@ -976,7 +977,9 @@ struct Bench(Writable):
         else:
             sep = ","
 
-        var first_sep = "| " if self.config.format == Format.table else ""
+        var first_sep = "| " if self.config.format == Format.table else StaticString(
+            ""
+        )
         var line_sep = "-" * total_width
 
         if self.config.format == Format.table:
