@@ -602,7 +602,7 @@ async def test_prefix_caching_grouped_prefixes(
     # hit rate.
     cache_hit_rate = kv_manager.cache_hit_rate
     if shared_prefix_len > 0:
-        assert cache_hit_rate > 0.45, breakpoint()  # type: ignore
+        assert cache_hit_rate > 0.45
 
     # run TG on all requests for num_tg_steps steps
     # we terminate requests with probability 10% each iteration
@@ -733,7 +733,7 @@ async def test_prefix_caching_cow() -> None:
             run_fetch=True,
             run_step=False,
         )
-        assert ctx.start_idx == cache_idx, breakpoint()  # type: ignore
+        assert ctx.start_idx == cache_idx
 
     run_forward_cow(
         seq_id=1, prompt=np.array([10, 11, 12, 13, 14, 22]), cache_idx=5
@@ -769,12 +769,12 @@ async def test_prefix_caching_rollback_prompt_n_num_step_1() -> None:
     # Whoops, the correct tokens is [1 2 3 4 5 6 7 8]!
     # Lets reset the ctx.
     ctx.rollback(3)
-    assert ctx.next_tokens.tolist() == [4], f"{ctx}"
+    assert ctx.next_tokens.tolist() == [4]
     ctx.update(5)
     ctx.jump_ahead(6)
     ctx.jump_ahead(7)
     ctx.jump_ahead(8)
-    assert ctx.next_tokens.tolist() == [5, 6, 7, 8], f"{ctx}"
+    assert ctx.next_tokens.tolist() == [5, 6, 7, 8]
 
     # Rollback should evict the stale hashes and blocks
     kv_manager.rollback([ctx])
