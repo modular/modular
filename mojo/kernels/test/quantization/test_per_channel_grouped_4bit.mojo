@@ -64,18 +64,18 @@ fn test_fake_quant_error[l2_tolerance: Float32]():
     print("------------test_fake_quant_error------------")
     print("********** GROUP SIZE 08 **********")
     var g8_result = _run_test_quant[8, l2_tolerance]()
-    print("G08 PASS" if g8_result else "G08 FAIL")
+    print("G08 PASS" if g8_result else StaticString("G08 FAIL"))
     print()
 
     print("********** GROUP SIZE 16 **********")
     var g16_result = _run_test_quant[16, l2_tolerance]()
-    print("G16 PASS" if g16_result else "G16 FAIL")
+    print("G16 PASS" if g16_result else StaticString("G16 FAIL"))
     print()
 
     print("********** GROUP SIZE 32 **********")
     var g32_result = _run_test_quant[32, l2_tolerance]()
     print("------------end test_fake_quant_error------------")
-    print("G32 PASS" if g32_result else "G32 FAIL")
+    print("G32 PASS" if g32_result else StaticString("G32 FAIL"))
     print()
 
 
@@ -210,17 +210,17 @@ fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]():
 
     print("********** GROUP SIZE 08 **********")
     var g8_result = _read_write_to_tensors[8, rtol, atol]()
-    print("G08 PASS" if g8_result else "G08 FAIL")
+    print("G08 PASS" if g8_result else StaticString("G08 FAIL"))
     print()
 
     print("********** GROUP SIZE 16 **********")
     var g16_result = _read_write_to_tensors[16, rtol, atol]()
-    print("G16 PASS" if g8_result else "G16 FAIL")
+    print("G16 PASS" if g8_result else StaticString("G16 FAIL"))
     print()
 
     print("********** GROUP SIZE 32 **********")
     var g32_result = _read_write_to_tensors[32, rtol, atol]()
-    print("G32 PASS" if g8_result else "G32 FAIL")
+    print("G32 PASS" if g8_result else StaticString("G32 FAIL"))
     print()
 
     print("------------end test_read_write_to_tensors------------")
