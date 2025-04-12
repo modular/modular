@@ -14,9 +14,8 @@ from max.tensor import TensorSpec
 ```
 """
 
-from sys import sizeof
-
 from collections import List
+from sys import sizeof
 
 from memory import UnsafePointer
 

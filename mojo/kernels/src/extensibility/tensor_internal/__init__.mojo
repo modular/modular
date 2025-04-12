@@ -5,15 +5,24 @@
 # ===----------------------------------------------------------------------=== #
 """APIs to create and manage tensors in a graph."""
 
+from .io_spec import (
+    FusedInput,
+    FusedOutput,
+    Input,
+    IOSpec,
+    IOUnknown,
+    MutableInput,
+    Output,
+)
 from .managed_tensor_slice import (
     DynamicTensor,
     InputTensor,
-    ManagedTensorSlice,
-    StaticTensorSpec,
-    OutputTensor,
-    VariadicTensors,
     InputVariadicTensors,
+    ManagedTensorSlice,
+    OutputTensor,
     OutputVariadicTensors,
+    StaticTensorSpec,
+    VariadicTensors,
     _input_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
@@ -24,12 +33,3 @@ from .managed_tensor_slice import (
 from .tensor import Tensor
 from .tensor_shape import TensorShape
 from .tensor_spec import RuntimeTensorSpec, TensorSpec
-from .io_spec import (
-    IOSpec,
-    IOUnknown,
-    Input,
-    Output,
-    FusedInput,
-    FusedOutput,
-    MutableInput,
-)

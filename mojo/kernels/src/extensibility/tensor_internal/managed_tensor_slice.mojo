@@ -7,31 +7,33 @@
 Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
-import algorithm
-from buffer import DimList, NDBuffer
-from buffer.dimlist import _make_partially_static_index_list
 from collections import InlineArray, OptionalReg
 from collections.string import StaticString
-from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
-from gpu.host._compile import _get_gpu_target
-from gpu.host.info import is_cpu
-from layout import LayoutTensor, RuntimeLayout, Layout
 from math import ceil, fma, iota
-from memory import UnsafePointer
-from memory.pointer import _GPUAddressSpace
 from random import rand
-from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel
 from sys import alignof, simdwidthof
 from sys.info import is_gpu
 from sys.intrinsics import strided_load, strided_store
+
+import algorithm
+from buffer import DimList, NDBuffer
+from buffer.dimlist import _make_partially_static_index_list
+from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
+from gpu.host._compile import _get_gpu_target
+from gpu.host.info import is_cpu
+from layout import Layout, LayoutTensor, RuntimeLayout
+from memory import UnsafePointer
+from memory.pointer import _GPUAddressSpace
+from register import register_internal
+from runtime.asyncrt import DeviceContextPtr
+from runtime.tracing import Trace, TraceLevel
 from tensor_internal import RuntimeTensorSpec, TensorSpec
+
 from utils import IndexList, StaticTuple
 from utils._serialize import _serialize
 
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
-from .io_spec import IOSpec, IO
+from .io_spec import IO, IOSpec
 
 # ===----------------------------------------------------------------------=== #
 # Load / Store Helper primitives

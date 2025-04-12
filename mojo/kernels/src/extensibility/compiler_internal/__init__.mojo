@@ -4,8 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .directives import (
-    StaticTensorSpec,
-    register,
-    view_kernel,
-)
+from .directives import StaticTensorSpec, register, view_kernel

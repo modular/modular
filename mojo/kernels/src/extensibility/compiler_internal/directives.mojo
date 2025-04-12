@@ -7,7 +7,7 @@
 from collections import OptionalReg
 
 from buffer.dimlist import DimList
-from layout import Layout, IntTuple
+from layout import IntTuple, Layout
 
 from utils import IndexList, StaticTuple
 
