@@ -25,4 +25,6 @@ from .bit import (
     prev_power_of_two,
     rotate_bits_left,
     rotate_bits_right,
+    bin,
+    hex,
 )
