@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_up, ceildiv, exp, exp2, log
-from sys import alignof, is_nvidia_gpu, simdwidthof, is_amd_gpu
 from collections.string import StaticString
+from math import align_down, align_up, ceildiv, exp, exp2, log
+from sys import alignof, is_amd_gpu, is_nvidia_gpu, simdwidthof
 
+import gpu.warp as warp
 from algorithm import sync_parallelize, vectorize
 from algorithm._gpu.reduction import block_reduce, row_reduce
 from algorithm.reduction import (
@@ -21,7 +22,7 @@ from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu.host import DeviceAttribute, DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import AddressSpace
-import gpu.warp as warp
+from layout._utils import idx2crd
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.tensor_builder import LayoutTensorBuild as tb
@@ -33,7 +34,6 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from utils import IndexList, StaticTuple
 from utils.index import Index, product
 from utils.numerics import get_accum_type, min_or_neg_inf
-from layout._utils import idx2crd
 
 # ===-----------------------------------------------------------------------===#
 # Utilities

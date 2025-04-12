@@ -4,12 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.string import StaticString
 from math import clamp
 
 from algorithm import elementwise
 from buffer import NDBuffer
 from runtime.asyncrt import DeviceContextPtr
-from collections.string import StaticString
 
 from utils._select import _select_register_value as select
 from utils.index import IndexList

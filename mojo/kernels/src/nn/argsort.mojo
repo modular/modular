@@ -5,19 +5,20 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from sys.info import simdwidthof, bitwidthof, alignof
-from utils.index import Index
-from buffer import NDBuffer
-from gpu.host import DeviceContext
 from collections.string import StaticString
-from gpu.host.info import is_cpu
-from math import iota, ceildiv
+from math import ceildiv, iota
+from sys.info import alignof, bitwidthof, simdwidthof
+
 from algorithm import elementwise
-from utils.index import IndexList, StaticTuple
-from gpu.host._compile import _get_gpu_target
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
-from runtime.tracing import Trace, TraceLevel
 from bit import next_power_of_two
+from buffer import NDBuffer
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
+from gpu.host import DeviceContext
+from gpu.host._compile import _get_gpu_target
+from gpu.host.info import is_cpu
+from runtime.tracing import Trace, TraceLevel
+
+from utils.index import Index, IndexList, StaticTuple
 
 
 fn _argsort_cpu[

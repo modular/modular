@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from collections import InlineArray
 from random import random_ui64
 
 from buffer import NDBuffer
@@ -13,12 +14,11 @@ from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,
     _index_tensor_impl,
-    index_tensor_shape,
     advanced_indexing_getitem,
     advanced_indexing_getitem_shape,
     advanced_indexing_setitem_inplace,
+    index_tensor_shape,
 )
-from collections import InlineArray
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList, StaticTuple

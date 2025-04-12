@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
+from collections.string import StaticString
 from math import ceildiv
 from sys import simdwidthof
 from sys.info import _current_target
-from collections.string import StaticString
 
 from algorithm import elementwise, sync_parallelize
 from buffer import NDBuffer

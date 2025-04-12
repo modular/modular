@@ -8,13 +8,9 @@
 from collections import OptionalReg
 from math import ceildiv, exp, recip
 from math.constants import log2e
-from sys import (
-    alignof,
-    has_nvidia_gpu_accelerator,
-    simdwidthof,
-    sizeof,
-)
+from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof, sizeof
 
+import gpu.warp as warp
 from algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,
@@ -33,7 +29,9 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute, Dim as LaunchDim
+from gpu.host import DeviceContext
+from gpu.host import Dim as LaunchDim
+from gpu.host import FuncAttribute
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import (
@@ -42,16 +40,15 @@ from gpu.memory import (
     async_copy_wait_all,
     external_memory,
 )
-import gpu.warp as warp
 from kv_cache.types import KVCacheT
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
+    copy,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy,
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
@@ -72,19 +69,15 @@ from nn.mha_operand import (
     RaggedMHAOperand,
 )
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
-from nn.mha_utils import MHAConfig, _kernel_mask, _copy_frag_to_smem
+from nn.mha_utils import MHAConfig, _copy_frag_to_smem, _kernel_mask
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf, neg_inf
+from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
-from utils.numerics import get_accum_type
-
-from .softmax import (
-    _online_softmax_iter_for_mma_output,
-)
 
 from .mha import _get_start_and_end_for_partitions
+from .softmax import _online_softmax_iter_for_mma_output
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations

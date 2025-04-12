@@ -6,23 +6,26 @@
 
 
 from collections import OptionalReg
+from sys import (
+    alignof,
+    env_get_bool,
+    env_get_int,
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+    is_nvidia_gpu,
+    simdwidthof,
+    sizeof,
+)
+from sys.info import _accelerator_arch
+
 from gpu import WARP_SIZE, lane_id
 from gpu.memory import AddressSpace
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
-from sys import (
-    alignof,
-    env_get_bool,
-    is_nvidia_gpu,
-    simdwidthof,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
-from sys.info import _accelerator_arch
+
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
-from sys import env_get_int, sizeof
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention

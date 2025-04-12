@@ -5,77 +5,67 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray, OptionalReg
+from math import align_down, align_up, ceildiv, exp, recip
+from math.constants import log2e
+from pathlib import Path
+from sys import alignof, simdwidthof, sizeof
+from sys.intrinsics import readfirstlane
+
+import gpu.warp as warp
+from algorithm.functional import tile_and_unswitch, unswitch, vectorize
+from buffer import NDBuffer
+from buffer.dimlist import DimList
 from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
     barrier,
-    lane_id,
     block_dim,
     block_idx,
     global_idx,
-    thread_idx,
-    WARP_SIZE,
     grid_dim,
-    MAX_THREADS_PER_BLOCK_METADATA,
+    lane_id,
+    thread_idx,
 )
-from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
-
-from math.constants import log2e
-
-from math import align_down, align_up, ceildiv, exp, recip
-
-from memory import UnsafePointer, stack_allocation
-
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.sync import (
-    schedule_barrier,
-    schedule_group_barrier,
-    AMDScheduleBarrierMask,
-)
-import gpu.warp as warp
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
-from layout import Layout, LayoutTensor, IntTuple
+from gpu.mma import mma as mma_simd
+from gpu.sync import (
+    AMDScheduleBarrierMask,
+    schedule_barrier,
+    schedule_group_barrier,
+)
+from layout import IntTuple, Layout, LayoutTensor
+from layout._utils import hash, idx2crd
 from layout.layout_tensor import (
+    LayoutTensorIter,
+    ThreadScope,
+    copy,
+    copy_dram_to_local,
     copy_dram_to_sram,
     copy_local_to_dram,
-    copy_dram_to_local,
-    copy,
     copy_sram_to_dram,
-    ThreadScope,
 )
+from layout.runtime_layout import RuntimeLayout
+from layout.runtime_tuple import RuntimeTuple
+from layout.swizzle import Swizzle
+from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.tensor_builder import static
+from layout.tensor_core import TensorCore, get_mma_shape, num_matrix_reg
+from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
+from linalg.utils_gpu import MatmulConfig
+from memory import UnsafePointer, stack_allocation
+from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
+from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
+from nn.mha_utils import MHAConfig, _kernel_mask
 from nn.softmax import (
     _online_softmax_iter_for_mma_output,
     _online_softmax_iter_for_mma_output_split_warp_reduce,
     _softmax_gpu,
     softmax,
 )
-from nn.mha_utils import _kernel_mask
 
-from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
-
-from layout.runtime_tuple import RuntimeTuple
-from utils.numerics import min_or_neg_inf, neg_inf
-from pathlib import Path
-from algorithm.functional import tile_and_unswitch, unswitch, vectorize
-
-from layout.runtime_layout import RuntimeLayout
-from layout.tensor_builder import LayoutTensorBuild as tb, static
-from layout.tensor_core import TensorCore, get_mma_shape, num_matrix_reg
-from linalg.utils import GemmShape
-from math import align_down, ceildiv, align_up
-from memory import UnsafePointer
-from sys import simdwidthof, alignof, sizeof
 from utils import Index, IndexList, StaticTuple
-from utils.numerics import get_accum_type
-from linalg.utils_gpu import MatmulConfig
-from linalg.utils import apply_epilogue, elementwise_epilogue_type
-from layout.swizzle import Swizzle
-from math import exp
-from nn.mha_utils import MHAConfig
-from layout._utils import idx2crd, hash
-from layout.layout_tensor import LayoutTensorIter
-from gpu.mma import mma as mma_simd
-from sys.intrinsics import readfirstlane
+from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 
 
 @always_inline

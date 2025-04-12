@@ -4,9 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import OptionalReg
+from math import ceildiv, recip
+from math.constants import log2e
+from sys import alignof, simdwidthof, sizeof
+
+import gpu.warp as warp
 from algorithm.functional import tile_and_unswitch, unswitch
 from buffer import NDBuffer
-from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -19,7 +24,7 @@ from gpu import (
 )
 from gpu.cluster import elect_one_sync
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.intrinsics import warpgroup_reg_dealloc, warpgroup_reg_alloc
+from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -27,32 +32,28 @@ from gpu.memory import (
     external_memory,
 )
 from gpu.sync import async_copy_arrive, named_barrier
-import gpu.warp as warp
 from layout.int_tuple import IntTuple
 from layout.layout import Layout
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
+    copy,
     copy_dram_to_sram_async,
     copy_local_to_dram,
-    copy,
     copy_sram_to_dram,
     cp_async_k_major,
     cp_async_mn_major,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
-from layout.tma_async import PipelineState, SharedMemBarrier
 from layout.tensor_core import get_fragment_size
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from utils.numerics import get_accum_type
+from layout.tma_async import PipelineState, SharedMemBarrier
 from linalg._multistage_gemm_gpu import multistage_mma
-from math import recip, ceildiv
-from math.constants import log2e
 from memory import UnsafePointer, stack_allocation
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand, NDBufferMHAOperand
@@ -64,14 +65,14 @@ from nn.mha_utils import (
     _kernel_mask,
 )
 from nn.softmax import (
+    _online_softmax_correction,
     _online_softmax_iter_for_mma_output_sm90,
     _rowmax_online_softmax,
     _rowsum,
-    _online_softmax_correction,
 )
-from sys import alignof, simdwidthof, sizeof
+
 from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf, neg_inf
+from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
 

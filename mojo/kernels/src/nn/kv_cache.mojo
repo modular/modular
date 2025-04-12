@@ -29,7 +29,7 @@ from nn.flash_attention import (
 )
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import CausalMask, NullMask, MaterializedMask
+from nn.mha_mask import CausalMask, MaterializedMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from nn.normalization import _rms_norm_impl
 from register import register_internal

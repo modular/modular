@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.string import StaticString
+
 from algorithm import sync_parallelize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
-from collections.string import StaticString
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from register import register_internal

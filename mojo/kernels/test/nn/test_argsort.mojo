@@ -6,10 +6,10 @@
 # RUN: %mojo-no-debug %s
 
 
-from memory import UnsafePointer
-from nn.argsort import argsort
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from memory import UnsafePointer
+from nn.argsort import argsort
 from testing import assert_true
 
 

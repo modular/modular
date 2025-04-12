@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from collections import OptionalReg
+from collections.string import StaticString
 from math import align_down, align_up, ceildiv, exp, recip
 from math.constants import log2e
 from sys import (
@@ -21,6 +21,7 @@ from sys import (
 )
 from sys.intrinsics import _type_is_eq
 
+import gpu.warp as warp
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from bit import next_power_of_two
@@ -36,7 +37,9 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute, Dim as LaunchDim
+from gpu.host import DeviceContext
+from gpu.host import Dim as LaunchDim
+from gpu.host import FuncAttribute
 from gpu.host.info import A100, H100, _get_info_from_target
 from gpu.memory import (
     AddressSpace,
@@ -44,22 +47,17 @@ from gpu.memory import (
     async_copy_wait_all,
     external_memory,
 )
-import gpu.warp as warp
 from kv_cache.types import KVCacheStaticParams, KVCacheT, PagedKVCache
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
+    copy,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
-    copy,
     copy_sram_to_dram,
-)
-from nn._amd_flash_attention_gpu import (
-    mha_single_batch as amd_mha_single_batch,
-    mha_decoding_single_batch as amd_mha_decoding_single_batch,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
@@ -74,18 +72,21 @@ from linalg.transpose import transpose
 from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
-from nn.mha_mask import MHAMask, NullMask, TileMaskStatus, MaterializedMask
+from nn._amd_flash_attention_gpu import (
+    mha_decoding_single_batch as amd_mha_decoding_single_batch,
+)
+from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
+from nn.mha_mask import MaterializedMask, MHAMask, NullMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 from nn.mha_sm90 import mha_sm90
-from nn.mha_utils import MHAConfig, _kernel_mask, _copy_frag_to_smem
+from nn.mha_utils import MHAConfig, _copy_frag_to_smem, _kernel_mask
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf, neg_inf
+from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
-from utils.numerics import get_accum_type
 
 from .softmax import (
     _online_softmax_iter_for_mma_output,

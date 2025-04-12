@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from collections import InlineArray
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import InlineArray
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 
 from utils import IndexList

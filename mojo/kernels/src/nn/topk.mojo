@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import List, OptionalReg
+from collections.string import StaticString
 from math import ceildiv, exp, iota
 from random import random_float64
 from sys import alignof, simdwidthof, sizeof
-from collections.string import StaticString
 
+import gpu.warp as warp
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from bit import log2_floor
@@ -27,7 +28,6 @@ from gpu import (
     thread_idx,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
-import gpu.warp as warp
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.dim import Dim
 from gpu.host.info import is_cpu

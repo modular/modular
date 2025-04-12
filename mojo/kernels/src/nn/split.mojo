@@ -5,20 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import List
-from sys import external_call
-
-from sys import simdwidthof
 from collections.string import StaticString
+from sys import external_call, simdwidthof
+from sys.info import _current_target
+
 from algorithm import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import memcpy
-from gpu.host.info import is_cpu
 from gpu.host import DeviceContext
-from sys.info import _current_target
 from gpu.host._compile import _get_gpu_target
+from gpu.host.info import is_cpu
+from memory import memcpy
 
-from utils import StaticTuple, IndexList
+from utils import IndexList, StaticTuple
 from utils.index import product
 
 # ===-----------------------------------------------------------------------===#

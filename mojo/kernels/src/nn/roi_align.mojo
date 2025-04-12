@@ -4,11 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.string import StaticString
 from math import ceil
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections.string import StaticString
 
 from utils import IndexList
 from utils.numerics import min_or_neg_inf

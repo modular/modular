@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from collections import InlineArray
+
 from algorithm import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import InlineArray
 from nn.slice import slice_dim_as_view
 
 from utils.index import Index, IndexList

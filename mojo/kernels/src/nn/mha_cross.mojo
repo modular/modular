@@ -17,8 +17,9 @@ from memory import UnsafePointer
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
-from utils.numerics import get_accum_type
+
 from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
 
 
 @always_inline

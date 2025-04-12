@@ -5,13 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import iota
+from math import iota, isclose
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.cumsum import cumsum
-from math import isclose
 
 
 # CHECK-LABEL: test_cumsum_1d

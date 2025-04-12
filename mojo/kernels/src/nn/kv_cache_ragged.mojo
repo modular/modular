@@ -13,16 +13,14 @@ from gpu.host.info import is_cpu, is_gpu
 from kv_cache.types import (
     ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
-    PagedKVCacheCollectionFA3Fallback,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
     PagedKVCache,
     PagedKVCacheCollection,
+    PagedKVCacheCollectionFA3Fallback,
 )
-from quantization.qmatmul import matmul_qint4
 from linalg.matmul import elementwise_epilogue_type, matmul
-from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from memory import UnsafePointer
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -30,14 +28,16 @@ from nn.flash_attention import (
 )
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import CausalMask, MHAMask, NullMask, ChunkedCausalMask
+from nn.mha_mask import CausalMask, ChunkedCausalMask, MHAMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from nn.mla import (
+    _k_cache_to_buffer,
     flare_mla_decoding,
     flare_mla_prefill,
     mla_prefill_plan,
-    _k_cache_to_buffer,
 )
+from quantization.qmatmul import matmul_qint4
+from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
