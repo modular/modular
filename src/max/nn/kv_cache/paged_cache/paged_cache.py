@@ -779,6 +779,8 @@ class PagedKVCacheManager(KVCacheManager):
     def rollback(self, batch: list[T]) -> None:
         """Rollback the KVCache for speculative decoding by discarding all data
         after ctx.start_idx.
+
+        Rollback should only be called after kv_cache.step() and decrement of ctx.start_idx.
         """
         for ctx in batch:
             self.block_manager.rollback(ctx)
