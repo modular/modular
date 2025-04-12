@@ -1358,20 +1358,39 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
 }
 
 void KGEN::printAsMojoStringLiteral(StringRef name, raw_ostream &out) {
-  static const llvm::SmallDenseMap<char, const char *, 8> sLookup = {
-      {'\n', "\\n"}, {'\t', "\\t"}, {'\r', "\\r"}, {'\a', "\\a"},
-      {'\b', "\\b"}, {'\f', "\\f"}, {'\v', "\\v"},
-  };
-
   for (unsigned char c : name) {
-    if (c == '\\')
-      out << '\\' << c;
-    else if (auto iter = sLookup.find(c); iter != sLookup.end())
-      out << iter->getSecond();
-    else if (llvm::isPrint(c) && c != '"')
-      out << c;
-    else
-      out << '\\' << llvm::hexdigit(c >> 4) << llvm::hexdigit(c & 0x0F);
+    switch (c) {
+    case '\\':
+      out << "\\\\";
+      break;
+    case '\n':
+      out << "\\n";
+      break;
+    case '\t':
+      out << "\\t";
+      break;
+    case '\r':
+      out << "\\r";
+      break;
+    case '\a':
+      out << "\\a";
+      break;
+    case '\b':
+      out << "\\b";
+      break;
+    case '\f':
+      out << "\\f";
+      break;
+    case '\v':
+      out << "\\v";
+      break;
+    default:
+      if (llvm::isPrint(c) && c != '"')
+        out << c;
+      else
+        out << '\\' << llvm::hexdigit(c >> 4) << llvm::hexdigit(c & 0x0F);
+      break;
+    }
   }
 }
 
