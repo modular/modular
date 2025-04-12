@@ -48,6 +48,7 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetMachine.h"
 
 using namespace M;
@@ -156,6 +157,53 @@ enum class OutputType {
   pythonExtensionModule,
 };
 
+/// Helper function to create an output file with the given extension
+static std::unique_ptr<llvm::ToolOutputFile>
+createOutputFile(const State &state, bool hasBinaryOutput,
+                 StringRef fileExtension) {
+  // Get the input filename
+  StringRef inputName;
+  for (const char *arg : state.arguments) {
+    if (StringRef(arg).starts_with("-"))
+      continue;
+    inputName = arg;
+    break;
+  }
+
+  if (inputName.empty()) {
+    state.reportError("no input file provided");
+    return nullptr;
+  }
+
+  // Get the file base name, e.g. `foo` in `foo.mojo`
+  StringRef inputBaseName = inputName.rsplit('.').first;
+
+  // Create the output filename
+  std::string outputName = (inputBaseName + fileExtension).str();
+
+  // Check if -o was specified
+  StringRef outputPath = outputName;
+  for (size_t i = 0; i < state.arguments.size(); ++i) {
+    if (StringRef(state.arguments[i]) == "-o" &&
+        i + 1 < state.arguments.size()) {
+      outputPath = state.arguments[i + 1];
+      break;
+    }
+  }
+
+  // Create the output file
+  std::error_code ec;
+  auto outFile = std::make_unique<llvm::ToolOutputFile>(outputPath, ec,
+                                                        llvm::sys::fs::OF_None);
+
+  if (ec) {
+    state.reportError("could not open output file: " + ec.message());
+    return nullptr;
+  }
+
+  return outFile;
+}
+
 /// Given a module representing a Mojo program, compile the program to a static
 /// archive. Returns an unsuccessful exit code if the archive could not be
 /// created successfully, and nullopt otherwise.
@@ -163,7 +211,8 @@ static std::optional<int>
 compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
                        MLIRContext &context, const CompilationOptions &options,
                        OwningOpRef<ModuleOp> module, TargetInfoAttr target,
-                       BufferRef &archive, OutputType outputType) {
+                       BufferRef &archive, OutputType outputType,
+                       const llvm::opt::InputArgList &args) {
   KGENCompiler compiler(context, options);
 
   // Compile the moduleOp down to the post-elaboration phase, because before
@@ -193,6 +242,33 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
       return state.reportError(
           "shared library should not contain a 'main' function");
     break;
+  }
+
+  // If --emit-llvm is specified, emit LLVM IR
+  if (args.hasArg(options::OPT_emit_llvm)) {
+    // Compile Module to LLVM IR
+    llvm::LLVMContext llvmCtx;
+    ErrorOr<std::unique_ptr<llvm::Module>> llvmModuleOr =
+        objectCompiler->lowerAllFuncsToLLVM(llvmCtx, *module);
+    if (!llvmModuleOr)
+      return state.reportError(Twine("could not lower funcs to LLVM: ") +
+                               llvmModuleOr.getError());
+
+    // Open .ll file
+    auto outFile = createOutputFile(state, /*hasBinaryOutput=*/false, ".ll");
+    if (!outFile)
+      return state.reportError("could not open .ll output file");
+
+    // Print to .ll file
+    std::unique_ptr<llvm::Module> llvmModule = llvmModuleOr.takeValue();
+    llvmModule->print(outFile->os(), nullptr);
+    outFile->keep();
+
+    // Print to stdout
+    llvmModule->print(llvm::outs(), nullptr);
+
+    // Return with success to avoid the link step
+    return EXIT_SUCCESS;
   }
 
   // Generate an archive for the module.
@@ -566,7 +642,7 @@ static int build(const State &subcommandState) {
   BufferRef archive;
   if (std::optional<int> exitCode = compileModuleToArchive(
           state, runtime, mlirCtx, options, moduleOp.takeValue(), target,
-          archive, outputType))
+          archive, outputType, args))
     return *exitCode;
 
   return linkOutput(outputType, state, args, options, archive);
