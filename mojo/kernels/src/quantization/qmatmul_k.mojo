@@ -6,6 +6,7 @@
 from collections import InlineArray
 from math import ceildiv
 from sys import (
+    CompilationTarget,
     alignof,
     has_avx512f,
     has_neon,
@@ -14,7 +15,6 @@ from sys import (
     is_apple_silicon,
     simdwidthof,
     sizeof,
-    CompilationTarget,
 )
 from sys.intrinsics import llvm_intrinsic
 

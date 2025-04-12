@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from bit import log2_floor
 from collections import Optional, OptionalReg
 from collections.string import StaticString
 from math import ceildiv, isclose
@@ -13,6 +12,7 @@ from random import rand, randint, random_float64, seed
 from sys import alignof, argv, is_nvidia_gpu, simdwidthof, sizeof
 from sys._assembly import inlined_assembly
 
+from bit import log2_floor
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import (
@@ -24,7 +24,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute, DeviceAttribute
+from gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
 from gpu.host.info import A100, DEFAULT_GPU_ARCH, is_gpu
 from gpu.intrinsics import lop
 from gpu.memory import (
@@ -35,28 +35,24 @@ from gpu.memory import (
 )
 from gpu.mma import ld_matrix, mma
 from layout import RuntimeLayout
+from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     _swizzle_signature,
+    copy,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_local,
-    copy,
     copy_sram_to_dram,
 )
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.runtime_tuple import RuntimeTuple
-from layout.swizzle import Swizzle, make_swizzle, make_ldmatrix_swizzle
+from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import (
-    TensorCore,
-    get_fragment_size,
-    get_mma_shape,
-)
+from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import warp_split_k_reduction
 from linalg.matmul_gpu import _matmul_gpu
 from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
@@ -66,12 +62,12 @@ from linalg.utils_gpu import (
     block_swizzle,
     select_config,
 )
-from utils.numerics import get_accum_type
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import Index, IndexList
+from utils.numerics import get_accum_type
 
 
 @always_inline

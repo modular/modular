@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray
+from collections import InlineArray, Optional, OptionalReg
 from math import ceildiv
 from sys import (
     alignof,
@@ -16,13 +16,12 @@ from sys import (
     simdwidthof,
     sizeof,
 )
-from collections import Optional, OptionalReg
-from linalg.matmul import elementwise_epilogue_type
 
 from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.accumulate import _Accumulator
+from linalg.matmul import elementwise_epilogue_type
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.utils import partition_work
 from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
