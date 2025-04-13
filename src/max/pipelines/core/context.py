@@ -51,6 +51,8 @@ class InputContext(Protocol):
                     resizes to multiples of CHUNK_SIZE to accommodate the new tokens.
     """
 
+    def set_draft_offset(self, idx: int) -> None: ...
+
     @property
     def ignore_eos(self) -> bool: ...
 
@@ -252,6 +254,8 @@ class TextContext:
         self.ignore_eos = ignore_eos
         self.active_status = ContextStatus.ACTIVE
 
+        self._draft_offset = 0
+
     @property
     def start_idx(self) -> int:
         return self._start_idx
@@ -284,17 +288,15 @@ class TextContext:
         self._start_idx = new_start_idx
         self._active_idx = new_active_idx
         self._end_idx = new_active_idx
-        self._completion_end_idx = new_active_idx
 
         # If the new active_idx is less than the completion end idx
         # and current status suggests we have hit an EOS token
         # reset the status
-        if (
-            self._active_idx < self._completion_end_idx
-            and self.active_status == ContextStatus.END_OF_SEQUENCE
-        ):
-            self.active_status = ContextStatus.ACTIVE
+        if self._active_idx < self._completion_end_idx:
             self._completion_end_idx = new_active_idx
+
+            if self.active_status == ContextStatus.END_OF_SEQUENCE:
+                self.active_status = ContextStatus.ACTIVE
 
     @property
     def current_length(self) -> int:
@@ -369,6 +371,9 @@ class TextContext:
     @property
     def next_tokens(self) -> np.ndarray:
         return self._tokens[self._start_idx : self._active_idx]
+
+    def set_draft_offset(self, idx: int) -> None:
+        self._draft_offset = idx
 
     @property
     def tokens(self) -> np.ndarray:

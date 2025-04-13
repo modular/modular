@@ -130,6 +130,7 @@ def token_sampler(
             )
 
             all_logits = ops.concat([existing_logits, new_logits], -1)
+            tokens = ops.squeeze(tokens, -1)
             graph.output(tokens, all_tokens, all_logits)
         else:
             tokens = ops.squeeze(tokens, -1)

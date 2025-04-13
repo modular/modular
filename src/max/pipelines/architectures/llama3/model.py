@@ -284,11 +284,15 @@ class LlamaModelBase(PipelineModel[TextContext]):
         """Prepare the inputs for the first pass in multistep execution."""
         if self.kv_cache_config.cache_strategy.uses_opaque():
             return self._prepare_ragged_initial_token_inputs(
-                context_batch, kv_cache_inputs
+                context_batch,
+                kv_cache_inputs,
+                return_n_logits,
             )
         else:
             return self._prepare_padded_initial_token_inputs(
-                context_batch, kv_cache_inputs
+                context_batch,
+                kv_cache_inputs,
+                return_n_logits,
             )
 
     def _prepare_ragged_next_token_inputs(

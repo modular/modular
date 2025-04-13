@@ -204,6 +204,12 @@ class PipelineConfig(MAXConfig):
                     for key in kv_cache_kwargs:
                         del unmatched_kwargs[key]
 
+        # NOTE: Do not use this directly after instantiating PipelineConfig. We
+        # only keep this here to support backward compatibility of the draft_model
+        # field entrypoint. This will be removed entirely soon. I purposefully
+        # set this to an empty string than None, to ensure that we catch any
+        # inadvertent use of draft_model.
+        self.draft_model = ""
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
 
