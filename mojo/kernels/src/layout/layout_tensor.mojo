@@ -4115,7 +4115,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(num_vecs):
-                var src_idx: Scalar[src.linear_idx_type] = 0
+                var src_idx: Scalar[src.linear_idx_type]
                 alias src_static_idx: Scalar[src.linear_idx_type] = src.layout(
                     i
                 )
@@ -4167,7 +4167,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(dst_size * dst_element_size):
-                var src_idx: Scalar[src.linear_idx_type] = 0
+                var src_idx: Scalar[src.linear_idx_type]
                 alias src_static_idx = make_layout(
                     src.element_layout, src.layout
                 )(i)
@@ -4866,7 +4866,7 @@ fn copy_dram_to_sram[
 
             alias dst_idx = dst_fragments.layout(i)
 
-            var src_idx: Scalar[src_fragments.linear_idx_type] = 0
+            var src_idx: Scalar[src_fragments.linear_idx_type]
 
             @parameter
             if src.layout.all_dims_known():
@@ -5787,7 +5787,7 @@ fn copy_sram_to_dram[
                 )
                 alias dst_static_idx = dst_fragments.layout(i)
 
-                var dst_idx: Scalar[dst_fragments.linear_idx_type] = 0
+                var dst_idx: Scalar[dst_fragments.linear_idx_type]
 
                 @parameter
                 if dst.layout.all_dims_known():
@@ -5977,7 +5977,7 @@ fn copy_local_to_dram[
             )
             alias dst_static_idx = dst_fragments.layout(i)
 
-            var dst_idx: Scalar[dst_fragments.linear_idx_type] = 0
+            var dst_idx: Scalar[dst_fragments.linear_idx_type]
 
             @parameter
             if dst_fragments.layout.all_dims_known():
