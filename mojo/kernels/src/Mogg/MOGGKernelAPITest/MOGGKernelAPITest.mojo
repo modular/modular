@@ -459,9 +459,9 @@ struct MatmulFuseOut:
         alias c_dtype = c.type
 
         # Convert everything to NDBuffer
-        var c_buffer = toNDBuffer[c_dtype, 2](c)
-        var a_buffer = toNDBuffer[a_dtype, 2](a)
-        var b_buffer = toNDBuffer[b_dtype, 2](b)
+        # var c_buffer = toNDBuffer[c_dtype, 2](c)
+        # var a_buffer = toNDBuffer[a_dtype, 2](a)
+        # var b_buffer = toNDBuffer[b_dtype, 2](b)
 
         @parameter
         @always_inline

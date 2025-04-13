@@ -2763,7 +2763,7 @@ struct Transpose:
                     " rank)"
                 )
 
-        shape, strides = Self.transpose_in_place(input, permutations)
+        shape, _ = Self.transpose_in_place(input, permutations)
         var out = IndexList[input.rank]()
 
         @parameter
