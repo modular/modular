@@ -22,8 +22,6 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     var xRange: Float32 = 2.0
     var yRange: Float32 = 1.5
     var minX = 0.5 - xRange
-    var maxX = 0.5 + xRange
-    var minY = -0.5 - yRange
     var maxY = -0.5 + yRange
 
     var c = ComplexFloat32(
@@ -33,7 +31,7 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     var z = c
 
     var iter: Int = 0
-    for i in range(10):
+    for _i in range(10):
         iter += 1
         z = z * z + c
         if z.squared_norm() > 4:
