@@ -57,11 +57,10 @@ BATCH_SIZE = 4
 
 
 def is_h100_h200() -> bool:
+    """Checks if this is an H100 or H200 GPU."""
     devices = NVITOPDevice.all()
-    return (
-        len(devices) > 0
-        and "H100" in devices[0].name()
-        or "H200" in devices[0].name()
+    return bool(devices) and (
+        "H100" in devices[0].name() or "H200" in devices[0].name()
     )
 
 
