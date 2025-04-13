@@ -37,7 +37,12 @@ def gather(
     output_shape = [*shape[:axis], *indices.shape, *shape[axis + 1 :]]
     return Graph.current._add_op(
         rmo.mo_gather,
-        TensorType(input.dtype, output_shape, input.device).to_mlir(),
+        TensorType(
+            input.dtype,
+            output_shape,
+            # Prefer indices device if input device unset since they're equal.
+            input.device if input.device else indices.device,
+        ).to_mlir(),
         input,
         indices,
         constant(axis, DType.int64),
