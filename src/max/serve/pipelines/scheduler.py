@@ -857,7 +857,9 @@ class TokenGenerationScheduler(Scheduler):
             num_steps=sch_output.num_steps,
         )
         # put the unfinished request back into the queue, and delete its responses
-        self._handle_chunked_requests(batch_to_execute, batch_responses)
+        if self.scheduler_config.enable_chunked_prefill:
+            self._handle_chunked_requests(batch_to_execute, batch_responses)
+
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
         # add the encoded requests to the continuous batch
