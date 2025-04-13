@@ -125,14 +125,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for m in range(0, block_m, 2 * Self._tuple_width):
+        for _ in range(0, block_m, 2 * Self._tuple_width):
 
             @parameter
             for col in range(Self._tile_n):
                 var packed_bits = bits_ptr.load[width = Self._simd_width]()
                 bits_ptr += Self._simd_width
-
-                var dst_row_ptr = dst_ptr
 
                 @parameter
                 for i in range(2):

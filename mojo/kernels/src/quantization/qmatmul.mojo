@@ -54,10 +54,10 @@ def matmul_qint4_pack_b[
     var src_ptr = b.data
     var dst_ptr = b_rot.data
 
-    for n in range(0, N, n_groups):
+    for _ in range(0, N, n_groups):
         for nn in range(n_groups):
             var dst_k_ptr = dst_ptr
-            for k in range(0, K, group_size):
+            for _ in range(0, K, group_size):
                 var scale = src_ptr.bitcast[Float16]().load()
                 dst_k_ptr.bitcast[Float16]().store(nn, scale)
                 src_ptr += sizeof[DType.float16]()
