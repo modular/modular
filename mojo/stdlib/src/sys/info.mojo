@@ -521,8 +521,23 @@ fn _is_sm_120x() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_sm_8x_or_newer() -> Bool:
+    return _is_sm_8x() or _is_sm_9x_or_newer()
+
+
+@always_inline("nodebug")
 fn _is_sm_9x_or_newer() -> Bool:
-    return _is_sm_9x() or _is_sm_100x() or _is_sm_120x()
+    return _is_sm_9x() or _is_sm_100x_or_newer()
+
+
+@always_inline("nodebug")
+fn _is_sm_100x_or_newer() -> Bool:
+    return _is_sm_100x() or _is_sm_120x_or_newer()
+
+
+@always_inline("nodebug")
+fn _is_sm_120x_or_newer() -> Bool:
+    return _is_sm_120x()
 
 
 @always_inline("nodebug")
