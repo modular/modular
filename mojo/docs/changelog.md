@@ -33,6 +33,15 @@ what we publish.
   type which led to a variety of problems.  Support for `object` is being
   removed until we have time to investigate a proper replacement.
 
+- The Mojo compiler now warns about stores to values that are never used, e.g.:
+  `x = foo(); x = bar()` will warn about the first assignment to `x` because
+  it is overwritten.  You can generally address this by deleting dead code, or
+  by assigning to `_` instead: `_ = foo(); x = bar()`.  You may also encounter
+  this in variable declarations, e.g. `var x = 0; ...; x = foo()`.  In this
+  case, change the variable to being declared as uninitialized, e.g.
+  `var x: Int`.  You may also silence this warning entirely for a variable by
+  renaming it to start with an underscore, e.g. `_x`.
+
 ### Standard library changes
 
 - The `StringLiteral` type has been moved to a more reliable "dependent type"
