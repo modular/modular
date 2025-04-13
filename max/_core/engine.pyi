@@ -113,9 +113,7 @@ class Model:
     def signature(self) -> inspect.Signature:
         """Get input signature for model."""
 
-    def execute(
-        self, *args: InputType, copy_inputs_to_device: bool = True
-    ) -> list[Tensor | MojoValue]:
+    def execute(self, *args: InputType) -> list[Tensor | MojoValue]:
         """
         Executes the model with the provided input and returns the outputs.
 
@@ -132,12 +130,6 @@ class Model:
               :obj:`torch.Tensor`, and :obj:`max.driver.Tensor` inputs. All
               inputs will be copied to the device that the model is resident on
               prior to executing.
-
-            copy_inputs_to_device:
-              Whether to copy all input tensors to the model's device. Defaults
-              to :obj:`True`. If set to :obj:`False`, input tensors will remain
-              on whatever device they're currently on, which the model must be
-              prepared for.
 
             output_device:
               The device to copy output tensors to. Defaults to :obj:`None`, in
