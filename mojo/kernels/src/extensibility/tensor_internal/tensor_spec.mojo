@@ -113,10 +113,10 @@ struct TensorSpec(
           type: The dtype of the specification.
           shape: The shapes to initialize the shape with.
         """
-        var owned_shape = shape^
-        var rep = _as_rep16(owned_shape._rep)
+        var rep = _as_rep16(shape._rep)
         # Set to null so dims won't get freed for RepOutOfLine.
-        owned_shape._rep.ptr = UnsafePointer[NoneType]()
+        shape._rep.ptr = UnsafePointer[NoneType]()
+        _ = shape^
         rep.auxillary = type._as_i8()
 
         self.shape = TensorShape()
