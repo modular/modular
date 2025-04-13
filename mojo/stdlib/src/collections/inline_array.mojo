@@ -65,7 +65,7 @@ fn _inline_array_construction_checks[size: Int]():
 @value
 struct InlineArray[
     ElementType: Copyable & Movable,
-    size: Int,
+    size: UInt,
     *,
     run_destructors: Bool = False,
 ](Sized, Movable, Copyable, ExplicitlyCopyable):
@@ -180,7 +180,7 @@ struct InlineArray[
 
     @always_inline
     @implicit
-    fn __init__[batch_size: Int = 64](out self, fill: Self.ElementType):
+    fn __init__[batch_size: UInt = 64](out self, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied
         value.
 
@@ -224,13 +224,13 @@ struct InlineArray[
         for _ in range(0, unroll_end, batch_size):
 
             @parameter
-            for _ in range(batch_size):
+            for _ in range(Int(batch_size)):
                 ptr.init_pointee_copy(fill)
                 ptr += 1
 
         # Fill the remainder
         @parameter
-        for _ in range(unroll_end, size):
+        for _ in range(Int(unroll_end), Int(size)):
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
@@ -284,7 +284,7 @@ struct InlineArray[
 
         # Move each element into the array storage.
         @parameter
-        for i in range(size):
+        for i in range(Int(size)):
             UnsafePointer(to=storage[i]).move_pointee_into(ptr)
             ptr += 1
 
@@ -346,7 +346,7 @@ struct InlineArray[
         if Self.run_destructors:
 
             @parameter
-            for idx in range(size):
+            for idx in range(Int(size)):
                 var ptr = self.unsafe_ptr() + idx
                 ptr.destroy_pointee()
 
@@ -418,8 +418,8 @@ struct InlineArray[
             supports both positive indices starting from 0 and negative indices
             counting backwards from the end of the array.
         """
-        constrained[-size <= Int(idx) < size, "Index must be within bounds."]()
         alias normalized_index = normalize_index["InlineArray"](idx, size)
+        constrained[normalized_index < size, "Index must be within bounds."]()
         return self.unsafe_get(normalized_index)
 
     # ===------------------------------------------------------------------=== #
@@ -483,15 +483,14 @@ struct InlineArray[
         """
         var i = index(idx)
         debug_assert(
-            0 <= Int(i) < size,
+            UInt(i) < size,
             " InlineArray.unsafe_get() index out of bounds: ",
-            Int(idx),
+            UInt(i),
             " should be less than: ",
             size,
         )
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._array).address,
-            i,
+            UnsafePointer(to=self._array).address, i
         )
         return UnsafePointer(ptr)[]
 
@@ -570,7 +569,7 @@ struct InlineArray[
         """
 
         @parameter
-        for i in range(size):
+        for i in range(Int(size)):
             if self[i] == value:
                 return True
         return False
