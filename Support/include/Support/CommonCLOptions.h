@@ -184,15 +184,6 @@ public:
 
   LogicalResult emitArchive(StringRef object) const;
 
-  //===--------------------------------------------------------------------===//
-  // Hacks and workarounds
-  //===--------------------------------------------------------------------===//
-
-  // TODO(#20024): Until we have a better solution we need to disable oneDNN
-  // optimizations in stock tf since they appear to be incompatible with the
-  // tf eager C API.
-  bool disableTFOneDNN{false};
-
 private:
   /// Default alignment for input files.
   /// Used only when both client code and CLI do not specify alignment.
@@ -255,19 +246,6 @@ private:
           "The directory in which to store 'temporary' intermediate files. No "
           "files will be saved here unless `-save-temps` is also specified."),
       llvm::cl::location(options.tempsDir), llvm::cl::Optional,
-      llvm::cl::cat(CommonOptionsCategory)};
-
-  //===--------------------------------------------------------------------===//
-  // Hacks and workarounds
-  //===--------------------------------------------------------------------===//
-
-  // TODO(#20024): Until we have a better solution we need to disable oneDNN
-  // optimizations in stock tf since they appear to be incompatible with the
-  // tf eager C API.
-  M::cl::MOpt<bool, true> disableTFOneDNNOpt{
-      "disable-tf-onednn",
-      cl::desc("Disable the stock TF oneDNN optimizations."),
-      llvm::cl::location(options.disableTFOneDNN),
       llvm::cl::cat(CommonOptionsCategory)};
 };
 
