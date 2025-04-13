@@ -46,7 +46,7 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
         # var t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM if (is_amd_gpu() or no_lop) else lop[
         #    lut
         # ](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
-        var t: Int32 = 0
+        var t: Int32
 
         @parameter
         if is_amd_gpu() or no_lop:

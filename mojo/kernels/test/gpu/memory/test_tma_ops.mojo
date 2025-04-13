@@ -151,7 +151,7 @@ fn test_elect_one_sync():
 
     fn test_elect_one_sync_kernel():
         # CHECK: elect.sync      %r1|%p1, -1;
-        var lane_predicate: Bool = elect_one_sync()
+        var _lane_predicate: Bool = elect_one_sync()
 
     print(
         _compile_code_asm[

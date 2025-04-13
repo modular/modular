@@ -96,7 +96,7 @@ fn mac_loop[
     GROUP_M: Int,
 ):
     var tile_id = start_iter // iters_per_tile
-    var pid = IndexList[2](0, 0)
+    var pid: IndexList[2]
     if GROUP_M > 0:
         pid = swizzle_tile(tile_id, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_M)
     else:

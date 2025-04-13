@@ -40,7 +40,7 @@ fn semaphore_vector_reduce[
     sema.wait(block_idx)
 
     c_ptr[tid] += a_ptr[block_idx * N + tid]
-    var lx = 0
+    var lx: Int
     if num_parts == (block_idx + 1):
         lx = 0
     else:

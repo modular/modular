@@ -78,9 +78,8 @@ fn run_matvec[
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
-    var nstime = 0.0
     var kernelType = "GEMV"
-    nstime = ctx.execution_time[run_func_gemv](iterations)
+    var nstime = ctx.execution_time[run_func_gemv](iterations)
     var flops = 2 * M * N * K
     var sectime = ((nstime / iterations) / 1000000000)
     print(kernelType, "KERNEL:")

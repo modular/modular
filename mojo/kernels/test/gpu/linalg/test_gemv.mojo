@@ -149,7 +149,6 @@ def run_matvec[
     ctx.enqueue_copy(c_host_naive, c_device)
     ctx.synchronize()
 
-    nstime = 0.0
     nstime = ctx.execution_time[run_func_naive](iterations)
     var sectime2 = ((nstime / iterations) / 1000000000)
     print("SHMEM MATMUL:")
