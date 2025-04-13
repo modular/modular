@@ -28,7 +28,7 @@ fn test_model_numpy_input() raises:
     )
 
     var np = Python.import_module("numpy")
-    var input_np_tensor = np.ones(PythonObject.tuple(5)).astype(np.float32)
+    var input_np_tensor = np.ones(Python.tuple(5)).astype(np.float32)
 
     var np_outputs = model.execute("input", input_np_tensor)
     _ = input_np_tensor^
