@@ -151,7 +151,7 @@ def test_range_reversed():
         )
         var forward_sum = 0
         var backward_sum = 0
-        for i in range(len(forward)):
+        for _ in range(len(forward)):
             forward_sum += iforward.__next__()
             backward_sum += ibackward.__next__()
         assert_equal(forward_sum, backward_sum, "forward_sum, backward_sum")

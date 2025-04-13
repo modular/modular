@@ -48,7 +48,7 @@ def test_write_does_not_trigger_destructor():
     a.write(AbortOnDel(42))
 
     # Using the initializer should not trigger the destructor too.
-    var b = UnsafeMaybeUninitialized[AbortOnDel](AbortOnDel(42))
+    _ = UnsafeMaybeUninitialized[AbortOnDel](AbortOnDel(42))
 
     # The destructor of a and b have already run at this point, and it shouldn't have
     # caused a crash since we assume uninitialized memory.

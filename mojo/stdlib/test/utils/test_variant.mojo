@@ -184,7 +184,7 @@ def test_get_returns_mutable_reference():
 
 
 def test_is_type_supported():
-    var x = Variant[Float64, Int32](Int32(0))
+    var x: Variant[Float64, Int32]
     assert_equal(x.is_type_supported[Float64](), True)
     assert_equal(x.is_type_supported[Int32](), True)
     assert_equal(x.is_type_supported[Float32](), False)

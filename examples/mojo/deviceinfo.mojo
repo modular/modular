@@ -37,7 +37,7 @@ from sys.info import _current_arch, _current_target, _triple_attr
 
 
 def main():
-    var os = StaticString("")
+    var os: StaticString
     if os_is_linux():
         os = "linux"
     elif os_is_macos():

@@ -1133,7 +1133,6 @@ def test_string_char_slices_iter():
 
     assert_equal(321111, atol(concat))
 
-    var idx = -1
     vs = String("mojo🔥")
     var iterator = vs.codepoint_slices()
     assert_equal(5, len(iterator))

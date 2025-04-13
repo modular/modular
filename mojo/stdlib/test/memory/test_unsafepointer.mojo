@@ -232,7 +232,7 @@ def test_unsafepointer_alloc_origin():
 
     # Note: Set ObservableDel origin explicitly since it otherwise contains a
     #   MutableAnyOrigin pointer that interferes with this test.
-    var obj_2 = ObservableDel[__origin_of(did_del_2)](
+    _ = ObservableDel[__origin_of(did_del_2)](
         UnsafePointer.address_of(did_del_2)
     )
 

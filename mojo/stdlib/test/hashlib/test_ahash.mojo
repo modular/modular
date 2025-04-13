@@ -738,9 +738,7 @@ def assert_fill_factor_old_hash[
 
 
 def test_fill_factor():
-    var words = List[String]()
-
-    words = gen_word_pairs[words_ar]()
+    var words: List[String] = gen_word_pairs[words_ar]()
     assert_fill_factor["AR"](words, len(words), 0.63)
     assert_fill_factor["AR"](words, len(words) // 2, 0.86)
     assert_fill_factor["AR"](words, len(words) // 4, 0.98)

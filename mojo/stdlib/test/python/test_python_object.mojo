@@ -291,9 +291,8 @@ fn test_string_conversions() raises -> None:
             print("Error occurred")
 
     fn test_type_object() raises -> None:
-        var py = Python()
         var py_float = PythonObject(3.14)
-        var type_obj = py.type(py_float)
+        var type_obj = Python.type(py_float)
         assert_equal(String(type_obj), "<class 'float'>")
 
     test_string_literal()
@@ -355,12 +354,12 @@ fn test_iter() raises:
         i += 1
 
     var list2 = Python.list()
-    for fruit in list2:
+    for _ in list2:
         raise Error("This should not be reachable as the list is empty.")
 
     var not_iterable: PythonObject = 3
     with assert_raises():
-        for x in not_iterable:
+        for _ in not_iterable:
             assert_false(
                 True,
                 msg=(

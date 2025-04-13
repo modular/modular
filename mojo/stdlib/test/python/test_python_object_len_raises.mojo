@@ -18,7 +18,6 @@ from testing import assert_raises
 
 
 def test_invalid_len():
-    var python = Python()
     var x = PythonObject(42)
     with assert_raises(contains="object has no len()"):
         _ = len(x)

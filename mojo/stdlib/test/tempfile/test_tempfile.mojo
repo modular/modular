@@ -165,7 +165,7 @@ def test_gettempdir():
 
 
 def test_temporary_directory() -> None:
-    var tmp_dir: String = ""
+    var tmp_dir: String
     with TemporaryDirectory(suffix="my_suffix", prefix="my_prefix") as tmp_dir:
         assert_true(exists(tmp_dir), "Failed to create temp dir " + tmp_dir)
         assert_true(tmp_dir.endswith("my_suffix"))
