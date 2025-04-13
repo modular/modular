@@ -667,7 +667,6 @@ fn tile[
         upperbound_y: Max offset in y dimension passed to workgroup function.
     """
     # Initialize where to start on the overall work load.
-    var current_offset_x: Int = offset_x
     var current_offset_y: Int = offset_y
 
     alias num_tiles_x = len(tile_sizes_x)
@@ -677,7 +676,7 @@ fn tile[
     for idx_y in range(num_tiles_y):
         alias tile_size_y = tile_sizes_y[idx_y]
         while current_offset_y <= upperbound_y - tile_size_y:
-            current_offset_x = offset_x
+            var current_offset_x = offset_x
 
             @parameter
             for idx_x in range(num_tiles_x):
