@@ -15,7 +15,6 @@ from typing import Callable as _Callable
 from typing import Union as _Union
 
 from .context import (
-    ContextStatus,
     InputContext,
     TextAndVisionContext,
     TextContext,
@@ -41,7 +40,6 @@ from .interfaces import (
 PipelinesFactory = _Callable[[], _Union[TokenGenerator, EmbeddingsGenerator]]
 
 __all__ = [
-    "ContextStatus",
     "InputContext",
     "TextAndVisionContext",
     "TextContext",

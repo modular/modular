@@ -31,10 +31,8 @@ from max.nn.kv_cache import KVCacheInputsSequence
 from transformers import AutoConfig
 
 from .core import (
-    ContextStatus,
     InputContext,
     TextGenerationResponse,
-    TextGenerationStatus,
     TextResponse,
     TokenGenerator,
 )
@@ -432,12 +430,10 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         ):
             context = context_batch[idx]
 
-            if context.active_status == ContextStatus.END_OF_SEQUENCE:  # type: ignore
-                status = TextGenerationStatus.END_OF_SEQUENCE
-            else:
-                status = TextGenerationStatus.ACTIVE
-
-            res[request_ids[idx]] = TextGenerationResponse([], status)
+            res[request_ids[idx]] = TextGenerationResponse(
+                [],
+                context.active_status,  # type: ignore
+            )
 
             context = context_batch[idx]
             rollback_count = num_draft_tokens_generated - rejected_token_idx
@@ -475,12 +471,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 context.set_draft_offset(idx=-1)
                 context.bump_token_indices(start_idx=-1)
 
-            if context.active_status == ContextStatus.END_OF_SEQUENCE:  # type: ignore
-                res[request_ids[idx]].update_status(
-                    TextGenerationStatus.END_OF_SEQUENCE
-                )
-            elif context.active_status == ContextStatus.ACTIVE:  # type: ignore
-                res[request_ids[idx]].update_status(TextGenerationStatus.ACTIVE)
+            res[request_ids[idx]].update_status(context.active_status)  # type: ignore
 
             # TODO: This resets the context object for a new sequence.
             # We may want to make this more explicit
