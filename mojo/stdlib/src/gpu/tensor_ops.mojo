@@ -181,9 +181,8 @@ fn _tc_reduce_vector[
             mma(c_reg, a_reg, b_reg, d_reg)
 
             # a third mma operation needed to sum the 8 elements
-            var x_reg = SIMD[in_type, 4]()
             b_reg = SIMD[in_type, 2](1)
-            x_reg = c_reg.cast[in_type]()
+            var x_reg = c_reg.cast[in_type]()
             d_reg = SIMD[out_type, 4]()
             mma(d_reg, x_reg, b_reg, d_reg)
 
