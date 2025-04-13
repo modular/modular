@@ -600,7 +600,7 @@ class InferenceSession:
                         registered_weight.__dlpack_device__()[0] == 1
                     ):
                         raise ValueError(
-                            f"Mismatch in device type for weight '{weight_name}'."
+                            f"Mismatch in device type for weight '{weight_name}'. Expected {expected_device} but weight is {registered_weight}"
                         )
 
             _model = self._impl.compile_from_object(
