@@ -811,8 +811,6 @@ struct _Accumulator[
         """Accumulation optimized for NEON."""
         constrained[has_neon()]()
 
-        var b_ptr = b
-
         @parameter
         @always_inline
         fn micro_kernel[num_lanes: Int](offset: Int):
@@ -870,8 +868,6 @@ struct _Accumulator[
     ):
         """Accumulation optimized for NEON."""
         constrained[has_neon()]()
-
-        var b_ptr = b
 
         @parameter
         @always_inline

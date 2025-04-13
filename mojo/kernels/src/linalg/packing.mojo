@@ -244,7 +244,7 @@ struct PackMatrixRows[
         # fill rows with valid data
 
         var row_idx: Int = 0
-        var col_idx: Int = 0
+        var col_idx: Int
 
         # An unswitch-able unit function that transpose packs a small tile.
         @always_inline

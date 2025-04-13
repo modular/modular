@@ -1000,7 +1000,7 @@ fn multistage_gemm_kernel[
                         accum_smem_warp_tile.vectorize[1, simd_size](),
                     )
 
-                var lock_flag = 0
+                var lock_flag: Int
                 if num_parts == (block_idx.z + 1):
                     lock_flag = 0
                 else:
