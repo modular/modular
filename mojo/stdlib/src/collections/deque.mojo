@@ -51,7 +51,7 @@ struct Deque[ElementType: Copyable & Movable](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    alias default_capacity: Int = 64
+    alias default_capacity: UInt = 64
     """The default capacity of the deque: must be the power of 2."""
 
     # ===-------------------------------------------------------------------===#
@@ -61,19 +61,19 @@ struct Deque[ElementType: Copyable & Movable](
     var _data: UnsafePointer[ElementType]
     """The underlying storage for the deque."""
 
-    var _head: Int
+    var _head: UInt
     """The index of the head: points the first element of the deque."""
 
-    var _tail: Int
+    var _tail: UInt
     """The index of the tail: points behind the last element of the deque."""
 
-    var _capacity: Int
+    var _capacity: UInt
     """The amount of elements that can fit in the deque without resizing it."""
 
-    var _min_capacity: Int
+    var _min_capacity: UInt
     """The minimum required capacity in the number of elements of the deque."""
 
-    var _maxlen: Int
+    var _maxlen: UInt
     """The maximum number of elements allowed in the deque.
 
     If more elements are pushed, causing the total to exceed this limit,
@@ -91,9 +91,9 @@ struct Deque[ElementType: Copyable & Movable](
         out self,
         *,
         owned elements: Optional[List[ElementType]] = None,
-        capacity: Int = Self.default_capacity,
-        min_capacity: Int = Self.default_capacity,
-        maxlen: Int = -1,
+        capacity: UInt = Self.default_capacity,
+        min_capacity: UInt = Self.default_capacity,
+        maxlen: UInt = UInt.MAX,
         shrink: Bool = True,
     ):
         """Constructs a deque.
@@ -105,21 +105,19 @@ struct Deque[ElementType: Copyable & Movable](
             maxlen: The maximum allowed capacity of the deque when growing.
             shrink: Should storage be de-allocated when not needed.
         """
-        if capacity <= 0:
-            deque_capacity = self.default_capacity
-        else:
-            deque_capacity = next_power_of_two(capacity)
+        var deque_capacity = self.default_capacity if (capacity == 0) else UInt(
+            next_power_of_two(capacity)
+        )
 
-        if min_capacity <= 0:
-            min_deque_capacity = self.default_capacity
-        else:
-            min_deque_capacity = next_power_of_two(min_capacity)
+        var min_deque_capacity = self.default_capacity if (
+            min_capacity == 0
+        ) else UInt(next_power_of_two(min_capacity))
 
-        if maxlen <= 0:
-            max_deque_len = -1
+        if maxlen == 0 or maxlen == UInt.MAX:
+            max_deque_len = UInt.MAX
         else:
             max_deque_len = maxlen
-            max_deque_capacity = next_power_of_two(maxlen)
+            max_deque_capacity = UInt(next_power_of_two(maxlen))
             if max_deque_capacity == maxlen:
                 max_deque_capacity <<= 1
             deque_capacity = min(deque_capacity, max_deque_capacity)
@@ -235,7 +233,7 @@ struct Deque[ElementType: Copyable & Movable](
         for element in other:
             self.append(element[])
 
-    fn __mul__(self, n: Int) -> Self:
+    fn __mul__(self, n: UInt) -> Self:
         """Concatenates `n` deques of `self` and returns a new deque.
 
         Args:
@@ -244,7 +242,7 @@ struct Deque[ElementType: Copyable & Movable](
         Returns:
             The new deque.
         """
-        if n <= 0:
+        if n == 0:
             return Self(
                 capacity=self._min_capacity,
                 min_capacity=self._min_capacity,
@@ -257,13 +255,13 @@ struct Deque[ElementType: Copyable & Movable](
                 new.append(element[])
         return new^
 
-    fn __imul__(mut self, n: Int):
+    fn __imul__(mut self, n: UInt):
         """Concatenates self `n` times in place.
 
         Args:
             n: The multiplier number.
         """
-        if n <= 0:
+        if n == 0:
             self.clear()
             return
 
@@ -386,18 +384,17 @@ struct Deque[ElementType: Copyable & Movable](
         Returns:
             A reference to the element at the given index.
         """
-        normalized_idx = idx
+        normalized_idx = UInt(idx)
+        if idx < 0:
+            normalized_idx = len(self) + idx
 
         debug_assert(
-            -len(self) <= normalized_idx < len(self),
+            normalized_idx < len(self),
             "index: ",
             normalized_idx,
             " is out of bounds for `Deque` of size: ",
             len(self),
         )
-
-        if normalized_idx < 0:
-            normalized_idx += len(self)
 
         offset = self._physical_index(self._head + normalized_idx)
         return (self._data + offset)[]
@@ -489,8 +486,8 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             value: The value to append.
         """
-        # checking for positive _maxlen first is important for speed
-        if self._maxlen > 0 and len(self) == self._maxlen:
+        # checking for smaller than UInt.MAX first is important for speed
+        if self._maxlen < UInt.MAX and len(self) == self._maxlen:
             (self._data + self._head).destroy_pointee()
             self._head = self._physical_index(self._head + 1)
 
@@ -506,8 +503,8 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             value: The value to append.
         """
-        # checking for positive _maxlen first is important for speed
-        if self._maxlen > 0 and len(self) == self._maxlen:
+        # checking for smaller than UInt.MAX first is important for speed
+        if self._maxlen < UInt.MAX and len(self) == self._maxlen:
             self._tail = self._physical_index(self._tail - 1)
             (self._data + self._tail).destroy_pointee()
 
@@ -533,7 +530,7 @@ struct Deque[ElementType: Copyable & Movable](
 
     fn count[
         T: EqualityComparable & Copyable & Movable, //
-    ](self: Deque[T], value: T) -> Int:
+    ](self: Deque[T], value: T) -> UInt:
         """Counts the number of occurrences of a `value` in the deque.
 
         Parameters:
@@ -546,7 +543,7 @@ struct Deque[ElementType: Copyable & Movable](
         Returns:
             The number of occurrences of the value in the deque.
         """
-        count = 0
+        count = UInt(0)
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
             if (self._data + offset)[] == value:
@@ -626,7 +623,7 @@ struct Deque[ElementType: Copyable & Movable](
         value: T,
         start: Int = 0,
         stop: Optional[Int] = None,
-    ) raises -> Int:
+    ) raises -> UInt:
         """Returns the index of the first occurrence of a `value` in a deque
         restricted by the range given the `start` and `stop` bounds.
 
@@ -870,8 +867,8 @@ struct Deque[ElementType: Copyable & Movable](
                 )
 
     fn _compute_pop_and_move_counts(
-        self, len_self: Int, len_values: Int
-    ) -> (Int, Int, Int, Int, Int):
+        self, len_self: UInt, len_values: UInt
+    ) -> (UInt, UInt, UInt, UInt, UInt):
         """
         Calculates the number of elements to retain, move or discard in the deque and
         in the list of the new values based on the current length of the deque,
@@ -891,9 +888,7 @@ struct Deque[ElementType: Copyable & Movable](
         """
         len_total = len_self + len_values
 
-        n_move_total = (
-            min(len_total, self._maxlen) if self._maxlen > 0 else len_total
-        )
+        n_move_total = min(len_total, self._maxlen)
         n_move_values = min(len_values, n_move_total)
         n_move_self = n_move_total - n_move_values
 
@@ -953,7 +948,7 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             new_capacity: The new capacity of the buffer.
         """
-        deque_len = len(self) if self else self._capacity
+        var deque_len = UInt(len(self)) if self else self._capacity
 
         tail_len = self._tail
         head_len = self._capacity - self._head

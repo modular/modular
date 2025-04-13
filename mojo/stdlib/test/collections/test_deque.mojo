@@ -26,17 +26,13 @@ fn test_impl_init_default() raises:
 
     assert_equal(q._capacity, q.default_capacity)
     assert_equal(q._min_capacity, q.default_capacity)
-    assert_equal(q._maxlen, -1)
+    assert_equal(q._maxlen, UInt.MAX)
     assert_equal(q._head, 0)
     assert_equal(q._tail, 0)
     assert_equal(q._shrink, True)
 
 
 fn test_impl_init_capacity() raises:
-    q = Deque[Int](capacity=-10)
-    assert_equal(q._capacity, q.default_capacity)
-    assert_equal(q._min_capacity, q.default_capacity)
-
     q = Deque[Int](capacity=0)
     assert_equal(q._capacity, q.default_capacity)
     assert_equal(q._min_capacity, q.default_capacity)
@@ -51,10 +47,6 @@ fn test_impl_init_capacity() raises:
 
 
 fn test_impl_init_min_capacity() raises:
-    q = Deque[Int](min_capacity=-10)
-    assert_equal(q._min_capacity, q.default_capacity)
-    assert_equal(q._capacity, q.default_capacity)
-
     q = Deque[Int](min_capacity=0)
     assert_equal(q._min_capacity, q.default_capacity)
     assert_equal(q._capacity, q.default_capacity)
@@ -69,12 +61,8 @@ fn test_impl_init_min_capacity() raises:
 
 
 fn test_impl_init_maxlen() raises:
-    q = Deque[Int](maxlen=-10)
-    assert_equal(q._maxlen, -1)
-    assert_equal(q._capacity, q.default_capacity)
-
     q = Deque[Int](maxlen=0)
-    assert_equal(q._maxlen, -1)
+    assert_equal(q._maxlen, UInt.MAX)
     assert_equal(q._capacity, q.default_capacity)
 
     q = Deque[Int](maxlen=10)
@@ -312,7 +300,7 @@ fn test_impl_extend() raises:
     assert_equal((q._data + 5)[], 2)
 
     # turn off `maxlen` restriction
-    q._maxlen = -1
+    q._maxlen = UInt.MAX
     q.extend(lst)
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 2)
@@ -375,7 +363,7 @@ fn test_impl_extendleft() raises:
     assert_equal((q._data + 5)[], 2)
 
     # turn off `maxlen` restriction
-    q._maxlen = -1
+    q._maxlen = UInt.MAX
     q.extendleft(lst)
     assert_equal(q._capacity, 8)
     assert_equal(q._head, 7)
@@ -504,7 +492,7 @@ fn test_impl_add() raises:
     # has to inherit q2 properties
     assert_equal(q4._capacity, 64)
     assert_equal(q4._min_capacity, 256)
-    assert_equal(q4._maxlen, -1)
+    assert_equal(q4._maxlen, UInt.MAX)
     assert_equal(q4._shrink, False)
     assert_equal(q4._head, 0)
     assert_equal(q4._tail, 16)
@@ -531,7 +519,7 @@ fn test_impl_add() raises:
     # has to inherit q4 properties
     assert_equal(q6._capacity, 64)
     assert_equal(q6._min_capacity, 256)
-    assert_equal(q6._maxlen, -1)
+    assert_equal(q6._maxlen, UInt.MAX)
     assert_equal(q6._shrink, False)
     # has to obey to maxlen
     assert_equal(len(q6), 32)
@@ -564,7 +552,7 @@ fn test_impl_iadd() raises:
     # has to keep q2 properties
     assert_equal(q2._capacity, 64)
     assert_equal(q2._min_capacity, 256)
-    assert_equal(q2._maxlen, -1)
+    assert_equal(q2._maxlen, UInt.MAX)
     assert_equal(q2._shrink, False)
     assert_equal(len(q2), 18)
     assert_equal(q2._head, 0)
