@@ -78,11 +78,13 @@ modular_py_test(
     srcs = [
         "gpu_tests/conftest.py",
         "gpu_tests/test_cli_gpu.py",
+        "gpu_tests/test_config_gpu_pure.py",
         "gpu_tests/test_cumsum_gpu.py",
         "gpu_tests/test_engine.py",
         "gpu_tests/test_explicit_device.py",
         "gpu_tests/test_gpu_weight.py",
         "gpu_tests/test_load_weights_fp8.py",
+        "gpu_tests/test_memory_estimation_gpu.py",
         "gpu_tests/test_registry_gpu.py",
     ],
     data = [
@@ -125,7 +127,6 @@ modular_py_test(
     srcs = [
         "gpu_tests/conftest.py",
         "gpu_tests/test_config_gpu.py",
-        "gpu_tests/test_memory_estimation_gpu.py",
         "gpu_tests/test_sampling_gpu.py",
         "gpu_tests/test_speculative_decoding_gpu.py",
         "gpu_tests/test_tokenizer_gpu.py",
@@ -196,7 +197,7 @@ modular_run_binary_test(
     args = [
         "generate",
         "--model-path",
-        "modularai/Llama-3.1-8B-Instruct-GGUF",
+        "hf-internal-testing/tiny-random-LlamaForCausalLM",
         "--devices=gpu:0,1,2,3",
         "--max-batch-size=1",
         "--max-new-tokens=32",
@@ -204,15 +205,16 @@ modular_run_binary_test(
         "--max-length=512",
     ],
     binary = "//SDK/lib/API/python/max/entrypoints:pipelines",
+    env = {
+        "MODULAR_DISABLE_HF_NETWORK_ACCESS": "1",
+    },
     exec_properties = {
         # 2 here means *at least* 2 GPUs, in practice CI will have 4
         "resources:gpu-count": "2",
     },
     gpu_constraints = ["//:has_multi_gpu"],
     tags = [
-        "manual",  # TODO(AITLIB-293)
         "multi-gpu",
         "no-sandbox",
-        "requires-network",
     ],
 )

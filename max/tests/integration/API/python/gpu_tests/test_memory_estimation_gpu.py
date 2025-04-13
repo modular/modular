@@ -8,14 +8,12 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 from max.driver import DeviceSpec, load_devices, scan_available_devices
-from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.max_config import KVCacheConfig
 from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
-from max.pipelines.model_config import MAXModelConfig
+from test_common.pipeline_config import DummyPipelineConfig
 from test_common.pipeline_model import DUMMY_ARCH, DummyLlamaPipelineModel
 
 
@@ -24,33 +22,30 @@ def create_mock_pipeline_config(
     max_batch_size: Optional[int],
     max_length: Optional[int],
     device_specs: Optional[list[DeviceSpec]] = None,
-) -> MagicMock:
+) -> DummyPipelineConfig:
     if device_specs is None:
         device_specs = scan_available_devices()
 
-    mock_config = MagicMock()
-    mock_config.model_config = MAXModelConfig(
+    return DummyPipelineConfig(
         model_path=model_path,
+        max_batch_size=max_batch_size,
+        max_length=max_length,
         device_specs=device_specs,
         quantization_encoding=DUMMY_ARCH.default_encoding,
-        _kv_cache_config=KVCacheConfig(
-            cache_strategy=KVCacheStrategy.CONTINUOUS,
-        ),
-        _huggingface_config=MagicMock(),
     )
 
-    mock_config.max_batch_size = max_batch_size
-    mock_config.max_length = max_length
-    return mock_config
 
-
-@pytest.mark.skip("TODO: AITLIB-293")
 def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memory():
     with (
         patch.object(
             DummyLlamaPipelineModel,
             "calculate_max_seq_len",
             return_value=100000,
+        ),
+        patch.object(
+            DummyLlamaPipelineModel,
+            "estimate_weights_size",
+            return_value=50 * 1024 * 1024,
         ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock
@@ -74,11 +69,16 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
             )
 
 
-@pytest.mark.skip("TODO: AITLIB-238, AITLIB-293")
+@pytest.mark.skip("TODO: AITLIB-238")
 def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution():
     with (
         patch.object(
             DummyLlamaPipelineModel, "calculate_max_seq_len", return_value=10000
+        ),
+        patch.object(
+            DummyLlamaPipelineModel,
+            "estimate_weights_size",
+            return_value=30000 * 1024 * 1024,
         ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock
@@ -102,13 +102,18 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution():
             )
 
 
-@pytest.mark.skip("TODO: AITLIB-293")
+@pytest.mark.skip("TODO: AITLIB-293, Use accurate mocked values")
 def test_memory_estimation__raise_oom_error_all_defaults(caplog):
     with (
         patch.object(
             DummyLlamaPipelineModel,
             "calculate_max_seq_len",
             return_value=100000,
+        ),
+        patch.object(
+            DummyLlamaPipelineModel,
+            "estimate_weights_size",
+            return_value=35000 * 1024 * 1024,
         ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock
@@ -132,7 +137,7 @@ def test_memory_estimation__raise_oom_error_all_defaults(caplog):
         assert "Truncated model's default max_length from" in caplog.text
 
 
-@pytest.mark.skip("TODO: AITLIB-293")
+@pytest.mark.skip("TODO: AITLIB-293, Use accurate mocked values")
 def test_memory_estimation__raise_oom_error_max_length_set():
     with (
         patch.object(
@@ -163,11 +168,16 @@ def test_memory_estimation__raise_oom_error_max_length_set():
             )
 
 
-@pytest.mark.skip("TODO: AITLIB-293")
+@pytest.mark.skip("TODO: AITLIB-293, Use accurate mocked values")
 def test_memory_estimation__raise_oom_error_max_batch_size_set():
     with (
         patch.object(
             DummyLlamaPipelineModel, "calculate_max_seq_len", return_value=4096
+        ),
+        patch.object(
+            DummyLlamaPipelineModel,
+            "estimate_weights_size",
+            return_value=40000 * 1024 * 1024,
         ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock
@@ -189,13 +199,18 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set():
             )
 
 
-@pytest.mark.skip("TODO: AITLIB-293")
+@pytest.mark.skip("TODO: AITLIB-293, Use accurate mocked values")
 def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_set():
     with (
         patch.object(
             DummyLlamaPipelineModel,
             "calculate_max_seq_len",
             return_value=9999999999999,
+        ),
+        patch.object(
+            DummyLlamaPipelineModel,
+            "estimate_weights_size",
+            return_value=40000 * 1024 * 1024,
         ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock

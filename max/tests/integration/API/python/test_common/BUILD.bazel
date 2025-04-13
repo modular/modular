@@ -6,6 +6,7 @@ modular_py_library(
     imports = ["."],
     deps = [
         ":pipeline_cli_utils",
+        ":pipeline_config",
         ":pipeline_model",
     ],
 )
@@ -25,6 +26,18 @@ modular_py_library(
     imports = [".."],
     deps = [
         "//SDK/lib/API/python/max",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "pipeline_config",
+    srcs = ["pipeline_config.py"],
+    imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
         requirement("transformers"),
     ],
 )
