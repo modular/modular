@@ -134,7 +134,7 @@ fn _scalar_attr[
     # Note: while this could generalize to something like splat, MO doesn't
     # really make use of those.
     var shape = List[Int, hint_trivial_type=True](capacity=rank)
-    for i in range(rank):
+    for _ in range(rank):
         shape.append(1)
     return _tensor_attr[dtype](ctx, name, Tensor(shape, value))
 

@@ -67,7 +67,8 @@ struct AnyTensor:
         self._data = device_tensor.unsafe_ptr()
         var tmp = device_tensor^
         var tmp_dm = tmp._storage^
-        tmp._storage = DeviceMemory()
+        tmp._storage = DeviceMemory()  # Make sure the destructor can run.
+        _ = tmp^
         self._device_memory_impl_ptr = tmp_dm^._steal_impl_ptr()
 
     @doc_private
