@@ -30,6 +30,7 @@ modular_py_binary(
         "//SDK/integration-test/pipelines/python/test_common",
         "@torch_llama-gptq_golden",
         "@torch_llama3-vision_golden",
+        "@torch_llama4_golden",
         "@torch_llama_golden",
         "@torch_mistral_golden",
         "@torch_mpnet_golden",
