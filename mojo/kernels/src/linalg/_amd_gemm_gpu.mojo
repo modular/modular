@@ -19,6 +19,7 @@ from gpu import (
     grid_dim,
     lane_id,
     thread_idx,
+    warp_id as get_warp_id,
 )
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
@@ -399,7 +400,7 @@ fn gemm_kernel[
     alias k_dim = b.shape[1 if transpose_b else 0]()
 
     # Thread and warp indices
-    var warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = get_warp_id()
 
     # Helper function for shared memory layout
     @always_inline

@@ -25,6 +25,7 @@ from gpu import (
     global_idx,
     lane_id,
     thread_idx,
+    warp_id as get_warp_id,
 )
 from gpu.host import DeviceAttribute, DeviceContext, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
@@ -350,7 +351,7 @@ fn gevm_kernel[
     k: Int,
 ):
     var warps_per_block = block_dim.x // WARP_SIZE
-    var warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = get_warp_id()
     var accum = Scalar[s_type]()
     var col = block_idx.x * WARP_SIZE + lane_id()
     var tid = global_idx.x
@@ -407,7 +408,7 @@ fn gevm_tc_kernel_vector_8x[
     alias align_x = alignof[SIMD[s_type, simd_width]]()
 
     var warps_per_block = block_dim.x // WARP_SIZE
-    var warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = get_warp_id()
     var accum = SIMD[s_type, simd_width]()
     var col = block_idx.x * WARP_SIZE * simd_width + lane_id() * simd_width
     var tid = global_idx.x

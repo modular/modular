@@ -29,6 +29,7 @@ from gpu.id import (
     block_idx,
     grid_dim,
     lane_id,
+    warp_id as get_warp_id,
     thread_idx,
 )
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -1248,7 +1249,7 @@ fn hopper_matmul_tma_wgmma_kernel[
                         final_c_reg_tile[mma_id, i] += c_reg_tile[mma_id, i]
 
     c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    warp_id = thread_idx.x // WARP_SIZE
+    warp_id = get_warp_id()
 
     @parameter
     for m_mma in range(num_m_mmas):
