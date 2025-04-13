@@ -8,7 +8,7 @@ from math import isclose
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import CPU, Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Value
@@ -23,7 +23,7 @@ def test_load_on_gpu(gpu_session: InferenceSession, mo_model_path: Path):
 def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
     """Validate that we can execute inputs on GPU."""
     model = gpu_session.load(mo_model_path)
-    cuda = model.devices[0]
+    cuda = model.input_devices[0]
     input_tensor = Tensor.from_numpy(np.ones(5, dtype=np.float32)).to(cuda)
     outputs = model.execute(input_tensor)
     assert len(outputs) == 1
@@ -38,7 +38,7 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
     # of larger tensors. This will be important for things like our kv cache
     # implementation.
     model = gpu_session.load(mo_model_path)
-    cuda = model.devices[0]
+    cuda = model.input_devices[0]
 
     arr = np.arange(0, 20, dtype=np.float32).reshape((2, 10))
     input_tensor = Tensor.from_numpy(arr).to(cuda)[0, :5]
@@ -70,9 +70,9 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
 def test_scalar_inputs(gpu_session: InferenceSession, scalar_input_path: Path):
     # We should be able to execute models with scalar inputs.
     model = gpu_session.load(scalar_input_path)
-    cuda = model.devices[0]
+    cuda = model.input_devices[0]
     scalar = Tensor.scalar(3, dtype=DType.int32, device=cuda)
-    vector = np.arange(1, 6, dtype=np.int32)
+    vector = Tensor.from_numpy(np.arange(1, 6, dtype=np.int32)).to(cuda)
 
     cuda_output = model.execute(scalar, vector)[0]
     host_output = cuda_output.to(CPU())
@@ -100,7 +100,7 @@ class Model:
     """Model that performs elementwise add with a weights tensor."""
 
     num_elems: int
-    device: DeviceRef = field(default_factory=CPU)
+    device: Device = field(default_factory=CPU)
 
     def __call__(self, input: Value) -> Value:
         weights_tensor_type = TensorType(
@@ -135,16 +135,15 @@ def test_execute_external_weights_gpu(gpu_session: InferenceSession) -> None:
     )
 
     compiled = gpu_session.load(graph, weights_registry={"foo": weights})
-    cuda = compiled.devices[0]
+    cuda = compiled.input_devices[0]
     input_np = (
         np.random.default_rng(seed=42)
         .standard_normal(num_elems)
         .astype(np.float32)
     )
-    output = compiled.execute(
-        Tensor.from_dlpack(input_np).to(cuda),
-        copy_inputs_to_device=False,
-    )[0].to(CPU())
+    output = compiled.execute(Tensor.from_dlpack(input_np).to(cuda))[0].to(
+        CPU()
+    )
     for idx, elt in enumerate(input_np + weights):
         assert isclose(output[idx].item(), elt)
 
@@ -209,7 +208,7 @@ def test_aliasing_outputs(
     # The device tensor execution path should support models that return the
     # same tensor outputs more than once.
     model = gpu_session.load(aliasing_outputs_path)
-    cuda = model.devices[0]
+    cuda = model.input_devices[0]
 
     arr = np.arange(0, 5, dtype=np.int32)
     input_tensor = Tensor.from_numpy(arr).to(cuda)
@@ -234,3 +233,49 @@ def test_aliasing_outputs(
 def test_devices(gpu_session: InferenceSession) -> None:
     device = Accelerator()
     assert str(device) == str(gpu_session.devices[0])
+
+
+def test_session_device_initialization() -> None:
+    """Verify InferenceSession device list initialization behavior."""
+    gpu = Accelerator()
+    cpu = CPU()
+
+    # Case 1: Default (no devices specified).
+    session1 = InferenceSession()
+    assert set(session1.devices) == {cpu}, "Default devices should be just CPU"
+
+    # Case 2: Only CPU specified.
+    session2 = InferenceSession(devices=[cpu])
+    assert set(session2.devices) == {cpu}, (
+        "Devices with only CPU should result in just CPU"
+    )
+
+    # Case 3: Only GPU specified.
+    session3 = InferenceSession(devices=[gpu])
+    assert set(session3.devices) == {gpu}, (
+        "Devices with only GPU should result in GPU"
+    )
+
+    # Case 4: GPU and CPU specified.
+    session4 = InferenceSession(devices=[gpu, cpu])
+    assert set(session4.devices) == {gpu, cpu}, (
+        "Devices with GPU and CPU should be unique"
+    )
+
+    # Case 5: Duplicate GPU specified.
+    session5 = InferenceSession(devices=[gpu, gpu])
+    assert set(session5.devices) == {gpu}, (
+        "Devices with duplicate GPU should be unique"
+    )
+
+    # Case 6: Duplicate CPU specified.
+    session6 = InferenceSession(devices=[cpu, cpu])
+    assert set(session6.devices) == {cpu}, (
+        "Devices with duplicate CPU should result in just CPU"
+    )
+
+    # Case 7: Empty list specified.
+    session7 = InferenceSession(devices=[])
+    assert not set(session7.devices), (
+        "Devices with empty list should give the empty set"
+    )
