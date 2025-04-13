@@ -392,11 +392,11 @@ fn sync_parallelize[
     var num_global_queue_tasks = num_work_items % num_threads
     var tg = TaskGroup()
     var count = 0
-    for i in range(num_per_lq_tasks):
+    for _ in range(num_per_lq_tasks):
         for j in range(num_threads):
             tg._create_task(task_fn(count), j)
             count += 1
-    for k in range(num_global_queue_tasks):
+    for _ in range(num_global_queue_tasks):
         tg.create_task(task_fn(count))
         count += 1
 
