@@ -139,15 +139,13 @@ def _map_execute_kwarg(
 
 
 @traced
-def _Model_execute(
-    self: Model,
-    *args: InputType,
-    copy_inputs_to_device: bool = True,
-) -> list[Tensor | MojoValue]:
+def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
     tracer = Tracer()
     input_impls: list[Union[Tensor, MojoValue]] = []
 
-    input_idx = 0
+    # Track the tensor input indices separately to index into `self.input_devices`.
+    # This is because only tensor input devices are encoded in the `Model`.
+    tensor_input_idx = 0
     for idx, arg in enumerate(args):
         _raise_if_not_contiguous(arg)
 
@@ -171,17 +169,21 @@ def _Model_execute(
                 " implementing the dlpack protocol. We do not"
                 f" currently support inputs of the type {type(arg)}."
             )
-        if copy_inputs_to_device:
-            tracer.push(f"copy_inputs_to_device_{input_idx}")
-            input_devices = self.input_devices
-            if input_idx >= len(input_devices):
-                raise ValueError(
-                    "Number of inputs does not match expected number ("
-                    f"{len(input_devices)}) for model"
-                )
-            tensor = tensor.to(input_devices[input_idx])
-            input_idx = input_idx + 1
-            tracer.pop()
+
+        input_devices = self.input_devices
+        if tensor_input_idx >= len(input_devices):
+            raise ValueError(
+                "Number of inputs does not match expected number ("
+                f"{len(input_devices)}) for model"
+            )
+
+        # Check that the input tensor has the expected device for this `Model`.
+        expected_device = input_devices[tensor_input_idx]
+        if tensor.device != expected_device:
+            raise TypeError(
+                f"expected arg {idx} to be on device {expected_device}, but was on device {tensor.device}"
+            )
+        tensor_input_idx += 1
         input_impls.append(tensor)
     results = self._execute_device_tensors(input_impls)
 
