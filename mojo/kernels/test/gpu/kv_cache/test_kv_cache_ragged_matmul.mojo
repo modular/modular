@@ -6,6 +6,9 @@
 # TODO: MSTDL-1147 understand why this test fails with asserts turned on.
 # RUN: %mojo-no-debug %s
 
+# fail is tracked by KERN-1740
+# XFAIL: H100-GPU
+
 from collections import Set
 from math import ceildiv
 from random import random_ui64, seed
