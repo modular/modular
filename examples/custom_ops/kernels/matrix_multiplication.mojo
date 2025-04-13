@@ -14,7 +14,7 @@
 from math import ceildiv
 from sys.info import simdwidthof
 
-from gpu import WARP_SIZE, barrier, block_idx, thread_idx
+from gpu import WARP_SIZE, barrier, block_idx, thread_idx, warp_id
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.layout_tensor import (
@@ -667,11 +667,9 @@ fn tensor_core_matrix_multiplication[
     alias N = C.shape[1]()  # Number of columns in matrix C
     alias K = A.shape[1]()  # Number of columns in matrix A
 
-    var warp_id = thread_idx.x // WARP_SIZE  # Warp ID within the block
-
     # Calculate warp tile coordinates within the block
-    warp_y = warp_id // (BN // WN)
-    warp_x = warp_id % (BN // WN)
+    warp_y = warp_id() // (BN // WN)
+    warp_x = warp_id() % (BN // WN)
 
     # Get the warp tile of the output matrix C
     C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
