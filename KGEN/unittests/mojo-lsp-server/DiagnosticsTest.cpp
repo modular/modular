@@ -29,7 +29,7 @@ from a.b.c import d
 TEST(DiagnosticsTest, detectUnusedLocalVariable) {
   Document doc("test:///unused.mojo", R"(
 fn function():
-  var unused = 0
+  var unused: Int
   var used = 1
   print(used)
   )");
@@ -72,7 +72,7 @@ fn function():
       .open(doc)
       .onDiagnostics(doc,
                      [](const std::vector<lsp::Diagnostic> &diags) {
-                       ASSERT_EQ((int)diags.size(), 1);
+                       ASSERT_EQ((int)diags.size(), 2);
                        EXPECT_EQ(diags[0].message, "unused variable 'x'");
                      })
       .execute();

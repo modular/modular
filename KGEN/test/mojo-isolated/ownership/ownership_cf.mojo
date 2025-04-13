@@ -56,33 +56,33 @@ struct MemExample:
 
 # CHECK-LABEL: lit.fn @"if_examples
 fn if_examples(cond: __mlir_type.i1):
-    # CHECK: %a = lit.var.decl
-    var a: MemExample
+    # CHECK: %_a = lit.var.decl
+    var _a: MemExample
 
-    # CHECK-NEXT: %b = lit.var.decl
-    # CHECK-NEXT: lifetime.start %b
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
-    # CHECK-NEXT: lifetime.end %b
-    var b = MemExample()
+    # CHECK-NEXT: %_b = lit.var.decl
+    # CHECK-NEXT: lifetime.start %_b
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%_b)
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%_b)
+    # CHECK-NEXT: lifetime.end %_b
+    var _b = MemExample()
 
     # CHECK: hlcf.elif
     # CHECK-NEXT: hlcf.elif.yield
     # CHECK-NEXT: } then {
     if cond:
-        # CHECK-NEXT: lifetime.start %a
-        # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
-        # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
-        # CHECK-NEXT: lifetime.end %a
-        a = MemExample()
+        # CHECK-NEXT: lifetime.start %_a
+        # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%_a)
+        # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%_a)
+        # CHECK-NEXT: lifetime.end %_a
+        _a = MemExample()
     # CHECK-NEXT: hlcf.yield
     # CHECK-NEXT: } else {
     else:
-        # CHECK-NEXT: lifetime.start %b
-        # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-        # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
-        # CHECK-NEXT: lifetime.end %b
-        b = MemExample()
+        # CHECK-NEXT: lifetime.start %_b
+        # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%_b)
+        # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%_b)
+        # CHECK-NEXT: lifetime.end %_b
+        _b = MemExample()
     # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: }
 
@@ -170,16 +170,16 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
     # CHECK-NEXT: lifetime.end %a
 
-    # CHECK-NEXT: %b = lit.var.decl
-    var b: MemExample
+    # CHECK-NEXT: %_b = lit.var.decl
+    var _b: MemExample
     # CHECK-NEXT: [[ERRSLOT:%.*]] = lit.var.decl "e"
     # CHECK-NEXT: lit.try {
     try:
-        # CHECK-NEXT: lifetime.start %b
-        # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-        b = MemExample()
-        # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
-        # CHECK-NEXT: lifetime.end %b
+        # CHECK-NEXT: lifetime.start %_b
+        # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%_b)
+        _b = MemExample()
+        # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%_b)
+        # CHECK-NEXT: lifetime.end %_b
         raise err
     # CHECK: } except {
     # CHECK-NEXT: [[ERR:%.*]] = lit.ref.immut [[ERRSLOT]]
@@ -194,11 +194,11 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT:   kgen.unreachable
     # CHECK-NEXT: }
 
-    # CHECK-NEXT: lifetime.start %b
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
-    b = MemExample()
-    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
-    # CHECK-NEXT: lifetime.end %b
+    # CHECK-NEXT: lifetime.start %_b
+    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%_b)
+    _b = MemExample()
+    # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%_b)
+    # CHECK-NEXT: lifetime.end %_b
 
     # CHECK-NEXT: %c = lit.var.decl
     var c: MemExample
@@ -447,6 +447,7 @@ struct TrivialRange:
 fn mojo98(n: Int):
     var a = MemExample()
     for i in TrivialRange():
+        # expected-warning @+1 {{assignment to 'a.x' was never used}}
         a.x = i
 
 

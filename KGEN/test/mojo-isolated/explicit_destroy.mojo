@@ -13,7 +13,7 @@ struct MyAffine:
 
 # CHECK-LABEL: @"testAffineThing
 fn testAffineThing():
-    var l = MyAffine()
+    _ = MyAffine()
     # CHECK: __del__
 
 
