@@ -80,8 +80,15 @@ static void printParameterMangling(TypedAttr value, raw_ostream &os) {
     return;
   }
 
+  // Print SymbolRefAttr without a leading @, because that antagonizes ELF and
+  // isn't required to disambiguate symbols.
+  auto result = getParamAsString(value);
+  StringRef resultToPrint = result;
+  if (resultToPrint.starts_with("@"))
+    resultToPrint = resultToPrint.drop_front();
+
   // The kgen representation will always be a valid choice.
-  os << getParamAsString(value);
+  os << resultToPrint;
 }
 
 std::string KGEN::mangleParameterValues(GeneratorOpInterface generator,
@@ -104,7 +111,12 @@ std::string KGEN::mangleParameterValues(GeneratorOpInterface generator,
   }
 
   // Having "@" in mangled names is invalid for ELF files and triggers error at
-  // linking stage, so replace them.
-  std::replace(result.begin(), result.end(), '@', '_');
+  // linking stage, so replace them.  We replace "@" with "\eA" and "\e" with
+  // "\e\e" to make sure there are no collisions. \e is a non-standard C++
+  // extension so we use \033 for portability.
+  for (size_t pos = result.find_first_of("@\033"); pos != std::string::npos;
+       pos = result.find_first_of("@\033", pos + 2)) {
+    result.replace(pos, 1, result[pos] == '@' ? "\033" : "\033\033");
+  }
   return result;
 }

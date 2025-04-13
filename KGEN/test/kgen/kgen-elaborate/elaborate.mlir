@@ -210,13 +210,13 @@ kgen.generator @parametricTypes(%arg0: !pop.scalar<ui64>, %arg1: !pop.simd<2, f3
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @"takeUnary,dt=f32,fn=_nopExample"() {
+// CHECK-LABEL: kgen.func @"takeUnary,dt=f32,fn=nopExample"() {
 // CHECK: %simd = kgen.param.constant
 // CHECK: %0 = pop.cast %simd
 // CHECK: %1 = kgen.call @"nopExample,dt=f32"(%0) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 // CHECK: %2 = kgen.call @"nopExample,dt=f32"(%1) : (!pop.scalar<f32>) -> !pop.scalar<f32>
 
-// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=_doubleExample"()
+// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=doubleExample"()
 // CHECK: %simd = kgen.param.constant
 // CHECK: %0 = pop.cast %simd
 // CHECK: %1 = kgen.call @"doubleExample,dt=si32"(%0) : (!pop.scalar<si32>) -> !pop.scalar<si32>
@@ -259,15 +259,15 @@ kgen.generator @takeParametricBinary
 
 // CHECK-LABEL:  kgen.func @test_symbol() {
 kgen.generator @test_symbol() {
-  // CHECK: kgen.call @"takeUnary,dt=si32,fn=_doubleExample"()
+  // CHECK: kgen.call @"takeUnary,dt=si32,fn=doubleExample"()
   kgen.call @takeUnary<:dtype si32,
      :<dtype>(!pop.scalar<*(0,0)>) -> !pop.scalar<*(0,0)> @doubleExample>() : () -> ()
 
-  // CHECK: kgen.call @"takeUnary,dt=f32,fn=_nopExample"()
+  // CHECK: kgen.call @"takeUnary,dt=f32,fn=nopExample"()
   kgen.call @takeUnary<:dtype f32,
      :<dtype>(!pop.scalar<*(0,0)>) -> !pop.scalar<*(0,0)> @nopExample>() : () -> ()
 
-  // CHECK: kgen.call @"takeParametricBinary,sz=2,dt=f32,fn=_parametricAdd"()
+  // CHECK: kgen.call @"takeParametricBinary,sz=2,dt=f32,fn=parametricAdd"()
   kgen.call @takeParametricBinary
      <
       2,
@@ -290,7 +290,7 @@ kgen.generator @parametricBinOp<ty: type>
   kgen.return %res : !kgen.param<ty>
 }
 
-// CHECK-LABEL: kgen.func @"takeParametricBinary,dt=f32,fn=_parametricBinOp"() {
+// CHECK-LABEL: kgen.func @"takeParametricBinary,dt=f32,fn=parametricBinOp"() {
 kgen.generator @takeParametricBinary
   <dt: dtype,
    fn: <type>(!kgen.param<*(0,0)>, !kgen.param<*(0,0)>) -> !kgen.param<*(0,0)>
@@ -308,7 +308,7 @@ kgen.generator @takeParametricBinary
 
 // CHECK-LABEL: kgen.func @test_paramref_type_rewrite() {
 kgen.generator @test_paramref_type_rewrite() {
-  // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=_parametricBinOp"() : () -> ()
+  // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=parametricBinOp"() : () -> ()
   kgen.call @takeParametricBinary<:dtype f32,
       :<type>(!kgen.param<*(0,0)>, !kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> @parametricBinOp>() : () -> ()
 
@@ -337,7 +337,7 @@ kgen.generator @test_comptime_call_indirect() -> index {
 
 // This takes a parameter function that uses a contextual type instead of
 // to-be-bound types.
-// CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=_sillyFn"() -> index {
+// CHECK-LABEL: kgen.func @"takeFnContextualType,ty=index,fn=sillyFn"() -> index {
 // CHECK:  %0 = kgen.call @sillyFn() : () -> index
 kgen.generator @takeFnContextualType<ty: type, fn: ()->!kgen.param<ty>>() -> !kgen.param<ty> {
   %0 = kgen.call_param[()->!kgen.param<ty>: fn]()
@@ -350,7 +350,7 @@ kgen.generator @sillyFn() -> index {
 }
 
 // CHECK-LABEL:  kgen.func @elaborateFnWithContextualType() -> index {
-// CHECK:   %0 = kgen.call @"takeFnContextualType,ty=index,fn=_sillyFn"() : () -> index
+// CHECK:   %0 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"() : () -> index
 kgen.generator @elaborateFnWithContextualType() -> index {
   %0 = kgen.call @takeFnContextualType<:type index, :()->index @sillyFn>() : () -> index
   kgen.return %0 : index
@@ -363,7 +363,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
     <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> @takeFnContextualType,
                     index, @sillyFn)>
 
-  // CHECK-NEXT: %0 = kgen.call @"takeFnContextualType,ty=index,fn=_sillyFn"()
+  // CHECK-NEXT: %0 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"()
   %0 = kgen.call_param[()->index: boundFn]()
 
   kgen.param.declare fn: <type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType>
@@ -372,7 +372,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
     <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn,
                     index, @sillyFn)>
 
-  // CHECK-NEXT: %1 = kgen.call @"takeFnContextualType,ty=index,fn=_sillyFn"()
+  // CHECK-NEXT: %1 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"()
   %1 = kgen.call_param[()->index: boundFn2]()
 
   kgen.return %0, %1 : index, index
@@ -1340,9 +1340,9 @@ kgen.generator export @main() {
   %2 = kgen.param.constant: !capture = <compile_assembly(current_target(), =asm, "", 0, :() -> (index, index) @params<1, 2>)>
   // CHECK-NEXT: constant: string = <"params,a=1,b=2">
   %3 = kgen.param.constant: string = <get_linkage_name(current_target(), :() -> (index, index) @params<1, 2>)>
-  // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}func_param,f=_params
+  // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}func_param,f=params
   %4 = kgen.param.constant: !capture = <compile_assembly(current_target(), =asm, "", 0, :() -> index @func_param<:<index, index>() -> (index, index) @params>)>
-  // CHECK-NEXT: constant: string = <"func_param,f=_params">
+  // CHECK-NEXT: constant: string = <"func_param,f=params">
   %5 = kgen.param.constant: string = <get_linkage_name(current_target(), :() -> index @func_param<:<index, index>() -> (index, index) @params>)>
   kgen.return
 }
@@ -2125,14 +2125,14 @@ kgen.generator export @entry(%arg0: !kgen.pointer<none>) {
                                          tune_cpu = "sm_80">, 2, "",
                                          :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">>
                                         : !kgen.struct<(string, index)>
-  // CHECK-NEXT: %2 = kgen.call @"HELLO,x=_FOO_populate_captures"(%arg0) : (!kgen.pointer<none>) capturing -> !kgen.none
+  // CHECK-NEXT: %2 = kgen.call @"HELLO,x=FOO_populate_captures"(%arg0) : (!kgen.pointer<none>) capturing -> !kgen.none
   kgen.param.declare x: (!kgen.pointer<none>) capturing -> !kgen.none = <compile_offload_closure(@HELLO<:() capturing -> index *"foo()">)>
   %2 = kgen.call_param[(!kgen.pointer<none>) capturing -> !kgen.none: x](%arg0)
   kgen.return
 }
 
 // COM: populate_captures must be an inlined
-// CHECK: kgen.func @"HELLO,x=_FOO_populate_captures"(%arg0: !kgen.pointer<none>) capturing -> !kgen.none always_inline {
+// CHECK: kgen.func @"HELLO,x=FOO_populate_captures"(%arg0: !kgen.pointer<none>) capturing -> !kgen.none always_inline {
 // CHECK-NEXT: [[V0:%.*]] = pop.compiler.global_load "CAPTURE_0" : !kgen.pointer<index>
 // CHECK-NEXT: [[V1:%.*]] = pop.stack_allocation 1 x pointer<index>
 // CHECK-NEXT: pop.store [[V0]], [[V1]] : !kgen.pointer<pointer<index>>
