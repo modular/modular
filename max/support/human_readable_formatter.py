@@ -13,6 +13,7 @@ def to_human_readable_bytes(bytes: int) -> str:
     MiB = KiB * 1024
     GiB = MiB * 1024
     TiB = GiB * 1024
+    bytes = int(bytes)
     if bytes > TiB:
         return f"{bytes / TiB:.2f} TiB"
     if bytes > GiB:
