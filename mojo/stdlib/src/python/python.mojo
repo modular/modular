@@ -191,10 +191,8 @@ struct Python:
         Args:
             dir_path: The path to a Python module you want to import.
         """
-        var cpython = _get_global_python_itf().cpython()
         var sys = Python.import_module("sys")
         var directory: PythonObject = dir_path
-
         _ = sys.path.append(directory)
 
     # ===-------------------------------------------------------------------===#

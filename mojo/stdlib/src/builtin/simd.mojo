@@ -3244,7 +3244,6 @@ fn _convert_f32_to_float8_scaler[
     var sign: UInt8 = 0x80 if FPUtils[dtype].get_sign(x) else 0x00
     var exp = Int32(FPUtils[dtype].get_exponent_biased(x)) - FP32_EXPONENT_BIAS
     var mantissa = Int32(FPUtils[dtype].get_mantissa(x))
-    var u: UInt8 = 0
 
     var kF8_NaN: UInt8 = 0x7F
 

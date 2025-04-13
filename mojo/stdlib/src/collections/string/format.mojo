@@ -693,7 +693,6 @@ struct _FormatSpec(CollectionElement):
         var idx = 0
         while idx < f_len:
             if f_ptr[idx] == `:`:
-                exclamation_index = idx
                 break
             idx += 1
 
@@ -722,14 +721,14 @@ struct _FormatSpec(CollectionElement):
             res: The resulting String.
             item: The item to stringify.
         """
-        var type_implements_format_write = True  # TODO
-        var type_implements_format_write_raising = True  # TODO
-        var type_implements_format = True  # TODO
-        var type_implements_format_raising = True  # TODO
-        var type_implements_float = True  # TODO
-        var type_implements_float_raising = True  # TODO
-        var type_implements_int = True  # TODO
-        var type_implements_int_raising = True  # TODO
+        # var type_implements_format_write = True  # TODO
+        # var type_implements_format_write_raising = True  # TODO
+        # var type_implements_format = True  # TODO
+        # var type_implements_format_raising = True  # TODO
+        # var type_implements_float = True  # TODO
+        # var type_implements_float_raising = True  # TODO
+        # var type_implements_int = True  # TODO
+        # var type_implements_int_raising = True  # TODO
 
         # TODO: send to the type's  __format__ method if it has one
         # TODO: transform to int/float depending on format spec

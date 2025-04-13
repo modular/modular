@@ -1057,7 +1057,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
 
         var buffer = List[Byte](capacity=self.byte_length() * n + 1)
-        for i in range(n):
+        for _ in range(n):
             buffer.extend(self.as_bytes())
         buffer.append(0)
         return String(buffer=buffer)
@@ -1187,7 +1187,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         var str_byte_len = self.byte_length() - 1
         var lhs = 0
-        var rhs = 0
         var items = 0
         var sep_len = sep.byte_length()
         if sep_len == 0:
@@ -1196,7 +1195,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             output.append(String(""))
 
         while lhs <= str_byte_len:
-            rhs = self.find(sep, lhs)
+            var rhs = self.find(sep, lhs)
             if rhs == -1:
                 output.append(String(self[lhs:]))
                 break
@@ -1255,7 +1254,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var output = List[StringSlice[origin]]()
         var str_byte_len = self.byte_length() - 1
         var lhs = 0
-        var rhs = 0
         var items = 0
         while lhs <= str_byte_len:
             try:
@@ -1274,7 +1272,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                     # if the last char is not whitespace
                     output.append(self[str_byte_len:])
                     break
-                rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
+                var rhs = lhs + num_bytes(self.unsafe_ptr()[lhs])
                 for s in self[
                     lhs + num_bytes(self.unsafe_ptr()[lhs]) :
                 ].codepoint_slices():

@@ -799,9 +799,8 @@ struct Dict[K: KeyElement, V: CollectionElement](
         """
         var hash = hash(key)
         var found: Bool
-        var slot: UInt64
         var index: Int
-        found, slot, index = self._find_index(hash, key)
+        found, _, index = self._find_index(hash, key)
         if found:
             var entry = Pointer(to=self._entries[index])
             debug_assert(entry[].__bool__(), "entry in index must be full")
@@ -985,7 +984,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
     fn _new_entries(reserve_at_least: Int) -> List[Optional[DictEntry[K, V]]]:
         var entries = List[Optional[DictEntry[K, V]]](capacity=reserve_at_least)
         # We have memory available, we'll use everything.
-        for i in range(entries.capacity):
+        for _ in range(entries.capacity):
             entries.append(None)
         return entries
 
@@ -1082,7 +1081,6 @@ struct Dict[K: KeyElement, V: CollectionElement](
             self._set_index(slot, left)
             if left != right:
                 self._entries[left] = entry.unsafe_take()
-                entry = None
             right += 1
 
         self._n_entries = self.size

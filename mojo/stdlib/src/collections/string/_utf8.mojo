@@ -148,7 +148,7 @@ fn _is_valid_utf8_runtime(span: Span[Byte]) -> Bool:
             return False
         i += simd_size
 
-    var has_error = SIMD[DType.uint8, simd_size]()
+    var has_error: SIMD[DType.uint8, simd_size]
     # last incomplete chunk
     if i != length:
         var buffer = SIMD[DType.uint8, simd_size](0)

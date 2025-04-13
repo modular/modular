@@ -96,7 +96,7 @@ fn _serialize[
 
     # Open parens for every other dimension other than row_elem_count &
     # column_elem_count
-    for i in range(2, rank):
+    for _ in range(2, rank):
         serialize_fn(_kStartTensorMarker)
 
     # We are basically printing a bunch of 2D tensors in succession
@@ -156,8 +156,8 @@ fn _serialize[
             serialize_fn(_kTensorFiller)
             matrix_idx = num_matrices - _kCompactElemPerSide
 
-    # Now every element is printed. We just have to close all open parans.
-    for i in range(2, rank):
+    # Now every element is printed. We just have to close all open parens.
+    for _ in range(2, rank):
         serialize_fn(_kEndTensorMarker)
 
     if serialize_dtype:

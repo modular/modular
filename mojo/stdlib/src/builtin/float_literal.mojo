@@ -61,7 +61,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
         Args:
             value: The IntLiteral value.
         """
-        out = __type_of(result)()
+        pass
 
     alias nan = FloatLiteral[__mlir_attr.`#pop.float_literal<nan>`]()
     alias infinity = FloatLiteral[__mlir_attr.`#pop.float_literal<inf>`]()

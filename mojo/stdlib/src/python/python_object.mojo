@@ -552,7 +552,7 @@ struct PythonObject(
         var cpython = _get_global_python_itf().cpython()
         self.py_object = cpython.PyDict_New()
         for entry in value.items():
-            var result = cpython.PyDict_SetItem(
+            _ = cpython.PyDict_SetItem(
                 self.py_object, entry[].key.py_object, entry[].value.py_object
             )
 

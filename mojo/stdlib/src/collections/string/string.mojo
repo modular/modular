@@ -266,9 +266,9 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     var ord_letter_max = (-1, -1)
     var result = 0
-    var is_negative: Bool = False
-    var has_prefix: Bool = False
-    var start: Int = 0
+    var is_negative: Bool
+    var has_prefix: Bool
+    var start: Int
     var str_len = str_slice.byte_length()
 
     start, is_negative = _trim_and_handle_sign(str_slice, str_len)
