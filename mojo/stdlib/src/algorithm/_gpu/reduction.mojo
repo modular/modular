@@ -16,6 +16,7 @@ from gpu import (
     block_idx,
     grid_dim,
     lane_id,
+    warp_id,
     thread_idx,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
@@ -106,7 +107,7 @@ fn block_reduce[
         address_space = AddressSpace.SHARED,
     ]()
 
-    var warp: UInt = thread_idx.x // WARP_SIZE
+    var warp = warp_id()
 
     var warp_accum = do_warp_reduce(val)
 
