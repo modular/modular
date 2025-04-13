@@ -156,9 +156,6 @@ fn test_fused_reductions_outer() raises:
         var loaded_val = vector.load[width=width](indices[0] * 2 + indices[1])
         return rebind[SIMD[type, width]](loaded_val)
 
-    var col0 = StaticTuple[Scalar[test_type], num_reductions]()
-    var col1 = StaticTuple[Scalar[test_type], num_reductions]()
-
     @always_inline
     @parameter
     fn reduce_fn[

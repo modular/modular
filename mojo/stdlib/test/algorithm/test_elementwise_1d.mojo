@@ -19,8 +19,6 @@ from utils.index import IndexList
 def test_elementwise_1d():
     print("== test_elementwise_1d")
 
-    var num_work_items = num_physical_cores()
-
     alias num_elements = 64
     var ptr = UnsafePointer[Float32].alloc(num_elements)
 
@@ -28,8 +26,6 @@ def test_elementwise_1d():
 
     for i in range(len(vector)):
         vector[i] = i
-
-    var chunk_size = ceildiv(len(vector), num_work_items)
 
     @always_inline
     @__copy_capture(vector)

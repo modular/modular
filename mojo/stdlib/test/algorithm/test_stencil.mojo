@@ -57,8 +57,6 @@ fn test_stencil_avg_pool():
 
     alias output_shape = DimList(1, output_heigh, output_width, 1)
 
-    var pad_value = 0
-
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
     )
@@ -172,8 +170,6 @@ fn test_stencil_avg_pool_padded():
     alias output_width = input_width - pool_window_w + pad_w * 2 + 1
 
     alias output_shape = DimList(1, output_heigh, output_width, 1)
-
-    var pad_value = 0
 
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
@@ -290,8 +286,6 @@ fn test_stencil_avg_pool_stride_2():
     alias output_width = (input_width - pool_window_w) // stride + 1
 
     alias output_shape = DimList(1, output_heigh, output_width, 1)
-
-    var pad_value = 0
 
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
@@ -411,8 +405,6 @@ fn test_stencil_max_pool_dilation_2():
     ) // stride + 1
 
     alias output_shape = DimList(1, output_heigh, output_width, 1)
-
-    var pad_value = 0
 
     var input_stack = InlineArray[Scalar[dtype], Int(input_shape.product())](
         uninitialized=True
