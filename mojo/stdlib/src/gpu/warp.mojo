@@ -26,6 +26,8 @@ integers, floats, and half-precision floats, with SIMD vectorization.
 
 from collections.string import StringSlice
 from sys import is_nvidia_gpu, llvm_intrinsic
+from sys.info import _is_sm_100x_or_newer
+from sys._assembly import inlined_assembly
 
 from bit import log2_floor
 from builtin.math import max as _max
@@ -919,6 +921,23 @@ fn prefix_sum[
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline("nodebug")
+fn _has_redux_f32_support[dtype: DType, simd_width: Int]() -> Bool:
+    return _is_sm_100x_or_newer() and dtype is DType.float32 and simd_width == 1
+
+
+@always_inline("nodebug")
+fn _redux_f32_max_min[direction: StaticString](val: SIMD) -> __type_of(val):
+    alias instruction = StaticString("redux.sync.") + direction + ".NaN.f32"
+    return inlined_assembly[
+        instruction + " $0, $1, $2;",
+        __type_of(val),
+        constraints="=r,r,i",
+        has_side_effect=True,
+    ](val, Int32(_FULL_MASK))
+
+
+@always_inline
 fn lane_group_max[
     val_type: DType,
     simd_width: Int, //,
@@ -946,6 +965,13 @@ fn lane_group_max[
     """
 
     @parameter
+    if (
+        _has_redux_f32_support[val_type, simd_width]()
+        and num_lanes == WARP_SIZE
+    ):
+        return _redux_f32_max_min["max"](val)
+
+    @parameter
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
         return _max(x, y)
 
@@ -954,6 +980,7 @@ fn lane_group_max[
     ](val)
 
 
+@always_inline
 fn lane_group_max_and_broadcast[
     val_type: DType,
     simd_width: Int, //,
@@ -979,6 +1006,13 @@ fn lane_group_max_and_broadcast[
         A SIMD value where all participating lanes contain the maximum value found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
+
+    @parameter
+    if (
+        _has_redux_f32_support[val_type, simd_width]()
+        and num_lanes == WARP_SIZE
+    ):
+        return _redux_f32_max_min["max"](val)
 
     @parameter
     fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
@@ -1044,6 +1078,13 @@ fn lane_group_min[
         A SIMD value where all participating lanes contain the minimum value found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
+
+    @parameter
+    if (
+        _has_redux_f32_support[val_type, simd_width]()
+        and num_lanes == WARP_SIZE
+    ):
+        return _redux_f32_max_min["min"](val)
 
     @parameter
     fn _reduce_min(x: SIMD, y: __type_of(x)) -> __type_of(x):
