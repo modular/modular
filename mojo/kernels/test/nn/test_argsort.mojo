@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
+# fail is tracked by KERN-1739
+# XFAIL: ubsan
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
