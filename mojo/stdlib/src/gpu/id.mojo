@@ -26,6 +26,8 @@ from sys.intrinsics import grid_dim as _grid_dim
 from sys.intrinsics import lane_id as _lane_id
 from sys.intrinsics import thread_idx as _thread_idx
 
+from .warp import broadcast
+
 from gpu import WARP_SIZE
 
 # ===-----------------------------------------------------------------------===#
@@ -82,6 +84,24 @@ fn lane_id() -> UInt:
 
 
 # ===-----------------------------------------------------------------------===#
+# warp_id
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn warp_id() -> UInt:
+    """Returns the warp ID of the current thread within its block.
+    The warp ID is a unique identifier for each warp within a block, ranging
+    from 0 to BLOCK_SIZE/WARP_SIZE-1. This ID is commonly used for warp-level
+    programming and synchronization within a block.
+
+    Returns:
+        The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
+    """
+    return broadcast(thread_idx.x // WARP_SIZE)
+
+
+# ===-----------------------------------------------------------------------===#
 # sm_id
 # ===-----------------------------------------------------------------------===#
 
@@ -103,11 +123,15 @@ fn sm_id() -> UInt:
 
     @parameter
     if is_nvidia_gpu():
-        return UInt(
-            Int(
-                llvm_intrinsic[
-                    "llvm.nvvm.read.ptx.sreg.smid", Int32, has_side_effect=False
-                ]().cast[DType.uint32]()
+        return broadcast(
+            UInt(
+                Int(
+                    llvm_intrinsic[
+                        "llvm.nvvm.read.ptx.sreg.smid",
+                        Int32,
+                        has_side_effect=False,
+                    ]().cast[DType.uint32]()
+                )
             )
         )
     else:
