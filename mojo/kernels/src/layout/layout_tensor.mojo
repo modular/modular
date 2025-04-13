@@ -4126,7 +4126,7 @@ struct LayoutTensor[
                 else:
                     src_idx = src.runtime_layout(i)
                 alias dst_idx = layout(i)
-                var swizzled_idx: Scalar[self.linear_idx_type] = 0
+                var swizzled_idx: Scalar[self.linear_idx_type]
 
                 @parameter
                 if swizzle:
@@ -4954,7 +4954,7 @@ fn copy_dram_to_sram[
     for i in range(num_stores_per_thread):
         alias src_static_idx = src_fragments.layout(i)
         alias dst_idx = dst_fragments.layout(i)
-        var src_idx: Scalar[src_fragments.linear_idx_type] = 0
+        var src_idx: Scalar[src_fragments.linear_idx_type]
 
         @parameter
         if src_tensor.layout.all_dims_known():

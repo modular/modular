@@ -1021,12 +1021,12 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
 
         Aborts execution with an error message if validation fails.
         """
-        if self._store.owning() > 0:
-            var data_size = self._store.size()
-            var computed_size = Self.tuple_size(self._store)
 
-            @parameter
-            if INT_TUPLE_VALIDATION:
+        @parameter
+        if INT_TUPLE_VALIDATION:
+            if self._store.owning() > 0:
+                var data_size = self._store.size()
+                var computed_size = Self.tuple_size(self._store)
                 if data_size != computed_size:
                     abort(
                         String(

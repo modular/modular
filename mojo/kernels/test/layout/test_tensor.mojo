@@ -1959,6 +1959,7 @@ fn test_vectorized_tile() raises:
     ]()
     var tensor_a = managed_tensor_a.tensor()
     var vt = tensor_a.vectorize[1, 2]().tile[4, 2](0, 0)
+    _ = vt  # silence warning.
     assert_equal(Int(vt.layout.shape[0]), 4)
     assert_equal(Int(vt.layout.shape[1]), 2)
     assert_equal(Int(vt.element_layout.shape[0]), 1)

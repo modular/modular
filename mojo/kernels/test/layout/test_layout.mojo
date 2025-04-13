@@ -353,12 +353,10 @@ fn test_complement() raises:
         "((3, 2):(2, 12))",
     )
 
-    var test = Layout(1, 0)
     validate_complement[Layout(1, 0)]()
 
     validate_complement[Layout(1, 1)]()
 
-    test = Layout(4, 0)
     validate_complement[Layout(4, 0)]()
 
     validate_complement[Layout(IntTuple(2, 4), IntTuple(1, 2))]()
