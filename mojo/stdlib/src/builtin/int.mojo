@@ -1232,7 +1232,7 @@ struct Int(
 
         writer.write(Int64(self))
 
-    fn write_padded[W: Writer](self, mut writer: W, width: Int):
+    fn write_padded[W: Writer](self, mut writer: W, width: UInt):
         """Write the int right-aligned to a set padding.
 
         Parameters:

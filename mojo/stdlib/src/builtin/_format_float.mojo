@@ -634,8 +634,8 @@ fn _check_divisibility_and_divide_by_pow10[
 
 
 fn _truncate[
-    D: DType, S: Int, //, TruncateType: DType
-](u: SIMD[D, S]) -> SIMD[D, S]:
+    D: DType, width: UInt, //, TruncateType: DType
+](u: SIMD[D, width]) -> SIMD[D, width]:
     """Cast to DType to truncate to the width of that type, then cast back to
     original DType.
     """

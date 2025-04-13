@@ -21,7 +21,7 @@ from testing import assert_equal, assert_false, assert_true
 
 fn random_numbers[
     dtype: DType
-](size: Int, max: Int = 3000) -> List[Scalar[dtype]]:
+](size: UInt, max: Int = 3000) -> List[Scalar[dtype]]:
     var result = List[Scalar[dtype]](size)
     for _ in range(size):
 

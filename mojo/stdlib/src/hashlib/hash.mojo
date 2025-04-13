@@ -101,26 +101,26 @@ fn hash[T: Hashable](hashable: T) -> UInt:
     return hashable.__hash__()
 
 
-fn _djbx33a_init[dtype: DType, size: Int]() -> SIMD[dtype, size]:
+fn _djbx33a_init[dtype: DType, size: UInt]() -> SIMD[dtype, size]:
     return SIMD[dtype, size](5361)
 
 
 fn _djbx33a_hash_update[
-    dtype: DType, size: Int
+    dtype: DType, size: UInt
 ](data: SIMD[dtype, size], next: SIMD[dtype, size]) -> SIMD[dtype, size]:
     return data * 33 + next
 
 
 # Based on the hash function used by ankerl::unordered_dense::hash
 # https://martin.ankerl.com/2022/08/27/hashmap-bench-01/#ankerl__unordered_dense__hash
-fn _ankerl_init[dtype: DType, size: Int]() -> SIMD[dtype, size]:
+fn _ankerl_init[dtype: DType, size: UInt]() -> SIMD[dtype, size]:
     alias int_type = _uint_type_of_width[bitwidthof[dtype]()]()
     alias init = Int64(-7046029254386353131).cast[int_type]()
     return SIMD[dtype, size](bitcast[dtype, 1](init))
 
 
 fn _ankerl_hash_update[
-    dtype: DType, size: Int
+    dtype: DType, size: UInt
 ](data: SIMD[dtype, size], next: SIMD[dtype, size]) -> SIMD[dtype, size]:
     # compute the hash as though the type is uint
     alias int_type = _uint_type_of_width[bitwidthof[dtype]()]()
@@ -138,7 +138,7 @@ alias _HASH_UPDATE = _djbx33a_hash_update
 # performance issue we've been seeing with Dict. It's still not ideal as
 # a long-term hash function.
 @always_inline
-fn _hash_simd[dtype: DType, size: Int](data: SIMD[dtype, size]) -> UInt:
+fn _hash_simd[dtype: DType, size: UInt](data: SIMD[dtype, size]) -> UInt:
     """Hash a SIMD byte vector using direct DJBX33A hash algorithm.
 
     See `hash(bytes, n)` documentation for more details.

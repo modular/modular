@@ -93,7 +93,7 @@ fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
 
 fn randint[
     dtype: DType
-](ptr: UnsafePointer[Scalar[dtype]], size: Int, low: Int, high: Int):
+](ptr: UnsafePointer[Scalar[dtype]], size: UInt, low: Int, high: Int):
     """Fills memory with uniform random in range [low, high].
 
     Constraints:
@@ -123,7 +123,7 @@ fn rand[
     dtype: DType
 ](
     ptr: UnsafePointer[Scalar[dtype], mut=True, **_],
-    size: Int,
+    size: UInt,
     /,
     *,
     min: Float64 = 0.0,
@@ -204,7 +204,7 @@ fn randn[
     dtype: DType
 ](
     ptr: UnsafePointer[Scalar[dtype]],
-    size: Int,
+    size: UInt,
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,
 ):

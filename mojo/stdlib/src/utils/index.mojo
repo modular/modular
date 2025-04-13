@@ -152,7 +152,7 @@ fn _bool_tuple_reduce[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
+fn _type_of_width[bitwidth: UInt, unsigned: Bool]() -> DType:
     @parameter
     if unsigned:
         return _uint_type_of_width[bitwidth]()
@@ -166,7 +166,7 @@ fn _is_unsigned[dtype: DType]() -> Bool:
 
 @value
 @register_passable("trivial")
-struct IndexList[size: Int, *, element_type: DType = DType.int64](
+struct IndexList[size: UInt, *, element_type: DType = DType.int64](
     Sized,
     Stringable,
     Writable,
@@ -992,7 +992,7 @@ fn Index[
 
 
 @always_inline
-fn product[size: Int](tuple: IndexList[size, **_], end_idx: Int = size) -> Int:
+fn product[size: UInt](tuple: IndexList[size, **_], end_idx: Int = size) -> Int:
     """Computes a product of values in the tuple up to the given index.
 
     Parameters:
@@ -1010,7 +1010,7 @@ fn product[size: Int](tuple: IndexList[size, **_], end_idx: Int = size) -> Int:
 
 @always_inline
 fn product[
-    size: Int
+    size: UInt
 ](tuple: IndexList[size, **_], start_idx: Int, end_idx: Int) -> Int:
     """Computes a product of values in the tuple in the given index range.
 

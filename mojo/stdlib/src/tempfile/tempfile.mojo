@@ -31,7 +31,7 @@ from utils import write_buffered
 alias TMP_MAX = 10_000
 
 
-fn _get_random_name(size: Int = 8) -> String:
+fn _get_random_name(size: UInt = 8) -> String:
     alias characters = String("abcdefghijklmnopqrstuvwxyz0123456789_")
     var name_list = List[UInt8](capacity=size + 1)
     for _ in range(size):

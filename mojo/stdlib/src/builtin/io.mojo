@@ -309,7 +309,7 @@ fn _printf[
 @no_inline
 fn _snprintf[
     fmt: StaticString, *types: AnyType
-](str: UnsafePointer[UInt8], size: Int, *args: *types) -> Int:
+](str: UnsafePointer[UInt8], size: UInt, *args: *types) -> Int:
     """Writes a format string into an output pointer.
 
     Parameters:

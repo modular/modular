@@ -56,6 +56,11 @@ trait _IntIterable(_IntIter):
         ...
 
 
+trait _UIntIterable(_UIntIter):
+    fn __iter__(self) -> Self:
+        ...
+
+
 trait _StridedIterable(_IntIter):
     fn __iter__(self) -> _StridedRangeIterator:
         ...
@@ -90,6 +95,12 @@ fn parameter_for_generator[
 
 
 fn parameter_for_generator[
+    T: _UIntIterable,
+](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
+    return _generator(range.__iter__())
+
+
+fn parameter_for_generator[
     T: _StridedIterable,
 ](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
     return _generator(range.__iter__())
@@ -97,6 +108,19 @@ fn parameter_for_generator[
 
 fn _generator[
     IteratorT: _IntIter
+](it: IteratorT) -> _ParamForIterator[IteratorT]:
+    if it.__len__() != 0:
+        var next_it = it
+        var value = next_it.__next__()
+        return _ParamForIterator(next_it, value, False)
+
+    var value: IteratorT
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(value))
+    return _ParamForIterator(value^, 0, True)
+
+
+fn _generator[
+    IteratorT: _UIntIter
 ](it: IteratorT) -> _ParamForIterator[IteratorT]:
     if it.__len__() != 0:
         var next_it = it

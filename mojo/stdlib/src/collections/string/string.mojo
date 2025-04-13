@@ -1226,7 +1226,7 @@ struct String(
         return String(elems, sep=sep)
 
     fn join[
-        T: WritableCollectionElement, //, buffer_size: Int = 4096
+        T: WritableCollectionElement, //, buffer_size: UInt = 4096
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
@@ -1861,7 +1861,7 @@ struct String(
         """
         return self.as_string_slice().is_ascii_printable()
 
-    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn rjust(self, width: UInt, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 
         Args:
@@ -1873,7 +1873,7 @@ struct String(
         """
         return self.as_string_slice().rjust(width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ljust(self, width: UInt, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
 
         Args:
@@ -1885,7 +1885,7 @@ struct String(
         """
         return self.as_string_slice().ljust(width, fillchar)
 
-    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn center(self, width: UInt, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
 
         Args:

@@ -27,7 +27,7 @@ from bit import next_power_of_two
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
-fn make_dict[size: Int]() -> Dict[Int, Int]:
+fn make_dict[size: UInt]() -> Dict[Int, Int]:
     var d = Dict[Int, Int]()
     for i in range(0, size):
         d[i] = Int(random.random_si64(0, size))
@@ -54,7 +54,7 @@ fn bench_dict_init(mut b: Bencher) raises:
 # Benchmark Dict Insert
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_dict_insert[size: Int](mut b: Bencher) raises:
+fn bench_dict_insert[size: UInt](mut b: Bencher) raises:
     """Insert 100 new items."""
     var items = make_dict[size]()
 
@@ -72,7 +72,7 @@ fn bench_dict_insert[size: Int](mut b: Bencher) raises:
 # Benchmark Dict Lookup
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_dict_lookup[size: Int](mut b: Bencher) raises:
+fn bench_dict_lookup[size: UInt](mut b: Bencher) raises:
     """Lookup 100 items."""
     var items = make_dict[size]()
     var closest_divisor = ceil(100 / size)

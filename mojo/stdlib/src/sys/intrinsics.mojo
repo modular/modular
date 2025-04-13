@@ -124,7 +124,7 @@ fn _unsafe_aliasing_address_to_pointer[
 
 @always_inline("nodebug")
 fn gather[
-    dtype: DType, size: Int, //, *, invariant: Bool = False
+    dtype: DType, size: UInt, //, *, invariant: Bool = False
 ](
     owned base: SIMD[DType.index, size],
     mask: SIMD[DType.bool, size],
@@ -212,7 +212,7 @@ fn gather[
 
 @always_inline("nodebug")
 fn scatter[
-    dtype: DType, size: Int, //
+    dtype: DType, size: UInt, //
 ](
     value: SIMD[dtype, size],
     owned base: SIMD[DType.index, size],
@@ -533,7 +533,7 @@ fn prefetch[
 
 @always_inline("nodebug")
 fn masked_load[
-    dtype: DType, //, size: Int
+    dtype: DType, //, size: UInt
 ](
     addr: UnsafePointer[Scalar[dtype], **_],
     mask: SIMD[DType.bool, size],
@@ -579,7 +579,7 @@ fn masked_load[
 
 @always_inline("nodebug")
 fn masked_store[
-    size: Int
+    size: UInt
 ](
     value: SIMD,
     addr: UnsafePointer[Scalar[value.dtype], **_],
@@ -621,7 +621,7 @@ fn masked_store[
 
 @always_inline("nodebug")
 fn compressed_store[
-    dtype: DType, size: Int
+    dtype: DType, size: UInt
 ](
     value: SIMD[dtype, size],
     addr: UnsafePointer[Scalar[dtype], **_],
@@ -661,7 +661,7 @@ fn compressed_store[
 
 @always_inline("nodebug")
 fn strided_load[
-    dtype: DType, //, simd_width: Int, *, invariant: Bool = False
+    dtype: DType, //, simd_width: UInt, *, invariant: Bool = False
 ](
     addr: UnsafePointer[Scalar[dtype], **_],
     stride: Int,
@@ -702,7 +702,7 @@ fn strided_load[
 
 @always_inline("nodebug")
 fn strided_store[
-    dtype: DType, //, simd_width: Int
+    dtype: DType, //, simd_width: UInt
 ](
     value: SIMD[dtype, simd_width],
     addr: UnsafePointer[Scalar[dtype], **_],

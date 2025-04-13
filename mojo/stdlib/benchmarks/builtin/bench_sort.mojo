@@ -34,7 +34,7 @@ from stdlib.builtin.sort import (
 @always_inline
 fn randomize_list[
     dt: DType
-](mut list: List[Scalar[dt]], size: Int, max: Scalar[dt] = Scalar[dt].MAX):
+](mut list: List[Scalar[dt]], size: UInt, max: Scalar[dt] = Scalar[dt].MAX):
     @parameter
     if dt.is_integral():
         randint(list.data, size, 0, Int(max))
@@ -57,7 +57,7 @@ fn insertion_sort[dtype: DType](mut list: List[Scalar[dtype]]):
 
 
 @always_inline
-fn small_sort[size: Int, dtype: DType](mut list: List[Scalar[dtype]]):
+fn small_sort[size: UInt, dtype: DType](mut list: List[Scalar[dtype]]):
     @parameter
     fn _less_than(
         lhs: _SortWrapper[Scalar[dtype]], rhs: _SortWrapper[Scalar[dtype]]

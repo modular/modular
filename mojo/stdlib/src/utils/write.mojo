@@ -219,7 +219,7 @@ struct _WriteBufferHeap(Writer):
     var data: UnsafePointer[UInt8]
     var pos: Int
 
-    fn __init__(out self, size: Int):
+    fn __init__(out self, size: UInt):
         self.data = UnsafePointer[
             UInt8, address_space = AddressSpace.GENERIC
         ].alloc(size)
@@ -260,7 +260,7 @@ struct _WriteBufferHeap(Writer):
 
 
 struct _TotalWritableBytes(Writer):
-    var size: Int
+    var size: UInt
 
     fn __init__(out self):
         self.size = 0
@@ -345,7 +345,7 @@ struct _WriteBufferStack[
 fn write_buffered[
     W: Writer, //,
     *Ts: Writable,
-    buffer_size: Int = 4096,
+    buffer_size: UInt = 4096,
     use_heap: Bool = False,
 ](
     mut writer: W,
@@ -425,7 +425,7 @@ fn write_buffered[
 fn write_buffered[
     W: Writer,
     T: WritableCollectionElement, //,
-    buffer_size: Int = 4096,
+    buffer_size: UInt = 4096,
 ](mut writer: W, values: List[T, *_], *, sep: StaticString = ""):
     """
     Use a buffer on the stack to minimize expensive calls to the writer. You

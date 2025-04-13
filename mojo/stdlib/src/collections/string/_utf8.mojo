@@ -80,7 +80,7 @@ alias shuf3 = SIMD[DType.uint8, 16](
 
 @always_inline
 fn _extract_vector[
-    width: Int, //, offset: Int
+    width: UInt, //, offset: Int
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:
@@ -89,7 +89,7 @@ fn _extract_vector[
 
 
 fn validate_chunk[
-    simd_size: Int
+    simd_size: UInt
 ](
     current_block: SIMD[DType.uint8, simd_size],
     previous_input_block: SIMD[DType.uint8, simd_size],
@@ -197,7 +197,7 @@ fn _is_valid_utf8(span: Span[Byte]) -> Bool:
 
 @always_inline
 fn _is_utf8_continuation_byte[
-    w: Int
+    w: UInt
 ](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
     return vec.cast[DType.int8]() < -(0b1000_0000 >> 1)
 

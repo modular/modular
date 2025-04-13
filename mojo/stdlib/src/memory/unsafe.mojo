@@ -29,9 +29,9 @@ from sys import bitwidthof
 @always_inline("nodebug")
 fn bitcast[
     dtype: DType,
-    width: Int, //,
+    width: UInt, //,
     new_type: DType,
-    new_width: Int = width,
+    new_width: UInt = width,
 ](val: SIMD[dtype, width]) -> SIMD[new_type, new_width]:
     """Bitcasts a SIMD value to another SIMD value.
 
@@ -98,7 +98,7 @@ fn _uint(n: Int) -> DType:
 
 @always_inline("nodebug")
 fn pack_bits[
-    width: Int, //,
+    width: UInt, //,
     new_type: DType = _uint(width),
 ](val: SIMD[DType.bool, width]) -> Scalar[new_type]:
     """Packs a SIMD vector of `bool` values into an integer.

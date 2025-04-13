@@ -471,7 +471,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var size: Int
+    var size: UInt
     """The number of elements currently stored in the dict."""
     var _n_entries: Int
     """The number of entries currently allocated."""

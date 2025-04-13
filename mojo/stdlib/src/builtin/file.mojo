@@ -177,7 +177,7 @@ struct FileHandle(Writer):
         if not self.handle:
             raise Error("invalid file handle")
 
-        var size_copy: Int64 = size
+        var size_copy = Int64(size)
         var err_msg = _OwnedStringRef()
 
         var buf = external_call[
@@ -322,7 +322,7 @@ struct FileHandle(Writer):
         if not self.handle:
             raise Error("invalid file handle")
 
-        var size_copy: Int64 = size
+        var size_copy = Int64(size)
         var err_msg = _OwnedStringRef()
 
         var buf = external_call[

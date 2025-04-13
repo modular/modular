@@ -29,7 +29,7 @@ from memory import UnsafePointer
 @always_inline
 fn _set_array_elem[
     index: Int,
-    size: Int,
+    size: UInt,
     type: AnyTrivialRegType,
 ](
     val: type,
@@ -54,7 +54,7 @@ fn _set_array_elem[
 
 @always_inline
 fn _create_array[
-    size: Int, type: AnyTrivialRegType
+    size: UInt, type: AnyTrivialRegType
 ](lst: VariadicList[type]) -> __mlir_type[
     `!pop.array<`, size.value, `, `, type, `>`
 ]:
@@ -93,7 +93,7 @@ fn _create_array[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _static_tuple_construction_checks[size: Int]():
+fn _static_tuple_construction_checks[size: UInt]():
     """Checks if the properties in `StaticTuple` are valid.
 
     Validity right now is just ensuring the number of elements is > 0.
@@ -106,7 +106,7 @@ fn _static_tuple_construction_checks[size: Int]():
 
 @value
 @register_passable("trivial")
-struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
+struct StaticTuple[element_type: AnyTrivialRegType, size: UInt](Sized):
     """A statically sized tuple type which contains elements of homogeneous types.
 
     Parameters:

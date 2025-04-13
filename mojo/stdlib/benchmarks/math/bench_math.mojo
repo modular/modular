@@ -61,7 +61,7 @@ var int_inputs = make_int_inputs(0, 10_000_000, 1_000_000)
 
 @parameter
 fn bench_math[
-    math_f1p: fn[dtype: DType, size: Int] (SIMD[dtype, size]) -> SIMD[
+    math_f1p: fn[dtype: DType, size: UInt] (SIMD[dtype, size]) -> SIMD[
         dtype, size
     ]
 ](mut b: Bencher) raises:
@@ -80,7 +80,7 @@ fn bench_math[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_math3[
-    math_f3p: fn[dtype: DType, size: Int] (
+    math_f3p: fn[dtype: DType, size: UInt] (
         SIMD[dtype, size], SIMD[dtype, size], SIMD[dtype, size]
     ) -> SIMD[dtype, size]
 ](mut b: Bencher) raises:

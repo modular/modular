@@ -48,7 +48,7 @@ from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 # ===-----------------------------------------------------------------------===#
 
 
-fn _inline_array_construction_checks[size: Int]():
+fn _inline_array_construction_checks[size: UInt]():
     """Checks if the properties in `InlineArray` are valid.
 
     Validity right now is just ensuring the number of elements is > 0.
@@ -62,7 +62,7 @@ fn _inline_array_construction_checks[size: Int]():
 @value
 struct InlineArray[
     ElementType: CollectionElement,
-    size: Int,
+    size: UInt,
     *,
     run_destructors: Bool = False,
 ](Sized, Movable, Copyable, ExplicitlyCopyable, CollectionElement):
@@ -167,7 +167,7 @@ struct InlineArray[
 
     @always_inline
     @implicit
-    fn __init__[batch_size: Int = 64](out self, fill: Self.ElementType):
+    fn __init__[batch_size: UInt = 64](out self, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied value.
 
         Parameters:
@@ -215,7 +215,7 @@ struct InlineArray[
 
         # Fill the remainder
         @parameter
-        for _ in range(unroll_end, size):
+        for _ in range(unroll_end, Int(size)):
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
@@ -392,8 +392,8 @@ struct InlineArray[
         print(arr[-1])  # Prints 3 - last element
         ```
         """
-        constrained[-size <= Int(idx) < size, "Index must be within bounds."]()
         alias normalized_index = normalize_index["InlineArray"](idx, size)
+        constrained[normalized_index < size, "Index must be within bounds."]()
         return self.unsafe_get(normalized_index)
 
     # ===------------------------------------------------------------------=== #

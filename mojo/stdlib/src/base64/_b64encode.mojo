@@ -36,7 +36,7 @@ alias Bytes = SIMD[DType.uint8, _]
 
 
 fn _base64_simd_mask[
-    simd_width: Int
+    simd_width: UInt
 ](nb_value_to_load: Int) -> SIMD[DType.bool, simd_width]:
     alias mask = _compile_time_iota[DType.uint8, simd_width]()
     return mask < UInt8(nb_value_to_load)
@@ -54,8 +54,10 @@ fn _base64_simd_mask[
 # |                                                                   |
 # |--- ascii(d) ---|--- ascii(c) ---|--- ascii(b) ---|--- ascii(a) ---|
 # |. . d₅d₄d₃d₂d₁d₀|. . c₅c₄c₃c₂c₁c₀|. . b₅b₄b₃b₂b₁b₀|. . a₅a₄a₃a₂a₁a₀|
-fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
-    constrained[width in [4, 8, 16, 32, 64], "width must be between 4 and 64"]()
+fn _6bit_to_byte[width: UInt](input: Bytes[width]) -> Bytes[width]:
+    constrained[
+        width in List[UInt](4, 8, 16, 32, 64), "width must be between 4 and 64"
+    ]()
 
     fn indices() -> IndexList[width]:
         alias perm = List(1, 0, 2, 1)
@@ -110,7 +112,7 @@ alias END_SECOND_RANGE = 51
 # fmt: on
 
 
-fn _to_b64_ascii[width: Int, //](input: Bytes[width]) -> Bytes[width]:
+fn _to_b64_ascii[width: UInt, //](input: Bytes[width]) -> Bytes[width]:
     var abcd = _6bit_to_byte(input)
     var target_indices = _sub_with_saturation(abcd, END_SECOND_RANGE)
     var offset_indices = (abcd <= END_FIRST_RANGE).select(13, target_indices)
@@ -118,7 +120,7 @@ fn _to_b64_ascii[width: Int, //](input: Bytes[width]) -> Bytes[width]:
 
 
 fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
-    simd_width: Int
+    simd_width: UInt
 ]() -> SIMD[DType.uint8, simd_width]:
     """This is a lookup table to know how many bytes we need to store in the output buffer
     for a given number of bytes to encode in base64. Including the '=' sign.
@@ -141,7 +143,7 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
 
 
 fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
-    max_size: Int
+    max_size: UInt
 ](nb_of_elements_to_load: Int) -> Int:
     alias table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
         max_size
@@ -150,7 +152,7 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
 
 
 fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
-    simd_width: Int
+    simd_width: UInt
 ]() -> SIMD[DType.uint8, simd_width]:
     """This is a lookup table to know how many bytes we need to store in the output buffer
     for a given number of bytes to encode in base64. This is **not** including the '=' sign.
@@ -176,7 +178,7 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equa
 
 
 fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
-    max_size: Int
+    max_size: UInt
 ](nb_of_elements_to_load: Int) -> Int:
     alias table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
         max_size
@@ -185,7 +187,7 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign
 
 
 fn load_incomplete_simd[
-    simd_width: Int
+    simd_width: UInt
 ](pointer: UnsafePointer[UInt8], nb_of_elements_to_load: Int) -> SIMD[
     DType.uint8, simd_width
 ]:
@@ -256,7 +258,7 @@ fn b64encode_with_buffers(
 # Utility functions
 
 
-fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
+fn _repeat_until[width: UInt](v: SIMD) -> SIMD[v.dtype, width]:
     constrained[width >= v.size, "width must be at least v.size"]()
 
     @parameter
@@ -273,7 +275,7 @@ fn _rshift_bits_in_u16[shift: Int](input: Bytes) -> __type_of(input):
 
 @always_inline
 fn _sub_with_saturation[
-    width: Int, //
+    width: UInt, //
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:

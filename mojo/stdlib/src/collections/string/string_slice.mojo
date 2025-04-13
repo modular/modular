@@ -2103,7 +2103,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 return False
         return True
 
-    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn rjust(self, width: UInt, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 
         Args:
@@ -2115,7 +2115,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self._justify(width - len(self), width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ljust(self, width: UInt, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
 
         Args:
@@ -2127,7 +2127,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self._justify(0, width, fillchar)
 
-    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn center(self, width: UInt, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
 
         Args:
@@ -2139,7 +2139,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return self._justify(width - len(self) >> 1, width, fillchar)
 
-    fn _justify(self, start: Int, width: Int, fillchar: StaticString) -> String:
+    fn _justify(
+        self, start: Int, width: UInt, fillchar: StaticString
+    ) -> String:
         if len(self) >= width:
             return String(self)
         debug_assert(

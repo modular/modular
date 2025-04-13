@@ -68,7 +68,7 @@ struct stat_result(Stringable, Writable):
     var st_gid: Int
     """Group identifier of the file owner."""
 
-    var st_size: Int
+    var st_size: UInt
     """Size of the file in bytes, if it is a regular file or a symbolic link."""
 
     var st_atimespec: _CTimeSpec
@@ -86,7 +86,7 @@ struct stat_result(Stringable, Writable):
     var st_blocks: Int
     """Number of 512-byte blocks allocated for file."""
 
-    var st_blksize: Int
+    var st_blksize: UInt
     """Preferred blocksize for efficient file system I/O."""
 
     var st_rdev: Int
@@ -104,13 +104,13 @@ struct stat_result(Stringable, Writable):
         st_nlink: Int,
         st_uid: Int,
         st_gid: Int,
-        st_size: Int,
+        st_size: UInt,
         st_atimespec: _CTimeSpec,
         st_mtimespec: _CTimeSpec,
         st_ctimespec: _CTimeSpec,
         st_birthtimespec: _CTimeSpec,
         st_blocks: Int,
-        st_blksize: Int,
+        st_blksize: UInt,
         st_rdev: Int,
         st_flags: Int,
     ):

@@ -43,7 +43,7 @@ fn _default_alignment[type: AnyType]() -> Int:
 
 
 @always_inline
-fn _default_alignment[dtype: DType, width: Int = 1]() -> Int:
+fn _default_alignment[dtype: DType, width: UInt = 1]() -> Int:
     return _default_alignment[Scalar[dtype]]()
 
 
@@ -485,7 +485,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn load[
         dtype: DType, //,
-        width: Int = 1,
+        width: UInt = 1,
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
@@ -561,7 +561,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn load[
         dtype: DType, //,
-        width: Int = 1,
+        width: UInt = 1,
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
@@ -600,7 +600,7 @@ struct UnsafePointer[
     fn load[
         I: Indexer,
         dtype: DType, //,
-        width: Int = 1,
+        width: UInt = 1,
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
@@ -663,7 +663,7 @@ struct UnsafePointer[
     fn store[
         I: Indexer,
         dtype: DType,
-        width: Int, //,
+        width: UInt, //,
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
@@ -728,7 +728,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn store[
         dtype: DType,
-        width: Int,
+        width: UInt,
         offset_type: DType, //,
         *,
         alignment: Int = _default_alignment[dtype, width](),
@@ -786,7 +786,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn store[
         dtype: DType,
-        width: Int, //,
+        width: UInt, //,
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
@@ -811,7 +811,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn _store[
         dtype: DType,
-        width: Int,
+        width: UInt,
         *,
         alignment: Int = _default_alignment[dtype, width](),
         volatile: Bool = False,
@@ -834,7 +834,7 @@ struct UnsafePointer[
 
     @always_inline("nodebug")
     fn strided_load[
-        dtype: DType, T: Intable, //, width: Int
+        dtype: DType, T: Intable, //, width: UInt
     ](self: UnsafePointer[Scalar[dtype], **_], stride: T) -> SIMD[dtype, width]:
         """Performs a strided load of the SIMD vector.
 
@@ -855,7 +855,7 @@ struct UnsafePointer[
     fn strided_store[
         dtype: DType,
         T: Intable, //,
-        width: Int,
+        width: UInt,
     ](
         self: UnsafePointer[Scalar[dtype], **_],
         val: SIMD[dtype, width],
@@ -879,7 +879,7 @@ struct UnsafePointer[
     fn gather[
         dtype: DType, //,
         *,
-        width: Int = 1,
+        width: UInt = 1,
         alignment: Int = _default_alignment[dtype, width](),
     ](
         self: UnsafePointer[Scalar[dtype], **_],
@@ -934,7 +934,7 @@ struct UnsafePointer[
     fn scatter[
         dtype: DType, //,
         *,
-        width: Int = 1,
+        width: UInt = 1,
         alignment: Int = _default_alignment[dtype, width](),
     ](
         self: UnsafePointer[Scalar[dtype], **_],

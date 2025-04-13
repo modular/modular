@@ -703,7 +703,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
             return
         self._realloc(new_capacity)
 
-    fn resize(mut self, new_size: Int, value: T):
+    fn resize(mut self, new_size: UInt, value: T):
         """Resizes the list to the given new size.
 
         If the new size is smaller than the current one, elements at the end
@@ -722,7 +722,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
                 (self.data + i).init_pointee_copy(value)
             self._len = new_size
 
-    fn resize(mut self, new_size: Int):
+    fn resize(mut self, new_size: UInt):
         """Resizes the list to the given new size.
 
         With no new value provided, the new size must be smaller than or equal

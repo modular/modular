@@ -161,7 +161,7 @@ fn _heap_sort[
 
 
 @always_inline
-fn _estimate_initial_height(size: Int) -> Int:
+fn _estimate_initial_height(size: UInt) -> Int:
     # Compute the log2 of the size rounded upward.
     var log2 = Int(
         (bitwidthof[DType.index]() - 1) ^ count_leading_zeros(size | 1)

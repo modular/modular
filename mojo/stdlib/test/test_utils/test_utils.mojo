@@ -19,7 +19,7 @@ from builtin.simd import _simd_apply
 @always_inline
 fn libm_call[
     dtype: DType,
-    simd_width: Int,
+    simd_width: UInt,
     fn_fp32: StaticString,
     fn_fp64: StaticString,
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:

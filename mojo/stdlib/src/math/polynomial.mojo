@@ -29,7 +29,7 @@ from collections import List
 @always_inline
 fn polynomial_evaluate[
     dtype: DType,
-    simd_width: Int, //,
+    simd_width: UInt, //,
     coefficients: List[SIMD[dtype, simd_width], *_],
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Evaluates the polynomial.
@@ -57,7 +57,7 @@ fn polynomial_evaluate[
 @always_inline
 fn _horner_evaluate[
     dtype: DType,
-    simd_width: Int, //,
+    simd_width: UInt, //,
     coefficients: List[SIMD[dtype, simd_width], *_],
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Evaluates the polynomial using the passed in value and the specified

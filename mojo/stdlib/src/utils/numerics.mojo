@@ -551,7 +551,7 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
 
 @always_inline("nodebug")
 fn isnan[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: UInt
 ](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Checks if the value is Not a Number (NaN).
 
@@ -862,7 +862,7 @@ fn min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
 
 @always_inline("nodebug")
 fn isinf[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: UInt
 ](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Checks if the value is infinite.
 
@@ -904,7 +904,7 @@ fn isinf[
 
 @always_inline("nodebug")
 fn isfinite[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: UInt
 ](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Checks if the value is not infinite.
 
@@ -988,7 +988,7 @@ fn get_accum_type[
 
 
 fn nextafter[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: UInt
 ](arg0: SIMD[dtype, simd_width], arg1: SIMD[dtype, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -1044,7 +1044,7 @@ fn nextafter[
 
 @always_inline("nodebug")
 fn ulp[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: UInt
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Computes the ULP (units of last place) or (units of least precision) of
     the number.

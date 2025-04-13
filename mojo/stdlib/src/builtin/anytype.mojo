@@ -79,7 +79,7 @@ trait AnyType:
     struct ResourceOwner(AnyType):
         var ptr: UnsafePointer[Int]
 
-        fn __init__(out self, size: Int):
+        fn __init__(out self, size: UInt):
             self.ptr = UnsafePointer[Int].alloc(size)
 
         fn __del__(owned self):

@@ -498,7 +498,7 @@ fn _malloc[
     /,
     *,
     alignment: Int = alignof[type]() if is_gpu() else 1,
-](size: Int, /) -> UnsafePointer[
+](size: UInt, /) -> UnsafePointer[
     type, address_space = AddressSpace.GENERIC, alignment=alignment
 ]:
     @parameter

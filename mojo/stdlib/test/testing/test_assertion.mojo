@@ -121,7 +121,7 @@ def test_assert_almost_equal():
 
     @parameter
     def _should_succeed[
-        dtype: DType, size: Int
+        dtype: DType, size: UInt
     ](
         lhs: SIMD[dtype, size],
         rhs: SIMD[dtype, size],
@@ -158,7 +158,7 @@ def test_assert_almost_equal():
 
     @parameter
     def _should_fail[
-        dtype: DType, size: Int
+        dtype: DType, size: UInt
     ](
         lhs: SIMD[dtype, size],
         rhs: SIMD[dtype, size],

@@ -44,7 +44,7 @@ fn count_leading_zeros(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn count_leading_zeros[
-    dtype: DType, width: Int, //
+    dtype: DType, width: UInt, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of leading zeros in a SIMD vector.
 
@@ -88,7 +88,7 @@ fn count_trailing_zeros(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn count_trailing_zeros[
-    dtype: DType, width: Int, //
+    dtype: DType, width: UInt, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of trailing zeros in a SIMD vector.
 
@@ -132,7 +132,7 @@ fn bit_reverse(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn bit_reverse[
-    dtype: DType, width: Int, //
+    dtype: DType, width: UInt, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Element-wise reverses the bitpattern of a SIMD vector of integer values.
 
@@ -181,7 +181,7 @@ fn byte_swap(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn byte_swap[
-    dtype: DType, width: Int, //
+    dtype: DType, width: UInt, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Byte-swaps a SIMD vector of integer values with an even number of bytes.
 
@@ -234,7 +234,7 @@ fn pop_count(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn pop_count[
-    dtype: DType, width: Int, //
+    dtype: DType, width: UInt, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the number of bits set in a SIMD vector of integer values.
 
@@ -265,7 +265,7 @@ fn pop_count[
 
 @always_inline("nodebug")
 fn bit_not[
-    dtype: DType, width: Int, //
+    dtype: DType, width: UInt, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs a bitwise NOT operation on an SIMD vector of integer values.
 
@@ -308,7 +308,7 @@ fn bit_width(val: Int) -> Int:
 
 @always_inline("nodebug")
 fn bit_width[
-    dtype: DType, width: Int, //
+    dtype: DType, width: UInt, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the minimum number of bits required to represent each element of a SIMD vector of integer values.
 
@@ -406,7 +406,7 @@ fn next_power_of_two(val: UInt) -> UInt:
 
 @always_inline
 fn next_power_of_two[
-    dtype: DType, width: Int, //
+    dtype: DType, width: UInt, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value for each element of a SIMD vector. Any integral value less than
@@ -457,7 +457,7 @@ fn prev_power_of_two(val: Int) -> Int:
 
 @always_inline
 fn prev_power_of_two[
-    dtype: DType, width: Int, //
+    dtype: DType, width: UInt, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the largest power of 2 that is less than or equal to the input
     value for each element of a SIMD vector. Any integral value less than or
@@ -526,7 +526,7 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
 @always_inline("nodebug")
 fn rotate_bits_left[
     dtype: DType,
-    width: Int, //,
+    width: UInt, //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Shifts bits to the left by `shift` positions (with wrap-around) for each element of a SIMD vector.
@@ -600,7 +600,7 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
 @always_inline("nodebug")
 fn rotate_bits_right[
     dtype: DType,
-    width: Int, //,
+    width: UInt, //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Shifts bits to the right by `shift` positions (with wrap-around) for each element of a SIMD vector.

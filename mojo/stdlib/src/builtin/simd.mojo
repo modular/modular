@@ -199,7 +199,7 @@ alias Byte = UInt8
 
 
 @always_inline("nodebug")
-fn _simd_construction_checks[dtype: DType, size: Int]():
+fn _simd_construction_checks[dtype: DType, size: UInt]():
     """Checks if the SIMD size is valid.
 
     The SIMD size is valid if it is a power of two and is positive.
@@ -229,7 +229,7 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
 
 
 @always_inline("nodebug")
-fn _unchecked_zero[dtype: DType, size: Int]() -> SIMD[dtype, size]:
+fn _unchecked_zero[dtype: DType, size: UInt]() -> SIMD[dtype, size]:
     var zero = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](
         __mlir_attr.`#pop.simd<0> : !pop.scalar<index>`
     )
@@ -253,7 +253,7 @@ fn _has_native_f8_support() -> Bool:
 
 @lldb_formatter_wrapping_type
 @register_passable("trivial")
-struct SIMD[dtype: DType, size: Int](
+struct SIMD[dtype: DType, size: UInt](
     Absable,
     Boolable,
     Ceilable,
@@ -1987,7 +1987,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline("nodebug")
     fn _shuffle_variadic[
-        *mask: Int, output_size: Int = size
+        *mask: Int, output_size: UInt = size
     ](self, other: Self) -> SIMD[dtype, output_size]:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
@@ -2048,7 +2048,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline("nodebug")
     fn _shuffle_list[
-        output_size: Int, mask: StaticTuple[Int, output_size]
+        output_size: UInt, mask: StaticTuple[Int, output_size]
     ](self, other: Self) -> SIMD[dtype, output_size]:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
@@ -2149,7 +2149,7 @@ struct SIMD[dtype: DType, size: Int](
     # TODO: move to the utils directory - see https://github.com/modular/max/issues/3477
     @always_inline
     fn _dynamic_shuffle[
-        mask_size: Int, //
+        mask_size: UInt, //
     ](self, mask: SIMD[DType.uint8, mask_size]) -> SIMD[Self.dtype, mask_size]:
         """Shuffles (also called blend) the values of the current vector.
 
@@ -2234,7 +2234,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     fn slice[
-        output_width: Int, /, *, offset: Int = 0
+        output_width: UInt, /, *, offset: Int = 0
     ](self) -> SIMD[dtype, output_width]:
         """Returns a slice of the vector of the specified width with the given
         offset.
@@ -2428,7 +2428,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline
     fn reduce[
-        func: fn[dtype: DType, width: Int] (
+        func: fn[dtype: DType, width: UInt] (
             SIMD[dtype, width], SIMD[dtype, width]
         ) capturing -> SIMD[dtype, width],
         size_out: Int = 1,
@@ -2481,7 +2481,7 @@ struct SIMD[dtype: DType, size: Int](
             @always_inline
             @parameter
             fn max_reduce_body[
-                dtype: DType, width: Int
+                dtype: DType, width: UInt
             ](v1: SIMD[dtype, width], v2: SIMD[dtype, width]) -> SIMD[
                 dtype, width
             ]:
@@ -2539,7 +2539,7 @@ struct SIMD[dtype: DType, size: Int](
             @always_inline
             @parameter
             fn min_reduce_body[
-                dtype: DType, width: Int
+                dtype: DType, width: UInt
             ](v1: SIMD[dtype, width], v2: SIMD[dtype, width]) -> SIMD[
                 dtype, width
             ]:
@@ -2590,7 +2590,7 @@ struct SIMD[dtype: DType, size: Int](
         @always_inline
         @parameter
         fn add_reduce_body[
-            dtype: DType, width: Int
+            dtype: DType, width: UInt
         ](v1: SIMD[dtype, width], v2: SIMD[dtype, width]) -> SIMD[dtype, width]:
             return v1 + v2
 
@@ -2614,7 +2614,7 @@ struct SIMD[dtype: DType, size: Int](
         @always_inline
         @parameter
         fn mul_reduce_body[
-            dtype: DType, width: Int
+            dtype: DType, width: UInt
         ](v1: SIMD[dtype, width], v2: SIMD[dtype, width]) -> SIMD[dtype, width]:
             return v1 * v2
 
@@ -2648,7 +2648,7 @@ struct SIMD[dtype: DType, size: Int](
             @always_inline
             @parameter
             fn and_reduce_body[
-                dtype: DType, width: Int
+                dtype: DType, width: UInt
             ](v1: SIMD[dtype, width], v2: SIMD[dtype, width]) -> SIMD[
                 dtype, width
             ]:
@@ -2694,7 +2694,7 @@ struct SIMD[dtype: DType, size: Int](
             @always_inline
             @parameter
             fn or_reduce_body[
-                dtype: DType, width: Int
+                dtype: DType, width: UInt
             ](v1: SIMD[dtype, width], v2: SIMD[dtype, width]) -> SIMD[
                 dtype, width
             ]:
@@ -2779,7 +2779,7 @@ struct SIMD[dtype: DType, size: Int](
         elements (with wrap-around).
 
         Constraints:
-            `-size <= shift < size`
+            `-Int(size) <= shift < size`
 
         Parameters:
             shift: The number of positions by which to rotate the elements of
@@ -2791,8 +2791,8 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         constrained[
-            shift >= -size and shift < size,
-            "Constraint: -size <= shift < size",
+            shift >= -Int(size) and shift < size,
+            "Constraint: -Int(size) <= shift < size",
         ]()
 
         @parameter
@@ -2809,7 +2809,7 @@ struct SIMD[dtype: DType, size: Int](
         elements (with wrap-around).
 
         Constraints:
-            `-size < shift <= size`
+            `-Int(size) < shift <= size`
 
         Parameters:
             shift: The number of positions by which to rotate the elements of
@@ -2821,8 +2821,8 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         constrained[
-            shift > -size and shift <= size,
-            "Constraint: -size < shift <= size",
+            shift > -Int(size) and shift <= size,
+            "Constraint: -Int(size) < shift <= size",
         ]()
 
         @parameter
@@ -2930,7 +2930,7 @@ struct SIMD[dtype: DType, size: Int](
             var idx = 0
 
             @parameter
-            for i in reversed(range(size)):
+            for i in reversed(range(Int(size))):
                 values[idx] = i
                 idx += 1
             return values
@@ -2991,7 +2991,7 @@ fn _tbl1(
 
 @always_inline
 fn _pow[
-    simd_width: Int
+    simd_width: UInt
 ](base: SIMD[_, simd_width], exp: SIMD[_, simd_width]) -> __type_of(base):
     """Computes the power of the elements of a SIMD vector raised to the
     corresponding elements of another SIMD vector.
@@ -3049,7 +3049,7 @@ fn _powf_scalar(base: Scalar, exponent: Scalar) -> __type_of(base):
 
 @always_inline
 fn _powf[
-    simd_width: Int
+    simd_width: UInt
 ](base: SIMD[_, simd_width], exp: SIMD[_, simd_width]) -> __type_of(base):
     constrained[
         exp.dtype.is_floating_point(), "exponent must be floating point"
@@ -3156,7 +3156,7 @@ fn _convert_float8_to_f32_scaler[
 @always_inline
 fn _convert_float8_to_f32[
     dtype: DType,
-    size: Int,
+    size: UInt,
 ](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
     @parameter
     if _is_sm_9x_or_newer():
@@ -3180,7 +3180,7 @@ fn _convert_float8_to_f32[
 @always_inline
 fn _convert_float8_to_f16[
     dtype: DType,
-    size: Int,
+    size: UInt,
 ](val: SIMD[dtype, size],) -> SIMD[DType.float16, size]:
     @parameter
     if _is_sm_9x_or_newer():
@@ -3197,7 +3197,7 @@ fn _convert_float8_to_f16[
 fn _convert_f32_to_float8[
     dtype: DType,
     target: DType,
-    size: Int,
+    size: UInt,
 ](val: SIMD[dtype, size],) -> SIMD[target, size]:
     @parameter
     if _is_sm_9x_or_newer():
@@ -3378,7 +3378,7 @@ fn _bfloat16_to_f32_scalar(
 
 @always_inline
 fn _bfloat16_to_f32[
-    size: Int
+    size: UInt
 ](val: SIMD[DType.bfloat16, size]) -> SIMD[DType.float32, size]:
     @parameter
     if has_neon():
@@ -3422,7 +3422,7 @@ fn _f32_to_bfloat16_scalar(
 
 @always_inline
 fn _f32_to_bfloat16[
-    size: Int
+    size: UInt
 ](val: SIMD[DType.float32, size]) -> SIMD[DType.bfloat16, size]:
     @parameter
     if has_neon():
@@ -3452,7 +3452,7 @@ fn _simd_apply[
         Scalar[input_dtype]
     ) capturing -> Scalar[result_dtype],
     result_dtype: DType,
-    simd_width: Int,
+    simd_width: UInt,
 ](x: SIMD[_, simd_width]) -> SIMD[result_dtype, simd_width]:
     """Returns a value whose elements corresponds to applying `func` to each
     element in the vector.
@@ -3484,7 +3484,7 @@ fn _simd_apply[
         Scalar[lhs_dtype], Scalar[rhs_dtype]
     ) capturing -> Scalar[result_dtype],
     result_dtype: DType,
-    simd_width: Int,
+    simd_width: UInt,
 ](x: SIMD[_, simd_width], y: SIMD[_, simd_width]) -> SIMD[
     result_dtype, simd_width
 ]:

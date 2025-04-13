@@ -150,7 +150,7 @@ struct LinkedList[
     """The first node in the list."""
     var _tail: Self._NodePointer
     """The last node in the list."""
-    var _size: Int
+    var _size: UInt
     """The number of elements in the list."""
 
     fn __init__(out self):

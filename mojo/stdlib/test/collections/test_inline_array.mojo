@@ -83,7 +83,9 @@ def test_array_int():
     var arr3 = InlineArray[Int, 1](5)
     assert_equal(arr3[0], 5)
 
-    def test_init_fill[size: Int, batch_size: Int, dt: DType](arg: Scalar[dt]):
+    def test_init_fill[
+        size: UInt, batch_size: UInt, dt: DType
+    ](arg: Scalar[dt]):
         var arr = InlineArray[Scalar[dt], size].__init__[batch_size=batch_size](
             fill=arg
         )

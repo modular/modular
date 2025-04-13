@@ -300,7 +300,7 @@ struct _FixedString[CAP: Int](
     # Fields
     var buffer: InlineArray[UInt8, CAP]
     """The underlying storage for the fixed string."""
-    var size: Int
+    var size: UInt
     """The number of elements in the vector."""
 
     # ===------------------------------------------------------------------===#

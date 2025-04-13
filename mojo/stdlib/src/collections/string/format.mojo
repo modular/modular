@@ -205,7 +205,7 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
     @staticmethod
     fn _create_entries(
         fmt_src: StringSlice, len_pos_args: Int
-    ) raises -> (List[Self], Int):
+    ) raises -> (List[Self], UInt):
         """Returns a list of entries and its total estimated entry byte width.
         """
         var manual_indexing_count = 0
@@ -223,7 +223,7 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         var skip_next = False
         var fmt_ptr = fmt_src.unsafe_ptr()
         var fmt_len = fmt_src.byte_length()
-        var total_estimated_entry_byte_width = 0
+        var total_estimated_entry_byte_width = UInt(0)
 
         for i in range(fmt_len):
             if skip_next:
@@ -257,8 +257,8 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
                     if current_entry._handle_field_and_break(
                         fmt_src,
                         len_pos_args,
-                        i,
-                        start_value,
+                        UInt(i),
+                        UInt(start_value),
                         automatic_indexing_count,
                         raised_automatic_index,
                         manual_indexing_count,
@@ -301,7 +301,7 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
         mut manual_indexing_count: Int,
         mut raised_manual_index: Optional[Int],
         mut raised_kwarg_field: Optional[String],
-        mut total_estimated_entry_byte_width: Int,
+        mut total_estimated_entry_byte_width: UInt,
     ) raises -> Bool:
         alias S = StringSlice[StaticConstantOrigin]
 
