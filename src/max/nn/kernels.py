@@ -879,6 +879,7 @@ def flash_attention_ragged_paged_fa3_fallback(
             )
         ],
         parameters=parameters,
+        device=input.device,
     )[0].tensor
 
 
@@ -1381,7 +1382,7 @@ def cross_attention_ragged(
             kv_collection,
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
-            ops.constant(scale, dtype=DType.float32),
+            ops.constant(scale, dtype=DType.float32).to(DeviceRef.CPU()),
         ],
         out_types=[
             TensorType(
@@ -1389,6 +1390,7 @@ def cross_attention_ragged(
             )
         ],
         parameters=parameters,
+        device=input.device,
     )[0].tensor
 
 

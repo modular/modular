@@ -19,7 +19,7 @@ import math
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn import MLP, RMSNorm
 from max.nn.kernels import (
     MHAMaskVariant,
@@ -114,7 +114,9 @@ class CrossSdpaAttention(Layer):
             self.kv_params,
             input=query_states,
             kv_collection=kv_collection,
-            layer_idx=ops.constant(self.layer_idx, DType.uint32),
+            layer_idx=ops.constant(
+                self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+            ),
             input_row_offsets=hidden_input_row_offsets,
             # Use the null mask to attend to all vision tokens.
             mask_variant=MHAMaskVariant.NULL_MASK,

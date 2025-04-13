@@ -133,9 +133,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         model_inputs = cast(PixtralInputs, model_inputs)
         if model_inputs.has_vision_inputs:
             image_embeds = self.vision_model.execute(
-                model_inputs.pixel_values,
-                model_inputs.attention_mask,
-                copy_inputs_to_device=False,
+                model_inputs.pixel_values, model_inputs.attention_mask
             )[0]
         else:
             # batch_size * num_concurrent_media * num_patches are set to 0 here to imitate a dummy tensor (used in text-only mode).
@@ -155,7 +153,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             image_embeds,
             model_inputs.input_row_offsets,
             *model_inputs.kv_cache_inputs,
-            copy_inputs_to_device=False,
         )
         if len(model_outputs) == 3:
             return ModelOutputs(

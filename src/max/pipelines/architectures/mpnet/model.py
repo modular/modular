@@ -138,9 +138,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(MPNetInputs, model_inputs)
         model_outputs = self.model.execute(
-            model_inputs.next_tokens_batch,
-            model_inputs.attention_mask,
-            copy_inputs_to_device=False,
+            model_inputs.next_tokens_batch, model_inputs.attention_mask
         )
 
         return ModelOutputs(

@@ -122,7 +122,6 @@ class ReplitModel(PipelineModel[TextContext]):
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             *model_inputs.kv_cache_inputs,
-            copy_inputs_to_device=False,
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
@@ -164,7 +163,7 @@ class ReplitModel(PipelineModel[TextContext]):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
-            ).to(self.devices[0]),
+            ),
         )
 
     def prepare_next_token_inputs(
@@ -333,7 +332,9 @@ class ReplitModel(PipelineModel[TextContext]):
             DType.uint32, shape=["input_row_offsets_len"]
         )
         return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"]
+            DType.int64,
+            shape=["return_n_logits"],
+            device=DeviceRef.CPU(),
         )
         kv_cache_types = self.kv_manager.input_symbols()[0]
         with Graph(

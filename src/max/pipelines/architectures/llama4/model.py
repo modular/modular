@@ -435,9 +435,6 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             model_inputs.cache_positions,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
-            copy_inputs_to_device=(
-                not self.kv_cache_config.cache_strategy.uses_opaque()
-            ),
         )
         if len(model_outputs) == 3:
             return ModelOutputs(

@@ -190,10 +190,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return Llama3Config.get_num_layers(huggingface_config)
 
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-    ) -> ModelOutputs:
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         model_inputs = cast(Llama3Inputs, model_inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
         model_outputs = self.model.execute(
@@ -202,9 +199,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
             model_inputs.return_n_logits,
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
-            copy_inputs_to_device=(
-                not self.kv_cache_config.cache_strategy.uses_opaque()
-            ),
         )
 
         if len(model_outputs) == 3:
@@ -244,7 +238,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
-            ).to(self.devices[0]),
+            ),
         )
 
     def _prepare_padded_initial_token_inputs(
@@ -272,7 +266,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Tensor.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
-            ).to(self.devices[0]),
+            ),
         )
 
     def prepare_initial_token_inputs(
@@ -454,7 +448,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
         return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"]
+            DType.int64,
+            shape=["return_n_logits"],
+            device=DeviceRef.CPU(),
         )
 
         huggingface_config = self.huggingface_config
@@ -580,7 +576,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
         return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"]
+            DType.int64,
+            shape=["return_n_logits"],
+            device=DeviceRef.CPU(),
         )
 
         if len(self.devices) > 1:

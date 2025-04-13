@@ -733,7 +733,9 @@ class PagedKVCacheManager(KVCacheManager):
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
                 max_lengths=TensorType(
-                    DType.uint32, shape=["steps_remaining", 2]
+                    DType.uint32,
+                    shape=["steps_remaining", 2],
+                    device=DeviceRef.CPU(),
                 ),
             )
             for i in range(len(self.devices))
@@ -920,7 +922,9 @@ class PagedKVCacheManagerFA3Fallback(PagedKVCacheManager):
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
                 max_lengths=TensorType(
-                    DType.uint32, shape=["steps_remaining", 2]
+                    DType.uint32,
+                    shape=["steps_remaining", 2],
+                    device=DeviceRef.CPU(),
                 ),
             )
             for i in range(len(self.devices))
