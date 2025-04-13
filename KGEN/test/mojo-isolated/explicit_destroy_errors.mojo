@@ -19,7 +19,7 @@ struct EmptyExplicit:
 
 fn errorExample():
     # expected-error @below {{Must use consume!}}
-    var l = EmptyExplicit()
+    _ = EmptyExplicit()
 
 
 # expected-error @below {{Must use consume!}}
@@ -66,7 +66,7 @@ fn upcastLinearCopyable(owned x: LinearCopyableStruct):
 # CHECK-LABEL: lit.fn @"callsWith
 fn callsWith():
   # expected-error @below {{Unhandled explicit_destroy type Coroutine}}
-  x = testAsyncVoid()
+  _ = testAsyncVoid()
   # CHECK-NOT: lit.call {{.*}}__del__
 
 

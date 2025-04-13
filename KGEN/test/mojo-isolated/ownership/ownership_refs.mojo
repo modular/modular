@@ -9,6 +9,8 @@
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics | FileCheck %s
 
+fn use_any[*Ts: AnyType](*args: *Ts): pass
+
 # ===----------------------------------------------------------------------=== #
 # Parsing of references
 # ===----------------------------------------------------------------------=== #
@@ -192,6 +194,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK-NEXT: lifetime.start %aref2
   # CHECK-NEXT: lit.ref.store [[AR]], %aref2
   # CHECK-NEXT: lifetime.end %aref2
+  # expected-warning @+1 {{assignment to 'aref2' was never used}}
   var aref2 = aref
 
   # Pointer can bind to immutable things as well, no problem.
@@ -253,6 +256,8 @@ fn callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
   # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@ownership_refs::@TwoLifetimes<:origin<0> *"z`2", :origin<0> *"z`2">
   var l4 = returnTwoArgLifetimes(z, z)
 
+  use_any(l1, l2, l3, l4)
+
 fn returnOneArgLifetime(a: MemExample)
   -> OneLifetime[__origin_of(a)]:
   return OneLifetime[__origin_of(a)]()
@@ -304,12 +309,12 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 
 # CHECK-LABEL: lit.fn @"ref_copyability
 fn ref_copyability[*element_types: Copyable](*args: *element_types):
-  # CHECK: %x = lit.var.decl
+  # CHECK: %_x = lit.var.decl
   # CHECK: [[ITEM:%.*]] = lit.call @stdlib::@builtin::@stubs::@VariadicPack::@"__getitem__
-  # CHECK: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__copyinit__{{.*}}([[ITEM]], %x)
-  var x = args[4]
+  # CHECK: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
+  var _x = args[4]
 
-  # CHECK-NEXT: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__del__{{.*}}(%_x)
 
 # Issue #37659: Parameter inference doesn't work with force-immut origins
 

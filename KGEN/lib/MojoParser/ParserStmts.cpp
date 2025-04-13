@@ -1171,7 +1171,9 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   // Create a VarDeclOp for the induction variable.  We infer its type from the
   // call to __next__ down below.
   VarDeclOp indvarDeclOp = getEmitter().emitVarDecl(
-      target, getUnresolvedType(), forLoc, VarDeclKind::Implicit);
+      target, getUnresolvedType(), forLoc,
+      target.getValue() == "_" ? VarDeclKind::Synthesized
+                               : VarDeclKind::Implicit);
 
   bool isInvalid = false;
   auto notifyVarDecl = [&](ASTDecl &decl) {

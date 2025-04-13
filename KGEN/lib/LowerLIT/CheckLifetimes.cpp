@@ -190,7 +190,9 @@ struct TypeDeclInfo {
 
   /// If this is a non-destructible/linear type, emit its linear type error
   /// message and return true. Otherwise returns false.
-  bool emitErrorMsgIfLinearType(Location loc, Type type) const;
+  bool
+  emitErrorMsgIfLinearType(Location loc, Type type,
+                           std::vector<InFlightDiagnostic> &diagsToEmit) const;
 
   /// Return the function for a given symbol name if known.
   FnOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
@@ -297,13 +299,18 @@ SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type) const {
 
 /// If this is a non-destructible/linear type, return the error message to
 /// emit if an implicit destructor call is required.
-bool TypeDeclInfo::emitErrorMsgIfLinearType(Location loc, Type type) const {
+bool TypeDeclInfo::emitErrorMsgIfLinearType(
+    Location loc, Type type,
+    std::vector<InFlightDiagnostic> &diagsToEmit) const {
   if (auto valueType = dyn_cast<LIT::StructType>(type)) {
     StructDeclOp structDecl = getStructDeclForType(valueType);
     std::optional<StringRef> errorMsg = structDecl.getLinearTypeErrorMsg();
-    if (errorMsg)
-      ::mlir::emitError(loc) << *errorMsg;
-    return errorMsg.has_value();
+    if (!errorMsg)
+      return false;
+
+    auto diag = ::mlir::emitError(loc) << *errorMsg;
+    diagsToEmit.push_back(std::move(diag));
+    return true;
   }
 
   if (auto generic = dyn_cast<ParamType>(type)) {
@@ -320,6 +327,8 @@ bool TypeDeclInfo::emitErrorMsgIfLinearType(Location loc, Type type) const {
           hasError = true;
         }
       }
+
+      diagsToEmit.push_back(std::move(diag));
       return hasError;
     }
   }
@@ -760,7 +769,7 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
     auto refType = dyn_cast<RefType>(val.getType());
     if (!refType) {
       mlir::emitError(val.getLoc())
-          << "trackable IR value of type " << val.getType()
+          << "INTERNAL ERROR: trackable IR value of type " << val.getType()
           << " should have type '!lit.ref': " << val;
       return;
     }
@@ -1827,8 +1836,9 @@ namespace {
 /// operation with the uses (eg if it is a copyinit).
 class DestructorInserter {
 public:
-  DestructorInserter(ImplicitLocOpBuilder builder, ValueSet &valueSet)
-      : builder(builder), valueSet(valueSet) {}
+  DestructorInserter(ImplicitLocOpBuilder builder, ValueSet &valueSet,
+                     std::vector<InFlightDiagnostic> &diagsToEmit)
+      : builder(builder), valueSet(valueSet), diagsToEmit(diagsToEmit) {}
 
   /// This method indicates that the specified value needs to be destroyed after
   /// this operation.  If 'fieldsToDestroy' is non-empty then it specifies which
@@ -1872,6 +1882,11 @@ public:
 
 private:
   ValueSet &valueSet;
+
+  /// This is a set of warnings to emit from this pass.  We buffer them and then
+  /// emit them at the end of the pass, because dtor insertion is "bottom up"
+  /// and we want to emit warnings in a "top down" manner.
+  std::vector<InFlightDiagnostic> &diagsToEmit;
 
   /// During the core op-processing loop, this is the set of values that need to
   /// be destroyed.
@@ -1967,6 +1982,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
       addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
       diag << " destroyed out of the middle of a value, preventing the "
               "overall value from being destroyed";
+      diagsToEmit.push_back(std::move(diag));
       return;
     }
 
@@ -2048,8 +2064,8 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   if (!dtor) {
     // If there is no destructor, then this is either a trivial type or a
     // non-linear type.  Check for linearTypeErrorMsg and emit it if present.
-    if (valueSet.typeDeclInfo.emitErrorMsgIfLinearType(builder.getLoc(),
-                                                       destroyedType)) {
+    if (valueSet.typeDeclInfo.emitErrorMsgIfLinearType(
+            builder.getLoc(), destroyedType, diagsToEmit)) {
       valueSet.getValueInfo(valueRef.valueId).hasErrorDiagnosed = true;
     }
 
@@ -2083,8 +2099,9 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   SmallVector<TypedAttr> implicitOrigins;
   auto delSelfTy = dyn_cast<RefType>(signature.getArguments()[0]);
   if (!delSelfTy) {
-    mlir::emitError(builder.getLoc())
-        << "invalid __del__ that doesn't take register by-ref";
+    auto diag = mlir::emitError(builder.getLoc())
+                << "invalid __del__ that doesn't take register by-ref";
+    diagsToEmit.push_back(std::move(diag));
     return;
   }
 
@@ -2097,8 +2114,9 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   // method will have address space zero.  Attempts to delete other things
   // should not explode the compiler.
   if (delSelfTy.getAddressSpace() != argRef.getAddressSpace()) {
-    mlir::emitError(builder.getLoc())
-        << "cannot destroy value in non-default address space";
+    auto diag = mlir::emitError(builder.getLoc())
+                << "cannot destroy value in non-default address space";
+    diagsToEmit.push_back(std::move(diag));
     return;
   }
 
@@ -2582,7 +2600,7 @@ private:
   void checkDef(Value value, Operation &op, bool isDeref,
                 DestructorInserter &dtorInserter);
   void checkOriginEffect(TypedAttr origin, DestructorInserter &dtorInserter);
-  void scheduleNeededDtors(ValueRef use, DestructorInserter &dtorInserter,
+  bool scheduleNeededDtors(ValueRef use, DestructorInserter &dtorInserter,
                            Value value = Value());
 
   /// Emit a debug value for the value if it is tracked with debug info.
@@ -2615,6 +2633,11 @@ private:
   /// surrounding loop.
   BitVector *breakSet = nullptr;
   BitVector *continueSet = nullptr;
+
+  /// This is a set of warnings to emit from this pass.  We buffer them and then
+  /// emit them at the end of the pass, because dtor insertion is "bottom up"
+  /// and we want to emit warnings in a "top down" manner.
+  std::vector<InFlightDiagnostic> diagsToEmit;
 };
 } // namespace
 
@@ -2679,10 +2702,14 @@ void DestructorInsertion::scanFunction(FnOp func) {
       loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
     ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
-    DestructorInserter dtorInserter(builder, valueSet);
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
     checkUse(argValue, /*isDeref=*/isIndirect, dtorInserter);
     dtorInserter.emitDestructors();
   }
+
+  // Emit any diagnostics that were queued up in a top-down order.
+  while (!diagsToEmit.empty())
+    diagsToEmit.pop_back();
 }
 
 /// Scan a block top down, checking all the operations that may use a value or
@@ -2734,7 +2761,7 @@ void DestructorInsertion::scanBlock(Block &block) {
     // they are for values used by it.
     ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(),
                                  std::next(Block::iterator(&op)));
-    DestructorInserter dtorInserter(builder, valueSet);
+    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
 
     assert(resultEffects.size() == op.getNumResults() &&
            "getOperationEffects returned wrong # effects");
@@ -3159,7 +3186,10 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
 
     // Otherwise, use the set of values consumed on loop entry as the new
     // continue set.
-    std::swap(loopBodySets.consumedValues, continueSet);
+    auto merged = unifyConsumedSets(continueSet, loopBodySets.consumedValues);
+    if (!merged.empty())
+      loopBodySets.consumedValues = std::move(merged);
+    continueSet = loopBodySets.consumedValues;
 
     // This should converge trivially as we are setting bits in the continue
     // set, but when we get a consume operator in the future this may be
@@ -3256,6 +3286,7 @@ void DestructorInsertion::checkConsume(Value value, Operation &op, bool isDeref,
       addBadValueNameToDiag(valueRef, aliveValues, valueSet, diag);
     }
     diag << " is used later";
+    diagsToEmit.push_back(std::move(diag));
     info.hasErrorDiagnosed = true;
   }
 
@@ -3287,7 +3318,7 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
   // there are dedicated bits in the consumedValues bitvector that represent
   // the consumption state of this value.
   if (ValueRef access = valueSet.getDirectValueRef(value, isDeref)) {
-    scheduleNeededDtors(access, dtorInserter, value);
+    (void)scheduleNeededDtors(access, dtorInserter, value);
     return;
   }
 
@@ -3298,7 +3329,7 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
     // Do not pass "value" here, because it will refer to the reference, which
     // may not be to the actual tracked value for 'access'.  For example, in
     // 'use(cond ? a : b)' we want to think about "a" and "b".
-    scheduleNeededDtors(access, dtorInserter);
+    (void)scheduleNeededDtors(access, dtorInserter);
   }
 }
 
@@ -3306,18 +3337,15 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
 /// arrival, emit a destructor of the value.
 void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
                                    DestructorInserter &dtorInserter) {
-  // If there is no use of the value we are defining, emit a dtor after the
-  // op. This happens when we have things like:
+  // If there is no use of the value we are defining, scheduleNeededDtors will
+  // emit a dtor after the op. This happens when we have things like:
   //
   //   init(&aggregate)
   //   ...
   //   aggregate.field1 = newValue  <<-- we are here
-  checkUse(value, isDeref, dtorInserter);
-
-  // This call defines the result, so anything above it is either dead or
-  // needs a destructor if live.  If this is a direct reference, we mark the
-  // target as being consumed.
   if (ValueRef direct = valueSet.getDirectValueRef(value, isDeref)) {
+    bool isFullUseDestroy = scheduleNeededDtors(direct, dtorInserter, value);
+
     if (!dryRun && value.getDefiningOp<VarDeclOp>()) {
       // Emit this above the operation.
       ImplicitLocOpBuilder builder(op.getLoc(), &op);
@@ -3325,9 +3353,37 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
       builder.create<VarLifetimeStartOp>(value);
     }
 
+    // If the destroyed value is a user-defined value that was just defined,
+    // warn about the useless store.
+    if (!dryRun && isFullUseDestroy) {
+      ValueInfo &valueEntry = valueSet.getValueInfo(direct.valueId);
+      // Don't warn about assignments into synthesized temporaries or arguments.
+      bool isUserVar = false;
+      if (auto varDecl = valueEntry.value.getDefiningOp<VarDeclOp>())
+        if (varDecl.getKind() != VarDeclKind::Synthesized &&
+            !varDecl.getArgShadowIndex().has_value() &&
+            // We allow people to silence this warning with a leading _ on
+            // variable names.
+            !varDecl.getName().starts_with("_"))
+          isUserVar = true;
+
+      if (isUserVar) {
+        auto diag = mlir::emitWarning(op.getLoc()) << "assignment to ";
+        BitVector allMissing(consumedValues.size(), true);
+        direct.markBits(allMissing, false);
+        addBadValueNameToDiag(direct, allMissing, valueSet, diag);
+        diag << " was never used; assign to '_' instead?";
+        diagsToEmit.push_back(std::move(diag));
+      }
+    }
+
     direct.markBits(consumedValues, false);
     return;
   }
+
+  // For indirect references, we treat this as a use, which will insert dtor
+  // calls if this was the last use of any indirectly referenced values.
+  checkUse(value, isDeref, dtorInserter);
 
   // Otherwise, we need to direct-emit a destructor call of the reference
   // itself since this operation will overwrite the value and we can't model
@@ -3336,9 +3392,8 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   if (!valueSet.isTrivial(value, isDeref) && !dryRun) {
     // Destructor call goes ahead of the mutation, not after.
     ImplicitLocOpBuilder builder(op.getLoc(), &op);
-    DestructorInserter beforeDtorInserter(builder, valueSet);
-    beforeDtorInserter.add(value,
-                           /*Just do it*/ ValueRef(0, 0, 0, isDeref));
+    DestructorInserter beforeDtorInserter(builder, valueSet, diagsToEmit);
+    beforeDtorInserter.add(value, /*Just do it*/ ValueRef(0, 0, 0, isDeref));
     beforeDtorInserter.emitDestructors();
   }
 }
@@ -3348,7 +3403,7 @@ void DestructorInsertion::checkOriginEffect(TypedAttr origin,
                                             DestructorInserter &dtorInserter) {
   // Iff this is the /last/ use of the value, emit a dtor for the value.
   for (auto access : valueSet.getValueRefsForOrigin(origin))
-    scheduleNeededDtors(access, dtorInserter);
+    (void)scheduleNeededDtors(access, dtorInserter);
 }
 
 /// If the specified valueRef corresponds to a trivial value or subfield, clear
@@ -3445,7 +3500,9 @@ computeAccessPathForMaxUnconsumedField(ValueRef use,
 /// 'value' is an optional value indicating the MLIR value corresponding to
 /// this, which is useful to avoid emitting redundant lit.struct.ger
 /// instructions when we already have it.
-void DestructorInsertion::scheduleNeededDtors(ValueRef use,
+///
+/// Returns true if the destructor was scheduled to destroy the entire use.
+bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
                                               DestructorInserter &dtorInserter,
                                               Value value) {
   assert(use && "Only works on valid refs");
@@ -3454,13 +3511,13 @@ void DestructorInsertion::scheduleNeededDtors(ValueRef use,
   // destroying, then ignore the request.
   ValueInfo &valueInfo = valueSet.getValueInfo(use.valueId);
   if (valueInfo.hasErrorDiagnosed || use.isAllPresent(consumedValues))
-    return;
+    return false;
 
   // If we are just computing the consumedValue set, don't actually insert any
   // destructor calls.
   if (dryRun) {
     use.markBits(consumedValues, true);
-    return;
+    return false;
   }
 
   // 'self' in an initializer is modeled as having its whole-object bit set
@@ -3480,8 +3537,11 @@ void DestructorInsertion::scheduleNeededDtors(ValueRef use,
 
     // If this was the only missing bit, then we're good.
     if (use.isAllPresent(consumedValues))
-      return;
+      return false;
   }
+
+  // Check to see if this whole value needs to be destroyed.
+  bool isFullObjectDestroy = !consumedValues[use.endBit - 1];
 
   // If this is the last use of some subfield of a value that needs to be
   // destroyed, emit a destructor for the WHOLE overall value.
@@ -3526,12 +3586,12 @@ void DestructorInsertion::scheduleNeededDtors(ValueRef use,
            "cannot have partially consumed object");
     dtorInserter.add(value, use);
     use.markBits(consumedValues, true);
-    return;
+    return isFullObjectDestroy; // Destroyed the full value.
   }
 
-  // Trivial types don't have __del__ methods and can't be tracked, so if this
-  // is referring to one of them, make sure to clear the bits so we don't
-  // think they need to be destroyed.
+  // Trivial types don't have __del__ methods and can't be tracked, so if
+  // this is referring to one of them, make sure to clear the bits so we
+  // don't think they need to be destroyed.
   clearTrivialFields(use, valueType, consumedValues, valueSet);
 
   // If we need to destroy the whole value, we can just use an empty BitVector,
@@ -3542,6 +3602,9 @@ void DestructorInsertion::scheduleNeededDtors(ValueRef use,
     fieldsToDestroy = consumedValues;
   dtorInserter.add(value, use, std::move(fieldsToDestroy));
   use.markBits(consumedValues, true);
+
+  // Return true if we destroyed the full reference.
+  return isFullObjectDestroy;
 }
 
 void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
@@ -3599,7 +3662,7 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
 
   // Any dtor calls will be emitted at the start of the block.
   DestructorInserter dtorInserter(
-      ImplicitLocOpBuilder(loc, &block, block.begin()), valueSet);
+      ImplicitLocOpBuilder(loc, &block, block.begin()), valueSet, diagsToEmit);
 
   int nextToDestroy = entriesToDestroy.find_first();
   while (nextToDestroy != -1) {
@@ -3616,7 +3679,7 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
 
     // Emit destructor calls for the entire value or the correct subfields that
     // need to be destroyed.
-    scheduleNeededDtors(fullValueRef, dtorInserter);
+    (void)scheduleNeededDtors(fullValueRef, dtorInserter);
 
     // Find the next object to destroy.
     nextToDestroy = entriesToDestroy.find_next(fullValueRef.endBit - 1);

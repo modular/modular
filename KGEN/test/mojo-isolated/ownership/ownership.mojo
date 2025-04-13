@@ -71,6 +71,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%arg0)
 
   # CHECK-NEXT: %mem1 = lit.var.decl "mem1" var
+  # expected-warning @+1 {{assignment to 'mem1' was never used}}
   var mem1 = MemExample()
   # CHECK-NEXT: lifetime.start %mem1
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem1)
@@ -91,6 +92,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lifetime.start %mem2
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem2)
 
+  # expected-warning @+1 {{assignment to 'reg' was never used}}
   var reg = RegExample()
   # CHECK-NEXT: %reg = lit.var.decl "reg"
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
@@ -134,6 +136,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant: {{.*}}5
   # CHECK-NEXT: lifetime.start %someInt
   # CHECK-NEXT: lit.ref.store [[FIVE]], %someInt
+  # expected-warning @+1 {{assignment to 'someInt' was never used}}
   var someInt = 4
   someInt = 5  # silence var warning.
   # CHECK-NEXT: = lit.ref.load %someInt
@@ -154,7 +157,9 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}@RegExample::@"__init__{{.*}}()
   # CHECK-NEXT: lifetime.start %localReg
   # CHECK-NEXT: lit.ref.store [[TMP]], %localReg
+  # expected-warning @+1 {{assignment to 'localReg' was never used}}
   var localReg = RegExample()
+
 
 # CHECK-LABEL: lit.fn @"indirect_call
 fn indirect_call[detail_fn: fn() -> MemExample]():
@@ -177,6 +182,7 @@ struct Parameterized[level: Int]:
 # CHECK-LABEL: lit.fn @"test_parameterized
 fn test_parameterized():
   # CHECK: %x = lit.var.decl "x"
+  # expected-warning @+1 {{assignment to 'x' was never used}}
   var x = Parameterized[4]()
   # CHECK: lit.call {{.*}}@"__init__{{.*}}(%x)
   # CHECK: lit.call {{.*}}__del__{{.*}}<:!Int {4}>(%x)
@@ -215,6 +221,7 @@ fn testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
   # CHECK-NEXT: lifetime.start %ownedI1
   # CHECK-NEXT: lit.ref.store [[I1VAL]], %ownedI1
   # CHECK-NEXT: lifetime.end %ownedI1
+  # expected-warning @+1 {{assignment to 'ownedI1' was never used}}
   var ownedI1 = __get_address_as_owned_value(i1ptr)
 
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
@@ -565,6 +572,7 @@ fn bigreg_test():
   # CHECK-NEXT: lit.ref.store [[TMP]], [[AREF]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%varThing)
   # CHECK-NEXT: lifetime.end %varThing
+  # expected-warning @+1 {{assignment to 'varThing.a' was never used}}
   varThing.a = RegExample()
 
   # Must drop the value in a register to pass by-ref
@@ -776,6 +784,7 @@ fn variadic_field_sensitivity():
   # Need to restore 'a' so memPair may destruct.
   # CHECK: [[AREF:%.*]] = lit.ref.struct.ger %memPair[a]
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[AREF]])
+  # expected-warning @+1 {{assignment to 'memPair.a' was never used}}
   memPair.a = MemExample()
 
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%memPair)
@@ -975,6 +984,7 @@ fn overwrite(y: MemExample, x: Bool) raises:
    # CHECK-NEXT: hlcf.yield
    # CHECK-NEXT: }
    # CHECK: lit.call @{{.*}}::@MemPair::@"__del__{{.*}}(%foo)
+   # expected-warning @+1 {{assignment to 'foo.a' was never used; assign to '_' instead?}}
    foo.a = MemExample()
 
 
@@ -1135,6 +1145,7 @@ fn handleAnyLifetime3():
     # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
     # CHECK-NEXT: lit.ref.store
     # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
+    # expected-warning @+1 {{assignment to 'a_packed_ptr' was never used}}
     var a_packed_ptr = UnsafePointer[Int]()
 
     # CHECK-NEXT: lit.call {{.*}}__init__
@@ -1143,6 +1154,7 @@ fn handleAnyLifetime3():
     # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
 
     # This shouldn't be treated as a use of `a_packed_ptr`
+    # expected-warning @+1 {{assignment to 'a_packed_ptr' was never used}}
     a_packed_ptr = UnsafePointer[Int]()
 
 
@@ -1352,7 +1364,7 @@ fn test_min2(a: String):
 
 # MOCO-1500: Can't take origin of read-only String arg
 def origin_of_def_arg(a: String):
-    o = __origin_of(a)
+    _ = __origin_of(a)
 
 # MOCO-1542: Need to rebind field type when checking size.
 @value
@@ -1365,6 +1377,7 @@ fn use_parameterized_field():
   var litref = __get_mvalue_as_litref(s.b)
   var rebind = __mlir_op.`kgen.rebind`
     [_type=Pointer[Int, __origin_of(s.b)]._mlir_type](litref)
+  # expected-warning @+1 {{assignment to 'mvalue' was never used}}
   var mvalue = __get_litref_as_mvalue(rebind)
 
 # MOCO-1558: Failure handling sub-type elements

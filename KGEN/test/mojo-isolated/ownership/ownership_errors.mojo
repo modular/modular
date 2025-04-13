@@ -336,6 +336,7 @@ fn fieldConsumeError(
     w.mem^.consume()
     use(w)  # expected-error {{use of uninitialized value 'w.mem'}}
 
+    # expected-warning @+2 {{assignment to 'twoRegsRP' was never used; assign to '_' instead?}}
     # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
     var twoRegsRP = TwoRegsRP()
     twoRegsRP.reg1^.consume()
@@ -384,6 +385,7 @@ fn testStructWithNoDel():
     var l = StructWithNoDel(100)
     # expected-error @below {{value 'l' cannot be consumed, because 'l.x' is used later}}
     take(l^)
+    # expected-warning @+1 {{assignment to 'l.x' was never used}}
     l.x = 10
 
 
@@ -426,7 +428,8 @@ struct TrivialRange:
 
 fn testWrapperNestedInt():
     var w = WrapperNestedInt(NestedInt(0))
-    for i in TrivialRange():
+    for _ in TrivialRange():
+        # expected-warning @+1 {{assignment to 'w.x.y' was never used}}
         w.x.y = 0
 
 
@@ -503,9 +506,11 @@ fn test_inout_ref(mut v: StrArray, i: Int):
 
 # expected-note @below {{'a' declared here}}
 fn test_disable_del(owned a: MemExample, owned b: String, owned c: MemExample):
+    # expected-warning @+1 {{assignment to 'tmp1' was never used}}
     tmp1 = a.x
     __disable_del a
-    # expected-error @+1 {{use of uninitialized value 'a'}}
+    # expected-error @+2 {{use of uninitialized value 'a'}}
+    # expected-warning @+1 {{assignment to 'tmp2' was never used}}
     tmp2 = a.y
 
     # expected-error @+1 {{can only mark directly tracked values as destroyed}}
@@ -513,3 +518,28 @@ fn test_disable_del(owned a: MemExample, owned b: String, owned c: MemExample):
 
     # expected-error @+1 {{can only mark full values as destroyed, not subfields}}
     __disable_del c.x
+
+fn test_uninit_store_trivial():
+    var example = TrivialAggregate()
+    example.a = 1
+    # expected-warning @+1 {{assignment to 'example.b' was never used}}
+    example.b = 2
+
+
+@register_passable("trivial")
+struct TrivialAggregate:
+    var a: Int
+    var b: Int
+
+    fn __init__(out self):
+        self.a = 0
+        self.b = 0
+
+
+fn param_for_merge_diagnostic():
+    # NOTE: shouldn't produce a "unused store" warning.
+    var array_ptr = Int()
+    @parameter
+    for _ in TrivialRange():
+        _ = array_ptr.value
+
