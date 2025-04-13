@@ -36,7 +36,7 @@ fn test_python_exception_getattr() raises:
 
 fn test_python_exception_getitem() raises:
     try:
-        var list = PythonObject.list(1, 2, 3)
+        var list = Python.list(1, 2, 3)
         var should_fail = list[13]
     except e:
         assert_equal(String(e), "list index out of range")

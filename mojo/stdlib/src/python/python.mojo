@@ -358,13 +358,34 @@ struct Python:
         return PythonObject(Dict[PythonObject, PythonObject]())
 
     @staticmethod
-    fn list() -> PythonObject:
-        """Construct an empty Python list.
+    fn list[*Ts: PythonObjectible](*values: *Ts) -> PythonObject:
+        """Construct an Python list of objects.
+
+        Parameters:
+            Ts: The list element types.
+
+        Args:
+            values: The values to initialize the list with.
 
         Returns:
-            The constructed empty Python list.
+            The constructed Python list.
         """
-        return PythonObject.list()
+        return PythonObject._list(values)
+
+    @staticmethod
+    fn tuple[*Ts: PythonObjectible](*values: *Ts) -> PythonObject:
+        """Construct an Python tuple of objects.
+
+        Parameters:
+            Ts: The list element types.
+
+        Args:
+            values: The values to initialize the tuple with.
+
+        Returns:
+            The constructed Python tuple.
+        """
+        return PythonObject._tuple(values)
 
     @no_inline
     fn as_string_slice(

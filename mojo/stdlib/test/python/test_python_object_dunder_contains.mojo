@@ -24,14 +24,14 @@ def test_contains_dunder(mut python: Python):
         var z = PythonObject(0)
         _ = 5 in z
 
-    var x = PythonObject.list(1.1, 2.2)
+    var x = Python.list(1.1, 2.2)
     assert_true(1.1 in x)
     assert_false(3.3 in x)
 
-    x = PythonObject.list("Hello", "World")
+    x = Python.list("Hello", "World")
     assert_true("World" in x)
 
-    x = PythonObject.tuple(1.5, 2)
+    x = Python.tuple(1.5, 2)
     assert_true(1.5 in x)
     assert_false(3.5 in x)
 

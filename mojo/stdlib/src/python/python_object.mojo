@@ -451,8 +451,26 @@ struct PythonObject(
         cpython = _get_global_python_itf().cpython()
         self.py_object = cpython.PyUnicode_DecodeUTF8(string)
 
+    @always_inline
     @staticmethod
     fn list[*Ts: PythonObjectible](*values: *Ts) -> Self:
+        """Initialize the object from a list of values.
+
+        Parameters:
+            Ts: The list element types.
+
+        Args:
+            values: The values to initialize the list with.
+
+        Returns:
+            A PythonObject representing the list.
+        """
+        return Self._list(values)
+
+    @staticmethod
+    fn _list[
+        *Ts: PythonObjectible
+    ](values: VariadicPack[_, PythonObjectible, *Ts]) -> Self:
         """Initialize the object from a list literal.
 
         Parameters:
@@ -474,6 +492,7 @@ struct PythonObject(
             _ = cpython.PyList_SetItem(py_object, i, obj.py_object)
         return py_object
 
+    @always_inline
     @staticmethod
     fn tuple[*Ts: PythonObjectible](*values: *Ts) -> Self:
         """Initialize the object from a tuple literal.
@@ -482,7 +501,24 @@ struct PythonObject(
             Ts: The tuple element types.
 
         Args:
-            values: The tuple value.
+            values: The values to initialize the tuple with.
+
+        Returns:
+            A PythonObject representing the tuple.
+        """
+        return Self._tuple(values)
+
+    @staticmethod
+    fn _tuple[
+        *Ts: PythonObjectible
+    ](values: VariadicPack[_, PythonObjectible, *Ts]) -> Self:
+        """Initialize the object from a tuple literal.
+
+        Parameters:
+            Ts: The tuple element types.
+
+        Args:
+            values: The values to initialize the tuple with.
 
         Returns:
             A PythonObject representing the tuple.
