@@ -349,6 +349,10 @@ class MAXModelConfig(MAXModelConfigBase):
         """Verifies that the quantization encoding and weight path provided
         are consistent.
         """
+
+        if os.environ.get("MODULAR_DISABLE_HF_NETWORK_ACCESS", None):
+            return
+
         # If weight_path and quantization_encoding are provided, verify that they are consistent.
         try:
             _weights_format = weights_format(self.weight_path)

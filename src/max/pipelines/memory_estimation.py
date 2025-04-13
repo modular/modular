@@ -123,7 +123,7 @@ class MemoryEstimator:
         total_size += actual_kv_cache_size
         # If the model is too large to fit in memory, and the user did not
         # specify a max_length, try to infer a value that would fit.
-        if total_size > free_memory and not user_provided_max_length:
+        if int(total_size) > free_memory and not user_provided_max_length:
             original_max_length = pipeline_config.max_length
             (
                 found_valid_max_length,
@@ -191,7 +191,7 @@ class MemoryEstimator:
         vram_usage_limit_scale = 0.95
 
         if isinstance(free_memory, (int, float)):
-            if total_size > free_memory:
+            if int(total_size) > int(free_memory):
                 self._raise_oom_error(
                     pipeline_config,
                     user_provided_max_length,
@@ -205,7 +205,7 @@ class MemoryEstimator:
                     devices=devices,
                 )
 
-            elif total_size > vram_usage_limit_scale * free_memory:
+            elif int(total_size) > int(vram_usage_limit_scale * free_memory):
                 logger.warning(
                     "Estimated model and kv cache memory use nears available memory. You may experience errors."
                 )

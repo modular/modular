@@ -192,6 +192,10 @@ def repo_exists_with_retry(repo_id: str) -> bool:
 
     See huggingface_hub.repo_exists for details
     """
+
+    if os.environ.get("MODULAR_DISABLE_HF_NETWORK_ACCESS", None):
+        return True
+
     max_attempts = 5
     base_delays = [2**i for i in range(max_attempts)]
     retry_delays_in_seconds = [
