@@ -18,7 +18,15 @@ from algorithm.reduction import (
 from bit import log2_floor
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
+from gpu import (
+    WARP_SIZE,
+    barrier,
+    block_idx,
+    grid_dim,
+    lane_id,
+    thread_idx,
+    warp_id as get_warp_id,
+)
 from gpu.host import DeviceAttribute, DeviceContext
 from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import AddressSpace
@@ -913,7 +921,7 @@ fn _online_softmax_kernel[
 
     alias frag_size = get_fragment_size[mma_shape]()[2]
 
-    var warp_id: UInt = warp.broadcast(thread_idx.x // WARP_SIZE)
+    var warp_id = get_warp_id()
     var lane = lane_id()
 
     # If we do more than 2 iterations, the first N - 2 iterations won't be

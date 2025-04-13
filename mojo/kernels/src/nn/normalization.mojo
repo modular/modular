@@ -25,6 +25,7 @@ from gpu import (
     block_dim,
     block_idx,
     lane_id,
+    warp_id,
     syncwarp,
     thread_idx,
 )
@@ -196,7 +197,7 @@ fn welford_block_all_reduce[
         1, type, address_space = AddressSpace.SHARED
     ]()
 
-    var warp_idx = thread_idx.x // WARP_SIZE
+    var warp_idx = warp_id()
     var lane_idx = lane_id()
     var warp_mean = Scalar[type]()
     var warp_m2 = Scalar[type]()

@@ -24,6 +24,7 @@ from gpu import (
     global_idx,
     grid_dim,
     lane_id,
+    warp_id as get_warp_id,
     thread_idx,
 )
 from gpu.host import DeviceContext
@@ -137,7 +138,7 @@ fn mma[
     alias BM = config.block_m()
     alias BN = config.block_n()
     alias depth = config.depth
-    var warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = get_warp_id()
     alias num_warps = config.num_threads() // WARP_SIZE
     alias num_threads = config.num_threads()
     alias num_warps_n = BN // WN
@@ -684,7 +685,7 @@ fn mha_single_batch[
         num_m_mmas * num_n_mmas, output_frag_size
     ]().local().alloc().fill(0)
 
-    var warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = get_warp_id()
 
     var warp_row = warp_id // num_warps_n
     var warp_col = warp_id % num_warps_n
@@ -1126,7 +1127,7 @@ fn mha_decoding_single_batch[
         num_m_mmas * num_n_mmas, output_frag_size
     ]().local().alloc().fill(0)
 
-    var warp_id = thread_idx.x // WARP_SIZE
+    var warp_id = get_warp_id()
 
     var warp_row = warp_id // num_warps_n
     var warp_col = warp_id % num_warps_n

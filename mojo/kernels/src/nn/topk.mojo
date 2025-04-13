@@ -26,6 +26,7 @@ from gpu import (
     grid_dim,
     lane_id,
     thread_idx,
+    warp_id,
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, FuncAttribute
@@ -534,7 +535,7 @@ fn _block_reduce_topk[
     ]()
 
     # Calculate warp id and thread information
-    var warp: UInt = warp.broadcast(thread_idx.x // WARP_SIZE)
+    var warp = warp_id()
     alias num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value
