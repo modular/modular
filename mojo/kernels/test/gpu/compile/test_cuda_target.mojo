@@ -21,6 +21,7 @@ from gpu import (
     block_idx,
     global_idx,
     lane_id,
+    warp_id,
     thread_idx,
 )
 from gpu.host import DeviceContext
@@ -467,7 +468,7 @@ fn block_reduce(val: Float32) -> Float32:
     alias warp_shift = log2_floor(WARP_SIZE)
 
     var lane = lane_id()
-    var warp = thread_idx.x // WARP_SIZE
+    var warp = warp_id()
 
     var warp_sum = warp_sum_reduce(val)
 

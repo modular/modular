@@ -9,7 +9,7 @@
 from math import ceildiv
 from sys import sizeof
 
-from gpu import WARP_SIZE, barrier
+from gpu import WARP_SIZE, barrier, warp_id as get_warp_id
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
@@ -219,7 +219,7 @@ fn tma_wgmma_kernel[
         barrier()
 
     c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    warp_id = thread_idx.x // WARP_SIZE
+    warp_id = get_warp_id()
 
     @parameter
     for m_mma in range(num_m_mmas):

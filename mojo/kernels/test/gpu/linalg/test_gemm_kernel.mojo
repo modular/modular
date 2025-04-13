@@ -13,7 +13,7 @@ from sys import argv
 from buffer import DimList, NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx
+from gpu.id import block_idx, thread_idx, warp_id
 from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.sync import barrier
 from layout import Layout, LayoutTensor
@@ -76,9 +76,8 @@ fn gemm_kernel[
     var num_warps = NUM_THREADS // WARP_SIZE
     var n_warp_n = BN // WN
     var n_warp_m = BM // WM
-    var warp_id = thread_idx.x // WARP_SIZE
-    var warp_m = Int(warp_id) // n_warp_n
-    var warp_n = Int(warp_id) % n_warp_n
+    var warp_m = Int(warp_id()) // n_warp_n
+    var warp_n = Int(warp_id()) % n_warp_n
 
     # Allocate register tiles.
     var a_reg = tb[a_type]().row_major[TM]().local().alloc()

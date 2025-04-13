@@ -14,7 +14,7 @@ from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from gpu.id import block_idx, thread_idx, warp_id as get_warp_id
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace, fence_mbarrier_init
 from gpu.mma import (
@@ -252,7 +252,7 @@ fn multicast_tma_wgmma_kernel[
         barrier()
 
     c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    warp_id = thread_idx.x // WARP_SIZE
+    warp_id = get_warp_id()
 
     @parameter
     for m_mma in range(num_m_mmas):

@@ -13,7 +13,14 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.io import _printf
-from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
+from gpu import (
+    WARP_SIZE,
+    barrier,
+    block_dim,
+    block_idx,
+    thread_idx,
+    warp_id as get_warp_id,
+)
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.int_tuple import IntTuple
@@ -1060,7 +1067,7 @@ fn matmul_kernel_tc[
     alias N = C.shape[1]()  # Number of columns in matrix C
     alias K = A.shape[1]()  # Number of columns in matrix A
 
-    var warp_id = thread_idx.x // WARP_SIZE  # Warp ID within the block
+    var warp_id = get_warp_id()  # Warp ID within the block
 
     # Calculate warp tile coordinates within the block
     warp_y = warp_id // (BN // WN)

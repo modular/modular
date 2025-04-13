@@ -22,6 +22,7 @@ from gpu import (
     block_idx,
     global_idx,
     thread_idx,
+    warp_id,
 )
 from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
@@ -80,7 +81,7 @@ fn sgemm_warp_tiling_kernel[
     var c_col = block_idx.x
 
     # Placement of the warp in the threadblock tile.
-    var warp_idx = thread_idx.x // WARP_SIZE  # the warp this thread is in
+    var warp_idx = warp_id()  # the warp this thread is in
     var warp_col = warp_idx % (BN // WN)
     var warp_row = warp_idx // (BN // WN)
 
