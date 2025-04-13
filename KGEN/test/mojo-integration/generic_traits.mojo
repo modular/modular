@@ -113,7 +113,7 @@ struct SomeType:
 fn drop_copy[T: Copyable](value: T):
     # CHECK: [[V0:%.*]] = kgen.param.constant: struct<()> = <{ }>
     # CHECK: call {{.*}}SomeType::__del__{{.*}}([[V0]])
-    var unused = value
+    var _unused = value
 
 
 @export
