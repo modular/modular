@@ -15,13 +15,13 @@ from runtime.tracing import Trace, TraceLevel
 fn test_tracing[level: TraceLevel, enabled: Bool]():
     @parameter
     async fn test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
-        var result = Int()
         alias s1 = "ENABLED: trace event 2" if enabled else StaticString(
             "DISABLED: trace event 2"
         )
         alias s2 = "ENABLED: detail event 2" if enabled else String(
             "DISABLED: detail event 2"
         )
+        var result: Int
         with Trace[level](s1, s2):
             result = lhs + rhs
         return result

@@ -44,7 +44,7 @@ fn test_basic_lock() raises:
                 tg.create_task(inc())
         tg.wait[__origin_of(lock)]()
 
-    var time_ns = time_function[test_atomic]()
+    _ = time_function[test_atomic]()
     _ = lock^
     # print("Total time taken ", time_ns / (1_000_000_000), " s")
 
