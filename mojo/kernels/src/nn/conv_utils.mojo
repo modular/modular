@@ -774,7 +774,7 @@ fn get_conv_num_partitions[
 
     var matmul_M = conv_shape.matmul_M()
     var matmul_N = conv_shape.matmul_N()
-    var matmul_K = conv_shape.matmul_K()
+    # var matmul_K = conv_shape.matmul_K()
 
     # Accessing A is more expensive in im2col than accessing B.
     # Time a factor to M to var the heuristic bias on partitioning M.

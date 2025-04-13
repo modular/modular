@@ -1027,7 +1027,6 @@ fn flash_attention_split_kv[
     ):
         alias kv_rank = rank + 1
 
-        var num_kv_heads = v_cache_shape[2]
         var kv_cache_len = v_cache_shape[3]
 
         @always_inline

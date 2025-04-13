@@ -132,8 +132,6 @@ struct CausalMask(MHAMask):
     ) -> SIMD[type, width]:
         alias index_type = coord.element_type
 
-        var masked_score_vec = score_vec
-
         # coord[2] and coord[3] are the token index in query and key respectively.
         var q_idx = coord[2]
         var k_idx = coord[3]
@@ -141,7 +139,7 @@ struct CausalMask(MHAMask):
         # coords[2] >= coords[3] ensures the current tokens is only affected by
         # itself and previous tokens.
         # TODO(KERN-782): -10000 should be -inf but softmax saturates with NaNs.
-        masked_score_vec = (
+        var masked_score_vec = (
             SIMD[index_type, width](q_idx) >= iota[index_type, width](k_idx)
         ).select(score_vec, MASK_VALUE)
 

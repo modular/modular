@@ -208,14 +208,10 @@ fn max_pool[
             break
 
     var padding_h_low = 0 if empty_padding else Int(paddings[0])
-    var padding_h_high = 0 if empty_padding else Int(paddings[1])
     var padding_w_low = 0 if empty_padding else Int(paddings[2])
     var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
     alias simd_width = simdwidthof[type]()
-
-    var input_height = input.dim(1)
-    var input_width = input.dim(2)
 
     var pool_window_h = Int(filter[0])
     var pool_window_w = Int(filter[1])
@@ -366,14 +362,10 @@ fn max_pool_gpu[
             break
 
     var padding_h_low = 0 if empty_padding else Int(paddings[0])
-    var padding_h_high = 0 if empty_padding else Int(paddings[1])
     var padding_w_low = 0 if empty_padding else Int(paddings[2])
     var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
     alias simd_width = 1
-
-    var input_height = input.dim(1)
-    var input_width = input.dim(2)
 
     var pool_window_h = Int(filter[0])
     var pool_window_w = Int(filter[1])
@@ -539,9 +531,6 @@ fn avg_pool[
         padding_w_high = padding_w_high + implicit_pad1
 
     alias simd_width = simdwidthof[type]()
-
-    var input_height = input.dim(1)
-    var input_width = input.dim(2)
 
     var output_height = output.dim(1)
     var output_width = output.dim(2)
@@ -786,9 +775,6 @@ fn avg_pool_gpu[
         padding_w_high = padding_w_high + implicit_pad1
 
     alias simd_width = 1  # Must be 1 for GPU
-
-    var input_height = input.dim(1)
-    var input_width = input.dim(2)
 
     var output_height = output.dim(1)
     var output_width = output.dim(2)

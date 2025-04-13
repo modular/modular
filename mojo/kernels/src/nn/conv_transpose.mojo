@@ -308,7 +308,6 @@ fn get_partition(
 ) -> ConvPartition:
     var task_id_f = task_id % num_partitions[2]
     var quotient = task_id // num_partitions[2]
-    var task_id_c = 0
     var task_id_howo = quotient % num_partitions[3]
     var task_id_ng = quotient // num_partitions[3]
 
@@ -471,7 +470,7 @@ struct ConvTransposedPacked[
         var num_rows = self.conv_shape.output_image_flat_size()
         var output_ptr = self.output.data + n * num_rows * self.conv_shape.f + f_offset
 
-        for i in range(num_rows):
+        for _ in range(num_rows):
 
             @always_inline
             @parameter
@@ -1328,7 +1327,7 @@ fn conv_transposed[
         alias packed_filter_rank = filter_rank if filter_packed else filter_rank + 1
 
         var packed_filter_ptr = filter.data
-        var packed_filter_shape = IndexList[packed_filter_rank](1)
+        var packed_filter_shape: IndexList[packed_filter_rank]
 
         # If filter is not packed, we have to pack it before the kernel.
         @parameter

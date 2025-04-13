@@ -54,7 +54,7 @@ struct AlibiScoreMod[
         k_idx: SIMD[coords_dtype, width],
         max_prompt_len: Int,
     ) -> SIMD[type, width]:
-        var scale = SIMD[type, width](0)
+        var scale: SIMD[type, width]
 
         @parameter
         if num_heads.is_power_of_two():
@@ -88,8 +88,6 @@ struct AlibiScoreMod[
         score_vec: SIMD[type, width],
         max_prompt_len: Int,
     ) -> SIMD[type, width]:
-        var score_mod_vec = score_vec
-
         # coord[1] is the head index.
         # coord[2] and coord[3] are the token index in query and key respectively.
 
@@ -100,7 +98,9 @@ struct AlibiScoreMod[
 
         # coords[2] >= coords[3] ensures the current tokens is only affected by
         # itself and previous tokens.
-        score_mod_vec = (q_idx >= (k_idx + iota[coords_dtype, width]())).select(
+        var score_mod_vec = (
+            q_idx >= (k_idx + iota[coords_dtype, width]())
+        ).select(
             score_vec
             + self._generate_alibi_bias[coords_dtype, type, width](
                 head_idx, k_idx, max_prompt_len

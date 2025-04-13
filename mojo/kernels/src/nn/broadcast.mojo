@@ -147,7 +147,7 @@ fn broadcast_impl[
 
     var next_input_offset = input_offset
     var next_output_offset = output_offset
-    for i in range(input.dim(axis)):
+    for _ in range(input.dim(axis)):
         broadcast_impl[rank, output_shape, input_shape, type](
             axis + 1,
             output,

@@ -804,9 +804,6 @@ fn pad_repeat[
         output[output_idx] = input[input_idx]
 
     for axis in reversed(range(rank)):
-        var pre_pad = pre_pads[axis]
-        var post_pad = post_pads[axis]
-
         for i in range(axis):
             loop_bounds[i] = IndexList[2](
                 pre_pads[i], pre_pads[i] + input.dim(i)
