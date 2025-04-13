@@ -35,6 +35,13 @@ what we publish.
 
 ### Standard library changes
 
+- The `StringLiteral` type has been moved to a more reliable "dependent type"
+  design where the value of the string is carried in a parameter instead of a
+  stored member. This defines away a category of compiler crashes when working
+  with `StringLiteral` by making it impossible to express that.  As a
+  consequence of this change, many APIs should switch to using `StaticString`
+  instead of `StringLiteral`.
+
 - `Span` now has a `swap_elements` method which takes two indices and swaps them
    within the span.
 

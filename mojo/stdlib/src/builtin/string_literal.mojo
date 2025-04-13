@@ -33,9 +33,9 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===-----------------------------------------------------------------------===#
 
 
-@lldb_formatter_wrapping_type
+@value
 @register_passable("trivial")
-struct StringLiteral(
+struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
     CollectionElementNew,
     Writable,
@@ -55,27 +55,19 @@ struct StringLiteral(
     String literals are all null-terminated for compatibility with C APIs, but
     this is subject to change. String literals store their length as an integer,
     and this does not include the null terminator.
+
+    Parameters:
+        value: The underlying string value.
     """
-
-    # Fields
-    alias type = __mlir_type.`!kgen.string`
-
-    var value: Self.type
-    """The underlying storage for the string literal."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    @implicit
-    fn __init__(out self, value: Self.type):
-        """Create a string literal from a builtin string type.
-
-        Args:
-            value: The string value.
-        """
-        self.value = value
+    fn __init__(out self):
+        """Constructor for any value."""
+        pass
 
     @always_inline("nodebug")
     fn copy(self) -> Self:
@@ -91,7 +83,19 @@ struct StringLiteral(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __add__(self, rhs: StringLiteral) -> StringLiteral:
+    fn __add__(
+        self,
+        rhs: StringLiteral,
+        out result: StringLiteral[
+            __mlir_attr[
+                `#pop.string_concat<`,
+                self.value,
+                `,`,
+                rhs.value,
+                `> : !kgen.string`,
+            ]
+        ],
+    ):
         """Concatenate two string literals.
 
         Args:
@@ -100,7 +104,7 @@ struct StringLiteral(
         Returns:
             The concatenated string.
         """
-        return __mlir_op.`pop.string.concat`(self.value, rhs.value)
+        result = __type_of(result)()
 
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.

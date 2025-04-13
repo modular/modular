@@ -190,7 +190,7 @@ def test_add():
 def test_add_string_slice():
     var s1 = String("123")
     var s2 = StringSlice("abc")
-    var s3: StringLiteral = "abc"
+    var s3 = "abc"
     assert_equal("123abc", s1 + s2)
     assert_equal("123abc", s1 + s3)
     assert_equal("abc123", s2 + s1)
@@ -1272,17 +1272,17 @@ def test_format_args():
     var output = String(vinput).format("123", 456)
     assert_equal(len(output), 7)
 
-    vinput = "{1}{0}"
-    output = String(vinput).format("123", 456)
+    var vinput2 = "{1}{0}"
+    output = String(vinput2).format("123", 456)
     assert_equal(len(output), 6)
     assert_equal(output, "456123")
 
-    vinput = "123"
-    output = String(vinput).format()
+    var vinput3 = "123"
+    output = String(vinput3).format()
     assert_equal(len(output), 3)
 
-    vinput = ""
-    output = String(vinput).format()
+    var vinput4 = ""
+    output = String(vinput4).format()
     assert_equal(len(output), 0)
 
     var res = "🔥 Mojo ❤️‍🔥 Mojo 🔥"
