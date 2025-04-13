@@ -862,7 +862,7 @@ fn prefix_sum[
     *,
     output_type: DType = type,
     exclusive: Bool = False,
-](x: SIMD[type, _]) -> Scalar[output_type]:
+](x: Scalar[type]) -> Scalar[output_type]:
     """Computes a warp-level prefix sum (scan) operation.
 
     Performs an inclusive or exclusive prefix sum across threads in a warp using
