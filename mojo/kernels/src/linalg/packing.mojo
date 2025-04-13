@@ -481,7 +481,7 @@ struct PackMatrixCols[
         alias unroll_factor = get_packB_unroll_factor()
 
         var row_idx: Int = 0
-        var col_idx: Int = 0
+        var col_idx: Int
 
         @always_inline
         @__copy_capture(valid_row_count)
