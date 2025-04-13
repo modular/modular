@@ -26,9 +26,8 @@ from sys.intrinsics import grid_dim as _grid_dim
 from sys.intrinsics import lane_id as _lane_id
 from sys.intrinsics import thread_idx as _thread_idx
 
+from .globals import WARP_SIZE
 from .warp import broadcast
-
-from gpu import WARP_SIZE
 
 # ===-----------------------------------------------------------------------===#
 # Aliases
