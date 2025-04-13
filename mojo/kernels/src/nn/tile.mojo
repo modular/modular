@@ -79,7 +79,6 @@ fn tile[
         num_rows_input = input.dim(rank - 2)
     var num_cols_input = input.dim(rank - 1)
 
-    var num_cols_output = output.dim(rank - 1)
     var repeats_len = repeats.dim(0)
 
     # Initializes output by first copying in the original input to the

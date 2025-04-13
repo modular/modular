@@ -209,7 +209,7 @@ fn max_pool[
 
     var padding_h_low = 0 if empty_padding else Int(paddings[0])
     var padding_w_low = 0 if empty_padding else Int(paddings[2])
-    var padding_w_high = 0 if empty_padding else Int(paddings[3])
+    # var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
     alias simd_width = simdwidthof[type]()
 
@@ -363,7 +363,7 @@ fn max_pool_gpu[
 
     var padding_h_low = 0 if empty_padding else Int(paddings[0])
     var padding_w_low = 0 if empty_padding else Int(paddings[2])
-    var padding_w_high = 0 if empty_padding else Int(paddings[3])
+    # var padding_w_high = 0 if empty_padding else Int(paddings[3])
 
     alias simd_width = 1
 
