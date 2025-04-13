@@ -98,8 +98,6 @@ fn case_return_arg_tuple(
     py_self: PythonObject,
     args: TypedPythonObject["Tuple"],
 ) -> PythonObject:
-    var cpython = Python().impl.cpython()
-
     return args
 
 
