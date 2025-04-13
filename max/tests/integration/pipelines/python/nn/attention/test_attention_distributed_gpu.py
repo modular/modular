@@ -288,7 +288,7 @@ def execute_attn_for_devices(
         *flattened_kv_cache_inputs,
         *signal_buffers,
     ]
-    return model.execute(*all_inputs, copy_inputs_to_device=False)
+    return model.execute(*all_inputs)
 
 
 @pytest.mark.parametrize(

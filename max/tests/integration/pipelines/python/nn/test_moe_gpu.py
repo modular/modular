@@ -110,26 +110,17 @@ def test_moe_create_indices() -> None:
     topk_ids_0 = torch.randint(
         0, NUM_EXPERTS, size=(2500,), dtype=torch.uint32
     ).numpy()
-    results_0 = model.execute(
-        Tensor.from_numpy(topk_ids_0).to(device0),
-        copy_inputs_to_device=False,
-    )
+    results_0 = model.execute(Tensor.from_numpy(topk_ids_0).to(device0))
     validate_moe_indices(results_0, topk_ids_0, 2500)
 
     topk_ids_1 = torch.randint(
         0, NUM_EXPERTS, size=(11,), dtype=torch.uint32
     ).numpy()
-    results_1 = model.execute(
-        Tensor.from_numpy(topk_ids_1).to(device0),
-        copy_inputs_to_device=False,
-    )
+    results_1 = model.execute(Tensor.from_numpy(topk_ids_1).to(device0))
     validate_moe_indices(results_1, topk_ids_1, 11)
 
     topk_ids_2 = torch.randint(
         0, NUM_EXPERTS, size=(1,), dtype=torch.uint32
     ).numpy()
-    results_2 = model.execute(
-        Tensor.from_numpy(topk_ids_2).to(device0),
-        copy_inputs_to_device=False,
-    )
+    results_2 = model.execute(Tensor.from_numpy(topk_ids_2).to(device0))
     validate_moe_indices(results_2, topk_ids_2, 1)

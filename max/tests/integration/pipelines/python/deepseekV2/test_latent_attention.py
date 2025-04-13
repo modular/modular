@@ -49,8 +49,7 @@ def generate_max_outputs(
     use_prefill: bool = True,
 ) -> torch.Tensor:
     device0 = Accelerator(0)
-    devices = [device0]
-    session = InferenceSession(devices=devices)
+    session = InferenceSession(devices=[device0])
     session.set_debug_print_options(style=PrintStyle.COMPACT)
 
     rope = OptimizedRotaryEmbedding(
@@ -170,10 +169,7 @@ def generate_max_outputs(
             )
 
             max_output = compiled.execute(
-                input_tensor_device,
-                input_row_offsets.to(device0),
-                *fetch_args,
-                copy_inputs_to_device=False,
+                input_tensor_device, input_row_offsets.to(device0), *fetch_args
             )
 
             for ctx in batch:
@@ -195,10 +191,7 @@ def generate_max_outputs(
         )
 
         max_output = compiled.execute(
-            input_tensor_device,
-            input_row_offsets.to(device0),
-            *fetch_args,
-            copy_inputs_to_device=False,
+            input_tensor_device, input_row_offsets.to(device0), *fetch_args
         )
 
         torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")

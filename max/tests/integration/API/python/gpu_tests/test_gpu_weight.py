@@ -139,5 +139,5 @@ def test_input_device_mismatch():
         weights_registry={"w": device_weight},
     )
 
-    result = model.execute(input_tensor, copy_inputs_to_device=False)[0]
+    result = model.execute(input_tensor)[0]
     assert isinstance(result, Tensor)

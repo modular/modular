@@ -8,7 +8,7 @@
 import numpy as np
 import torch
 from context_utils import create_text_context
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -25,10 +25,8 @@ from torch.utils.dlpack import from_dlpack
 def test_mla_prefill_plan() -> None:
     """Tests the mla_prefill_plan custom op."""
     # Set up hyperparameters for the test.
-    host = CPU(0)
     device0 = Accelerator(0)
-    devices = [device0]
-    session = InferenceSession(devices=devices)
+    session = InferenceSession(devices=[device0])
 
     page_size = 128
     kv_params = KVCacheParams(
@@ -42,7 +40,9 @@ def test_mla_prefill_plan() -> None:
     batch_size = len(prompt_lens)
 
     # Set MLIR types for the graph.
-    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
+    input_row_offsets_type = TensorType(
+        DType.uint32, shape=["input_row_offsets_len"], device=DeviceRef.GPU()
+    )
 
     kv_manager = PagedKVCacheManager(
         kv_params,
@@ -101,9 +101,7 @@ def test_mla_prefill_plan() -> None:
     ]
     fetch_args = kv_manager.fetch(batch)[0]
 
-    results = model.execute(
-        input_row_offsets.to(device0), *fetch_args, copy_inputs_to_device=False
-    )
+    results = model.execute(input_row_offsets.to(device0), *fetch_args)
 
     buffer_row_offsets_ref = np.zeros((16, batch_size + 1), dtype=np.int32)
     buffer_row_offsets_ref[0, 1] = 10
@@ -129,10 +127,8 @@ def test_mla_prefill_plan() -> None:
 def test_mla_decompress_k_cache() -> None:
     """Tests the mla_decompress_k_cache custom op."""
     # Set up hyperparameters for the test.
-    host = CPU(0)
     device0 = Accelerator(0)
-    devices = [device0]
-    session = InferenceSession(devices=devices)
+    session = InferenceSession(devices=[device0])
 
     page_size = 128
     kv_params = KVCacheParams(
@@ -249,7 +245,6 @@ def test_mla_decompress_k_cache() -> None:
         cache_lengths,
         lookup_table_tensor,
         is_cache_empty_buf,
-        copy_inputs_to_device=False,
     )
 
     # Concatenate tokens from blocks to form ragged reference cache

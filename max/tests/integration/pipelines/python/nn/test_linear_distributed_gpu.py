@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import cast
+
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
@@ -14,7 +17,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.nn import ColumnParallelLinear, LinearV2
 
 
-def _distribute_value(v, devices: list[Device]):
+def _distribute_value(v, devices: Sequence[Device]):
     return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 
@@ -33,7 +36,11 @@ def _single_gpu_linear(
     graph = Graph(
         "linear",
         linear,
-        input_types=[TensorType(DType.float32, [batch_size, in_dim])],
+        input_types=[
+            TensorType(
+                DType.float32, [batch_size, in_dim], device=DeviceRef.GPU()
+            )
+        ],
     )
     return session.load(graph, weights_registry=linear.state_dict())
 
@@ -44,7 +51,7 @@ def _multi_gpu_linear(
     out_dim: int,
     state_dict: dict[str, np.ndarray],
     session: InferenceSession,
-    devices: list[Device],
+    devices: Sequence[Device],
 ) -> Model:
     """Compiles a Linear layer that runs on multiple devices."""
     distributed_linear = ColumnParallelLinear(
@@ -57,7 +64,11 @@ def _multi_gpu_linear(
     distributed_linear.load_state_dict(state_dict)
     with Graph(
         "distributed_linear",
-        input_types=[TensorType(DType.float32, [batch_size, in_dim])],
+        input_types=[
+            TensorType(
+                DType.float32, [batch_size, in_dim], device=DeviceRef.GPU()
+            )
+        ],
     ) as distributed_graph:
         inputs = _distribute_value(distributed_graph.inputs[0], devices)
         distributed_graph.output(*distributed_linear(inputs))
@@ -100,11 +111,13 @@ def test_linear(
         batch_size, in_dim, out_dim, state_dict, session
     )
 
-    input = np.random.uniform(size=(batch_size, in_dim)).astype(np.float32)
+    input = Tensor.from_numpy(
+        np.random.uniform(size=(batch_size, in_dim)).astype(np.float32)
+    ).to(Accelerator())
     outputs = compiled_linear(input)
 
     assert len(outputs) == 1
-    expected_output = outputs[0].to(host).to_numpy()
+    expected_output = cast(Tensor, outputs[0]).to(host).to_numpy()
 
     # Compute multi-gpu Linear layer outputs.
     compiled_distributed_linear = _multi_gpu_linear(

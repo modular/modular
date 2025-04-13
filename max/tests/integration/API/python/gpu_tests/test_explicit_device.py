@@ -5,9 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.engine Python bindings with Max Graph when using explicit device."""
 
-import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Tensor
+from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
@@ -116,20 +115,3 @@ def test_explicit_device_compilation() -> None:
     session = InferenceSession(devices=[device])
     compiled = session.load(graph)
     assert str(device) == str(compiled.devices[0])
-
-
-def test_explicit_device_execution() -> None:
-    graph = create_test_graph_with_transfer()
-    host = CPU()
-    device = Accelerator(0)
-    session = InferenceSession(devices=[device])
-    compiled = session.load(graph)
-    a_np = np.ones((1, 1)).astype(np.float32)
-    b_np = np.ones((1, 1)).astype(np.float32)
-    c_np = np.ones((1, 1)).astype(np.float32)
-    a = Tensor.from_numpy(a_np).to(device)
-    b = Tensor.from_numpy(b_np).to(device)
-    c = Tensor.from_numpy(b_np)
-    output = compiled.execute(a, b, c)
-    assert isinstance(output[0], Tensor)
-    assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())

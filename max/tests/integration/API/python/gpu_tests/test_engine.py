@@ -3,11 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+import re
 from dataclasses import dataclass, field
 from math import isclose
 from pathlib import Path
+from typing import cast
 
 import numpy as np
+import pytest
 from max.driver import CPU, Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -75,20 +78,6 @@ def test_scalar_inputs(gpu_session: InferenceSession, scalar_input_path: Path):
     vector = Tensor.from_numpy(np.arange(1, 6, dtype=np.int32)).to(cuda)
 
     cuda_output = model.execute(scalar, vector)[0]
-    host_output = cuda_output.to(CPU())
-    assert np.array_equal(
-        host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
-    )
-
-    # We should also be able to execute with raw Python scalars.
-    cuda_output = model.execute(3, vector)[0]
-    host_output = cuda_output.to(CPU())
-    assert np.array_equal(
-        host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
-    )
-
-    # We should also be able to execute with numpy scalars.
-    cuda_output = model.execute(np.int32(3), vector)[0]
     host_output = cuda_output.to(CPU())
     assert np.array_equal(
         host_output.to_numpy(), np.arange(4, 9, dtype=np.int32)
@@ -279,3 +268,30 @@ def test_session_device_initialization() -> None:
     assert not set(session7.devices), (
         "Devices with empty list should give the empty set"
     )
+
+
+def test_execute_wrong_device_input(gpu_session: InferenceSession) -> None:
+    """Test that model.execute() raises TypeError for input tensors on the wrong device."""
+    N = 42
+    model = gpu_session.load(
+        Graph(
+            "mixed_devices",
+            forward=lambda x, y: x.to(cast(DeviceRef, y.device)) + y,
+            input_types=[
+                # One tensor on host, the other on device.
+                TensorType(DType.float32, shape=[N], device=DeviceRef.CPU()),
+                TensorType(DType.float32, shape=[N], device=DeviceRef.GPU()),
+            ],
+        )
+    )
+
+    # Attempt to execute with the wrong device input should raise TypeError
+    with pytest.raises(
+        TypeError,
+        # Escape because CPU and Accelerator's repr's include parentheses.
+        match=re.escape(
+            f"expected arg 0 to be on device {CPU()}, but was on device {Accelerator()}"
+        ),
+    ):
+        x = Tensor(DType.float32, shape=(N,), device=Accelerator())
+        model.execute(x, x)

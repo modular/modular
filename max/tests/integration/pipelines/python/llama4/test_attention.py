@@ -273,7 +273,6 @@ def generate_max_outputs(
                 cache_lengths.to(device),
                 lookup_table_tensor.to(device),
                 is_cache_empty_buf,
-                copy_inputs_to_device=False,
             )[0]
         )
     return outputs

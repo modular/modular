@@ -14,7 +14,7 @@ from context_utils import create_text_context
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, TensorValue, Weight, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.nn import Linear, RMSNorm
 from max.nn.attention import Attention
 from max.nn.kernels import (
@@ -56,9 +56,13 @@ LAYER_IDX = 0
 BATCH_SIZE = 4
 
 
-def is_h100() -> bool:
+def is_h100_h200() -> bool:
     devices = NVITOPDevice.all()
-    return len(devices) > 0 and "H100" in devices[0].name()
+    return (
+        len(devices) > 0
+        and "H100" in devices[0].name()
+        or "H200" in devices[0].name()
+    )
 
 
 def _attention_layer(
@@ -149,7 +153,7 @@ def _attention_layer(
         attn_fn = Attention(
             n_heads=N_HEADS,
             kv_params=kv_params,
-            layer_idx=ops.constant(LAYER_IDX, DType.uint32),
+            layer_idx=ops.constant(LAYER_IDX, DType.uint32, DeviceRef.CPU()),
             wqkv=wqkv,
             wo=Linear(wo),
             scale=math.sqrt(1 / HEAD_DIM),
@@ -237,7 +241,6 @@ def test_attention_gpu(start_pos, seq_len):
         cache_lengths,
         lookup_table_tensor,
         is_cache_empty_buf,
-        copy_inputs_to_device=False,
     )
     for result in results:
         if isinstance(result, Tensor):
@@ -395,15 +398,20 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
 
     dtype = DType.float32
     hidden_states_type = TensorType(
-        dtype, ["total_seq_len", config.hidden_size]
+        dtype, ["total_seq_len", config.hidden_size], device=DeviceRef.GPU()
     )
     cross_attention_states_type = TensorType(
         dtype,
         shape=[batch_size * cross_seq_len, config.hidden_size],
+        device=DeviceRef.GPU(),
     )
 
-    input_row_offsets_type = TensorType(DType.uint32, shape=[batch_size + 1])
-    hidden_max_seq_len_type = TensorType(DType.uint32, shape=[1])
+    input_row_offsets_type = TensorType(
+        DType.uint32, shape=[batch_size + 1], device=DeviceRef.GPU()
+    )
+    hidden_max_seq_len_type = TensorType(
+        DType.uint32, shape=[1], device=DeviceRef.CPU()
+    )
 
     kv_params = KVCacheParams(
         dtype=dtype, n_kv_heads=config.num_key_value_heads, head_dim=head_dim
@@ -478,7 +486,6 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
         Tensor.from_numpy(cross_attention_states.numpy()).to(cuda),
         Tensor.from_numpy(cross_input_row_offsets.numpy()).to(cuda),
         *kv_cache_inputs,
-        copy_inputs_to_device=False,
     )[0]
     assert isinstance(predicted, Tensor)
 
@@ -530,7 +537,9 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
     )
 
 
-@pytest.mark.skipif(not is_h100(), reason="Test only supported on H100")
+@pytest.mark.skipif(
+    not is_h100_h200(), reason="Test only supported on H100 and H200"
+)
 def test_kv_cache_paged_fa3_fallback():
     cuda = Accelerator()
     session = InferenceSession(devices=[cuda])
@@ -588,10 +597,7 @@ def test_kv_cache_paged_fa3_fallback():
                 is_cache_empty,
             ) = g.inputs
 
-            layer_idx = ops.constant(
-                0,
-                DType.uint32,
-            )
+            layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
             kv_collection = fetch_op(
                 blocks, cache_lengths, lookup_table, is_cache_empty
@@ -652,7 +658,6 @@ def test_kv_cache_paged_fa3_fallback():
         cache_lengths.to(cuda),
         lookup_table_tensor.to(cuda),
         is_cache_empty_buf,
-        copy_inputs_to_device=False,
     )[0]
     assert isinstance(result, Tensor)
 
@@ -733,10 +738,7 @@ def test_kv_cache_paged_mla_prefill():
                 is_cache_empty,
             ) = g.inputs
 
-            layer_idx = ops.constant(
-                0,
-                DType.uint32,
-            )
+            layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
             kv_collection = fetch_op(
                 blocks, cache_lengths, lookup_table, is_cache_empty
@@ -803,7 +805,6 @@ def test_kv_cache_paged_mla_prefill():
         cache_lengths.to(cuda),
         lookup_table_tensor.to(cuda),
         is_cache_empty_buf,
-        copy_inputs_to_device=False,
     )[0]
     assert isinstance(result, Tensor)
 

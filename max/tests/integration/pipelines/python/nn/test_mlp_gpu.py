@@ -78,10 +78,10 @@ def test_mlp(input_type: TensorType):
     w2_np = np.ones((128, 16)).astype(np.float32)
     w3_np = np.ones((16, 128)).astype(np.float32)
 
-    x = Tensor.from_numpy(x_np)
-    w1 = Tensor.from_numpy(w1_np)
-    w2 = Tensor.from_numpy(w2_np)
-    w3 = Tensor.from_numpy(w3_np)
+    x = Tensor.from_numpy(x_np).to(device0)
+    w1 = Tensor.from_numpy(w1_np).to(device0)
+    w2 = Tensor.from_numpy(w2_np).to(device0)
+    w3 = Tensor.from_numpy(w3_np).to(device0)
 
     results = compiled.execute(x, w1, w2, w3)
     expected = (
