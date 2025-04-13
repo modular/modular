@@ -1012,7 +1012,7 @@ def test_strip():
 
 
 def test_hash():
-    fn assert_hash_equals_literal_hash[s: StringLiteral]() raises:
+    fn assert_hash_equals_literal_hash[s: StaticString]() raises:
         assert_equal(hash(s), hash(String(s)))
 
     assert_hash_equals_literal_hash["a"]()

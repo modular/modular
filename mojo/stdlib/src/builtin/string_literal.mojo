@@ -18,7 +18,6 @@ These are Mojo built-ins, so you don't need to import them.
 from collections import List
 from collections.string.format import _CurlyEntryFormattable
 from collections.string.string_slice import CodepointSliceIter
-from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike
 from sys.ffi import c_char
 
@@ -45,7 +44,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Sized,
     Stringable,
     FloatableRaising,
-    _HashableWithHasher,
     PathLike,
     _CurlyEntryFormattable,
     PythonObjectible,
@@ -268,27 +266,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A new representation of the string.
         """
         return repr(self.as_string_slice())
-
-    fn __hash__(self) -> UInt:
-        """Hash the underlying buffer using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        return hash(self.unsafe_ptr(), len(self))
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
-        """Updates hasher with the underlying bytes.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher._update_with_bytes(self.unsafe_ptr(), self.byte_length())
 
     fn __fspath__(self) -> String:
         """Return the file system path representation of the object.

@@ -140,8 +140,8 @@ fn test_issue_31111():
 
 
 def test_hash_comptime():
-    alias hash_123 = hash("123")
-    assert_equal(hash_123, hash("123"))
+    alias hash_123 = hash(StaticString("123"))
+    assert_equal(hash_123, hash(StaticString("123")))
 
     alias hash_22 = hash(22)
     assert_equal(hash_22, hash(22))

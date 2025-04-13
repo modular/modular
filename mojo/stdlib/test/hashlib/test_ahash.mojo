@@ -610,26 +610,25 @@ alias hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
 
 
 def test_hash_byte_array():
-    assert_equal(hash[HasherType=hasher0]("a"), hash[HasherType=hasher0]("a"))
-    assert_equal(hash[HasherType=hasher1]("a"), hash[HasherType=hasher1]("a"))
+    alias a = StaticString("a")
+    alias b = StaticString("b")
+    alias c = StaticString("c")
+    alias d = StaticString("d")
+
+    assert_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher0](a))
+    assert_equal(hash[HasherType=hasher1](a), hash[HasherType=hasher1](a))
+    assert_not_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher1](a))
+    assert_equal(hash[HasherType=hasher0](b), hash[HasherType=hasher0](b))
+    assert_equal(hash[HasherType=hasher1](b), hash[HasherType=hasher1](b))
+    assert_not_equal(hash[HasherType=hasher0](b), hash[HasherType=hasher1](b))
+    assert_equal(hash[HasherType=hasher0](c), hash[HasherType=hasher0](c))
+    assert_equal(hash[HasherType=hasher1](c), hash[HasherType=hasher1](c))
+    assert_not_equal(hash[HasherType=hasher0](c), hash[HasherType=hasher1](c))
+    assert_equal(hash[HasherType=hasher0](d), hash[HasherType=hasher0](d))
+    assert_equal(hash[HasherType=hasher1](d), hash[HasherType=hasher1](d))
     assert_not_equal(
-        hash[HasherType=hasher0]("a"), hash[HasherType=hasher1]("a")
-    )
-    assert_equal(hash[HasherType=hasher0]("b"), hash[HasherType=hasher0]("b"))
-    assert_equal(hash[HasherType=hasher1]("b"), hash[HasherType=hasher1]("b"))
-    assert_not_equal(
-        hash[HasherType=hasher0]("b"), hash[HasherType=hasher1]("b")
-    )
-    assert_equal(hash[HasherType=hasher0]("c"), hash[HasherType=hasher0]("c"))
-    assert_equal(hash[HasherType=hasher1]("c"), hash[HasherType=hasher1]("c"))
-    assert_not_equal(
-        hash[HasherType=hasher0]("c"), hash[HasherType=hasher1]("c")
-    )
-    assert_equal(hash[HasherType=hasher0]("d"), hash[HasherType=hasher0]("d"))
-    assert_equal(hash[HasherType=hasher1]("d"), hash[HasherType=hasher1]("d"))
-    assert_not_equal(
-        hash[HasherType=hasher0]("d"),
-        hash[HasherType=hasher1]("d"),
+        hash[HasherType=hasher0](d),
+        hash[HasherType=hasher1](d),
     )
 
 

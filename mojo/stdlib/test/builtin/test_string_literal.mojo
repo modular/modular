@@ -195,15 +195,6 @@ def test_comparison_operators():
     assert_true(StringLiteral.__ge__("", empty_slice))
 
 
-def test_hash():
-    # Test a couple basic hash behaviors.
-    # `test_hash.test_hash_bytes` has more comprehensive tests.
-    assert_not_equal(0, StringLiteral.__hash__("test"))
-    assert_not_equal(StringLiteral.__hash__("a"), StringLiteral.__hash__("b"))
-    assert_equal(StringLiteral.__hash__("a"), StringLiteral.__hash__("a"))
-    assert_equal(StringLiteral.__hash__("b"), StringLiteral.__hash__("b"))
-
-
 def test_indexing():
     var s = "hello"
     assert_equal(s[False], "h")
@@ -370,7 +361,6 @@ def main():
     test_rfind()
     test_comparison_operators()
     test_count()
-    test_hash()
     test_indexing()
     test_intable()
     test_isdigit()
