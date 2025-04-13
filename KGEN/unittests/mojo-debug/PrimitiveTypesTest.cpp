@@ -200,7 +200,7 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
             "(scalar<f32>) another_float = ([0] = 4.125)\n");
   EXPECT_STREQ(ctx.frame.FindVariable("^ uncommon name").GetValue(), "1123123");
   EXPECT_EQ(ctx.runCommand("v a_string_literal").output,
-            "(string) a_string_literal = \"fofofo\"\n");
+            "(StringLiteral[:string \"fofofo\"]) a_string_literal = {}\n");
   // FIXME(37682): Reenable list printing
   // (*index, scalar<f64>, index) a_list = {
   //   [0] = 1

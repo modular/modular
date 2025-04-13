@@ -456,14 +456,6 @@ static CValue handleIntFPStringLiteral(TypedAttr value, ASTType type,
   ASTDecl *decl = type.getDecl(emitter.shared);
 
   auto litStruct = dyn_cast_if_present<StructDeclOp>(decl);
-
-  // FIXME: remove legacy StringLiteral format.
-  if (litStruct && litStruct.getParams().empty()) {
-    return emitter.emitConstructorCall(
-        type, CallOperands({{AnyValue(value), expr}}), expr,
-        CallSyntax::kImplicitConvert, dest);
-  }
-
   if (!litStruct || litStruct.getParams().size() != 1 ||
       !isa<POP::IntLiteralType, POP::FloatLiteralType, StringType>(
           litStruct.getParams()[0].getType())) {

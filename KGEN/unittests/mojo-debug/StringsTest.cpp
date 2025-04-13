@@ -25,11 +25,8 @@ TEST(StringsTest, testStrings) {
   SBValue s3 = ctx.frame.FindVariable("s3");
   SBValue s4 = ctx.frame.FindVariable("s4");
 
-  // StringLiterals, being built-in, provide the underlying strings as value. On
-  // the other hand, String, being parsed by a data formatter, provides the
+  // String, being parsed by a data formatter, provides the
   // underlying string as a Summary, following C++'s convention in LLDB.
-
-  EXPECT_STREQ(literal.GetValue(), "\"string_literal\"");
   EXPECT_STREQ(s1.GetSummary(), "\"let_string\"");
   EXPECT_TRUE(StringRef(s2.GetSummary()).contains("\"012345678910111213141"));
   EXPECT_STREQ(s3.GetSummary(), "\"\"");

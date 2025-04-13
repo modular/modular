@@ -23,7 +23,7 @@ struct Point(CollectionElement):
 
 fn main():
     var p2 = Point(2, 2)
-    var literal = "string_literal"
+    var literal: StaticString = "string_literal"
     var s1 = String("let_string")
     var s2 = String("")
     for i in range(0, 100):

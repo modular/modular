@@ -563,13 +563,13 @@ fn function[type: AnyTrivialRegType](arg: type):
       .hover(doc, *doc.findFirstPos("print("),
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(function) fn print(x: StringLiteral)
+(function) fn print(x: StringLiteral[value])
 ```)");
              })
       .hover(doc, *doc.findFirstPos("print(arg"),
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(function) fn print(x: StringLiteral)
+(function) fn print(x: StringLiteral[value])
 ```
 ---
 

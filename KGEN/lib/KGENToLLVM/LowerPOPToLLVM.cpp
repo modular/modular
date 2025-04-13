@@ -1652,29 +1652,6 @@ struct ConvertPOPStringAddress
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPStringConcat
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPStringConcat : public ConvertPOPToLLVMPattern<StringConcatOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(StringConcatOp op, StringConcatOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // FIXME: This op should not exist.
-    // See https://github.com/modular/mojo/issues/3820
-    auto diag = mlir::emitError(
-        op.getLoc(),
-        "cannot use StringLiteral append methods at runtime, only in an alias");
-    diag.attachNote(op.getLoc())
-        << "see https://github.com/modular/mojo/issues/3820 for more "
-           "information";
-    rewriter.replaceOp(op, adaptor.getOperands().front());
-    return failure();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPStringSize
 //===----------------------------------------------------------------------===//
 
@@ -2164,7 +2141,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDXOr,
       ConvertPOPStore,
       ConvertPOPStringAddress,
-      ConvertPOPStringConcat,
       ConvertPOPStringSize,
       ConvertPOPSub,
       ConvertPOPUnionBitcast,

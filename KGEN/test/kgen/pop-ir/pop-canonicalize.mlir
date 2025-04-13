@@ -1369,18 +1369,16 @@ kgen.func @select_to_cond(%cond: i1) -> !pop.scalar<bool> {
 
 
 // CHECK-LABEL: @string_ops
-kgen.func @string_ops() -> (index, !kgen.string, !kgen.string) {
+kgen.func @string_ops() -> (index, !kgen.string) {
   %str = kgen.param.constant: string = <"four">
   // CHECK-DAG: kgen.param.constant = <4>
   %0 = pop.string.size %str
-  // CHECK-DAG: kgen.param.constant: string = <"fourfour">
-  %1 = pop.string.concat %str, %str
   %hello_world = kgen.param.constant: string = <"hello world">
   %world = kgen.param.constant: string = <" world">
   %empty_str = kgen.param.constant: string = <"">
   // CHECK-DAG: kgen.param.constant: string = <"c7b615cc75879ba90049873fe9098ddf">
   %3 = pop.string.hash %hello_world
-  kgen.return %0, %1, %3 : index, !kgen.string, !kgen.string
+  kgen.return %0, %3 : index, !kgen.string
 }
 
 

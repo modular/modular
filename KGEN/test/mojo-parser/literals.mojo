@@ -40,7 +40,7 @@ fn var_let_decls():
     # CHECK: lit.alias.decl {{.*}}flDivNegZero{{.*}}@FloatLiteral<:!pop.float_literal #pop.float_literal<nan>> = <*?> 
     alias flDivNegZero = 5.0 / -0.0
 
-    # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<!StringLiteral,
-    # CHECK: [[CONST:%.*]] = kgen.param.constant: !StringLiteral = <{:string "hello"}>
+    # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<{{.*}}StringLiteral<:string "hello">
+    # CHECK: [[CONST:%.*]] = kgen.param.constant: {{.*}}@StringLiteral<:string "hello"> = <*?>
     # CHECK: lit.ref.store [[CONST]], %str
     var str = "hello"
