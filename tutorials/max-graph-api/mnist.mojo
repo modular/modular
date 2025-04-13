@@ -98,7 +98,7 @@ def preprocess(image: PythonObject) -> PythonObject:
     transforms = py.import_module("torchvision.transforms")
     image_tensor = transforms.ToTensor()(image)
     image_tensor_normalized = transforms.Normalize(
-        Python.tuple(0.5), Python.tuple(0.5)
+        py.tuple(0.5), py.tuple(0.5)
     )(image_tensor)
     reshaped_image = image_tensor_normalized.reshape(1, 28 * 28).numpy()
     return reshaped_image
