@@ -431,7 +431,7 @@ class InferenceSession:
     def __init__(
         self,
         num_threads: int | None = None,
-        devices: Iterable[Device] = [CPU()],
+        devices: Iterable[Device] | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
     ):
@@ -452,7 +452,24 @@ class InferenceSession:
         self.num_threads = num_threads
         if num_threads:
             config["num_threads"] = num_threads
-        config["devices"] = devices
+
+        final_devices: list[Device]
+        if devices is None:
+            # Default case when `devices` argument is not provided.
+            final_devices = [CPU()]
+        else:
+            # Process the provided iterable `devices`.
+            final_devices = []
+            seen_devices: set[Device] = set()
+            for device in devices:
+                if device not in seen_devices:
+                    final_devices.append(device)
+                    seen_devices.add(device)
+            # If the user provided an empty iterable, final_devices remains empty.
+
+        # Assign the ordered, unique list to the config.
+        config["devices"] = final_devices
+
         if custom_extensions is not None:
             config["custom_extensions"] = _process_custom_extensions_objects(
                 custom_extensions
