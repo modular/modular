@@ -1527,8 +1527,6 @@ fn matmul_gpu_qint4_impl[
     alias c_shape = c.shape
     var shape = GemmShape.get[transpose_b=True](c, a, b)
     var m = shape.M
-    var n = shape.N
-    var k = shape.K
 
     alias static_K = a_shape.get[1]()
     alias static_N = c_shape.get[1]()

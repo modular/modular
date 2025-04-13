@@ -215,12 +215,12 @@ fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]():
 
     print("********** GROUP SIZE 16 **********")
     var g16_result = _read_write_to_tensors[16, rtol, atol]()
-    print("G16 PASS" if g8_result else StaticString("G16 FAIL"))
+    print("G16 PASS" if g16_result else StaticString("G16 FAIL"))
     print()
 
     print("********** GROUP SIZE 32 **********")
     var g32_result = _read_write_to_tensors[32, rtol, atol]()
-    print("G32 PASS" if g8_result else StaticString("G32 FAIL"))
+    print("G32 PASS" if g32_result else StaticString("G32 FAIL"))
     print()
 
     print("------------end test_read_write_to_tensors------------")

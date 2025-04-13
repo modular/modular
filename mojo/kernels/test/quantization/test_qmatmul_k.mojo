@@ -134,8 +134,8 @@ struct qgemm_Q4_0(QuantizedGemm):
         )
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
 
-        for n in range(N):
-            for k in range(k_groups):
+        for _n in range(N):
+            for _k in range(k_groups):
                 block_ptr[].base_scale = random_float16(max=0.001)
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
@@ -224,8 +224,8 @@ struct qgemm_Q4_K(QuantizedGemm):
         )
         var block_ptr = b_ptr.bitcast[_block_Q4_K]()
 
-        for n in range(N):
-            for k in range(k_groups):
+        for _n in range(N):
+            for _k in range(k_groups):
                 block_ptr[].base_scale = random_float16(max=0.001)
                 block_ptr[].base_min = random_float16(min=-0.01, max=0.01)
                 fill_random(block_ptr[].q_scales_and_mins)
@@ -355,8 +355,8 @@ struct qgemm_Q6_K(QuantizedGemm):
         )
         var block_ptr = b_ptr.bitcast[_block_Q6_K]()
 
-        for n in range(N):
-            for k in range(k_groups):
+        for _n in range(N):
+            for _k in range(k_groups):
                 fill_random(block_ptr[].q_bits_lo)
                 fill_random(block_ptr[].q_bits_hi)
                 fill_random(block_ptr[].q_scales)

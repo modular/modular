@@ -98,7 +98,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for m in range(0, block_m, 2 * Self._tuple_width):
+        for _m in range(0, block_m, 2 * Self._tuple_width):
 
             @parameter
             for col in range(Self._tile_n):
@@ -154,7 +154,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for m in range(0, block_m, 4 * Self._tuple_width):
+        for _m in range(0, block_m, 4 * Self._tuple_width):
             var src_col_ptr = src_ptr
 
             @parameter
@@ -186,7 +186,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
         var bits_ptr = self.bits.unsafe_ptr()
 
-        for m in range(0, block_m, 4 * Self._tuple_width):
+        for _m in range(0, block_m, 4 * Self._tuple_width):
             var dst_col_ptr = dst_ptr
 
             @parameter
@@ -347,7 +347,7 @@ fn _expand_q_bits_lo[
     owned src_ptr: UnsafePointer[UInt8, **_],
     owned dst_ptr: UnsafePointer[UInt8, **_],
 ):
-    for k in range(0, _block_QK_K.quantized_k // 2, width):
+    for _k in range(0, _block_QK_K.quantized_k // 2, width):
         var src_q_bits = src_ptr.load[width=width]()
         src_ptr += width
 
@@ -366,11 +366,11 @@ fn _expand_and_merge_q_bits_hi[
     alias values_per_byte = 8 // bit_count
     alias bit_mask = (1 << bit_count) - 1
 
-    for k in range(0, _block_QK_K.quantized_k // values_per_byte, width):
+    for _k in range(0, _block_QK_K.quantized_k // values_per_byte, width):
         var src_q_bits = src_ptr.load[width=width]()
         src_ptr += width
 
-        for i in range(values_per_byte):
+        for _ in range(values_per_byte):
             var dst_q_bits_lo = dst_ptr.load[width=width]()
             var dst_q_bits_hi = (src_q_bits & bit_mask) << 4
             src_q_bits >>= bit_count
@@ -388,7 +388,7 @@ fn _copy_column_q_bits_to_block[
     """Interleaves the linear source buffer to the blocked destination
     buffer.
     """
-    for k in range(0, _block_QK_K.quantized_k, 4):
+    for _k in range(0, _block_QK_K.quantized_k, 4):
         dst_ptr.store(src_ptr.load[width=4]())
         src_ptr += 4
         dst_ptr += block_n * 4
@@ -583,10 +583,10 @@ def matmul_Q4_K_pack_b[
     var src_ptr = b.data.bitcast[_block_Q4_K]()
     var dst_ptr = b_packed.data.bitcast[_block_Q4_K_packed[block_n]]()
 
-    for kb in range(k_blocks):
+    for _kb in range(k_blocks):
         var src_n_ptr = src_ptr
 
-        for n in range(0, N, block_n):
+        for _n in range(0, N, block_n):
             _pack_block_Q4_K[block_n, b_origin, b_packed_origin](
                 src_n_ptr, k_blocks, dst_ptr
             )
@@ -613,10 +613,10 @@ def matmul_Q6_K_pack_b[
     var src_ptr = b.data.bitcast[_block_Q6_K]()
     var dst_ptr = b_packed.data.bitcast[_block_Q6_K_packed[block_n]]()
 
-    for kb in range(k_blocks):
+    for _kb in range(k_blocks):
         var src_n_ptr = src_ptr
 
-        for n in range(0, N, block_n):
+        for _n in range(0, N, block_n):
             _pack_block_Q6_K[block_n](src_n_ptr, k_blocks, dst_ptr)
 
             src_n_ptr += k_blocks * block_n
