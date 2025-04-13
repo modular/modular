@@ -2160,18 +2160,6 @@ OpFoldResult StringSizeOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// StringConcatOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult StringConcatOp::fold(FoldAdaptor adaptor) {
-  if (auto lhs = dyn_cast_or_null<TypedAttr>(adaptor.getLhs()))
-    if (auto rhs = dyn_cast_or_null<TypedAttr>(adaptor.getRhs()))
-      if (auto concat = StringConcatAttr::get(getContext(), lhs, rhs))
-        return concat;
-  return {};
-}
-
-//===----------------------------------------------------------------------===//
 // StringHashOp
 //===----------------------------------------------------------------------===//
 

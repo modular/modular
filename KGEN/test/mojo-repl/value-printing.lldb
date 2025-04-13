@@ -52,7 +52,7 @@ var w = SIMD[DType.int8, 2](-50, 31)
 # CHECK:     (si8) [1] = 31
 # CHECK:   }
 # CHECK:   (Bool) x = True
-# CHECK:   (StringLiteral) y = "fofofo"
+# CHECK:   (StringSlice[StaticConstantOrigin]) y = 
 # CHECK:   (SIMD[float32, 4]) z = {
 # CHECK:     (f32) [0] = 1
 # CHECK:     (f32) [1] = 2
@@ -66,7 +66,7 @@ struct Foo:
   var v: Int
   var w: SIMD[DType.int8, 2]
   var x: Bool
-  var y: StringLiteral
+  var y: StaticString
   var z: SIMD[DType.float32, 4]
   fn __init__(out self):
     self.v = -101
@@ -77,9 +77,9 @@ struct Foo:
 
 var f = Foo()
 
-# CHECK: (StringLiteral) empty =
-# CHECK: (StringLiteral) long = "abcdefghijklmnopqrstuvwxyz1234567890"
-# CHECK: (StringLiteral) short = "123"
+# CHECK: (StringLiteral[""]) empty =
+# CHECK: (StringLiteral["abcdefghijklmnopqrstuvwxyz1234567890"]) long =
+# CHECK: (StringLiteral["123"]) short =
 var empty = ""
 var long = "abcdefghijklmnopqrstuvwxyz1234567890"
 var short = "123"

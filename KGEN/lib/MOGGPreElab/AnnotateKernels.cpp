@@ -127,12 +127,17 @@ bool decoratorIsPartOfMAXCompiler(SymbolRefAttr symbol) {
          rootName == COMPILER_PREFIX || rootName == COMPILER_PREFIX_INTERNAL;
 }
 
+// We expect the decorator to be of the form:
+// #kgen.param.expr<apply, #kgen.symbol.constant<@StringSlice::@"__init__"
+//        [mut: Bool, origin: Origin, value: !kgen.string]
 StringAttr getStringAttrFromStaticStringDecorator(TypedAttr operand) {
-  return cast<StringAttr>(
-      std::get<1>(cast<LIT::LITStructAttr>(
-                      cast<KGEN::ParamOperatorAttr>(operand).getOperand(1))
-                      .getValues()
-                      .front()));
+  auto initApply = dyn_cast<ParamOperatorAttr>(operand);
+  assert(initApply && initApply.getOpcode() == POC::Apply &&
+         "Expected a call to StringSlice.__init__");
+  auto callee = dyn_cast<SymbolConstantAttr>(initApply.getOperand(0));
+  assert(callee && callee.getParamValues().size() == 3 &&
+         "Expected a symbol reference to StringSlice.__init__");
+  return cast<StringAttr>(callee.getParamValues()[2]);
 }
 
 template <typename StructDeclOrFnTy>

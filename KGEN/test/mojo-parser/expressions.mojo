@@ -812,59 +812,59 @@ fn _strings():
 
     var a = ""                 # CHECK: ""
     # CHECK: "hello world"
-    a = "hello \
+    var a2 = "hello \
 world"
 
     # COM: match newline hex values via regex since they vary between OSs
     # CHECK: "hello \\{{[\\0-9A-Z]+}}world"
-    a = r"hello \
+    var a3 = r"hello \
 world"
 
     # CHECK:  "1'{{(\\0D)?}}\0A2"
-    a = """1'
+    var a4 = """1'
 2"""
 
     # CHECK:  "1\222"
-    a = '''1"\
+    var a5 = '''1"\
 2'''
 
     # CHECK:   "1\22{{(\\0D)?}}\0A2"
-    a = '''1"
+    var a6 = '''1"
 2'''
 
     # CHECK:   "1\22\0A2"
-    a = '1"\n2'
+    var a7 = '1"\n2'
 
     # CHECK: "hello concat world"
-    a = "hello " "concat " "world"
+    var a8 = "hello " "concat " "world"
 
-    a = "Hello"            # CHECK: "Hello"
-    a = "Hello 'world'"    # CHECK: "Hello 'world'"
-    a = "A\x42"            # CHECK: "AB"
-    a = "A\x423"           # CHECK: "AB3"
-    a = "A\102"            # CHECK: "AB"
-    a = "A\1023"           # CHECK: "AB3"
+    var a9 = "Hello"            # CHECK: "Hello"
+    var a10 = "Hello 'world'"    # CHECK: "Hello 'world'"
+    var a11 = "A\x42"            # CHECK: "AB"
+    var a12 = "A\x423"           # CHECK: "AB3"
+    var a13 = "A\102"            # CHECK: "AB"
+    var a14 = "A\1023"           # CHECK: "AB3"
 
     # COM: the MLIR textual representation escapes strings, so below \ is \\ and " is \"
-    a = 'Hello "world"'    # CHECK: "Hello \22world\22"
-    a = r"A\x42"           # CHECK: "A\\x42"
-    a = R"A\x42"           # CHECK: "A\\x42"
-    a = r"AB\\"            # CHECK: "AB\\\\"
-    a = r"A\x"             # CHECK: "A\\x"
-    a = "AB\\"             # CHECK: "AB\\"
-    a = r"A\"B"            # CHECK: "A\\\22B"
-    a = r'A\'B'            # CHECK: "A\\'B"
-    a = "A\"B"             # CHECK: "A\22B"
-    a = 'A\'B'             # CHECK: "A'B"
-    a = r"A\zB"            # CHECK: "A\\zB"
+    var a15 = 'Hello "world"'    # CHECK: "Hello \22world\22"
+    var a16 = r"A\x42"           # CHECK: "A\\x42"
+    var a17 = R"A\x42"           # CHECK: "A\\x42"
+    var a18 = r"AB\\"            # CHECK: "AB\\\\"
+    var a19 = r"A\x"             # CHECK: "A\\x"
+    var a20 = "AB\\"             # CHECK: "AB\\"
+    var a21 = r"A\"B"            # CHECK: "A\\\22B"
+    var a22 = r'A\'B'            # CHECK: "A\\'B"
+    var a23 = "A\"B"             # CHECK: "A\22B"
+    var a24 = 'A\'B'             # CHECK: "A'B"
+    var a25 = r"A\zB"            # CHECK: "A\\zB"
 
     # Issue #201: https://github.com/modular/mojo/issues/201
     # CHECK: lit.fn *"hello{{.*}} {
     fn hello() -> StaticString:
-        # CHECK: kgen.param.constant: !StringLiteral = <{:string "123"}>
+        # CHECK: kgen.param.constant: {{.*}}@StringLiteral<:string "123"> = <*?>
         return "123"
         # lit.end_fn
-    # expected-warning @+1 {{'StringLiteral' value is unused}}
+    # expected-warning @+1 {{'StringLiteral["other comment"]' value is unused}}
     """other comment"""
 
 
@@ -943,19 +943,16 @@ struct DynamicObject:
 fn dynamic_attribute():
     # CHECK: %const_obj = lit.var.decl "const_obj"
     var const_obj = ConstDynamicObject()
-    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "dynamic_attribute"}>
-    # CHECK: call {{.*}}@ConstDynamicObject::@"__getattr__{{.*}}(
+    # CHECK: call {{.*}}@ConstDynamicObject::@"__getattr__{{.*}}<:string "dynamic_attribute">(
     _ = const_obj.dynamic_attribute
 
     var obj = DynamicObject()
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
-    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "some_attr"}>
-    # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}([[IMMREF]],
+    # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}<:string "some_attr">([[IMMREF]],
     _ = obj.some_attr
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
-    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "some_attr"}>
     # CHECK: %[[VALUE:.*]] = kgen.param.constant: !Int = <{42}>
-    # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}([[IMMREF]], {{.*}}, %[[VALUE]])
+    # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}<:string "some_attr">([[IMMREF]], {{.*}}, %[[VALUE]])
     obj.some_attr = 42
 
 
@@ -1157,8 +1154,9 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> var, ?, {{.*}}) throws -> i1
   float7: def(*Int) -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, !StringLiteral = {:string "foo"}, |) -> !kgen.none>
-  float12: fn(Int = 10, StringLiteral = "foo") -> None,
+  # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
+  # CHECK-SAME: , |) -> !kgen.none>
+  float12: fn(Int = 10, StaticString = "foo") -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !Int>
   named: fn(x: MemoryType) -> Int

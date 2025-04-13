@@ -228,8 +228,8 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "doc_private",
       "lldb_formatter_wrapping_type",
 
-      "__mogg_intrinsic_attr",
-      "register_internal",
+      MOGGPreElab::Decorators::REGISTER_MOGG_INTRINSIC,
+      MOGGPreElab::Decorators::REGISTER_INTERNAL_FUNCTION,
       "enforce_io_param",
 
       "register",

@@ -813,7 +813,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         typeName = cast<LIT::StructDeclOp>(*decl).getDeclName().strref();
       TypedAttr elt = std::get<1>(structAttr.getValues().front());
       if (typeName == "Int" || typeName == "Bool" || typeName == "Origin" ||
-          typeName == "DType" || typeName == "StringLiteral") {
+          typeName == "DType") {
         if (auto extract = dyn_cast<LIT::StructExtractAttr>(elt))
           elt = extract.getStructValue();
         printDemangledParam(os, elt, diagShared);
