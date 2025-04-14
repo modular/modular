@@ -19,6 +19,7 @@ struct A:
 fn test_key_element() raises:
     var a = A()
     print("bp")  # breakpoint
+    _ = a
 
 
 fn main() raises:

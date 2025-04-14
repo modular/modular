@@ -33,3 +33,4 @@ fn main():
     var s4 = UnsafePointer[String].address_of(s2)
     print(literal, s1, s2, s3, end="")  # breakpoint
     print(s4)
+    _ = p2
