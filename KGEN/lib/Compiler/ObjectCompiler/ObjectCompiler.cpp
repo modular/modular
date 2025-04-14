@@ -557,6 +557,14 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
                                              std::nullopt, numFunctionBase,
                                              isParLLC));
   } else {
+    if (failed(writeTempModule(options.saveTempsPrefix, ".pre-llc-split",
+                               *module))) {
+      auto error = AsyncRT::AnyAsyncValueRef::createError(
+          runtime, AsyncRT::getMLIRDiagnostic(
+                       "writing module to file before llc split failed", loc));
+      cacheResults.push_back(std::move(error));
+      return cacheResults;
+    }
     splitPerFunction(
         std::move(module),
         [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
