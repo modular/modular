@@ -19,8 +19,6 @@ modular_py_test(
     size = "large",
     srcs = glob(["*.py"]),
     data = [
-        # TODO(MAXPLAT-86): Find a shared place for these tools
-        "//ONNX/tools/onnx:monnx",
         "//PyTorch:ATenRT",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",
