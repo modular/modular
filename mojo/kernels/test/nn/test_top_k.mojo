@@ -90,9 +90,9 @@ fn test_case_sampling[
         out_idxs,
     )
 
-    var xxx_no_lifetimes = input  # intentionally bad name
-    var xx_no_lifetimes = out_vals
-    var x_no_lifetimes = out_idxs
+    var _xxx_no_lifetimes = input  # intentionally bad name
+    var _xx_no_lifetimes = out_vals
+    var _x_no_lifetimes = out_idxs
 
     for i in range(out_idxs.size()):
         print(out_idxs.data[i], end="")
@@ -128,7 +128,7 @@ fn test_case[
         sorted,
     )
 
-    var xxx_no_origins = input^  # intentionally bad name
+    var _xxx_no_origins = input^  # intentionally bad name
 
     for i in range(len(out_vals.storage)):
         print(out_vals.storage[i], end="")

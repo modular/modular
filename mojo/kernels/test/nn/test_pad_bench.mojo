@@ -424,7 +424,7 @@ fn bench[
     @parameter
     fn runner_iter():
         try:
-            for i in range(N):
+            for _ in range(N):
                 var result = func[rank, 0, size]()
                 keep(result)
         except e:
@@ -433,7 +433,7 @@ fn bench[
     @parameter
     fn runner_recursive():
         try:
-            for i in range(N):
+            for _ in range(N):
                 var result = func[rank, 1, size]()
                 keep(result)
         except e:

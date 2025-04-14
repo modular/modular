@@ -84,10 +84,6 @@ fn static_conv(
         num_groups=num_groups,
     )
 
-    var tile_size = get_conv_tile_shape[value_type](
-        C, R * S, micro_kernel_shape[1]
-    )
-
     fn direct_null_elementwise_epilogue(
         n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
     ):

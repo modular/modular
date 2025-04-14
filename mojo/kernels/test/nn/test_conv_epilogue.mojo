@@ -109,12 +109,12 @@ fn test[
     rand(bias_ptr, F)
 
     # Find the tile size used in packing.
-    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    # alias micro_kernel_height = get_direct_conv_micro_kernel_height()
+    # alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     # Rounded C and F size for pre-packed filter.
-    var micro_kernel_f_size = micro_kernel_width * simd_size
-    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
+    # var micro_kernel_f_size = micro_kernel_width * simd_size
+    # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
     var input_shape = extend_shape(input_dims, N, C)
