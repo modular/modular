@@ -18,14 +18,16 @@ from max.pipelines import (
     PipelineEngine,
     SupportedEncoding,
 )
-from test_common.pipeline_model import (
-    DUMMY_ARCH,
-    DUMMY_GPTQ_ARCH,
-    REPLIT_ARCH,
+from test_common.pipeline_config import (
     mock_estimate_memory_footprint,
     mock_huggingface_config,
     mock_huggingface_hub_repo_exists_with_retry,
     prepare_registry,
+)
+from test_common.pipeline_model_dummy import (
+    DUMMY_ARCH,
+    DUMMY_GPTQ_ARCH,
+    REPLIT_ARCH,
 )
 
 

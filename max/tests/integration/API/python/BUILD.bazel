@@ -21,7 +21,7 @@ modular_py_test(
     ],
     env = {"MODULAR_PATH": "."},
     deps = [
-        "//SDK/integration-test/API/python/test_common",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max",
         "//SDK/lib/API/python/max/entrypoints",
         # TODO(MAXPLAT-85): mypy doesn't inherit requirements
@@ -58,7 +58,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/API/python/test_common",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max",
         "//SDK/lib/API/python/max/entrypoints",
         # TODO(MAXPLAT-85): mypy doesn't inherit requirements
@@ -106,7 +106,7 @@ modular_py_test(
         "no-mypy",  # TODO: fix and remove
     ],
     deps = [
-        "//SDK/integration-test/API/python/test_common",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints",
         requirement("click"),
@@ -144,7 +144,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//SDK/integration-test/API/python/test_common",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints",
         requirement("click"),

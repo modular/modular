@@ -21,6 +21,9 @@ modular_py_library(
         ":ndarray_from_tensor_type",
         ":numpy_encoder",
         ":path",
+        ":pipeline_cli_utils",
+        ":pipeline_config",
+        ":pipeline_model_dummy",
         ":process_isolation",
         ":registry",
         ":torch_utils",
@@ -108,6 +111,37 @@ modular_py_library(
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/pipelines/architectures",
         "@rules_python//python/runfiles",
+    ],
+)
+
+modular_py_library(
+    name = "pipeline_cli_utils",
+    srcs = ["pipeline_cli_utils.py"],
+    imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max/driver",
+    ],
+)
+
+modular_py_library(
+    name = "pipeline_model_dummy",
+    srcs = ["pipeline_model_dummy.py"],
+    imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "pipeline_config",
+    srcs = ["pipeline_config.py"],
+    imports = [".."],
+    deps = [
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        requirement("transformers"),
     ],
 )
 

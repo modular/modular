@@ -14,7 +14,7 @@ import pytest
 from max.driver import DeviceSpec, load_devices, scan_available_devices
 from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
 from test_common.pipeline_config import DummyPipelineConfig
-from test_common.pipeline_model import DUMMY_ARCH, DummyLlamaPipelineModel
+from test_common.pipeline_model_dummy import DUMMY_ARCH, DummyLlamaPipelineModel
 
 
 def create_mock_pipeline_config(

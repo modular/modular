@@ -14,7 +14,9 @@ from max.entrypoints.cli import pipeline_config_options
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import PipelineConfig
 from test_common.pipeline_cli_utils import CLITestCommand
-from test_common.pipeline_model import mock_pipeline_config_hf_dependencies
+from test_common.pipeline_config import (
+    mock_pipeline_config_hf_dependencies,
+)
 
 
 @click.group()

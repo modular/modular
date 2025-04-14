@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from max.driver import DeviceSpec
 from max.pipelines.config import PipelineConfig
-from test_common.pipeline_model import (
+from test_common.pipeline_config import (
     mock_pipeline_config_hf_dependencies,
 )
 

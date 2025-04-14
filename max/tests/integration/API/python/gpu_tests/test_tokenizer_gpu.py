@@ -13,7 +13,7 @@ from max.pipelines import (
     TokenGeneratorRequestMessage,
     TokenGeneratorResponseFormat,
 )
-from test_common.pipeline_model import (
+from test_common.pipeline_config import (
     mock_estimate_memory_footprint,
     mock_huggingface_config,
 )
